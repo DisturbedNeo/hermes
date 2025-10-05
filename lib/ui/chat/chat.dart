@@ -2,8 +2,9 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:hermes/core/helpers/uuid.dart';
-import 'package:hermes/ui/chat_list.dart';
-import 'package:hermes/ui/chat_view.dart';
+import 'package:hermes/ui/chat/chat_list.dart';
+import 'package:hermes/ui/chat/chat_view.dart';
+import 'package:hermes/ui/chat/model_picker.dart';
 import 'package:hermes/ui/settings.dart';
 
 class Chat extends StatefulWidget {
@@ -28,6 +29,11 @@ class _ChatState extends State<Chat> {
   }
 
   @override
+  void initState() {
+    super.initState();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -37,15 +43,7 @@ class _ChatState extends State<Chat> {
           onPressed: () => toggleChatList(),
         ),
         actions: [
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Text(
-                'Model: (unset)',
-                style: Theme.of(context).textTheme.labelMedium,
-              ),
-            ),
-          ),
+          ModelPicker(),
           IconButton(
             tooltip: 'Settings',
             icon: const Icon(Icons.settings_outlined),
@@ -59,7 +57,10 @@ class _ChatState extends State<Chat> {
           Positioned.fill(
             child: ValueListenableBuilder<String>(
               valueListenable: chatId,
-              builder: (_, id, __) => ChatView(chatId: id),
+              builder: (_, id, __) => ChatView(
+                key: ValueKey(id),
+                chatId: id
+              ),
             ),
           ),
 

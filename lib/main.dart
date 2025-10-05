@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/core/services/theme_manager.dart';
@@ -63,6 +65,13 @@ class _AppState extends State<App> with WidgetsBindingObserver {
         // App is hidden from user but still running
         break;
     }
+  }
+
+  @override
+  Future<AppExitResponse> didRequestAppExit() {
+    serviceProvider.dispose();
+
+    return super.didRequestAppExit();
   }
 
   @override

@@ -8,6 +8,8 @@ class PreferencesService {
 
   static const String _dataLocationKey = 'data_location_path';
   static const String _darkModeKey = 'is_dark_mode';
+  static const String _modelsDirectory = 'models_directory';
+  static const String _llamaCppDirectory = 'llama_cpp_directory';
   static const String _themeIdKey = 'theme_id';
   static const String _worldOverviewTabPrefKey = 'last_tab_index_';
 
@@ -60,38 +62,25 @@ class PreferencesService {
     return true;
   }
 
-  Future<String> getDefaultDataLocation() async {
-    final Directory documentsDirectory =
-        await getApplicationDocumentsDirectory();
-    return documentsDirectory.path;
-  }
-
-  String getDatabaseFileName() => 'codex.db';
-
-  Future<String> getFullDatabasePath() async {
-    final directory = await getDataDirectoryPath();
-    return path.join(directory, getDatabaseFileName());
-  }
+  String getDatabaseFileName() => 'hermes.db';
+  
+  Future<String> getDefaultDataLocation() async => (await getApplicationDocumentsDirectory()).path;
+  Future<String> getFullDatabasePath() async => path.join(await getDataDirectoryPath(), getDatabaseFileName());
 
   Future<bool> isDarkMode() async => (await _prefs).getBool(_darkModeKey) ?? false;
-
-  Future<bool> setDarkMode(bool isDarkMode) async =>
-      (await _prefs).setBool(_darkModeKey, isDarkMode);
+  Future<bool> setDarkMode(bool isDarkMode) async => (await _prefs).setBool(_darkModeKey, isDarkMode);
 
   Future<String?> getThemeId() async => (await _prefs).getString(_themeIdKey);
+  Future<bool> setThemeId(String themeId) async => (await _prefs).setString(_themeIdKey, themeId);
 
-  Future<bool> setThemeId(String themeId) async =>
-      (await _prefs).setString(_themeIdKey, themeId);
+  Future<int> getTabIndex(String worldId) async => (await _prefs).getInt('$_worldOverviewTabPrefKey$worldId') ?? 0;
+  Future<bool> setTabIndex(String worldId, int index) async => (await _prefs).setInt('$_worldOverviewTabPrefKey$worldId', index);
 
-  Future<int> getTabIndex(String worldId) async {
-    final prefs = await _prefs;
-    return prefs.getInt('$_worldOverviewTabPrefKey$worldId') ?? 0;
-  }
+  Future<String?> getLlamaCppDirectory() async => (await _prefs).getString(_llamaCppDirectory);
+  Future<bool> setLlamaCppDirectory(String path) async => (await _prefs).setString(_llamaCppDirectory, path);
 
-  Future<bool> setTabIndex(String worldId, int index) async {
-    final prefs = await _prefs;
-    return prefs.setInt('$_worldOverviewTabPrefKey$worldId', index);
-  }
+  Future<String?> getModelsDirectory() async => (await _prefs).getString(_modelsDirectory);
+  Future<bool> setModelsDirectory(String directory) async => (await _prefs).setString(_modelsDirectory, directory);
 
   void dispose() {}
 }

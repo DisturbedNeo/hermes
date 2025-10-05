@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hermes/core/models/hermes_theme_data.dart';
-import 'package:hermes/core/models/themes/forest_theme.dart';
-import 'package:hermes/core/models/themes/luxury_theme.dart';
-import 'package:hermes/core/models/themes/ocean_theme.dart';
+import 'package:hermes/core/models/themes/nexus_theme.dart';
+import 'package:hermes/core/models/themes/solarpunk_theme.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 
@@ -13,9 +12,8 @@ class ThemeManager with ChangeNotifier {
   final PreferencesService _preferencesService = serviceProvider.get<PreferencesService>();
 
   static List<HermesThemeData> allThemes = [
-    LuxuryTheme.build(),
-    OceanTheme.build(),
-    ForestTheme.build(),
+    SolarpunkTheme.build(),
+    NexusTheme.build(),
   ];
 
   final Duration _themeSwitchDuration = const Duration(milliseconds: 300);

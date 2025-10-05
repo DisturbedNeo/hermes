@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:hermes/core/services/preferences_service.dart';
+import 'package:hermes/core/services/service_provider.dart';
 
 class Settings extends StatefulWidget {
   const Settings({super.key});
@@ -7,16 +9,39 @@ class Settings extends StatefulWidget {
 }
 
 class _SettingsState extends State<Settings> {
-  late final TextEditingController _urlCtrl;
-  late final TextEditingController _keyCtrl;
-  late final TextEditingController _modelCtrl;
+  late final TextEditingController _llamaCppDirCtrl;
+  late final TextEditingController _modelsDirCtrl;
+
+  final PreferencesService preferencesService =
+      serviceProvider.get<PreferencesService>();
+
+  void loadSettings() async {
+    final llamaCppDir = await preferencesService.getLlamaCppDirectory();
+    final modelsDir = await preferencesService.getModelsDirectory();
+    if (!mounted) return;
+    if (llamaCppDir is String && llamaCppDir.isNotEmpty) {
+      _llamaCppDirCtrl.text = llamaCppDir;
+    }
+    if (modelsDir is String && modelsDir.isNotEmpty) {
+      _modelsDirCtrl.text = modelsDir;
+    }
+    setState(() {});
+  }
 
   @override
   void initState() {
     super.initState();
-    _urlCtrl = TextEditingController(text: '');
-    _keyCtrl = TextEditingController(text: '');
-    _modelCtrl = TextEditingController(text: '');
+    _llamaCppDirCtrl = TextEditingController(text: '');
+    _modelsDirCtrl = TextEditingController(text: '');
+
+    loadSettings();
+  }
+
+  @override
+  void dispose() {
+    _llamaCppDirCtrl.dispose();
+    _modelsDirCtrl.dispose();
+    super.dispose();
   }
 
   @override
@@ -26,45 +51,45 @@ class _SettingsState extends State<Settings> {
         padding: const EdgeInsets.all(16),
         child: ListView(
           children: [
-            const Text('Settings', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            const Text('Settings',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
             const SizedBox(height: 12),
+
+            // llama.cpp Directory
             TextField(
-              controller: _urlCtrl,
+              controller: _llamaCppDirCtrl,
               decoration: const InputDecoration(
-                labelText: 'Base URL',
-                hintText: 'http://localhost:8080',
-                prefixIcon: Icon(Icons.link),
+                labelText: 'llama.cpp Directory',
+                hintText: '/home/you/dev/llama.cpp',
+                prefixIcon: Icon(Icons.folder),
               ),
             ),
             const SizedBox(height: 12),
+
+            // Models Directory
             TextField(
-              controller: _keyCtrl,
+              controller: _modelsDirCtrl,
               decoration: const InputDecoration(
-                labelText: 'API Key (optional)',
-                prefixIcon: Icon(Icons.vpn_key),
-              ),
-              obscureText: true,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _modelCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Default model id',
-                hintText: 'llama-3.1-8b-instruct',
-                prefixIcon: Icon(Icons.memory),
+                labelText: 'Models Directory',
+                hintText: '/home/you/Models',
+                prefixIcon: Icon(Icons.folder),
               ),
             ),
             const SizedBox(height: 16),
+
             FilledButton(
               onPressed: () async {
-                /*await configService.save(
-                  baseUrl: _urlCtrl.text.trim(),
-                  apiKey: _keyCtrl.text.trim(),
-                  defaultModel: _modelCtrl.text.trim(),
-                );*/
+                final llamaCppDir = _llamaCppDirCtrl.text.trim();
+                final modelsDir = _modelsDirCtrl.text.trim();
+
+                await preferencesService.setLlamaCppDirectory(llamaCppDir);
+                await preferencesService.setModelsDirectory(modelsDir);
+
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved')));
-                  setState(() {}); // refresh labels if needed
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Saved')),
+                  );
+                  setState(() {});
                 }
               },
               child: const Text('Save'),

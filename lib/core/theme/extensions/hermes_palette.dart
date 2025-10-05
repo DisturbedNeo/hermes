@@ -7,6 +7,8 @@ class HermesPalette extends ThemeExtension<HermesPalette> {
   final Color onPrimary;
   final Color secondary;
   final Color onSecondary;
+  final Color tertiary;
+  final Color onTertiary;
   final Color background;
   final Color surface;
   final Color onSurface;
@@ -32,6 +34,8 @@ class HermesPalette extends ThemeExtension<HermesPalette> {
     required this.onPrimary,
     required this.secondary,
     required this.onSecondary,
+    required this.tertiary,
+    required this.onTertiary,
     required this.background,
     required this.surface,
     required this.onSurface,
@@ -52,10 +56,12 @@ class HermesPalette extends ThemeExtension<HermesPalette> {
   factory HermesPalette.custom({
     required Color primary,
     required Color secondary,
+    required Color tertiary,
     required Color background,
     required Color surface,
     Color? onPrimary,
     Color? onSecondary,
+    Color? onTertiary,
     Color? onSurface,
     Color? success,
     Color? onSuccess,
@@ -82,6 +88,12 @@ class HermesPalette extends ThemeExtension<HermesPalette> {
             ? Colors.white
             : Colors.black);
 
+    final calculatedOnTertiary = 
+        onTertiary ??
+        (ThemeData.estimateBrightnessForColor(tertiary) == Brightness.dark
+            ? Colors.white
+            : Colors.black);
+
     final calculatedOnSurface =
         onSurface ??
         (ThemeData.estimateBrightnessForColor(surface) == Brightness.dark
@@ -98,6 +110,8 @@ class HermesPalette extends ThemeExtension<HermesPalette> {
       onPrimary: calculatedOnPrimary,
       secondary: secondary,
       onSecondary: calculatedOnSecondary,
+      tertiary: tertiary,
+      onTertiary: calculatedOnTertiary,
       background: background,
       surface: surface,
       onSurface: calculatedOnSurface,
@@ -122,6 +136,8 @@ class HermesPalette extends ThemeExtension<HermesPalette> {
     Color? onPrimary,
     Color? secondary,
     Color? onSecondary,
+    Color? tertiary,
+    Color? onTertiary,
     Color? background,
     Color? surface,
     Color? onSurface,
@@ -142,6 +158,8 @@ class HermesPalette extends ThemeExtension<HermesPalette> {
     onPrimary: onPrimary ?? this.onPrimary,
     secondary: secondary ?? this.secondary,
     onSecondary: onSecondary ?? this.onSecondary,
+    tertiary: tertiary ?? this.tertiary,
+    onTertiary: onTertiary ?? this.onTertiary,
     background: background ?? this.background,
     surface: surface ?? this.surface,
     onSurface: onSurface ?? this.onSurface,
@@ -173,6 +191,8 @@ class HermesPalette extends ThemeExtension<HermesPalette> {
       onPrimary: Color.lerp(onPrimary, other.onPrimary, t)!,
       secondary: Color.lerp(secondary, other.secondary, t)!,
       onSecondary: Color.lerp(onSecondary, other.onSecondary, t)!,
+      tertiary: Color.lerp(tertiary, other.tertiary, t)!,
+      onTertiary: Color.lerp(onTertiary, other.onTertiary, t)!,
       background: Color.lerp(background, other.background, t)!,
       surface: Color.lerp(surface, other.surface, t)!,
       onSurface: Color.lerp(onSurface, other.onSurface, t)!,

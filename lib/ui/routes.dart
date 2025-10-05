@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hermes/ui/chat.dart';
+import 'package:hermes/ui/chat/chat.dart';
 
 class AppRoutes {
   AppRoutes._();
