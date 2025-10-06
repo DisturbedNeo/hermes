@@ -54,9 +54,7 @@ class PreferencesService {
     if (dataMoved && await currentDbFile.exists()) {
       try {
         await currentDbFile.delete();
-      } catch (e) {
-        // No-op
-      }
+      } catch (_) {}
     }
 
     return true;

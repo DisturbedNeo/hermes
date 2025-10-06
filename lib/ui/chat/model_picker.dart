@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:hermes/core/helpers/models_directory.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/service_provider.dart';
-import 'package:hermes/ui/chat/model_configuration.dart';
+import 'package:hermes/ui/model_configuration/model_configuration.dart';
 
 class ModelPicker extends StatefulWidget {
   const ModelPicker({super.key});
@@ -125,16 +125,23 @@ class _ModelPickerState extends State<ModelPicker> {
                                 required int ctx,
                                 required int threads,
                                 required int? gpuLayers,
-                              }) {
-                                setState(() => _selected = v);
+                              }) async {
+                                setState(() {
+                                  _selected = v;
+                                  _loading = true;
+                                });
 
-                                serverManager.start(
+                                await serverManager.start(
                                   modelPath: file.path,
                                   modelName: v,
                                   nCtx: ctx,
                                   nThreads: threads,
                                   nGpuLayers: gpuLayers ?? 999,
                                 );
+
+                                setState(() {
+                                  _loading = false;
+                                });
                               },
                         ),
                       );

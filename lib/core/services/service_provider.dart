@@ -59,9 +59,7 @@ class ServiceProvider {
             print('Disposed ${service.runtimeType}');
           }
         }
-      } catch (e) {
-        // No-Op
-      }
+      } catch (_) {}
     }
   }
 

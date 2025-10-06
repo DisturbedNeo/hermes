@@ -1,12 +1,15 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:hermes/core/helpers/uuid.dart';
+import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_message.dart';
+import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/core/services/chat_client.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/ui/chat/composer.dart';
-import 'package:hermes/ui/chat/message_bubble.dart';
+import 'package:hermes/ui/chat/message/message_bubble.dart';
+import 'package:hermes/ui/chat/message/message_row.dart';
 
 class ChatView extends StatefulWidget {
   final String chatId;
@@ -18,9 +21,8 @@ class ChatView extends StatefulWidget {
 
 class _ChatViewState extends State<ChatView> {
   final controller = TextEditingController();
-  final scroll = ScrollController();
   final List<Bubble> messages = [
-    Bubble(role: 'system', text: 'You are a helpful assistant.'),
+    Bubble(id: uuid.v7(), role: 'system', text: 'You are a helpful assistant.'),
   ];
 
   final LlamaServerManager serverManager = serviceProvider
@@ -29,6 +31,16 @@ class _ChatViewState extends State<ChatView> {
   StreamSubscription<String>? streamSub;
   ChatClient? currentClient;
   bool isStreaming = false;
+  String? streamingId;
+
+  final scroll = ScrollController();
+
+  GlobalKey? activeAnchorKey;
+  double? activeAnchorAlign;
+  bool anchorRestoreScheduled = false;
+
+  final Map<String, GlobalKey> rowKeys = {};
+  GlobalKey rowKeyFor(String id) => rowKeys.putIfAbsent(id, () => GlobalKey());
 
   bool get isReady => serverManager.current != null;
 
@@ -46,25 +58,50 @@ class _ChatViewState extends State<ChatView> {
     return Column(
       children: [
         Expanded(
-          child: ListView.builder(
-            controller: scroll,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-            itemCount: messages.length,
-            itemBuilder: (_, i) => MessageBubble(
-              key: ValueKey('bubble_${i}_${messages[i].text.hashCode}'),
-              b: messages[i],
-              onSave: (newText) {
-                setState(() {
-                  messages[i] = Bubble(role: messages[i].role, text: newText);
-                });
-              },
-              editable: true && !isStreaming,
-            ),
+          child: Stack(
+            children: [
+              ListView.builder(
+                controller: scroll,
+                reverse: true,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 16,
+                ),
+                itemCount: messages.length,
+                itemBuilder: (_, i) {
+                  final index = messages.length - 1 - i;
+                  final b = messages[index];
+                  final isUser = b.role == 'user';
+                  final rowKey = rowKeyFor(b.id);
+
+                  return Padding(
+                    key: rowKey,
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: MessageRow(
+                      isUser: isUser,
+                      bubble: MessageBubble(
+                        key: ValueKey('bubble_${index}_${b.id}'),
+                        b: b,
+                        onSave: (newText) {
+                          setState(() {
+                            messages[index] = Bubble(
+                              id: b.id,
+                              role: b.role,
+                              text: newText,
+                            );
+                          });
+                        },
+                        editable: !isStreaming,
+                      ),
+                      actions: _RowActionsPlaceholder(isUser: isUser),
+                    ),
+                  );
+                },
+              ),
+            ],
           ),
         ),
-
         const Divider(height: 1),
-
         ValueListenableBuilder<LlamaServerHandle?>(
           valueListenable: serverManager.handle,
           builder: (_, handle, __) {
@@ -84,31 +121,35 @@ class _ChatViewState extends State<ChatView> {
 
   void send(String text) {
     if (isStreaming) return;
-
     final t = text.trim();
     if (t.isEmpty) return;
 
+    final assistantId = uuid.v7();
+
     setState(() {
-      messages.add(Bubble(role: 'user', text: t));
-      messages.add(Bubble(role: 'assistant', text: ''));
+      messages.add(Bubble(id: uuid.v7(), role: 'user', text: t));
+      messages.add(Bubble(id: assistantId, role: 'assistant', text: ''));
       isStreaming = true;
     });
 
     controller.clear();
-    scrollToBottom();
+
+    streamingId = assistantId;
 
     streamAssistantResponse();
   }
 
   Future<void> streamAssistantResponse() async {
     final handle = serverManager.current!;
-    final baseUrl = handle.baseUrl;
-    final client = ChatClient(baseUrl: baseUrl.toString(), model: handle.model);
+    final client = ChatClient(
+      baseUrl: handle.baseUrl.toString(),
+      model: handle.model,
+    );
     currentClient = client;
 
     final int assistantIndex = messages.length - 1;
 
-    final List<ChatMessage> payload = messages
+    final payload = messages
         .take(assistantIndex)
         .where(
           (b) =>
@@ -123,9 +164,11 @@ class _ChatViewState extends State<ChatView> {
           .listen(
             (token) {
               if (!mounted || token.isEmpty) return;
+
               setState(() {
                 final current = messages[assistantIndex];
                 messages[assistantIndex] = Bubble(
+                  id: current.id,
                   role: current.role,
                   text: current.text + token,
                 );
@@ -133,8 +176,10 @@ class _ChatViewState extends State<ChatView> {
             },
             onError: (e, st) {
               if (!mounted) return;
+
               setState(() {
                 messages[assistantIndex] = Bubble(
+                  id: uuid.v7(),
                   role: 'assistant',
                   text: 'Something went wrong: $e',
                 );
@@ -144,39 +189,14 @@ class _ChatViewState extends State<ChatView> {
           );
 
       await streamSub!.asFuture<void>();
-
-      if (mounted && messages[assistantIndex].text.isEmpty) {
-        setState(() {
-          messages[assistantIndex] = Bubble(
-            role: 'assistant',
-            text: '(no response)',
-          );
-        });
-      }
-    } on HttpException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        messages[assistantIndex] = Bubble(
-          role: 'assistant',
-          text: 'Error ${e.message}',
-        );
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        messages[assistantIndex] = Bubble(
-          role: 'assistant',
-          text: 'Something went wrong: $e',
-        );
-      });
     } finally {
       streamSub = null;
+      streamingId = null;
       currentClient?.dispose();
       currentClient = null;
 
       if (mounted) {
         setState(() => isStreaming = false);
-        scrollToBottom();
       }
     }
   }
@@ -188,15 +208,26 @@ class _ChatViewState extends State<ChatView> {
     currentClient = null;
     setState(() => isStreaming = false);
   }
+}
 
-  void scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !scroll.hasClients) return;
-      scroll.animateTo(
-        scroll.position.maxScrollExtent + 80,
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-      );
-    });
+class _RowActionsPlaceholder extends StatelessWidget {
+  final bool isUser;
+  const _RowActionsPlaceholder({required this.isUser});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.outlineVariant;
+
+    return Opacity(
+      opacity: 0.6,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.more_horiz, size: 20, color: color),
+          const SizedBox(width: 4),
+          Icon(isUser ? Icons.person : Icons.smart_toy, size: 18, color: color),
+        ],
+      ),
+    );
   }
 }

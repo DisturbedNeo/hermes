@@ -3,7 +3,9 @@
         "Behavior",
         "color",
         "Colors",
+        "deadband",
         "Dialog",
-        "gguf"
+        "gguf",
+        "visibles"
     ]
 }

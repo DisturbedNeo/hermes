@@ -111,7 +111,7 @@ class _ChatState extends State<Chat> {
 }
 
 class _SideSheet extends StatelessWidget {
-  final AxisDirection side; // left or right
+  final AxisDirection side;
   final bool open;
   final double width;
   final Widget child;
@@ -130,12 +130,10 @@ class _SideSheet extends StatelessWidget {
     return Align(
       alignment: fromLeft ? Alignment.centerLeft : Alignment.centerRight,
       child: IgnorePointer(
-        // prevent interacting when closed (but still let it animate)
         ignoring: !open,
         child: AnimatedSlide(
           duration: const Duration(milliseconds: 220),
           curve: Curves.easeOutCubic,
-          // slide fully off-screen horizontally when closed
           offset: open
               ? Offset.zero
               : (fromLeft ? const Offset(-1, 0) : const Offset(1, 0)),

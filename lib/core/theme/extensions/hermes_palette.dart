@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:hermes/core/theme/hermes_colours.dart';
 
 class HermesPalette extends ThemeExtension<HermesPalette> {
   // Core colors
@@ -100,10 +99,10 @@ class HermesPalette extends ThemeExtension<HermesPalette> {
             ? Colors.white
             : Colors.black);
 
-    final successColor = success ?? HermesColours.success;
-    final warningColor = warning ?? HermesColours.warning;
-    final errorColor = error ?? HermesColours.error;
-    final infoColor = info ?? HermesColours.info;
+    final successColor = success ?? Color(0xFF43A047);
+    final warningColor = warning ?? Color(0xFFFFA000);
+    final errorColor = error ?? Color(0xFFD32F2F);
+    final infoColor = info ?? Color(0xFF1976D2);
 
     return HermesPalette(
       primary: primary,
@@ -124,8 +123,8 @@ class HermesPalette extends ThemeExtension<HermesPalette> {
       info: infoColor,
       onInfo: onInfo ?? Colors.white,
       highlight: highlight ?? secondary.withValues(alpha: 0.2),
-      muted: muted ?? HermesColours.mediumGrey,
-      divider: divider ?? HermesColours.lightGrey,
+      muted: muted ?? Color(0xFF9E9E9E),
+      divider: divider ?? Color(0xFFEEEEEE),
       overlay: overlay ?? Colors.black.withValues(alpha: 0.5),
     );
   }

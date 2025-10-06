@@ -4,45 +4,10 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:hermes/core/helpers/file.dart';
+import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:path/path.dart' as p;
-
-class LlamaServerHandle {
-  final Process process;
-  final Uri baseUrl;
-  final String model;
-  final StreamSubscription stdoutSub;
-  final StreamSubscription stderrSub;
-
-  LlamaServerHandle({
-    required this.process,
-    required this.baseUrl,
-    required this.model,
-    required this.stdoutSub,
-    required this.stderrSub,
-  });
-
-  Future<void> stop() async {
-    _sendSignalSafe(process, ProcessSignal.sigint);
-
-    await Future.delayed(const Duration(milliseconds: 400));
-
-    _sendSignalSafe(process, ProcessSignal.sigterm);
-
-    await Future.delayed(const Duration(milliseconds: 300));
-    _sendSignalSafe(process, ProcessSignal.sigkill);
-
-    await stdoutSub.cancel();
-    await stderrSub.cancel();
-  }
-
-  void _sendSignalSafe(Process p, ProcessSignal sig) {
-    try {
-      p.kill(sig);
-    } catch (_) {}
-  }
-}
 
 class LlamaServerManager {
   final ValueNotifier<LlamaServerHandle?> handle = ValueNotifier(null);
@@ -151,7 +116,7 @@ class LlamaServerManager {
   }
 
   Future<void> waitUntilReady(Uri base) async {
-    await Future.delayed(const Duration(seconds: 10));
+    await Future.delayed(const Duration(seconds: 5));
 
     final client = HttpClient();
     final deadline = DateTime.now().add(const Duration(seconds: 60));
