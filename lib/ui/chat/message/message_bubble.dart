@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:hermes/core/helpers/style.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/ui/chat/message/bubble_editor.dart';
 import 'package:hermes/ui/chat/message/bubble_markdown_view.dart';
 import 'package:hermes/ui/chat/message/bubble_surface.dart';
+import 'package:hermes/ui/chat/message/think_section.dart';
+import 'package:hermes/ui/chat/message/think_stream_parser.dart';
 
 class MessageBubble extends StatefulWidget {
   final Bubble b;
@@ -18,29 +22,76 @@ class MessageBubble extends StatefulWidget {
   });
 
   @override
-  State<MessageBubble> createState() => _MessageBubbleState();
+  State<MessageBubble> createState() => MessageBubbleState();
 }
 
-class _MessageBubbleState extends State<MessageBubble> {
-  bool _editing = false;
-  late final TextEditingController _ctrl = TextEditingController(text: widget.b.text);
-  final FocusNode _focus = FocusNode();
+class MessageBubbleState extends State<MessageBubble> {
+  bool editing = false;
+  late final TextEditingController ctrl = TextEditingController(
+    text: widget.b.text,
+  );
+  final FocusNode focus = FocusNode();
+
+  final ThinkStreamParser parser = ThinkStreamParser();
+  String prevText = '';
+
+  Timer? idleTimer;
 
   @override
-  void didUpdateWidget(covariant MessageBubble old) {
-    super.didUpdateWidget(old);
-    if (!_editing && old.b.text != widget.b.text) _ctrl.text = widget.b.text;
-    if (_editing && !widget.editable) _cancel();
+  void initState() {
+    super.initState();
+    ingestUpdate(widget.b.text);
   }
 
-  void _beginEdit() {
+  @override
+  void didUpdateWidget(covariant MessageBubble oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (!editing && oldWidget.b.text != widget.b.text) {
+      ctrl.text = widget.b.text;
+    }
+
+    if (editing && !widget.editable) cancel();
+
+    if (oldWidget.b.text != widget.b.text) {
+      ingestUpdate(widget.b.text);
+    }
+  }
+
+  void ingestUpdate(String newText) {
+    if (prevText.isNotEmpty && newText.startsWith(prevText)) {
+      final delta = newText.substring(prevText.length);
+      if (delta.isNotEmpty) parser.addChunk(delta);
+    } else {
+      parser.reset();
+      if (newText.isNotEmpty) parser.addChunk(newText);
+    }
+
+    prevText = newText;
+
+    idleTimer?.cancel();
+    idleTimer = Timer(const Duration(milliseconds: 250), parser.flushTail);
+  }
+
+  void beginEdit() {
     if (!widget.editable) return;
-    setState(() => _editing = true);
-    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _focus.requestFocus(); });
+    setState(() => editing = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) focus.requestFocus();
+    });
   }
 
-  void _cancel() { setState(() { _editing = false; _ctrl.text = widget.b.text; }); }
-  void _save()   { widget.onSave?.call(_ctrl.text); setState(() => _editing = false); }
+  void cancel() {
+    setState(() {
+      editing = false;
+      ctrl.text = widget.b.text;
+    });
+  }
+
+  void save() {
+    widget.onSave?.call(ctrl.text);
+    setState(() => editing = false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -56,30 +107,68 @@ class _MessageBubbleState extends State<MessageBubble> {
         BubbleSurface(
           borderRadius: borderRadius,
           background: bg,
-          enabled: widget.editable && !_editing,
-          onTap: _beginEdit,
+          enabled: widget.editable && !editing,
+          onTap: beginEdit,
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 120),
             switchInCurve: Curves.easeOut,
             switchOutCurve: Curves.easeIn,
-            child: _editing
+            child: editing
                 ? BubbleEditor(
                     key: const ValueKey('editor'),
-                    controller: _ctrl,
-                    focusNode: _focus,
+                    controller: ctrl,
+                    focusNode: focus,
                     foreground: fg,
-                    onCancel: _cancel,
-                    onSave: _save,
+                    onCancel: cancel,
+                    onSave: save,
                   )
-                : BubbleMarkdownView(
-                    key: const ValueKey('markdown'),
-                    text: widget.b.text,
-                    foreground: fg,
-                    background: bg,
+                : AnimatedBuilder(
+                    key: const ValueKey('markdown-plus-think'),
+                    animation: parser,
+                    builder: (context, _) => partsColumn(fg, bg),
                   ),
           ),
         ),
       ],
     );
+  }
+
+  Widget partsColumn(Color fg, Color bg) {
+    final children = <Widget>[];
+    for (var i = 0; i < parser.parts.length; i++) {
+      final p = parser.parts[i];
+      if (i > 0) children.add(const SizedBox(height: 8));
+
+      children.add(
+        p.isThink
+            ? ThinkSection(
+                key: ValueKey(p.id),
+                text: p.text,
+                fg: fg,
+                bg: bg,
+                streaming: !p.closed,
+              )
+            : Padding(
+                padding: const EdgeInsets.symmetric(vertical: 0, horizontal: 6),
+                child: BubbleMarkdownView(
+                  key: ValueKey(p.id),
+                  text: p.text,
+                  foreground: fg,
+                  background: bg,
+                ),
+              ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
+    );
+  }
+
+  @override
+  void dispose() {
+    idleTimer?.cancel();
+    parser.dispose();
+    super.dispose();
   }
 }
