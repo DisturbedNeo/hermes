@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_message.dart';
@@ -27,6 +28,8 @@ class _ChatViewState extends State<ChatView> {
 
   final LlamaServerManager serverManager = serviceProvider
       .get<LlamaServerManager>();
+
+  late final composerFocusNode = FocusNode()..onKeyEvent = onKey;
 
   StreamSubscription<String>? streamSub;
   ChatClient? currentClient;
@@ -108,6 +111,7 @@ class _ChatViewState extends State<ChatView> {
             final ready = handle != null;
             return Composer(
               controller: controller,
+              focusNode: composerFocusNode,
               enabled: ready,
               isStreaming: isStreaming,
               onSubmitted: send,
@@ -197,6 +201,12 @@ class _ChatViewState extends State<ChatView> {
 
       if (mounted) {
         setState(() => isStreaming = false);
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            composerFocusNode.requestFocus();
+          }
+        });
       }
     }
   }
@@ -207,6 +217,37 @@ class _ChatViewState extends State<ChatView> {
     streamSub = null;
     currentClient = null;
     setState(() => isStreaming = false);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        composerFocusNode.requestFocus();
+      }
+    });
+  }
+
+  KeyEventResult onKey(node, event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event.logicalKey != LogicalKeyboardKey.enter) {
+      return KeyEventResult.ignored;
+    }
+
+    final shift = HardwareKeyboard.instance.isShiftPressed;
+    if (!shift && !isStreaming) {
+      FocusScope.of(context).unfocus();
+      send(controller.text.trim());
+      return KeyEventResult.handled;
+    }
+
+    if (shift) {
+      final text = controller.text;
+      final sel = controller.selection;
+      final updated = text.replaceRange(sel.start, sel.end, '\n');
+      controller.text = updated;
+      controller.selection = TextSelection.collapsed(offset: sel.start + 1);
+      return KeyEventResult.handled;
+    }
+
+    return KeyEventResult.ignored;
   }
 }
 

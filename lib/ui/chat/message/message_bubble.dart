@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:hermes/core/helpers/style.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/ui/chat/message/bubble_editor.dart';
-import 'package:hermes/ui/chat/message/bubble_markdown_view.dart';
 import 'package:hermes/ui/chat/message/bubble_surface.dart';
+import 'package:hermes/ui/chat/message/markdown_view.dart';
 import 'package:hermes/ui/chat/message/think_section.dart';
 import 'package:hermes/ui/chat/message/think_stream_parser.dart';
 
@@ -27,15 +27,17 @@ class MessageBubble extends StatefulWidget {
 
 class MessageBubbleState extends State<MessageBubble> {
   bool editing = false;
-  late final TextEditingController ctrl = TextEditingController(
-    text: widget.b.text,
-  );
+
   final FocusNode focus = FocusNode();
 
   final ThinkStreamParser parser = ThinkStreamParser();
   String prevText = '';
 
   Timer? idleTimer;
+
+  late final TextEditingController ctrl = TextEditingController(
+    text: widget.b.text,
+  );
 
   @override
   void initState() {
@@ -147,14 +149,14 @@ class MessageBubbleState extends State<MessageBubble> {
                 fg: fg,
                 bg: bg,
                 streaming: !p.closed,
+                onTap: beginEdit,
               )
             : Padding(
                 padding: const EdgeInsets.symmetric(vertical: 0, horizontal: 6),
-                child: BubbleMarkdownView(
+                child: MarkdownView(
                   key: ValueKey(p.id),
-                  text: p.text,
-                  foreground: fg,
-                  background: bg,
+                  data: p.text,
+                  onTapNonLink: beginEdit,
                 ),
               ),
       );

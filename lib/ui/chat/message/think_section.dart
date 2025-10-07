@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:hermes/ui/chat/message/bubble_markdown_view.dart';
+import 'package:hermes/ui/chat/message/markdown_view.dart';
 
 class ThinkSection extends StatefulWidget {
   final String text;
   final Color fg;
   final Color bg;
   final bool streaming;
+  final VoidCallback? onTap;
 
   const ThinkSection({
     super.key,
     required this.text,
     required this.fg,
     required this.bg,
+    this.onTap,
     this.streaming = false,
   });
 
@@ -78,10 +80,9 @@ class _ThinkSectionState extends State<ThinkSection> {
             firstChild: const SizedBox.shrink(),
             secondChild: Padding(
               padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-              child: BubbleMarkdownView(
-                text: widget.text,
-                foreground: widget.fg.withValues(alpha: 0.95),
-                background: Color.alphaBlend(widget.fg.withValues(alpha: 0.04), widget.bg),
+              child: MarkdownView(
+                data: widget.text, 
+                onTapNonLink: widget.onTap
               ),
             ),
           ),
