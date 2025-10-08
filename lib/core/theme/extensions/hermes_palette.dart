@@ -8,7 +8,6 @@ class HermesPalette extends ThemeExtension<HermesPalette> {
   final Color onSecondary;
   final Color tertiary;
   final Color onTertiary;
-  final Color background;
   final Color surface;
   final Color onSurface;
 
@@ -35,7 +34,6 @@ class HermesPalette extends ThemeExtension<HermesPalette> {
     required this.onSecondary,
     required this.tertiary,
     required this.onTertiary,
-    required this.background,
     required this.surface,
     required this.onSurface,
     required this.success,
@@ -56,7 +54,6 @@ class HermesPalette extends ThemeExtension<HermesPalette> {
     required Color primary,
     required Color secondary,
     required Color tertiary,
-    required Color background,
     required Color surface,
     Color? onPrimary,
     Color? onSecondary,
@@ -111,7 +108,6 @@ class HermesPalette extends ThemeExtension<HermesPalette> {
       onSecondary: calculatedOnSecondary,
       tertiary: tertiary,
       onTertiary: calculatedOnTertiary,
-      background: background,
       surface: surface,
       onSurface: calculatedOnSurface,
       success: successColor,
@@ -137,7 +133,6 @@ class HermesPalette extends ThemeExtension<HermesPalette> {
     Color? onSecondary,
     Color? tertiary,
     Color? onTertiary,
-    Color? background,
     Color? surface,
     Color? onSurface,
     Color? success,
@@ -159,7 +154,6 @@ class HermesPalette extends ThemeExtension<HermesPalette> {
     onSecondary: onSecondary ?? this.onSecondary,
     tertiary: tertiary ?? this.tertiary,
     onTertiary: onTertiary ?? this.onTertiary,
-    background: background ?? this.background,
     surface: surface ?? this.surface,
     onSurface: onSurface ?? this.onSurface,
     success: success ?? this.success,
@@ -192,7 +186,6 @@ class HermesPalette extends ThemeExtension<HermesPalette> {
       onSecondary: Color.lerp(onSecondary, other.onSecondary, t)!,
       tertiary: Color.lerp(tertiary, other.tertiary, t)!,
       onTertiary: Color.lerp(onTertiary, other.onTertiary, t)!,
-      background: Color.lerp(background, other.background, t)!,
       surface: Color.lerp(surface, other.surface, t)!,
       onSurface: Color.lerp(onSurface, other.onSurface, t)!,
       success: Color.lerp(success, other.success, t)!,

@@ -10,7 +10,6 @@ class NexusTheme {
         primary: const Color(0xFF2563EB),   // Cobalt blue
         secondary: const Color(0xFF475569), // Slate gray
         tertiary: const Color(0xFF10B981),  // Teal
-        background: const Color(0xFFF8FAFC),
         surface: Colors.white,
       ),
       isDark: false,
@@ -21,7 +20,6 @@ class NexusTheme {
         primary: const Color(0xFF60A5FA),   // Light blue
         secondary: const Color(0xFF94A3B8), // Steel gray
         tertiary: const Color(0xFF34D399),  // Cool mint
-        background: const Color(0xFF0F172A),
         surface: const Color(0xFF1E293B),
       ),
       isDark: true,

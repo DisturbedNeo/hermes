@@ -58,7 +58,7 @@ class _ModelPickerState extends State<ModelPicker> {
 
   @override
   Widget build(BuildContext context) {
-    final Color bgColor = Theme.of(context).colorScheme.secondaryContainer;
+    final Color bgColor = Theme.of(context).colorScheme.surfaceContainerHighest;
 
     if (_loading) {
       return const Row(
@@ -69,7 +69,7 @@ class _ModelPickerState extends State<ModelPicker> {
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
           SizedBox(width: 8),
-          Text('Loading models…'),
+          Text('Loading…'),
         ],
       );
     }

@@ -26,7 +26,6 @@ class BubbleEditor extends StatelessWidget {
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.enter, control: true): onSave,
-        const SingleActivator(LogicalKeyboardKey.enter, meta: true): onSave, // mac
         const SingleActivator(LogicalKeyboardKey.escape): onCancel,
       },
       child: Column(
@@ -41,8 +40,14 @@ class BubbleEditor extends StatelessWidget {
             decoration: InputDecoration(
               hintText: 'Edit message…',
               filled: true,
-              fillColor: scheme.surface.withValues(alpha: 0.75),
+              fillColor: scheme.surface,
+              hoverColor: scheme.surface,
               contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+              enabledBorder: InputBorder.none,
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(8)),
+                borderSide: BorderSide(width: 1, color: scheme.surface.withValues(alpha: 0.25)),
+              ),
             ),
             style: base.bodyMedium?.copyWith(fontSize: 16, color: scheme.onSecondaryContainer),
           ),
@@ -65,7 +70,7 @@ class BubbleEditor extends StatelessWidget {
                   side: const BorderSide(width: 0.5),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
-                child: KeyHint(label: 'Save', shortcut: 'Ctrl/⌘ + Enter', hintColor: foreground),
+                child: KeyHint(label: 'Save', shortcut: 'Ctrl + Enter', hintColor: foreground),
               ),
             ],
           ),

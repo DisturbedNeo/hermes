@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/helpers/style.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/ui/chat/message/bubble_editor.dart';
@@ -72,7 +73,7 @@ class MessageBubbleState extends State<MessageBubble> {
     prevText = newText;
 
     idleTimer?.cancel();
-    idleTimer = Timer(const Duration(milliseconds: 250), parser.flushTail);
+    idleTimer = Timer(const Duration(milliseconds: 100), parser.flushTail);
   }
 
   void beginEdit() {
@@ -98,7 +99,7 @@ class MessageBubbleState extends State<MessageBubble> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final isUser = widget.b.role == 'user';
+    final isUser = widget.b.role == MessageRole.user;
     final align = isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start;
     final (bg, fg) = getColorsForRole(scheme, widget.b.role);
     final borderRadius = BorderRadius.circular(8);

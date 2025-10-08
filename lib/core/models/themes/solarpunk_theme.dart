@@ -7,22 +7,21 @@ class SolarpunkTheme {
   static HermesThemeData build() {
     final lightTheme = HermesThemeBuilder(
       palette: HermesPalette.custom(
-        primary: const Color(0xFF2E8B57),   // Verdant green
-        secondary: const Color(0xFFFBC02D), // Solar gold
-        tertiary: const Color(0xFF5BA4A4),  // Seafoam teal
-        background: const Color(0xFFFAFDF9),
-        surface: const Color(0xFFF0F8F4),
+        primary: const Color(0xFF3CC276),
+        secondary: const Color(0xFFFDC741),
+        tertiary: const Color(0xFF64B0B0),
+        surface: const Color(0xFFFAFAFA),
       ),
       isDark: false,
     ).build();
 
     final darkTheme = HermesThemeBuilder(
       palette: HermesPalette.custom(
-        primary: const Color(0xFF81C784),   // Leaf glow
-        secondary: const Color(0xFFFFEE58), // Solar yellow
-        tertiary: const Color(0xFF4FD1C5),  // Aqua-green pulse
-        background: const Color(0xFF0D1F14),
-        surface: const Color(0xFF1B2E22),
+        primary: const Color(0xFF324F33),
+        secondary: const Color(0xFF94860E),
+        tertiary: const Color(0xFF13645C), 
+
+        surface: const Color(0xFF0D1711),
       ),
       isDark: true,
     ).build();

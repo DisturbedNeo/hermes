@@ -116,7 +116,7 @@ class HermesThemeBuilder {
       onTertiary: _palette.onTertiary,
       surface: _palette.surface,
       onSurface: _palette.onSurface,
-      background: _palette.background,
+      background: _palette.surface,
       onBackground: _palette.onSurface,
       error: _palette.error,
       onError: _palette.onError,
@@ -142,7 +142,7 @@ class HermesThemeBuilder {
     
     return (_isDark ? ThemeData.dark(useMaterial3: true) : ThemeData.light(useMaterial3: true)).copyWith(
       colorScheme: colorScheme,
-      scaffoldBackgroundColor: _palette.background,
+      scaffoldBackgroundColor: _palette.surface,
       
       appBarTheme: appBarTheme,
       cardTheme: cardTheme.cardTheme.data,

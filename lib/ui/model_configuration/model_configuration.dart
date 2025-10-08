@@ -66,6 +66,7 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Configure Model', style: TextStyle(color: Colors.black)),
+      backgroundColor: Theme.of(context).colorScheme.surface,
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,

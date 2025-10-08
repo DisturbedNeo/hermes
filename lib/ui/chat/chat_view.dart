@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_message.dart';
@@ -8,6 +9,7 @@ import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/core/services/chat_client.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/service_provider.dart';
+import 'package:hermes/ui/chat/actions_row.dart';
 import 'package:hermes/ui/chat/composer.dart';
 import 'package:hermes/ui/chat/message/message_bubble.dart';
 import 'package:hermes/ui/chat/message/message_row.dart';
@@ -23,7 +25,11 @@ class ChatView extends StatefulWidget {
 class _ChatViewState extends State<ChatView> {
   final controller = TextEditingController();
   final List<Bubble> messages = [
-    Bubble(id: uuid.v7(), role: 'system', text: 'You are a helpful assistant.'),
+    Bubble(
+      id: uuid.v7(),
+      role: MessageRole.system,
+      text: 'You are a helpful assistant.',
+    ),
   ];
 
   final LlamaServerManager serverManager = serviceProvider
@@ -38,15 +44,6 @@ class _ChatViewState extends State<ChatView> {
 
   final scroll = ScrollController();
 
-  GlobalKey? activeAnchorKey;
-  double? activeAnchorAlign;
-  bool anchorRestoreScheduled = false;
-
-  final Map<String, GlobalKey> rowKeys = {};
-  GlobalKey rowKeyFor(String id) => rowKeys.putIfAbsent(id, () => GlobalKey());
-
-  bool get isReady => serverManager.current != null;
-
   @override
   void dispose() {
     streamSub?.cancel();
@@ -56,135 +53,131 @@ class _ChatViewState extends State<ChatView> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: Stack(
-            children: [
-              ListView.builder(
-                controller: scroll,
-                reverse: true,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 16,
-                ),
-                itemCount: messages.length,
-                itemBuilder: (_, i) {
-                  final index = messages.length - 1 - i;
-                  final b = messages[index];
-                  final isUser = b.role == 'user';
-                  final rowKey = rowKeyFor(b.id);
-
-                  return Padding(
-                    key: rowKey,
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: MessageRow(
-                      isUser: isUser,
-                      bubble: MessageBubble(
-                        key: ValueKey('bubble_${index}_${b.id}'),
-                        b: b,
-                        onSave: (newText) {
-                          setState(() {
-                            messages[index] = Bubble(
-                              id: b.id,
-                              role: b.role,
-                              text: newText,
-                            );
-                          });
-                        },
-                        editable: !isStreaming,
-                      ),
-                      actions: _RowActionsPlaceholder(isUser: isUser),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
-        const Divider(height: 1),
-        ValueListenableBuilder<LlamaServerHandle?>(
-          valueListenable: serverManager.handle,
-          builder: (_, handle, __) {
-            final ready = handle != null;
-            return Composer(
-              controller: controller,
-              focusNode: composerFocusNode,
-              enabled: ready,
-              isStreaming: isStreaming,
-              onSubmitted: send,
-              onCancel: stopStreaming,
-            );
-          },
-        ),
-      ],
-    );
-  }
-
   void send(String text) {
     if (isStreaming) return;
     final t = text.trim();
     if (t.isEmpty) return;
 
-    final assistantId = uuid.v7();
-
     setState(() {
-      messages.add(Bubble(id: uuid.v7(), role: 'user', text: t));
-      messages.add(Bubble(id: assistantId, role: 'assistant', text: ''));
+      messages.add(Bubble(id: uuid.v7(), role: MessageRole.user, text: t));
       isStreaming = true;
     });
 
     controller.clear();
+    streamingId = null;
 
-    streamingId = assistantId;
-
-    streamAssistantResponse();
+    streamAssistantResponse(assistantIndex: null);
   }
 
-  Future<void> streamAssistantResponse() async {
+  void generateOrContinue() {
+    if (isStreaming || messages.isEmpty) return;
+
+    final lastMessage = messages.last;
+
+    if (lastMessage.role == MessageRole.assistant) {
+      setState(() => isStreaming = true);
+      streamingId = lastMessage.id;
+
+      streamAssistantResponse(
+        assistantIndex: messages.length - 1,
+        addGenerationPrompt: true,
+      );
+    } else {
+      setState(() => isStreaming = true);
+      streamingId = null;
+
+      streamAssistantResponse(
+        assistantIndex: null,
+        addGenerationPrompt: lastMessage.role != MessageRole.user,
+      );
+    }
+  }
+
+  Future<void> streamAssistantResponse({
+    required int? assistantIndex,
+    bool addGenerationPrompt = false,
+  }) async {
     final handle = serverManager.current!;
+
     final client = ChatClient(
       baseUrl: handle.baseUrl.toString(),
       model: handle.model,
     );
+
     currentClient = client;
 
-    final int assistantIndex = messages.length - 1;
+    final takeCount = (assistantIndex == null)
+        ? messages.length
+        : (assistantIndex + 1);
 
     final payload = messages
-        .take(assistantIndex)
+        .take(takeCount)
         .where(
           (b) =>
-              b.role == 'system' || b.role == 'user' || b.role == 'assistant',
+              b.role == MessageRole.system ||
+              b.role == MessageRole.user ||
+              b.role == MessageRole.assistant,
         )
-        .map((b) => ChatMessage(role: b.role, content: b.text))
+        .map((b) => ChatMessage(role: b.role.wire, content: b.text))
         .toList();
+
+    final extraParams = <String, dynamic>{
+      if (addGenerationPrompt) 'add_generation_prompt': true,
+    };
+
+    final buf = StringBuffer();
+    Timer? flushTimer;
+
+    void flushNow() {
+      if (buf.isEmpty) return;
+
+      setState(() {
+        if (assistantIndex == null) {
+          final id = uuid.v7();
+          messages.add(Bubble(id: id, role: MessageRole.assistant, text: ''));
+          assistantIndex = messages.length - 1;
+          streamingId = id;
+        }
+
+        final current = messages[assistantIndex!];
+
+        messages[assistantIndex!] = current.copyWith(
+          text: current.text + buf.toString(),
+        );
+
+        buf.clear();
+      });
+    }
+
+    void scheduleFlush() {
+      flushTimer ??= Timer(const Duration(milliseconds: 33), () {
+        flushTimer = null;
+        flushNow();
+      });
+    }
 
     try {
       streamSub = client
-          .streamMessage(messages: payload)
+          .streamMessage(messages: payload, extraParams: extraParams)
           .listen(
             (token) {
               if (!mounted || token.isEmpty) return;
-
-              setState(() {
-                final current = messages[assistantIndex];
-                messages[assistantIndex] = Bubble(
-                  id: current.id,
-                  role: current.role,
-                  text: current.text + token,
-                );
-              });
+              buf.write(token);
+              scheduleFlush();
             },
             onError: (e, st) {
               if (!mounted) return;
-
+              flushTimer?.cancel();
+              buf.clear();
               setState(() {
-                messages[assistantIndex] = Bubble(
-                  id: uuid.v7(),
-                  role: 'assistant',
+                if (assistantIndex == null) {
+                  final id = uuid.v7();
+                  messages.add(
+                    Bubble(id: id, role: MessageRole.assistant, text: ''),
+                  );
+                  assistantIndex = messages.length - 1;
+                }
+                messages[assistantIndex!] = messages[assistantIndex!].copyWith(
                   text: 'Something went wrong: $e',
                 );
               });
@@ -194,6 +187,9 @@ class _ChatViewState extends State<ChatView> {
 
       await streamSub!.asFuture<void>();
     } finally {
+      flushTimer?.cancel();
+      flushNow();
+
       streamSub = null;
       streamingId = null;
       currentClient?.dispose();
@@ -203,9 +199,7 @@ class _ChatViewState extends State<ChatView> {
         setState(() => isStreaming = false);
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            composerFocusNode.requestFocus();
-          }
+          if (mounted) composerFocusNode.requestFocus();
         });
       }
     }
@@ -231,14 +225,7 @@ class _ChatViewState extends State<ChatView> {
       return KeyEventResult.ignored;
     }
 
-    final shift = HardwareKeyboard.instance.isShiftPressed;
-    if (!shift && !isStreaming) {
-      FocusScope.of(context).unfocus();
-      send(controller.text.trim());
-      return KeyEventResult.handled;
-    }
-
-    if (shift) {
+    if (HardwareKeyboard.instance.isShiftPressed) {
       final text = controller.text;
       final sel = controller.selection;
       final updated = text.replaceRange(sel.start, sel.end, '\n');
@@ -247,28 +234,147 @@ class _ChatViewState extends State<ChatView> {
       return KeyEventResult.handled;
     }
 
+    if (!isStreaming) {
+      final trimmed = controller.text.trim();
+      FocusScope.of(context).unfocus();
+      if (trimmed.isNotEmpty) {
+        send(trimmed);
+      } else {
+        generateOrContinue();
+      }
+
+      return KeyEventResult.handled;
+    }
+
     return KeyEventResult.ignored;
   }
-}
 
-class _RowActionsPlaceholder extends StatelessWidget {
-  final bool isUser;
-  const _RowActionsPlaceholder({required this.isUser});
+  List<ActionSpec> getActionsForRole(MessageRole role) {
+    List<ActionSpec> actions = [];
+    MediaQueryData mq = MediaQuery.of(context);
+
+    ActionSpec copyText = ActionSpec(
+      icon: Icons.copy_rounded,
+      tooltip: 'Copy Text',
+      onTap: (message) {
+        Clipboard.setData(ClipboardData(text: message.text));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Copied to clipboard'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 1),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadiusGeometry.circular(24)),
+            margin: EdgeInsets.only(bottom: mq.size.height - 120, left: mq.size.width / 4, right: mq.size.width / 4),
+          ),
+        );
+      },
+    );
+
+    actions.add(copyText);
+
+    if (role == MessageRole.assistant) {
+      ActionSpec regenerate = ActionSpec(
+        icon: Icons.replay_rounded,
+        tooltip: 'Regenerate',
+        onTap: (message) {
+          final messageIndex = messages.indexWhere((m) => m.id == message.id);
+
+          messages.removeRange(messageIndex, messages.length);
+
+          generateOrContinue();
+        },
+      );
+
+      actions.add(regenerate);
+    }
+
+    if (role == MessageRole.user || role == MessageRole.assistant) {
+      ActionSpec deleteMessage = ActionSpec(
+        icon: Icons.delete_forever_rounded,
+        tooltip: 'Delete',
+        onTap: (message) {
+          // Show confirmation dialog
+        },
+      );
+
+      actions.add(deleteMessage);
+    }
+
+    return actions;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.outlineVariant;
+    return Column(
+      children: [
+        Expanded(
+          child: Stack(
+            children: [
+              ListView.builder(
+                controller: scroll,
+                reverse: true,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 16,
+                ),
+                itemCount: messages.length,
+                itemBuilder: (_, i) {
+                  final index = messages.length - 1 - i;
+                  final b = messages[index];
+                  final isUser = b.role == MessageRole.user;
 
-    return Opacity(
-      opacity: 0.6,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.more_horiz, size: 20, color: color),
-          const SizedBox(width: 4),
-          Icon(isUser ? Icons.person : Icons.smart_toy, size: 18, color: color),
-        ],
-      ),
+                  return Padding(
+                    key: ValueKey('message_${b.id}'),
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: MessageRow(
+                      isUser: isUser,
+                      bubble: MessageBubble(
+                        key: ValueKey('bubble_${b.id}'),
+                        b: b,
+                        onSave: (newText) {
+                          setState(() {
+                            messages[index] = Bubble(
+                              id: b.id,
+                              role: b.role,
+                              text: newText,
+                            );
+                          });
+                        },
+                        editable: !isStreaming,
+                      ),
+                      actions: ActionsRow(
+                        key: ValueKey('actions_${b.id}'),
+                        actions: getActionsForRole(b.role),
+                        message: b,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        ValueListenableBuilder<LlamaServerHandle?>(
+          valueListenable: serverManager.handle,
+          builder: (_, handle, __) {
+            return Composer(
+              controller: controller,
+              focusNode: composerFocusNode,
+              enabled: handle != null,
+              isStreaming: isStreaming,
+              lastWasAssistant:
+                  messages.isNotEmpty &&
+                  messages.last.role == MessageRole.assistant,
+              onSend: send,
+              onGenerate: generateOrContinue,
+              onContinue: generateOrContinue,
+              onCancel: stopStreaming,
+            );
+          },
+        ),
+      ],
     );
   }
 }
