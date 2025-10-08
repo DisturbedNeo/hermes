@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:hermes/core/helpers/models_directory.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/service_provider.dart';
+import 'package:hermes/ui/chat/message/dot_pulse.dart';
 import 'package:hermes/ui/model_configuration/model_configuration.dart';
 
 class ModelPicker extends StatefulWidget {
@@ -61,7 +62,7 @@ class _ModelPickerState extends State<ModelPicker> {
     final Color bgColor = Theme.of(context).colorScheme.surfaceContainerHighest;
 
     if (_loading) {
-      return const Row(
+      return Row(
         children: [
           SizedBox(
             width: 18,
@@ -70,6 +71,8 @@ class _ModelPickerState extends State<ModelPicker> {
           ),
           SizedBox(width: 8),
           Text('Loading…'),
+          SizedBox(width: 8),
+          SizedBox(width: 10, height: 10, child: DotPulse(color: bgColor.withValues(alpha: 0.25))),
         ],
       );
     }

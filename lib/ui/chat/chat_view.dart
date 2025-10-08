@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:hermes/core/enums/delete_choice.dart';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
@@ -9,8 +10,9 @@ import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/core/services/chat_client.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/service_provider.dart';
-import 'package:hermes/ui/chat/actions_row.dart';
+import 'package:hermes/ui/chat/message/actions_row.dart';
 import 'package:hermes/ui/chat/composer.dart';
+import 'package:hermes/ui/chat/message/delete_message_dialog.dart';
 import 'package:hermes/ui/chat/message/message_bubble.dart';
 import 'package:hermes/ui/chat/message/message_row.dart';
 
@@ -257,6 +259,7 @@ class _ChatViewState extends State<ChatView> {
       icon: Icons.copy_rounded,
       tooltip: 'Copy Text',
       onTap: (message) {
+        if (streamingId == message.id) return;
         Clipboard.setData(ClipboardData(text: message.text));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -277,6 +280,7 @@ class _ChatViewState extends State<ChatView> {
       ActionSpec regenerate = ActionSpec(
         icon: Icons.replay_rounded,
         tooltip: 'Regenerate',
+        isEnabled: !isStreaming,
         onTap: (message) {
           final messageIndex = messages.indexWhere((m) => m.id == message.id);
 
@@ -293,8 +297,25 @@ class _ChatViewState extends State<ChatView> {
       ActionSpec deleteMessage = ActionSpec(
         icon: Icons.delete_forever_rounded,
         tooltip: 'Delete',
-        onTap: (message) {
-          // Show confirmation dialog
+        isEnabled: !isStreaming,
+        onTap: (message) async {
+          final messageIndex = messages.indexWhere((m) => m.id == message.id);
+          if (messageIndex == -1) return;
+
+          final choice = await showDialog<DeleteChoice>(
+            context: context, 
+            builder: (_) => DeleteMessageDialog(),
+          );
+
+          if (choice == null) return;
+
+          setState(() {
+            if (choice == DeleteChoice.thisOnly) {
+              messages.removeAt(messageIndex);
+            } else if (choice == DeleteChoice.includeSubsequent) {
+              messages.removeRange(messageIndex, messages.length);
+            }
+          });
         },
       );
 
