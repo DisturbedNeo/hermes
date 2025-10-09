@@ -2,10 +2,10 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:hermes/core/helpers/uuid.dart';
-import 'package:hermes/ui/chat/chat_list.dart';
+import 'package:hermes/ui/overlays/chat_list.dart';
 import 'package:hermes/ui/chat/chat_view.dart';
 import 'package:hermes/ui/chat/model_picker.dart';
-import 'package:hermes/ui/settings.dart';
+import 'package:hermes/ui/overlays/settings.dart';
 
 class Chat extends StatefulWidget {
   const Chat({super.key});
