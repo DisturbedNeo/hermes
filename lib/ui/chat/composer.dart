@@ -148,20 +148,18 @@ class _ComposerState extends State<Composer> {
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
         child: Row(
           children: [
-            // Role dropdown (compact, accessible)
             ConstrainedBox(
               constraints: const BoxConstraints(minWidth: 140, maxWidth: 180),
               child: Tooltip(
                 message: 'Message role',
                 waitDuration: const Duration(milliseconds: 400),
                 child: DropdownButtonFormField<MessageRole>(
-                  value: _selectedRole,
+                  initialValue: _selectedRole,
                   isDense: true,
                   onChanged: widget.enabled
                       ? (v) {
                           if (v == null) return;
                           setState(() => _selectedRole = v);
-                          // Keep focus on the text field for flow
                           _focusNode.requestFocus();
                         }
                       : null,
@@ -189,7 +187,6 @@ class _ComposerState extends State<Composer> {
               ),
             ),
             const SizedBox(width: 8),
-            // Text input
             Expanded(
               child: TextField(
                 controller: _controller,
