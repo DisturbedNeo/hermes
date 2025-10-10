@@ -2,7 +2,6 @@ enum MessageRole {
   user,
   assistant,
   system,
-  tool
 }
 
 extension MessageRoleWire on MessageRole {
@@ -10,6 +9,5 @@ extension MessageRoleWire on MessageRole {
     MessageRole.user => 'user',
     MessageRole.assistant => 'assistant',
     MessageRole.system => 'system',
-    MessageRole.tool => 'tool',
   };
 }

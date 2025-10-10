@@ -74,25 +74,23 @@ class MessageActions extends StatelessWidget {
       actions.add(regenerate);
     }
 
-    if (role == MessageRole.user || role == MessageRole.assistant) {
-      ActionSpec deleteMessage = ActionSpec(
-        icon: Icons.delete_forever_rounded,
-        tooltip: 'Delete',
-        isEnabled: !chat.isStreaming,
-        onTap: (message) async {
-          final choice = await showDialog<DeleteChoice>(
-            context: context,
-            builder: (_) => DeleteMessageDialog(),
-          );
+    ActionSpec deleteMessage = ActionSpec(
+      icon: Icons.delete_forever_rounded,
+      tooltip: 'Delete',
+      isEnabled: !chat.isStreaming,
+      onTap: (message) async {
+        final choice = await showDialog<DeleteChoice>(
+          context: context,
+          builder: (_) => DeleteMessageDialog(),
+        );
 
-          if (choice == null) return;
+        if (choice == null) return;
 
-          chat.deleteMessages(message.id, deleteChoice: choice);
-        },
-      );
+        chat.deleteMessages(message.id, deleteChoice: choice);
+      },
+    );
 
-      actions.add(deleteMessage);
-    }
+    actions.add(deleteMessage);
 
     return actions;
   }

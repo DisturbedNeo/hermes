@@ -74,6 +74,17 @@ class ChatService extends ChangeNotifier {
     );
   }
 
+  void insertMessage(String text, MessageRole role) {
+    if (isStreaming) return;
+
+    final t = text.trim();
+
+    if (t.isEmpty) return;
+
+    _messages.add(Bubble(id: uuid.v7(), role: role, text: t));
+    _notifyIfNotDisposed();
+  }
+
   Future<void> send(String text) async {
     if (isStreaming) return;
 

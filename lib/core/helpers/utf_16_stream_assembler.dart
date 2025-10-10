@@ -37,7 +37,7 @@ class Utf16StreamAssembler {
       final u = units[i];
 
       if (_isHigh(u)) {
-        if (i + i < units.length) {
+        if (i + 1 < units.length) {
           final v = units[i + 1];
 
           if (_isLow(v)) {
