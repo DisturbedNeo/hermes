@@ -8,24 +8,11 @@ import 'package:hermes/core/services/service_provider.dart';
 enum ComposerMode { send, generate, cont, cancel }
 
 class Composer extends StatefulWidget {
-  final VoidCallback onCancel;
-  final Function(String) onSend;
-  final VoidCallback onGenerate;
-  final VoidCallback onContinue;
-
-  final bool isStreaming;
   final bool enabled;
-  final bool lastWasAssistant;
 
   const Composer({
     super.key,
-    required this.onCancel,
-    required this.onSend,
-    required this.onGenerate,
-    required this.onContinue,
-    required this.isStreaming,
     required this.enabled,
-    required this.lastWasAssistant,
   });
 
   @override
@@ -96,12 +83,12 @@ class _ComposerState extends State<Composer> {
   }
 
   ComposerMode _modeFor(String text) {
-    if (widget.isStreaming) return ComposerMode.cancel;
+    if (_chat.isStreaming) return ComposerMode.cancel;
 
     final isEmpty = text.trim().isEmpty;
     if (!isEmpty) return ComposerMode.send;
 
-    return widget.lastWasAssistant ? ComposerMode.cont : ComposerMode.generate;
+    return (_chat.messages.isNotEmpty && _chat.messages.last.role == MessageRole.assistant) ? ComposerMode.cont : ComposerMode.generate;
   }
 
   KeyEventResult _onKey(FocusNode _, KeyEvent event) {
@@ -195,13 +182,13 @@ class _ComposerState extends State<Composer> {
                 maxLines: 6,
                 enabled: widget.enabled,
                 keyboardType: TextInputType.multiline,
-                textInputAction: (roleIsUser && !widget.isStreaming)
+                textInputAction: (roleIsUser && !_chat.isStreaming)
                     ? TextInputAction.send
                     : TextInputAction.newline,
                 decoration: InputDecoration(
                   hintText: !widget.enabled
                       ? 'Load a model to chat…'
-                      : widget.isStreaming
+                      : _chat.isStreaming
                       ? 'Streaming response…'
                       : 'Type a message…',
                   border: const OutlineInputBorder(),
@@ -246,7 +233,7 @@ class _ComposerState extends State<Composer> {
                         FilledButton.icon(
                           icon: const Icon(Icons.stop),
                           label: const Text('Cancel'),
-                          onPressed: widget.onCancel,
+                          onPressed: _chat.stopStreaming,
                         ),
                       );
                       break;
@@ -255,7 +242,7 @@ class _ComposerState extends State<Composer> {
                         FilledButton.icon(
                           icon: const Icon(Icons.auto_awesome),
                           label: const Text('Generate'),
-                          onPressed: widget.enabled ? widget.onGenerate : null,
+                          onPressed: widget.enabled ? _chat.generateOrContinue : null,
                         ),
                       );
                       break;
@@ -264,7 +251,7 @@ class _ComposerState extends State<Composer> {
                         FilledButton.icon(
                           icon: const Icon(Icons.more_horiz),
                           label: const Text('Continue'),
-                          onPressed: widget.enabled ? widget.onContinue : null,
+                          onPressed: widget.enabled ? _chat.generateOrContinue : null,
                         ),
                       );
                       break;
@@ -274,7 +261,7 @@ class _ComposerState extends State<Composer> {
                           icon: const Icon(Icons.send),
                           label: const Text('Send'),
                           onPressed: widget.enabled
-                              ? () => widget.onSend(value.text.trim())
+                              ? () => _chat.send(value.text.trim())
                               : null,
                         ),
                       );

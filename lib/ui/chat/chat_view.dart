@@ -77,17 +77,7 @@ class _ChatViewState extends State<ChatView> {
             ValueListenableBuilder<LlamaServerHandle?>(
               valueListenable: _chat.serverManager.handle,
               builder: (_, handle, __) {
-                return Composer(
-                  enabled: handle != null,
-                  isStreaming: _chat.isStreaming,
-                  lastWasAssistant:
-                      _chat.messages.isNotEmpty &&
-                      _chat.messages.last.role == MessageRole.assistant,
-                  onSend: _chat.send,
-                  onGenerate: _chat.generateOrContinue,
-                  onContinue: _chat.generateOrContinue,
-                  onCancel: _chat.stopStreaming,
-                );
+                return Composer(enabled: handle != null);
               },
             ),
           ],

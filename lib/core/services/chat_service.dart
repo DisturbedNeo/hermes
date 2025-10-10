@@ -95,7 +95,7 @@ class ChatService extends ChangeNotifier {
     _messages.add(Bubble(id: uuid.v7(), role: MessageRole.user, text: t));
     _notifyIfNotDisposed();
 
-    await _streamAssistantResponse(assistantId: null);
+    await _streamAssistantResponse(assistantId: null, addGenerationPrompt: true);
   }
 
   Future<void> generateOrContinue() async {
@@ -105,7 +105,7 @@ class ChatService extends ChangeNotifier {
       assistantId: _messages.last.role == MessageRole.assistant
           ? _messages.last.id
           : null,
-      addGenerationPrompt: _messages.last.role != MessageRole.user,
+      addGenerationPrompt: _messages.last.role != MessageRole.assistant,
     );
   }
 
@@ -171,13 +171,7 @@ class ChatService extends ChangeNotifier {
     final targetId = _ensureAssistantTarget(assistantId);
     final targetIndex = _messages.indexWhere((m) => m.id == targetId);
 
-    final upToIndexInclusive =
-        (targetIndex >= 0 &&
-            _messages[targetIndex].role == MessageRole.assistant)
-        ? targetIndex - 1
-        : targetIndex;
-
-    final payload = _buildPayload(upToIndexInclusive: upToIndexInclusive);
+    final payload = _buildPayload(upToIndexInclusive: targetIndex);
 
     final extraParams = {
       if (addGenerationPrompt) 'add_generation_prompt': true,
