@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hermes/core/helpers/models_directory.dart';
-import 'package:hermes/core/services/llama_server_manager.dart';
+import 'package:hermes/core/services/chat_service.dart';
+import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/ui/chat/message/dot_pulse.dart';
 import 'package:hermes/ui/model_configuration/model_configuration.dart';
@@ -17,12 +18,12 @@ class ModelPicker extends StatefulWidget {
 class _ModelPickerState extends State<ModelPicker> {
   Map<String, File> _models = {};
   String? _selected;
+  
   bool _loading = true;
   String? _error;
-  StreamSubscription<FileSystemEvent>? _fsSub;
 
-  final LlamaServerManager serverManager = serviceProvider
-      .get<LlamaServerManager>();
+  final _chatService = serviceProvider.get<ChatService>();
+  final _preferencesService = serviceProvider.get<PreferencesService>();
 
   @override
   void initState() {
@@ -49,12 +50,6 @@ class _ModelPickerState extends State<ModelPicker> {
         _loading = false;
       });
     }
-  }
-
-  @override
-  void dispose() {
-    _fsSub?.cancel();
-    super.dispose();
   }
 
   @override
@@ -134,12 +129,15 @@ class _ModelPickerState extends State<ModelPicker> {
                                   _loading = true;
                                 });
 
-                                await serverManager.start(
-                                  modelPath: file.path,
-                                  modelName: v,
-                                  nCtx: ctx,
-                                  nThreads: threads,
-                                  nGpuLayers: gpuLayers ?? 999,
+                                final llamaCppDirectory = await _preferencesService.getLlamaCppDirectory() ?? '';
+
+                                await _chatService.startServer(
+                                  llamaCppDirectory,
+                                  file.path,
+                                  v,
+                                  ctx,
+                                  threads,
+                                  gpuLayers ?? 999,
                                 );
 
                                 setState(() {

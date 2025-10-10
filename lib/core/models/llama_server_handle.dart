@@ -3,15 +3,11 @@ import 'dart:io';
 
 class LlamaServerHandle {
   final Process process;
-  final Uri baseUrl;
-  final String model;
   final StreamSubscription stdoutSub;
   final StreamSubscription stderrSub;
 
   LlamaServerHandle({
     required this.process,
-    required this.baseUrl,
-    required this.model,
     required this.stdoutSub,
     required this.stderrSub,
   });

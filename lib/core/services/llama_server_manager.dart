@@ -5,20 +5,19 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:hermes/core/helpers/file.dart';
 import 'package:hermes/core/models/llama_server_handle.dart';
-import 'package:hermes/core/services/preferences_service.dart';
-import 'package:hermes/core/services/service_provider.dart';
+import 'package:hermes/core/services/chat_client.dart';
 import 'package:path/path.dart' as p;
 
 class LlamaServerManager {
   final ValueNotifier<LlamaServerHandle?> handle = ValueNotifier(null);
+  ChatClient? chatClient;
 
   LlamaServerHandle? get current => handle.value;
 
-  final PreferencesService _preferencesService = serviceProvider.get<PreferencesService>();
-
-  var isDisposed = false;
+  var _isDisposed = false;
 
   Future<void> start({
+    required String llamaCppDirectory,
     required String modelPath,
     required String modelName,
     int nCtx = 8192,
@@ -27,14 +26,13 @@ class LlamaServerManager {
   }) async {
     await stop();
 
-    final port = await getFreePort();
-    final llamaCppDirectory = await _preferencesService.getLlamaCppDirectory();
+    final port = await _getFreePort();
 
-    if (llamaCppDirectory == null){
+    if (llamaCppDirectory.isEmpty){
       throw FlutterError('llama.cpp directory not specified');
     }
 
-    final llamaServerExe = await resolveLlamaServerExecutable(llamaCppDirectory);
+    final llamaServerExe = await _resolveLlamaServerExecutable(llamaCppDirectory);
 
     if (llamaServerExe == null) {
       throw FlutterError(
@@ -63,9 +61,12 @@ class LlamaServerManager {
     final stdoutSub = process.stdout.transform(utf8.decoder).listen((line) { if (kDebugMode) print(line); });
     final stderrSub = process.stderr.transform(utf8.decoder).listen((line) { if (kDebugMode) print(line); });
 
-    final newHandle = LlamaServerHandle(process: process, baseUrl: Uri.parse('http://127.0.0.1:$port'), model: modelName, stdoutSub: stdoutSub, stderrSub: stderrSub);
+    final newHandle = LlamaServerHandle(process: process, stdoutSub: stdoutSub, stderrSub: stderrSub);
+    final baseUrl = 'http://127.0.0.1:$port';
 
-    await waitUntilReady(newHandle.baseUrl);
+    await _waitUntilReady(Uri.parse(baseUrl));
+
+    chatClient = ChatClient(baseUrl: baseUrl, model: modelName);
 
     handle.value = newHandle;
   }
@@ -76,9 +77,10 @@ class LlamaServerManager {
     }
 
     handle.value = null;
+    chatClient = null;
   }
 
-  Future<String?> resolveLlamaServerExecutable(String llamaCppDir) async {
+  Future<String?> _resolveLlamaServerExecutable(String llamaCppDir) async {
     final candidates = <String>[
       // make / default in repo root
       p.join(llamaCppDir, 'llama-server'),
@@ -108,14 +110,14 @@ class LlamaServerManager {
     return null;
   }
 
-  Future<int> getFreePort() async {
+  Future<int> _getFreePort() async {
     final socket = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
     final port = socket.port;
     await socket.close();
     return port;
   }
 
-  Future<void> waitUntilReady(Uri base) async {
+  Future<void> _waitUntilReady(Uri base) async {
     await Future.delayed(const Duration(seconds: 5));
 
     final client = HttpClient();
@@ -147,10 +149,11 @@ class LlamaServerManager {
   }
 
   void dispose() {
-    if (isDisposed) return;
+    if (_isDisposed) return;
 
     stop();
+    chatClient?.dispose();
 
-    isDisposed = true;
+    _isDisposed = true;
   }
 }

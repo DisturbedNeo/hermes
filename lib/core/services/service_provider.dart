@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:hermes/core/services/llama_server_manager.dart';
+import 'package:hermes/core/services/chat_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_factory.dart';
 import 'package:hermes/core/services/theme_manager.dart';
@@ -33,9 +33,8 @@ class ServiceProvider {
     if (_initialized) return;
 
     registerSingleton(PreferencesService());
-    
     registerSingleton(ThemeManager());
-    registerSingleton(LlamaServerManager());
+    registerSingleton(ChatService());
 
     _initialized = true;
   }
