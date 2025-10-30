@@ -123,6 +123,12 @@ class _ModelPickerState extends State<ModelPicker> {
                                 required int ctx,
                                 required int threads,
                                 required int? gpuLayers,
+                                required double temperature,
+                                required double topP,
+                                required int topK,
+                                required int batch,
+                                required int uBatch,
+                                required int miroStatMode,
                               }) async {
                                 setState(() {
                                   _selected = v;
@@ -138,6 +144,12 @@ class _ModelPickerState extends State<ModelPicker> {
                                   ctx,
                                   threads,
                                   gpuLayers ?? 999,
+                                  temperature,
+                                  topP,
+                                  topK,
+                                  batch,
+                                  uBatch,
+                                  miroStatMode
                                 );
 
                                 setState(() {

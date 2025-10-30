@@ -1,7 +1,8 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:hermes/core/helpers/uuid.dart';
+import 'package:hermes/core/services/chat_service.dart';
+import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/ui/overlays/chat_list.dart';
 import 'package:hermes/ui/chat/chat_view.dart';
 import 'package:hermes/ui/chat/model_picker.dart';
@@ -9,14 +10,14 @@ import 'package:hermes/ui/overlays/settings.dart';
 
 class Chat extends StatefulWidget {
   const Chat({super.key});
-  
+
   @override
   State<StatefulWidget> createState() => _ChatState();
 }
 
 class _ChatState extends State<Chat> {
-  final chatId = ValueNotifier<String>('new');
-  
+  final _chat = serviceProvider.get<ChatService>();
+
   var isChatListOpen = false;
   var isSettingsOpen = false;
 
@@ -55,13 +56,7 @@ class _ChatState extends State<Chat> {
         clipBehavior: Clip.none,
         children: [
           Positioned.fill(
-            child: ValueListenableBuilder<String>(
-              valueListenable: chatId,
-              builder: (_, id, __) => ChatView(
-                key: ValueKey(id),
-                chatId: id
-              ),
-            ),
+            child: ChatView(),
           ),
 
           if (isChatListOpen || isSettingsOpen) ...[
@@ -86,12 +81,11 @@ class _ChatState extends State<Chat> {
             width: 360,
             child: ChatList(
               onOpenChat: (id) {
-                chatId.value = id;
+                _chat.openChat(id);
                 setState(() => isChatListOpen = false);
               },
               onNewChat: () {
-                final id = uuid.v7();
-                chatId.value = id;
+                _chat.newChat();
                 setState(() => isChatListOpen = false);
               },
             ),
@@ -140,7 +134,11 @@ class _SideSheet extends StatelessWidget {
           child: Material(
             elevation: 8,
             color: Theme.of(context).colorScheme.surface,
-            child: SizedBox(width: width, height: double.infinity, child: child),
+            child: SizedBox(
+              width: width,
+              height: double.infinity,
+              child: child,
+            ),
           ),
         ),
       ),

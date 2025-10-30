@@ -5,7 +5,9 @@
         "Colors",
         "deadband",
         "Dialog",
+        "Embd",
         "gguf",
+        "Mirostat",
         "visibles"
     ]
 }

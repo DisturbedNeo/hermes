@@ -6,7 +6,6 @@ import 'package:hermes/core/enums/delete_choice.dart';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/enums/stream_state.dart';
 import 'package:hermes/core/helpers/throttled_scheduler.dart';
-import 'package:hermes/core/helpers/utf_16_stream_assembler.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_message.dart';
@@ -14,7 +13,6 @@ import 'package:hermes/core/services/llama_server_manager.dart';
 
 class ChatService extends ChangeNotifier {
   final LlamaServerManager serverManager = LlamaServerManager();
-  late final Utf16StreamAssembler _assembler;
   late final ThrottledScheduler _scheduler;
 
   final Bubble systemPrompt = Bubble(
@@ -45,11 +43,9 @@ class ChatService extends ChangeNotifier {
   bool _disposed = false;
 
   ChatService() {
-    _assembler = Utf16StreamAssembler(onChunk: _appendToCurrentAssistant);
     _scheduler = ThrottledScheduler(
       interval: const Duration(milliseconds: 33),
       onTick: () {
-        _assembler.flush();
         _notifyIfNotDisposed();
       },
     );
@@ -63,6 +59,12 @@ class ChatService extends ChangeNotifier {
     int contextSize,
     int numThreads,
     int numGpuLayers,
+    double temperature,
+    double topP,
+    int topK,
+    int batch,
+    int uBatch,
+    int mirostat,
   ) async {
     await serverManager.start(
       llamaCppDirectory: llamaCppDirectory,
@@ -71,8 +73,27 @@ class ChatService extends ChangeNotifier {
       nCtx: contextSize,
       nThreads: numThreads,
       nGpuLayers: numGpuLayers,
+      temperature: temperature,
+      topP: topP,
+      topK: topK,
+      nBatch: batch,
+      nUBatch: uBatch,
+      mirostat: mirostat,
     );
   }
+
+  void newChat() {
+    if (streamState == StreamState.streaming) {
+      stopStreaming();
+    }
+
+    _messages.clear();
+    _messages.add(systemPrompt);
+
+    _notifyIfNotDisposed();
+  }
+
+  void openChat(String id) {}
 
   void insertMessage(String text, MessageRole role) {
     if (isStreaming) return;
@@ -113,8 +134,6 @@ class ChatService extends ChangeNotifier {
     StreamState newStreamState = StreamState.idle,
   }) async {
     _scheduler.cancel();
-    _assembler.flush();
-    _assembler.clear();
 
     final sub = _streamSub;
     _streamSub = null;
@@ -177,7 +196,6 @@ class ChatService extends ChangeNotifier {
       if (addGenerationPrompt) 'add_generation_prompt': true,
     };
 
-    _assembler.clear();
     _scheduler.cancel();
 
     final sub = client.streamMessage(
@@ -202,14 +220,12 @@ class ChatService extends ChangeNotifier {
   void _onStreamToken(String token) {
     if (token.isEmpty) return;
 
-    _assembler.add(token);
+    _appendToCurrentAssistant(token);
     _scheduler.schedule();
   }
 
   void _handleStreamTerminal({Object? error}) {
     _scheduler.cancel();
-    _assembler.flush();
-    _assembler.clear();
 
     if (error != null) {
       _appendErrorToCurrentAssistant(error);
@@ -287,18 +303,13 @@ class ChatService extends ChangeNotifier {
 
   List<ChatMessage> _buildPayload({required int upToIndexInclusive}) {
     if (_messages.isEmpty || upToIndexInclusive < 0) {
-      return [
-        systemPrompt,
-      ].map((m) => ChatMessage(role: m.role.wire, content: m.text)).toList();
+      return [];
     }
 
     final clamped = upToIndexInclusive.clamp(0, _messages.length - 1);
     final conversation = _messages.take(clamped + 1);
 
-    final payload = [
-      systemPrompt,
-      ...conversation,
-    ].map((m) => ChatMessage(role: m.role.wire, content: m.text)).toList();
+    final payload = conversation.map((m) => ChatMessage(role: m.role.wire, content: m.text)).toList();
 
     if (payload.isNotEmpty &&
         payload.last.role == MessageRole.assistant.wire &&

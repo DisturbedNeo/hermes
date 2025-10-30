@@ -20,9 +20,15 @@ class LlamaServerManager {
     required String llamaCppDirectory,
     required String modelPath,
     required String modelName,
-    int nCtx = 8192,
+    int nCtx = 4096,
     int nThreads = 1,
-    int nGpuLayers = 999,
+    int nGpuLayers = 0,
+    double temperature = 0.7,
+    double topP = 0.9,
+    int topK = 40,
+    int nBatch = 512,
+    int nUBatch = 512,
+    int mirostat = 0,
   }) async {
     await stop();
 
@@ -48,6 +54,13 @@ class LlamaServerManager {
       '-c', '$nCtx',
       '-t', '$nThreads',
       '-ngl', '$nGpuLayers',
+      '--temp', '$temperature',
+      '--top-p', '$topP',
+      '--top-k', '$topK',
+      '--mirostat', '$mirostat',
+      '-b', '$nBatch',
+      '-ub', '$nUBatch',
+      '--flash-attn', '0',
       '--no-mmap'
     ];
 

@@ -9,8 +9,7 @@ import 'package:hermes/ui/chat/message/message_bubble.dart';
 import 'package:hermes/ui/chat/message/message_row.dart';
 
 class ChatView extends StatefulWidget {
-  final String chatId;
-  const ChatView({super.key, required this.chatId});
+  const ChatView({super.key});
 
   @override
   State<ChatView> createState() => _ChatViewState();
@@ -76,7 +75,7 @@ class _ChatViewState extends State<ChatView> {
             const Divider(height: 1),
             ValueListenableBuilder<LlamaServerHandle?>(
               valueListenable: _chat.serverManager.handle,
-              builder: (_, handle, __) {
+              builder: (_, handle, _) {
                 return Composer(enabled: handle != null);
               },
             ),
