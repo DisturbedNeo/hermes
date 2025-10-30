@@ -110,6 +110,7 @@ class MessageBubbleState extends State<MessageBubble> {
                     reasoning: widget.b.reasoning,
                     text: widget.b.text,
                     showReasoning: showReasoning,
+                    tools: widget.b.tools,
                     fg: fg,
                     bg: bg,
                     onTap: _beginEdit,

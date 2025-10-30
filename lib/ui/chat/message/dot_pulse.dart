@@ -14,7 +14,7 @@ class _DotPulseState extends State<DotPulse> with SingleTickerProviderStateMixin
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: c,
-      builder: (_, __) => Opacity(
+      builder: (_, _) => Opacity(
         opacity: 0.5 + 0.5 * (1 - (c.value - 0.5).abs() * 2),
         child: DecoratedBox(
           decoration: BoxDecoration(shape: BoxShape.circle, color: widget.color),

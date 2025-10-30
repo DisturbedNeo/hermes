@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/ui/chat/message/markdown_view.dart';
 import 'package:hermes/ui/chat/message/think_section.dart';
+import 'package:hermes/ui/chat/message/tool_calls_view.dart';
 
 class BubbleView extends StatefulWidget {
   final String reasoning;
   final String text;
   final bool showReasoning;
+  final Map<int, BubbleToolCall> tools;
   final Color fg;
   final Color bg;
   final VoidCallback onTap;
@@ -20,6 +23,7 @@ class BubbleView extends StatefulWidget {
     required this.bg,
     required this.onTap,
     required this.onToggleReasoning,
+    this.tools = const {},
   });
 
   @override
@@ -45,6 +49,16 @@ class _BubbleViewState extends State<BubbleView> {
         ),
       );
       children.add(const SizedBox(height: 8));
+    }
+
+    if (widget.tools.isNotEmpty) {
+      children.add(
+        ToolCallsView(
+          tools: widget.tools,
+          fg: widget.fg,
+          bg: widget.bg,
+        )
+      );
     }
 
     if (widget.text.isNotEmpty) {

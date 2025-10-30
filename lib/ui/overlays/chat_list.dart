@@ -20,7 +20,7 @@ class ChatList extends StatelessWidget {
         Expanded(
           child: ListView.separated(
             itemCount: chats.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
+            separatorBuilder: (_, _) => const Divider(height: 1),
             itemBuilder: (_, i) {
               final c = chats[i];
               return ListTile(

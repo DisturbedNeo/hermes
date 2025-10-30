@@ -10,10 +10,14 @@ import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/chat_token.dart';
+import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
+import 'package:hermes/core/services/service_provider.dart';
+import 'package:hermes/core/services/tool_service.dart';
 
 class ChatService extends ChangeNotifier {
   final LlamaServerManager serverManager = LlamaServerManager();
+  final ToolService _toolService = serviceProvider.get<ToolService>();
   late final ThrottledScheduler _scheduler;
 
   final Bubble systemPrompt = Bubble(
@@ -24,8 +28,11 @@ class ChatService extends ChangeNotifier {
   );
 
   UnmodifiableListView<Bubble>? _messageCache;
-  UnmodifiableListView<Bubble> get messages => _messageCache ??= UnmodifiableListView(_messages);
+  UnmodifiableListView<Bubble> get messages =>
+      _messageCache ??= UnmodifiableListView(_messages);
   final List<Bubble> _messages = [];
+
+  final Map<String, Map<int, StringBuffer>> _toolBuffers = {};
 
   StreamState _streamState = StreamState.idle;
   StreamState get streamState => _streamState;
@@ -108,20 +115,25 @@ class ChatService extends ChangeNotifier {
     _notifyIfNotDisposed();
   }
 
-  Future<void> send(String text) async {
+  Future<void> send(String text, {List<String>? tools = const []}) async {
     if (isStreaming) return;
 
     final t = text.trim();
-
     if (t.isEmpty) return;
 
-    _messages.add(Bubble(id: uuid.v7(), role: MessageRole.user, text: t, reasoning: ''));
+    _messages.add(
+      Bubble(id: uuid.v7(), role: MessageRole.user, text: t, reasoning: ''),
+    );
     _notifyIfNotDisposed();
 
-    await _streamAssistantResponse(assistantId: null, addGenerationPrompt: true);
+    await _streamAssistantResponse(
+      assistantId: null,
+      addGenerationPrompt: true,
+      selectedToolIds: tools ?? [],
+    );
   }
 
-  Future<void> generateOrContinue() async {
+  Future<void> generateOrContinue({List<String>? tools = const []}) async {
     if (isStreaming || _messages.isEmpty) return;
 
     await _streamAssistantResponse(
@@ -129,7 +141,25 @@ class ChatService extends ChangeNotifier {
           ? _messages.last.id
           : null,
       addGenerationPrompt: _messages.last.role != MessageRole.assistant,
+      selectedToolIds: tools ?? [],
     );
+  }
+
+  void setToolResultForMessage(String messageId, int index, String resultJson) {
+    final msgIdx = _messages.indexWhere((m) => m.id == messageId);
+    if (msgIdx == -1) return;
+
+    final bubble = _messages[msgIdx];
+    final tools = Map<int, BubbleToolCall>.from(bubble.tools);
+    final existing = tools[index];
+    if (existing == null) return;
+
+    tools[index] = existing.copyWith(
+      arguments: '${existing.arguments}\n→ result: $resultJson',
+    );
+
+    _messages[msgIdx] = bubble.copyWith(tools: tools);
+    _notifyIfNotDisposed();
   }
 
   Future<void> stopStreaming({
@@ -150,7 +180,10 @@ class ChatService extends ChangeNotifier {
 
     if (index == -1 || message.id == _currentAssistantId) return;
 
-    _messages[index] = _messages[index].copyWith(reasoning: newReasoning, text: newText);
+    _messages[index] = _messages[index].copyWith(
+      reasoning: newReasoning,
+      text: newText,
+    );
 
     _notifyIfNotDisposed();
   }
@@ -182,6 +215,7 @@ class ChatService extends ChangeNotifier {
   Future<void> _streamAssistantResponse({
     required String? assistantId,
     bool addGenerationPrompt = false,
+    List<String> selectedToolIds = const [],
   }) async {
     if (isStreaming) return;
     final client = serverManager.chatClient;
@@ -194,8 +228,24 @@ class ChatService extends ChangeNotifier {
 
     final payload = _buildPayload(upToIndexInclusive: targetIndex);
 
+    final List<ToolDefinition> selectedTools = _resolveToolDefinitions(
+      selectedToolIds,
+    );
+    final openAITools = selectedTools.map((t) {
+      return {
+        'type': 'function',
+        'function': {
+          'name': t.id,
+          'description': t.description,
+          'parameters': t.schema,
+        },
+      };
+    }).toList();
+
     final extraParams = {
       if (addGenerationPrompt) 'add_generation_prompt': true,
+      if (openAITools.isNotEmpty) 'tools': openAITools,
+      if (openAITools.isNotEmpty) 'tool_choice': 'auto',
     };
 
     _scheduler.cancel();
@@ -220,12 +270,18 @@ class ChatService extends ChangeNotifier {
   }
 
   void _onStreamToken(ChatToken token) {
-    if (token.content == null && token.reasoning == null) return;
+    if (token.tool != null) {
+      _appendToolDeltaToCurrentAssistant(token.tool!);
+      _scheduler.schedule();
+      return;
+    }
 
     if (token.reasoning != null) {
       _appendToCurrentAssistant(token.reasoning!, true);
     } else if (token.content != null) {
       _appendToCurrentAssistant(token.content!, false);
+    } else {
+      return;
     }
 
     _scheduler.schedule();
@@ -249,6 +305,11 @@ class ChatService extends ChangeNotifier {
     _notifyIfNotDisposed();
   }
 
+  List<ToolDefinition> _resolveToolDefinitions(List<String> ids) {
+    if (ids.isEmpty) return const [];
+    return _toolService.getToolDefinitions(ids: ids);
+  }
+
   void _appendErrorToCurrentAssistant(Object e) {
     final index = _currentAssistantIndex;
     final err = '\n\n Something went wrong: \n$e';
@@ -260,7 +321,12 @@ class ChatService extends ChangeNotifier {
       );
     } else {
       _messages.add(
-        Bubble(id: uuid.v7(), role: MessageRole.assistant, text: err, reasoning: ''),
+        Bubble(
+          id: uuid.v7(),
+          role: MessageRole.assistant,
+          text: err,
+          reasoning: '',
+        ),
       );
     }
   }
@@ -316,6 +382,38 @@ class ChatService extends ChangeNotifier {
     }
   }
 
+  void _appendToolDeltaToCurrentAssistant(ToolCallDelta delta) {
+    final idx = _currentAssistantIndex;
+    if (idx < 0 || idx >= _messages.length) return;
+
+    final bubble = _messages[idx];
+    final bubbleId = bubble.id;
+
+    final buffersForMsg = _toolBuffers.putIfAbsent(
+      bubbleId,
+      () => <int, StringBuffer>{},
+    );
+
+    final buf = buffersForMsg.putIfAbsent(delta.index, () => StringBuffer());
+
+    if (delta.argumentsChunk != null && delta.argumentsChunk!.isNotEmpty) {
+      buf.write(delta.argumentsChunk);
+    }
+
+    final currentTools = Map<int, BubbleToolCall>.from(bubble.tools);
+    final existing = currentTools[delta.index];
+
+    final updatedTool = (existing ?? BubbleToolCall()).copyWith(
+      id: delta.id ?? existing?.id,
+      name: delta.name ?? existing?.name,
+      arguments: buf.toString(),
+    );
+
+    currentTools[delta.index] = updatedTool;
+
+    _messages[idx] = bubble.copyWith(tools: currentTools);
+  }
+
   List<ChatMessage> _buildPayload({required int upToIndexInclusive}) {
     if (_messages.isEmpty || upToIndexInclusive < 0) {
       return [];
@@ -324,7 +422,9 @@ class ChatService extends ChangeNotifier {
     final clamped = upToIndexInclusive.clamp(0, _messages.length - 1);
     final conversation = _messages.take(clamped + 1);
 
-    final payload = conversation.map((m) => ChatMessage(role: m.role.wire, content: m.text)).toList();
+    final payload = conversation
+        .map((m) => ChatMessage(role: m.role.wire, content: m.text))
+        .toList();
 
     if (payload.isNotEmpty &&
         payload.last.role == MessageRole.assistant.wire &&

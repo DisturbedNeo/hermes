@@ -61,7 +61,8 @@ class LlamaServerManager {
       '-b', '$nBatch',
       '-ub', '$nUBatch',
       '--flash-attn', '0',
-      '--no-mmap'
+      '--no-mmap',
+      '--jinja'
     ];
 
     final process = await Process.start(
