@@ -7,15 +7,19 @@ class ThinkSection extends StatefulWidget {
   final Color fg;
   final Color bg;
   final bool streaming;
-  final VoidCallback? onTap;
+  final bool expanded;
+  final VoidCallback? onTapBanner;
+  final VoidCallback? onTapBody;
 
   const ThinkSection({
     super.key,
     required this.text,
     required this.fg,
     required this.bg,
-    this.onTap,
+    this.onTapBanner,
+    this.onTapBody,
     this.streaming = false,
+    this.expanded = false,
   });
 
   @override
@@ -23,8 +27,6 @@ class ThinkSection extends StatefulWidget {
 }
 
 class _ThinkSectionState extends State<ThinkSection> {
-  bool expanded = false;
-
   @override
   Widget build(BuildContext context) {
     final subtleBg = Color.alphaBlend(widget.fg.withValues(alpha: 0.06), widget.bg);
@@ -42,18 +44,18 @@ class _ThinkSectionState extends State<ThinkSection> {
         children: [
           InkWell(
             borderRadius: BorderRadius.circular(8),
-            onTap: () => setState(() => expanded = !expanded),
+            onTap: widget.onTapBanner,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               child: Row(
                 children: [
-                  Icon(expanded ? Icons.visibility_off : Icons.visibility, size: 16, color: widget.fg.withValues(alpha: 0.8)),
+                  Icon(widget.expanded ? Icons.visibility_off : Icons.visibility, size: 16, color: widget.fg.withValues(alpha: 0.8)),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Row(
                       children: [
                         Text(
-                          expanded ? 'Hide assistant thoughts' : 'Show assistant thoughts',
+                          widget.expanded ? 'Hide assistant thoughts' : 'Show assistant thoughts',
                           style: Theme.of(context).textTheme.labelMedium?.copyWith(
                                 color: widget.fg.withValues(alpha: 0.8),
                                 fontWeight: FontWeight.w600,
@@ -68,7 +70,7 @@ class _ThinkSectionState extends State<ThinkSection> {
                   ),
                   AnimatedRotation(
                     duration: const Duration(milliseconds: 150),
-                    turns: expanded ? 0.5 : 0.0,
+                    turns: widget.expanded ? 0.5 : 0.0,
                     child: Icon(Icons.expand_more, size: 16, color: widget.fg.withValues(alpha: 0.6)),
                   ),
                 ],
@@ -77,13 +79,13 @@ class _ThinkSectionState extends State<ThinkSection> {
           ),
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 160),
-            crossFadeState: expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            crossFadeState: widget.expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
             firstChild: const SizedBox.shrink(),
             secondChild: Padding(
               padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
               child: MarkdownView(
                 data: widget.text, 
-                onTapNonLink: widget.onTap
+                onTapNonLink: widget.onTapBody
               ),
             ),
           ),

@@ -56,8 +56,8 @@ class _ChatViewState extends State<ChatView> {
                           bubble: MessageBubble(
                             key: ValueKey('bubble_${b.id}'),
                             b: b,
-                            onSave: (newText) {
-                              _chat.updateMessage(b, newText);
+                            onSave: (newReasoning, newText) {
+                              _chat.updateMessage(b, newReasoning, newText);
                             },
                             editable: !_chat.isStreaming,
                           ),

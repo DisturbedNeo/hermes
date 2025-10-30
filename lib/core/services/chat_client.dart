@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:hermes/core/models/chat_message.dart';
+import 'package:hermes/core/models/chat_token.dart';
 import 'package:http/http.dart' as http;
 
 class ChatClient {
@@ -20,7 +21,7 @@ class ChatClient {
     _client.close();
   }
 
-  Stream<String> streamMessage({
+  Stream<ChatToken> streamMessage({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
   }) async* {
@@ -62,7 +63,7 @@ class ChatClient {
     final eventData = <String>[]; 
     var sawDone = false;
 
-    String? flushEvent() {
+    ChatToken? flushEvent() {
       if (eventData.isEmpty) return null;
       final payload = eventData.join('\n').trim();
       eventData.clear();
@@ -84,8 +85,10 @@ class ChatClient {
         if (choices is List && choices.isNotEmpty) {
           final delta = choices[0]?['delta'];
           if (delta is Map) {
-            final token = delta['content'];
-            if (token is String && token.isNotEmpty) return token;
+            final reasoningToken = delta['reasoning_content'];
+            final contentToken = delta['content'];
+            if (reasoningToken is String && reasoningToken.isNotEmpty) return ChatToken(null, reasoningToken);
+            if (contentToken is String && contentToken.isNotEmpty) return ChatToken(contentToken, null);
           }
         }
       } on FormatException {
@@ -112,7 +115,7 @@ class ChatClient {
       }
     }
 
-    final tail = flushEvent();
-    if (tail != null) yield tail;
+    final tailToken = flushEvent();
+    if (tailToken != null) yield tailToken;
   }
 }

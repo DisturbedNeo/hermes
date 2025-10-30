@@ -9,6 +9,7 @@ import 'package:hermes/core/helpers/throttled_scheduler.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_message.dart';
+import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 
 class ChatService extends ChangeNotifier {
@@ -19,6 +20,7 @@ class ChatService extends ChangeNotifier {
     id: uuid.v7(),
     role: MessageRole.system,
     text: 'You are a helpful assistant.',
+    reasoning: '',
   );
 
   UnmodifiableListView<Bubble>? _messageCache;
@@ -35,7 +37,7 @@ class ChatService extends ChangeNotifier {
 
   bool get isStreaming => _streamState == StreamState.streaming;
 
-  StreamSubscription<String>? _streamSub;
+  StreamSubscription<ChatToken>? _streamSub;
   String? _currentAssistantId;
   int get _currentAssistantIndex =>
       _messages.indexWhere((m) => m.id == _currentAssistantId);
@@ -102,7 +104,7 @@ class ChatService extends ChangeNotifier {
 
     if (t.isEmpty) return;
 
-    _messages.add(Bubble(id: uuid.v7(), role: role, text: t));
+    _messages.add(Bubble(id: uuid.v7(), role: role, text: t, reasoning: ''));
     _notifyIfNotDisposed();
   }
 
@@ -113,7 +115,7 @@ class ChatService extends ChangeNotifier {
 
     if (t.isEmpty) return;
 
-    _messages.add(Bubble(id: uuid.v7(), role: MessageRole.user, text: t));
+    _messages.add(Bubble(id: uuid.v7(), role: MessageRole.user, text: t, reasoning: ''));
     _notifyIfNotDisposed();
 
     await _streamAssistantResponse(assistantId: null, addGenerationPrompt: true);
@@ -143,12 +145,12 @@ class ChatService extends ChangeNotifier {
     streamState = newStreamState;
   }
 
-  void updateMessage(Bubble message, String newText) {
+  void updateMessage(Bubble message, String newReasoning, String newText) {
     final index = _messages.indexWhere((m) => m.id == message.id);
 
     if (index == -1 || message.id == _currentAssistantId) return;
 
-    _messages[index] = _messages[index].copyWith(text: newText);
+    _messages[index] = _messages[index].copyWith(reasoning: newReasoning, text: newText);
 
     _notifyIfNotDisposed();
   }
@@ -217,10 +219,15 @@ class ChatService extends ChangeNotifier {
     }
   }
 
-  void _onStreamToken(String token) {
-    if (token.isEmpty) return;
+  void _onStreamToken(ChatToken token) {
+    if (token.content == null && token.reasoning == null) return;
 
-    _appendToCurrentAssistant(token);
+    if (token.reasoning != null) {
+      _appendToCurrentAssistant(token.reasoning!, true);
+    } else if (token.content != null) {
+      _appendToCurrentAssistant(token.content!, false);
+    }
+
     _scheduler.schedule();
   }
 
@@ -253,7 +260,7 @@ class ChatService extends ChangeNotifier {
       );
     } else {
       _messages.add(
-        Bubble(id: uuid.v7(), role: MessageRole.assistant, text: err),
+        Bubble(id: uuid.v7(), role: MessageRole.assistant, text: err, reasoning: ''),
       );
     }
   }
@@ -266,6 +273,7 @@ class ChatService extends ChangeNotifier {
         id: uuid.v7(),
         role: MessageRole.assistant,
         text: '',
+        reasoning: '',
       );
       _messages.add(bubble);
       targetId = bubble.id;
@@ -277,6 +285,7 @@ class ChatService extends ChangeNotifier {
           id: uuid.v7(),
           role: MessageRole.assistant,
           text: '',
+          reasoning: '',
         );
         _messages.add(bubble);
         targetId = bubble.id;
@@ -289,16 +298,22 @@ class ChatService extends ChangeNotifier {
     return targetId;
   }
 
-  void _appendToCurrentAssistant(String chunk) {
+  void _appendToCurrentAssistant(String chunk, bool isReasoning) {
     if (chunk.isEmpty) return;
 
     final index = _currentAssistantIndex;
 
     if (index < 0 || index >= _messages.length) return;
 
-    _messages[index] = _messages[index].copyWith(
-      text: _messages[index].text + chunk,
-    );
+    if (isReasoning) {
+      _messages[index] = _messages[index].copyWith(
+        reasoning: _messages[index].reasoning + chunk,
+      );
+    } else {
+      _messages[index] = _messages[index].copyWith(
+        text: _messages[index].text + chunk,
+      );
+    }
   }
 
   List<ChatMessage> _buildPayload({required int upToIndexInclusive}) {
