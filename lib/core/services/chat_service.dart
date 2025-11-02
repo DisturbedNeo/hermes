@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:hermes/core/enums/delete_choice.dart';
@@ -167,11 +168,8 @@ class ChatService extends ChangeNotifier {
   }) async {
     _scheduler.cancel();
 
-    final sub = _streamSub;
-    _streamSub = null;
-    _currentAssistantId = null;
+    await _finaliseStream();
 
-    await sub?.cancel();
     streamState = newStreamState;
   }
 
@@ -231,6 +229,7 @@ class ChatService extends ChangeNotifier {
     final List<ToolDefinition> selectedTools = _resolveToolDefinitions(
       selectedToolIds,
     );
+
     final openAITools = selectedTools.map((t) {
       return {
         'type': 'function',
@@ -254,19 +253,13 @@ class ChatService extends ChangeNotifier {
       messages: payload,
       extraParams: extraParams,
     );
+
     _streamSub = sub.listen(
       _onStreamToken,
-      onError: (e, st) => _handleStreamTerminal(error: e),
-      onDone: () => _handleStreamTerminal(),
+      onError: (e, st) async => await _handleStreamTerminal(error: e),
+      onDone: () async => await _handleStreamTerminal(),
       cancelOnError: true,
     );
-
-    try {
-      await _streamSub?.asFuture<void>();
-      await stopStreaming();
-    } catch (_) {
-      await stopStreaming(newStreamState: StreamState.error);
-    }
   }
 
   void _onStreamToken(ChatToken token) {
@@ -287,27 +280,150 @@ class ChatService extends ChangeNotifier {
     _scheduler.schedule();
   }
 
-  void _handleStreamTerminal({Object? error}) {
+  Future<void> _handleStreamTerminal({Object? error}) async {
     _scheduler.cancel();
 
     if (error != null) {
       _appendErrorToCurrentAssistant(error);
       streamState = StreamState.error;
-    } else {
-      streamState = StreamState.idle;
+      await _finaliseStream();
+      return;
     }
 
-    final sub = _streamSub;
-    _streamSub = null;
-    _currentAssistantId = null;
-    sub?.cancel();
+    _normaliseAssistantContent();
+
+    final toolCalls = _extractToolCallsFromCurrentAssistant();
+    if (toolCalls.isNotEmpty) {
+      try {
+        await _runToolsAndContinue(toolCalls);
+      } catch (e) {
+        _appendErrorToCurrentAssistant(e);
+        streamState = StreamState.error;
+        await _finaliseStream();
+      }
+
+      return;
+    }
+
+    streamState = StreamState.idle;
+    await _finaliseStream();
+  }
+
+  List<BubbleToolCall> _extractToolCallsFromCurrentAssistant() {
+    final index = _currentAssistantIndex;
+    if (index < 0 || index >= _messages.length) return const [];
+
+    final bubble = _messages[index];
+    if (bubble.tools.isEmpty) return const [];
+
+    final calls =
+        bubble.tools.entries.where((t) => t.value.result == null).toList()
+          ..sort((a, b) => a.key.compareTo(b.key));
+
+    return calls.map((c) => c.value).toList();
+  }
+
+  Future<void> _runToolsAndContinue(List<BubbleToolCall> calls) async {
+    final idx = _currentAssistantIndex;
+    if (idx < 0 || idx >= _messages.length) {
+      await _finaliseStream();
+      return;
+    }
+
+    final assistantBubble = _messages[idx];
+    final Map<int, BubbleToolCall> updated = Map.of(assistantBubble.tools);
+
+    for (final entry in assistantBubble.tools.entries) {
+      final toolIndex = entry.key;
+      final toolCall = entry.value;
+
+      final toolName = toolCall.name;
+      final argsJson = toolCall.arguments;
+
+      if (toolName == null || argsJson == null) {
+        updated[toolIndex] = toolCall.copyWith(
+          result: '{"error":"missing tool name or args"}',
+        );
+        continue;
+      }
+
+      final resultJson = await _toolService.execute(
+        toolId: toolName,
+        argumentsJson: argsJson,
+      );
+
+      updated[toolIndex] = toolCall.copyWith(result: resultJson);
+    }
+
+    _messages[idx] = assistantBubble.copyWith(tools: updated);
+
+    final toolDisplay = _buildReadableToolResult(updated);
+
+    if (toolDisplay.isNotEmpty) {
+      _messages.add(
+        Bubble(
+          id: uuid.v7(),
+          role: MessageRole.assistant,
+          text: toolDisplay,
+          reasoning: '',
+        ),
+      );
+    }
 
     _notifyIfNotDisposed();
+
+    await _continueAfterTools(_messages[idx]);
+  }
+
+  Future<void> _continueAfterTools(Bubble assistantBubble) async {
+    final client = serverManager.chatClient;
+    if (client == null) {
+      streamState = StreamState.idle;
+      await _finaliseStream();
+      return;
+    }
+
+    streamState = StreamState.streaming;
+
+    final followUp = Bubble(
+      id: uuid.v7(),
+      role: MessageRole.assistant,
+      text: '',
+      reasoning: '',
+    );
+    _messages.add(followUp);
+    _currentAssistantId = followUp.id;
+    _notifyIfNotDisposed();
+
+    final targetIndex = _messages.indexWhere((m) => m.id == assistantBubble.id);
+    final payload = _buildPayloadWithTools(targetIndex);
+
+    final sub = client.streamMessage(messages: payload);
+
+    _streamSub = sub.listen(
+      _onStreamToken,
+      onError: (e, st) => _handleStreamTerminal(error: e),
+      onDone: () => _handleStreamTerminal(),
+      cancelOnError: true,
+    );
   }
 
   List<ToolDefinition> _resolveToolDefinitions(List<String> ids) {
     if (ids.isEmpty) return const [];
     return _toolService.getToolDefinitions(ids: ids);
+  }
+
+  String _buildReadableToolResult(Map<int, BubbleToolCall> tools) {
+    final sb = StringBuffer();
+    for (final entry in tools.entries) {
+      final tc = entry.value;
+      if (tc.result == null) continue;
+      final name = tc.name ?? 'tool';
+      sb.writeln('🔧 **$name**');
+      sb.writeln(tc.result);
+      sb.writeln();
+    }
+    return sb.toString().trim();
   }
 
   void _appendErrorToCurrentAssistant(Object e) {
@@ -414,6 +530,90 @@ class ChatService extends ChangeNotifier {
     _messages[idx] = bubble.copyWith(tools: currentTools);
   }
 
+  void _normaliseAssistantContent() {
+    final idx = _currentAssistantIndex;
+    if (idx < 0 || idx >= _messages.length) return;
+
+    final bubble = _messages[idx];
+    if (bubble.role != MessageRole.assistant) return;
+
+    final raw = bubble.text;
+
+    if (raw.isEmpty) return;
+
+    String remaining = raw;
+    String reasoning = bubble.reasoning;
+
+    final thinkRegex = RegExp(r'<think>([\s\S]*?)</think>', multiLine: true);
+    final thinkMatch = thinkRegex.firstMatch(remaining);
+
+    if (thinkMatch != null) {
+      final thinkContent = thinkMatch.group(1)?.trim() ?? '';
+      reasoning = ('$reasoning\n$thinkContent').trim();
+      remaining = remaining
+          .replaceRange(thinkMatch.start, thinkMatch.end, '')
+          .trim();
+    }
+
+    final toolsMap = Map<int, BubbleToolCall>.from(bubble.tools);
+    var toolIndex = toolsMap.length;
+
+    final xmlToolRegex = RegExp(
+      r'<tool_call>([\s\S]*?)</tool_call>',
+      multiLine: true,
+    );
+    final xmlToolMatches = xmlToolRegex.allMatches(remaining).toList();
+
+    for (final m in xmlToolMatches) {
+      final inner = m.group(1) ?? '';
+      final parsed = _parseXmlToolCallBody(inner);
+      if (parsed != null) {
+        toolsMap[toolIndex++] = parsed;
+      }
+    }
+
+    remaining = remaining.replaceAll(xmlToolRegex, '').trim();
+
+    _messages[idx] = bubble.copyWith(
+      reasoning: reasoning,
+      text: remaining,
+      tools: toolsMap,
+    );
+  }
+
+  BubbleToolCall? _parseXmlToolCallBody(String body) {
+    final lines = body
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
+    if (lines.isEmpty) return null;
+
+    final toolName = lines.first;
+    final rest = lines.skip(1).join('\n');
+
+    final keyRegex = RegExp(r'<arg_key>([^<]+)</arg_key>');
+    final valRegex = RegExp(r'<arg_value>([^<]+)</arg_value>');
+
+    final keyMatches = keyRegex.allMatches(rest).toList();
+    final valMatches = valRegex.allMatches(rest).toList();
+
+    final args = <String, String>{};
+    final len = keyMatches.length < valMatches.length
+        ? keyMatches.length
+        : valMatches.length;
+
+    for (var i = 0; i < len; i++) {
+      final k = keyMatches[i].group(1)?.trim();
+      final v = valMatches[i].group(1)?.trim();
+      if (k != null && v != null) {
+        args[k] = v;
+      }
+    }
+
+    return BubbleToolCall(name: toolName, arguments: jsonEncode(args));
+  }
+
   List<ChatMessage> _buildPayload({required int upToIndexInclusive}) {
     if (_messages.isEmpty || upToIndexInclusive < 0) {
       return [];
@@ -433,6 +633,71 @@ class ChatService extends ChangeNotifier {
     }
 
     return payload;
+  }
+
+  List<ChatMessage> _buildPayloadWithTools(int upToIndexInclusive) {
+    final clamped = upToIndexInclusive.clamp(0, _messages.length - 1);
+    final conversation = _messages.take(clamped + 1);
+
+    final result = <ChatMessage>[];
+
+    for (final b in conversation) {
+      if (b.role == MessageRole.assistant && b.tools.isNotEmpty) {
+        final toolCalls = b.tools.entries.map((entry) {
+          final index = entry.key;
+          final tc = entry.value;
+          final callId = tc.id ?? 'call_$index';
+          return {
+            'id': callId,
+            'type': 'function',
+            'function': {'name': tc.name, 'arguments': tc.arguments ?? '{}'},
+          };
+        }).toList();
+
+        result.add(
+          ChatMessage(
+            role: 'assistant',
+            content: b.text.isEmpty ? '' : b.text,
+            toolCalls: toolCalls,
+          ),
+        );
+
+        for (MapEntry<int, BubbleToolCall> entry in b.tools.entries) {
+          final index = entry.key;
+          final tc = entry.value;
+          final callId = tc.id ?? 'call_$index';
+          if (tc.result == null) continue;
+
+          result.add(
+            ChatMessage(
+              role: 'tool',
+              content: tc.result ?? '',
+              toolCallId: callId,
+            ),
+          );
+        }
+
+        continue;
+      }
+
+      result.add(ChatMessage(role: b.role.wire, content: b.text));
+    }
+
+    return result;
+  }
+
+  Future<void> _finaliseStream() async {
+    final sub = _streamSub;
+    _streamSub = null;
+
+    if (_currentAssistantId != null) {
+      _toolBuffers.remove(_currentAssistantId);
+    }
+
+    _currentAssistantId = null;
+    await sub?.cancel();
+
+    _notifyIfNotDisposed();
   }
 
   void _notifyIfNotDisposed() {

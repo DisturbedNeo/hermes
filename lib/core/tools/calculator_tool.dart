@@ -45,9 +45,12 @@ class CalculatorTool extends JsonTool<CalculatorOperation> {
 
   @override
   CalculatorOperation fromJson(Map<String, dynamic> json) {
-    final paramA = json['paramA'];
-    final paramB = json['paramB'];
+    var paramA = json['paramA'];
+    var paramB = json['paramB'];
     final operator = json['operator'];
+
+    if (paramA is String) paramA = num.tryParse(paramA);
+    if (paramB is String) paramB = num.tryParse(paramB);
 
     if (paramA is! num || paramB is! num || operator is! String) {
       throw const FormatException('Invalid calculator input');

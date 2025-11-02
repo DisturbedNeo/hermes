@@ -29,23 +29,27 @@ class Bubble {
 class BubbleToolCall {
   final String? id;
   final String? name;
-  final String arguments;
+  final String? arguments;
+  final String? result;
 
   const BubbleToolCall({
     this.id,
     this.name,
-    this.arguments = '',
+    this.arguments,
+    this.result
   });
 
   BubbleToolCall copyWith({
     String? id,
     String? name,
-    String? arguments
+    String? arguments,
+    String? result,
   }) {
     return BubbleToolCall(
       id: id ?? this.id,
       name: name ?? this.name,
-      arguments: arguments ?? this.arguments
+      arguments: arguments ?? this.arguments,
+      result: result ?? this.result,
     );
   }
 }

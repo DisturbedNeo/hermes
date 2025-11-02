@@ -18,4 +18,14 @@ class ToolService {
   List<ToolDefinition> getToolDefinitions({ List<String> ids = const [] }) {
     return _tools.where((tool) => ids.isEmpty || ids.contains(tool.id)).map((tool) => ToolDefinition(id: tool.id, name: tool.name, description: tool.description, schema: tool.schema)).toList();
   }
+
+  Future<String> execute({ String toolId = '', String argumentsJson = '' }) {
+    final tool = _toolRegistry[toolId];
+
+    if (tool == null) {
+      return Future.value('');
+    }
+
+    return tool.process(argumentsJson);
+  }
 }
