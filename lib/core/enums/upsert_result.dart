@@ -1,0 +1,4 @@
+enum UpsertResult {
+  inserted,
+  updated
+}

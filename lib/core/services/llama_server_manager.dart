@@ -5,7 +5,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:hermes/core/helpers/file.dart';
 import 'package:hermes/core/models/llama_server_handle.dart';
-import 'package:hermes/core/services/chat_client.dart';
+import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:path/path.dart' as p;
 
 class LlamaServerManager {
@@ -62,7 +62,7 @@ class LlamaServerManager {
       '-ub', '$nUBatch',
       '--flash-attn', '0',
       '--no-mmap',
-      '--jinja'
+      '--jinja',
     ];
 
     final process = await Process.start(
@@ -132,8 +132,6 @@ class LlamaServerManager {
   }
 
   Future<void> _waitUntilReady(Uri base) async {
-    await Future.delayed(const Duration(seconds: 5));
-
     final client = HttpClient();
     final deadline = DateTime.now().add(const Duration(seconds: 60));
     Object? lastError;
@@ -154,7 +152,7 @@ class LlamaServerManager {
         lastError = e;
       }
 
-      await Future.delayed(const Duration(seconds: 2));
+      await Future.delayed(const Duration(seconds: 3));
     }
 
     client.close(force: true);

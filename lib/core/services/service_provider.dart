@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:hermes/core/services/chat_service.dart';
+import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_factory.dart';
 import 'package:hermes/core/services/theme_manager.dart';

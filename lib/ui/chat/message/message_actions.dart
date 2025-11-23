@@ -4,7 +4,7 @@ import 'package:hermes/core/enums/delete_choice.dart';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/models/action_spec.dart';
 import 'package:hermes/core/models/bubble.dart';
-import 'package:hermes/core/services/chat_service.dart';
+import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/ui/chat/message/delete_message_dialog.dart';
 
@@ -37,7 +37,7 @@ class MessageActions extends StatelessWidget {
       icon: Icons.copy_rounded,
       tooltip: 'Copy Text',
       onTap: (message) {
-        if (chat.isStreaming && chat.messages.last.id == message.id) return;
+        if (chat.chatStream.isStreaming && chat.messageStore.last.id == message.id) return;
         Clipboard.setData(ClipboardData(text: message.text));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -64,9 +64,9 @@ class MessageActions extends StatelessWidget {
       ActionSpec regenerate = ActionSpec(
         icon: Icons.replay_rounded,
         tooltip: 'Regenerate',
-        isEnabled: !chat.isStreaming,
+        isEnabled: !chat.chatStream.isStreaming,
         onTap: (message) {
-          chat.deleteMessages(message.id);
+          chat.messageStore.removeById(message.id);
           chat.generateOrContinue();
         },
       );
@@ -77,7 +77,7 @@ class MessageActions extends StatelessWidget {
     ActionSpec deleteMessage = ActionSpec(
       icon: Icons.delete_forever_rounded,
       tooltip: 'Delete',
-      isEnabled: !chat.isStreaming,
+      isEnabled: !chat.chatStream.isStreaming,
       onTap: (message) async {
         final choice = await showDialog<DeleteChoice>(
           context: context,
@@ -86,7 +86,10 @@ class MessageActions extends StatelessWidget {
 
         if (choice == null) return;
 
-        chat.deleteMessages(message.id, deleteChoice: choice);
+        switch (choice) {
+          case DeleteChoice.thisOnly: chat.messageStore.removeById(message.id); break;
+          case DeleteChoice.includeSubsequent: chat.messageStore.removeFromId(message.id); break;
+        }
       },
     );
 
@@ -100,7 +103,7 @@ class MessageActions extends StatelessWidget {
     final chat = serviceProvider.get<ChatService>();
 
     return AnimatedBuilder(
-      animation: chat,
+      animation: Listenable.merge([chat.messageStore, chat.chatStream]),
       builder: (_, _) {
         final actions = _getActionsForRole(context, chat, _message.role);
 

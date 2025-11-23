@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/enums/stream_state.dart';
-import 'package:hermes/core/services/chat_service.dart';
+import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/models/tool_definition.dart';
@@ -13,10 +13,7 @@ enum ComposerMode { send, generate, cont, cancel }
 class Composer extends StatefulWidget {
   final bool enabled;
 
-  const Composer({
-    super.key,
-    required this.enabled,
-  });
+  const Composer({super.key, required this.enabled});
 
   @override
   State<Composer> createState() => _ComposerState();
@@ -42,25 +39,23 @@ class _ComposerState extends State<Composer> {
     super.initState();
     _controller = TextEditingController();
     _focusNode = FocusNode()..onKeyEvent = _onKey;
-    _previousStreamState = _chat.streamState;
-    _chat.addListener(_onChatChanged);
+    _previousStreamState = _chat.chatStream.state;
+    _chat.chatStream.addListener(_onStreamChanged);
 
     _allTools = _toolService.getToolDefinitions();
   }
 
   @override
   void dispose() {
-    _chat.removeListener(_onChatChanged);
+    _chat.chatStream.removeListener(_onStreamChanged);
     _focusNode.dispose();
     _controller.dispose();
     super.dispose();
   }
 
-  void _onChatChanged() {
-    final currentStreamState = _chat.streamState;
-
+  void _onStreamChanged() {
     if (_previousStreamState == StreamState.streaming &&
-        currentStreamState == StreamState.idle) {
+        _chat.chatStream.state == StreamState.idle) {
       final serverActive = _chat.serverManager.current != null;
 
       if (serverActive && widget.enabled) {
@@ -70,14 +65,15 @@ class _ComposerState extends State<Composer> {
       }
     }
 
-    _previousStreamState = currentStreamState;
+    _previousStreamState = _chat.chatStream.state;
   }
 
   IconData _iconForRole(MessageRole role) => switch (role) {
-        MessageRole.user => Icons.person,
-        MessageRole.assistant => Icons.smart_toy,
-        MessageRole.system => Icons.display_settings,
-      };
+    MessageRole.user => Icons.person,
+    MessageRole.assistant => Icons.smart_toy,
+    MessageRole.system => Icons.display_settings,
+    MessageRole.tool => Icons.settings_suggest,
+  };
 
   String _labelForRole(MessageRole role) =>
       "${role.wire[0].toUpperCase()}${role.wire.substring(1).toLowerCase()}";
@@ -92,13 +88,13 @@ class _ComposerState extends State<Composer> {
   }
 
   ComposerMode _modeFor(String text) {
-    if (_chat.isStreaming) return ComposerMode.cancel;
+    if (_chat.chatStream.isStreaming) return ComposerMode.cancel;
 
     final isEmpty = text.trim().isEmpty;
     if (!isEmpty) return ComposerMode.send;
 
-    return (_chat.messages.isNotEmpty &&
-            _chat.messages.last.role == MessageRole.assistant)
+    return (_chat.messageStore.messages.isNotEmpty &&
+            _chat.messageStore.messages.last.role == MessageRole.assistant)
         ? ComposerMode.cont
         : ComposerMode.generate;
   }
@@ -154,18 +150,13 @@ class _ComposerState extends State<Composer> {
       return KeyEventResult.handled;
     }
 
-    if (!_chat.isStreaming) {
+    if (!_chat.chatStream.isStreaming) {
       final trimmed = _controller.text.trim();
       _controller.clear();
       if (trimmed.isNotEmpty) {
-        _chat.send(
-          trimmed,
-          tools: _selectedToolIds.toList(),
-        );
+        _chat.send(trimmed, tools: _selectedToolIds.toList());
       } else {
-        _chat.generateOrContinue(
-          tools: _selectedToolIds.toList(),
-        );
+        _chat.generateOrContinue(tools: _selectedToolIds.toList());
       }
       return KeyEventResult.handled;
     }
@@ -261,10 +252,9 @@ class _ComposerState extends State<Composer> {
                 if (hasTools)
                   Text(
                     '${_selectedToolIds.length}',
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelSmall
-                        ?.copyWith(fontSize: 10),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.labelSmall?.copyWith(fontSize: 10),
                   ),
               ],
             ),
@@ -278,15 +268,15 @@ class _ComposerState extends State<Composer> {
                 maxLines: 6,
                 enabled: widget.enabled,
                 keyboardType: TextInputType.multiline,
-                textInputAction: (roleIsUser && !_chat.isStreaming)
+                textInputAction: (roleIsUser && !_chat.chatStream.isStreaming)
                     ? TextInputAction.send
                     : TextInputAction.newline,
                 decoration: InputDecoration(
                   hintText: !widget.enabled
                       ? 'Load a model to chat…'
-                      : _chat.isStreaming
-                          ? 'Streaming response…'
-                          : 'Type a message…',
+                      : _chat.chatStream.isStreaming
+                      ? 'Streaming response…'
+                      : 'Type a message…',
                   border: const OutlineInputBorder(),
                 ),
                 onSubmitted: (_) {
@@ -295,7 +285,7 @@ class _ComposerState extends State<Composer> {
                     _insertMessage();
                     return;
                   }
-                  if (!_chat.isStreaming) {
+                  if (!_chat.chatStream.isStreaming) {
                     final trimmed = _controller.text.trim();
                     _controller.clear();
                     _controller.selection = const TextSelection.collapsed(
@@ -304,10 +294,7 @@ class _ComposerState extends State<Composer> {
                     _focusNode.requestFocus();
 
                     if (trimmed.isNotEmpty) {
-                      _chat.send(
-                        trimmed,
-                        tools: _selectedToolIds.toList(),
-                      );
+                      _chat.send(trimmed, tools: _selectedToolIds.toList());
                     } else {
                       _chat.generateOrContinue(
                         tools: _selectedToolIds.toList(),
@@ -321,81 +308,90 @@ class _ComposerState extends State<Composer> {
               ),
             ),
             const SizedBox(width: 8),
-            ValueListenableBuilder<TextEditingValue>(
-              valueListenable: _controller,
-              builder: (_, value, _) {
-                final mode = _modeFor(value.text);
-                final List<Widget> buttons = [];
+            AnimatedBuilder(
+              animation: _chat.chatStream,
+              builder: (_, _) {
+                return ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _controller,
+                  builder: (_, value, _) {
+                    final mode = _modeFor(value.text);
+                    final List<Widget> buttons = [];
 
-                if (_selectedRole == MessageRole.user) {
-                  switch (mode) {
-                    case ComposerMode.cancel:
-                      buttons.add(
-                        FilledButton.icon(
-                          icon: const Icon(Icons.stop),
-                          label: const Text('Cancel'),
-                          onPressed: _chat.stopStreaming,
-                        ),
-                      );
-                      break;
-                    case ComposerMode.generate:
-                      buttons.add(
-                        FilledButton.icon(
-                          icon: const Icon(Icons.auto_awesome),
-                          label: const Text('Generate'),
-                          onPressed: widget.enabled
-                              ? () => _chat.generateOrContinue(
-                                    tools: _selectedToolIds.toList(),
-                                  )
-                              : null,
-                        ),
-                      );
-                      break;
-                    case ComposerMode.cont:
-                      buttons.add(
-                        FilledButton.icon(
-                          icon: const Icon(Icons.more_horiz),
-                          label: const Text('Continue'),
-                          onPressed: widget.enabled
-                              ? () => _chat.generateOrContinue(
-                                    tools: _selectedToolIds.toList(),
-                                  )
-                              : null,
-                        ),
-                      );
-                      break;
-                    case ComposerMode.send:
-                      buttons.add(
-                        FilledButton.icon(
-                          icon: const Icon(Icons.send),
-                          label: const Text('Send'),
-                          onPressed: widget.enabled
-                              ? () => _chat.send(
-                                    value.text.trim(),
-                                    tools: _selectedToolIds.toList(),
-                                  )
-                              : null,
-                        ),
-                      );
-                      break;
-                  }
+                    if (_selectedRole == MessageRole.user) {
+                      switch (mode) {
+                        case ComposerMode.cancel:
+                          buttons.add(
+                            FilledButton.icon(
+                              icon: const Icon(Icons.stop),
+                              label: const Text('Cancel'),
+                              onPressed: _chat.chatStream.stop,
+                            ),
+                          );
+                          break;
+                        case ComposerMode.generate:
+                          buttons.add(
+                            FilledButton.icon(
+                              icon: const Icon(Icons.auto_awesome),
+                              label: const Text('Generate'),
+                              onPressed: widget.enabled
+                                  ? () => _chat.generateOrContinue(
+                                      tools: _selectedToolIds.toList(),
+                                    )
+                                  : null,
+                            ),
+                          );
+                          break;
+                        case ComposerMode.cont:
+                          buttons.add(
+                            FilledButton.icon(
+                              icon: const Icon(Icons.more_horiz),
+                              label: const Text('Continue'),
+                              onPressed: widget.enabled
+                                  ? () => _chat.generateOrContinue(
+                                      tools: _selectedToolIds.toList(),
+                                    )
+                                  : null,
+                            ),
+                          );
+                          break;
+                        case ComposerMode.send:
+                          buttons.add(
+                            FilledButton.icon(
+                              icon: const Icon(Icons.send),
+                              label: const Text('Send'),
+                              onPressed: widget.enabled
+                                  ? () => _chat.send(
+                                      value.text.trim(),
+                                      tools: _selectedToolIds.toList(),
+                                    )
+                                  : null,
+                            ),
+                          );
+                          break;
+                      }
 
-                  buttons.add(const SizedBox(width: 8));
-                }
+                      buttons.add(const SizedBox(width: 8));
+                    }
 
-                buttons.add(
-                  Tooltip(
-                    message: 'Insert ${_labelForRole(_selectedRole)} message',
-                    waitDuration: const Duration(milliseconds: 400),
-                    child: FilledButton.icon(
-                      icon: const Icon(Icons.add),
-                      label: const Text('Insert'),
-                      onPressed: widget.enabled ? _insertMessage : null,
-                    ),
-                  ),
+                    buttons.add(
+                      Tooltip(
+                        message:
+                            'Insert ${_labelForRole(_selectedRole)} message',
+                        waitDuration: const Duration(milliseconds: 400),
+                        child: FilledButton.icon(
+                          icon: const Icon(Icons.add),
+                          label: const Text('Insert'),
+                          onPressed: widget.enabled ? _insertMessage : null,
+                        ),
+                      ),
+                    );
+
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: buttons,
+                    );
+                  },
                 );
-
-                return Row(mainAxisSize: MainAxisSize.min, children: buttons);
               },
             ),
           ],

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/models/llama_server_handle.dart';
-import 'package:hermes/core/services/chat_service.dart';
+import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/ui/chat/message/message_actions.dart';
 import 'package:hermes/ui/chat/composer.dart';
@@ -28,7 +28,7 @@ class _ChatViewState extends State<ChatView> {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _chat,
+      animation: Listenable.merge([_chat.messageStore, _chat.chatStream]),
       builder: (_, _) {
         return Column(
           children: [
@@ -42,10 +42,10 @@ class _ChatViewState extends State<ChatView> {
                       horizontal: 12,
                       vertical: 16,
                     ),
-                    itemCount: _chat.messages.length,
+                    itemCount: _chat.messageStore.messages.length,
                     itemBuilder: (_, i) {
-                      final index = _chat.messages.length - 1 - i;
-                      final b = _chat.messages[index];
+                      final index = _chat.messageStore.messages.length - 1 - i;
+                      final b = _chat.messageStore.messages[index];
                       final isUser = b.role == MessageRole.user;
 
                       return Padding(
@@ -57,9 +57,9 @@ class _ChatViewState extends State<ChatView> {
                             key: ValueKey('bubble_${b.id}'),
                             b: b,
                             onSave: (newReasoning, newText) {
-                              _chat.updateMessage(b, newReasoning, newText);
+                              _chat.messageStore.upsert(b.copyWith(reasoning: newReasoning, text: newText));
                             },
-                            editable: !_chat.isStreaming,
+                            editable: !_chat.chatStream.isStreaming,
                           ),
                           actions: MessageActions(
                             key: ValueKey('actions_${b.id}'),

@@ -51,8 +51,16 @@ class BubbleEditor extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            TextButton(onPressed: onCancel, child: const Text('Cancel')),
-            TextButton(onPressed: onSave, child: const Text('Save')),
+            TextButton(
+              onPressed: onCancel,
+              style: TextButton.styleFrom(foregroundColor: fg),
+              child: const Text('Cancel')
+            ),
+            TextButton(
+              onPressed: onSave, 
+              style: TextButton.styleFrom(foregroundColor: fg),
+              child: const Text('Save')
+            ),
           ],
         ),
       ],

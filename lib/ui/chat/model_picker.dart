@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hermes/core/helpers/models_directory.dart';
-import 'package:hermes/core/services/chat_service.dart';
+import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/ui/chat/message/dot_pulse.dart';
@@ -137,19 +137,19 @@ class _ModelPickerState extends State<ModelPicker> {
 
                                 final llamaCppDirectory = await _preferencesService.getLlamaCppDirectory() ?? '';
 
-                                await _chatService.startServer(
-                                  llamaCppDirectory,
-                                  file.path,
-                                  v,
-                                  ctx,
-                                  threads,
-                                  gpuLayers ?? 999,
-                                  temperature,
-                                  topP,
-                                  topK,
-                                  batch,
-                                  uBatch,
-                                  miroStatMode
+                                await _chatService.serverManager.start(
+                                  llamaCppDirectory: llamaCppDirectory,
+                                  modelPath: file.path,
+                                  modelName: v,
+                                  nCtx: ctx,
+                                  nThreads: threads,
+                                  nGpuLayers: gpuLayers ?? 999,
+                                  temperature: temperature,
+                                  topP: topP,
+                                  topK: topK,
+                                  nBatch: batch,
+                                  nUBatch: uBatch,
+                                  mirostat: miroStatMode
                                 );
 
                                 setState(() {
