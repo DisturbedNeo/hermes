@@ -29,6 +29,11 @@ class LlamaServerManager {
     int nBatch = 512,
     int nUBatch = 512,
     int mirostat = 0,
+    double repeatPenalty = 1.1,
+    int repeatLastN = 256,
+    double presencePenalty = 1.2,
+    double frequencyPenalty = 0.5,
+    bool thinking = true,
   }) async {
     await stop();
 
@@ -60,8 +65,11 @@ class LlamaServerManager {
       '--mirostat', '$mirostat',
       '-b', '$nBatch',
       '-ub', '$nUBatch',
-      '--flash-attn', '0',
-      '--no-mmap',
+      '--repeat-penalty', '$repeatPenalty',
+      '--repeat-last-n', '$repeatLastN',
+      '--presence-penalty', '$presencePenalty',
+      '--frequency-penalty', '$frequencyPenalty',
+      if (!thinking) ...['--chat-template-kwargs', '{"enable_thinking": false}'],
       '--jinja',
     ];
 

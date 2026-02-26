@@ -18,7 +18,7 @@ class ModelPicker extends StatefulWidget {
 class _ModelPickerState extends State<ModelPicker> {
   Map<String, File> _models = {};
   String? _selected;
-  
+
   bool _loading = true;
   String? _error;
 
@@ -67,7 +67,11 @@ class _ModelPickerState extends State<ModelPicker> {
           SizedBox(width: 8),
           Text('Loading…'),
           SizedBox(width: 8),
-          SizedBox(width: 10, height: 10, child: DotPulse(color: bgColor.withValues(alpha: 0.25))),
+          SizedBox(
+            width: 10,
+            height: 10,
+            child: DotPulse(color: bgColor.withValues(alpha: 0.25)),
+          ),
         ],
       );
     }
@@ -104,12 +108,18 @@ class _ModelPickerState extends State<ModelPicker> {
                       vertical: 4,
                     ),
                     dropdownColor: bgColor,
-                    items: _models.keys.map((alias) {
-                      return DropdownMenuItem(
-                        value: alias,
-                        child: Text(alias, overflow: TextOverflow.ellipsis),
-                      );
-                    }).toList(),
+                    items:
+                        (_models.keys.toList()..sort((a, b) => a.compareTo(b)))
+                            .map((alias) {
+                              return DropdownMenuItem(
+                                value: alias,
+                                child: Text(
+                                  alias,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              );
+                            })
+                            .toList(),
                     onChanged: (v) {
                       if (v == null || !_models.containsKey(v)) return;
                       final file = _models[v]!;
@@ -129,13 +139,21 @@ class _ModelPickerState extends State<ModelPicker> {
                                 required int batch,
                                 required int uBatch,
                                 required int miroStatMode,
+                                required double repeatPenalty,
+                                required int repeatLastN,
+                                required double presencePenalty,
+                                required double frequencyPenalty,
+                                required bool thinking,
                               }) async {
                                 setState(() {
                                   _selected = v;
                                   _loading = true;
                                 });
 
-                                final llamaCppDirectory = await _preferencesService.getLlamaCppDirectory() ?? '';
+                                final llamaCppDirectory =
+                                    await _preferencesService
+                                        .getLlamaCppDirectory() ??
+                                    '';
 
                                 await _chatService.serverManager.start(
                                   llamaCppDirectory: llamaCppDirectory,
@@ -149,7 +167,12 @@ class _ModelPickerState extends State<ModelPicker> {
                                   topK: topK,
                                   nBatch: batch,
                                   nUBatch: uBatch,
-                                  mirostat: miroStatMode
+                                  mirostat: miroStatMode,
+                                  repeatPenalty: repeatPenalty,
+                                  repeatLastN: repeatLastN,
+                                  presencePenalty: presencePenalty,
+                                  frequencyPenalty: frequencyPenalty,
+                                  thinking: thinking,
                                 );
 
                                 setState(() {

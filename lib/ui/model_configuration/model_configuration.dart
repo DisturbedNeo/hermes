@@ -15,6 +15,11 @@ class ModelConfiguration extends StatefulWidget {
     required int batch,
     required int uBatch,
     required int miroStatMode,
+    required double repeatPenalty,
+    required int repeatLastN,
+    required double presencePenalty,
+    required double frequencyPenalty,
+    required bool thinking,
   })
   onConfirm;
 
@@ -28,12 +33,17 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
   int _ctx = 8;
   int _threads = (Platform.numberOfProcessors * 0.75).ceil();
   int _gpuLayers = 999;
-  double _temperature = 0.8;
-  double _topP = 0.9;
-  int _topK = 40;
+  double _temperature = 0.7;
+  double _topP = 0.8;
+  int _topK = 20;
   int _batch = 512;
   int _uBatch = 512;
   int _miroStatMode = 0;
+  double _repeatPenalty = 1.0;
+  int _repeatLastN = 64;
+  double _presencePenalty = 1.5;
+  double _frequencyPenalty = 0.0;
+  bool _thinking = false;
 
   @override
   Widget build(BuildContext context) {
@@ -86,7 +96,7 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
               value: _topP,
               min: 0.1,
               max: 1.0,
-              step: 0.1,
+              step: 0.05,
               onChanged: (v) => setState(() => _topP = v),
             ),
             SliderControl.integer(
@@ -121,6 +131,48 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
               step: 1,
               onChanged: (v) => setState(() => _miroStatMode = v),
             ),
+            SliderControl.decimal(
+              label: 'Repeat Penalty',
+              value: _repeatPenalty,
+              min: 0.5,
+              max: 2.0,
+              step: 0.05,
+              onChanged: (v) =>
+                  setState(() => _repeatPenalty = v.clamp(0.5, 2.0).toDouble()),
+            ),
+            SliderControl.integer(
+              label: 'Repeat Last N',
+              value: _repeatLastN,
+              min: 0,
+              max: 2048,
+              step: 16,
+              onChanged: (v) => setState(() => _repeatLastN = v.clamp(0, 2048)),
+            ),
+            SliderControl.decimal(
+              label: 'Presence Penalty',
+              value: _presencePenalty,
+              min: -2.0,
+              max: 2.0,
+              step: 0.1,
+              onChanged: (v) => setState(
+                () => _presencePenalty = v.clamp(-2.0, 2.0).toDouble(),
+              ),
+            ),
+            SliderControl.decimal(
+              label: 'Frequency Penalty',
+              value: _frequencyPenalty,
+              min: -2.0,
+              max: 2.0,
+              step: 0.1,
+              onChanged: (v) => setState(
+                () => _frequencyPenalty = v.clamp(-2.0, 2.0).toDouble(),
+              ),
+            ),
+            SwitchListTile(
+              title: const Text('Thinking'),
+              value: _thinking,
+              onChanged: (v) => setState(() => _thinking = v),
+            ),
           ],
         ),
       ),
@@ -144,6 +196,11 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
               batch: _batch,
               uBatch: _uBatch,
               miroStatMode: _miroStatMode,
+              repeatPenalty: _repeatPenalty,
+              repeatLastN: _repeatLastN,
+              presencePenalty: _presencePenalty,
+              frequencyPenalty: _frequencyPenalty,
+              thinking: _thinking,
             );
             Navigator.of(context).pop();
           },
