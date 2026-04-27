@@ -360,10 +360,19 @@ class _ComposerState extends State<Composer> {
                               icon: const Icon(Icons.send),
                               label: const Text('Send'),
                               onPressed: widget.enabled
-                                  ? () => _chat.send(
-                                      value.text.trim(),
-                                      tools: _selectedToolIds.toList(),
-                                    )
+                                  ? () {
+                                      final trimmed = value.text.trim();
+                                      _controller.clear();
+                                      _controller.selection =
+                                          const TextSelection.collapsed(
+                                            offset: 0,
+                                          );
+                                      _focusNode.requestFocus();
+                                      _chat.send(
+                                        trimmed,
+                                        tools: _selectedToolIds.toList(),
+                                      );
+                                    }
                                   : null,
                             ),
                           );
