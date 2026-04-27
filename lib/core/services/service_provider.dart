@@ -17,6 +17,7 @@ class ServiceProvider {
   final Map<Type, ServiceFactory> _transientServices = {};
 
   bool _initialized = false;
+  Future<void>? _disposing;
 
   T get<T extends Object>() {
     if (_singletonServices.containsKey(T)) {
@@ -41,21 +42,32 @@ class ServiceProvider {
     _initialized = true;
   }
 
-  void dispose() {
+  Future<void> dispose() => _disposing ??= _disposeServices();
+
+  Future<void> _disposeServices() async {
     _initialized = false;
-    _singletonServices.forEach((key, value) {
-      _disposeIfPossible(value);
-    });
+    final services = _singletonServices.values.toList().reversed.toList();
 
     _singletonServices.clear();
     _transientServices.clear();
+
+    try {
+      for (final service in services) {
+        await _disposeIfPossible(service);
+      }
+    } finally {
+      _disposing = null;
+    }
   }
 
-  void _disposeIfPossible(dynamic service) {
+  Future<void> _disposeIfPossible(dynamic service) async {
     if (service != null) {
       try {
         if (service.dispose is Function) {
-          service.dispose();
+          final result = service.dispose();
+          if (result is Future) {
+            await result;
+          }
           if (kDebugMode) {
             print('Disposed ${service.runtimeType}');
           }

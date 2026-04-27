@@ -314,13 +314,11 @@ class LlamaServerManager {
     return '$message\nRecent llama-server output:\n$recentOutput';
   }
 
-  void dispose() {
+  Future<void> dispose() async {
     if (_isDisposed) return;
-
-    stop();
-    chatClient?.dispose();
-
     _isDisposed = true;
+
+    await stop();
   }
 }
 

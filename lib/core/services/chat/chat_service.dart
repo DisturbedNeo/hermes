@@ -196,7 +196,7 @@ class ChatService {
     if (error != null) {
       messageStore.appendCurrentError(error);
       messageStore.clearCurrentId();
-      chatStream.stop(next: StreamState.error);
+      await chatStream.stop(next: StreamState.error);
       return;
     }
 
@@ -206,7 +206,7 @@ class ChatService {
       );
     }
 
-    chatStream.stop();
+    await chatStream.stop();
 
     final toolCalls = ToolCaller.extractToolCalls(messageStore.currentMessage);
     if (toolCalls.isNotEmpty) {
@@ -215,7 +215,7 @@ class ChatService {
       } catch (e) {
         messageStore.appendCurrentError(e);
         messageStore.clearCurrentId();
-        chatStream.stop(next: StreamState.error);
+        await chatStream.stop(next: StreamState.error);
       }
 
       return;
@@ -224,11 +224,15 @@ class ChatService {
     messageStore.clearCurrentId();
   }
 
-  void dispose() {
+  Future<void> dispose() async {
     if (_disposed) return;
-    messageStore.clearCurrentId();
-    chatStream.stop();
-    serverManager.dispose();
     _disposed = true;
+
+    messageStore.clearCurrentId();
+    try {
+      await chatStream.stop();
+    } finally {
+      await serverManager.dispose();
+    }
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -52,7 +53,7 @@ class _AppState extends State<App> with WidgetsBindingObserver {
       case AppLifecycleState.detached:
         // App is in background or terminated, clean up resources
         //_db.closeDatabase();
-        serviceProvider.dispose();
+        unawaited(serviceProvider.dispose());
         break;
       case AppLifecycleState.resumed:
         // App is visible again, reinitialize services if needed
@@ -68,17 +69,21 @@ class _AppState extends State<App> with WidgetsBindingObserver {
   }
 
   @override
-  Future<AppExitResponse> didRequestAppExit() {
-    serviceProvider.dispose();
+  Future<AppExitResponse> didRequestAppExit() async {
+    await serviceProvider.dispose();
 
-    return super.didRequestAppExit();
+    return await super.didRequestAppExit();
   }
 
   @override
   void reassemble() {
     super.reassemble();
 
-    serviceProvider.dispose();
+    unawaited(_reinitializeServices());
+  }
+
+  Future<void> _reinitializeServices() async {
+    await serviceProvider.dispose();
     serviceProvider.initialize();
   }
 
