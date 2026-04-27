@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hermes/core/helpers/file.dart';
 import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
+import 'package:hermes/core/models/model_session_diagnostics.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:path/path.dart' as p;
 
@@ -14,6 +15,7 @@ class LlamaServerManager {
   static const Duration _startupStallTimeout = Duration(minutes: 2);
 
   final ValueNotifier<LlamaServerHandle?> handle = ValueNotifier(null);
+  final ModelSessionDiagnostics diagnostics = ModelSessionDiagnostics();
   ChatClient? chatClient;
   String? currentModelName;
 
@@ -65,9 +67,30 @@ class LlamaServerManager {
     bool thinking = true,
   }) async {
     final generation = ++_startGeneration;
+    final snapshot = ModelConfigurationSnapshot(
+      modelName: modelName,
+      modelPath: modelPath,
+      llamaCppDirectory: llamaCppDirectory,
+      nCtx: nCtx,
+      nThreads: nThreads,
+      nGpuLayers: nGpuLayers,
+      temperature: temperature,
+      topP: topP,
+      topK: topK,
+      nBatch: nBatch,
+      nUBatch: nUBatch,
+      mirostat: mirostat,
+      repeatPenalty: repeatPenalty,
+      repeatLastN: repeatLastN,
+      presencePenalty: presencePenalty,
+      frequencyPenalty: frequencyPenalty,
+      thinking: thinking,
+    );
 
     if (llamaCppDirectory.isEmpty) {
-      throw FlutterError('llama.cpp directory not specified');
+      final error = FlutterError('llama.cpp directory not specified');
+      diagnostics.recordFailure(error);
+      throw error;
     }
 
     final llamaServerExe = await _resolveLlamaServerExecutable(
@@ -75,10 +98,12 @@ class LlamaServerManager {
     );
 
     if (llamaServerExe == null) {
-      throw FlutterError(
+      final error = FlutterError(
         'Could not find llama-server binary in $llamaCppDirectory. '
         'Make sure llama.cpp is built and the server binary exists.',
       );
+      diagnostics.recordFailure(error);
+      throw error;
     }
 
     final port = await _getFreePort();
@@ -109,21 +134,37 @@ class LlamaServerManager {
     await _stopHandles();
     _throwIfCancelled(generation);
 
-    final process = await Process.start(
-      llamaServerExe,
-      args,
-      workingDirectory: llamaCppDirectory,
+    final baseUrl = 'http://127.0.0.1:$port';
+    diagnostics.recordStarting(
+      snapshot: snapshot,
+      port: port,
+      baseUrl: baseUrl,
+      executablePath: llamaServerExe,
     );
+
+    final Process process;
+    try {
+      process = await Process.start(
+        llamaServerExe,
+        args,
+        workingDirectory: llamaCppDirectory,
+      );
+    } catch (e, stackTrace) {
+      diagnostics.recordFailure(e);
+      Error.throwWithStackTrace(e, stackTrace);
+    }
 
     final startupOutput = _StartupOutput();
 
     final stdoutSub = process.stdout.transform(utf8.decoder).listen((line) {
       startupOutput.add(line);
+      diagnostics.addLog('stdout', line);
       if (kDebugMode) print(line);
     });
 
     final stderrSub = process.stderr.transform(utf8.decoder).listen((line) {
       startupOutput.add(line);
+      diagnostics.addLog('stderr', line);
       if (kDebugMode) print(line);
     });
 
@@ -135,7 +176,20 @@ class LlamaServerManager {
 
     _startingHandle = newHandle;
 
-    final baseUrl = 'http://127.0.0.1:$port';
+    unawaited(
+      process.exitCode.then((code) {
+        if (handle.value == newHandle || _startingHandle == newHandle) {
+          diagnostics.recordProcessExit(code);
+        }
+
+        if (handle.value == newHandle) {
+          chatClient?.dispose();
+          chatClient = null;
+          currentModelName = null;
+          handle.value = null;
+        }
+      }),
+    );
 
     try {
       await _waitUntilReady(
@@ -158,10 +212,17 @@ class LlamaServerManager {
       currentModelName = modelName;
       _startingHandle = null;
       handle.value = newHandle;
+      diagnostics.recordReady();
     } catch (e, stackTrace) {
       chatClient = null;
       if (_startingHandle == newHandle) {
         _startingHandle = null;
+      }
+
+      if (e is LlamaServerStartupCancelled) {
+        diagnostics.recordCancelled();
+      } else {
+        diagnostics.recordFailure(e, recentOutput: startupOutput.recentOutput);
       }
 
       try {
@@ -186,6 +247,7 @@ class LlamaServerManager {
     handle.value = null;
     chatClient = null;
     currentModelName = null;
+    diagnostics.recordStopped();
 
     currentClient?.dispose();
 
@@ -342,6 +404,7 @@ class LlamaServerManager {
     _isDisposed = true;
 
     await stop();
+    diagnostics.dispose();
   }
 }
 

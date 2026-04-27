@@ -7,6 +7,7 @@ import 'package:hermes/core/enums/stream_state.dart';
 import 'package:hermes/core/services/chat/chat_stream.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
+import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/saved_chat.dart';
@@ -51,6 +52,7 @@ class ChatService extends ChangeNotifier {
   ChatService() {
     messageStore.setMessages([systemPrompt]);
     messageStore.addListener(_handleMessagesChanged);
+    chatStream.onStop = serverManager.diagnostics.recordStreamEnded;
   }
 
   Future<void> newChat() async {
@@ -114,6 +116,7 @@ class ChatService extends ChangeNotifier {
 
   void setCurrentModelSnapshot(ModelConfigurationSnapshot snapshot) {
     currentModelSnapshot = snapshot;
+    _updateContextEstimate();
     if (currentChatId != null) {
       _dirty = true;
       _scheduleAutosave();
@@ -238,6 +241,10 @@ class ChatService extends ChangeNotifier {
             upToIndexInclusive: contextIndex,
           );
 
+    serverManager.diagnostics.recordStreamStarted(
+      estimatedContextTokens: _estimateContextTokens(payload),
+    );
+
     final sub = client.streamMessage(
       messages: payload,
       extraParams: extraParams,
@@ -245,12 +252,36 @@ class ChatService extends ChangeNotifier {
 
     chatStream.attach(
       sub.listen(
-        messageStore.appendToken,
+        _handleStreamToken,
         onError: (e, _) async => await _handleStreamTerminal(error: e),
         onDone: () async => await _handleStreamTerminal(),
         cancelOnError: true,
       ),
     );
+  }
+
+  void _handleStreamToken(ChatToken token) {
+    serverManager.diagnostics.recordStreamOutput(_streamedText(token));
+    messageStore.appendToken(token);
+  }
+
+  int _estimateContextTokens(List<ChatMessage> messages) {
+    var characters = 0;
+
+    for (final message in messages) {
+      characters += message.content.length;
+    }
+
+    return (characters / 4).ceil();
+  }
+
+  String _streamedText(ChatToken token) {
+    return [
+      token.content,
+      token.reasoning,
+      token.tool?.name,
+      token.tool?.argumentsChunk,
+    ].whereType<String>().join();
   }
 
   Future<void> _runToolsAndContinue(List<BubbleToolCall> calls) async {
@@ -297,6 +328,7 @@ class ChatService extends ChangeNotifier {
 
   Future<void> _handleStreamTerminal({Object? error}) async {
     if (error != null) {
+      serverManager.diagnostics.recordStreamError(error);
       messageStore.appendCurrentError(error);
       messageStore.clearCurrentId();
       await chatStream.stop(next: StreamState.error);
@@ -310,6 +342,7 @@ class ChatService extends ChangeNotifier {
     }
 
     await chatStream.stop();
+    serverManager.diagnostics.recordStreamEnded();
 
     final toolCalls = ToolCaller.extractToolCalls(messageStore.currentMessage);
     if (toolCalls.isNotEmpty) {
@@ -345,9 +378,26 @@ class ChatService extends ChangeNotifier {
   }
 
   void _handleMessagesChanged() {
+    _updateContextEstimate();
     if (_disposed || _loadingSnapshot || currentChatId == null) return;
     _dirty = true;
     _scheduleAutosave();
+  }
+
+  void _updateContextEstimate() {
+    final snapshot = currentModelSnapshot;
+    if (snapshot == null || messageStore.messages.isEmpty) {
+      serverManager.diagnostics.updateContextEstimate(null);
+      return;
+    }
+
+    final payload = PayloadBuilder.buildPayloadWithTools(
+      messages: messageStore.messages,
+      upToIndexInclusive: messageStore.messages.length - 1,
+    );
+    serverManager.diagnostics.updateContextEstimate(
+      _estimateContextTokens(payload),
+    );
   }
 
   void _scheduleAutosave() {

@@ -1,15 +1,18 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:hermes/core/enums/diagnostics_visibility.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class PreferencesService {
+class PreferencesService extends ChangeNotifier {
   final Future<SharedPreferences> _prefs = SharedPreferences.getInstance();
 
   static const String _dataLocationKey = 'data_location_path';
   static const String _darkModeKey = 'is_dark_mode';
   static const String _modelsDirectory = 'models_directory';
   static const String _llamaCppDirectory = 'llama_cpp_directory';
+  static const String _diagnosticsVisibility = 'diagnostics_visibility';
   static const String _themeIdKey = 'theme_id';
   static const String _worldOverviewTabPrefKey = 'last_tab_index_';
 
@@ -91,5 +94,20 @@ class PreferencesService {
   Future<bool> setModelsDirectory(String directory) async =>
       (await _prefs).setString(_modelsDirectory, directory);
 
-  void dispose() {}
+  Future<DiagnosticsVisibility> getDiagnosticsVisibility() async =>
+      DiagnosticsVisibilityLabel.fromName(
+        (await _prefs).getString(_diagnosticsVisibility),
+      );
+
+  Future<bool> setDiagnosticsVisibility(
+    DiagnosticsVisibility visibility,
+  ) async {
+    final saved = await (await _prefs).setString(
+      _diagnosticsVisibility,
+      visibility.name,
+    );
+
+    if (saved) notifyListeners();
+    return saved;
+  }
 }

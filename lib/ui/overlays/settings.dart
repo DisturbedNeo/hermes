@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hermes/core/enums/diagnostics_visibility.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 
@@ -11,6 +12,7 @@ class Settings extends StatefulWidget {
 class _SettingsState extends State<Settings> {
   late final TextEditingController _llamaCppDirCtrl;
   late final TextEditingController _modelsDirCtrl;
+  DiagnosticsVisibility _diagnosticsVisibility = DiagnosticsVisibility.off;
 
   final PreferencesService preferencesService = serviceProvider
       .get<PreferencesService>();
@@ -18,6 +20,8 @@ class _SettingsState extends State<Settings> {
   void loadSettings() async {
     final llamaCppDir = await preferencesService.getLlamaCppDirectory();
     final modelsDir = await preferencesService.getModelsDirectory();
+    final diagnosticsVisibility = await preferencesService
+        .getDiagnosticsVisibility();
     if (!mounted) return;
     if (llamaCppDir is String && llamaCppDir.isNotEmpty) {
       _llamaCppDirCtrl.text = llamaCppDir;
@@ -25,6 +29,7 @@ class _SettingsState extends State<Settings> {
     if (modelsDir is String && modelsDir.isNotEmpty) {
       _modelsDirCtrl.text = modelsDir;
     }
+    _diagnosticsVisibility = diagnosticsVisibility;
     setState(() {});
   }
 
@@ -76,6 +81,32 @@ class _SettingsState extends State<Settings> {
                 hintText: '/home/you/Models',
                 prefixIcon: Icon(Icons.folder),
               ),
+            ),
+            const SizedBox(height: 16),
+
+            const Text(
+              'Diagnostics',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<DiagnosticsVisibility>(
+              initialValue: _diagnosticsVisibility,
+              decoration: const InputDecoration(
+                labelText: 'Session diagnostics',
+                prefixIcon: Icon(Icons.monitor_heart_outlined),
+                border: OutlineInputBorder(),
+              ),
+              items: DiagnosticsVisibility.values.map((visibility) {
+                return DropdownMenuItem(
+                  value: visibility,
+                  child: Text(visibility.label),
+                );
+              }).toList(),
+              onChanged: (visibility) async {
+                if (visibility == null) return;
+                setState(() => _diagnosticsVisibility = visibility);
+                await preferencesService.setDiagnosticsVisibility(visibility);
+              },
             ),
             const SizedBox(height: 16),
 

@@ -6,6 +6,7 @@ import 'package:hermes/core/enums/stream_state.dart';
 class ChatStream<T> extends ChangeNotifier {
   StreamState _state = StreamState.idle;
   StreamSubscription<T>? _sub;
+  VoidCallback? onStop;
 
   StreamState get state => _state;
   bool get isStreaming => _state == StreamState.streaming;
@@ -26,6 +27,7 @@ class ChatStream<T> extends ChangeNotifier {
     final s = _sub;
     _sub = null;
     await s?.cancel();
+    onStop?.call();
     setState(next);
   }
 }

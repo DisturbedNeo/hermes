@@ -5,6 +5,7 @@ import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/ui/chat/message/message_actions.dart';
 import 'package:hermes/ui/chat/composer.dart';
+import 'package:hermes/ui/chat/diagnostics_bar.dart';
 import 'package:hermes/ui/chat/message/message_bubble.dart';
 import 'package:hermes/ui/chat/message/message_row.dart';
 
@@ -84,6 +85,7 @@ class _ChatViewState extends State<ChatView> {
               ),
             ),
             const Divider(height: 1),
+            const DiagnosticsBar(),
             ValueListenableBuilder<LlamaServerHandle?>(
               valueListenable: _chat.serverManager.handle,
               builder: (_, handle, _) {
