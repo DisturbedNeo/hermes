@@ -1,4 +1,1 @@
-enum DeleteChoice {
-  thisOnly,
-  includeSubsequent
-}
+enum DeleteChoice { thisOnly, includeSubsequent }

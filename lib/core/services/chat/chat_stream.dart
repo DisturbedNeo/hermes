@@ -22,7 +22,7 @@ class ChatStream<T> extends ChangeNotifier {
     setState(StreamState.streaming);
   }
 
-  Future<void> stop({ StreamState next = StreamState.idle }) async {
+  Future<void> stop({StreamState next = StreamState.idle}) async {
     final s = _sub;
     _sub = null;
     await s?.cancel();

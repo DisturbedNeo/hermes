@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 class LabelledSection extends StatelessWidget {
   const LabelledSection({
-    super.key, 
+    super.key,
     required this.label,
     required this.child,
     this.helper,

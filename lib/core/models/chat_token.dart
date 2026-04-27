@@ -3,7 +3,7 @@ class ChatToken {
   final String? reasoning;
   final ToolCallDelta? tool;
 
-  ChatToken({ this.content, this.reasoning, this.tool });
+  ChatToken({this.content, this.reasoning, this.tool});
 }
 
 class ToolCallDelta {
@@ -12,10 +12,5 @@ class ToolCallDelta {
   final String? name;
   final String? argumentsChunk;
 
-  ToolCallDelta({
-    required this.index,
-    this.id,
-    this.name,
-    this.argumentsChunk,
-  });
+  ToolCallDelta({required this.index, this.id, this.name, this.argumentsChunk});
 }

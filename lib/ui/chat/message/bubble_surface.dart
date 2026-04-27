@@ -8,7 +8,7 @@ class BubbleSurface extends StatelessWidget {
   final bool enabled;
 
   const BubbleSurface({
-    super.key, 
+    super.key,
     required this.child,
     required this.borderRadius,
     required this.background,
@@ -25,10 +25,16 @@ class BubbleSurface extends StatelessWidget {
       child: InkWell(
         onTap: enabled ? onTap : null,
         borderRadius: borderRadius,
-        mouseCursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        mouseCursor: enabled
+            ? SystemMouseCursors.click
+            : SystemMouseCursors.basic,
         overlayColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.hovered)) return Colors.black.withValues(alpha: 0.05);
-          if (states.contains(WidgetState.focused))  return Colors.black.withValues(alpha: 0.08);
+          if (states.contains(WidgetState.hovered)) {
+            return Colors.black.withValues(alpha: 0.05);
+          }
+          if (states.contains(WidgetState.focused)) {
+            return Colors.black.withValues(alpha: 0.08);
+          }
           return null;
         }),
         child: Padding(
@@ -36,7 +42,10 @@ class BubbleSurface extends StatelessWidget {
           child: Container(
             constraints: const BoxConstraints(maxWidth: 900),
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: background, borderRadius: borderRadius),
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: borderRadius,
+            ),
             child: child,
           ),
         ),

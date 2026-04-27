@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_factory.dart';
@@ -37,6 +38,9 @@ class ServiceProvider {
     registerSingleton(PreferencesService());
     registerSingleton(ThemeManager());
     registerSingleton(ToolService());
+    registerSingleton(
+      ChatLibraryService(preferencesService: get<PreferencesService>()),
+    );
     registerSingleton(ChatService());
 
     _initialized = true;

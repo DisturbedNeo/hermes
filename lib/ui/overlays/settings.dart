@@ -12,8 +12,8 @@ class _SettingsState extends State<Settings> {
   late final TextEditingController _llamaCppDirCtrl;
   late final TextEditingController _modelsDirCtrl;
 
-  final PreferencesService preferencesService =
-      serviceProvider.get<PreferencesService>();
+  final PreferencesService preferencesService = serviceProvider
+      .get<PreferencesService>();
 
   void loadSettings() async {
     final llamaCppDir = await preferencesService.getLlamaCppDirectory();
@@ -51,8 +51,10 @@ class _SettingsState extends State<Settings> {
         padding: const EdgeInsets.all(16),
         child: ListView(
           children: [
-            const Text('Settings',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            const Text(
+              'Settings',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 12),
 
             // llama.cpp Directory
@@ -86,9 +88,9 @@ class _SettingsState extends State<Settings> {
                 await preferencesService.setModelsDirectory(modelsDir);
 
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Saved')),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('Saved')));
                   setState(() {});
                 }
               },

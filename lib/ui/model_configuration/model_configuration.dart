@@ -1,28 +1,25 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/ui/model_configuration/slider_control.dart';
 
 typedef ModelConfigurationConfirm =
-    Future<void> Function({
-      required int ctx,
-      required int threads,
-      required int? gpuLayers,
-      required double temperature,
-      required double topP,
-      required int topK,
-      required int batch,
-      required int uBatch,
-      required int miroStatMode,
-      required double repeatPenalty,
-      required int repeatLastN,
-      required double presencePenalty,
-      required double frequencyPenalty,
-      required bool thinking,
-    });
+    Future<void> Function(ModelConfigurationSnapshot snapshot);
 
 class ModelConfiguration extends StatefulWidget {
-  const ModelConfiguration({super.key, required this.onConfirm, this.onCancel});
+  const ModelConfiguration({
+    super.key,
+    required this.modelName,
+    required this.modelPath,
+    required this.llamaCppDirectory,
+    required this.onConfirm,
+    this.onCancel,
+  });
+
+  final String modelName;
+  final String modelPath;
+  final String llamaCppDirectory;
 
   final ModelConfigurationConfirm onConfirm;
 
@@ -56,20 +53,25 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
 
     try {
       await widget.onConfirm(
-        ctx: _ctx * 1024,
-        threads: _threads,
-        gpuLayers: _gpuLayers,
-        temperature: _temperature,
-        topP: _topP,
-        topK: _topK,
-        batch: _batch,
-        uBatch: _uBatch,
-        miroStatMode: _miroStatMode,
-        repeatPenalty: _repeatPenalty,
-        repeatLastN: _repeatLastN,
-        presencePenalty: _presencePenalty,
-        frequencyPenalty: _frequencyPenalty,
-        thinking: _thinking,
+        ModelConfigurationSnapshot(
+          modelName: widget.modelName,
+          modelPath: widget.modelPath,
+          llamaCppDirectory: widget.llamaCppDirectory,
+          nCtx: _ctx * 1024,
+          nThreads: _threads,
+          nGpuLayers: _gpuLayers,
+          temperature: _temperature,
+          topP: _topP,
+          topK: _topK,
+          nBatch: _batch,
+          nUBatch: _uBatch,
+          mirostat: _miroStatMode,
+          repeatPenalty: _repeatPenalty,
+          repeatLastN: _repeatLastN,
+          presencePenalty: _presencePenalty,
+          frequencyPenalty: _frequencyPenalty,
+          thinking: _thinking,
+        ),
       );
 
       if (mounted) {

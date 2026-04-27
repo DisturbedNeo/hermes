@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 
 class NumberField extends StatelessWidget {
   const NumberField({
-    super.key, 
+    super.key,
     required this.controller,
     required this.enabled,
     required this.label,

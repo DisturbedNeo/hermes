@@ -13,11 +13,13 @@ class MessageStore extends ChangeNotifier {
   final Map<String, int> _indexMap = {};
   String? _currentId;
 
-  UnmodifiableListView<Bubble> get messages => _messageCache ??= UnmodifiableListView(_messages);
+  UnmodifiableListView<Bubble> get messages =>
+      _messageCache ??= UnmodifiableListView(_messages);
   set messages(List<Bubble> val) {
     _messages = val;
     _messageCache = UnmodifiableListView(val);
   }
+
   int? get currentIndex => _currentId == null ? null : _indexMap[_currentId!];
   Bubble? get currentMessage {
     final i = currentIndex;
@@ -33,7 +35,9 @@ class MessageStore extends ChangeNotifier {
     messages = List<Bubble>.of(items, growable: true);
     _rebuildIndex();
     _currentId = currentId;
-    if (_currentId != null && !_indexMap.containsKey(_currentId)) _currentId = null;
+    if (_currentId != null && !_indexMap.containsKey(_currentId)) {
+      _currentId = null;
+    }
     notifyListeners();
   }
 
@@ -61,7 +65,10 @@ class MessageStore extends ChangeNotifier {
   bool replaceById(String id, Bubble newMessage) {
     final index = _indexMap[id];
     if (index == null) return false;
-    assert(id == newMessage.id, 'Replacing with a different id will break indexing');
+    assert(
+      id == newMessage.id,
+      'Replacing with a different id will break indexing',
+    );
     _messages[index] = newMessage;
     notifyListeners();
     return true;
@@ -104,7 +111,7 @@ class MessageStore extends ChangeNotifier {
     return true;
   }
 
-    String ensureAssistantTarget(String? assistantId) {
+  String ensureAssistantTarget(String? assistantId) {
     String? targetId = assistantId;
 
     if (targetId == null) {
@@ -118,8 +125,7 @@ class MessageStore extends ChangeNotifier {
       targetId = bubble.id;
     } else {
       final index = messages.indexWhere((m) => m.id == targetId);
-      if (index == -1 ||
-          messages[index].role != MessageRole.assistant) {
+      if (index == -1 || messages[index].role != MessageRole.assistant) {
         final bubble = Bubble(
           id: uuid.v7(),
           role: MessageRole.assistant,
@@ -149,6 +155,12 @@ class MessageStore extends ChangeNotifier {
   }
 
   void _rebuildIndex() {
-    _indexMap..clear()..addEntries(Iterable<int>.generate(_messages.length).map((i) => MapEntry(_messages[i].id, i)));
+    _indexMap
+      ..clear()
+      ..addEntries(
+        Iterable<int>.generate(
+          _messages.length,
+        ).map((i) => MapEntry(_messages[i].id, i)),
+      );
   }
 }

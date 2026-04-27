@@ -5,10 +5,7 @@ class ThrottledScheduler {
   final void Function() onTick;
   Timer? _timer;
 
-  ThrottledScheduler({
-    required this.interval,
-    required this.onTick,
-  });
+  ThrottledScheduler({required this.interval, required this.onTick});
 
   void schedule() {
     _timer ??= Timer(interval, () {
@@ -16,7 +13,7 @@ class ThrottledScheduler {
       onTick();
     });
   }
-  
+
   void cancel() {
     _timer?.cancel();
     _timer = null;

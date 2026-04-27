@@ -37,7 +37,10 @@ class MessageActions extends StatelessWidget {
       icon: Icons.copy_rounded,
       tooltip: 'Copy Text',
       onTap: (message) {
-        if (chat.chatStream.isStreaming && chat.messageStore.last.id == message.id) return;
+        if (chat.chatStream.isStreaming &&
+            chat.messageStore.last.id == message.id) {
+          return;
+        }
         Clipboard.setData(ClipboardData(text: message.text));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -87,8 +90,12 @@ class MessageActions extends StatelessWidget {
         if (choice == null) return;
 
         switch (choice) {
-          case DeleteChoice.thisOnly: chat.messageStore.removeById(message.id); break;
-          case DeleteChoice.includeSubsequent: chat.messageStore.removeFromId(message.id); break;
+          case DeleteChoice.thisOnly:
+            chat.messageStore.removeById(message.id);
+            break;
+          case DeleteChoice.includeSubsequent:
+            chat.messageStore.removeFromId(message.id);
+            break;
         }
       },
     );

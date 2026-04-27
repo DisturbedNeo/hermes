@@ -55,9 +55,7 @@ class _ChatState extends State<Chat> {
       body: Stack(
         clipBehavior: Clip.none,
         children: [
-          Positioned.fill(
-            child: ChatView(),
-          ),
+          Positioned.fill(child: ChatView()),
 
           if (isChatListOpen || isSettingsOpen) ...[
             Positioned.fill(
@@ -80,12 +78,12 @@ class _ChatState extends State<Chat> {
             open: isChatListOpen,
             width: 360,
             child: ChatList(
-              onOpenChat: (id) {
-                _chat.openChat(id);
+              onOpenChat: (id) async {
+                await _chat.openChat(id);
                 setState(() => isChatListOpen = false);
               },
-              onNewChat: () {
-                _chat.newChat();
+              onNewChat: () async {
+                await _chat.newChat();
                 setState(() => isChatListOpen = false);
               },
             ),

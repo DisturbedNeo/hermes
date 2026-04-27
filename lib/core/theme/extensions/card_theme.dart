@@ -74,8 +74,9 @@ class HermesCardTheme extends ThemeExtension<HermesCardTheme> {
       cardTheme: _lerpCardTheme(cardTheme, other.cardTheme, t),
       defaultPadding: lerpDouble(defaultPadding, other.defaultPadding, t),
       defaultMargin: lerpDouble(defaultMargin, other.defaultMargin, t),
-      defaultBorderRadius:
-          t < 0.5 ? defaultBorderRadius : other.defaultBorderRadius,
+      defaultBorderRadius: t < 0.5
+          ? defaultBorderRadius
+          : other.defaultBorderRadius,
     );
   }
 

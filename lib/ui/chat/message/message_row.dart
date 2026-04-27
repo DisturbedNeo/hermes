@@ -32,8 +32,9 @@ class MessageRow extends StatelessWidget {
           );
 
           return Column(
-            crossAxisAlignment:
-                isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            crossAxisAlignment: isUser
+                ? CrossAxisAlignment.end
+                : CrossAxisAlignment.start,
             children: [
               ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: bubbleCap),
@@ -42,8 +43,9 @@ class MessageRow extends StatelessWidget {
               if (hasActions) ...[
                 const SizedBox(height: 6),
                 Align(
-                  alignment:
-                      isUser ? Alignment.centerRight : Alignment.centerLeft,
+                  alignment: isUser
+                      ? Alignment.centerRight
+                      : Alignment.centerLeft,
                   child: actions!,
                 ),
               ],

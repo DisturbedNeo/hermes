@@ -4,9 +4,9 @@ class KeyHint extends StatelessWidget {
   final String label;
   final String shortcut;
   final Color hintColor;
-  
+
   const KeyHint({
-    super.key, 
+    super.key,
     required this.label,
     required this.shortcut,
     required this.hintColor,

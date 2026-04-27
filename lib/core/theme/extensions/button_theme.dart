@@ -39,7 +39,9 @@ class HermesButtonTheme extends ThemeExtension<HermesButtonTheme> {
       elevation: const WidgetStatePropertyAll(3),
       shadowColor: WidgetStatePropertyAll(primary.withAlpha(128)),
       shape: const WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(8)),
+        ),
       ),
       padding: const WidgetStatePropertyAll(
         EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -60,7 +62,9 @@ class HermesButtonTheme extends ThemeExtension<HermesButtonTheme> {
       elevation: const WidgetStatePropertyAll(2),
       shadowColor: WidgetStatePropertyAll(secondary.withAlpha(128)),
       shape: const WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(8)),
+        ),
       ),
       padding: const WidgetStatePropertyAll(
         EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -101,7 +105,9 @@ class HermesButtonTheme extends ThemeExtension<HermesButtonTheme> {
         return null;
       }),
       shape: const WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(8)),
+        ),
       ),
       padding: const WidgetStatePropertyAll(
         EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -122,7 +128,9 @@ class HermesButtonTheme extends ThemeExtension<HermesButtonTheme> {
       elevation: const WidgetStatePropertyAll(3),
       shadowColor: WidgetStatePropertyAll(error.withAlpha(128)),
       shape: const WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(8)),
+        ),
       ),
       padding: const WidgetStatePropertyAll(
         EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -153,7 +161,9 @@ class HermesButtonTheme extends ThemeExtension<HermesButtonTheme> {
       elevation: const WidgetStatePropertyAll(4),
       shadowColor: WidgetStatePropertyAll(Colors.black.withAlpha(77)),
       shape: const WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(8)),
+        ),
       ),
       padding: const WidgetStatePropertyAll(
         EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -174,7 +184,9 @@ class HermesButtonTheme extends ThemeExtension<HermesButtonTheme> {
       elevation: const WidgetStatePropertyAll(3),
       shadowColor: WidgetStatePropertyAll(Colors.black.withAlpha(77)),
       shape: const WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(8)),
+        ),
       ),
       padding: const WidgetStatePropertyAll(
         EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -215,7 +227,9 @@ class HermesButtonTheme extends ThemeExtension<HermesButtonTheme> {
         return null;
       }),
       shape: const WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(8)),
+        ),
       ),
       padding: const WidgetStatePropertyAll(
         EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -236,7 +250,9 @@ class HermesButtonTheme extends ThemeExtension<HermesButtonTheme> {
       elevation: const WidgetStatePropertyAll(4),
       shadowColor: WidgetStatePropertyAll(Colors.black.withValues(alpha: 0.3)),
       shape: const WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(8)),
+        ),
       ),
       padding: const WidgetStatePropertyAll(
         EdgeInsets.symmetric(horizontal: 20, vertical: 12),

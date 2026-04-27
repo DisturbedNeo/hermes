@@ -1,13 +1,18 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/enums/stream_state.dart';
 import 'package:hermes/core/services/chat/chat_stream.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_token.dart';
+import 'package:hermes/core/models/model_configuration_snapshot.dart';
+import 'package:hermes/core/models/saved_chat.dart';
 import 'package:hermes/core/helpers/chat/assistant_ops.dart';
 import 'package:hermes/core/helpers/chat/content_normaliser.dart';
+import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
 import 'package:hermes/core/helpers/chat/tool_caller.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
@@ -15,12 +20,14 @@ import 'package:hermes/core/helpers/chat/payload_builder.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/core/services/tool_service.dart';
 
-class ChatService {
+class ChatService extends ChangeNotifier {
   final LlamaServerManager serverManager = LlamaServerManager();
   final MessageStore messageStore = MessageStore();
   final ChatStream chatStream = ChatStream<ChatToken>();
 
   final ToolService _toolService = serviceProvider.get<ToolService>();
+  final ChatLibraryService _chatLibrary = serviceProvider
+      .get<ChatLibraryService>();
 
   final Bubble systemPrompt = Bubble(
     id: uuid.v7(),
@@ -30,21 +37,117 @@ class ChatService {
   );
 
   bool _disposed = false;
+  bool _loadingSnapshot = false;
+  bool _dirty = false;
+  Timer? _autosaveTimer;
+  Future<void> _saveChain = Future.value();
+
+  String? currentChatId;
+  SavedChat? currentSavedChat;
+  ModelConfigurationSnapshot? currentModelSnapshot;
+  ModelConfigurationSnapshot? pendingModelRestore;
+  String? pendingModelRestoreIssue;
 
   ChatService() {
     messageStore.setMessages([systemPrompt]);
+    messageStore.addListener(_handleMessagesChanged);
   }
 
   Future<void> newChat() async {
+    await flushCurrentChat();
+
     if (chatStream.isStreaming) {
       messageStore.clearCurrentId();
       await chatStream.stop();
     }
 
+    _clearSavedState();
     messageStore.setMessages([systemPrompt]);
   }
 
-  void openChat(String id) {}
+  Future<void> openChat(String id) async {
+    await flushCurrentChat();
+
+    if (chatStream.isStreaming) {
+      messageStore.clearCurrentId();
+      await chatStream.stop();
+    }
+
+    final snapshot = await _chatLibrary.getChat(id);
+    if (snapshot == null) return;
+
+    _loadingSnapshot = true;
+    try {
+      currentChatId = snapshot.chat.id;
+      currentSavedChat = snapshot.chat;
+      _dirty = false;
+      messageStore.setMessages(snapshot.messages);
+      await _chatLibrary.markOpened(snapshot.chat.id);
+      await _prepareModelRestorePrompt(snapshot.chat.modelSnapshot);
+    } finally {
+      _loadingSnapshot = false;
+    }
+
+    notifyListeners();
+  }
+
+  Future<SavedChat> saveCurrentChat({String? title}) async {
+    return _queueSave(title: title, force: true);
+  }
+
+  Future<void> deleteSavedChat(String chatId) async {
+    await _chatLibrary.deleteChat(chatId);
+    if (currentChatId == chatId) {
+      _clearSavedState();
+      await newChat();
+    }
+  }
+
+  Future<void> flushCurrentChat() async {
+    _autosaveTimer?.cancel();
+    _autosaveTimer = null;
+    if (currentChatId != null && _dirty) {
+      await _queueSave(force: true);
+    }
+    await _saveChain;
+  }
+
+  void setCurrentModelSnapshot(ModelConfigurationSnapshot snapshot) {
+    currentModelSnapshot = snapshot;
+    if (currentChatId != null) {
+      _dirty = true;
+      _scheduleAutosave();
+    }
+
+    if (pendingModelRestore?.matches(snapshot) ?? false) {
+      pendingModelRestore = null;
+      pendingModelRestoreIssue = null;
+    }
+
+    notifyListeners();
+  }
+
+  Future<void> restorePendingModel() async {
+    final snapshot = pendingModelRestore;
+    if (snapshot == null) return;
+
+    if (!await File(snapshot.modelPath).exists()) {
+      throw FlutterError('Saved model file not found: ${snapshot.modelPath}');
+    }
+
+    pendingModelRestore = null;
+    pendingModelRestoreIssue = null;
+    notifyListeners();
+
+    await serverManager.startWithSnapshot(snapshot);
+    setCurrentModelSnapshot(snapshot);
+  }
+
+  void dismissPendingModelRestore() {
+    pendingModelRestore = null;
+    pendingModelRestoreIssue = null;
+    notifyListeners();
+  }
 
   void insertMessage(String text, MessageRole role) {
     if (chatStream.isStreaming) return;
@@ -224,15 +327,92 @@ class ChatService {
     messageStore.clearCurrentId();
   }
 
+  @override
   Future<void> dispose() async {
     if (_disposed) return;
-    _disposed = true;
 
+    messageStore.removeListener(_handleMessagesChanged);
+    _autosaveTimer?.cancel();
+    await flushCurrentChat();
+    _disposed = true;
     messageStore.clearCurrentId();
     try {
       await chatStream.stop();
     } finally {
       await serverManager.dispose();
+      super.dispose();
     }
+  }
+
+  void _handleMessagesChanged() {
+    if (_disposed || _loadingSnapshot || currentChatId == null) return;
+    _dirty = true;
+    _scheduleAutosave();
+  }
+
+  void _scheduleAutosave() {
+    _autosaveTimer?.cancel();
+    _autosaveTimer = Timer(
+      const Duration(milliseconds: 600),
+      () => unawaited(_queueSave(force: true)),
+    );
+  }
+
+  Future<SavedChat> _queueSave({String? title, bool force = false}) {
+    _autosaveTimer?.cancel();
+    _autosaveTimer = null;
+
+    final completer = Completer<SavedChat>();
+
+    final operation = _saveChain.then((_) async {
+      if (_disposed) {
+        throw StateError('ChatService is disposed');
+      }
+
+      if (!force && currentChatId != null && !_dirty) {
+        return currentSavedChat!;
+      }
+
+      final saved = await _chatLibrary.saveChatSnapshot(
+        chatId: currentChatId,
+        title: title,
+        messages: messageStore.messages.toList(),
+        modelSnapshot: currentModelSnapshot,
+      );
+
+      currentChatId = saved.id;
+      currentSavedChat = saved;
+      _dirty = false;
+      notifyListeners();
+      return saved;
+    });
+
+    _saveChain = operation.then<void>((_) {});
+    operation.then(completer.complete, onError: completer.completeError);
+    return completer.future;
+  }
+
+  Future<void> _prepareModelRestorePrompt(
+    ModelConfigurationSnapshot? snapshot,
+  ) async {
+    pendingModelRestore = null;
+    pendingModelRestoreIssue = null;
+
+    if (snapshot == null || snapshot.matches(currentModelSnapshot)) return;
+
+    pendingModelRestore = snapshot;
+    if (!await File(snapshot.modelPath).exists()) {
+      pendingModelRestoreIssue =
+          'Saved model file not found: ${snapshot.modelPath}';
+    }
+  }
+
+  void _clearSavedState() {
+    currentChatId = null;
+    currentSavedChat = null;
+    pendingModelRestore = null;
+    pendingModelRestoreIssue = null;
+    _dirty = false;
+    notifyListeners();
   }
 }

@@ -5,7 +5,9 @@ import 'package:hermes/core/services/service_provider.dart';
 import 'package:path/path.dart' as p;
 
 Future<Map<String, File>> getModels() async {
-  final modelsDirectoryPath = await serviceProvider.get<PreferencesService>().getModelsDirectory();
+  final modelsDirectoryPath = await serviceProvider
+      .get<PreferencesService>()
+      .getModelsDirectory();
 
   if (modelsDirectoryPath == null) {
     return {};
@@ -18,7 +20,10 @@ Future<Map<String, File>> getModels() async {
   }
 
   final models = <String, File>{};
-  final shardPattern = RegExp(r'^(.*)-(\d{5})-of-(\d{5})\.gguf$', caseSensitive: false);
+  final shardPattern = RegExp(
+    r'^(.*)-(\d{5})-of-(\d{5})\.gguf$',
+    caseSensitive: false,
+  );
 
   for (final entity in modelsDirectory.listSync().whereType<File>()) {
     final name = p.basename(entity.path);

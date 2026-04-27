@@ -28,7 +28,27 @@ class _ModelPickerState extends State<ModelPicker> {
   @override
   void initState() {
     super.initState();
+    _chatService.addListener(_syncSelectedFromActiveModel);
+    _chatService.serverManager.handle.addListener(_syncSelectedFromActiveModel);
+    _syncSelectedFromActiveModel();
     _loadModels();
+  }
+
+  @override
+  void dispose() {
+    _chatService.removeListener(_syncSelectedFromActiveModel);
+    _chatService.serverManager.handle.removeListener(_syncSelectedFromActiveModel);
+    super.dispose();
+  }
+
+  void _syncSelectedFromActiveModel() {
+    final activeModel = _chatService.serverManager.currentModelName;
+    if (_selected == activeModel) return;
+    if (!mounted) {
+      _selected = activeModel;
+      return;
+    }
+    setState(() => _selected = activeModel);
   }
 
   Future<void> _loadModels() async {
@@ -87,6 +107,12 @@ class _ModelPickerState extends State<ModelPicker> {
       );
     }
 
+    final aliases = _models.keys.toList()..sort((a, b) => a.compareTo(b));
+    final selected = _selected;
+    if (selected != null && !aliases.contains(selected)) {
+      aliases.insert(0, selected);
+    }
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -108,91 +134,60 @@ class _ModelPickerState extends State<ModelPicker> {
                       vertical: 4,
                     ),
                     dropdownColor: bgColor,
-                    items:
-                        (_models.keys.toList()..sort((a, b) => a.compareTo(b)))
-                            .map((alias) {
-                              return DropdownMenuItem(
-                                value: alias,
-                                child: Text(
-                                  alias,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              );
-                            })
-                            .toList(),
-                    onChanged: (v) {
+                    items: aliases.map((alias) {
+                      final modelIsAvailable = _models.containsKey(alias);
+                      return DropdownMenuItem(
+                        value: alias,
+                        enabled: modelIsAvailable,
+                        child: Text(
+                          modelIsAvailable ? alias : '$alias (loaded)',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (v) async {
                       if (v == null || !_models.containsKey(v)) return;
                       final file = _models[v]!;
+                      final llamaCppDirectory =
+                          await _preferencesService.getLlamaCppDirectory() ??
+                          '';
+                      if (!context.mounted) return;
 
                       showDialog<void>(
                         context: context,
                         barrierDismissible: false,
                         builder: (_) => ModelConfiguration(
+                          modelName: v,
+                          modelPath: file.path,
+                          llamaCppDirectory: llamaCppDirectory,
                           onCancel: _chatService.serverManager.stop,
-                          onConfirm:
-                              ({
-                                required int ctx,
-                                required int threads,
-                                required int? gpuLayers,
-                                required double temperature,
-                                required double topP,
-                                required int topK,
-                                required int batch,
-                                required int uBatch,
-                                required int miroStatMode,
-                                required double repeatPenalty,
-                                required int repeatLastN,
-                                required double presencePenalty,
-                                required double frequencyPenalty,
-                                required bool thinking,
-                              }) async {
-                                setState(() {
-                                  _selected = v;
-                                  _loading = true;
-                                  _error = null;
-                                });
+                          onConfirm: (snapshot) async {
+                            setState(() {
+                              _selected = v;
+                              _loading = true;
+                              _error = null;
+                            });
 
-                                try {
-                                  final llamaCppDirectory =
-                                      await _preferencesService
-                                          .getLlamaCppDirectory() ??
-                                      '';
+                            try {
+                              await _chatService.serverManager
+                                  .startWithSnapshot(snapshot);
+                              _chatService.setCurrentModelSnapshot(snapshot);
+                            } catch (_) {
+                              if (mounted) {
+                                setState(
+                                  () => _selected = _chatService
+                                      .serverManager
+                                      .currentModelName,
+                                );
+                              }
 
-                                  await _chatService.serverManager.start(
-                                    llamaCppDirectory: llamaCppDirectory,
-                                    modelPath: file.path,
-                                    modelName: v,
-                                    nCtx: ctx,
-                                    nThreads: threads,
-                                    nGpuLayers: gpuLayers ?? 999,
-                                    temperature: temperature,
-                                    topP: topP,
-                                    topK: topK,
-                                    nBatch: batch,
-                                    nUBatch: uBatch,
-                                    mirostat: miroStatMode,
-                                    repeatPenalty: repeatPenalty,
-                                    repeatLastN: repeatLastN,
-                                    presencePenalty: presencePenalty,
-                                    frequencyPenalty: frequencyPenalty,
-                                    thinking: thinking,
-                                  );
-                                } catch (_) {
-                                  if (mounted) {
-                                    setState(
-                                      () => _selected = _chatService
-                                          .serverManager
-                                          .currentModelName,
-                                    );
-                                  }
-
-                                  rethrow;
-                                } finally {
-                                  if (mounted) {
-                                    setState(() => _loading = false);
-                                  }
-                                }
-                              },
+                              rethrow;
+                            } finally {
+                              if (mounted) {
+                                setState(() => _loading = false);
+                              }
+                            }
+                          },
                         ),
                       );
                     },

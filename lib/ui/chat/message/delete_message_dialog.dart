@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hermes/core/enums/delete_choice.dart';
 
 class DeleteMessageDialog extends StatefulWidget {
-  const DeleteMessageDialog({ super.key });
+  const DeleteMessageDialog({super.key});
 
   @override
   State<StatefulWidget> createState() => _DeleteMessageDialogState();

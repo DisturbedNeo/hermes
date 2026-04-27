@@ -54,12 +54,12 @@ class BubbleEditor extends StatelessWidget {
             TextButton(
               onPressed: onCancel,
               style: TextButton.styleFrom(foregroundColor: fg),
-              child: const Text('Cancel')
+              child: const Text('Cancel'),
             ),
             TextButton(
-              onPressed: onSave, 
+              onPressed: onSave,
               style: TextButton.styleFrom(foregroundColor: fg),
-              child: const Text('Save')
+              child: const Text('Save'),
             ),
           ],
         ),

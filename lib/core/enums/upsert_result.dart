@@ -1,4 +1,1 @@
-enum UpsertResult {
-  inserted,
-  updated
-}
+enum UpsertResult { inserted, updated }

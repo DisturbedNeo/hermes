@@ -7,7 +7,13 @@ class Bubble {
   final String reasoning;
   final Map<int, BubbleToolCall> tools;
 
-  const Bubble({required this.id, required this.role, required this.text, required this.reasoning, this.tools = const {}});
+  const Bubble({
+    required this.id,
+    required this.role,
+    required this.text,
+    required this.reasoning,
+    this.tools = const {},
+  });
 
   Bubble copyWith({
     String? id,
@@ -32,12 +38,7 @@ class BubbleToolCall {
   final String? arguments;
   final String? result;
 
-  const BubbleToolCall({
-    this.id,
-    this.name,
-    this.arguments,
-    this.result
-  });
+  const BubbleToolCall({this.id, this.name, this.arguments, this.result});
 
   BubbleToolCall copyWith({
     String? id,

@@ -84,7 +84,7 @@ class HermesPalette extends ThemeExtension<HermesPalette> {
             ? Colors.white
             : Colors.black);
 
-    final calculatedOnTertiary = 
+    final calculatedOnTertiary =
         onTertiary ??
         (ThemeData.estimateBrightnessForColor(tertiary) == Brightness.dark
             ? Colors.white

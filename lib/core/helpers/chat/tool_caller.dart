@@ -58,7 +58,10 @@ class ToolCaller {
     required ToolCallDelta delta,
     required Map<int, BubbleToolCall> currentTools,
   }) {
-    final buffersForMsg = _toolBuffers.putIfAbsent(messageId, () => <int, StringBuffer>{});
+    final buffersForMsg = _toolBuffers.putIfAbsent(
+      messageId,
+      () => <int, StringBuffer>{},
+    );
     final buf = buffersForMsg.putIfAbsent(delta.index, () => StringBuffer());
 
     if (delta.argumentsChunk != null && delta.argumentsChunk!.isNotEmpty) {
@@ -107,14 +110,14 @@ class ToolCaller {
   static List<BubbleToolCall> extractToolCalls(Bubble? b) {
     if (b == null || b.tools.isEmpty) return const [];
 
-    final calls =
-        b.tools.entries.where((t) => t.value.result == null).toList()
-          ..sort((a, b) => a.key.compareTo(b.key));
+    final calls = b.tools.entries.where((t) => t.value.result == null).toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
 
     return calls.map((c) => c.value).toList();
   }
 
-  static Bubble withResult(Bubble bubble, {
+  static Bubble withResult(
+    Bubble bubble, {
     required int index,
     required String resultJson,
   }) {

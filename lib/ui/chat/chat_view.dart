@@ -28,10 +28,16 @@ class _ChatViewState extends State<ChatView> {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([_chat.messageStore, _chat.chatStream]),
+      animation: Listenable.merge([
+        _chat,
+        _chat.messageStore,
+        _chat.chatStream,
+      ]),
       builder: (_, _) {
         return Column(
           children: [
+            if (_chat.pendingModelRestore != null)
+              _ModelRestoreBanner(chat: _chat),
             Expanded(
               child: Stack(
                 children: [
@@ -57,7 +63,12 @@ class _ChatViewState extends State<ChatView> {
                             key: ValueKey('bubble_${b.id}'),
                             b: b,
                             onSave: (newReasoning, newText) {
-                              _chat.messageStore.upsert(b.copyWith(reasoning: newReasoning, text: newText));
+                              _chat.messageStore.upsert(
+                                b.copyWith(
+                                  reasoning: newReasoning,
+                                  text: newText,
+                                ),
+                              );
                             },
                             editable: !_chat.chatStream.isStreaming,
                           ),
@@ -82,6 +93,45 @@ class _ChatViewState extends State<ChatView> {
           ],
         );
       },
+    );
+  }
+}
+
+class _ModelRestoreBanner extends StatelessWidget {
+  final ChatService chat;
+
+  const _ModelRestoreBanner({required this.chat});
+
+  @override
+  Widget build(BuildContext context) {
+    final snapshot = chat.pendingModelRestore!;
+    final issue = chat.pendingModelRestoreIssue;
+
+    return MaterialBanner(
+      content: Text(
+        issue ??
+            'This chat was saved with ${snapshot.modelName}. Restore its saved model configuration?',
+      ),
+      actions: [
+        if (issue == null)
+          TextButton(
+            onPressed: () async {
+              try {
+                await chat.restorePendingModel();
+              } catch (e) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Failed to restore model: $e')),
+                );
+              }
+            },
+            child: const Text('Restore'),
+          ),
+        TextButton(
+          onPressed: chat.dismissPendingModelRestore,
+          child: const Text('Dismiss'),
+        ),
+      ],
     );
   }
 }

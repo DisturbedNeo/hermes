@@ -19,7 +19,7 @@ class SolarpunkTheme {
       palette: HermesPalette.custom(
         primary: const Color(0xFF324F33),
         secondary: const Color(0xFF94860E),
-        tertiary: const Color(0xFF13645C), 
+        tertiary: const Color(0xFF13645C),
 
         surface: const Color(0xFF0D1711),
       ),
@@ -31,7 +31,8 @@ class SolarpunkTheme {
       id: 'solarpunk',
       lightTheme: lightTheme,
       darkTheme: darkTheme,
-      description: 'A solarpunk blend of green life and bright tech — organic hues grounded by solar warmth and aqua light.',
+      description:
+          'A solarpunk blend of green life and bright tech — organic hues grounded by solar warmth and aqua light.',
       category: 'Nature-Tech',
     );
   }

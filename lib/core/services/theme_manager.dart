@@ -9,7 +9,8 @@ class ThemeManager with ChangeNotifier {
   bool _isDarkMode = false;
   late HermesThemeData _currentTheme;
 
-  final PreferencesService _preferencesService = serviceProvider.get<PreferencesService>();
+  final PreferencesService _preferencesService = serviceProvider
+      .get<PreferencesService>();
 
   static List<HermesThemeData> allThemes = [
     SolarpunkTheme.build(),

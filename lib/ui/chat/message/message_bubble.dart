@@ -114,7 +114,8 @@ class MessageBubbleState extends State<MessageBubble> {
                     fg: fg,
                     bg: bg,
                     onTap: _beginEdit,
-                    onToggleReasoning: () => setState(() => showReasoning = !showReasoning),
+                    onToggleReasoning: () =>
+                        setState(() => showReasoning = !showReasoning),
                   ),
           ),
         ),

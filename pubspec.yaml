@@ -39,6 +39,7 @@ dependencies:
   shared_preferences: ^2.5.3
   path_provider: ^2.1.5
   http: ^1.5.0
+  sqflite_common_ffi: ^2.3.6
   url_launcher: ^6.3.2
   markdown_widget: ^2.3.2+8
   analyzer: ^8.1.1

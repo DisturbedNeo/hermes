@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:hermes/core/helpers/file.dart';
 import 'package:hermes/core/models/llama_server_handle.dart';
+import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:path/path.dart' as p;
 
@@ -17,6 +18,28 @@ class LlamaServerManager {
   String? currentModelName;
 
   LlamaServerHandle? get current => handle.value;
+
+  Future<void> startWithSnapshot(ModelConfigurationSnapshot snapshot) {
+    return start(
+      llamaCppDirectory: snapshot.llamaCppDirectory,
+      modelPath: snapshot.modelPath,
+      modelName: snapshot.modelName,
+      nCtx: snapshot.nCtx,
+      nThreads: snapshot.nThreads,
+      nGpuLayers: snapshot.nGpuLayers,
+      temperature: snapshot.temperature,
+      topP: snapshot.topP,
+      topK: snapshot.topK,
+      nBatch: snapshot.nBatch,
+      nUBatch: snapshot.nUBatch,
+      mirostat: snapshot.mirostat,
+      repeatPenalty: snapshot.repeatPenalty,
+      repeatLastN: snapshot.repeatLastN,
+      presencePenalty: snapshot.presencePenalty,
+      frequencyPenalty: snapshot.frequencyPenalty,
+      thinking: snapshot.thinking,
+    );
+  }
 
   LlamaServerHandle? _startingHandle;
   var _startGeneration = 0;

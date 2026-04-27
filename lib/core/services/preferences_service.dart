@@ -61,24 +61,35 @@ class PreferencesService {
   }
 
   String getDatabaseFileName() => 'hermes.db';
-  
-  Future<String> getDefaultDataLocation() async => (await getApplicationDocumentsDirectory()).path;
-  Future<String> getFullDatabasePath() async => path.join(await getDataDirectoryPath(), getDatabaseFileName());
 
-  Future<bool> isDarkMode() async => (await _prefs).getBool(_darkModeKey) ?? false;
-  Future<bool> setDarkMode(bool isDarkMode) async => (await _prefs).setBool(_darkModeKey, isDarkMode);
+  Future<String> getDefaultDataLocation() async =>
+      (await getApplicationDocumentsDirectory()).path;
+  Future<String> getFullDatabasePath() async =>
+      path.join(await getDataDirectoryPath(), getDatabaseFileName());
+
+  Future<bool> isDarkMode() async =>
+      (await _prefs).getBool(_darkModeKey) ?? false;
+  Future<bool> setDarkMode(bool isDarkMode) async =>
+      (await _prefs).setBool(_darkModeKey, isDarkMode);
 
   Future<String?> getThemeId() async => (await _prefs).getString(_themeIdKey);
-  Future<bool> setThemeId(String themeId) async => (await _prefs).setString(_themeIdKey, themeId);
+  Future<bool> setThemeId(String themeId) async =>
+      (await _prefs).setString(_themeIdKey, themeId);
 
-  Future<int> getTabIndex(String worldId) async => (await _prefs).getInt('$_worldOverviewTabPrefKey$worldId') ?? 0;
-  Future<bool> setTabIndex(String worldId, int index) async => (await _prefs).setInt('$_worldOverviewTabPrefKey$worldId', index);
+  Future<int> getTabIndex(String worldId) async =>
+      (await _prefs).getInt('$_worldOverviewTabPrefKey$worldId') ?? 0;
+  Future<bool> setTabIndex(String worldId, int index) async =>
+      (await _prefs).setInt('$_worldOverviewTabPrefKey$worldId', index);
 
-  Future<String?> getLlamaCppDirectory() async => (await _prefs).getString(_llamaCppDirectory);
-  Future<bool> setLlamaCppDirectory(String path) async => (await _prefs).setString(_llamaCppDirectory, path);
+  Future<String?> getLlamaCppDirectory() async =>
+      (await _prefs).getString(_llamaCppDirectory);
+  Future<bool> setLlamaCppDirectory(String path) async =>
+      (await _prefs).setString(_llamaCppDirectory, path);
 
-  Future<String?> getModelsDirectory() async => (await _prefs).getString(_modelsDirectory);
-  Future<bool> setModelsDirectory(String directory) async => (await _prefs).setString(_modelsDirectory, directory);
+  Future<String?> getModelsDirectory() async =>
+      (await _prefs).getString(_modelsDirectory);
+  Future<bool> setModelsDirectory(String directory) async =>
+      (await _prefs).setString(_modelsDirectory, directory);
 
   void dispose() {}
 }

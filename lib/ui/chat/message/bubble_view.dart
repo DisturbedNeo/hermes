@@ -15,7 +15,7 @@ class BubbleView extends StatefulWidget {
   final VoidCallback onToggleReasoning;
 
   const BubbleView({
-    super.key, 
+    super.key,
     required this.reasoning,
     required this.text,
     required this.showReasoning,
@@ -53,11 +53,7 @@ class _BubbleViewState extends State<BubbleView> {
 
     if (widget.tools.isNotEmpty) {
       children.add(
-        ToolCallsView(
-          tools: widget.tools,
-          fg: widget.fg,
-          bg: widget.bg,
-        )
+        ToolCallsView(tools: widget.tools, fg: widget.fg, bg: widget.bg),
       );
     }
 

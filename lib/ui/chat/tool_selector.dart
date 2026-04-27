@@ -70,10 +70,7 @@ class _ToolSelectorState extends State<ToolSelector> {
                 children: [
                   const Text(
                     'Tools',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                   ),
                   const Spacer(),
                   Text(
