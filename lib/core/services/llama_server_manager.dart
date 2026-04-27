@@ -69,6 +69,7 @@ class LlamaServerManager {
       '--repeat-last-n', '$repeatLastN',
       '--presence-penalty', '$presencePenalty',
       '--frequency-penalty', '$frequencyPenalty',
+      '--no-mmap',
       if (!thinking) ...['--chat-template-kwargs', '{"enable_thinking": false}'],
       '--jinja',
     ];
