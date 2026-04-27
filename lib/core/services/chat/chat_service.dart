@@ -119,17 +119,26 @@ class ChatService {
     }();
 
     final extraParams = ToolCaller.buildExtraParams(
-      addGenerationPrompt: addGenerationPrompt, 
+      addGenerationPrompt: addGenerationPrompt,
       toolDefs: selectedToolIds.isNotEmpty
-        ? _toolService.getToolDefinitions(ids: selectedToolIds)
-        : const [],
-      );
+          ? _toolService.getToolDefinitions(ids: selectedToolIds)
+          : const [],
+    );
 
     final payload = includeToolResults
-      ? PayloadBuilder.buildPayloadWithTools(messages: messageStore.messages, upToIndexInclusive: contextIndex)
-      : PayloadBuilder.buildPayload(messages: messageStore.messages, upToIndexInclusive: contextIndex);
+        ? PayloadBuilder.buildPayloadWithTools(
+            messages: messageStore.messages,
+            upToIndexInclusive: contextIndex,
+          )
+        : PayloadBuilder.buildPayload(
+            messages: messageStore.messages,
+            upToIndexInclusive: contextIndex,
+          );
 
-    final sub = client.streamMessage(messages: payload, extraParams: extraParams);
+    final sub = client.streamMessage(
+      messages: payload,
+      extraParams: extraParams,
+    );
 
     chatStream.attach(
       sub.listen(
@@ -137,7 +146,7 @@ class ChatService {
         onError: (e, _) async => await _handleStreamTerminal(error: e),
         onDone: () async => await _handleStreamTerminal(),
         cancelOnError: true,
-      )
+      ),
     );
   }
 
@@ -175,21 +184,8 @@ class ChatService {
 
     messageStore.upsert(assistantBubble.copyWith(tools: updated));
 
-    final toolDisplay = ToolCaller.buildReadableToolResult(updated);
-
-    if (toolDisplay.isNotEmpty) {
-      messageStore.upsert(
-        Bubble(
-          id: uuid.v7(),
-          role: MessageRole.tool,
-          text: toolDisplay,
-          reasoning: '',
-        ),
-      );
-    }
-
     await _streamAssistantResponse(
-      includeToolResults: true, 
+      includeToolResults: true,
       addGenerationPrompt: false,
       selectedToolIds: const [],
       anchorId: assistantBubble.id,

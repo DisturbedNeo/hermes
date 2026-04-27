@@ -3,40 +3,45 @@ import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_message.dart';
 
 class PayloadBuilder {
-    static List<ChatMessage> buildPayload({ 
-      required List<Bubble> messages,
-      required int upToIndexInclusive 
-    }) {
+  static List<ChatMessage> buildPayload({
+    required List<Bubble> messages,
+    required int upToIndexInclusive,
+  }) {
     if (messages.isEmpty || upToIndexInclusive < 0) {
       return [];
     }
 
-    final clamped = upToIndexInclusive.clamp(0, messages.length - 1);
-    final conversation = messages.take(clamped + 1);
-
-    final payload = conversation
-        .map((m) { 
-          final mergedText = [
-            if (m.reasoning.isNotEmpty) m.reasoning,
-            m.text
-          ].join('\n');
-
-          return ChatMessage(role: m.role.wire, content: mergedText);
-        })
-        .toList();
+    final payload = _buildMessages(
+      messages: messages,
+      upToIndexInclusive: upToIndexInclusive,
+    );
 
     if (payload.isNotEmpty &&
         payload.last.role == MessageRole.assistant.wire &&
         payload.last.content.trim().isEmpty) {
-          payload.removeLast();
+      payload.removeLast();
     }
 
     return payload;
   }
 
-  static List<ChatMessage> buildPayloadWithTools({ 
+  static List<ChatMessage> buildPayloadWithTools({
     required List<Bubble> messages,
-    required int upToIndexInclusive
+    required int upToIndexInclusive,
+  }) {
+    if (messages.isEmpty || upToIndexInclusive < 0) {
+      return [];
+    }
+
+    return _buildMessages(
+      messages: messages,
+      upToIndexInclusive: upToIndexInclusive,
+    );
+  }
+
+  static List<ChatMessage> _buildMessages({
+    required List<Bubble> messages,
+    required int upToIndexInclusive,
   }) {
     final clamped = upToIndexInclusive.clamp(0, messages.length - 1);
     final conversation = messages.take(clamped + 1);
@@ -44,6 +49,10 @@ class PayloadBuilder {
     final result = <ChatMessage>[];
 
     for (final b in conversation) {
+      if (b.role == MessageRole.tool) {
+        continue;
+      }
+
       if (b.role == MessageRole.assistant && b.tools.isNotEmpty) {
         final toolCalls = b.tools.entries.map((entry) {
           final index = entry.key;
@@ -57,11 +66,7 @@ class PayloadBuilder {
         }).toList();
 
         result.add(
-          ChatMessage(
-            role: 'assistant',
-            content: b.text.isEmpty ? '' : b.text,
-            toolCalls: toolCalls,
-          ),
+          ChatMessage(role: 'assistant', content: b.text, toolCalls: toolCalls),
         );
 
         for (MapEntry<int, BubbleToolCall> entry in b.tools.entries) {
