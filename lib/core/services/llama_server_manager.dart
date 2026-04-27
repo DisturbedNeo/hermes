@@ -9,11 +9,17 @@ import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:path/path.dart' as p;
 
 class LlamaServerManager {
+  static const Duration _healthRequestTimeout = Duration(seconds: 2);
+  static const Duration _startupStallTimeout = Duration(minutes: 2);
+
   final ValueNotifier<LlamaServerHandle?> handle = ValueNotifier(null);
   ChatClient? chatClient;
+  String? currentModelName;
 
   LlamaServerHandle? get current => handle.value;
 
+  LlamaServerHandle? _startingHandle;
+  var _startGeneration = 0;
   var _isDisposed = false;
 
   Future<void> start({
@@ -35,15 +41,15 @@ class LlamaServerManager {
     double frequencyPenalty = 0.5,
     bool thinking = true,
   }) async {
-    await stop();
+    final generation = ++_startGeneration;
 
-    final port = await _getFreePort();
-
-    if (llamaCppDirectory.isEmpty){
+    if (llamaCppDirectory.isEmpty) {
       throw FlutterError('llama.cpp directory not specified');
     }
 
-    final llamaServerExe = await _resolveLlamaServerExecutable(llamaCppDirectory);
+    final llamaServerExe = await _resolveLlamaServerExecutable(
+      llamaCppDirectory,
+    );
 
     if (llamaServerExe == null) {
       throw FlutterError(
@@ -51,6 +57,9 @@ class LlamaServerManager {
         'Make sure llama.cpp is built and the server binary exists.',
       );
     }
+
+    final port = await _getFreePort();
+    _throwIfCancelled(generation);
 
     final args = <String>[
       '-m', modelPath,
@@ -74,33 +83,102 @@ class LlamaServerManager {
       '--jinja',
     ];
 
+    await _stopHandles();
+    _throwIfCancelled(generation);
+
     final process = await Process.start(
       llamaServerExe,
       args,
-      mode: ProcessStartMode.detachedWithStdio,
       workingDirectory: llamaCppDirectory,
     );
 
-    final stdoutSub = process.stdout.transform(utf8.decoder).listen((line) { if (kDebugMode) print(line); });
-    final stderrSub = process.stderr.transform(utf8.decoder).listen((line) { if (kDebugMode) print(line); });
+    final startupOutput = _StartupOutput();
 
-    final newHandle = LlamaServerHandle(process: process, stdoutSub: stdoutSub, stderrSub: stderrSub);
+    final stdoutSub = process.stdout.transform(utf8.decoder).listen((line) {
+      startupOutput.add(line);
+      if (kDebugMode) print(line);
+    });
+
+    final stderrSub = process.stderr.transform(utf8.decoder).listen((line) {
+      startupOutput.add(line);
+      if (kDebugMode) print(line);
+    });
+
+    final newHandle = LlamaServerHandle(
+      process: process,
+      stdoutSub: stdoutSub,
+      stderrSub: stderrSub,
+    );
+
+    _startingHandle = newHandle;
+
     final baseUrl = 'http://127.0.0.1:$port';
 
-    await _waitUntilReady(Uri.parse(baseUrl));
+    try {
+      await _waitUntilReady(
+        Uri.parse(baseUrl),
+        process,
+        startupOutput: startupOutput,
+        isCancelled: () => generation != _startGeneration,
+      );
 
-    chatClient = ChatClient(baseUrl: baseUrl, model: modelName);
+      _throwIfCancelled(generation);
 
-    handle.value = newHandle;
+      final newClient = ChatClient(baseUrl: baseUrl, model: modelName);
+
+      if (generation != _startGeneration) {
+        newClient.dispose();
+        throw const LlamaServerStartupCancelled();
+      }
+
+      chatClient = newClient;
+      currentModelName = modelName;
+      _startingHandle = null;
+      handle.value = newHandle;
+    } catch (e, stackTrace) {
+      chatClient = null;
+      if (_startingHandle == newHandle) {
+        _startingHandle = null;
+      }
+
+      try {
+        await newHandle.stop();
+      } catch (_) {}
+
+      Error.throwWithStackTrace(e, stackTrace);
+    }
   }
 
   Future<void> stop() async {
-    if (handle.value != null) {
-      await handle.value!.stop();
-    }
+    _startGeneration++;
+    await _stopHandles();
+  }
 
+  Future<void> _stopHandles() async {
+    final startingHandle = _startingHandle;
+    final currentHandle = handle.value;
+    final currentClient = chatClient;
+
+    _startingHandle = null;
     handle.value = null;
     chatClient = null;
+    currentModelName = null;
+
+    currentClient?.dispose();
+
+    if (startingHandle != null && startingHandle != currentHandle) {
+      await startingHandle.stop();
+    }
+
+    if (currentHandle != null) {
+      await currentHandle.stop();
+    }
+  }
+
+  void _throwIfCancelled(int generation) {
+    if (generation != _startGeneration) {
+      throw const LlamaServerStartupCancelled();
+    }
   }
 
   Future<String?> _resolveLlamaServerExecutable(String llamaCppDir) async {
@@ -140,33 +218,100 @@ class LlamaServerManager {
     return port;
   }
 
-  Future<void> _waitUntilReady(Uri base) async {
+  Future<void> _waitUntilReady(
+    Uri base,
+    Process process, {
+    required _StartupOutput startupOutput,
+    required bool Function() isCancelled,
+  }) async {
     final client = HttpClient();
-    final deadline = DateTime.now().add(const Duration(seconds: 60));
     Object? lastError;
+    var processExited = false;
+    int? processExitCode;
+    final exitCode = process.exitCode;
 
-    while(DateTime.now().isBefore(deadline)) {
-      try {
-        final req = await client.getUrl(base.replace(path: '/health'));
-        final res = await req.close();
+    unawaited(
+      exitCode.then((code) {
+        processExited = true;
+        processExitCode = code;
+      }),
+    );
 
-        if (res.statusCode == 200) {
-          await res.drain();
-          client.close(force: true);
-          return;
+    var delay = const Duration(milliseconds: 100);
+    var lastProgressAt = DateTime.now();
+    final maxDelay = const Duration(seconds: 1);
+
+    try {
+      while (true) {
+        if (startupOutput.lastOutputAt.isAfter(lastProgressAt)) {
+          lastProgressAt = startupOutput.lastOutputAt;
         }
 
-        await res.drain();
-      } catch (e) {
-        lastError = e;
-      }
+        if (isCancelled()) {
+          throw const LlamaServerStartupCancelled();
+        }
 
-      await Future.delayed(const Duration(seconds: 3));
+        if (processExited) {
+          throw StateError(
+            _startupFailureMessage(
+              'llama-server exited before it was ready (exit code $processExitCode)',
+              startupOutput,
+            ),
+          );
+        }
+
+        try {
+          final req = await client
+              .getUrl(base.replace(path: '/health'))
+              .timeout(_healthRequestTimeout);
+          final res = await req.close().timeout(_healthRequestTimeout);
+
+          if (res.statusCode == 200) {
+            await res.drain();
+            return;
+          }
+
+          if (res.statusCode == 503) {
+            lastProgressAt = DateTime.now();
+          }
+
+          lastError = 'health check returned HTTP ${res.statusCode}';
+          await res.drain();
+        } catch (e) {
+          lastError = e;
+        }
+
+        if (DateTime.now().difference(lastProgressAt) > _startupStallTimeout) {
+          throw StateError(
+            _startupFailureMessage(
+              'llama-server startup appears stalled. Last readiness error: $lastError',
+              startupOutput,
+            ),
+          );
+        }
+
+        await Future.any<void>([Future.delayed(delay), exitCode.then((_) {})]);
+
+        final nextDelayMs = (delay.inMilliseconds * 1.5).round();
+        delay = Duration(
+          milliseconds: nextDelayMs > maxDelay.inMilliseconds
+              ? maxDelay.inMilliseconds
+              : nextDelayMs,
+        );
+      }
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  String _startupFailureMessage(String message, _StartupOutput startupOutput) {
+    final recentOutput = startupOutput.recentOutput;
+
+    if (recentOutput.isEmpty) {
+      return message;
     }
 
-    client.close(force: true);
-
-    throw StateError('llama-cpp-python server not ready: $lastError');
+    return '$message\nRecent llama-server output:\n$recentOutput';
   }
 
   void dispose() {
@@ -177,4 +322,33 @@ class LlamaServerManager {
 
     _isDisposed = true;
   }
+}
+
+class LlamaServerStartupCancelled implements Exception {
+  const LlamaServerStartupCancelled();
+
+  @override
+  String toString() => 'llama-server startup cancelled';
+}
+
+class _StartupOutput {
+  static const int _maxEntries = 20;
+
+  final List<String> _entries = [];
+  DateTime lastOutputAt = DateTime.now();
+
+  void add(String output) {
+    final trimmed = output.trim();
+
+    if (trimmed.isEmpty) return;
+
+    lastOutputAt = DateTime.now();
+    _entries.add(trimmed);
+
+    if (_entries.length > _maxEntries) {
+      _entries.removeAt(0);
+    }
+  }
+
+  String get recentOutput => _entries.join('\n');
 }

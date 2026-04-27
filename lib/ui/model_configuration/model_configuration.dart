@@ -1,29 +1,32 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hermes/ui/model_configuration/slider_control.dart';
 
+typedef ModelConfigurationConfirm =
+    Future<void> Function({
+      required int ctx,
+      required int threads,
+      required int? gpuLayers,
+      required double temperature,
+      required double topP,
+      required int topK,
+      required int batch,
+      required int uBatch,
+      required int miroStatMode,
+      required double repeatPenalty,
+      required int repeatLastN,
+      required double presencePenalty,
+      required double frequencyPenalty,
+      required bool thinking,
+    });
+
 class ModelConfiguration extends StatefulWidget {
   const ModelConfiguration({super.key, required this.onConfirm, this.onCancel});
 
-  final void Function({
-    required int ctx,
-    required int threads,
-    required int? gpuLayers,
-    required double temperature,
-    required double topP,
-    required int topK,
-    required int batch,
-    required int uBatch,
-    required int miroStatMode,
-    required double repeatPenalty,
-    required int repeatLastN,
-    required double presencePenalty,
-    required double frequencyPenalty,
-    required bool thinking,
-  })
-  onConfirm;
+  final ModelConfigurationConfirm onConfirm;
 
-  final VoidCallback? onCancel;
+  final FutureOr<void> Function()? onCancel;
 
   @override
   State<ModelConfiguration> createState() => _ModelConfigurationState();
@@ -44,6 +47,56 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
   double _presencePenalty = 1.5;
   double _frequencyPenalty = 0.0;
   bool _thinking = false;
+  bool _submitting = false;
+
+  Future<void> _confirm() async {
+    if (_submitting) return;
+
+    setState(() => _submitting = true);
+
+    try {
+      await widget.onConfirm(
+        ctx: _ctx * 1024,
+        threads: _threads,
+        gpuLayers: _gpuLayers,
+        temperature: _temperature,
+        topP: _topP,
+        topK: _topK,
+        batch: _batch,
+        uBatch: _uBatch,
+        miroStatMode: _miroStatMode,
+        repeatPenalty: _repeatPenalty,
+        repeatLastN: _repeatLastN,
+        presencePenalty: _presencePenalty,
+        frequencyPenalty: _frequencyPenalty,
+        thinking: _thinking,
+      );
+
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to start model: $e')));
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
+    }
+  }
+
+  void _cancel() {
+    final onCancel = widget.onCancel;
+
+    if (_submitting && onCancel != null) {
+      unawaited(Future<void>.sync(onCancel));
+    }
+
+    Navigator.of(context).pop();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -177,34 +230,15 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () {
-            widget.onCancel?.call();
-            Navigator.of(context).pop();
-          },
-          child: const Text('Cancel'),
-        ),
+        TextButton(onPressed: _cancel, child: const Text('Cancel')),
         FilledButton(
-          onPressed: () {
-            widget.onConfirm(
-              ctx: _ctx * 1024,
-              threads: _threads,
-              gpuLayers: _gpuLayers,
-              temperature: _temperature,
-              topP: _topP,
-              topK: _topK,
-              batch: _batch,
-              uBatch: _uBatch,
-              miroStatMode: _miroStatMode,
-              repeatPenalty: _repeatPenalty,
-              repeatLastN: _repeatLastN,
-              presencePenalty: _presencePenalty,
-              frequencyPenalty: _frequencyPenalty,
-              thinking: _thinking,
-            );
-            Navigator.of(context).pop();
-          },
-          child: const Text('Confirm'),
+          onPressed: _submitting ? null : _confirm,
+          child: _submitting
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Confirm'),
         ),
       ],
     );

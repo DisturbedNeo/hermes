@@ -128,6 +128,7 @@ class _ModelPickerState extends State<ModelPicker> {
                         context: context,
                         barrierDismissible: false,
                         builder: (_) => ModelConfiguration(
+                          onCancel: _chatService.serverManager.stop,
                           onConfirm:
                               ({
                                 required int ctx,
@@ -148,36 +149,49 @@ class _ModelPickerState extends State<ModelPicker> {
                                 setState(() {
                                   _selected = v;
                                   _loading = true;
+                                  _error = null;
                                 });
 
-                                final llamaCppDirectory =
-                                    await _preferencesService
-                                        .getLlamaCppDirectory() ??
-                                    '';
+                                try {
+                                  final llamaCppDirectory =
+                                      await _preferencesService
+                                          .getLlamaCppDirectory() ??
+                                      '';
 
-                                await _chatService.serverManager.start(
-                                  llamaCppDirectory: llamaCppDirectory,
-                                  modelPath: file.path,
-                                  modelName: v,
-                                  nCtx: ctx,
-                                  nThreads: threads,
-                                  nGpuLayers: gpuLayers ?? 999,
-                                  temperature: temperature,
-                                  topP: topP,
-                                  topK: topK,
-                                  nBatch: batch,
-                                  nUBatch: uBatch,
-                                  mirostat: miroStatMode,
-                                  repeatPenalty: repeatPenalty,
-                                  repeatLastN: repeatLastN,
-                                  presencePenalty: presencePenalty,
-                                  frequencyPenalty: frequencyPenalty,
-                                  thinking: thinking,
-                                );
+                                  await _chatService.serverManager.start(
+                                    llamaCppDirectory: llamaCppDirectory,
+                                    modelPath: file.path,
+                                    modelName: v,
+                                    nCtx: ctx,
+                                    nThreads: threads,
+                                    nGpuLayers: gpuLayers ?? 999,
+                                    temperature: temperature,
+                                    topP: topP,
+                                    topK: topK,
+                                    nBatch: batch,
+                                    nUBatch: uBatch,
+                                    mirostat: miroStatMode,
+                                    repeatPenalty: repeatPenalty,
+                                    repeatLastN: repeatLastN,
+                                    presencePenalty: presencePenalty,
+                                    frequencyPenalty: frequencyPenalty,
+                                    thinking: thinking,
+                                  );
+                                } catch (_) {
+                                  if (mounted) {
+                                    setState(
+                                      () => _selected = _chatService
+                                          .serverManager
+                                          .currentModelName,
+                                    );
+                                  }
 
-                                setState(() {
-                                  _loading = false;
-                                });
+                                  rethrow;
+                                } finally {
+                                  if (mounted) {
+                                    setState(() => _loading = false);
+                                  }
+                                }
                               },
                         ),
                       );
