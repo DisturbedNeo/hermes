@@ -11,16 +11,16 @@ import 'package:hermes/ui/chat/tool_selector.dart';
 enum ComposerMode { send, generate, cont, cancel }
 
 class Composer extends StatefulWidget {
+  final ChatService chat;
   final bool enabled;
 
-  const Composer({super.key, required this.enabled});
+  const Composer({super.key, required this.chat, required this.enabled});
 
   @override
   State<Composer> createState() => _ComposerState();
 }
 
 class _ComposerState extends State<Composer> {
-  final _chat = serviceProvider.get<ChatService>();
   final _toolService = serviceProvider.get<ToolService>();
 
   late final TextEditingController _controller;
@@ -39,24 +39,36 @@ class _ComposerState extends State<Composer> {
     super.initState();
     _controller = TextEditingController();
     _focusNode = FocusNode()..onKeyEvent = _onKey;
-    _previousStreamState = _chat.chatStream.state;
-    _chat.chatStream.addListener(_onStreamChanged);
+    _previousStreamState = widget.chat.chatStream.state;
+    widget.chat.chatStream.addListener(_onStreamChanged);
 
     _allTools = _toolService.getToolDefinitions();
   }
 
   @override
+  void didUpdateWidget(covariant Composer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.chat == widget.chat) return;
+    oldWidget.chat.chatStream.removeListener(_onStreamChanged);
+    _previousStreamState = widget.chat.chatStream.state;
+    widget.chat.chatStream.addListener(_onStreamChanged);
+    _controller.clear();
+    _selectedToolIds.clear();
+  }
+
+  @override
   void dispose() {
-    _chat.chatStream.removeListener(_onStreamChanged);
+    widget.chat.chatStream.removeListener(_onStreamChanged);
     _focusNode.dispose();
     _controller.dispose();
     super.dispose();
   }
 
   void _onStreamChanged() {
+    final chat = widget.chat;
     if (_previousStreamState == StreamState.streaming &&
-        _chat.chatStream.state == StreamState.idle) {
-      final serverActive = _chat.serverManager.current != null;
+        chat.chatStream.state == StreamState.idle) {
+      final serverActive = chat.serverManager.current != null;
 
       if (serverActive && widget.enabled) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -65,7 +77,7 @@ class _ComposerState extends State<Composer> {
       }
     }
 
-    _previousStreamState = _chat.chatStream.state;
+    _previousStreamState = chat.chatStream.state;
   }
 
   IconData _iconForRole(MessageRole role) => switch (role) {
@@ -84,17 +96,18 @@ class _ComposerState extends State<Composer> {
     _controller.clear();
     _controller.selection = const TextSelection.collapsed(offset: 0);
     _focusNode.requestFocus();
-    _chat.insertMessage(trimmed, _selectedRole);
+    widget.chat.insertMessage(trimmed, _selectedRole);
   }
 
   ComposerMode _modeFor(String text) {
-    if (_chat.chatStream.isStreaming) return ComposerMode.cancel;
+    final chat = widget.chat;
+    if (chat.chatStream.isStreaming) return ComposerMode.cancel;
 
     final isEmpty = text.trim().isEmpty;
     if (!isEmpty) return ComposerMode.send;
 
-    return (_chat.messageStore.messages.isNotEmpty &&
-            _chat.messageStore.messages.last.role == MessageRole.assistant)
+    return (chat.messageStore.messages.isNotEmpty &&
+            chat.messageStore.messages.last.role == MessageRole.assistant)
         ? ComposerMode.cont
         : ComposerMode.generate;
   }
@@ -150,13 +163,14 @@ class _ComposerState extends State<Composer> {
       return KeyEventResult.handled;
     }
 
-    if (!_chat.chatStream.isStreaming) {
+    final chat = widget.chat;
+    if (!chat.chatStream.isStreaming) {
       final trimmed = _controller.text.trim();
       _controller.clear();
       if (trimmed.isNotEmpty) {
-        _chat.send(trimmed, tools: _selectedToolIds.toList());
+        chat.send(trimmed, tools: _selectedToolIds.toList());
       } else {
-        _chat.generateOrContinue(tools: _selectedToolIds.toList());
+        chat.generateOrContinue(tools: _selectedToolIds.toList());
       }
       return KeyEventResult.handled;
     }
@@ -168,6 +182,7 @@ class _ComposerState extends State<Composer> {
   Widget build(BuildContext context) {
     final roleIsUser = _selectedRole == MessageRole.user;
     final hasTools = _selectedToolIds.isNotEmpty;
+    final chat = widget.chat;
 
     return SafeArea(
       top: false,
@@ -268,13 +283,13 @@ class _ComposerState extends State<Composer> {
                 maxLines: 6,
                 enabled: widget.enabled,
                 keyboardType: TextInputType.multiline,
-                textInputAction: (roleIsUser && !_chat.chatStream.isStreaming)
+                textInputAction: (roleIsUser && !chat.chatStream.isStreaming)
                     ? TextInputAction.send
                     : TextInputAction.newline,
                 decoration: InputDecoration(
                   hintText: !widget.enabled
                       ? 'Load a model to chat…'
-                      : _chat.chatStream.isStreaming
+                      : chat.chatStream.isStreaming
                       ? 'Streaming response…'
                       : 'Type a message…',
                   border: const OutlineInputBorder(),
@@ -285,7 +300,7 @@ class _ComposerState extends State<Composer> {
                     _insertMessage();
                     return;
                   }
-                  if (!_chat.chatStream.isStreaming) {
+                  if (!chat.chatStream.isStreaming) {
                     final trimmed = _controller.text.trim();
                     _controller.clear();
                     _controller.selection = const TextSelection.collapsed(
@@ -294,11 +309,9 @@ class _ComposerState extends State<Composer> {
                     _focusNode.requestFocus();
 
                     if (trimmed.isNotEmpty) {
-                      _chat.send(trimmed, tools: _selectedToolIds.toList());
+                      chat.send(trimmed, tools: _selectedToolIds.toList());
                     } else {
-                      _chat.generateOrContinue(
-                        tools: _selectedToolIds.toList(),
-                      );
+                      chat.generateOrContinue(tools: _selectedToolIds.toList());
                     }
                   }
                 },
@@ -309,7 +322,7 @@ class _ComposerState extends State<Composer> {
             ),
             const SizedBox(width: 8),
             AnimatedBuilder(
-              animation: _chat.chatStream,
+              animation: chat.chatStream,
               builder: (_, _) {
                 return ValueListenableBuilder<TextEditingValue>(
                   valueListenable: _controller,
@@ -324,7 +337,7 @@ class _ComposerState extends State<Composer> {
                             FilledButton.icon(
                               icon: const Icon(Icons.stop),
                               label: const Text('Cancel'),
-                              onPressed: _chat.chatStream.stop,
+                              onPressed: chat.chatStream.stop,
                             ),
                           );
                           break;
@@ -334,7 +347,7 @@ class _ComposerState extends State<Composer> {
                               icon: const Icon(Icons.auto_awesome),
                               label: const Text('Generate'),
                               onPressed: widget.enabled
-                                  ? () => _chat.generateOrContinue(
+                                  ? () => chat.generateOrContinue(
                                       tools: _selectedToolIds.toList(),
                                     )
                                   : null,
@@ -347,7 +360,7 @@ class _ComposerState extends State<Composer> {
                               icon: const Icon(Icons.more_horiz),
                               label: const Text('Continue'),
                               onPressed: widget.enabled
-                                  ? () => _chat.generateOrContinue(
+                                  ? () => chat.generateOrContinue(
                                       tools: _selectedToolIds.toList(),
                                     )
                                   : null,
@@ -368,7 +381,7 @@ class _ComposerState extends State<Composer> {
                                             offset: 0,
                                           );
                                       _focusNode.requestFocus();
-                                      _chat.send(
+                                      chat.send(
                                         trimmed,
                                         tools: _selectedToolIds.toList(),
                                       );

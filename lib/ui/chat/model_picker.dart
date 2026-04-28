@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hermes/core/helpers/models_directory.dart';
-import 'package:hermes/core/services/chat/chat_service.dart';
+import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/ui/chat/message/dot_pulse.dart';
@@ -22,27 +22,27 @@ class _ModelPickerState extends State<ModelPicker> {
   bool _loading = true;
   String? _error;
 
-  final _chatService = serviceProvider.get<ChatService>();
+  final _tabs = serviceProvider.get<ChatTabsService>();
   final _preferencesService = serviceProvider.get<PreferencesService>();
 
   @override
   void initState() {
     super.initState();
-    _chatService.addListener(_syncSelectedFromActiveModel);
-    _chatService.serverManager.handle.addListener(_syncSelectedFromActiveModel);
+    _tabs.addListener(_syncSelectedFromActiveModel);
+    _tabs.serverManager.handle.addListener(_syncSelectedFromActiveModel);
     _syncSelectedFromActiveModel();
     _loadModels();
   }
 
   @override
   void dispose() {
-    _chatService.removeListener(_syncSelectedFromActiveModel);
-    _chatService.serverManager.handle.removeListener(_syncSelectedFromActiveModel);
+    _tabs.removeListener(_syncSelectedFromActiveModel);
+    _tabs.serverManager.handle.removeListener(_syncSelectedFromActiveModel);
     super.dispose();
   }
 
   void _syncSelectedFromActiveModel() {
-    final activeModel = _chatService.serverManager.currentModelName;
+    final activeModel = _tabs.serverManager.currentModelName;
     if (_selected == activeModel) return;
     if (!mounted) {
       _selected = activeModel;
@@ -160,7 +160,7 @@ class _ModelPickerState extends State<ModelPicker> {
                           modelName: v,
                           modelPath: file.path,
                           llamaCppDirectory: llamaCppDirectory,
-                          onCancel: _chatService.serverManager.stop,
+                          onCancel: _tabs.serverManager.stop,
                           onConfirm: (snapshot) async {
                             setState(() {
                               _selected = v;
@@ -169,15 +169,17 @@ class _ModelPickerState extends State<ModelPicker> {
                             });
 
                             try {
-                              await _chatService.serverManager
-                                  .startWithSnapshot(snapshot);
-                              _chatService.setCurrentModelSnapshot(snapshot);
+                              await _tabs.serverManager.startWithSnapshot(
+                                snapshot,
+                              );
+                              _tabs.activeChat?.setCurrentModelSnapshot(
+                                snapshot,
+                              );
                             } catch (_) {
                               if (mounted) {
                                 setState(
-                                  () => _selected = _chatService
-                                      .serverManager
-                                      .currentModelName,
+                                  () => _selected =
+                                      _tabs.serverManager.currentModelName,
                                 );
                               }
 

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
-import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/ui/chat/message/message_actions.dart';
 import 'package:hermes/ui/chat/composer.dart';
 import 'package:hermes/ui/chat/diagnostics_bar.dart';
@@ -10,14 +9,15 @@ import 'package:hermes/ui/chat/message/message_bubble.dart';
 import 'package:hermes/ui/chat/message/message_row.dart';
 
 class ChatView extends StatefulWidget {
-  const ChatView({super.key});
+  final ChatService chat;
+
+  const ChatView({super.key, required this.chat});
 
   @override
   State<ChatView> createState() => _ChatViewState();
 }
 
 class _ChatViewState extends State<ChatView> {
-  final _chat = serviceProvider.get<ChatService>();
   final _scroll = ScrollController();
 
   @override
@@ -28,17 +28,14 @@ class _ChatViewState extends State<ChatView> {
 
   @override
   Widget build(BuildContext context) {
+    final chat = widget.chat;
     return AnimatedBuilder(
-      animation: Listenable.merge([
-        _chat,
-        _chat.messageStore,
-        _chat.chatStream,
-      ]),
+      animation: Listenable.merge([chat, chat.messageStore, chat.chatStream]),
       builder: (_, _) {
         return Column(
           children: [
-            if (_chat.pendingModelRestore != null)
-              _ModelRestoreBanner(chat: _chat),
+            if (chat.pendingModelRestore != null)
+              _ModelRestoreBanner(chat: chat),
             Expanded(
               child: Stack(
                 children: [
@@ -49,10 +46,10 @@ class _ChatViewState extends State<ChatView> {
                       horizontal: 12,
                       vertical: 16,
                     ),
-                    itemCount: _chat.messageStore.messages.length,
+                    itemCount: chat.messageStore.messages.length,
                     itemBuilder: (_, i) {
-                      final index = _chat.messageStore.messages.length - 1 - i;
-                      final b = _chat.messageStore.messages[index];
+                      final index = chat.messageStore.messages.length - 1 - i;
+                      final b = chat.messageStore.messages[index];
                       final isUser = b.role == MessageRole.user;
 
                       return Padding(
@@ -64,18 +61,19 @@ class _ChatViewState extends State<ChatView> {
                             key: ValueKey('bubble_${b.id}'),
                             b: b,
                             onSave: (newReasoning, newText) {
-                              _chat.messageStore.upsert(
+                              chat.messageStore.upsert(
                                 b.copyWith(
                                   reasoning: newReasoning,
                                   text: newText,
                                 ),
                               );
                             },
-                            editable: !_chat.chatStream.isStreaming,
+                            editable: !chat.chatStream.isStreaming,
                           ),
                           actions: MessageActions(
                             key: ValueKey('actions_${b.id}'),
                             message: b,
+                            chat: chat,
                           ),
                         ),
                       );
@@ -87,9 +85,9 @@ class _ChatViewState extends State<ChatView> {
             const Divider(height: 1),
             const DiagnosticsBar(),
             ValueListenableBuilder<LlamaServerHandle?>(
-              valueListenable: _chat.serverManager.handle,
+              valueListenable: chat.serverManager.handle,
               builder: (_, handle, _) {
-                return Composer(enabled: handle != null);
+                return Composer(chat: chat, enabled: handle != null);
               },
             ),
           ],

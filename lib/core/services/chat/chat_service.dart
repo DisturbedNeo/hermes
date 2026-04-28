@@ -18,17 +18,16 @@ import 'package:hermes/core/services/chat/message_store.dart';
 import 'package:hermes/core/helpers/chat/tool_caller.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/helpers/chat/payload_builder.dart';
-import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/core/services/tool_service.dart';
 
 class ChatService extends ChangeNotifier {
-  final LlamaServerManager serverManager = LlamaServerManager();
+  final String tabId;
+  final LlamaServerManager serverManager;
   final MessageStore messageStore = MessageStore();
   final ChatStream chatStream = ChatStream<ChatToken>();
 
-  final ToolService _toolService = serviceProvider.get<ToolService>();
-  final ChatLibraryService _chatLibrary = serviceProvider
-      .get<ChatLibraryService>();
+  final ToolService _toolService;
+  final ChatLibraryService _chatLibrary;
 
   final Bubble systemPrompt = Bubble(
     id: uuid.v7(),
@@ -49,11 +48,49 @@ class ChatService extends ChangeNotifier {
   ModelConfigurationSnapshot? pendingModelRestore;
   String? pendingModelRestoreIssue;
 
-  ChatService() {
+  ChatService({
+    String? tabId,
+    required this.serverManager,
+    required ToolService toolService,
+    required ChatLibraryService chatLibrary,
+  }) : tabId = tabId ?? uuid.v7(),
+       _toolService = toolService,
+       _chatLibrary = chatLibrary {
     messageStore.setMessages([systemPrompt]);
     messageStore.addListener(_handleMessagesChanged);
     chatStream.onStop = serverManager.diagnostics.recordStreamEnded;
+    currentModelSnapshot = _activeServerSnapshot;
   }
+
+  bool get isDirty => _dirty;
+
+  bool get hasMeaningfulContent => messageStore.messages.any(
+    (message) =>
+        message.role != MessageRole.system &&
+        (message.text.trim().isNotEmpty ||
+            message.reasoning.trim().isNotEmpty ||
+            message.tools.isNotEmpty),
+  );
+
+  bool get isUnsavedNonEmpty => currentChatId == null && hasMeaningfulContent;
+
+  String get displayTitle {
+    final savedTitle = currentSavedChat?.title;
+    if (savedTitle != null && savedTitle.trim().isNotEmpty) return savedTitle;
+
+    final first = messageStore.messages
+        .where((m) => m.role != MessageRole.system && m.text.trim().isNotEmpty)
+        .map((m) => m.text.trim().replaceAll(RegExp(r'\s+'), ' '))
+        .firstOrNull;
+
+    if (first == null) return 'New chat';
+    return first.length <= 40 ? first : '${first.substring(0, 37)}...';
+  }
+
+  ModelConfigurationSnapshot? get _activeServerSnapshot =>
+      serverManager.current == null
+      ? null
+      : serverManager.diagnostics.modelSnapshot;
 
   Future<void> newChat() async {
     await flushCurrentChat();
@@ -64,10 +101,11 @@ class ChatService extends ChangeNotifier {
     }
 
     _clearSavedState();
+    currentModelSnapshot = _activeServerSnapshot;
     messageStore.setMessages([systemPrompt]);
   }
 
-  Future<void> openChat(String id) async {
+  Future<bool> openChat(String id) async {
     await flushCurrentChat();
 
     if (chatStream.isStreaming) {
@@ -76,21 +114,23 @@ class ChatService extends ChangeNotifier {
     }
 
     final snapshot = await _chatLibrary.getChat(id);
-    if (snapshot == null) return;
+    if (snapshot == null) return false;
 
     _loadingSnapshot = true;
     try {
       currentChatId = snapshot.chat.id;
       currentSavedChat = snapshot.chat;
+      currentModelSnapshot = snapshot.chat.modelSnapshot;
       _dirty = false;
       messageStore.setMessages(snapshot.messages);
       await _chatLibrary.markOpened(snapshot.chat.id);
-      await _prepareModelRestorePrompt(snapshot.chat.modelSnapshot);
+      await refreshModelRestorePrompt();
     } finally {
       _loadingSnapshot = false;
     }
 
     notifyListeners();
+    return true;
   }
 
   Future<SavedChat> saveCurrentChat({String? title}) async {
@@ -152,12 +192,19 @@ class ChatService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> refreshModelRestorePrompt() async {
+    await _prepareModelRestorePrompt(currentModelSnapshot);
+    notifyListeners();
+  }
+
   void insertMessage(String text, MessageRole role) {
     if (chatStream.isStreaming) return;
 
     final t = text.trim();
 
     if (t.isEmpty) return;
+
+    _adoptActiveModelIfRestoreDismissed();
 
     messageStore.upsert(
       Bubble(id: uuid.v7(), role: role, text: t, reasoning: ''),
@@ -169,6 +216,8 @@ class ChatService extends ChangeNotifier {
 
     final t = text.trim();
     if (t.isEmpty) return;
+
+    _adoptActiveModelIfRestoreDismissed();
 
     messageStore.upsert(
       Bubble(id: uuid.v7(), role: MessageRole.user, text: t, reasoning: ''),
@@ -184,6 +233,8 @@ class ChatService extends ChangeNotifier {
 
   Future<void> generateOrContinue({List<String>? tools = const []}) async {
     if (chatStream.isStreaming || messageStore.isEmpty) return;
+
+    _adoptActiveModelIfRestoreDismissed();
 
     final lastMessage = messageStore.last;
 
@@ -372,7 +423,6 @@ class ChatService extends ChangeNotifier {
     try {
       await chatStream.stop();
     } finally {
-      await serverManager.dispose();
       super.dispose();
     }
   }
@@ -448,7 +498,7 @@ class ChatService extends ChangeNotifier {
     pendingModelRestore = null;
     pendingModelRestoreIssue = null;
 
-    if (snapshot == null || snapshot.matches(currentModelSnapshot)) return;
+    if (snapshot == null || snapshot.matches(_activeServerSnapshot)) return;
 
     pendingModelRestore = snapshot;
     if (!await File(snapshot.modelPath).exists()) {
@@ -463,6 +513,24 @@ class ChatService extends ChangeNotifier {
     pendingModelRestore = null;
     pendingModelRestoreIssue = null;
     _dirty = false;
+    notifyListeners();
+  }
+
+  void _adoptActiveModelIfRestoreDismissed() {
+    if (pendingModelRestore != null) return;
+
+    final activeSnapshot = _activeServerSnapshot;
+    if (activeSnapshot == null ||
+        activeSnapshot.matches(currentModelSnapshot)) {
+      return;
+    }
+
+    currentModelSnapshot = activeSnapshot;
+    _updateContextEstimate();
+    if (currentChatId != null) {
+      _dirty = true;
+      _scheduleAutosave();
+    }
     notifyListeners();
   }
 }

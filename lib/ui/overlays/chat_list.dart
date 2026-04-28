@@ -3,16 +3,18 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hermes/core/models/saved_chat.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
-import 'package:hermes/core/services/chat/chat_service.dart';
+import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 
 class ChatList extends StatefulWidget {
   final FutureOr<void> Function(String chatId) onOpenChat;
+  final FutureOr<void> Function(String chatId) onOpenChatInNewTab;
   final FutureOr<void> Function() onNewChat;
 
   const ChatList({
     super.key,
     required this.onOpenChat,
+    required this.onOpenChatInNewTab,
     required this.onNewChat,
   });
 
@@ -21,7 +23,7 @@ class ChatList extends StatefulWidget {
 }
 
 class _ChatListState extends State<ChatList> {
-  final _chat = serviceProvider.get<ChatService>();
+  final _tabs = serviceProvider.get<ChatTabsService>();
   final _library = serviceProvider.get<ChatLibraryService>();
   final _searchController = TextEditingController();
 
@@ -34,7 +36,7 @@ class _ChatListState extends State<ChatList> {
   void initState() {
     super.initState();
     _searchController.addListener(_handleSearchChanged);
-    _chat.addListener(_refresh);
+    _tabs.addListener(_refresh);
     _library.addListener(_refresh);
     unawaited(_reloadChats());
   }
@@ -43,7 +45,7 @@ class _ChatListState extends State<ChatList> {
   void dispose() {
     _searchController.removeListener(_handleSearchChanged);
     _searchController.dispose();
-    _chat.removeListener(_refresh);
+    _tabs.removeListener(_refresh);
     _library.removeListener(_refresh);
     super.dispose();
   }
@@ -91,7 +93,7 @@ class _ChatListState extends State<ChatList> {
 
   Future<void> _saveCurrentChat() async {
     try {
-      await _chat.saveCurrentChat();
+      await _tabs.saveCurrentChat();
       await _reloadChats(showLoading: false);
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -121,14 +123,15 @@ class _ChatListState extends State<ChatList> {
       builder: (_) => _DeleteChatDialog(title: chat.title),
     );
     if (confirmed != true) return;
-    await _chat.deleteSavedChat(chat.id);
+    await _tabs.deleteSavedChat(chat.id);
     await _reloadChats(showLoading: false);
   }
 
   @override
   Widget build(BuildContext context) {
-    final canMutate = !_chat.chatStream.isStreaming;
-    final canSave = canMutate && _chat.currentChatId == null;
+    final activeChat = _tabs.activeChat;
+    final canMutate = !(activeChat?.chatStream.isStreaming ?? false);
+    final canSave = canMutate && activeChat?.currentChatId == null;
 
     return Column(
       children: [
@@ -140,7 +143,7 @@ class _ChatListState extends State<ChatList> {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (_chat.currentChatId == null)
+              if (activeChat?.currentChatId == null)
                 IconButton(
                   icon: const Icon(Icons.save_outlined),
                   onPressed: canSave ? _saveCurrentChat : null,
@@ -166,9 +169,7 @@ class _ChatListState extends State<ChatList> {
           ),
         ),
         const Divider(height: 1),
-        Expanded(
-          child: _buildChatList(canMutate),
-        ),
+        Expanded(child: _buildChatList(canMutate)),
       ],
     );
   }
@@ -199,12 +200,13 @@ class _ChatListState extends State<ChatList> {
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (_, i) {
         final c = _chats[i];
-        final selected = c.id == _chat.currentChatId;
+        final active = c.id == _tabs.activeChat?.currentChatId;
+        final open = _tabs.isSavedChatOpen(c.id);
 
         return ListTile(
-          selected: selected,
+          selected: active,
           leading: Icon(
-            selected ? Icons.chat_bubble : Icons.chat_bubble_outline,
+            active || open ? Icons.chat_bubble : Icons.chat_bubble_outline,
           ),
           title: Text(c.title, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(_formatDate(c.updatedAt)),
@@ -217,12 +219,19 @@ class _ChatListState extends State<ChatList> {
                 case _ChatAction.rename:
                   unawaited(_renameChat(c));
                   break;
+                case _ChatAction.openInNewTab:
+                  unawaited(Future.sync(() => widget.onOpenChatInNewTab(c.id)));
+                  break;
                 case _ChatAction.delete:
                   unawaited(_deleteChat(c));
                   break;
               }
             },
             itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: _ChatAction.openInNewTab,
+                child: Text('Open in new tab'),
+              ),
               PopupMenuItem(value: _ChatAction.rename, child: Text('Rename')),
               PopupMenuItem(value: _ChatAction.delete, child: Text('Delete')),
             ],
@@ -243,7 +252,7 @@ class _ChatListState extends State<ChatList> {
   }
 }
 
-enum _ChatAction { rename, delete }
+enum _ChatAction { openInNewTab, rename, delete }
 
 class _RenameChatDialog extends StatefulWidget {
   final String initialTitle;

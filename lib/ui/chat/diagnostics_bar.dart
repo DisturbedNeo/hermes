@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hermes/core/enums/diagnostics_visibility.dart';
 import 'package:hermes/core/models/model_session_diagnostics.dart';
-import 'package:hermes/core/services/chat/chat_service.dart';
+import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 
@@ -14,7 +14,7 @@ class DiagnosticsBar extends StatefulWidget {
 }
 
 class _DiagnosticsBarState extends State<DiagnosticsBar> {
-  final _chat = serviceProvider.get<ChatService>();
+  final _tabs = serviceProvider.get<ChatTabsService>();
   final _preferences = serviceProvider.get<PreferencesService>();
 
   DiagnosticsVisibility _visibility = DiagnosticsVisibility.off;
@@ -44,7 +44,7 @@ class _DiagnosticsBarState extends State<DiagnosticsBar> {
       return const SizedBox.shrink();
     }
 
-    final diagnostics = _chat.serverManager.diagnostics;
+    final diagnostics = _tabs.serverManager.diagnostics;
     return AnimatedBuilder(
       animation: diagnostics,
       builder: (context, _) {
