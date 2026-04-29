@@ -7,6 +7,83 @@
 
 #include "flutter/generated_plugin_registrant.h"
 
+namespace {
+
+constexpr int kFallbackInitialWidth = 960;
+constexpr int kFallbackInitialHeight = 1280;
+constexpr double kInitialWidthRatio = 0.40;
+constexpr double kInitialHeightRatio = 0.85;
+constexpr int kMinimumInitialWidth = 420;
+constexpr int kMinimumInitialHeight = 700;
+constexpr int kMaximumInitialWidth = 900;
+constexpr int kMaximumInitialHeight = 1300;
+constexpr int kWorkAreaMargin = 32;
+constexpr int kPortraitWidthGap = 32;
+
+struct InitialWindowSize {
+  int width;
+  int height;
+};
+
+static int clamp_int(int value, int lower, int upper) {
+  if (value < lower) {
+    return lower;
+  }
+  if (value > upper) {
+    return upper;
+  }
+  return value;
+}
+
+static int calculate_window_dimension(int available, double ratio, int minimum,
+                                      int maximum, int fallback) {
+  if (available <= 0) {
+    return fallback;
+  }
+
+  const int max_available =
+      available > kWorkAreaMargin ? available - kWorkAreaMargin : available;
+  const int upper = maximum < max_available ? maximum : max_available;
+  const int lower = minimum < upper ? minimum : upper;
+  const int target = static_cast<int>(available * ratio);
+  return clamp_int(target, lower, upper);
+}
+
+static InitialWindowSize calculate_initial_window_size() {
+  GdkDisplay* display = gdk_display_get_default();
+  if (display == nullptr) {
+    return {kFallbackInitialWidth, kFallbackInitialHeight};
+  }
+
+  GdkMonitor* monitor = gdk_display_get_primary_monitor(display);
+  if (monitor == nullptr && gdk_display_get_n_monitors(display) > 0) {
+    monitor = gdk_display_get_monitor(display, 0);
+  }
+  if (monitor == nullptr) {
+    return {kFallbackInitialWidth, kFallbackInitialHeight};
+  }
+
+  GdkRectangle workarea;
+  gdk_monitor_get_workarea(monitor, &workarea);
+
+  InitialWindowSize size = {
+      calculate_window_dimension(workarea.width, kInitialWidthRatio,
+                                 kMinimumInitialWidth, kMaximumInitialWidth,
+                                 kFallbackInitialWidth),
+      calculate_window_dimension(workarea.height, kInitialHeightRatio,
+                                 kMinimumInitialHeight, kMaximumInitialHeight,
+                                 kFallbackInitialHeight),
+  };
+
+  if (size.width >= size.height && size.height > kPortraitWidthGap) {
+    size.width = size.height - kPortraitWidthGap;
+  }
+
+  return size;
+}
+
+}  // namespace
+
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
@@ -53,7 +130,9 @@ static void my_application_activate(GApplication* application) {
     gtk_window_set_title(window, "hermes");
   }
 
-  gtk_window_set_default_size(window, 1280, 720);
+  const InitialWindowSize initial_window_size = calculate_initial_window_size();
+  gtk_window_set_default_size(window, initial_window_size.width,
+                              initial_window_size.height);
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(project, self->dart_entrypoint_arguments);
