@@ -40,6 +40,9 @@ class LlamaServerManager {
       presencePenalty: snapshot.presencePenalty,
       frequencyPenalty: snapshot.frequencyPenalty,
       thinking: snapshot.thinking,
+      kvCacheQuantizationEnabled: snapshot.kvCacheQuantizationEnabled,
+      kvCacheTypeK: snapshot.kvCacheTypeK,
+      kvCacheTypeV: snapshot.kvCacheTypeV,
     );
   }
 
@@ -65,6 +68,9 @@ class LlamaServerManager {
     double presencePenalty = 1.2,
     double frequencyPenalty = 0.5,
     bool thinking = true,
+    bool kvCacheQuantizationEnabled = false,
+    String kvCacheTypeK = ModelConfigurationSnapshot.defaultKvCacheType,
+    String kvCacheTypeV = ModelConfigurationSnapshot.defaultKvCacheType,
   }) async {
     final generation = ++_startGeneration;
     final snapshot = ModelConfigurationSnapshot(
@@ -85,6 +91,9 @@ class LlamaServerManager {
       presencePenalty: presencePenalty,
       frequencyPenalty: frequencyPenalty,
       thinking: thinking,
+      kvCacheQuantizationEnabled: kvCacheQuantizationEnabled,
+      kvCacheTypeK: kvCacheTypeK,
+      kvCacheTypeV: kvCacheTypeV,
     );
 
     if (llamaCppDirectory.isEmpty) {
@@ -110,24 +119,49 @@ class LlamaServerManager {
     _throwIfCancelled(generation);
 
     final args = <String>[
-      '-m', modelPath,
-      '--host', '127.0.0.1',
-      '--port', '$port',
-      '-c', '$nCtx',
-      '-t', '$nThreads',
-      '-ngl', '$nGpuLayers',
-      '--temp', '$temperature',
-      '--top-p', '$topP',
-      '--top-k', '$topK',
-      '--mirostat', '$mirostat',
-      '-b', '$nBatch',
-      '-ub', '$nUBatch',
-      '--repeat-penalty', '$repeatPenalty',
-      '--repeat-last-n', '$repeatLastN',
-      '--presence-penalty', '$presencePenalty',
-      '--frequency-penalty', '$frequencyPenalty',
+      '-m',
+      modelPath,
+      '--host',
+      '127.0.0.1',
+      '--port',
+      '$port',
+      '-c',
+      '$nCtx',
+      '-t',
+      '$nThreads',
+      '-ngl',
+      '$nGpuLayers',
+      '--temp',
+      '$temperature',
+      '--top-p',
+      '$topP',
+      '--top-k',
+      '$topK',
+      '--mirostat',
+      '$mirostat',
+      '-b',
+      '$nBatch',
+      '-ub',
+      '$nUBatch',
+      '--repeat-penalty',
+      '$repeatPenalty',
+      '--repeat-last-n',
+      '$repeatLastN',
+      '--presence-penalty',
+      '$presencePenalty',
+      '--frequency-penalty',
+      '$frequencyPenalty',
       '--no-mmap',
-      if (!thinking) ...['--chat-template-kwargs', '{"enable_thinking": false}'],
+      if (!thinking) ...[
+        '--chat-template-kwargs',
+        '{"enable_thinking": false}',
+      ],
+      if (kvCacheQuantizationEnabled) ...[
+        '--cache-type-k',
+        kvCacheTypeK,
+        '--cache-type-v',
+        kvCacheTypeV,
+      ],
       '--jinja',
     ];
 

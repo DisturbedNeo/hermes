@@ -31,7 +31,7 @@ class ModelConfiguration extends StatefulWidget {
 
 class _ModelConfigurationState extends State<ModelConfiguration> {
   int _ctx = 8;
-  int _threads = (Platform.numberOfProcessors * 0.75).ceil();
+  int _threads = (Platform.numberOfProcessors * 0.875).ceil();
   int _gpuLayers = 999;
   double _temperature = 0.7;
   double _topP = 0.8;
@@ -44,6 +44,9 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
   double _presencePenalty = 1.5;
   double _frequencyPenalty = 0.0;
   bool _thinking = false;
+  bool _kvCacheQuantizationEnabled = false;
+  String _kvCacheTypeK = ModelConfigurationSnapshot.defaultKvCacheType;
+  String _kvCacheTypeV = ModelConfigurationSnapshot.defaultKvCacheType;
   bool _submitting = false;
 
   Future<void> _confirm() async {
@@ -71,6 +74,9 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
           presencePenalty: _presencePenalty,
           frequencyPenalty: _frequencyPenalty,
           thinking: _thinking,
+          kvCacheQuantizationEnabled: _kvCacheQuantizationEnabled,
+          kvCacheTypeK: _kvCacheTypeK,
+          kvCacheTypeV: _kvCacheTypeV,
         ),
       );
 
@@ -228,6 +234,49 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
               value: _thinking,
               onChanged: (v) => setState(() => _thinking = v),
             ),
+            SwitchListTile(
+              title: const Text('Quantise KV Cache'),
+              value: _kvCacheQuantizationEnabled,
+              onChanged: (v) => setState(() => _kvCacheQuantizationEnabled = v),
+            ),
+            if (_kvCacheQuantizationEnabled) ...[
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                initialValue: _kvCacheTypeK,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'K cache type',
+                  border: OutlineInputBorder(),
+                ),
+                items: ModelConfigurationSnapshot.allowedKvCacheTypes.map((
+                  type,
+                ) {
+                  return DropdownMenuItem(value: type, child: Text(type));
+                }).toList(),
+                onChanged: (type) {
+                  if (type == null) return;
+                  setState(() => _kvCacheTypeK = type);
+                },
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _kvCacheTypeV,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'V cache type',
+                  border: OutlineInputBorder(),
+                ),
+                items: ModelConfigurationSnapshot.allowedKvCacheTypes.map((
+                  type,
+                ) {
+                  return DropdownMenuItem(value: type, child: Text(type));
+                }).toList(),
+                onChanged: (type) {
+                  if (type == null) return;
+                  setState(() => _kvCacheTypeV = type);
+                },
+              ),
+            ],
           ],
         ),
       ),
