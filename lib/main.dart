@@ -23,7 +23,8 @@ class App extends StatefulWidget {
 
 class _AppState extends State<App> with WidgetsBindingObserver {
   final ThemeManager _themeManager = serviceProvider.get<ThemeManager>();
-  //final CodexDb _db = serviceProvider.get<CodexDb>();
+  bool _exitCleanupStarted = false;
+  bool _exitAfterCleanup = false;
 
   @override
   void initState() {
@@ -70,9 +71,13 @@ class _AppState extends State<App> with WidgetsBindingObserver {
 
   @override
   Future<AppExitResponse> didRequestAppExit() async {
-    await serviceProvider.dispose();
+    if (_exitAfterCleanup) return AppExitResponse.exit;
+    if (_exitCleanupStarted) return AppExitResponse.cancel;
 
-    return await super.didRequestAppExit();
+    _exitCleanupStarted = true;
+    Timer.run(() => unawaited(_disposeServicesAndExit()));
+
+    return AppExitResponse.cancel;
   }
 
   @override
@@ -85,6 +90,15 @@ class _AppState extends State<App> with WidgetsBindingObserver {
   Future<void> _reinitializeServices() async {
     await serviceProvider.dispose();
     serviceProvider.initialize();
+  }
+
+  Future<void> _disposeServicesAndExit() async {
+    try {
+      await serviceProvider.dispose();
+    } finally {
+      _exitAfterCleanup = true;
+      await WidgetsBinding.instance.exitApplication(AppExitType.required);
+    }
   }
 
   @override
