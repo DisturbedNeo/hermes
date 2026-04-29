@@ -273,14 +273,36 @@ class ChatService extends ChangeNotifier {
 
     _adoptActiveModelIfRestoreDismissed();
 
-    final lastMessage = messageStore.last;
+    var lastMessage = messageStore.last;
+    if (lastMessage.role == MessageRole.assistant) {
+      lastMessage = ContentNormaliser.normalise(lastMessage);
+      messageStore.upsert(lastMessage);
+    }
+
+    final continuationTargetId =
+        lastMessage.role == MessageRole.assistant && lastMessage.tools.isEmpty
+        ? lastMessage.id
+        : null;
 
     await _streamAssistantResponse(
       includeToolResults: false,
       addGenerationPrompt: lastMessage.role != MessageRole.assistant,
       selectedToolIds: tools ?? const [],
       anchorId: null,
+      targetAssistantId: continuationTargetId,
     );
+  }
+
+  Future<void> cancelGeneration() async {
+    if (!chatStream.isStreaming) return;
+
+    final current = messageStore.currentMessage;
+    if (current != null) {
+      messageStore.upsert(ContentNormaliser.normalise(current));
+    }
+
+    messageStore.clearCurrentId();
+    await chatStream.stop();
   }
 
   Future<void> _streamAssistantResponse({
@@ -288,6 +310,7 @@ class ChatService extends ChangeNotifier {
     required bool addGenerationPrompt,
     List<String> selectedToolIds = const [],
     String? anchorId,
+    String? targetAssistantId,
   }) async {
     if (chatStream.isStreaming) return;
     final client = serverManager.chatClient;
@@ -295,22 +318,37 @@ class ChatService extends ChangeNotifier {
 
     chatStream.setState(StreamState.streaming);
 
-    final bubble = Bubble(
-      id: uuid.v7(),
-      role: MessageRole.assistant,
-      text: '',
-      reasoning: '',
-    );
-    messageStore.upsert(bubble);
-    messageStore.setCurrentId(bubble.id);
+    final targetIndex = targetAssistantId == null
+        ? -1
+        : messageStore.messages.indexWhere(
+            (m) => m.id == targetAssistantId && m.role == MessageRole.assistant,
+          );
 
-    final contextIndex = () {
-      if (anchorId != null) {
-        final index = messageStore.messages.indexWhere((m) => m.id == anchorId);
-        return index > 0 ? (messageStore.messages.length - 2) : index;
-      }
-      return messageStore.messages.length - 2;
-    }();
+    final contextIndex = targetIndex >= 0
+        ? targetIndex
+        : () {
+            final bubble = Bubble(
+              id: uuid.v7(),
+              role: MessageRole.assistant,
+              text: '',
+              reasoning: '',
+            );
+            messageStore.upsert(bubble);
+            messageStore.setCurrentId(bubble.id);
+
+            if (anchorId != null) {
+              final index = messageStore.messages.indexWhere(
+                (m) => m.id == anchorId,
+              );
+              return index > 0 ? (messageStore.messages.length - 2) : index;
+            }
+
+            return messageStore.messages.length - 2;
+          }();
+
+    if (targetIndex >= 0) {
+      messageStore.setCurrentId(targetAssistantId);
+    }
 
     final activeToolIds = selectedToolIds.isEmpty
         ? defaultToolIds

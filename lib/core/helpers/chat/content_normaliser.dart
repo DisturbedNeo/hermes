@@ -4,7 +4,7 @@ import 'package:hermes/core/helpers/chat/tool_caller.dart';
 
 class ContentNormaliser {
   static final RegExp _thinkRegex = RegExp(
-    r'<think>([\s\S]*?)</think>',
+    r'<think>([\s\S]*?)</think>\s*',
     multiLine: true,
   );
 
@@ -22,16 +22,20 @@ class ContentNormaliser {
     final toolsMap = Map<int, BubbleToolCall>.from(bubble.tools);
     var toolIndex = toolsMap.length;
 
-    final thinkMatch = _thinkRegex.firstMatch(remaining);
-    if (thinkMatch != null) {
+    final thinkMatches = _thinkRegex.allMatches(remaining).toList();
+    for (final thinkMatch in thinkMatches) {
       final thinkContent = thinkMatch.group(1)?.trim() ?? '';
       if (thinkContent.isNotEmpty) {
         reasoning = ('$reasoning\n$thinkContent').trim();
       }
-      remaining = remaining
-          .replaceRange(thinkMatch.start, thinkMatch.end, '')
-          .trim();
     }
+
+    remaining = remaining.replaceAllMapped(_thinkRegex, (match) {
+      final before = match.start > 0 ? remaining[match.start - 1] : '';
+      final after = match.end < remaining.length ? remaining[match.end] : '';
+      final joinsWords = _isWordBoundary(before) && _isWordBoundary(after);
+      return joinsWords ? ' ' : '';
+    }).trim();
 
     final xmlToolMatches = _xmlToolRegex.allMatches(remaining).toList();
     for (final m in xmlToolMatches) {
@@ -49,5 +53,9 @@ class ContentNormaliser {
       text: remaining,
       tools: toolsMap,
     );
+  }
+
+  static bool _isWordBoundary(String value) {
+    return value.isNotEmpty && RegExp(r'[A-Za-z0-9]').hasMatch(value);
   }
 }

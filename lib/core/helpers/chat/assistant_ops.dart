@@ -1,4 +1,5 @@
 import 'package:hermes/core/enums/message_role.dart';
+import 'package:hermes/core/helpers/chat/content_normaliser.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_token.dart';
@@ -19,7 +20,12 @@ extension AssistantOps on MessageStore {
   void appendCurrentText(String chunk) {
     final current = currentMessage;
     if (chunk.isEmpty || current == null) return;
-    upsert(current.copyWith(text: current.text + chunk));
+    final updated = current.copyWith(text: current.text + chunk);
+    upsert(
+      updated.text.contains('</think>')
+          ? ContentNormaliser.normalise(updated)
+          : updated,
+    );
   }
 
   void appendCurrentReasoning(String chunk) {

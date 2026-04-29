@@ -346,7 +346,7 @@ class _ComposerState extends State<Composer> {
                             FilledButton.icon(
                               icon: const Icon(Icons.stop),
                               label: const Text('Cancel'),
-                              onPressed: chat.chatStream.stop,
+                              onPressed: chat.cancelGeneration,
                             ),
                           );
                           break;
