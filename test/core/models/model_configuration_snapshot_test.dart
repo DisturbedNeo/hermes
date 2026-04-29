@@ -2,10 +2,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 
 void main() {
-  test('uses KV cache quantisation defaults for older snapshots', () {
+  test('uses KV cache quantisation defaults when snapshots omit them', () {
     final snapshot = ModelConfigurationSnapshot.fromJson(const {});
 
-    expect(snapshot.kvCacheQuantizationEnabled, isFalse);
+    expect(snapshot.kvCacheQuantizationEnabled, isTrue);
     expect(
       snapshot.kvCacheTypeK,
       ModelConfigurationSnapshot.defaultKvCacheType,

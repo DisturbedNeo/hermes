@@ -68,7 +68,7 @@ class LlamaServerManager {
     double presencePenalty = 1.2,
     double frequencyPenalty = 0.5,
     bool thinking = true,
-    bool kvCacheQuantizationEnabled = false,
+    bool kvCacheQuantizationEnabled = true,
     String kvCacheTypeK = ModelConfigurationSnapshot.defaultKvCacheType,
     String kvCacheTypeV = ModelConfigurationSnapshot.defaultKvCacheType,
   }) async {

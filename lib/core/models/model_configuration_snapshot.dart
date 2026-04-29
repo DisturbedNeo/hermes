@@ -76,7 +76,7 @@ class ModelConfigurationSnapshot {
       frequencyPenalty: _double(json['frequencyPenalty'], 0.5),
       thinking: json['thinking'] as bool? ?? true,
       kvCacheQuantizationEnabled:
-          json['kvCacheQuantizationEnabled'] as bool? ?? false,
+          json['kvCacheQuantizationEnabled'] as bool? ?? true,
       kvCacheTypeK: _kvCacheType(json['kvCacheTypeK']),
       kvCacheTypeV: _kvCacheType(json['kvCacheTypeV']),
     );

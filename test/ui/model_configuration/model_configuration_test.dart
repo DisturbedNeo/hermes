@@ -4,7 +4,7 @@ import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/ui/model_configuration/model_configuration.dart';
 
 void main() {
-  testWidgets('hides KV cache type dropdowns until quantisation is enabled', (
+  testWidgets('auto-expands core settings and collapses other categories', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -20,11 +20,31 @@ void main() {
       ),
     );
 
-    expect(find.text('K cache type'), findsNothing);
-    expect(find.text('V cache type'), findsNothing);
+    expect(find.text('Core'), findsOneWidget);
+    expect(find.text('Context (K)'), findsOneWidget);
+    expect(find.text('Thinking'), findsOneWidget);
+    expect(find.text('Performance'), findsOneWidget);
+    expect(find.text('Threads'), findsNothing);
+  });
 
-    await tester.ensureVisible(find.text('Quantise KV Cache'));
-    await tester.tap(find.text('Quantise KV Cache'));
+  testWidgets('hides KV cache type dropdowns when quantisation is disabled', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ModelConfiguration(
+            modelName: 'model',
+            modelPath: '/models/model.gguf',
+            llamaCppDirectory: '/llama.cpp',
+            onConfirm: (_) async {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.ensureVisible(find.text('Cache'));
+    await tester.tap(find.text('Cache'));
     await tester.pumpAndSettle();
 
     expect(find.text('K cache type'), findsOneWidget);
@@ -33,6 +53,13 @@ void main() {
       find.text(ModelConfigurationSnapshot.defaultKvCacheType),
       findsNWidgets(2),
     );
+
+    await tester.ensureVisible(find.text('Quantise KV Cache'));
+    await tester.tap(find.byType(SwitchListTile).last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('K cache type'), findsNothing);
+    expect(find.text('V cache type'), findsNothing);
   });
 
   testWidgets('submits KV cache quantisation defaults', (tester) async {
@@ -51,9 +78,6 @@ void main() {
       ),
     );
 
-    await tester.ensureVisible(find.text('Quantise KV Cache'));
-    await tester.tap(find.text('Quantise KV Cache'));
-    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Confirm'));
     await tester.tap(find.text('Confirm'));
     await tester.pumpAndSettle();
