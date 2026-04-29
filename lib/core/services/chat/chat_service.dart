@@ -5,12 +5,13 @@ import 'package:flutter/foundation.dart';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/enums/stream_state.dart';
 import 'package:hermes/core/services/chat/chat_stream.dart';
+import 'package:hermes/core/helpers/chat/context_estimator.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
-import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/saved_chat.dart';
+import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/helpers/chat/assistant_ops.dart';
 import 'package:hermes/core/helpers/chat/content_normaliser.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
@@ -19,6 +20,7 @@ import 'package:hermes/core/helpers/chat/tool_caller.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/helpers/chat/payload_builder.dart';
 import 'package:hermes/core/services/tool_service.dart';
+import 'package:hermes/core/services/workspace_service.dart';
 
 class ChatService extends ChangeNotifier {
   final String tabId;
@@ -28,11 +30,12 @@ class ChatService extends ChangeNotifier {
 
   final ToolService _toolService;
   final ChatLibraryService _chatLibrary;
+  final WorkspaceService _workspaceService;
 
-  final Bubble systemPrompt = Bubble(
+  late final Bubble systemPrompt = Bubble(
     id: uuid.v7(),
     role: MessageRole.system,
-    text: 'You are a helpful assistant.',
+    text: _buildSystemPrompt(),
     reasoning: '',
   );
 
@@ -47,15 +50,18 @@ class ChatService extends ChangeNotifier {
   ModelConfigurationSnapshot? currentModelSnapshot;
   ModelConfigurationSnapshot? pendingModelRestore;
   String? pendingModelRestoreIssue;
+  WorkspaceAttachment? workspace;
 
   ChatService({
     String? tabId,
     required this.serverManager,
     required ToolService toolService,
     required ChatLibraryService chatLibrary,
+    required WorkspaceService workspaceService,
   }) : tabId = tabId ?? uuid.v7(),
        _toolService = toolService,
-       _chatLibrary = chatLibrary {
+       _chatLibrary = chatLibrary,
+       _workspaceService = workspaceService {
     messageStore.setMessages([systemPrompt]);
     messageStore.addListener(_handleMessagesChanged);
     chatStream.onStop = serverManager.diagnostics.recordStreamEnded;
@@ -73,6 +79,15 @@ class ChatService extends ChangeNotifier {
   );
 
   bool get isUnsavedNonEmpty => currentChatId == null && hasMeaningfulContent;
+
+  bool get hasActiveWorkspace =>
+      workspace != null && workspace?.missing != true;
+
+  bool get workspaceToolsEnabled => hasActiveWorkspace;
+
+  List<String> get defaultToolIds => workspaceToolsEnabled
+      ? _toolService.defaultToolIds(includeWorkspaceTools: true)
+      : const [];
 
   String get displayTitle {
     final savedTitle = currentSavedChat?.title;
@@ -121,8 +136,9 @@ class ChatService extends ChangeNotifier {
       currentChatId = snapshot.chat.id;
       currentSavedChat = snapshot.chat;
       currentModelSnapshot = snapshot.chat.modelSnapshot;
+      workspace = await _restoreWorkspace(snapshot.chat.workspace);
       _dirty = false;
-      messageStore.setMessages(snapshot.messages);
+      messageStore.setMessages(_withCurrentSystemPrompt(snapshot.messages));
       await _chatLibrary.markOpened(snapshot.chat.id);
       await refreshModelRestorePrompt();
     } finally {
@@ -211,6 +227,27 @@ class ChatService extends ChangeNotifier {
     );
   }
 
+  Future<void> attachWorkspace(String folderPath) async {
+    if (chatStream.isStreaming) return;
+    workspace = await _workspaceService.attach(folderPath);
+    _syncSystemPrompt();
+    _markWorkspaceChanged();
+  }
+
+  void detachWorkspace() {
+    if (chatStream.isStreaming) return;
+    workspace = null;
+    _syncSystemPrompt();
+    _markWorkspaceChanged();
+  }
+
+  void setCommandExecutionApproved(bool approved) {
+    final current = workspace;
+    if (current == null) return;
+    workspace = current.copyWith(commandExecutionApproved: approved);
+    _markWorkspaceChanged();
+  }
+
   Future<void> send(String text, {List<String>? tools = const []}) async {
     if (chatStream.isStreaming) return;
 
@@ -275,10 +312,16 @@ class ChatService extends ChangeNotifier {
       return messageStore.messages.length - 2;
     }();
 
+    final activeToolIds = selectedToolIds.isEmpty
+        ? defaultToolIds
+        : selectedToolIds;
     final extraParams = ToolCaller.buildExtraParams(
       addGenerationPrompt: addGenerationPrompt,
-      toolDefs: selectedToolIds.isNotEmpty
-          ? _toolService.getToolDefinitions(ids: selectedToolIds)
+      toolDefs: activeToolIds.isNotEmpty
+          ? _toolService.getToolDefinitions(
+              ids: activeToolIds,
+              includeWorkspaceTools: workspaceToolsEnabled,
+            )
           : const [],
     );
 
@@ -293,7 +336,10 @@ class ChatService extends ChangeNotifier {
           );
 
     serverManager.diagnostics.recordStreamStarted(
-      estimatedContextTokens: _estimateContextTokens(payload),
+      estimatedContextTokens: ContextEstimator.estimateChatCompletionRequest(
+        messages: payload,
+        extraParams: extraParams,
+      ),
     );
 
     final sub = client.streamMessage(
@@ -314,16 +360,6 @@ class ChatService extends ChangeNotifier {
   void _handleStreamToken(ChatToken token) {
     serverManager.diagnostics.recordStreamOutput(_streamedText(token));
     messageStore.appendToken(token);
-  }
-
-  int _estimateContextTokens(List<ChatMessage> messages) {
-    var characters = 0;
-
-    for (final message in messages) {
-      characters += message.content.length;
-    }
-
-    return (characters / 4).ceil();
   }
 
   String _streamedText(ChatToken token) {
@@ -362,6 +398,9 @@ class ChatService extends ChangeNotifier {
       final resultJson = await _toolService.execute(
         toolId: toolName,
         argumentsJson: argsJson,
+        context: hasActiveWorkspace
+            ? WorkspaceToolContext(workspace: workspace!)
+            : null,
       );
 
       updated[toolIndex] = toolCall.copyWith(result: resultJson);
@@ -446,7 +485,7 @@ class ChatService extends ChangeNotifier {
       upToIndexInclusive: messageStore.messages.length - 1,
     );
     serverManager.diagnostics.updateContextEstimate(
-      _estimateContextTokens(payload),
+      ContextEstimator.estimateChatCompletionRequest(messages: payload),
     );
   }
 
@@ -478,6 +517,7 @@ class ChatService extends ChangeNotifier {
         title: title,
         messages: messageStore.messages.toList(),
         modelSnapshot: currentModelSnapshot,
+        workspace: workspace,
       );
 
       currentChatId = saved.id;
@@ -510,9 +550,74 @@ class ChatService extends ChangeNotifier {
   void _clearSavedState() {
     currentChatId = null;
     currentSavedChat = null;
+    workspace = null;
     pendingModelRestore = null;
     pendingModelRestoreIssue = null;
     _dirty = false;
+    notifyListeners();
+  }
+
+  Future<WorkspaceAttachment?> _restoreWorkspace(
+    WorkspaceAttachment? saved,
+  ) async {
+    if (saved == null) return null;
+    return _workspaceService.restore(
+      rootPath: saved.rootPath,
+      displayName: saved.displayName,
+      lastOpenedAt: saved.lastOpenedAt,
+      commandExecutionApproved: saved.commandExecutionApproved,
+    );
+  }
+
+  String _buildSystemPrompt() {
+    final currentWorkspace = workspace;
+    if (currentWorkspace == null) {
+      return 'You are a helpful assistant.';
+    }
+
+    if (currentWorkspace.missing) {
+      return 'You are a helpful assistant. A workspace was attached to this chat, but the folder is currently missing, so workspace tools are unavailable.';
+    }
+
+    return '''
+You are a helpful assistant.
+
+This chat has an attached workspace. The workspace root is:
+${currentWorkspace.rootPath}
+
+Workspace rules:
+- Use workspace tools for file and folder operations.
+- Only operate inside the attached workspace and use workspace-relative paths.
+- Inspect relevant files before editing them.
+- Prefer small, precise changes.
+- Explain destructive file operations before performing them.
+- Terminal commands are guarded and may be unavailable unless the user enables them for this chat.
+'''
+        .trim();
+  }
+
+  List<Bubble> _withCurrentSystemPrompt(List<Bubble> messages) {
+    final promptText = _buildSystemPrompt();
+    if (messages.isEmpty) return [systemPrompt.copyWith(text: promptText)];
+
+    final copy = List<Bubble>.of(messages);
+    if (copy.first.role == MessageRole.system) {
+      copy[0] = copy.first.copyWith(text: promptText);
+    } else {
+      copy.insert(0, systemPrompt.copyWith(text: promptText));
+    }
+    return copy;
+  }
+
+  void _syncSystemPrompt() {
+    messageStore.setMessages(_withCurrentSystemPrompt(messageStore.messages));
+  }
+
+  void _markWorkspaceChanged() {
+    if (currentChatId != null) {
+      _dirty = true;
+      _scheduleAutosave();
+    }
     notifyListeners();
   }
 

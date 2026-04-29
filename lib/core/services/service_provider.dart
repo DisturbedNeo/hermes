@@ -5,6 +5,7 @@ import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_factory.dart';
 import 'package:hermes/core/services/theme_manager.dart';
 import 'package:hermes/core/services/tool_service.dart';
+import 'package:hermes/core/services/workspace_service.dart';
 
 class ServiceProvider {
   ServiceProvider._();
@@ -37,6 +38,7 @@ class ServiceProvider {
 
     registerSingleton(PreferencesService());
     registerSingleton(ThemeManager());
+    registerSingleton(WorkspaceService());
     registerSingleton(ToolService());
     registerSingleton(
       ChatLibraryService(preferencesService: get<PreferencesService>()),
@@ -45,6 +47,7 @@ class ServiceProvider {
       ChatTabsService(
         chatLibrary: get<ChatLibraryService>(),
         toolService: get<ToolService>(),
+        workspaceService: get<WorkspaceService>(),
       ),
     );
 

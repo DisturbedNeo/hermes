@@ -1,5 +1,6 @@
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
+import 'package:hermes/core/models/workspace.dart';
 
 class SavedChat {
   final String id;
@@ -8,6 +9,7 @@ class SavedChat {
   final DateTime updatedAt;
   final DateTime? lastOpenedAt;
   final ModelConfigurationSnapshot? modelSnapshot;
+  final WorkspaceAttachment? workspace;
 
   const SavedChat({
     required this.id,
@@ -16,6 +18,7 @@ class SavedChat {
     required this.updatedAt,
     this.lastOpenedAt,
     this.modelSnapshot,
+    this.workspace,
   });
 }
 

@@ -5,7 +5,6 @@ import 'package:hermes/core/enums/stream_state.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/core/services/tool_service.dart';
-import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/ui/chat/tool_selector.dart';
 
 enum ComposerMode { send, generate, cont, cancel }
@@ -31,8 +30,7 @@ class _ComposerState extends State<Composer> {
   MessageRole _selectedRole = MessageRole.user;
 
   final Set<String> _selectedToolIds = {};
-
-  late final List<ToolDefinition> _allTools;
+  var _usingDefaultTools = true;
 
   @override
   void initState() {
@@ -41,8 +39,6 @@ class _ComposerState extends State<Composer> {
     _focusNode = FocusNode()..onKeyEvent = _onKey;
     _previousStreamState = widget.chat.chatStream.state;
     widget.chat.chatStream.addListener(_onStreamChanged);
-
-    _allTools = _toolService.getToolDefinitions();
   }
 
   @override
@@ -54,6 +50,13 @@ class _ComposerState extends State<Composer> {
     widget.chat.chatStream.addListener(_onStreamChanged);
     _controller.clear();
     _selectedToolIds.clear();
+    _usingDefaultTools = true;
+  }
+
+  List<String> _effectiveToolIds() {
+    return _usingDefaultTools
+        ? widget.chat.defaultToolIds
+        : _selectedToolIds.toList();
   }
 
   @override
@@ -114,6 +117,10 @@ class _ComposerState extends State<Composer> {
 
   Future<void> _openToolSelector() async {
     if (!widget.enabled) return;
+    final allTools = _toolService.getToolDefinitions(
+      includeWorkspaceTools: widget.chat.workspaceToolsEnabled,
+    );
+    final initial = _effectiveToolIds().toSet();
 
     final selected = await showModalBottomSheet<Set<String>>(
       context: context,
@@ -126,8 +133,8 @@ class _ComposerState extends State<Composer> {
           maxChildSize: 0.95,
           builder: (context, scrollController) {
             return ToolSelector(
-              allTools: _allTools,
-              initiallySelectedIds: _selectedToolIds,
+              allTools: allTools,
+              initiallySelectedIds: initial,
             );
           },
         );
@@ -136,6 +143,7 @@ class _ComposerState extends State<Composer> {
 
     if (selected != null && mounted) {
       setState(() {
+        _usingDefaultTools = false;
         _selectedToolIds
           ..clear()
           ..addAll(selected);
@@ -168,9 +176,9 @@ class _ComposerState extends State<Composer> {
       final trimmed = _controller.text.trim();
       _controller.clear();
       if (trimmed.isNotEmpty) {
-        chat.send(trimmed, tools: _selectedToolIds.toList());
+        chat.send(trimmed, tools: _effectiveToolIds());
       } else {
-        chat.generateOrContinue(tools: _selectedToolIds.toList());
+        chat.generateOrContinue(tools: _effectiveToolIds());
       }
       return KeyEventResult.handled;
     }
@@ -181,7 +189,8 @@ class _ComposerState extends State<Composer> {
   @override
   Widget build(BuildContext context) {
     final roleIsUser = _selectedRole == MessageRole.user;
-    final hasTools = _selectedToolIds.isNotEmpty;
+    final effectiveToolIds = _effectiveToolIds();
+    final hasTools = effectiveToolIds.isNotEmpty;
     final chat = widget.chat;
 
     return SafeArea(
@@ -235,7 +244,7 @@ class _ComposerState extends State<Composer> {
               children: [
                 IconButton(
                   tooltip: hasTools
-                      ? 'Tools (${_selectedToolIds.length})'
+                      ? 'Tools (${effectiveToolIds.length})'
                       : 'Select tools',
                   onPressed: widget.enabled ? _openToolSelector : null,
                   icon: Stack(
@@ -253,7 +262,7 @@ class _ComposerState extends State<Composer> {
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Text(
-                              _selectedToolIds.length.toString(),
+                              effectiveToolIds.length.toString(),
                               style: const TextStyle(
                                 fontSize: 9,
                                 color: Colors.white,
@@ -266,7 +275,7 @@ class _ComposerState extends State<Composer> {
                 ),
                 if (hasTools)
                   Text(
-                    '${_selectedToolIds.length}',
+                    '${effectiveToolIds.length}',
                     style: Theme.of(
                       context,
                     ).textTheme.labelSmall?.copyWith(fontSize: 10),
@@ -309,9 +318,9 @@ class _ComposerState extends State<Composer> {
                     _focusNode.requestFocus();
 
                     if (trimmed.isNotEmpty) {
-                      chat.send(trimmed, tools: _selectedToolIds.toList());
+                      chat.send(trimmed, tools: _effectiveToolIds());
                     } else {
-                      chat.generateOrContinue(tools: _selectedToolIds.toList());
+                      chat.generateOrContinue(tools: _effectiveToolIds());
                     }
                   }
                 },
@@ -348,7 +357,7 @@ class _ComposerState extends State<Composer> {
                               label: const Text('Generate'),
                               onPressed: widget.enabled
                                   ? () => chat.generateOrContinue(
-                                      tools: _selectedToolIds.toList(),
+                                      tools: _effectiveToolIds(),
                                     )
                                   : null,
                             ),
@@ -361,7 +370,7 @@ class _ComposerState extends State<Composer> {
                               label: const Text('Continue'),
                               onPressed: widget.enabled
                                   ? () => chat.generateOrContinue(
-                                      tools: _selectedToolIds.toList(),
+                                      tools: _effectiveToolIds(),
                                     )
                                   : null,
                             ),
@@ -383,7 +392,7 @@ class _ComposerState extends State<Composer> {
                                       _focusNode.requestFocus();
                                       chat.send(
                                         trimmed,
-                                        tools: _selectedToolIds.toList(),
+                                        tools: _effectiveToolIds(),
                                       );
                                     }
                                   : null,

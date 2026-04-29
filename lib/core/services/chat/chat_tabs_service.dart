@@ -5,12 +5,14 @@ import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/tool_service.dart';
+import 'package:hermes/core/services/workspace_service.dart';
 
 enum OpenChatTarget { currentTab, newTab }
 
 class ChatTabsService extends ChangeNotifier {
   final ChatLibraryService _chatLibrary;
   final ToolService _toolService;
+  final WorkspaceService _workspaceService;
 
   final LlamaServerManager serverManager = LlamaServerManager();
   final List<ChatService> _tabs = [];
@@ -21,8 +23,10 @@ class ChatTabsService extends ChangeNotifier {
   ChatTabsService({
     required ChatLibraryService chatLibrary,
     required ToolService toolService,
+    required WorkspaceService workspaceService,
   }) : _chatLibrary = chatLibrary,
-       _toolService = toolService {
+       _toolService = toolService,
+       _workspaceService = workspaceService {
     newTab();
   }
 
@@ -124,6 +128,7 @@ class ChatTabsService extends ChangeNotifier {
       serverManager: serverManager,
       toolService: _toolService,
       chatLibrary: _chatLibrary,
+      workspaceService: _workspaceService,
     );
     tab.addListener(notifyListeners);
     tab.messageStore.addListener(notifyListeners);

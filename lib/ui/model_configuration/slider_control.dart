@@ -133,6 +133,27 @@ class _SliderControlState<T extends num> extends State<SliderControl<T>> {
     widget.onChanged(widget.fromDouble(_dValue));
   }
 
+  void _setFromText(String s, {bool normalise = false}) {
+    final parsed = T == int
+        ? (int.tryParse(s)?.toDouble())
+        : double.tryParse(s);
+
+    if (parsed != null) {
+      final next = _snap(parsed);
+      if (next != _dValue) {
+        setState(() => _dValue = next);
+        widget.onChanged(widget.fromDouble(_dValue));
+      }
+    }
+
+    if (normalise) {
+      final normalised = _format(_dValue);
+      if (_controller.text != normalised) {
+        _controller.text = normalised;
+      }
+    }
+  }
+
   String _format(double v) {
     if (T == int) return v.round().toString();
     final s = v.toStringAsFixed(6);
@@ -194,15 +215,13 @@ class _SliderControlState<T extends num> extends State<SliderControl<T>> {
                 decimal: true,
                 signed: true,
               ),
-              onFieldSubmitted: (s) {
-                final parsed = T == int
-                    ? (int.tryParse(s)?.toDouble())
-                    : double.tryParse(s);
-                if (parsed != null) _setDouble(parsed);
-                final normalised = _format(_dValue);
-                if (_controller.text != normalised) {
-                  _controller.text = normalised;
-                }
+              onChanged: _setFromText,
+              onEditingComplete: () =>
+                  _setFromText(_controller.text, normalise: true),
+              onFieldSubmitted: (s) => _setFromText(s, normalise: true),
+              onTapOutside: (_) {
+                _setFromText(_controller.text, normalise: true);
+                FocusScope.of(context).unfocus();
               },
             ),
           ),

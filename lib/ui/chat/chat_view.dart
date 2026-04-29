@@ -7,11 +7,17 @@ import 'package:hermes/ui/chat/composer.dart';
 import 'package:hermes/ui/chat/diagnostics_bar.dart';
 import 'package:hermes/ui/chat/message/message_bubble.dart';
 import 'package:hermes/ui/chat/message/message_row.dart';
+import 'package:hermes/ui/chat/workspace_bar.dart';
 
 class ChatView extends StatefulWidget {
   final ChatService chat;
+  final VoidCallback onOpenWorkspace;
 
-  const ChatView({super.key, required this.chat});
+  const ChatView({
+    super.key,
+    required this.chat,
+    required this.onOpenWorkspace,
+  });
 
   @override
   State<ChatView> createState() => _ChatViewState();
@@ -36,6 +42,7 @@ class _ChatViewState extends State<ChatView> {
           children: [
             if (chat.pendingModelRestore != null)
               _ModelRestoreBanner(chat: chat),
+            WorkspaceBar(chat: chat, onOpenWorkspace: widget.onOpenWorkspace),
             Expanded(
               child: Stack(
                 children: [

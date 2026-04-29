@@ -205,8 +205,19 @@ class _ChatListState extends State<ChatList> {
 
         return ListTile(
           selected: active,
-          leading: Icon(
-            active || open ? Icons.chat_bubble : Icons.chat_bubble_outline,
+          leading: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(
+                active || open ? Icons.chat_bubble : Icons.chat_bubble_outline,
+              ),
+              if (c.workspace != null)
+                const Positioned(
+                  right: -6,
+                  bottom: -4,
+                  child: Icon(Icons.folder, size: 14),
+                ),
+            ],
           ),
           title: Text(c.title, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(_formatDate(c.updatedAt)),

@@ -8,6 +8,7 @@ import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/saved_chat.dart';
+import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -106,6 +107,7 @@ class ChatLibraryService extends ChangeNotifier {
   Future<SavedChat> saveChatSnapshot({
     required List<Bubble> messages,
     required ModelConfigurationSnapshot? modelSnapshot,
+    required WorkspaceAttachment? workspace,
     String? chatId,
     String? title,
   }) async {
@@ -138,6 +140,8 @@ class ChatLibraryService extends ChangeNotifier {
       final modelJson = modelSnapshot == null
           ? null
           : jsonEncode(modelSnapshot.toJson());
+      final workspaceLastOpenedAt =
+          workspace?.lastOpenedAt.millisecondsSinceEpoch;
 
       await txn.insert('saved_chats', {
         'id': id,
@@ -146,6 +150,11 @@ class ChatLibraryService extends ChangeNotifier {
         'updated_at': now.millisecondsSinceEpoch,
         'last_opened_at': lastOpenedAt?.millisecondsSinceEpoch,
         'model_snapshot_json': modelJson,
+        'workspace_root_path': workspace?.rootPath,
+        'workspace_display_name': workspace?.displayName,
+        'workspace_last_opened_at': workspaceLastOpenedAt,
+        'workspace_command_approved':
+            workspace?.commandExecutionApproved == true ? 1 : 0,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
 
       await txn.delete(
@@ -180,6 +189,7 @@ class ChatLibraryService extends ChangeNotifier {
         updatedAt: now,
         lastOpenedAt: lastOpenedAt,
         modelSnapshot: modelSnapshot,
+        workspace: workspace,
       );
     });
 
@@ -288,9 +298,28 @@ class ChatLibraryService extends ChangeNotifier {
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         last_opened_at INTEGER,
-        model_snapshot_json TEXT
+        model_snapshot_json TEXT,
+        workspace_root_path TEXT,
+        workspace_display_name TEXT,
+        workspace_last_opened_at INTEGER,
+        workspace_command_approved INTEGER NOT NULL DEFAULT 0
       )
     ''');
+
+    await _ensureColumn(db, 'saved_chats', 'workspace_root_path', 'TEXT');
+    await _ensureColumn(db, 'saved_chats', 'workspace_display_name', 'TEXT');
+    await _ensureColumn(
+      db,
+      'saved_chats',
+      'workspace_last_opened_at',
+      'INTEGER',
+    );
+    await _ensureColumn(
+      db,
+      'saved_chats',
+      'workspace_command_approved',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
 
     await db.execute('''
       CREATE TABLE IF NOT EXISTS saved_chat_messages (
@@ -357,6 +386,8 @@ class ChatLibraryService extends ChangeNotifier {
 
   SavedChat _savedChatFromRow(Map<String, Object?> row) {
     final modelJson = row['model_snapshot_json'] as String?;
+    final workspaceRoot = row['workspace_root_path'] as String?;
+    final workspaceLastOpenedAt = row['workspace_last_opened_at'] as int?;
     return SavedChat(
       id: row['id'] as String,
       title: row['title'] as String,
@@ -368,7 +399,33 @@ class ChatLibraryService extends ChangeNotifier {
           : ModelConfigurationSnapshot.fromJson(
               jsonDecode(modelJson) as Map<String, dynamic>,
             ),
+      workspace: workspaceRoot == null || workspaceRoot.isEmpty
+          ? null
+          : WorkspaceAttachment(
+              rootPath: workspaceRoot,
+              displayName:
+                  row['workspace_display_name'] as String? ??
+                  path.basename(workspaceRoot),
+              lastOpenedAt:
+                  _nullableDate(workspaceLastOpenedAt) ??
+                  DateTime.fromMillisecondsSinceEpoch(0),
+              commandExecutionApproved:
+                  (row['workspace_command_approved'] as int? ?? 0) == 1,
+            ),
     );
+  }
+
+  Future<void> _ensureColumn(
+    DatabaseExecutor db,
+    String table,
+    String column,
+    String definition,
+  ) async {
+    final columns = await db.rawQuery('PRAGMA table_info($table)');
+    final exists = columns.any((row) => row['name'] == column);
+    if (!exists) {
+      await db.execute('ALTER TABLE $table ADD COLUMN $column $definition');
+    }
   }
 
   Bubble _bubbleFromRow(Map<String, Object?> row) {

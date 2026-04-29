@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
@@ -9,6 +10,7 @@ import 'package:hermes/ui/overlays/chat_list.dart';
 import 'package:hermes/ui/chat/chat_view.dart';
 import 'package:hermes/ui/chat/model_picker.dart';
 import 'package:hermes/ui/overlays/settings.dart';
+import 'package:hermes/ui/overlays/workspace_panel.dart';
 
 class Chat extends StatefulWidget {
   const Chat({super.key});
@@ -22,13 +24,36 @@ class _ChatState extends State<Chat> {
 
   var isChatListOpen = false;
   var isSettingsOpen = false;
+  var isWorkspaceOpen = false;
 
   void toggleChatList() {
-    setState(() => isChatListOpen = !isChatListOpen);
+    setState(() {
+      isChatListOpen = !isChatListOpen;
+      if (isChatListOpen) {
+        isWorkspaceOpen = false;
+        isSettingsOpen = false;
+      }
+    });
   }
 
   void toggleSettings() {
-    setState(() => isSettingsOpen = !isSettingsOpen);
+    setState(() {
+      isSettingsOpen = !isSettingsOpen;
+      if (isSettingsOpen) {
+        isChatListOpen = false;
+        isWorkspaceOpen = false;
+      }
+    });
+  }
+
+  void toggleWorkspace() {
+    setState(() {
+      isWorkspaceOpen = !isWorkspaceOpen;
+      if (isWorkspaceOpen) {
+        isChatListOpen = false;
+        isSettingsOpen = false;
+      }
+    });
   }
 
   @override
@@ -47,6 +72,23 @@ class _ChatState extends State<Chat> {
         ),
         actions: [
           ModelPicker(),
+          IconButton(
+            tooltip: 'Workspace',
+            icon: AnimatedBuilder(
+              animation: _tabs,
+              builder: (_, _) {
+                final workspace = _tabs.activeChat?.workspace;
+                return Icon(
+                  workspace == null
+                      ? Icons.folder_open_outlined
+                      : workspace.missing
+                      ? Icons.folder_off_outlined
+                      : Icons.folder_special_outlined,
+                );
+              },
+            ),
+            onPressed: () => toggleWorkspace(),
+          ),
           IconButton(
             tooltip: 'Settings',
             icon: const Icon(Icons.settings_outlined),
@@ -78,15 +120,19 @@ class _ChatState extends State<Chat> {
                           : ChatView(
                               key: ValueKey('chat_${activeChat.tabId}'),
                               chat: activeChat,
+                              onOpenWorkspace: _selectWorkspaceForActiveChat,
                             ),
                     ),
 
-                    if (isChatListOpen || isSettingsOpen) ...[
+                    if (isChatListOpen ||
+                        isSettingsOpen ||
+                        isWorkspaceOpen) ...[
                       Positioned.fill(
                         child: GestureDetector(
                           onTap: () => setState(() {
                             isChatListOpen = false;
                             isSettingsOpen = false;
+                            isWorkspaceOpen = false;
                           }),
                           child: BackdropFilter(
                             filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
@@ -109,6 +155,16 @@ class _ChatState extends State<Chat> {
                           _tabs.newTab();
                           setState(() => isChatListOpen = false);
                         },
+                      ),
+                    ),
+
+                    _SideSheet(
+                      side: AxisDirection.right,
+                      open: isWorkspaceOpen,
+                      width: 420,
+                      child: WorkspacePanel(
+                        chat: activeChat,
+                        onSelectWorkspace: _selectWorkspaceForActiveChat,
                       ),
                     ),
 
@@ -162,6 +218,30 @@ class _ChatState extends State<Chat> {
       return;
     }
     setState(() => isChatListOpen = false);
+  }
+
+  Future<void> _selectWorkspaceForActiveChat() async {
+    final activeChat = _tabs.activeChat;
+    if (activeChat == null || activeChat.chatStream.isStreaming) return;
+
+    final directory = await getDirectoryPath(
+      confirmButtonText: 'Open workspace',
+    );
+    if (directory == null) return;
+
+    try {
+      await activeChat.attachWorkspace(directory);
+      if (!mounted) return;
+      setState(() => isWorkspaceOpen = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Workspace attached')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to attach workspace: $e')));
+    }
   }
 
   Future<void> _openSavedChatInNewTab(String chatId) async {
