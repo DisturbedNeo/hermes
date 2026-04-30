@@ -8,6 +8,7 @@ import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/saved_chat.dart';
+import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:path/path.dart' as path;
@@ -108,6 +109,7 @@ class ChatLibraryService extends ChangeNotifier {
     required List<Bubble> messages,
     required ModelConfigurationSnapshot? modelSnapshot,
     required WorkspaceAttachment? workspace,
+    required SystemPromptSnapshot? systemPromptSnapshot,
     String? chatId,
     String? title,
   }) async {
@@ -155,6 +157,12 @@ class ChatLibraryService extends ChangeNotifier {
         'workspace_last_opened_at': workspaceLastOpenedAt,
         'workspace_command_approved':
             workspace?.commandExecutionApproved == true ? 1 : 0,
+        'system_prompt_snapshot_json': systemPromptSnapshot == null
+            ? null
+            : jsonEncode(systemPromptSnapshot.toJson()),
+        'system_prompt_id': systemPromptSnapshot?.id,
+        'system_prompt_name': systemPromptSnapshot?.name,
+        'system_prompt_text': systemPromptSnapshot?.text,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
 
       await txn.delete(
@@ -194,6 +202,7 @@ class ChatLibraryService extends ChangeNotifier {
         lastOpenedAt: lastOpenedAt,
         modelSnapshot: modelSnapshot,
         workspace: workspace,
+        systemPromptSnapshot: systemPromptSnapshot,
       );
     });
 
@@ -277,6 +286,7 @@ class ChatLibraryService extends ChangeNotifier {
       dbPath,
       options: OpenDatabaseOptions(
         version: 1,
+        singleInstance: false,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
         },
@@ -306,7 +316,11 @@ class ChatLibraryService extends ChangeNotifier {
         workspace_root_path TEXT,
         workspace_display_name TEXT,
         workspace_last_opened_at INTEGER,
-        workspace_command_approved INTEGER NOT NULL DEFAULT 0
+        workspace_command_approved INTEGER NOT NULL DEFAULT 0,
+        system_prompt_snapshot_json TEXT,
+        system_prompt_id TEXT,
+        system_prompt_name TEXT,
+        system_prompt_text TEXT
       )
     ''');
 
@@ -324,6 +338,15 @@ class ChatLibraryService extends ChangeNotifier {
       'workspace_command_approved',
       'INTEGER NOT NULL DEFAULT 0',
     );
+    await _ensureColumn(
+      db,
+      'saved_chats',
+      'system_prompt_snapshot_json',
+      'TEXT',
+    );
+    await _ensureColumn(db, 'saved_chats', 'system_prompt_id', 'TEXT');
+    await _ensureColumn(db, 'saved_chats', 'system_prompt_name', 'TEXT');
+    await _ensureColumn(db, 'saved_chats', 'system_prompt_text', 'TEXT');
 
     await db.execute('''
       CREATE TABLE IF NOT EXISTS saved_chat_messages (
@@ -440,6 +463,32 @@ class ChatLibraryService extends ChangeNotifier {
               commandExecutionApproved:
                   (row['workspace_command_approved'] as int? ?? 0) == 1,
             ),
+      systemPromptSnapshot: _systemPromptFromRow(row),
+    );
+  }
+
+  SystemPromptSnapshot? _systemPromptFromRow(Map<String, Object?> row) {
+    final snapshotJson = row['system_prompt_snapshot_json'] as String?;
+    if (snapshotJson != null && snapshotJson.isNotEmpty) {
+      try {
+        return SystemPromptSnapshot.fromJson(
+          jsonDecode(snapshotJson) as Map<String, dynamic>,
+        );
+      } catch (_) {
+        // Fall through to legacy columns.
+      }
+    }
+
+    final text = row['system_prompt_text'] as String?;
+    final name = row['system_prompt_name'] as String?;
+    if (text == null || text.isEmpty || name == null || name.isEmpty) {
+      return null;
+    }
+
+    return SystemPromptSnapshot.legacy(
+      id: row['system_prompt_id'] as String?,
+      name: name,
+      text: text,
     );
   }
 

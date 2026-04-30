@@ -12,6 +12,7 @@ import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/saved_chat.dart';
+import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/helpers/chat/assistant_ops.dart';
 import 'package:hermes/core/helpers/chat/content_normaliser.dart';
@@ -22,10 +23,14 @@ import 'package:hermes/core/helpers/chat/tool_caller.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/helpers/chat/payload_builder.dart';
+import 'package:hermes/core/services/prompt_assembler.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_service.dart';
 
 class ChatService extends ChangeNotifier {
+  static const String defaultSystemPromptName = 'Default';
+  static const String defaultSystemPromptText = 'You are a helpful assistant.';
+
   final String tabId;
   final LlamaServerManager serverManager;
   final MessageStore messageStore = MessageStore();
@@ -35,6 +40,7 @@ class ChatService extends ChangeNotifier {
   final ChatLibraryService _chatLibrary;
   final WorkspaceService _workspaceService;
   final PreferencesService _preferencesService;
+  final PromptAssembler _promptAssembler = const PromptAssembler();
 
   late final Bubble systemPrompt = Bubble(
     id: uuid.v7(),
@@ -55,6 +61,7 @@ class ChatService extends ChangeNotifier {
   ModelConfigurationSnapshot? pendingModelRestore;
   String? pendingModelRestoreIssue;
   WorkspaceAttachment? workspace;
+  SystemPromptSnapshot? currentSystemPromptSnapshot;
 
   ChatService({
     String? tabId,
@@ -63,11 +70,13 @@ class ChatService extends ChangeNotifier {
     required ChatLibraryService chatLibrary,
     required WorkspaceService workspaceService,
     required PreferencesService preferencesService,
+    SystemPromptSnapshot? initialSystemPromptSnapshot,
   }) : tabId = tabId ?? uuid.v7(),
        _toolService = toolService,
        _chatLibrary = chatLibrary,
        _workspaceService = workspaceService,
        _preferencesService = preferencesService {
+    currentSystemPromptSnapshot = initialSystemPromptSnapshot;
     messageStore.setMessages([systemPrompt]);
     messageStore.addListener(_handleMessagesChanged);
     chatStream.onStop = serverManager.diagnostics.recordStreamEnded;
@@ -85,6 +94,9 @@ class ChatService extends ChangeNotifier {
   );
 
   bool get isUnsavedNonEmpty => currentChatId == null && hasMeaningfulContent;
+
+  bool get isSystemPromptLocked =>
+      chatStream.isStreaming || hasMeaningfulContent || currentChatId != null;
 
   bool get hasActiveWorkspace =>
       workspace != null && workspace?.missing != true;
@@ -113,7 +125,7 @@ class ChatService extends ChangeNotifier {
       ? null
       : serverManager.diagnostics.modelSnapshot;
 
-  Future<void> newChat() async {
+  Future<void> newChat({SystemPromptSnapshot? systemPromptSnapshot}) async {
     await flushCurrentChat();
 
     if (chatStream.isStreaming) {
@@ -122,8 +134,11 @@ class ChatService extends ChangeNotifier {
     }
 
     _clearSavedState();
+    currentSystemPromptSnapshot = systemPromptSnapshot;
     currentModelSnapshot = _activeServerSnapshot;
-    messageStore.setMessages([systemPrompt]);
+    messageStore.setMessages([
+      systemPrompt.copyWith(text: _buildSystemPrompt()),
+    ]);
   }
 
   Future<bool> openChat(String id) async {
@@ -143,6 +158,7 @@ class ChatService extends ChangeNotifier {
       currentSavedChat = snapshot.chat;
       currentModelSnapshot = snapshot.chat.modelSnapshot;
       workspace = await _restoreWorkspace(snapshot.chat.workspace);
+      currentSystemPromptSnapshot = snapshot.chat.systemPromptSnapshot;
       _dirty = false;
       messageStore.setMessages(_withCurrentSystemPrompt(snapshot.messages));
       await _chatLibrary.markOpened(snapshot.chat.id);
@@ -212,6 +228,21 @@ class ChatService extends ChangeNotifier {
     pendingModelRestore = null;
     pendingModelRestoreIssue = null;
     notifyListeners();
+  }
+
+  void setSystemPromptSnapshot(SystemPromptSnapshot snapshot) {
+    if (isSystemPromptLocked) {
+      throw StateError('System prompt is locked for this chat');
+    }
+
+    currentSystemPromptSnapshot = snapshot;
+    _syncSystemPrompt();
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  String buildSystemPromptForTesting({String? currentUserRequest}) {
+    return _buildSystemPrompt(currentUserRequest: currentUserRequest);
   }
 
   Future<void> refreshModelRestorePrompt() async {
@@ -376,15 +407,20 @@ class ChatService extends ChangeNotifier {
         messageStore.setCurrentId(targetAssistantId);
       }
 
+      final currentUserRequest = _currentUserRequestFor(contextIndex);
+      final payloadMessages = _payloadMessages(
+        currentUserRequest: currentUserRequest,
+      );
+
       final payload = includeToolResults
           ? PayloadBuilder.buildPayloadWithTools(
-              messages: messageStore.messages,
+              messages: payloadMessages,
               upToIndexInclusive: contextIndex,
               omitCoveredMessages: true,
               omittedMessageIds: emergencyOmittedMessageIds,
             )
           : PayloadBuilder.buildPayload(
-              messages: messageStore.messages,
+              messages: payloadMessages,
               upToIndexInclusive: contextIndex,
               omitCoveredMessages: true,
               omittedMessageIds: emergencyOmittedMessageIds,
@@ -599,7 +635,7 @@ class ChatService extends ChangeNotifier {
     }
 
     final payload = PayloadBuilder.buildPayloadWithTools(
-      messages: messageStore.messages,
+      messages: _payloadMessages(),
       upToIndexInclusive: messageStore.messages.length - 1,
       omitCoveredMessages: true,
     );
@@ -638,6 +674,7 @@ class ChatService extends ChangeNotifier {
         messages: messageStore.messages.toList(),
         modelSnapshot: currentModelSnapshot,
         workspace: workspace,
+        systemPromptSnapshot: currentSystemPromptSnapshot,
       );
 
       currentChatId = saved.id;
@@ -671,6 +708,7 @@ class ChatService extends ChangeNotifier {
     currentChatId = null;
     currentSavedChat = null;
     workspace = null;
+    currentSystemPromptSnapshot = null;
     pendingModelRestore = null;
     pendingModelRestoreIssue = null;
     _dirty = false;
@@ -689,18 +727,38 @@ class ChatService extends ChangeNotifier {
     );
   }
 
-  String _buildSystemPrompt() {
+  String _buildSystemPrompt({String? currentUserRequest}) {
+    final snapshot = currentSystemPromptSnapshot;
+    if (snapshot?.preset != null) {
+      final result = _promptAssembler.assemble(
+        PromptAssemblyRequest.fromSnapshot(
+          snapshot!,
+          autoModuleIds: _autoModuleIdsForWorkspace(),
+          workspaceRootPath: workspace?.rootPath,
+          workspaceMissing: workspace?.missing ?? false,
+          commandExecutionApproved: workspace?.commandExecutionApproved == true,
+          currentUserRequest: currentUserRequest,
+        ),
+      );
+      if (result.text.trim().isNotEmpty) return result.text;
+      if (snapshot.text.trim().isNotEmpty) return snapshot.text.trim();
+    }
+
+    final basePrompt =
+        currentSystemPromptSnapshot?.text.trim().isNotEmpty == true
+        ? currentSystemPromptSnapshot!.text.trim()
+        : defaultSystemPromptText;
     final currentWorkspace = workspace;
     if (currentWorkspace == null) {
-      return 'You are a helpful assistant.';
+      return basePrompt;
     }
 
     if (currentWorkspace.missing) {
-      return 'You are a helpful assistant. A workspace was attached to this chat, but the folder is currently missing, so workspace tools are unavailable.';
+      return '$basePrompt\n\nA workspace was attached to this chat, but the folder is currently missing, so workspace tools are unavailable.';
     }
 
     return '''
-You are a helpful assistant.
+$basePrompt
 
 This chat has an attached workspace. The workspace root is:
 ${currentWorkspace.rootPath}
@@ -716,8 +774,13 @@ Workspace rules:
         .trim();
   }
 
-  List<Bubble> _withCurrentSystemPrompt(List<Bubble> messages) {
-    final promptText = _buildSystemPrompt();
+  List<Bubble> _withCurrentSystemPrompt(
+    List<Bubble> messages, {
+    String? currentUserRequest,
+  }) {
+    final promptText = _buildSystemPrompt(
+      currentUserRequest: currentUserRequest,
+    );
     if (messages.isEmpty) return [systemPrompt.copyWith(text: promptText)];
 
     final copy = List<Bubble>.of(messages);
@@ -731,6 +794,32 @@ Workspace rules:
 
   void _syncSystemPrompt() {
     messageStore.setMessages(_withCurrentSystemPrompt(messageStore.messages));
+  }
+
+  List<Bubble> _payloadMessages({String? currentUserRequest}) {
+    return _withCurrentSystemPrompt(
+      messageStore.messages,
+      currentUserRequest: currentUserRequest,
+    );
+  }
+
+  String? _currentUserRequestFor(int contextIndex) {
+    final end = contextIndex.clamp(0, messageStore.messages.length - 1);
+    for (var i = end; i >= 0; i--) {
+      final message = messageStore.messages[i];
+      if (message.role == MessageRole.user && message.text.trim().isNotEmpty) {
+        return message.text.trim();
+      }
+    }
+    return null;
+  }
+
+  List<String> _autoModuleIdsForWorkspace() {
+    final currentWorkspace = workspace;
+    if (currentWorkspace == null) return const [];
+    return currentWorkspace.missing
+        ? const [BuiltInPromptIds.workspaceMissingModule]
+        : const [BuiltInPromptIds.workspaceRulesModule];
   }
 
   void _markWorkspaceChanged() {

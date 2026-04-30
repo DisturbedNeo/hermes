@@ -10,6 +10,7 @@ import 'package:hermes/ui/overlays/chat_list.dart';
 import 'package:hermes/ui/chat/chat_view.dart';
 import 'package:hermes/ui/chat/model_picker.dart';
 import 'package:hermes/ui/overlays/settings.dart';
+import 'package:hermes/ui/overlays/system_prompt_library_panel.dart';
 import 'package:hermes/ui/overlays/workspace_panel.dart';
 
 class Chat extends StatefulWidget {
@@ -24,6 +25,7 @@ class _ChatState extends State<Chat> {
 
   var isChatListOpen = false;
   var isSettingsOpen = false;
+  var isPromptLibraryOpen = false;
   var isWorkspaceOpen = false;
 
   void toggleChatList() {
@@ -32,6 +34,7 @@ class _ChatState extends State<Chat> {
       if (isChatListOpen) {
         isWorkspaceOpen = false;
         isSettingsOpen = false;
+        isPromptLibraryOpen = false;
       }
     });
   }
@@ -41,6 +44,18 @@ class _ChatState extends State<Chat> {
       isSettingsOpen = !isSettingsOpen;
       if (isSettingsOpen) {
         isChatListOpen = false;
+        isWorkspaceOpen = false;
+        isPromptLibraryOpen = false;
+      }
+    });
+  }
+
+  void togglePromptLibrary() {
+    setState(() {
+      isPromptLibraryOpen = !isPromptLibraryOpen;
+      if (isPromptLibraryOpen) {
+        isChatListOpen = false;
+        isSettingsOpen = false;
         isWorkspaceOpen = false;
       }
     });
@@ -52,6 +67,7 @@ class _ChatState extends State<Chat> {
       if (isWorkspaceOpen) {
         isChatListOpen = false;
         isSettingsOpen = false;
+        isPromptLibraryOpen = false;
       }
     });
   }
@@ -72,6 +88,11 @@ class _ChatState extends State<Chat> {
         ),
         actions: [
           ModelPicker(),
+          IconButton(
+            tooltip: 'System prompts',
+            icon: const Icon(Icons.display_settings_outlined),
+            onPressed: () => togglePromptLibrary(),
+          ),
           IconButton(
             tooltip: 'Workspace',
             icon: AnimatedBuilder(
@@ -126,12 +147,14 @@ class _ChatState extends State<Chat> {
 
                     if (isChatListOpen ||
                         isSettingsOpen ||
+                        isPromptLibraryOpen ||
                         isWorkspaceOpen) ...[
                       Positioned.fill(
                         child: GestureDetector(
                           onTap: () => setState(() {
                             isChatListOpen = false;
                             isSettingsOpen = false;
+                            isPromptLibraryOpen = false;
                             isWorkspaceOpen = false;
                           }),
                           child: BackdropFilter(
@@ -154,6 +177,19 @@ class _ChatState extends State<Chat> {
                         onNewChat: () {
                           _tabs.newTab();
                           setState(() => isChatListOpen = false);
+                        },
+                      ),
+                    ),
+
+                    _SideSheet(
+                      side: AxisDirection.right,
+                      open: isPromptLibraryOpen,
+                      width: 440,
+                      child: SystemPromptLibraryPanel(
+                        onPromptLoaded: () {
+                          if (mounted) {
+                            setState(() => isPromptLibraryOpen = false);
+                          }
                         },
                       ),
                     ),

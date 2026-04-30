@@ -1,17 +1,22 @@
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
+import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/preferences_service.dart';
+import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_service.dart';
 
 enum OpenChatTarget { currentTab, newTab }
 
+enum SystemPromptLoadTarget { currentChat, newTab }
+
 class ChatTabsService extends ChangeNotifier {
   final ChatLibraryService _chatLibrary;
+  final SystemPromptLibraryService _systemPromptLibrary;
   final ToolService _toolService;
   final WorkspaceService _workspaceService;
   final PreferencesService _preferencesService;
@@ -24,10 +29,12 @@ class ChatTabsService extends ChangeNotifier {
 
   ChatTabsService({
     required ChatLibraryService chatLibrary,
+    required SystemPromptLibraryService systemPromptLibrary,
     required ToolService toolService,
     required WorkspaceService workspaceService,
     required PreferencesService preferencesService,
   }) : _chatLibrary = chatLibrary,
+       _systemPromptLibrary = systemPromptLibrary,
        _toolService = toolService,
        _workspaceService = workspaceService,
        _preferencesService = preferencesService {
@@ -42,8 +49,8 @@ class ChatTabsService extends ChangeNotifier {
     return _tabs.where((tab) => tab.tabId == id).firstOrNull;
   }
 
-  ChatService newTab() {
-    final tab = _createTab();
+  ChatService newTab({SystemPromptSnapshot? systemPromptSnapshot}) {
+    final tab = _createTab(systemPromptSnapshot: systemPromptSnapshot);
     _tabs.add(tab);
     activeTabId = tab.tabId;
     notifyListeners();
@@ -99,6 +106,51 @@ class ChatTabsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<SystemPromptLoadTarget> loadSystemPromptIntoActiveChat(
+    SavedSystemPrompt prompt,
+  ) async {
+    final snapshot = prompt.toSnapshot();
+    final active = activeChat;
+    if (active != null && !active.isSystemPromptLocked) {
+      active.setSystemPromptSnapshot(snapshot);
+      await _systemPromptLibrary.markUsed(prompt.id);
+      notifyListeners();
+      return SystemPromptLoadTarget.currentChat;
+    }
+
+    newTab(systemPromptSnapshot: snapshot);
+    await _systemPromptLibrary.markUsed(prompt.id);
+    notifyListeners();
+    return SystemPromptLoadTarget.newTab;
+  }
+
+  Future<SystemPromptLoadTarget> loadPromptPresetIntoActiveChat(
+    PromptPreset preset, {
+    List<String> selectedOptionalModuleIds = const [],
+  }) async {
+    final active = activeChat;
+    if (active != null && !active.isSystemPromptLocked) {
+      final snapshot = await _systemPromptLibrary.snapshotForPreset(
+        preset,
+        selectedOptionalModuleIds: selectedOptionalModuleIds,
+        workspace: active.workspace,
+      );
+      active.setSystemPromptSnapshot(snapshot);
+      await _systemPromptLibrary.markPresetUsed(preset.id);
+      notifyListeners();
+      return SystemPromptLoadTarget.currentChat;
+    }
+
+    final snapshot = await _systemPromptLibrary.snapshotForPreset(
+      preset,
+      selectedOptionalModuleIds: selectedOptionalModuleIds,
+    );
+    newTab(systemPromptSnapshot: snapshot);
+    await _systemPromptLibrary.markPresetUsed(preset.id);
+    notifyListeners();
+    return SystemPromptLoadTarget.newTab;
+  }
+
   Future<void> closeTab(String tabId) async {
     final tab = _tabById(tabId);
     if (tab == null) return;
@@ -127,13 +179,14 @@ class ChatTabsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  ChatService _createTab() {
+  ChatService _createTab({SystemPromptSnapshot? systemPromptSnapshot}) {
     final tab = ChatService(
       serverManager: serverManager,
       toolService: _toolService,
       chatLibrary: _chatLibrary,
       workspaceService: _workspaceService,
       preferencesService: _preferencesService,
+      initialSystemPromptSnapshot: systemPromptSnapshot,
     );
     tab.addListener(notifyListeners);
     tab.messageStore.addListener(notifyListeners);
