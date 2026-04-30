@@ -30,13 +30,13 @@ class ModelConfiguration extends StatefulWidget {
 }
 
 class _ModelConfigurationState extends State<ModelConfiguration> {
-  int _ctx = 24;
+  int _ctx = 64;
   int _threads = (Platform.numberOfProcessors * 0.875).ceil();
   int _gpuLayers = 999;
   double _temperature = 0.7;
   double _topP = 0.8;
   int _topK = 20;
-  int _batch = 512;
+  int _batch = 2048;
   int _uBatch = 512;
   int _miroStatMode = 0;
   double _repeatPenalty = 1.0;
@@ -129,9 +129,9 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                   label: 'Context (K)',
                   value: _ctx,
                   min: 1,
-                  max: 256,
+                  max: 2048,
                   step: 1,
-                  onChanged: (v) => setState(() => _ctx = v.clamp(1, 256)),
+                  onChanged: (v) => setState(() => _ctx = v),
                 ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
@@ -154,7 +154,7 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                   max: Platform.numberOfProcessors,
                   step: 1,
                   onChanged: (v) => setState(
-                    () => _threads = v.clamp(1, Platform.numberOfProcessors),
+                    () => _threads = v,
                   ),
                 ),
                 SliderControl.integer(
@@ -169,7 +169,7 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                   label: 'Batch',
                   value: _batch,
                   min: 32,
-                  max: 1024,
+                  max: 2048,
                   step: 32,
                   onChanged: (v) => setState(() => _batch = v),
                 ),
@@ -177,7 +177,7 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                   label: 'uBatch',
                   value: _uBatch,
                   min: 16,
-                  max: 256,
+                  max: 512,
                   step: 16,
                   onChanged: (v) => setState(() => _uBatch = v),
                 ),
@@ -236,7 +236,7 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                   max: 2.0,
                   step: 0.05,
                   onChanged: (v) => setState(
-                    () => _repeatPenalty = v.clamp(0.5, 2.0).toDouble(),
+                    () => _repeatPenalty = v.toDouble(),
                   ),
                 ),
                 SliderControl.integer(
@@ -246,7 +246,7 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                   max: 2048,
                   step: 16,
                   onChanged: (v) =>
-                      setState(() => _repeatLastN = v.clamp(0, 2048)),
+                      setState(() => _repeatLastN = v),
                 ),
                 SliderControl.decimal(
                   label: 'Presence Penalty',
@@ -255,7 +255,7 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                   max: 2.0,
                   step: 0.1,
                   onChanged: (v) => setState(
-                    () => _presencePenalty = v.clamp(-2.0, 2.0).toDouble(),
+                    () => _presencePenalty = v.toDouble(),
                   ),
                 ),
                 SliderControl.decimal(
@@ -265,7 +265,7 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                   max: 2.0,
                   step: 0.1,
                   onChanged: (v) => setState(
-                    () => _frequencyPenalty = v.clamp(-2.0, 2.0).toDouble(),
+                    () => _frequencyPenalty = v.toDouble(),
                   ),
                 ),
               ],
