@@ -527,7 +527,7 @@ class ChatService extends ChangeNotifier {
 
     await _streamAssistantResponse(
       includeToolResults: true,
-      addGenerationPrompt: false,
+      addGenerationPrompt: true,
       selectedToolIds: const [],
       anchorId: assistantBubble.id,
     );
