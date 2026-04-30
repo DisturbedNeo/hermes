@@ -5,7 +5,7 @@ import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/models/tool_definition.dart';
 
 class ToolCaller {
-  static final Map<String, Map<int, StringBuffer>> _toolBuffers = {};
+  final Map<String, Map<int, StringBuffer>> _toolBuffers = {};
 
   static BubbleToolCall? parseXML(String body) {
     final lines = body
@@ -53,7 +53,7 @@ class ToolCaller {
     return sb.toString().trim();
   }
 
-  static Map<int, BubbleToolCall> applyDelta({
+  Map<int, BubbleToolCall> applyDelta({
     required String messageId,
     required ToolCallDelta delta,
     required Map<int, BubbleToolCall> currentTools,
@@ -132,11 +132,11 @@ class ToolCaller {
     return bubble.copyWith(tools: tools);
   }
 
-  static void clearForMessage(String messageId) {
+  void clearForMessage(String messageId) {
     _toolBuffers.remove(messageId);
   }
 
-  static void clearAll() {
+  void clearAll() {
     _toolBuffers.clear();
   }
 }

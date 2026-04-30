@@ -7,10 +7,10 @@ import 'package:hermes/core/services/service_provider.dart';
 
 class ThemeManager with ChangeNotifier {
   bool _isDarkMode = false;
-  late HermesThemeData _currentTheme;
+  HermesThemeData _currentTheme = allThemes.first;
+  bool _disposed = false;
 
-  final PreferencesService _preferencesService = serviceProvider
-      .get<PreferencesService>();
+  final PreferencesService _preferencesService;
 
   static List<HermesThemeData> allThemes = [
     SolarpunkTheme.build(),
@@ -19,7 +19,9 @@ class ThemeManager with ChangeNotifier {
 
   final Duration _themeSwitchDuration = const Duration(milliseconds: 300);
 
-  ThemeManager() {
+  ThemeManager({PreferencesService? preferencesService})
+    : _preferencesService =
+          preferencesService ?? serviceProvider.get<PreferencesService>() {
     _loadThemePreferences();
   }
 
@@ -38,6 +40,7 @@ class ThemeManager with ChangeNotifier {
       _currentTheme = allThemes.first;
     }
 
+    if (_disposed) return;
     notifyListeners();
   }
 
@@ -70,5 +73,11 @@ class ThemeManager with ChangeNotifier {
       }
     }
     return categories;
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }

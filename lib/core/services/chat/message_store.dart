@@ -8,6 +8,11 @@ import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
 
 class MessageStore extends ChangeNotifier {
+  MessageStore({ToolCaller? toolCaller})
+    : toolCaller = toolCaller ?? ToolCaller();
+
+  final ToolCaller toolCaller;
+
   List<Bubble> _messages = [];
   UnmodifiableListView<Bubble>? _messageCache;
   final Map<String, int> _indexMap = {};
@@ -196,10 +201,14 @@ class MessageStore extends ChangeNotifier {
 
   void clearCurrentId() {
     if (_currentId != null) {
-      ToolCaller.clearForMessage(_currentId!);
+      toolCaller.clearForMessage(_currentId!);
     }
 
     setCurrentId(null);
+  }
+
+  void clearToolBuffers() {
+    toolCaller.clearAll();
   }
 
   void markCoveredBySummary({

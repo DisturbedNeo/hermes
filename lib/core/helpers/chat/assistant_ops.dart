@@ -4,7 +4,6 @@ import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
-import 'package:hermes/core/helpers/chat/tool_caller.dart';
 
 extension AssistantOps on MessageStore {
   void appendToken(ChatToken token) {
@@ -37,7 +36,7 @@ extension AssistantOps on MessageStore {
   void applyCurrentToolDelta(ToolCallDelta delta) {
     final current = currentMessage;
     if (current == null) return;
-    final updatedTools = ToolCaller.applyDelta(
+    final updatedTools = toolCaller.applyDelta(
       messageId: current.id,
       delta: delta,
       currentTools: current.tools,

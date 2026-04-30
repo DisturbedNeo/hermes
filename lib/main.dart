@@ -9,7 +9,7 @@ import 'package:hermes/ui/routes.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  serviceProvider.initialize();
+  await serviceProvider.initialize();
 
   runApp(const App());
 }
@@ -52,13 +52,12 @@ class _AppState extends State<App> with WidgetsBindingObserver {
         // App is in background but may come back
         break;
       case AppLifecycleState.detached:
-        // App is in background or terminated, clean up resources
-        //_db.closeDatabase();
-        unawaited(serviceProvider.dispose());
+        // App may be terminating, but mounted widgets still hold service
+        // references. Cleanup is handled by didRequestAppExit when Flutter gives
+        // the app an awaitable exit path.
         break;
       case AppLifecycleState.resumed:
-        // App is visible again, reinitialize services if needed
-        serviceProvider.initialize();
+        // Services remain alive while the widget tree is mounted.
         break;
       case AppLifecycleState.inactive:
         // App is in an inactive state, like when receiving a phone call
@@ -78,18 +77,6 @@ class _AppState extends State<App> with WidgetsBindingObserver {
     Timer.run(() => unawaited(_disposeServicesAndExit()));
 
     return AppExitResponse.cancel;
-  }
-
-  @override
-  void reassemble() {
-    super.reassemble();
-
-    unawaited(_reinitializeServices());
-  }
-
-  Future<void> _reinitializeServices() async {
-    await serviceProvider.dispose();
-    serviceProvider.initialize();
   }
 
   Future<void> _disposeServicesAndExit() async {

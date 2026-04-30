@@ -243,5 +243,68 @@ void main() {
         expect(requestText, contains('old-assistant-2'));
       },
     );
+
+    test(
+      'does not compact when any active assistant tool call is unresolved',
+      () {
+        final oldText = List.filled(240, 'old context').join(' ');
+        final messages = [
+          const Bubble(
+            id: 'system',
+            role: MessageRole.system,
+            text: 'System prompt',
+            reasoning: '',
+          ),
+          const Bubble(
+            id: 'intent',
+            role: MessageRole.user,
+            text: 'Original task',
+            reasoning: '',
+          ),
+          Bubble(
+            id: 'old-assistant-with-tool',
+            role: MessageRole.assistant,
+            text: oldText,
+            reasoning: '',
+            tools: const {
+              0: BubbleToolCall(
+                name: 'read_file',
+                arguments: '{"path":"README.md"}',
+              ),
+            },
+          ),
+          Bubble(
+            id: 'old-user',
+            role: MessageRole.user,
+            text: oldText,
+            reasoning: '',
+          ),
+          const Bubble(
+            id: 'recent-assistant',
+            role: MessageRole.assistant,
+            text: 'Recent assistant state',
+            reasoning: '',
+          ),
+        ];
+
+        final manager = CompactionManager(
+          settings: const CompactionSettings(
+            triggerThreshold: 0.01,
+            hardLimitThreshold: 0.95,
+            recentWindowUnits: 1,
+          ),
+          client: client,
+        );
+
+        expect(
+          manager.shouldCompact(
+            messages: messages,
+            contextLimit: 4096,
+            extraParams: const {},
+          ),
+          isFalse,
+        );
+      },
+    );
   });
 }

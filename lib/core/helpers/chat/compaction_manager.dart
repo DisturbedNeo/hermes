@@ -602,12 +602,11 @@ class CompactionManager {
   }
 
   bool _hasUnresolvedToolCalls(List<Bubble> messages) {
-    for (var i = messages.length - 1; i >= 0; i--) {
-      final message = messages[i];
-      if (message.role != MessageRole.assistant) continue;
-      return message.tools.values.any((tool) => tool.result == null);
-    }
-    return false;
+    return messages.any((message) {
+      return message.role == MessageRole.assistant &&
+          !message.omittedFromModelPayload &&
+          message.tools.values.any((tool) => tool.result == null);
+    });
   }
 }
 

@@ -576,6 +576,7 @@ class ChatService extends ChangeNotifier {
     await flushCurrentChat();
     _disposed = true;
     messageStore.clearCurrentId();
+    messageStore.clearToolBuffers();
     try {
       await chatStream.stop();
     } finally {

@@ -10,6 +10,9 @@ import 'package:hermes/core/services/workspace_service.dart';
 class ServiceProvider {
   ServiceProvider._();
 
+  @visibleForTesting
+  ServiceProvider.testing();
+
   static final ServiceProvider _instance = ServiceProvider._();
   static ServiceProvider get instance => _instance;
 
@@ -19,7 +22,7 @@ class ServiceProvider {
   final Map<Type, ServiceFactory> _transientServices = {};
 
   bool _initialized = false;
-  Future<void>? _disposing;
+  Future<void> _lifecycle = Future.value();
 
   T get<T extends Object>() {
     if (_singletonServices.containsKey(T)) {
@@ -33,29 +36,39 @@ class ServiceProvider {
     throw Exception('Service of type $T is not registered.');
   }
 
-  void initialize() {
-    if (_initialized) return;
+  Future<void> initialize() {
+    return _enqueueLifecycleOperation(() async {
+      if (_initialized) return;
 
-    registerSingleton(PreferencesService());
-    registerSingleton(ThemeManager());
-    registerSingleton(WorkspaceService());
-    registerSingleton(ToolService());
-    registerSingleton(
-      ChatLibraryService(preferencesService: get<PreferencesService>()),
-    );
-    registerSingleton(
-      ChatTabsService(
-        chatLibrary: get<ChatLibraryService>(),
-        toolService: get<ToolService>(),
-        workspaceService: get<WorkspaceService>(),
-        preferencesService: get<PreferencesService>(),
-      ),
-    );
+      registerSingleton(PreferencesService());
+      registerSingleton(
+        ThemeManager(preferencesService: get<PreferencesService>()),
+      );
+      registerSingleton(WorkspaceService());
+      registerSingleton(ToolService());
+      registerSingleton(
+        ChatLibraryService(preferencesService: get<PreferencesService>()),
+      );
+      registerSingleton(
+        ChatTabsService(
+          chatLibrary: get<ChatLibraryService>(),
+          toolService: get<ToolService>(),
+          workspaceService: get<WorkspaceService>(),
+          preferencesService: get<PreferencesService>(),
+        ),
+      );
 
-    _initialized = true;
+      _initialized = true;
+    });
   }
 
-  Future<void> dispose() => _disposing ??= _disposeServices();
+  Future<void> dispose() => _enqueueLifecycleOperation(_disposeServices);
+
+  Future<void> _enqueueLifecycleOperation(Future<void> Function() operation) {
+    final next = _lifecycle.catchError((_) {}).then((_) => operation());
+    _lifecycle = next.catchError((_) {});
+    return next;
+  }
 
   Future<void> _disposeServices() async {
     _initialized = false;
@@ -64,12 +77,8 @@ class ServiceProvider {
     _singletonServices.clear();
     _transientServices.clear();
 
-    try {
-      for (final service in services) {
-        await _disposeIfPossible(service);
-      }
-    } finally {
-      _disposing = null;
+    for (final service in services) {
+      await _disposeIfPossible(service);
     }
   }
 
