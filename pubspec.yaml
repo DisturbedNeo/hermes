@@ -42,7 +42,7 @@ dependencies:
   sqflite_common_ffi: ^2.3.6
   url_launcher: ^6.3.2
   markdown_widget: ^2.3.2+8
-  analyzer: ^8.1.1
+  analyzer: ^10.0.1
   source_gen: ^4.0.2
   meta: ^1.16.0
   file_selector: ^1.0.4
