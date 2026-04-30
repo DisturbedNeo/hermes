@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:hermes/core/enums/diagnostics_visibility.dart';
+import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,6 +16,16 @@ class PreferencesService extends ChangeNotifier {
   static const String _diagnosticsVisibility = 'diagnostics_visibility';
   static const String _themeIdKey = 'theme_id';
   static const String _worldOverviewTabPrefKey = 'last_tab_index_';
+  static const String _contextCompactionEnabledKey =
+      'context_compaction_enabled';
+  static const String _contextCompactionTriggerKey =
+      'context_compaction_trigger_threshold';
+  static const String _contextCompactionHardLimitKey =
+      'context_compaction_hard_limit_threshold';
+  static const String _contextCompactionRecentWindowKey =
+      'context_compaction_recent_window_units';
+  static const String _contextCompactionEmergencyTruncationKey =
+      'context_compaction_emergency_truncation';
 
   Future<String> getDataDirectoryPath() async {
     final savedPath = (await _prefs).getString(_dataLocationKey);
@@ -106,6 +117,45 @@ class PreferencesService extends ChangeNotifier {
       _diagnosticsVisibility,
       visibility.name,
     );
+
+    if (saved) notifyListeners();
+    return saved;
+  }
+
+  Future<CompactionSettings> getCompactionSettings() async {
+    final prefs = await _prefs;
+    return CompactionSettings(
+      enabled: prefs.getBool(_contextCompactionEnabledKey) ?? true,
+      triggerThreshold: prefs.getDouble(_contextCompactionTriggerKey) ?? 0.80,
+      hardLimitThreshold:
+          prefs.getDouble(_contextCompactionHardLimitKey) ?? 0.95,
+      recentWindowUnits: prefs.getInt(_contextCompactionRecentWindowKey) ?? 6,
+      allowEmergencyPayloadTruncation:
+          prefs.getBool(_contextCompactionEmergencyTruncationKey) ?? false,
+    ).normalised();
+  }
+
+  Future<bool> setCompactionSettings(CompactionSettings settings) async {
+    final prefs = await _prefs;
+    final normalised = settings.normalised();
+    final saved =
+        await prefs.setBool(_contextCompactionEnabledKey, normalised.enabled) &&
+        await prefs.setDouble(
+          _contextCompactionTriggerKey,
+          normalised.triggerThreshold,
+        ) &&
+        await prefs.setDouble(
+          _contextCompactionHardLimitKey,
+          normalised.hardLimitThreshold,
+        ) &&
+        await prefs.setInt(
+          _contextCompactionRecentWindowKey,
+          normalised.recentWindowUnits,
+        ) &&
+        await prefs.setBool(
+          _contextCompactionEmergencyTruncationKey,
+          normalised.allowEmergencyPayloadTruncation,
+        );
 
     if (saved) notifyListeners();
     return saved;

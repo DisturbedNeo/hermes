@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
+import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_service.dart';
 
@@ -13,6 +14,7 @@ class ChatTabsService extends ChangeNotifier {
   final ChatLibraryService _chatLibrary;
   final ToolService _toolService;
   final WorkspaceService _workspaceService;
+  final PreferencesService _preferencesService;
 
   final LlamaServerManager serverManager = LlamaServerManager();
   final List<ChatService> _tabs = [];
@@ -24,9 +26,11 @@ class ChatTabsService extends ChangeNotifier {
     required ChatLibraryService chatLibrary,
     required ToolService toolService,
     required WorkspaceService workspaceService,
+    required PreferencesService preferencesService,
   }) : _chatLibrary = chatLibrary,
        _toolService = toolService,
-       _workspaceService = workspaceService {
+       _workspaceService = workspaceService,
+       _preferencesService = preferencesService {
     newTab();
   }
 
@@ -129,6 +133,7 @@ class ChatTabsService extends ChangeNotifier {
       toolService: _toolService,
       chatLibrary: _chatLibrary,
       workspaceService: _workspaceService,
+      preferencesService: _preferencesService,
     );
     tab.addListener(notifyListeners);
     tab.messageStore.addListener(notifyListeners);

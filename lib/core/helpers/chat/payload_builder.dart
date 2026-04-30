@@ -6,6 +6,8 @@ class PayloadBuilder {
   static List<ChatMessage> buildPayload({
     required List<Bubble> messages,
     required int upToIndexInclusive,
+    bool omitCoveredMessages = false,
+    Set<String> omittedMessageIds = const {},
   }) {
     if (messages.isEmpty || upToIndexInclusive < 0) {
       return [];
@@ -14,6 +16,8 @@ class PayloadBuilder {
     final payload = _buildMessages(
       messages: messages,
       upToIndexInclusive: upToIndexInclusive,
+      omitCoveredMessages: omitCoveredMessages,
+      omittedMessageIds: omittedMessageIds,
     );
 
     if (payload.isNotEmpty &&
@@ -28,6 +32,8 @@ class PayloadBuilder {
   static List<ChatMessage> buildPayloadWithTools({
     required List<Bubble> messages,
     required int upToIndexInclusive,
+    bool omitCoveredMessages = false,
+    Set<String> omittedMessageIds = const {},
   }) {
     if (messages.isEmpty || upToIndexInclusive < 0) {
       return [];
@@ -36,12 +42,16 @@ class PayloadBuilder {
     return _buildMessages(
       messages: messages,
       upToIndexInclusive: upToIndexInclusive,
+      omitCoveredMessages: omitCoveredMessages,
+      omittedMessageIds: omittedMessageIds,
     );
   }
 
   static List<ChatMessage> _buildMessages({
     required List<Bubble> messages,
     required int upToIndexInclusive,
+    required bool omitCoveredMessages,
+    required Set<String> omittedMessageIds,
   }) {
     final clamped = upToIndexInclusive.clamp(0, messages.length - 1);
     final conversation = messages.take(clamped + 1);
@@ -49,6 +59,14 @@ class PayloadBuilder {
     final result = <ChatMessage>[];
 
     for (final b in conversation) {
+      if (omittedMessageIds.contains(b.id)) {
+        continue;
+      }
+
+      if (omitCoveredMessages && b.omittedFromModelPayload) {
+        continue;
+      }
+
       if (b.role == MessageRole.tool) {
         continue;
       }
@@ -88,10 +106,18 @@ class PayloadBuilder {
           if (b.reasoning.isNotEmpty) b.reasoning,
           b.text,
         ].join('\n');
-        result.add(ChatMessage(role: b.role.wire, content: mergedText));
+        result.add(ChatMessage(role: _wireRoleFor(b), content: mergedText));
       }
     }
 
     return result;
+  }
+
+  static String _wireRoleFor(Bubble bubble) {
+    if (bubble.isSummaryMemory) {
+      return MessageRole.user.wire;
+    }
+
+    return bubble.role.wire;
   }
 }

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/enums/stream_state.dart';
 import 'package:hermes/core/services/chat/chat_stream.dart';
+import 'package:hermes/core/helpers/chat/compaction_manager.dart';
 import 'package:hermes/core/helpers/chat/context_estimator.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
@@ -14,10 +15,12 @@ import 'package:hermes/core/models/saved_chat.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/helpers/chat/assistant_ops.dart';
 import 'package:hermes/core/helpers/chat/content_normaliser.dart';
+import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
 import 'package:hermes/core/helpers/chat/tool_caller.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
+import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/helpers/chat/payload_builder.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_service.dart';
@@ -31,6 +34,7 @@ class ChatService extends ChangeNotifier {
   final ToolService _toolService;
   final ChatLibraryService _chatLibrary;
   final WorkspaceService _workspaceService;
+  final PreferencesService _preferencesService;
 
   late final Bubble systemPrompt = Bubble(
     id: uuid.v7(),
@@ -58,10 +62,12 @@ class ChatService extends ChangeNotifier {
     required ToolService toolService,
     required ChatLibraryService chatLibrary,
     required WorkspaceService workspaceService,
+    required PreferencesService preferencesService,
   }) : tabId = tabId ?? uuid.v7(),
        _toolService = toolService,
        _chatLibrary = chatLibrary,
-       _workspaceService = workspaceService {
+       _workspaceService = workspaceService,
+       _preferencesService = preferencesService {
     messageStore.setMessages([systemPrompt]);
     messageStore.addListener(_handleMessagesChanged);
     chatStream.onStop = serverManager.diagnostics.recordStreamEnded;
@@ -318,38 +324,6 @@ class ChatService extends ChangeNotifier {
 
     chatStream.setState(StreamState.streaming);
 
-    final targetIndex = targetAssistantId == null
-        ? -1
-        : messageStore.messages.indexWhere(
-            (m) => m.id == targetAssistantId && m.role == MessageRole.assistant,
-          );
-
-    final contextIndex = targetIndex >= 0
-        ? targetIndex
-        : () {
-            final bubble = Bubble(
-              id: uuid.v7(),
-              role: MessageRole.assistant,
-              text: '',
-              reasoning: '',
-            );
-            messageStore.upsert(bubble);
-            messageStore.setCurrentId(bubble.id);
-
-            if (anchorId != null) {
-              final index = messageStore.messages.indexWhere(
-                (m) => m.id == anchorId,
-              );
-              return index > 0 ? (messageStore.messages.length - 2) : index;
-            }
-
-            return messageStore.messages.length - 2;
-          }();
-
-    if (targetIndex >= 0) {
-      messageStore.setCurrentId(targetAssistantId);
-    }
-
     final activeToolIds = selectedToolIds.isEmpty
         ? defaultToolIds
         : selectedToolIds;
@@ -363,36 +337,141 @@ class ChatService extends ChangeNotifier {
           : const [],
     );
 
-    final payload = includeToolResults
-        ? PayloadBuilder.buildPayloadWithTools(
-            messages: messageStore.messages,
-            upToIndexInclusive: contextIndex,
-          )
-        : PayloadBuilder.buildPayload(
-            messages: messageStore.messages,
-            upToIndexInclusive: contextIndex,
-          );
+    try {
+      final emergencyOmittedMessageIds = await _compactContextIfNeeded(
+        client: client,
+        extraParams: extraParams,
+      );
 
-    serverManager.diagnostics.recordStreamStarted(
-      estimatedContextTokens: ContextEstimator.estimateChatCompletionRequest(
+      final targetIndex = targetAssistantId == null
+          ? -1
+          : messageStore.messages.indexWhere(
+              (m) =>
+                  m.id == targetAssistantId && m.role == MessageRole.assistant,
+            );
+
+      final contextIndex = targetIndex >= 0
+          ? targetIndex
+          : () {
+              final bubble = Bubble(
+                id: uuid.v7(),
+                role: MessageRole.assistant,
+                text: '',
+                reasoning: '',
+              );
+              messageStore.upsert(bubble);
+              messageStore.setCurrentId(bubble.id);
+
+              if (anchorId != null) {
+                final index = messageStore.messages.indexWhere(
+                  (m) => m.id == anchorId,
+                );
+                return index > 0 ? (messageStore.messages.length - 2) : index;
+              }
+
+              return messageStore.messages.length - 2;
+            }();
+
+      if (targetIndex >= 0) {
+        messageStore.setCurrentId(targetAssistantId);
+      }
+
+      final payload = includeToolResults
+          ? PayloadBuilder.buildPayloadWithTools(
+              messages: messageStore.messages,
+              upToIndexInclusive: contextIndex,
+              omitCoveredMessages: true,
+              omittedMessageIds: emergencyOmittedMessageIds,
+            )
+          : PayloadBuilder.buildPayload(
+              messages: messageStore.messages,
+              upToIndexInclusive: contextIndex,
+              omitCoveredMessages: true,
+              omittedMessageIds: emergencyOmittedMessageIds,
+            );
+
+      serverManager.diagnostics.recordStreamStarted(
+        estimatedContextTokens: ContextEstimator.estimateChatCompletionRequest(
+          messages: payload,
+          extraParams: extraParams,
+        ),
+        contextLimitTokens: currentModelSnapshot?.nCtx,
+      );
+
+      final sub = client.streamMessage(
         messages: payload,
         extraParams: extraParams,
-      ),
-    );
+      );
 
-    final sub = client.streamMessage(
-      messages: payload,
+      chatStream.attach(
+        sub.listen(
+          _handleStreamToken,
+          onError: (e, _) async => await _handleStreamTerminal(error: e),
+          onDone: () async => await _handleStreamTerminal(),
+          cancelOnError: true,
+        ),
+      );
+    } catch (e) {
+      serverManager.diagnostics.recordCompactionFailed(e);
+      messageStore.clearCurrentId();
+      await chatStream.stop(next: StreamState.error);
+    }
+  }
+
+  Future<Set<String>> _compactContextIfNeeded({
+    required ChatClient client,
+    required Map<String, dynamic> extraParams,
+  }) async {
+    final snapshot = currentModelSnapshot;
+    if (snapshot == null) return const {};
+
+    final settings = await _preferencesService.getCompactionSettings();
+    final manager = CompactionManager(settings: settings, client: client);
+    if (!manager.shouldCompact(
+      messages: messageStore.messages,
+      contextLimit: snapshot.nCtx,
       extraParams: extraParams,
+    )) {
+      return const {};
+    }
+
+    void status(String message) {
+      if (serverManager.diagnostics.compactionActive) {
+        serverManager.diagnostics.recordCompactionStatus(message);
+      } else {
+        serverManager.diagnostics.recordCompactionStarted(message);
+      }
+      notifyListeners();
+    }
+
+    final result = await manager.compactIfNeeded(
+      messageStore: messageStore,
+      contextLimit: snapshot.nCtx,
+      extraParams: extraParams,
+      onStatusChanged: status,
     );
 
-    chatStream.attach(
-      sub.listen(
-        _handleStreamToken,
-        onError: (e, _) async => await _handleStreamTerminal(error: e),
-        onDone: () async => await _handleStreamTerminal(),
-        cancelOnError: true,
-      ),
+    final finishStatus = result.emergencyPayloadTruncation
+        ? 'Emergency context truncation active for this request.'
+        : result.compacted
+        ? 'Context compaction complete.'
+        : 'Context compaction not needed.';
+    final savedTokens = result.compacted || result.emergencyPayloadTruncation
+        ? result.estimatedTokensSaved
+        : null;
+    final affectedMessages = result.compacted
+        ? result.messagesCovered
+        : result.emergencyPayloadTruncation
+        ? result.emergencyOmittedMessageIds.length
+        : null;
+
+    serverManager.diagnostics.recordCompactionFinished(
+      status: finishStatus,
+      tokensSaved: savedTokens,
+      messagesCovered: affectedMessages,
     );
+
+    return result.emergencyOmittedMessageIds;
   }
 
   void _handleStreamToken(ChatToken token) {
@@ -521,9 +600,11 @@ class ChatService extends ChangeNotifier {
     final payload = PayloadBuilder.buildPayloadWithTools(
       messages: messageStore.messages,
       upToIndexInclusive: messageStore.messages.length - 1,
+      omitCoveredMessages: true,
     );
     serverManager.diagnostics.updateContextEstimate(
       ContextEstimator.estimateChatCompletionRequest(messages: payload),
+      contextLimitTokens: snapshot.nCtx,
     );
   }
 

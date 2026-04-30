@@ -18,6 +18,51 @@ class ChatClient {
     _client.close();
   }
 
+  Future<String> completeMessage({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+  }) async {
+    final body = {
+      'model': _model,
+      'messages': messages.map((m) => m.toJson()).toList(),
+      'stream': false,
+      if (extraParams != null) ...extraParams,
+    };
+
+    final chatUri = Uri.parse('$_baseUrl/v1/chat/completions');
+    final response = await _client.post(
+      chatUri,
+      headers: const {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      _throwHttpException(response.statusCode, response.body, chatUri);
+    }
+
+    final decoded = jsonDecode(response.body);
+    final choices = decoded is Map ? decoded['choices'] : null;
+    if (choices is! List || choices.isEmpty) {
+      throw HttpException('No completion choices returned', uri: chatUri);
+    }
+
+    final message = choices.first is Map ? choices.first['message'] : null;
+    if (message is! Map) {
+      throw HttpException('No completion message returned', uri: chatUri);
+    }
+
+    final content = message['content'];
+    if (content is String && content.isNotEmpty) return content;
+
+    final reasoning = message['reasoning_content'];
+    if (reasoning is String && reasoning.isNotEmpty) return reasoning;
+
+    return '';
+  }
+
   Stream<ChatToken> streamMessage({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
@@ -44,16 +89,7 @@ class ChatClient {
 
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
       final responseBody = await streamed.stream.bytesToString();
-      try {
-        final error = jsonDecode(responseBody);
-        final message = error['error']?['message'] ?? error.toString();
-        throw HttpException('${streamed.statusCode}: $message', uri: chatUri);
-      } catch (_) {
-        throw HttpException(
-          '${streamed.statusCode}: $responseBody',
-          uri: chatUri,
-        );
-      }
+      _throwHttpException(streamed.statusCode, responseBody, chatUri);
     }
 
     final lines = streamed.stream
@@ -152,5 +188,16 @@ class ChatClient {
 
     final tailToken = flushEvent();
     if (tailToken != null) yield tailToken;
+  }
+
+  Never _throwHttpException(int statusCode, String responseBody, Uri uri) {
+    String message;
+    try {
+      final error = jsonDecode(responseBody);
+      message = error['error']?['message'] ?? error.toString();
+    } catch (_) {
+      message = responseBody;
+    }
+    throw HttpException('$statusCode: $message', uri: uri);
   }
 }

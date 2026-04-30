@@ -173,6 +173,10 @@ class ChatLibraryService extends ChangeNotifier {
           'text': message.text,
           'reasoning': message.reasoning,
           'tools_json': _toolsToJson(message.tools),
+          'omitted_from_model_payload': message.omittedFromModelPayload ? 1 : 0,
+          'summary_id': message.summaryId,
+          'is_summary_memory': message.isSummaryMemory ? 1 : 0,
+          'summary_schema_version': message.summarySchemaVersion,
           'position': i,
           'created_at': now.millisecondsSinceEpoch,
           'updated_at': now.millisecondsSinceEpoch,
@@ -329,6 +333,10 @@ class ChatLibraryService extends ChangeNotifier {
         text TEXT NOT NULL,
         reasoning TEXT NOT NULL,
         tools_json TEXT NOT NULL,
+        omitted_from_model_payload INTEGER NOT NULL DEFAULT 0,
+        summary_id TEXT,
+        is_summary_memory INTEGER NOT NULL DEFAULT 0,
+        summary_schema_version INTEGER,
         position INTEGER NOT NULL,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
@@ -340,6 +348,26 @@ class ChatLibraryService extends ChangeNotifier {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_saved_chat_messages_chat_position '
       'ON saved_chat_messages(chat_id, position)',
+    );
+
+    await _ensureColumn(
+      db,
+      'saved_chat_messages',
+      'omitted_from_model_payload',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+    await _ensureColumn(db, 'saved_chat_messages', 'summary_id', 'TEXT');
+    await _ensureColumn(
+      db,
+      'saved_chat_messages',
+      'is_summary_memory',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+    await _ensureColumn(
+      db,
+      'saved_chat_messages',
+      'summary_schema_version',
+      'INTEGER',
     );
 
     await db.execute('''
@@ -435,6 +463,11 @@ class ChatLibraryService extends ChangeNotifier {
       text: row['text'] as String? ?? '',
       reasoning: row['reasoning'] as String? ?? '',
       tools: _toolsFromJson(row['tools_json'] as String? ?? '{}'),
+      omittedFromModelPayload:
+          (row['omitted_from_model_payload'] as int? ?? 0) == 1,
+      summaryId: row['summary_id'] as String?,
+      isSummaryMemory: (row['is_summary_memory'] as int? ?? 0) == 1,
+      summarySchemaVersion: row['summary_schema_version'] as int?,
     );
   }
 

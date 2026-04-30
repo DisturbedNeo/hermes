@@ -34,6 +34,11 @@ class ModelSessionDiagnostics extends ChangeNotifier {
   DateTime? streamEndedAt;
   int streamOutputCharacters = 0;
   int? estimatedContextTokens;
+  int? contextLimitTokens;
+  bool compactionActive = false;
+  String? lastCompactionStatus;
+  int? lastCompactionTokensSaved;
+  int? lastCompactionMessagesCovered;
 
   final List<ModelSessionLogEntry> _logs = [];
 
@@ -68,6 +73,7 @@ class ModelSessionDiagnostics extends ChangeNotifier {
     startupDuration = null;
     lastError = null;
     recentFailureOutput = null;
+    contextLimitTokens = snapshot.nCtx;
     _resetStreamMetrics();
     addLog('lifecycle', 'Starting ${snapshot.modelName} on $baseUrl');
     notifyListeners();
@@ -121,12 +127,16 @@ class ModelSessionDiagnostics extends ChangeNotifier {
     notifyListeners();
   }
 
-  void recordStreamStarted({int? estimatedContextTokens}) {
+  void recordStreamStarted({
+    int? estimatedContextTokens,
+    int? contextLimitTokens,
+  }) {
     isStreaming = true;
     streamStartedAt = DateTime.now();
     streamEndedAt = null;
     streamOutputCharacters = 0;
     this.estimatedContextTokens = estimatedContextTokens;
+    this.contextLimitTokens = contextLimitTokens ?? this.contextLimitTokens;
     notifyListeners();
   }
 
@@ -136,8 +146,12 @@ class ModelSessionDiagnostics extends ChangeNotifier {
     notifyListeners();
   }
 
-  void updateContextEstimate(int? estimatedContextTokens) {
+  void updateContextEstimate(
+    int? estimatedContextTokens, {
+    int? contextLimitTokens,
+  }) {
     this.estimatedContextTokens = estimatedContextTokens;
+    this.contextLimitTokens = contextLimitTokens ?? this.contextLimitTokens;
     notifyListeners();
   }
 
@@ -151,6 +165,44 @@ class ModelSessionDiagnostics extends ChangeNotifier {
   void recordStreamError(Object error) {
     lastError = error.toString();
     recordStreamEnded();
+  }
+
+  void recordCompactionStarted(String status) {
+    compactionActive = true;
+    lastCompactionStatus = status;
+    addLog('compaction', status);
+    notifyListeners();
+  }
+
+  void recordCompactionStatus(String status) {
+    lastCompactionStatus = status;
+    addLog('compaction', status);
+    notifyListeners();
+  }
+
+  void recordCompactionFinished({
+    required String status,
+    int? tokensSaved,
+    int? messagesCovered,
+  }) {
+    compactionActive = false;
+    lastCompactionStatus = status;
+    if (tokensSaved != null) {
+      lastCompactionTokensSaved = tokensSaved;
+    }
+    if (messagesCovered != null) {
+      lastCompactionMessagesCovered = messagesCovered;
+    }
+    addLog('compaction', status);
+    notifyListeners();
+  }
+
+  void recordCompactionFailed(Object error) {
+    compactionActive = false;
+    lastError = error.toString();
+    lastCompactionStatus = 'Context compaction failed: $error';
+    addLog('compaction', lastCompactionStatus!);
+    notifyListeners();
   }
 
   void addLog(String source, String output) {
@@ -187,5 +239,6 @@ class ModelSessionDiagnostics extends ChangeNotifier {
     streamEndedAt = null;
     streamOutputCharacters = 0;
     estimatedContextTokens = null;
+    compactionActive = false;
   }
 }

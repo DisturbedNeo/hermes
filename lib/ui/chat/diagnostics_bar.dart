@@ -103,6 +103,17 @@ class _DiagnosticsBand extends StatelessWidget {
       ),
       _metric(context, Icons.speed_outlined, 'Speed', _speedText()),
       _metric(context, Icons.data_usage_outlined, 'Context', _contextText()),
+      if (diagnostics.compactionActive ||
+          diagnostics.lastCompactionMessagesCovered != null)
+        _metric(
+          context,
+          diagnostics.compactionActive
+              ? Icons.sync
+              : Icons.inventory_2_outlined,
+          'Compaction',
+          _compactionText(),
+          tooltip: diagnostics.lastCompactionStatus,
+        ),
       if (diagnostics.lastError != null)
         _metric(
           context,
@@ -225,13 +236,27 @@ class _DiagnosticsBand extends StatelessWidget {
   }
 
   String _contextText() {
-    final snapshot = diagnostics.modelSnapshot;
-    if (snapshot == null) return 'n/a';
+    final limit =
+        diagnostics.contextLimitTokens ?? diagnostics.modelSnapshot?.nCtx;
+    if (limit == null) return 'n/a';
 
     final estimate = diagnostics.estimatedContextTokens;
-    if (estimate == null) return _formatInt(snapshot.nCtx);
+    if (estimate == null) return _formatInt(limit);
 
-    return 'est. ${_formatInt(estimate)} / ${_formatInt(snapshot.nCtx)}';
+    return 'est. ${_formatInt(estimate)} / ${_formatInt(limit)}';
+  }
+
+  String _compactionText() {
+    if (diagnostics.compactionActive) return 'Compacting context...';
+
+    final messages = diagnostics.lastCompactionMessagesCovered;
+    final saved = diagnostics.lastCompactionTokensSaved;
+    if (messages == null) return 'n/a';
+
+    final savedText = saved == null
+        ? 'tokens saved n/a'
+        : '${_formatInt(saved)} tokens saved';
+    return '$messages messages, $savedText';
   }
 
   String _durationText(Duration? duration) {

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:hermes/core/enums/diagnostics_visibility.dart';
+import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
+import 'package:hermes/ui/model_configuration/slider_control.dart';
 
 class Settings extends StatefulWidget {
   const Settings({super.key});
@@ -13,6 +15,7 @@ class _SettingsState extends State<Settings> {
   late final TextEditingController _llamaCppDirCtrl;
   late final TextEditingController _modelsDirCtrl;
   DiagnosticsVisibility _diagnosticsVisibility = DiagnosticsVisibility.off;
+  CompactionSettings _compactionSettings = const CompactionSettings();
 
   final PreferencesService preferencesService = serviceProvider
       .get<PreferencesService>();
@@ -22,6 +25,7 @@ class _SettingsState extends State<Settings> {
     final modelsDir = await preferencesService.getModelsDirectory();
     final diagnosticsVisibility = await preferencesService
         .getDiagnosticsVisibility();
+    final compactionSettings = await preferencesService.getCompactionSettings();
     if (!mounted) return;
     if (llamaCppDir is String && llamaCppDir.isNotEmpty) {
       _llamaCppDirCtrl.text = llamaCppDir;
@@ -30,7 +34,14 @@ class _SettingsState extends State<Settings> {
       _modelsDirCtrl.text = modelsDir;
     }
     _diagnosticsVisibility = diagnosticsVisibility;
+    _compactionSettings = compactionSettings;
     setState(() {});
+  }
+
+  Future<void> _setCompactionSettings(CompactionSettings settings) async {
+    final normalised = settings.normalised();
+    setState(() => _compactionSettings = normalised);
+    await preferencesService.setCompactionSettings(normalised);
   }
 
   @override
@@ -107,6 +118,59 @@ class _SettingsState extends State<Settings> {
                 setState(() => _diagnosticsVisibility = visibility);
                 await preferencesService.setDiagnosticsVisibility(visibility);
               },
+            ),
+            const SizedBox(height: 16),
+
+            const Text(
+              'Context Compaction',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Enable context compaction'),
+              value: _compactionSettings.enabled,
+              onChanged: (enabled) => _setCompactionSettings(
+                _compactionSettings.copyWith(enabled: enabled),
+              ),
+            ),
+            SliderControl.integer(
+              label: 'Compaction threshold (%)',
+              value: (_compactionSettings.triggerThreshold * 100).round(),
+              min: 60,
+              max: 90,
+              step: 5,
+              onChanged: (value) {
+                final trigger = value / 100;
+                _setCompactionSettings(
+                  _compactionSettings.copyWith(
+                    triggerThreshold: trigger,
+                    hardLimitThreshold: _compactionSettings.hardLimitThreshold
+                        .clamp(trigger, 0.99)
+                        .toDouble(),
+                  ),
+                );
+              },
+            ),
+            SliderControl.integer(
+              label: 'Recent window size',
+              value: _compactionSettings.recentWindowUnits,
+              min: 2,
+              max: 10,
+              step: 1,
+              onChanged: (value) => _setCompactionSettings(
+                _compactionSettings.copyWith(recentWindowUnits: value),
+              ),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Emergency payload truncation'),
+              value: _compactionSettings.allowEmergencyPayloadTruncation,
+              onChanged: (enabled) => _setCompactionSettings(
+                _compactionSettings.copyWith(
+                  allowEmergencyPayloadTruncation: enabled,
+                ),
+              ),
             ),
             const SizedBox(height: 16),
 

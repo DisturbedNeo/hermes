@@ -48,6 +48,7 @@ class ServiceProvider {
         chatLibrary: get<ChatLibraryService>(),
         toolService: get<ToolService>(),
         workspaceService: get<WorkspaceService>(),
+        preferencesService: get<PreferencesService>(),
       ),
     );
 

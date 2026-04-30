@@ -6,6 +6,10 @@ class Bubble {
   final String text;
   final String reasoning;
   final Map<int, BubbleToolCall> tools;
+  final bool omittedFromModelPayload;
+  final String? summaryId;
+  final bool isSummaryMemory;
+  final int? summarySchemaVersion;
 
   const Bubble({
     required this.id,
@@ -13,6 +17,10 @@ class Bubble {
     required this.text,
     required this.reasoning,
     this.tools = const {},
+    this.omittedFromModelPayload = false,
+    this.summaryId,
+    this.isSummaryMemory = false,
+    this.summarySchemaVersion,
   });
 
   Bubble copyWith({
@@ -21,6 +29,10 @@ class Bubble {
     String? text,
     String? reasoning,
     Map<int, BubbleToolCall>? tools,
+    bool? omittedFromModelPayload,
+    Object? summaryId = _sentinel,
+    bool? isSummaryMemory,
+    Object? summarySchemaVersion = _sentinel,
   }) {
     return Bubble(
       id: id ?? this.id,
@@ -28,9 +40,20 @@ class Bubble {
       text: text ?? this.text,
       reasoning: reasoning ?? this.reasoning,
       tools: tools ?? this.tools,
+      omittedFromModelPayload:
+          omittedFromModelPayload ?? this.omittedFromModelPayload,
+      summaryId: identical(summaryId, _sentinel)
+          ? this.summaryId
+          : summaryId as String?,
+      isSummaryMemory: isSummaryMemory ?? this.isSummaryMemory,
+      summarySchemaVersion: identical(summarySchemaVersion, _sentinel)
+          ? this.summarySchemaVersion
+          : summarySchemaVersion as int?,
     );
   }
 }
+
+const Object _sentinel = Object();
 
 class BubbleToolCall {
   final String? id;

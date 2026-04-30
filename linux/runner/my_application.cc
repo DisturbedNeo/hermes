@@ -11,8 +11,8 @@ namespace {
 
 constexpr int kFallbackInitialWidth = 960;
 constexpr int kFallbackInitialHeight = 1280;
-constexpr double kInitialWidthRatio = 0.40;
-constexpr double kInitialHeightRatio = 0.85;
+constexpr double kInitialWidthRatio = 0.44;
+constexpr double kInitialHeightRatio = 0.88;
 constexpr int kMinimumInitialWidth = 420;
 constexpr int kMinimumInitialHeight = 700;
 constexpr int kMaximumInitialWidth = 900;
