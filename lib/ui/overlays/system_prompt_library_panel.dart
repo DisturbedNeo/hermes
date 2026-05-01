@@ -206,16 +206,11 @@ class _SystemPromptLibraryPanelState extends State<SystemPromptLibraryPanel> {
         selectedOptionalModuleIds = selection;
       }
 
-      final target = await _tabs.loadPromptPresetIntoActiveChat(
+      await _tabs.loadPromptPresetIntoActiveChat(
         preset,
         selectedOptionalModuleIds: selectedOptionalModuleIds,
       );
       if (!mounted) return;
-      _showMessage(
-        target == SystemPromptLoadTarget.currentChat
-            ? 'Prompt loaded'
-            : 'New chat opened with prompt',
-      );
       widget.onPromptLoaded?.call();
     } catch (e) {
       _showMessage('Failed to load preset: $e');

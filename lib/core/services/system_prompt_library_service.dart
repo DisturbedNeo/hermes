@@ -8,6 +8,7 @@ import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/prompt_assembler.dart';
+import 'package:hermes/core/services/prompt_library_seed_data.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -529,6 +530,7 @@ class SystemPromptLibraryService extends ChangeNotifier {
 
     await _seedBuiltIns(db);
     await _migrateLegacyPrompts(db);
+    await _seedStarterLibrary(db);
   }
 
   Future<void> _seedBuiltIns(DatabaseExecutor db) async {
@@ -621,6 +623,58 @@ Workspace rules:
       ),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+  }
+
+  Future<void> _seedStarterLibrary(DatabaseExecutor db) async {
+    if (await _metaValue(db, PromptLibrarySeedData.starterSeedMetaKey) == '1') {
+      return;
+    }
+
+    final now = DateTime.now();
+    for (final seed in PromptLibrarySeedData.starterModules) {
+      if (await _idExists(db, 'prompt_modules', seed.id)) continue;
+
+      await db.insert(
+        'prompt_modules',
+        _moduleRow(
+          id: seed.id,
+          name: await _uniqueNameFor(db, 'prompt_modules', seed.name),
+          category: seed.category,
+          content: seed.content.trim(),
+          priority: seed.priority,
+          isBuiltIn: false,
+          requiredModuleIds: seed.requiredModuleIds,
+          conflictingModuleIds: seed.conflictingModuleIds,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+    }
+
+    for (final seed in PromptLibrarySeedData.starterPresets) {
+      if (await _idExists(db, 'prompt_presets', seed.id)) continue;
+
+      await db.insert(
+        'prompt_presets',
+        _presetRow(
+          id: seed.id,
+          name: await _uniqueNameFor(db, 'prompt_presets', seed.name),
+          baseModuleIds: seed.baseModuleIds,
+          optionalModuleIds: seed.optionalModuleIds,
+          customInstructions: seed.customInstructions.trim(),
+          legacyFullPrompt: null,
+          isBuiltIn: false,
+          createdAt: now,
+          updatedAt: now,
+          lastUsedAt: null,
+        ),
+      );
+    }
+
+    await db.insert('prompt_library_meta', {
+      'key': PromptLibrarySeedData.starterSeedMetaKey,
+      'value': '1',
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> _migrateLegacyPrompts(DatabaseExecutor db) async {
@@ -842,6 +896,17 @@ Workspace rules:
       columns: const ['id'],
       where: 'name = ? COLLATE NOCASE',
       whereArgs: [name],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
+  }
+
+  Future<bool> _idExists(DatabaseExecutor db, String table, String id) async {
+    final rows = await db.query(
+      table,
+      columns: const ['id'],
+      where: 'id = ?',
+      whereArgs: [id],
       limit: 1,
     );
     return rows.isNotEmpty;

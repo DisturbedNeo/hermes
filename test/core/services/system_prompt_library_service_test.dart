@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/services/preferences_service.dart';
+import 'package:hermes/core/services/prompt_library_seed_data.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -32,20 +33,136 @@ void main() {
     }
   });
 
-  test('seeds built-in modules and the default preset', () async {
-    final modules = await library.listModules();
-    final presets = await library.listPresets();
+  test(
+    'seeds built-in modules, the default preset, and starter prompts',
+    () async {
+      final modules = await library.listModules();
+      final presets = await library.listPresets();
+      final presetIds = presets.map((preset) => preset.id);
 
-    expect(
-      modules.map((module) => module.id),
-      contains(SystemPromptLibraryService.coreDefaultModuleId),
+      expect(
+        modules.map((module) => module.id),
+        contains(SystemPromptLibraryService.coreDefaultModuleId),
+      );
+      expect(presetIds, contains(SystemPromptLibraryService.defaultPresetId));
+      expect(presetIds, contains(PromptLibrarySeedIds.generalUsePreset));
+      expect(presetIds, contains(PromptLibrarySeedIds.codingPreset));
+      expect(presetIds, contains(PromptLibrarySeedIds.creativeWritingPreset));
+      expect(presetIds, contains(PromptLibrarySeedIds.researchPreset));
+
+      final defaultPreset = presets.singleWhere(
+        (preset) => preset.id == SystemPromptLibraryService.defaultPresetId,
+      );
+      expect(defaultPreset.isBuiltIn, isTrue);
+      expect(defaultPreset.baseModuleIds, [
+        SystemPromptLibraryService.coreDefaultModuleId,
+      ]);
+
+      final generalUsePreset = presets.singleWhere(
+        (preset) => preset.id == PromptLibrarySeedIds.generalUsePreset,
+      );
+      expect(generalUsePreset.isBuiltIn, isFalse);
+      expect(generalUsePreset.baseModuleIds, [
+        PromptLibrarySeedIds.generalUseCore,
+      ]);
+      expect(
+        generalUsePreset.optionalModuleIds,
+        containsAll([
+          PromptLibrarySeedIds.generalExecutiveAssistant,
+          PromptLibrarySeedIds.generalConciseMode,
+          PromptLibrarySeedIds.universalMinimalistOutput,
+        ]),
+      );
+
+      final concise = modules.singleWhere(
+        (module) => module.id == PromptLibrarySeedIds.generalConciseMode,
+      );
+      expect(concise.isBuiltIn, isFalse);
+      expect(
+        concise.conflictingModuleIds,
+        containsAll([
+          PromptLibrarySeedIds.generalDeepDetailMode,
+          PromptLibrarySeedIds.universalMinimalistOutput,
+        ]),
+      );
+    },
+  );
+
+  test(
+    'starter seed data can be edited and deleted without being restored',
+    () async {
+      final preset = (await library.getPreset(
+        PromptLibrarySeedIds.generalUsePreset,
+      ))!;
+      final module = (await library.getModule(
+        PromptLibrarySeedIds.generalExecutiveAssistant,
+      ))!;
+
+      await library.updatePreset(
+        id: preset.id,
+        name: 'Personal general use',
+        baseModuleIds: preset.baseModuleIds,
+        optionalModuleIds: preset.optionalModuleIds,
+        customInstructions: 'Prefer compact examples.',
+        legacyFullPrompt: preset.legacyFullPrompt,
+      );
+      await library.updateModule(
+        id: module.id,
+        name: 'Personal executive assistant',
+        category: module.category,
+        content: 'Keep planning advice brief and concrete.',
+        priority: module.priority,
+        requiredModuleIds: module.requiredModuleIds,
+        conflictingModuleIds: module.conflictingModuleIds,
+      );
+
+      expect(
+        (await library.getPreset(preset.id))?.name,
+        'Personal general use',
+      );
+      expect(
+        (await library.getModule(module.id))?.content,
+        'Keep planning advice brief and concrete.',
+      );
+
+      await library.deletePreset(preset.id);
+      await library.deleteModule(module.id);
+      await library.dispose();
+      library = SystemPromptLibraryService(
+        preferencesService: PreferencesService(),
+        databasePath: databasePath,
+      );
+
+      expect(await library.getPreset(preset.id), isNull);
+      expect(await library.getModule(module.id), isNull);
+    },
+  );
+
+  test('starter style modules are mutually exclusive when assembled', () async {
+    final preset = (await library.getPreset(
+      PromptLibrarySeedIds.generalUsePreset,
+    ))!;
+
+    final assembled = await library.assemblePreset(
+      preset,
+      selectedOptionalModuleIds: const [
+        PromptLibrarySeedIds.generalConciseMode,
+        PromptLibrarySeedIds.generalDeepDetailMode,
+        PromptLibrarySeedIds.universalMinimalistOutput,
+      ],
     );
-    expect(presets.map((preset) => preset.id), [
-      SystemPromptLibraryService.defaultPresetId,
-    ]);
-    expect(presets.single.baseModuleIds, [
-      SystemPromptLibraryService.coreDefaultModuleId,
-    ]);
+    final styleIds = {
+      PromptLibrarySeedIds.generalConciseMode,
+      PromptLibrarySeedIds.generalDeepDetailMode,
+      PromptLibrarySeedIds.universalMinimalistOutput,
+    };
+    final includedStyleIds = assembled.includedModules
+        .map((module) => module.id)
+        .where(styleIds.contains)
+        .toList();
+
+    expect(includedStyleIds, hasLength(1));
+    expect(assembled.diagnostics, isNotEmpty);
   });
 
   test(
@@ -58,9 +175,10 @@ void main() {
         priority: 40,
       );
 
-      expect((await library.searchModules('review')).map((m) => m.id), [
-        module.id,
-      ]);
+      expect(
+        (await library.searchModules('Reviewer rules')).map((m) => m.id),
+        contains(module.id),
+      );
 
       final updatedModule = await library.updateModule(
         id: module.id,
@@ -122,7 +240,7 @@ void main() {
       priority: 20,
     );
     final preset = await library.createPreset(
-      name: 'Coding',
+      name: 'Coding with language modules',
       baseModuleIds: [base.id],
       optionalModuleIds: [csharp.id, rust.id],
     );

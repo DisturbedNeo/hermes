@@ -241,7 +241,7 @@ void main() {
         priority: 20,
       );
       final preset = await promptLibrary.createPreset(
-        name: 'Coding',
+        name: 'Coding optional module test',
         baseModuleIds: [base.id],
         optionalModuleIds: [csharp.id, rust.id],
       );
