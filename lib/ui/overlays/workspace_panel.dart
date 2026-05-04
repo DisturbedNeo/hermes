@@ -5,6 +5,7 @@ import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/core/services/workspace_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class WorkspacePanel extends StatefulWidget {
   final ChatService? chat;
@@ -102,6 +103,16 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
     }
   }
 
+  Future<void> _openInExplorer(String path) async {
+    final uri = Uri.directory(path);
+    if (!await launchUrl(uri)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to open file explorer')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final chat = widget.chat;
@@ -123,9 +134,11 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
                   overflow: TextOverflow.ellipsis,
                 ),
           trailing: IconButton(
-            tooltip: 'Open workspace',
+            tooltip: 'Open in file explorer',
             icon: const Icon(Icons.folder_open_outlined),
-            onPressed: canMutate ? () => widget.onSelectWorkspace() : null,
+            onPressed: canMutate && workspace != null
+                ? () => _openInExplorer(workspace.rootPath)
+                : null,
           ),
         ),
         if (workspace != null)

@@ -65,8 +65,8 @@ class WorkspaceBar extends StatelessWidget {
                 visualDensity: VisualDensity.compact,
               ),
             IconButton(
-              tooltip: 'Workspace',
-              icon: const Icon(Icons.more_horiz),
+              tooltip: 'Change Workspace',
+              icon: const Icon(Icons.swap_horiz),
               onPressed: onOpenWorkspace,
               visualDensity: VisualDensity.compact,
             ),
