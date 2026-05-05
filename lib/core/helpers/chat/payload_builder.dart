@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_message.dart';
@@ -79,12 +81,20 @@ class PayloadBuilder {
           return {
             'id': callId,
             'type': 'function',
-            'function': {'name': tc.name, 'arguments': tc.arguments ?? '{}'},
+            'function': {
+              'name': tc.name,
+              'arguments': _toolArgumentsForPayload(tc.arguments),
+            },
           };
         }).toList();
 
         result.add(
-          ChatMessage(role: 'assistant', content: b.text, toolCalls: toolCalls),
+          ChatMessage(
+            role: 'assistant',
+            content: b.text,
+            reasoningContent: b.reasoning,
+            toolCalls: toolCalls,
+          ),
         );
 
         for (MapEntry<int, BubbleToolCall> entry in b.tools.entries) {
@@ -119,5 +129,19 @@ class PayloadBuilder {
     }
 
     return bubble.role.wire;
+  }
+
+  static dynamic _toolArgumentsForPayload(String? arguments) {
+    if (arguments == null || arguments.trim().isEmpty) {
+      return <String, dynamic>{};
+    }
+
+    try {
+      final decoded = jsonDecode(arguments);
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      return decoded;
+    } catch (_) {
+      return arguments;
+    }
   }
 }

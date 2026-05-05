@@ -57,7 +57,7 @@ class ChatClient {
     final content = message['content'];
     if (content is String && content.isNotEmpty) return content;
 
-    final reasoning = message['reasoning_content'];
+    final reasoning = message['reasoning_content'] ?? message['reasoning'];
     if (reasoning is String && reasoning.isNotEmpty) return reasoning;
 
     return '';
@@ -99,14 +99,14 @@ class ChatClient {
     final eventData = <String>[];
     var sawDone = false;
 
-    ChatToken? flushEvent() {
-      if (eventData.isEmpty) return null;
+    List<ChatToken> flushEvent() {
+      if (eventData.isEmpty) return const [];
       final payload = eventData.join('\n').trim();
       eventData.clear();
 
       if (payload.trim() == '[DONE]') {
         sawDone = true;
-        return null;
+        return const [];
       }
 
       try {
@@ -121,58 +121,44 @@ class ChatClient {
         if (choices is List && choices.isNotEmpty) {
           final delta = choices[0]?['delta'];
           if (delta is Map) {
-            final reasoningToken = delta['reasoning_content'];
+            final tokens = <ChatToken>[];
+
+            final reasoningToken =
+                delta['reasoning_content'] ?? delta['reasoning'];
             if (reasoningToken is String && reasoningToken.isNotEmpty) {
-              return ChatToken(reasoning: reasoningToken);
+              tokens.add(ChatToken(reasoning: reasoningToken));
             }
 
             final contentToken = delta['content'];
             if (contentToken is String && contentToken.isNotEmpty) {
-              return ChatToken(content: contentToken);
+              tokens.add(ChatToken(content: contentToken));
             }
 
             final toolCalls = delta['tool_calls'];
             if (toolCalls is List && toolCalls.isNotEmpty) {
-              final tc = toolCalls.first;
-              if (tc is Map) {
-                final index = tc['index'] is int ? tc['index'] as int : 0;
-                final id = tc['id'] as String?;
-
-                String? name;
-                String? argsChunk;
-
-                final func = tc['function'];
-                if (func is Map) {
-                  name = func['name'] as String?;
-                  final args = func['arguments'];
-                  if (args is String && args.isNotEmpty) {
-                    argsChunk = args;
-                  }
-                }
-
-                return ChatToken(
-                  tool: ToolCallDelta(
-                    index: index,
-                    id: id,
-                    name: name,
-                    argumentsChunk: argsChunk,
-                  ),
-                );
-              }
+              tokens.addAll(
+                toolCalls.whereType<Map>().map(_toolDeltaFromWire).whereType(),
+              );
+            } else if (toolCalls is Map) {
+              final token = _toolDeltaFromWire(toolCalls);
+              if (token != null) tokens.add(token);
             }
+
+            return tokens;
           }
         }
       } on FormatException {
-        return null;
+        return const [];
       }
 
-      return null;
+      return const [];
     }
 
     await for (final line in lines) {
       if (line.isEmpty) {
-        final token = flushEvent();
-        if (token != null) yield token;
+        for (final token in flushEvent()) {
+          yield token;
+        }
         if (sawDone) break;
         continue;
       }
@@ -186,8 +172,47 @@ class ChatClient {
       }
     }
 
-    final tailToken = flushEvent();
-    if (tailToken != null) yield tailToken;
+    for (final token in flushEvent()) {
+      yield token;
+    }
+  }
+
+  static ChatToken? _toolDeltaFromWire(Map tc) {
+    final rawIndex = tc['index'];
+    final index = rawIndex is int
+        ? rawIndex
+        : int.tryParse(rawIndex?.toString() ?? '') ?? 0;
+    final id = tc['id']?.toString();
+
+    String? name;
+    String? argsChunk;
+
+    final func = tc['function'];
+    Object? args;
+    if (func is Map) {
+      name = func['name']?.toString();
+      args = func['arguments'];
+    } else {
+      name = tc['name']?.toString() ?? tc['tool_name']?.toString();
+      args = tc['arguments'] ?? tc['parameters'];
+    }
+
+    if (args is String && args.isNotEmpty) {
+      argsChunk = args;
+    } else if (args != null) {
+      argsChunk = jsonEncode(args);
+    }
+
+    if (id == null && name == null && argsChunk == null) return null;
+
+    return ChatToken(
+      tool: ToolCallDelta(
+        index: index,
+        id: id,
+        name: name,
+        argumentsChunk: argsChunk,
+      ),
+    );
   }
 
   Never _throwHttpException(int statusCode, String responseBody, Uri uri) {

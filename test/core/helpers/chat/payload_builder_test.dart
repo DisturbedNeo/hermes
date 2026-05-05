@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/helpers/chat/payload_builder.dart';
@@ -163,6 +165,43 @@ void main() {
           'user',
         ]);
         expect(payload[2].content, 'Context summary');
+      },
+    );
+
+    test(
+      'preserves reasoning and structured args for assistant tool calls',
+      () {
+        final payload = PayloadBuilder.buildPayloadWithTools(
+          messages: [
+            const Bubble(
+              id: 'assistant',
+              role: MessageRole.assistant,
+              text: '',
+              reasoning: 'I should read the file first.',
+              tools: {
+                0: BubbleToolCall(
+                  id: 'call_1',
+                  name: 'read_file',
+                  arguments: '{"path":"README.md"}',
+                ),
+              },
+            ),
+          ],
+          upToIndexInclusive: 0,
+        );
+
+        expect(
+          payload.single.reasoningContent,
+          'I should read the file first.',
+        );
+        expect(payload.single.toolCalls.single['function'], {
+          'name': 'read_file',
+          'arguments': {'path': 'README.md'},
+        });
+        expect(
+          jsonEncode(payload.single.toJson()),
+          contains('reasoning_content'),
+        );
       },
     );
   });

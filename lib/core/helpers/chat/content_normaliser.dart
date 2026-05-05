@@ -8,14 +8,8 @@ class ContentNormaliser {
     multiLine: true,
   );
 
-  static final RegExp _xmlToolRegex = RegExp(
-    r'<tool_call>([\s\S]*?)</tool_call>',
-    multiLine: true,
-  );
-
   static Bubble normalise(Bubble bubble) {
     if (bubble.role != MessageRole.assistant) return bubble;
-    if (bubble.text.isEmpty) return bubble;
 
     String remaining = bubble.text;
     String reasoning = bubble.reasoning;
@@ -37,16 +31,17 @@ class ContentNormaliser {
       return joinsWords ? ' ' : '';
     }).trim();
 
-    final xmlToolMatches = _xmlToolRegex.allMatches(remaining).toList();
-    for (final m in xmlToolMatches) {
-      final inner = m.group(1) ?? '';
-      final parsed = ToolCaller.parseXML(inner);
-      if (parsed != null) {
-        toolsMap[toolIndex++] = parsed;
-      }
+    final textExtraction = ToolCaller.extractInlineToolCalls(remaining);
+    remaining = textExtraction.text;
+    for (final call in textExtraction.calls) {
+      toolsMap[toolIndex++] = call;
     }
 
-    remaining = remaining.replaceAll(_xmlToolRegex, '').trim();
+    final reasoningExtraction = ToolCaller.extractInlineToolCalls(reasoning);
+    reasoning = reasoningExtraction.text;
+    for (final call in reasoningExtraction.calls) {
+      toolsMap[toolIndex++] = call;
+    }
 
     return bubble.copyWith(
       reasoning: reasoning,
