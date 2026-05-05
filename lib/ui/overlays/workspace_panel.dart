@@ -141,31 +141,32 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
                 : null,
           ),
         ),
-        if (workspace != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.swap_horiz),
-                    label: const Text('Change'),
-                    onPressed: canMutate
-                        ? () => widget.onSelectWorkspace()
-                        : null,
-                  ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.swap_horiz),
+                  label: Text(workspace == null ? 'Attach' : 'Change'),
+                  onPressed: canMutate
+                      ? () => widget.onSelectWorkspace()
+                      : null,
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.link_off),
-                    label: const Text('Detach'),
-                    onPressed: canMutate ? chat?.detachWorkspace : null,
-                  ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.link_off),
+                  label: const Text('Detach'),
+                  onPressed: workspace != null && canMutate
+                      ? chat?.detachWorkspace
+                      : null,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
+        ),
         const Divider(height: 1),
         Expanded(child: _buildBody(canMutate)),
       ],
