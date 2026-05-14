@@ -1696,18 +1696,6 @@ Return a corrected JobSpec using:
     );
   }
 
-  StopPolicy _withoutToolCallLimits(StopPolicy policy) {
-    return StopPolicy(
-      maxTotalPhases: policy.maxTotalPhases,
-      maxPhaseTerminalCommands: policy.maxPhaseTerminalCommands,
-      maxPhaseFilesRead: policy.maxPhaseFilesRead,
-      maxPhaseRetries: policy.maxPhaseRetries,
-      maxRuntimeSeconds: policy.maxRuntimeSeconds,
-      stopOnRequiredQuestion: policy.stopOnRequiredQuestion,
-      stopOnLowConfidence: policy.stopOnLowConfidence,
-    );
-  }
-
   JobSpec _normaliseSpec(
     JobSpec spec,
     TaskBrief brief,
@@ -1758,9 +1746,7 @@ Return a corrected JobSpec using:
             }
             return phase.copyWith(
               status: PhaseStatus.pending,
-              stopPolicy: phase.stopPolicy == null
-                  ? null
-                  : _withoutToolCallLimits(phase.stopPolicy!),
+              stopPolicy: phase.stopPolicy,
               allowedTools: allowed,
               disallowedTools: phaseDisallowed,
               expectedOutputs: phase.expectedOutputs
@@ -1811,7 +1797,7 @@ Return a corrected JobSpec using:
             ),
       ),
       stopPolicy: _hasActionableStopPolicy(spec.stopPolicy)
-          ? _withoutToolCallLimits(spec.stopPolicy)
+          ? spec.stopPolicy
           : const StopPolicy(
               maxTotalPhases: 12,
               maxPhaseRetries: 1,
@@ -2498,7 +2484,7 @@ When complete:
 
   StopPolicy _effectiveStopPolicy(JobSpec spec, JobPhase phase) {
     final phasePolicy = phase.stopPolicy;
-    if (phasePolicy == null) return _withoutToolCallLimits(spec.stopPolicy);
+    if (phasePolicy == null) return spec.stopPolicy;
     return StopPolicy(
       maxTotalPhases: spec.stopPolicy.maxTotalPhases,
       maxPhaseTerminalCommands:
@@ -2610,6 +2596,7 @@ When complete:
     }
     return buffer.toString().trim();
   }
+
 
   Future<_RecoveryResult> _recoverSnapshot({
     required WorkspaceAttachment workspace,
