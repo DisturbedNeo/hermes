@@ -130,6 +130,10 @@ static void my_application_activate(GApplication* application) {
     gtk_window_set_title(window, "hermes");
   }
 
+  std::filesystem::path icon_path = std::filesystem::current_path() / "data/flutter_assets/assets/icon.png";
+
+  gtk_window_set_icon_from_file(window, icon_path.c_str(), nullptr);
+
   const InitialWindowSize initial_window_size = calculate_initial_window_size();
   gtk_window_set_default_size(window, initial_window_size.width,
                               initial_window_size.height);
