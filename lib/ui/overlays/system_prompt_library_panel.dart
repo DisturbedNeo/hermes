@@ -212,6 +212,7 @@ class _SystemPromptLibraryPanelState extends State<SystemPromptLibraryPanel> {
       );
       if (!mounted) return;
       widget.onPromptLoaded?.call();
+      _showMessage('Prompt loaded');
     } catch (e) {
       _showMessage('Failed to load preset: $e');
     }

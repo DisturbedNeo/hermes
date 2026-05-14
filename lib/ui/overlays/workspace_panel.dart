@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:hermes/core/models/job.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
@@ -204,6 +205,27 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
               subtitle: Text(entry['path'] as String),
             ),
         ],
+        if ((widget.chat?.availableJobs.isNotEmpty ?? false)) ...[
+          const _SectionHeader('Jobs In This Chat'),
+          for (final job in widget.chat!.availableJobs.take(12))
+            ListTile(
+              dense: true,
+              leading: Icon(_iconForJobStatus(job.status)),
+              title: Text(
+                job.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                '${job.status.wire} - ${job.id}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              onTap: canMutate
+                  ? () => unawaited(widget.chat?.loadJob(job.id))
+                  : null,
+            ),
+        ],
         if (_recent.isNotEmpty) ...[
           const _SectionHeader('Recent'),
           for (final workspace in _recent)
@@ -233,6 +255,16 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
     );
   }
 }
+
+IconData _iconForJobStatus(JobStatus status) => switch (status) {
+  JobStatus.completed => Icons.check_circle_outline,
+  JobStatus.running => Icons.sync,
+  JobStatus.paused => Icons.pause_circle_outline,
+  JobStatus.blocked => Icons.block,
+  JobStatus.failed => Icons.error_outline,
+  JobStatus.cancelled => Icons.cancel_outlined,
+  JobStatus.draft || JobStatus.planned => Icons.account_tree_outlined,
+};
 
 class _SectionHeader extends StatelessWidget {
   final String label;

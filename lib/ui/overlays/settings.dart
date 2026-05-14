@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:hermes/core/enums/diagnostics_visibility.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
+import 'package:hermes/core/models/job.dart';
+import 'package:hermes/core/models/job_system_settings.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/ui/model_configuration/slider_control.dart';
@@ -16,6 +18,7 @@ class _SettingsState extends State<Settings> {
   late final TextEditingController _modelsDirCtrl;
   DiagnosticsVisibility _diagnosticsVisibility = DiagnosticsVisibility.off;
   CompactionSettings _compactionSettings = const CompactionSettings();
+  JobSystemSettings _jobSystemSettings = const JobSystemSettings();
 
   final PreferencesService preferencesService = serviceProvider
       .get<PreferencesService>();
@@ -26,6 +29,7 @@ class _SettingsState extends State<Settings> {
     final diagnosticsVisibility = await preferencesService
         .getDiagnosticsVisibility();
     final compactionSettings = await preferencesService.getCompactionSettings();
+    final jobSystemSettings = await preferencesService.getJobSystemSettings();
     if (!mounted) return;
     if (llamaCppDir is String && llamaCppDir.isNotEmpty) {
       _llamaCppDirCtrl.text = llamaCppDir;
@@ -35,6 +39,7 @@ class _SettingsState extends State<Settings> {
     }
     _diagnosticsVisibility = diagnosticsVisibility;
     _compactionSettings = compactionSettings;
+    _jobSystemSettings = jobSystemSettings;
     setState(() {});
   }
 
@@ -42,6 +47,12 @@ class _SettingsState extends State<Settings> {
     final normalised = settings.normalised();
     setState(() => _compactionSettings = normalised);
     await preferencesService.setCompactionSettings(normalised);
+  }
+
+  Future<void> _setJobSystemSettings(JobSystemSettings settings) async {
+    final normalised = settings.normalised();
+    setState(() => _jobSystemSettings = normalised);
+    await preferencesService.setJobSystemSettings(normalised);
   }
 
   @override
@@ -171,6 +182,90 @@ class _SettingsState extends State<Settings> {
                   allowEmergencyPayloadTruncation: enabled,
                 ),
               ),
+            ),
+            const SizedBox(height: 16),
+
+            const Text(
+              'Job System',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Enable structured jobs'),
+              value: _jobSystemSettings.enabled,
+              onChanged: (enabled) => _setJobSystemSettings(
+                _jobSystemSettings.copyWith(enabled: enabled),
+              ),
+            ),
+            DropdownButtonFormField<AutonomyLevel>(
+              initialValue: _jobSystemSettings.defaultAutonomy,
+              decoration: const InputDecoration(
+                labelText: 'Default autonomy',
+                prefixIcon: Icon(Icons.tune),
+                border: OutlineInputBorder(),
+              ),
+              items: AutonomyLevel.values.map((autonomy) {
+                return DropdownMenuItem(
+                  value: autonomy,
+                  child: Text(autonomy.wire),
+                );
+              }).toList(),
+              onChanged: _jobSystemSettings.enabled
+                  ? (autonomy) {
+                      if (autonomy == null) return;
+                      _setJobSystemSettings(
+                        _jobSystemSettings.copyWith(defaultAutonomy: autonomy),
+                      );
+                    }
+                  : null,
+            ),
+            const SizedBox(height: 8),
+            SliderControl.integer(
+              label: 'Max phase retries',
+              value: _jobSystemSettings.maxPhaseRetries,
+              min: 0,
+              max: 5,
+              step: 1,
+              onChanged: (value) => _setJobSystemSettings(
+                _jobSystemSettings.copyWith(maxPhaseRetries: value),
+              ),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Approve file edits'),
+              value: _jobSystemSettings.requireApprovalBeforeFileEdits,
+              onChanged: _jobSystemSettings.enabled
+                  ? (enabled) => _setJobSystemSettings(
+                      _jobSystemSettings.copyWith(
+                        requireApprovalBeforeFileEdits: enabled,
+                      ),
+                    )
+                  : null,
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Approve terminal phases'),
+              value: _jobSystemSettings.requireApprovalBeforeTerminal,
+              onChanged: _jobSystemSettings.enabled
+                  ? (enabled) => _setJobSystemSettings(
+                      _jobSystemSettings.copyWith(
+                        requireApprovalBeforeTerminal: enabled,
+                      ),
+                    )
+                  : null,
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Show job messages in chat'),
+              value: _jobSystemSettings.showJobMessagesInChat,
+              onChanged: _jobSystemSettings.enabled
+                  ? (enabled) => _setJobSystemSettings(
+                      _jobSystemSettings.copyWith(
+                        showJobMessagesInChat: enabled,
+                      ),
+                    )
+                  : null,
             ),
             const SizedBox(height: 16),
 

@@ -46,3 +46,4 @@ app.*.map.json
 /hermes.sh
 *.png
 /devtools_options.yaml
+/.agent

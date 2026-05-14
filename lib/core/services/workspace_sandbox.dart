@@ -92,6 +92,12 @@ class WorkspaceSandbox {
     String relativePath,
   ) async {
     final resolved = await resolve(rootPath, relativePath);
+    final type = await FileSystemEntity.type(resolved.absolutePath);
+    if (type == FileSystemEntityType.directory) {
+      throw WorkspaceSandboxException(
+        'Path is a directory. Use list_directory for directories: ${resolved.relativePath}',
+      );
+    }
     final file = File(resolved.absolutePath);
     final length = await file.length();
     if (length > maxReadBytes) {
@@ -220,6 +226,8 @@ class WorkspaceSandbox {
           if (results.length >= maxSearchResults) break;
         }
       } on FormatException {
+        continue;
+      } on FileSystemException {
         continue;
       }
     }

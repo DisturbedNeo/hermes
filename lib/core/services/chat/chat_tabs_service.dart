@@ -4,11 +4,13 @@ import 'package:flutter/foundation.dart';
 import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
+import 'package:hermes/core/services/job_service.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_service.dart';
+import 'package:hermes/core/models/workspace.dart';
 
 enum OpenChatTarget { currentTab, newTab }
 
@@ -18,6 +20,7 @@ class ChatTabsService extends ChangeNotifier {
   final ChatLibraryService _chatLibrary;
   final SystemPromptLibraryService _systemPromptLibrary;
   final ToolService _toolService;
+  final JobService _jobService;
   final WorkspaceService _workspaceService;
   final PreferencesService _preferencesService;
 
@@ -31,11 +34,13 @@ class ChatTabsService extends ChangeNotifier {
     required ChatLibraryService chatLibrary,
     required SystemPromptLibraryService systemPromptLibrary,
     required ToolService toolService,
+    required JobService jobService,
     required WorkspaceService workspaceService,
     required PreferencesService preferencesService,
   }) : _chatLibrary = chatLibrary,
        _systemPromptLibrary = systemPromptLibrary,
        _toolService = toolService,
+       _jobService = jobService,
        _workspaceService = workspaceService,
        _preferencesService = preferencesService {
     newTab();
@@ -172,9 +177,18 @@ class ChatTabsService extends ChangeNotifier {
   }
 
   Future<void> deleteSavedChat(String chatId) async {
+    final snapshot = await _chatLibrary.getChat(chatId);
+    final workspaces = _workspacesForDeletedChat(
+      chatId,
+      snapshot?.chat.workspace,
+    );
     await _chatLibrary.deleteChat(chatId);
-    for (final tab in _tabs.where((tab) => tab.currentChatId == chatId)) {
-      await tab.newChat();
+    try {
+      await _deleteJobsForChatSessionInWorkspaces(chatId, workspaces);
+    } finally {
+      for (final tab in _tabs.where((tab) => tab.currentChatId == chatId)) {
+        await tab.resetIfCurrentSavedChatDeleted(chatId);
+      }
     }
     notifyListeners();
   }
@@ -183,6 +197,7 @@ class ChatTabsService extends ChangeNotifier {
     final tab = ChatService(
       serverManager: serverManager,
       toolService: _toolService,
+      jobService: _jobService,
       chatLibrary: _chatLibrary,
       workspaceService: _workspaceService,
       preferencesService: _preferencesService,
@@ -227,7 +242,64 @@ class ChatTabsService extends ChangeNotifier {
     for (final tab in List<ChatService>.of(_tabs)) {
       await _removeTab(tab);
     }
+    await _cleanupOrphanedJobs();
     await serverManager.dispose();
     super.dispose();
+  }
+
+  List<WorkspaceAttachment> _workspacesForDeletedChat(
+    String chatId,
+    WorkspaceAttachment? savedWorkspace,
+  ) {
+    final byRoot = <String, WorkspaceAttachment>{};
+    void add(WorkspaceAttachment? workspace) {
+      if (workspace == null || workspace.missing) return;
+      byRoot[workspace.rootPath] = workspace;
+    }
+
+    add(savedWorkspace);
+    for (final tab in _tabs.where((tab) => tab.currentChatId == chatId)) {
+      add(tab.workspace);
+    }
+    return byRoot.values.toList();
+  }
+
+  Future<void> _deleteJobsForChatSessionInWorkspaces(
+    String chatSessionId,
+    Iterable<WorkspaceAttachment> workspaces,
+  ) async {
+    for (final workspace in workspaces) {
+      await _jobService.deleteJobsForChatSession(
+        workspace,
+        chatSessionId: chatSessionId,
+      );
+    }
+  }
+
+  Future<void> _cleanupOrphanedJobs() async {
+    final savedChats = await _chatLibrary.listChats();
+    final retainedChatSessionIds = savedChats.map((chat) => chat.id).toSet();
+    final byRoot = <String, WorkspaceAttachment>{};
+    void add(WorkspaceAttachment? workspace) {
+      if (workspace == null || workspace.missing) return;
+      byRoot[workspace.rootPath] = workspace;
+    }
+
+    for (final chat in savedChats) {
+      add(chat.workspace);
+    }
+    for (final tab in _tabs) {
+      add(tab.workspace);
+    }
+    for (final workspace in await _workspaceService.recentWorkspaces()) {
+      add(workspace);
+    }
+
+    for (final workspace in byRoot.values) {
+      await _jobService.deleteOrphanedChatJobs(
+        workspace,
+        retainedChatSessionIds: retainedChatSessionIds,
+      );
+    }
   }
 }

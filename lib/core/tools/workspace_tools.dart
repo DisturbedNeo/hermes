@@ -90,7 +90,8 @@ class ReadFileTool extends WorkspaceTool {
   @override
   final String name = 'Read file';
   @override
-  final String description = 'Reads a UTF-8 text file inside the workspace.';
+  final String description =
+      'Reads an existing UTF-8 text file inside the workspace. Use list_directory for directories.';
   @override
   final Map<String, dynamic> schema = {
     'type': 'object',

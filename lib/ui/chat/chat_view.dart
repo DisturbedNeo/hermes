@@ -8,6 +8,7 @@ import 'package:hermes/ui/chat/message/bubble_surface.dart';
 import 'package:hermes/ui/chat/message/message_actions.dart';
 import 'package:hermes/ui/chat/composer.dart';
 import 'package:hermes/ui/chat/diagnostics_bar.dart';
+import 'package:hermes/ui/chat/job_panel.dart';
 import 'package:hermes/ui/chat/message/markdown_view.dart';
 import 'package:hermes/ui/chat/message/message_bubble.dart';
 import 'package:hermes/ui/chat/message/message_row.dart';
@@ -29,6 +30,7 @@ class ChatView extends StatefulWidget {
 
 class _ChatViewState extends State<ChatView> {
   final _scroll = ScrollController();
+  bool _jobPanelExpanded = true;
 
   @override
   void dispose() {
@@ -43,64 +45,30 @@ class _ChatViewState extends State<ChatView> {
       animation: Listenable.merge([chat, chat.messageStore, chat.chatStream]),
       builder: (_, _) {
         final displayItems = _displayItems(chat.messageStore.messages);
+        final showJobPanel = _showJobPanel(chat);
         return Column(
           children: [
             if (chat.pendingModelRestore != null)
               _ModelRestoreBanner(chat: chat),
             WorkspaceBar(chat: chat, onOpenWorkspace: widget.onOpenWorkspace),
-            Expanded(
-              child: Stack(
-                children: [
-                  ListView.builder(
-                    controller: _scroll,
-                    reverse: true,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 16,
-                    ),
-                    itemCount: displayItems.length,
-                    itemBuilder: (_, i) {
-                      final item = displayItems[displayItems.length - 1 - i];
-                      final b = item.message;
-                      final isUser = item is _SummaryDisplayItem
-                          ? false
-                          : b.role == MessageRole.user;
-
-                      return Padding(
-                        key: ValueKey('message_${b.id}'),
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: MessageRow(
-                          isUser: isUser,
-                          bubble: item is _SummaryDisplayItem
-                              ? _SummaryMemoryGroup(
-                                  key: ValueKey('summary_${b.id}'),
-                                  summary: b,
-                                  coveredMessages: item.coveredMessages,
-                                )
-                              : MessageBubble(
-                                  key: ValueKey('bubble_${b.id}'),
-                                  b: b,
-                                  onSave: (newReasoning, newText) {
-                                    chat.messageStore.upsert(
-                                      b.copyWith(
-                                        reasoning: newReasoning,
-                                        text: newText,
-                                      ),
-                                    );
-                                  },
-                                  editable: !chat.chatStream.isStreaming,
-                                ),
-                          actions: MessageActions(
-                            key: ValueKey('actions_${b.id}'),
-                            message: b,
-                            chat: chat,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
+            if (showJobPanel && !_jobPanelExpanded)
+              JobPanel(
+                chat: chat,
+                expanded: false,
+                onToggleExpanded: _toggleJobPanel,
               ),
+            Expanded(
+              child: showJobPanel && _jobPanelExpanded
+                  ? JobPanel(
+                      chat: chat,
+                      expanded: true,
+                      onToggleExpanded: _toggleJobPanel,
+                    )
+                  : _MessageList(
+                      scroll: _scroll,
+                      displayItems: displayItems,
+                      chat: chat,
+                    ),
             ),
             const Divider(height: 1),
             const DiagnosticsBar(),
@@ -114,6 +82,17 @@ class _ChatViewState extends State<ChatView> {
         );
       },
     );
+  }
+
+  void _toggleJobPanel() {
+    setState(() => _jobPanelExpanded = !_jobPanelExpanded);
+  }
+
+  bool _showJobPanel(ChatService chat) {
+    return chat.activeJob != null ||
+        chat.availableJobs.isNotEmpty ||
+        chat.jobBusy ||
+        chat.jobModelOutputTitle != null;
   }
 
   List<_DisplayItem> _displayItems(List<Bubble> messages) {
@@ -135,6 +114,68 @@ class _ChatViewState extends State<ChatView> {
         else if (!message.omittedFromModelPayload)
           _MessageDisplayItem(message),
     ];
+  }
+}
+
+class _MessageList extends StatelessWidget {
+  final ScrollController scroll;
+  final List<_DisplayItem> displayItems;
+  final ChatService chat;
+
+  const _MessageList({
+    required this.scroll,
+    required this.displayItems,
+    required this.chat,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        ListView.builder(
+          controller: scroll,
+          reverse: true,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+          itemCount: displayItems.length,
+          itemBuilder: (_, i) {
+            final item = displayItems[displayItems.length - 1 - i];
+            final b = item.message;
+            final isUser = item is _SummaryDisplayItem
+                ? false
+                : b.role == MessageRole.user;
+
+            return Padding(
+              key: ValueKey('message_${b.id}'),
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: MessageRow(
+                isUser: isUser,
+                bubble: item is _SummaryDisplayItem
+                    ? _SummaryMemoryGroup(
+                        key: ValueKey('summary_${b.id}'),
+                        summary: b,
+                        coveredMessages: item.coveredMessages,
+                      )
+                    : MessageBubble(
+                        key: ValueKey('bubble_${b.id}'),
+                        b: b,
+                        onSave: (newReasoning, newText) {
+                          chat.messageStore.upsert(
+                            b.copyWith(reasoning: newReasoning, text: newText),
+                          );
+                        },
+                        editable: !chat.chatStream.isStreaming,
+                      ),
+                actions: MessageActions(
+                  key: ValueKey('actions_${b.id}'),
+                  message: b,
+                  chat: chat,
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
   }
 }
 

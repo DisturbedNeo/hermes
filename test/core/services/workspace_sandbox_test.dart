@@ -72,6 +72,34 @@ void main() {
         throwsA(isA<WorkspaceSandboxException>()),
       );
     });
+
+    test('search skips binary files that cannot be decoded as UTF-8', () async {
+      await File('${root.path}/notes.txt').writeAsString('needle');
+      await File('${root.path}/binary.dat').writeAsBytes([0xff, 0xfe, 0xfd]);
+
+      final results = await sandbox.searchFiles(root.path, 'needle');
+
+      expect(results.map((item) => item['path']), contains('notes.txt'));
+      expect(
+        results.map((item) => item['path']),
+        isNot(contains('binary.dat')),
+      );
+    });
+
+    test('readFile reports directories as the wrong path type', () async {
+      await Directory('${root.path}/lib').create();
+
+      await expectLater(
+        sandbox.readFile(root.path, 'lib'),
+        throwsA(
+          isA<WorkspaceSandboxException>().having(
+            (error) => error.message,
+            'message',
+            contains('Use list_directory'),
+          ),
+        ),
+      );
+    });
   });
 
   group('ToolService workspace tools', () {

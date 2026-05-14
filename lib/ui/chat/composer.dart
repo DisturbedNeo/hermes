@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/enums/stream_state.dart';
+import 'package:hermes/core/models/job.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/core/services/tool_service.dart';
@@ -172,7 +173,7 @@ class _ComposerState extends State<Composer> {
     }
 
     final chat = widget.chat;
-    if (!chat.chatStream.isStreaming) {
+    if (!chat.chatStream.isStreaming && !chat.jobBusy) {
       final trimmed = _controller.text.trim();
       _controller.clear();
       if (trimmed.isNotEmpty) {
@@ -192,241 +193,305 @@ class _ComposerState extends State<Composer> {
     final effectiveToolIds = _effectiveToolIds();
     final hasTools = effectiveToolIds.isNotEmpty;
     final chat = widget.chat;
+    final enabled = widget.enabled && !chat.jobBusy;
 
     return SafeArea(
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 140, maxWidth: 180),
-              child: Tooltip(
-                message: 'Message role',
-                waitDuration: const Duration(milliseconds: 400),
-                child: DropdownButtonFormField<MessageRole>(
-                  initialValue: _selectedRole,
-                  isDense: true,
-                  onChanged: widget.enabled
-                      ? (v) {
-                          if (v == null) return;
-                          setState(() => _selectedRole = v);
-                          _focusNode.requestFocus();
-                        }
-                      : null,
-                  decoration: const InputDecoration(
-                    labelText: 'Role',
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
+            _ExecutionModeSelector(chat: chat, enabled: enabled),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    minWidth: 140,
+                    maxWidth: 180,
+                  ),
+                  child: Tooltip(
+                    message: 'Message role',
+                    waitDuration: const Duration(milliseconds: 400),
+                    child: DropdownButtonFormField<MessageRole>(
+                      initialValue: _selectedRole,
+                      isDense: true,
+                      onChanged: enabled
+                          ? (v) {
+                              if (v == null) return;
+                              setState(() => _selectedRole = v);
+                              _focusNode.requestFocus();
+                            }
+                          : null,
+                      decoration: const InputDecoration(
+                        labelText: 'Role',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                      ),
+                      items: MessageRole.values.map((role) {
+                        return DropdownMenuItem<MessageRole>(
+                          value: role,
+                          child: Row(
+                            children: [
+                              Icon(_iconForRole(role), size: 18),
+                              const SizedBox(width: 8),
+                              Text(_labelForRole(role)),
+                            ],
+                          ),
+                        );
+                      }).toList(),
                     ),
                   ),
-                  items: MessageRole.values.map((role) {
-                    return DropdownMenuItem<MessageRole>(
-                      value: role,
-                      child: Row(
-                        children: [
-                          Icon(_iconForRole(role), size: 18),
-                          const SizedBox(width: 8),
-                          Text(_labelForRole(role)),
-                        ],
-                      ),
-                    );
-                  }).toList(),
                 ),
-              ),
-            ),
-            const SizedBox(width: 8),
+                const SizedBox(width: 8),
 
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  tooltip: hasTools
-                      ? 'Tools (${effectiveToolIds.length})'
-                      : 'Select tools',
-                  onPressed: widget.enabled ? _openToolSelector : null,
-                  icon: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      const Icon(Icons.build),
-                      if (hasTools)
-                        Positioned(
-                          right: -4,
-                          top: -4,
-                          child: Container(
-                            padding: const EdgeInsets.all(3),
-                            decoration: BoxDecoration(
-                              color: Colors.redAccent,
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              effectiveToolIds.length.toString(),
-                              style: const TextStyle(
-                                fontSize: 9,
-                                color: Colors.white,
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: hasTools
+                          ? 'Tools (${effectiveToolIds.length})'
+                          : 'Select tools',
+                      onPressed: enabled ? _openToolSelector : null,
+                      icon: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          const Icon(Icons.build),
+                          if (hasTools)
+                            Positioned(
+                              right: -4,
+                              top: -4,
+                              child: Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: BoxDecoration(
+                                  color: Colors.redAccent,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  effectiveToolIds.length.toString(),
+                                  style: const TextStyle(
+                                    fontSize: 9,
+                                    color: Colors.white,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                if (hasTools)
-                  Text(
-                    '${effectiveToolIds.length}',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.labelSmall?.copyWith(fontSize: 10),
-                  ),
-              ],
-            ),
-            const SizedBox(width: 8),
-
-            Expanded(
-              child: TextField(
-                controller: _controller,
-                focusNode: _focusNode,
-                minLines: 1,
-                maxLines: 6,
-                enabled: widget.enabled,
-                keyboardType: TextInputType.multiline,
-                textInputAction: (roleIsUser && !chat.chatStream.isStreaming)
-                    ? TextInputAction.send
-                    : TextInputAction.newline,
-                decoration: InputDecoration(
-                  hintText: !widget.enabled
-                      ? 'Load a model to chat…'
-                      : chat.chatStream.isStreaming
-                      ? 'Streaming response…'
-                      : 'Type a message…',
-                  border: const OutlineInputBorder(),
-                ),
-                onSubmitted: (_) {
-                  if (!widget.enabled) return;
-                  if (_selectedRole != MessageRole.user) {
-                    _insertMessage();
-                    return;
-                  }
-                  if (!chat.chatStream.isStreaming) {
-                    final trimmed = _controller.text.trim();
-                    _controller.clear();
-                    _controller.selection = const TextSelection.collapsed(
-                      offset: 0,
-                    );
-                    _focusNode.requestFocus();
-
-                    if (trimmed.isNotEmpty) {
-                      chat.send(trimmed, tools: _effectiveToolIds());
-                    } else {
-                      chat.generateOrContinue(tools: _effectiveToolIds());
-                    }
-                  }
-                },
-                onEditingComplete: () {
-                  _focusNode.requestFocus();
-                },
-              ),
-            ),
-            const SizedBox(width: 8),
-            AnimatedBuilder(
-              animation: chat.chatStream,
-              builder: (_, _) {
-                return ValueListenableBuilder<TextEditingValue>(
-                  valueListenable: _controller,
-                  builder: (_, value, _) {
-                    final mode = _modeFor(value.text);
-                    final List<Widget> buttons = [];
-
-                    if (_selectedRole == MessageRole.user) {
-                      switch (mode) {
-                        case ComposerMode.cancel:
-                          buttons.add(
-                            FilledButton.icon(
-                              icon: const Icon(Icons.stop),
-                              label: const Text('Cancel'),
-                              onPressed: chat.cancelGeneration,
-                            ),
-                          );
-                          break;
-                        case ComposerMode.generate:
-                          buttons.add(
-                            FilledButton.icon(
-                              icon: const Icon(Icons.auto_awesome),
-                              label: const Text('Generate'),
-                              onPressed: widget.enabled
-                                  ? () => chat.generateOrContinue(
-                                      tools: _effectiveToolIds(),
-                                    )
-                                  : null,
-                            ),
-                          );
-                          break;
-                        case ComposerMode.cont:
-                          buttons.add(
-                            FilledButton.icon(
-                              icon: const Icon(Icons.more_horiz),
-                              label: const Text('Continue'),
-                              onPressed: widget.enabled
-                                  ? () => chat.generateOrContinue(
-                                      tools: _effectiveToolIds(),
-                                    )
-                                  : null,
-                            ),
-                          );
-                          break;
-                        case ComposerMode.send:
-                          buttons.add(
-                            FilledButton.icon(
-                              icon: const Icon(Icons.send),
-                              label: const Text('Send'),
-                              onPressed: widget.enabled
-                                  ? () {
-                                      final trimmed = value.text.trim();
-                                      _controller.clear();
-                                      _controller.selection =
-                                          const TextSelection.collapsed(
-                                            offset: 0,
-                                          );
-                                      _focusNode.requestFocus();
-                                      chat.send(
-                                        trimmed,
-                                        tools: _effectiveToolIds(),
-                                      );
-                                    }
-                                  : null,
-                            ),
-                          );
-                          break;
-                      }
-
-                      buttons.add(const SizedBox(width: 8));
-                    }
-
-                    buttons.add(
-                      Tooltip(
-                        message:
-                            'Insert ${_labelForRole(_selectedRole)} message',
-                        waitDuration: const Duration(milliseconds: 400),
-                        child: FilledButton.icon(
-                          icon: const Icon(Icons.add),
-                          label: const Text('Insert'),
-                          onPressed: widget.enabled ? _insertMessage : null,
-                        ),
+                        ],
                       ),
-                    );
+                    ),
+                    if (hasTools)
+                      Text(
+                        '${effectiveToolIds.length}',
+                        style: Theme.of(
+                          context,
+                        ).textTheme.labelSmall?.copyWith(fontSize: 10),
+                      ),
+                  ],
+                ),
+                const SizedBox(width: 8),
 
-                    return Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: buttons,
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    minLines: 1,
+                    maxLines: 6,
+                    enabled: enabled,
+                    keyboardType: TextInputType.multiline,
+                    textInputAction:
+                        (roleIsUser && !chat.chatStream.isStreaming)
+                        ? TextInputAction.send
+                        : TextInputAction.newline,
+                    decoration: InputDecoration(
+                      hintText: !widget.enabled
+                          ? 'Load a model to chat...'
+                          : chat.jobBusy
+                          ? 'Job is running...'
+                          : chat.chatStream.isStreaming
+                          ? 'Streaming response...'
+                          : chat.executionMode == ExecutionMode.chat
+                          ? 'Type a message...'
+                          : 'Describe the job...',
+                      border: const OutlineInputBorder(),
+                    ),
+                    onSubmitted: (_) {
+                      if (!enabled) return;
+                      if (_selectedRole != MessageRole.user) {
+                        _insertMessage();
+                        return;
+                      }
+                      if (!chat.chatStream.isStreaming && !chat.jobBusy) {
+                        final trimmed = _controller.text.trim();
+                        _controller.clear();
+                        _controller.selection = const TextSelection.collapsed(
+                          offset: 0,
+                        );
+                        _focusNode.requestFocus();
+
+                        if (trimmed.isNotEmpty) {
+                          chat.send(trimmed, tools: _effectiveToolIds());
+                        } else {
+                          chat.generateOrContinue(tools: _effectiveToolIds());
+                        }
+                      }
+                    },
+                    onEditingComplete: () {
+                      _focusNode.requestFocus();
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                AnimatedBuilder(
+                  animation: chat.chatStream,
+                  builder: (_, _) {
+                    return ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: _controller,
+                      builder: (_, value, _) {
+                        final mode = _modeFor(value.text);
+                        final List<Widget> buttons = [];
+
+                        if (_selectedRole == MessageRole.user) {
+                          switch (mode) {
+                            case ComposerMode.cancel:
+                              buttons.add(
+                                FilledButton.icon(
+                                  icon: const Icon(Icons.stop),
+                                  label: const Text('Cancel'),
+                                  onPressed: chat.cancelGeneration,
+                                ),
+                              );
+                              break;
+                            case ComposerMode.generate:
+                              buttons.add(
+                                FilledButton.icon(
+                                  icon: const Icon(Icons.auto_awesome),
+                                  label: const Text('Generate'),
+                                  onPressed: enabled
+                                      ? () => chat.generateOrContinue(
+                                          tools: _effectiveToolIds(),
+                                        )
+                                      : null,
+                                ),
+                              );
+                              break;
+                            case ComposerMode.cont:
+                              buttons.add(
+                                FilledButton.icon(
+                                  icon: const Icon(Icons.more_horiz),
+                                  label: const Text('Continue'),
+                                  onPressed: enabled
+                                      ? () => chat.generateOrContinue(
+                                          tools: _effectiveToolIds(),
+                                        )
+                                      : null,
+                                ),
+                              );
+                              break;
+                            case ComposerMode.send:
+                              buttons.add(
+                                FilledButton.icon(
+                                  icon: Icon(
+                                    chat.executionMode == ExecutionMode.chat
+                                        ? Icons.send
+                                        : Icons.account_tree_outlined,
+                                  ),
+                                  label: Text(
+                                    chat.executionMode == ExecutionMode.chat
+                                        ? 'Send'
+                                        : chat.executionMode.label,
+                                  ),
+                                  onPressed: enabled
+                                      ? () {
+                                          final trimmed = value.text.trim();
+                                          _controller.clear();
+                                          _controller.selection =
+                                              const TextSelection.collapsed(
+                                                offset: 0,
+                                              );
+                                          _focusNode.requestFocus();
+                                          chat.send(
+                                            trimmed,
+                                            tools: _effectiveToolIds(),
+                                          );
+                                        }
+                                      : null,
+                                ),
+                              );
+                              break;
+                          }
+                        } else {
+                          buttons.add(
+                            Tooltip(
+                              message:
+                                  'Insert ${_labelForRole(_selectedRole)} message',
+                              waitDuration: const Duration(milliseconds: 400),
+                              child: FilledButton.icon(
+                                icon: const Icon(Icons.add),
+                                label: const Text('Insert'),
+                                onPressed: enabled ? _insertMessage : null,
+                              ),
+                            ),
+                          );
+                        }
+
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: buttons,
+                        );
+                      },
                     );
                   },
-                );
-              },
+                ),
+              ],
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ExecutionModeSelector extends StatelessWidget {
+  final ChatService chat;
+  final bool enabled;
+
+  const _ExecutionModeSelector({required this.chat, required this.enabled});
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: SegmentedButton<ExecutionMode>(
+        showSelectedIcon: false,
+        style: SegmentedButton.styleFrom(visualDensity: VisualDensity.compact),
+        segments: const [
+          ButtonSegment(
+            value: ExecutionMode.chat,
+            icon: Icon(Icons.chat_bubble_outline),
+            label: Text('Chat'),
+            tooltip: 'Chat',
+          ),
+          ButtonSegment(
+            value: ExecutionMode.plan,
+            icon: Icon(Icons.format_list_numbered),
+            label: Text('Plan'),
+            tooltip: 'Plan',
+          ),
+          ButtonSegment(
+            value: ExecutionMode.job,
+            icon: Icon(Icons.account_tree_outlined),
+            label: Text('Job'),
+            tooltip: 'Job',
+          ),
+        ],
+        selected: {chat.executionMode},
+        onSelectionChanged: enabled
+            ? (selection) => chat.setExecutionMode(selection.single)
+            : null,
       ),
     );
   }

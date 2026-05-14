@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
+import 'package:hermes/core/services/job_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/prompt_assembler.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
@@ -27,10 +28,12 @@ void main() {
       databasePath: ':memory:',
     );
     promptLibrary = _FakeSystemPromptLibraryService();
+    final toolService = ToolService();
     tabs = ChatTabsService(
       chatLibrary: chatLibrary,
       systemPromptLibrary: promptLibrary,
-      toolService: ToolService(),
+      toolService: toolService,
+      jobService: JobService(toolService: toolService),
       workspaceService: WorkspaceService(),
       preferencesService: preferences,
     );

@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:hermes/core/enums/diagnostics_visibility.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
+import 'package:hermes/core/models/job.dart';
+import 'package:hermes/core/models/job_system_settings.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,6 +28,17 @@ class PreferencesService extends ChangeNotifier {
       'context_compaction_recent_window_units';
   static const String _contextCompactionEmergencyTruncationKey =
       'context_compaction_emergency_truncation';
+  static const String _jobSystemEnabledKey = 'job_system_enabled';
+  static const String _jobSystemDefaultAutonomyKey =
+      'job_system_default_autonomy';
+  static const String _jobSystemMaxPhaseRetriesKey =
+      'job_system_max_phase_retries';
+  static const String _jobSystemApprovalBeforeFileEditsKey =
+      'job_system_approval_before_file_edits';
+  static const String _jobSystemApprovalBeforeTerminalKey =
+      'job_system_approval_before_terminal';
+  static const String _jobSystemShowMessagesKey =
+      'job_system_show_messages_in_chat';
 
   Future<String> getDataDirectoryPath() async {
     final savedPath = (await _prefs).getString(_dataLocationKey);
@@ -155,6 +168,52 @@ class PreferencesService extends ChangeNotifier {
         await prefs.setBool(
           _contextCompactionEmergencyTruncationKey,
           normalised.allowEmergencyPayloadTruncation,
+        );
+
+    if (saved) notifyListeners();
+    return saved;
+  }
+
+  Future<JobSystemSettings> getJobSystemSettings() async {
+    final prefs = await _prefs;
+    return JobSystemSettings(
+      enabled: prefs.getBool(_jobSystemEnabledKey) ?? true,
+      defaultAutonomy: parseAutonomyLevel(
+        prefs.getString(_jobSystemDefaultAutonomyKey),
+      ),
+      maxPhaseRetries: prefs.getInt(_jobSystemMaxPhaseRetriesKey) ?? 1,
+      requireApprovalBeforeFileEdits:
+          prefs.getBool(_jobSystemApprovalBeforeFileEditsKey) ?? true,
+      requireApprovalBeforeTerminal:
+          prefs.getBool(_jobSystemApprovalBeforeTerminalKey) ?? false,
+      showJobMessagesInChat: prefs.getBool(_jobSystemShowMessagesKey) ?? true,
+    ).normalised();
+  }
+
+  Future<bool> setJobSystemSettings(JobSystemSettings settings) async {
+    final prefs = await _prefs;
+    final normalised = settings.normalised();
+    final saved =
+        await prefs.setBool(_jobSystemEnabledKey, normalised.enabled) &&
+        await prefs.setString(
+          _jobSystemDefaultAutonomyKey,
+          normalised.defaultAutonomy.wire,
+        ) &&
+        await prefs.setInt(
+          _jobSystemMaxPhaseRetriesKey,
+          normalised.maxPhaseRetries,
+        ) &&
+        await prefs.setBool(
+          _jobSystemApprovalBeforeFileEditsKey,
+          normalised.requireApprovalBeforeFileEdits,
+        ) &&
+        await prefs.setBool(
+          _jobSystemApprovalBeforeTerminalKey,
+          normalised.requireApprovalBeforeTerminal,
+        ) &&
+        await prefs.setBool(
+          _jobSystemShowMessagesKey,
+          normalised.showJobMessagesInChat,
         );
 
     if (saved) notifyListeners();
