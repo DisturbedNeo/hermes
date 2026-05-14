@@ -67,7 +67,7 @@ class ModelConfigurationSnapshot {
       temperature: _double(json['temperature'], 0.7),
       topP: _double(json['topP'], 0.9),
       topK: _int(json['topK'], 40),
-      nBatch: _int(json['nBatch'], 512),
+      nBatch: _int(json['nBatch'], 2048),
       nUBatch: _int(json['nUBatch'], 512),
       mirostat: _int(json['mirostat'], 0),
       repeatPenalty: _double(json['repeatPenalty'], 1.1),

@@ -27,7 +27,7 @@ void main() {
       temperature: 0.7,
       topP: 0.8,
       topK: 20,
-      nBatch: 512,
+      nBatch: 2048,
       nUBatch: 512,
       mirostat: 0,
       repeatPenalty: 1,

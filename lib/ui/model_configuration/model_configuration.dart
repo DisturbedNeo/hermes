@@ -36,8 +36,8 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
   double _temperature = 0.7;
   double _topP = 0.8;
   int _topK = 20;
-  int _batch = 2048;
-  int _uBatch = 512;
+  int _batch = 8192;
+  int _uBatch = 2048;
   int _miroStatMode = 0;
   double _repeatPenalty = 1.0;
   int _repeatLastN = 64;
@@ -168,17 +168,17 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                 SliderControl.integer(
                   label: 'Batch',
                   value: _batch,
-                  min: 32,
-                  max: 2048,
-                  step: 32,
+                  min: 256,
+                  max: 8192,
+                  step: 256,
                   onChanged: (v) => setState(() => _batch = v),
                 ),
                 SliderControl.integer(
                   label: 'uBatch',
                   value: _uBatch,
-                  min: 16,
-                  max: 512,
-                  step: 16,
+                  min: 256,
+                  max: 2048,
+                  step: 256,
                   onChanged: (v) => setState(() => _uBatch = v),
                 ),
               ],

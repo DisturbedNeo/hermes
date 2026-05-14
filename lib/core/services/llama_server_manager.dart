@@ -60,7 +60,7 @@ class LlamaServerManager {
     double temperature = 0.7,
     double topP = 0.9,
     int topK = 40,
-    int nBatch = 512,
+    int nBatch = 2048,
     int nUBatch = 512,
     int mirostat = 0,
     double repeatPenalty = 1.1,
