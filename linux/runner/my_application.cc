@@ -5,6 +5,11 @@
 #include <gdk/gdkx.h>
 #endif
 
+#include <libgen.h>
+#include <limits.h>
+#include <unistd.h>
+#include <string>
+
 #include "flutter/generated_plugin_registrant.h"
 
 namespace {
@@ -97,6 +102,20 @@ static void first_frame_cb(MyApplication* self, FlView *view)
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
 
+static std::string GetExecutableDirectory() {
+  char path[PATH_MAX];
+
+  ssize_t count = readlink("/proc/self/exe", path, PATH_MAX - 1);
+  if (count <= 0) {
+    return ".";
+  }
+
+  path[count] = '\0';
+
+  // dirname may modify its input, so pass it a mutable buffer.
+  return std::string(dirname(path));
+}
+
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
@@ -130,7 +149,8 @@ static void my_application_activate(GApplication* application) {
     gtk_window_set_title(window, "hermes");
   }
 
-  std::filesystem::path icon_path = std::filesystem::current_path() / "data/flutter_assets/assets/icon.png";
+  std::string icon_path =
+      GetExecutableDirectory() + "/data/flutter_assets/assets/hermes.png";
 
   gtk_window_set_icon_from_file(window, icon_path.c_str(), nullptr);
 
