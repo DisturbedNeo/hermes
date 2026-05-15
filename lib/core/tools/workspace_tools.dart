@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:hermes/core/models/workspace.dart';
+import 'package:hermes/core/services/subagent_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/tools/tool.dart';
 
@@ -100,6 +101,11 @@ class ReadFileTool extends WorkspaceTool {
         'type': 'string',
         'description': 'Workspace-relative file path.',
       },
+      'request': {
+        'type': 'string',
+        'description':
+            'Optional request to extract specific information from the file (e.g., "list all exported functions", "summarize the file structure", "find the main class definition"). When provided, returns only the extracted information instead of the full file content.',
+      },
     },
     'required': ['path'],
   };
@@ -108,11 +114,65 @@ class ReadFileTool extends WorkspaceTool {
   Future<Map<String, dynamic>> run(
     Map<String, dynamic> input,
     WorkspaceToolContext context,
-  ) {
-    return sandbox.readFile(
-      context.workspace.rootPath,
-      stringArg(input, 'path'),
-    );
+  ) async {
+    final filePath = stringArg(input, 'path');
+    final request = stringArg(input, 'request', fallback: '');
+
+    if (request.isEmpty) {
+      // Standard read - return full file content
+      return sandbox.readFile(
+        context.workspace.rootPath,
+        filePath,
+      );
+    }
+
+    // Request mode - extract specific information using subagent
+    final subagentService = context.subagentService as SubagentService?;
+    if (subagentService == null) {
+      return {
+        'error':
+            'Subagent service not available. Cannot perform extraction request.',
+      };
+    }
+
+    try {
+      final fileContent = await sandbox.readFile(
+        context.workspace.rootPath,
+        filePath,
+      );
+
+      // Check if the read returned an error
+      if (fileContent.containsKey('error')) {
+        return fileContent;
+      }
+
+      final content = fileContent['content'] as String? ?? '';
+
+      if (content.isEmpty) {
+        return {
+          'extracted': '',
+          'request': request,
+          'note': 'File is empty or could not be read.',
+        };
+      }
+
+      final extracted = await subagentService.extract(
+        fileContent: content,
+        extractionRequest: request,
+        filePath: filePath,
+      );
+
+      return {
+        'extracted': extracted,
+        'request': request,
+        'file_path': filePath,
+      };
+    } catch (e) {
+      return {
+        'error': 'Failed to extract information: $e',
+        'request': request,
+      };
+    }
   }
 }
 

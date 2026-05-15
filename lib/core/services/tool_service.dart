@@ -6,12 +6,20 @@ import 'package:hermes/core/tools/calculator_tool.dart';
 import 'package:hermes/core/tools/tool.dart';
 import 'package:hermes/core/tools/workspace_tools.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
+import 'package:hermes/core/services/subagent_service.dart';
 
 class ToolService {
   ToolService({WorkspaceSandbox? workspaceSandbox})
     : _workspaceSandbox = workspaceSandbox ?? WorkspaceSandbox();
 
   final WorkspaceSandbox _workspaceSandbox;
+  SubagentService? _subagentService;
+
+  /// Updates the subagent service. Pass null to disable when the LLM server
+  /// is unavailable.
+  void setSubagentService(SubagentService? service) {
+    _subagentService = service;
+  }
 
   late final List<Tool> _globalTools = [CalculatorTool()];
 
@@ -79,6 +87,14 @@ class ToolService {
       );
     }
 
-    return tool.process(argumentsJson, context: context);
+    // Ensure subagent service is available in context if we have one
+    final effectiveContext = context != null && _subagentService != null
+        ? WorkspaceToolContext(
+            workspace: context.workspace,
+            subagentService: _subagentService,
+          )
+        : context;
+
+    return tool.process(argumentsJson, context: effectiveContext);
   }
 }

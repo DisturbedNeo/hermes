@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
@@ -7,6 +8,7 @@ import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/job_system/job_service.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/preferences_service.dart';
+import 'package:hermes/core/services/subagent_service.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_service.dart';
@@ -25,6 +27,7 @@ class ChatTabsService extends ChangeNotifier {
   final PreferencesService _preferencesService;
 
   final LlamaServerManager serverManager = LlamaServerManager();
+  SubagentService? _subagentService;
   final List<ChatService> _tabs = [];
 
   String? activeTabId;
@@ -44,6 +47,38 @@ class ChatTabsService extends ChangeNotifier {
        _workspaceService = workspaceService,
        _preferencesService = preferencesService {
     newTab();
+    _initializeSubagentService();
+  }
+
+  /// Initializes the subagent service when the LLM server becomes available.
+  Future<void> _initializeSubagentService() async {
+    // Listen for server availability and create/update subagent service when ready
+    serverManager.handle.addListener(_handleServerAvailabilityChanged);
+
+    // If server is already running, create the subagent service immediately
+    if (serverManager.chatClient != null) {
+      _subagentService ??= SubagentService(
+        chatClientFactory: () => serverManager.chatClient!,
+      );
+      _toolService.setSubagentService(_subagentService!);
+    }
+  }
+
+  void _handleServerAvailabilityChanged() {
+    if (serverManager.chatClient != null) {
+      if (_subagentService == null) {
+        _subagentService = SubagentService(
+          chatClientFactory: () => serverManager.chatClient!,
+        );
+      }
+      // Update the reference in ToolService
+      _toolService.setSubagentService(_subagentService!);
+    } else {
+      // Server stopped - clear the subagent service so tool calls
+      // gracefully return an error instead of crashing
+      _subagentService = null;
+      _toolService.setSubagentService(null);
+    }
   }
 
   UnmodifiableListView<ChatService> get tabs => UnmodifiableListView(_tabs);

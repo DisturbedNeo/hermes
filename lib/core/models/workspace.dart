@@ -48,6 +48,7 @@ class WorkspaceAttachment {
 
 class WorkspaceToolContext {
   final WorkspaceAttachment workspace;
+  final Object? subagentService;
 
-  const WorkspaceToolContext({required this.workspace});
+  const WorkspaceToolContext({required this.workspace, this.subagentService});
 }
