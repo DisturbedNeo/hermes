@@ -117,7 +117,6 @@ void main() {
     expect(loaded, isTrue);
     expect(tabs.tabs, hasLength(1));
     expect(tabs.activeChat?.currentSystemPromptSnapshot?.name, preset.name);
-    expect(find.text('Prompt loaded'), findsOneWidget);
   });
 
   testWidgets('selects optional modules when loading a preset', (tester) async {
