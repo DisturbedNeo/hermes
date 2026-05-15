@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/job.dart';
-import 'package:hermes/core/services/job_model_validator.dart';
+import 'package:hermes/core/services/job_system/job_model_validator.dart';
 
 void main() {
   group('BuiltInModelValidators', () {

@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
-import 'package:hermes/core/services/job_service.dart';
+import 'package:hermes/core/services/job_system/job_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_factory.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';

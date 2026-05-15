@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:hermes/core/helpers/regex.dart';
 import 'package:hermes/core/models/job.dart';
 import 'package:hermes/core/services/terminal_command_classifier.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
@@ -9,8 +10,7 @@ import 'package:yaml/yaml.dart';
 
 enum PhaseValidatorType { deterministic, model }
 
-typedef TerminalCommandClassifierFn =
-    TerminalCommandClass Function(String command);
+typedef TerminalCommandClassifierFn = TerminalCommandClass Function(String command);
 
 abstract class PhaseValidator {
   String get id;
@@ -320,7 +320,7 @@ class RuntimeBudgetValidator extends DeterministicPhaseValidator {
         passed: runtime <= maxRuntime,
         severity: runtime <= maxRuntime ? 'info' : 'error',
         message:
-            'Phase runtime ${_formatDuration(runtime)}/$maxRuntimeSeconds seconds.',
+            'Phase runtime ${'${(runtime.inMilliseconds / 1000).toStringAsFixed(1)} seconds'}/$maxRuntimeSeconds seconds.',
       ),
     ];
   }
@@ -567,8 +567,8 @@ PhaseValidationResult _patternResult({
   required String content,
   required bool expectedMatch,
 }) {
-  final error = _regexError(pattern);
-  final matched = error == null && _regexMatches(pattern, content);
+  final error = regexError(pattern);
+  final matched = error == null && regexMatches(pattern, content);
   final passed = error == null && (expectedMatch ? matched : !matched);
   return PhaseValidationResult(
     id: id,
@@ -656,11 +656,6 @@ bool _yamlParsesStructured(String content) {
   }
 }
 
-String _formatDuration(Duration duration) {
-  final seconds = duration.inMilliseconds / 1000;
-  return '${seconds.toStringAsFixed(seconds >= 10 ? 1 : 2)} seconds';
-}
-
 String _classedCommands(
   Iterable<String> commands,
   TerminalCommandClassifierFn classifyCommand,
@@ -668,19 +663,6 @@ String _classedCommands(
   return commands
       .map((command) => '${classifyCommand(command).wire}: $command')
       .join('; ');
-}
-
-String? _regexError(String pattern) {
-  try {
-    RegExp(pattern, multiLine: true);
-    return null;
-  } catch (e) {
-    return e.toString();
-  }
-}
-
-bool _regexMatches(String pattern, String content) {
-  return RegExp(pattern, multiLine: true).hasMatch(content);
 }
 
 bool _pathMatchesConstraint(String filePath, String constraint) {

@@ -9,38 +9,16 @@ import 'package:hermes/core/models/job.dart';
 import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
-import 'package:hermes/core/services/job_model_validator.dart';
-import 'package:hermes/core/services/job_phase_validator.dart';
-import 'package:hermes/core/services/job_storage_service.dart';
-import 'package:hermes/core/services/job_template_registry.dart';
+import 'package:hermes/core/services/job_system/job_model_output.dart';
+import 'package:hermes/core/services/job_system/job_model_validator.dart';
+import 'package:hermes/core/services/job_system/job_phase_validator.dart';
+import 'package:hermes/core/services/job_system/job_storage_service.dart';
+import 'package:hermes/core/services/job_system/job_summary.dart';
+import 'package:hermes/core/services/job_system/job_template_registry.dart';
 import 'package:hermes/core/services/terminal_command_classifier.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:path/path.dart' as path;
-
-typedef JobModelOutputSink = void Function(JobModelOutputEvent event);
-
-enum JobModelOutputEventType {
-  start,
-  content,
-  reasoning,
-  toolCall,
-  toolResult,
-  done,
-  error,
-}
-
-class JobModelOutputEvent {
-  final JobModelOutputEventType type;
-  final String label;
-  final String text;
-
-  const JobModelOutputEvent({
-    required this.type,
-    required this.label,
-    this.text = '',
-  });
-}
 
 class JobService {
   JobService({

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/job.dart';
-import 'package:hermes/core/services/job_storage_service.dart';
+import 'package:hermes/core/services/job_system/job_storage_service.dart';
 import 'package:path/path.dart' as path;
 
 void main() {

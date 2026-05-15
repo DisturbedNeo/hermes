@@ -5,10 +5,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/job.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
-import 'package:hermes/core/services/job_phase_validator.dart';
-import 'package:hermes/core/services/job_service.dart';
-import 'package:hermes/core/services/job_storage_service.dart';
-import 'package:hermes/core/services/job_template_registry.dart';
+import 'package:hermes/core/services/job_system/job_phase_validator.dart';
+import 'package:hermes/core/services/job_system/job_service.dart';
+import 'package:hermes/core/services/job_system/job_storage_service.dart';
+import 'package:hermes/core/services/job_system/job_template_registry.dart';
 import 'package:hermes/core/services/prompt_library_seed_data.dart';
 import 'package:hermes/core/services/tool_service.dart';
 
