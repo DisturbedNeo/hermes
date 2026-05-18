@@ -11,10 +11,13 @@ import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/job_system/job_model_output.dart';
 import 'package:hermes/core/services/job_system/job_model_validator.dart';
+import 'package:hermes/core/services/job_system/job_json.dart';
 import 'package:hermes/core/services/job_system/job_phase_validator.dart';
+import 'package:hermes/core/services/job_system/job_spec_validator.dart';
 import 'package:hermes/core/services/job_system/job_storage_service.dart';
 import 'package:hermes/core/services/job_system/job_summary.dart';
 import 'package:hermes/core/services/job_system/job_template_registry.dart';
+import 'package:hermes/core/services/job_system/job_tool_policy_resolver.dart';
 import 'package:hermes/core/services/terminal_command_classifier.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
@@ -27,21 +30,31 @@ class JobService {
     WorkspaceSandbox? sandbox,
     JobTemplateRegistry? templateRegistry,
     List<PhaseValidator>? phaseValidators,
+    JobSpecValidator? specValidator,
   }) : _toolService = toolService,
        _storage = storage ?? JobStorageService(),
        _sandbox = sandbox ?? WorkspaceSandbox(),
        _templateRegistry = templateRegistry ?? const JobTemplateRegistry(),
        _phaseValidators =
-           phaseValidators ?? BuiltInPhaseValidators.deterministic;
+           phaseValidators ?? BuiltInPhaseValidators.deterministic,
+       _specValidator = specValidator ?? const JobSpecValidator();
 
   final ToolService _toolService;
   final JobStorageService _storage;
   final WorkspaceSandbox _sandbox;
   final JobTemplateRegistry _templateRegistry;
   final List<PhaseValidator> _phaseValidators;
+  final JobSpecValidator _specValidator;
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
 
   JobStorageService get storage => _storage;
+
+  JobToolPolicyResolver get _toolPolicyResolver => JobToolPolicyResolver(
+    availableToolIds: _toolService
+        .getToolDefinitions(includeWorkspaceTools: true)
+        .map((tool) => tool.id)
+        .toSet(),
+  );
 
   Future<List<JobSummary>> listJobs(
     WorkspaceAttachment workspace, {
@@ -144,7 +157,7 @@ class JobService {
     required String rawJson,
   }) async {
     final now = DateTime.now();
-    final parsed = TaskBrief.fromJson(_parseEditableJson(rawJson)).copyWith(
+    final parsed = TaskBrief.fromJson(JobJson.parseObject(rawJson)).copyWith(
       id: snapshot.taskBrief.id,
       createdAt: snapshot.taskBrief.createdAt,
       updatedAt: now,
@@ -174,7 +187,7 @@ class JobService {
     required String rawJson,
   }) async {
     final now = DateTime.now();
-    final parsed = JobSpec.fromJson(_parseEditableJson(rawJson)).copyWith(
+    final parsed = JobSpec.fromJson(JobJson.parseObject(rawJson)).copyWith(
       id: snapshot.spec.id,
       taskBriefId: snapshot.taskBrief.id,
       createdAt: snapshot.spec.createdAt,
@@ -197,7 +210,7 @@ class JobService {
       updatedAt: now,
       phases: phases,
     );
-    _throwIfInvalidJobSpec(spec);
+    _specValidator.throwIfInvalid(spec);
     final updated = snapshot.copyWith(
       spec: spec,
       state: snapshot.state.copyWith(
@@ -319,7 +332,7 @@ class JobService {
         'Replan proposal does not match the active job.',
       );
     }
-    _throwIfInvalidJobSpec(proposal.spec);
+    _specValidator.throwIfInvalid(proposal.spec);
     await _storage.saveSnapshot(workspace.rootPath, proposal);
     return proposal;
   }
@@ -436,7 +449,7 @@ ${_encoder.convert(snapshot.state.toJson())}
             updatedAt: now,
             phases: phases,
           );
-    final validationIssues = _validateJobSpec(spec);
+    final validationIssues = _specValidator.validate(spec);
     if (validationIssues.isNotEmpty) {
       final blocked = snapshot.copyWith(
         spec: spec.copyWith(status: JobStatus.blocked, updatedAt: now),
@@ -1047,7 +1060,7 @@ ${_encoder.convert(snapshot.state.toJson())}
       _normaliseSpec(spec, brief, jobId, now),
       maxPhaseRetries,
     );
-    final specIssues = _validateJobSpec(spec);
+    final specIssues = _specValidator.validate(spec);
     if (specIssues.isNotEmpty) {
       spec = _applyMaxPhaseRetries(
         _normaliseSpec(
@@ -1063,7 +1076,7 @@ ${_encoder.convert(snapshot.state.toJson())}
         ),
         maxPhaseRetries,
       );
-      _throwIfInvalidJobSpec(spec);
+      _specValidator.throwIfInvalid(spec);
     }
 
     final state = JobState(
@@ -1606,7 +1619,7 @@ ${_encoder.convert(_templateRegistry.summaries(jobId))}
     );
     final candidate = JobSpec.fromJson(json);
     final normalised = _normaliseSpec(candidate, taskBrief, jobId, now);
-    final issues = _validateJobSpec(normalised);
+    final issues = _specValidator.validate(normalised);
     if (issues.isEmpty) return candidate;
 
     final repairedJson = await _completeJson(
@@ -1637,7 +1650,7 @@ Return a corrected JobSpec using:
 ''',
     );
     final repaired = JobSpec.fromJson(repairedJson);
-    final repairedIssues = _validateJobSpec(
+    final repairedIssues = _specValidator.validate(
       _normaliseSpec(repaired, taskBrief, jobId, now),
     );
     if (repairedIssues.isEmpty) return repaired;
@@ -1680,17 +1693,13 @@ Return a corrected JobSpec using:
     String jobId,
     DateTime now,
   ) {
-    final availableTools = _toolService
-        .getToolDefinitions(includeWorkspaceTools: true)
-        .map((tool) => tool.id)
-        .toSet();
-    final defaultDisallowed = _normaliseToolIds(
+    final toolPolicy = _toolPolicyResolver;
+    final defaultDisallowed = toolPolicy.normaliseToolIds(
       spec.toolPolicy.defaultDisallowed,
-      availableTools,
     );
     final defaultAllowed = spec.toolPolicy.defaultAllowed.isEmpty
-        ? availableTools.toList()
-        : _normaliseToolIds(spec.toolPolicy.defaultAllowed, availableTools);
+        ? toolPolicy.availableToolIds.toList()
+        : toolPolicy.normaliseToolIds(spec.toolPolicy.defaultAllowed);
     final effectiveDefaultAllowed = defaultAllowed
         .where((tool) => !defaultDisallowed.contains(tool))
         .toList();
@@ -1703,16 +1712,15 @@ Return a corrected JobSpec using:
             autonomy: spec.autonomy,
           ).phases
         : spec.phases.map((phase) {
-            final phaseDisallowed = _normaliseToolIds(
+            final phaseDisallowed = toolPolicy.normaliseToolIds(
               phase.disallowedTools,
-              availableTools,
             );
             var allowed = phase.allowedTools.isEmpty
                 ? effectiveDefaultAllowed
-                : _normaliseToolIds(
-                    phase.allowedTools,
-                    availableTools,
-                  ).where((tool) => !defaultDisallowed.contains(tool)).toList();
+                : toolPolicy
+                      .normaliseToolIds(phase.allowedTools)
+                      .where((tool) => !defaultDisallowed.contains(tool))
+                      .toList();
             allowed = allowed
                 .where((tool) => !phaseDisallowed.contains(tool))
                 .toList();
@@ -1796,107 +1804,6 @@ Return a corrected JobSpec using:
         policy.stopOnLowConfidence != null;
   }
 
-  void _throwIfInvalidJobSpec(JobSpec spec) {
-    final issues = _validateJobSpec(spec);
-    if (issues.isEmpty) return;
-    throw FormatException('Invalid JobSpec: ${issues.join('; ')}');
-  }
-
-  List<String> _validateJobSpec(JobSpec spec) {
-    final issues = <String>[];
-    if (spec.version != 1) {
-      issues.add('version must be 1');
-    }
-    if (spec.id.trim().isEmpty) {
-      issues.add('job id is required');
-    }
-    if (spec.taskBriefId.trim().isEmpty) {
-      issues.add('taskBriefId is required');
-    }
-    if (spec.title.trim().isEmpty) {
-      issues.add('job title is required');
-    }
-    if (spec.phases.isEmpty) {
-      issues.add('at least one phase is required');
-    }
-
-    final seenPhaseIds = <String>{};
-    for (final phase in spec.phases) {
-      final phaseLabel = phase.id.trim().isEmpty ? '<empty>' : phase.id;
-      if (phase.id.trim().isEmpty) {
-        issues.add('phase id is required');
-      } else if (!RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(phase.id)) {
-        issues.add('phase "$phaseLabel" id must use letters, numbers, _ or -');
-      } else if (!seenPhaseIds.add(phase.id)) {
-        issues.add('phase id "$phaseLabel" is duplicated');
-      }
-      if (phase.title.trim().isEmpty) {
-        issues.add('phase "$phaseLabel" title is required');
-      }
-      if (phase.objective.trim().isEmpty) {
-        issues.add('phase "$phaseLabel" objective is required');
-      }
-      if (phase.completionCriteria.isEmpty) {
-        issues.add('phase "$phaseLabel" needs completion criteria');
-      }
-      if (phase.expectedOutputs.isEmpty) {
-        issues.add('phase "$phaseLabel" needs at least one expected output');
-      }
-      for (final input in phase.inputs) {
-        if (!_isSafeWorkspaceRelativePath(input.path)) {
-          issues.add(
-            'phase "$phaseLabel" input path is unsafe or empty: ${input.path}',
-          );
-        }
-      }
-      for (final output in phase.expectedOutputs) {
-        if (!_isSafeWorkspaceRelativePath(output.path)) {
-          issues.add(
-            'phase "$phaseLabel" output path is unsafe or empty: ${output.path}',
-          );
-        }
-      }
-      final validation = phase.validation;
-      if (validation != null) {
-        for (final requiredPath in validation.mustExist) {
-          if (!_isSafeWorkspaceRelativePath(requiredPath)) {
-            issues.add(
-              'phase "$phaseLabel" mustExist path is unsafe or empty: $requiredPath',
-            );
-          }
-        }
-        for (final protectedPath in validation.mustNotModify) {
-          if (!_isSafeWorkspaceRelativePath(protectedPath)) {
-            issues.add(
-              'phase "$phaseLabel" mustNotModify path is unsafe or empty: $protectedPath',
-            );
-          }
-        }
-        for (final pattern in [
-          ...validation.requiredPatterns,
-          ...validation.forbiddenPatterns,
-        ]) {
-          final error = _regexError(pattern);
-          if (error != null) {
-            issues.add(
-              'phase "$phaseLabel" validation regex is invalid: $pattern ($error)',
-            );
-          }
-        }
-      }
-    }
-    return issues;
-  }
-
-  bool _isSafeWorkspaceRelativePath(String value) {
-    final trimmed = value.trim();
-    if (trimmed.isEmpty || path.isAbsolute(trimmed)) return false;
-    final normalised = path.normalize(trimmed).replaceAll('\\', '/');
-    return normalised != '..' &&
-        !normalised.startsWith('../') &&
-        normalised != '.';
-  }
-
   Future<_PhaseExecutionOutput> _executePhase({
     required ChatClient client,
     required WorkspaceAttachment workspace,
@@ -1971,7 +1878,7 @@ Return a corrected JobSpec using:
                 'type': 'function',
                 'function': {
                   'name': completion.toolCalls[i].name,
-                  'arguments': _decodeJsonOrString(
+                  'arguments': JobJson.decodeJsonOrString(
                     completion.toolCalls[i].arguments,
                   ),
                 },
@@ -1984,7 +1891,7 @@ Return a corrected JobSpec using:
         if (pendingApprovals.isNotEmpty) break;
         final call = completion.toolCalls[i];
         final callId = call.id ?? 'call_$i';
-        final args = _decodeJsonOrString(call.arguments);
+        final args = JobJson.decodeJsonOrString(call.arguments);
         final beforeFileChange = await _captureFileChangeBefore(
           workspace.rootPath,
           call.name,
@@ -2424,89 +2331,17 @@ When complete:
 ''';
   }
 
-  List<String> _phaseAllowedTools(JobSpec spec, JobPhase phase) {
-    final availableTools = _toolService
-        .getToolDefinitions(includeWorkspaceTools: true)
-        .map((tool) => tool.id)
-        .toSet();
-    var tools = phase.allowedTools.isEmpty
-        ? _normaliseToolIds(
-            spec.toolPolicy.defaultAllowed,
-            availableTools,
-          ).toSet()
-        : _normaliseToolIds(phase.allowedTools, availableTools).toSet();
-    tools.removeAll(
-      _normaliseToolIds(spec.toolPolicy.defaultDisallowed, availableTools),
-    );
-    tools.removeAll(_normaliseToolIds(phase.disallowedTools, availableTools));
-    if (_effectiveTerminalPolicy(spec, phase) == TerminalPolicy.none) {
-      tools.remove('run_command');
-    }
-    return tools.toList()..sort();
-  }
+  List<String> _phaseAllowedTools(JobSpec spec, JobPhase phase) =>
+      _toolPolicyResolver.phaseAllowedTools(spec, phase);
 
-  List<String> _phaseDisallowedTools(JobSpec spec, JobPhase phase) {
-    final availableTools = _toolService
-        .getToolDefinitions(includeWorkspaceTools: true)
-        .map((tool) => tool.id)
-        .toSet();
-    final disallowed = {
-      ..._normaliseToolIds(spec.toolPolicy.defaultDisallowed, availableTools),
-      ..._normaliseToolIds(phase.disallowedTools, availableTools),
-    };
-    if (_effectiveTerminalPolicy(spec, phase) == TerminalPolicy.none) {
-      disallowed.add('run_command');
-    }
-    return disallowed.toList()..sort();
-  }
+  List<String> _phaseDisallowedTools(JobSpec spec, JobPhase phase) =>
+      _toolPolicyResolver.phaseDisallowedTools(spec, phase);
 
-  StopPolicy _effectiveStopPolicy(JobSpec spec, JobPhase phase) {
-    final phasePolicy = phase.stopPolicy;
-    if (phasePolicy == null) return spec.stopPolicy;
-    return StopPolicy(
-      maxTotalPhases: spec.stopPolicy.maxTotalPhases,
-      maxPhaseTerminalCommands:
-          phasePolicy.maxPhaseTerminalCommands ??
-          spec.stopPolicy.maxPhaseTerminalCommands,
-      maxPhaseFilesRead:
-          phasePolicy.maxPhaseFilesRead ?? spec.stopPolicy.maxPhaseFilesRead,
-      maxPhaseRetries:
-          phasePolicy.maxPhaseRetries ?? spec.stopPolicy.maxPhaseRetries,
-      maxRuntimeSeconds:
-          phasePolicy.maxRuntimeSeconds ?? spec.stopPolicy.maxRuntimeSeconds,
-      stopOnRequiredQuestion:
-          phasePolicy.stopOnRequiredQuestion ??
-          spec.stopPolicy.stopOnRequiredQuestion,
-      stopOnLowConfidence:
-          phasePolicy.stopOnLowConfidence ??
-          spec.stopPolicy.stopOnLowConfidence,
-    );
-  }
+  StopPolicy _effectiveStopPolicy(JobSpec spec, JobPhase phase) =>
+      _toolPolicyResolver.effectiveStopPolicy(spec, phase);
 
-  TerminalPolicy _effectiveTerminalPolicy(JobSpec spec, JobPhase phase) {
-    final terminal = spec.toolPolicy.terminal;
-    if (terminal?.allowed == false) return TerminalPolicy.none;
-    final global = terminal?.policy ?? phase.terminalPolicy;
-    return _stricterTerminalPolicy(global, phase.terminalPolicy);
-  }
-
-  TerminalPolicy _stricterTerminalPolicy(
-    TerminalPolicy left,
-    TerminalPolicy right,
-  ) {
-    return _terminalPolicyRank(left) <= _terminalPolicyRank(right)
-        ? left
-        : right;
-  }
-
-  int _terminalPolicyRank(TerminalPolicy policy) {
-    return switch (policy) {
-      TerminalPolicy.none => 0,
-      TerminalPolicy.readonly => 1,
-      TerminalPolicy.workspaceMutating => 2,
-      TerminalPolicy.unrestrictedWorkspace => 3,
-    };
-  }
+  TerminalPolicy _effectiveTerminalPolicy(JobSpec spec, JobPhase phase) =>
+      _toolPolicyResolver.effectiveTerminalPolicy(spec, phase);
 
   List<JobArtifact> _mergeArtifacts(
     List<JobArtifact> current,
@@ -2574,7 +2409,6 @@ When complete:
     }
     return buffer.toString().trim();
   }
-
 
   Future<_RecoveryResult> _recoverSnapshot({
     required WorkspaceAttachment workspace,
@@ -2970,14 +2804,6 @@ When complete:
     };
   }
 
-  Map<String, dynamic> _parseEditableJson(String rawJson) {
-    final parsed = _tryParseJsonObject(rawJson);
-    if (parsed == null) {
-      throw const FormatException('Expected one valid JSON object.');
-    }
-    return parsed;
-  }
-
   List<JobPhase> _preserveCompletedPhaseStatuses({
     required List<JobPhase> original,
     required List<JobPhase> updated,
@@ -3178,7 +3004,7 @@ When complete:
     final raw = completion.content.isNotEmpty
         ? completion.content
         : completion.reasoning;
-    final parsed = _tryParseJsonObject(raw);
+    final parsed = JobJson.tryParseObject(raw);
     if (parsed != null) return parsed;
 
     final repairedCompletion = await _completeChatForJob(
@@ -3198,67 +3024,9 @@ When complete:
     final repaired = repairedCompletion.content.isNotEmpty
         ? repairedCompletion.content
         : repairedCompletion.reasoning;
-    final repairedParsed = _tryParseJsonObject(repaired);
+    final repairedParsed = JobJson.tryParseObject(repaired);
     if (repairedParsed != null) return repairedParsed;
     throw const FormatException('Model did not return parseable JSON.');
-  }
-
-  Map<String, dynamic>? _tryParseJsonObject(String raw) {
-    final trimmed = _stripCodeFence(raw.trim());
-    final direct = _decodeMap(trimmed);
-    if (direct != null) return direct;
-    final extracted = _extractFirstJsonObject(trimmed);
-    if (extracted == null) return null;
-    return _decodeMap(extracted);
-  }
-
-  Map<String, dynamic>? _decodeMap(String value) {
-    try {
-      final decoded = jsonDecode(value);
-      if (decoded is Map<String, dynamic>) return decoded;
-      if (decoded is Map) return Map<String, dynamic>.from(decoded);
-    } catch (_) {
-      return null;
-    }
-    return null;
-  }
-
-  String _stripCodeFence(String value) {
-    final match = RegExp(
-      r'^```(?:json)?\s*([\s\S]*?)\s*```$',
-      caseSensitive: false,
-    ).firstMatch(value);
-    return match?.group(1)?.trim() ?? value;
-  }
-
-  String? _extractFirstJsonObject(String value) {
-    final start = value.indexOf('{');
-    if (start < 0) return null;
-    var depth = 0;
-    var inString = false;
-    var escaped = false;
-    for (var i = start; i < value.length; i++) {
-      final char = value[i];
-      if (inString) {
-        if (escaped) {
-          escaped = false;
-        } else if (char == '\\') {
-          escaped = true;
-        } else if (char == '"') {
-          inString = false;
-        }
-        continue;
-      }
-      if (char == '"') {
-        inString = true;
-      } else if (char == '{') {
-        depth++;
-      } else if (char == '}') {
-        depth--;
-        if (depth == 0) return value.substring(start, i + 1);
-      }
-    }
-    return null;
   }
 
   TaskBrief _fallbackTaskBrief({
@@ -3531,25 +3299,6 @@ When complete:
   String _replaceJobId(String value, String jobId) =>
       value.replaceAll('{{job_id}}', jobId);
 
-  List<String> _normaliseToolIds(List<String> toolIds, Set<String> available) {
-    return toolIds
-        .map(
-          (id) => switch (id) {
-            'list_files' => 'list_directory',
-            'list_dir' => 'list_directory',
-            'search' => 'search_files',
-            'read' => 'read_file',
-            'write' => 'write_file',
-            'patch' => 'patch_file',
-            _ => id,
-          },
-        )
-        .where(available.contains)
-        .toSet()
-        .toList()
-      ..sort();
-  }
-
   Future<WorkspacePath?> _resolveMaybe(
     String rootPath,
     String relativePath,
@@ -3573,18 +3322,8 @@ When complete:
     return length > 0;
   }
 
-  bool _shouldDetectWorkspaceMutations(JobSpec spec, JobPhase phase) {
-    final allowedTools = _phaseAllowedTools(spec, phase);
-    final writesAllowed =
-        allowedTools.contains('write_file') ||
-        allowedTools.contains('patch_file') ||
-        allowedTools.contains('create_directory') ||
-        allowedTools.contains('rename_path') ||
-        allowedTools.contains('delete_path');
-    return _effectiveTerminalPolicy(spec, phase) == TerminalPolicy.readonly ||
-        !writesAllowed ||
-        (phase.validation?.mustNotModify.isNotEmpty ?? false);
-  }
+  bool _shouldDetectWorkspaceMutations(JobSpec spec, JobPhase phase) =>
+      _toolPolicyResolver.shouldDetectWorkspaceMutations(spec, phase);
 
   Future<_WorkspaceMutationSnapshot> _workspaceMutationSnapshot(
     String rootPath,
@@ -3656,14 +3395,6 @@ When complete:
       }
     }
     return result;
-  }
-
-  Object _decodeJsonOrString(String value) {
-    try {
-      return jsonDecode(value);
-    } catch (_) {
-      return value;
-    }
   }
 
   List<Map<String, dynamic>> _mapList(Object? value) {
@@ -4321,7 +4052,7 @@ When complete:
     required Set<String> terminalCommands,
   }) {
     final args = arguments is Map ? arguments : const {};
-    final result = _decodeJsonOrString(resultJson);
+    final result = JobJson.decodeJsonOrString(resultJson);
     final resultMap = result is Map ? result : const {};
     final resultPath = resultMap['path']?.toString();
     final argPath = args['path']?.toString();
@@ -4366,15 +4097,6 @@ When complete:
 
   TerminalCommandClass _classifyCommand(String command) =>
       TerminalCommandClassifier.classify(command);
-
-  String? _regexError(String pattern) {
-    try {
-      RegExp(pattern, multiLine: true);
-      return null;
-    } catch (e) {
-      return e.toString();
-    }
-  }
 
   String _normaliseRelativePath(String value) {
     final normalised = path.posix.normalize(value.replaceAll('\\', '/'));
