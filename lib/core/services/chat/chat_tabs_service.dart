@@ -66,11 +66,9 @@ class ChatTabsService extends ChangeNotifier {
 
   void _handleServerAvailabilityChanged() {
     if (serverManager.chatClient != null) {
-      if (_subagentService == null) {
-        _subagentService = SubagentService(
+      _subagentService ??= SubagentService(
           chatClientFactory: () => serverManager.chatClient!,
         );
-      }
       // Update the reference in ToolService
       _toolService.setSubagentService(_subagentService!);
     } else {
