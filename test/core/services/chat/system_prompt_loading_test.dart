@@ -188,6 +188,57 @@ void main() {
       expect(chat.activeJob?.runs.single.summary, 'Step complete.');
     });
 
+    test('step finished message omits future planned artifacts', () async {
+      serverManager.chatClient = _QueueChatClient([
+        jsonEncode({
+          'title': 'Artifact task',
+          'goal': 'Analyze and report',
+          'constraints': ['Stay inside the workspace.'],
+          'successCriteria': ['Report is written.'],
+          'steps': [
+            {
+              'id': 'inspect',
+              'title': 'Inspect',
+              'objective': 'Inspect the codebase.',
+              'instructions': ['Read relevant files.'],
+              'mayEditFiles': false,
+              'artifacts': [
+                {'path': '.agent/jobs/{{job_id}}/overview.md'},
+              ],
+            },
+            {
+              'id': 'report',
+              'title': 'Report',
+              'objective': 'Write final report.',
+              'instructions': ['Write final report.'],
+              'mayEditFiles': false,
+              'artifacts': [
+                {'path': '.agent/jobs/{{job_id}}/final_report.md'},
+              ],
+            },
+          ],
+        }),
+      ]);
+      await chat.attachWorkspace(tempDir.path);
+      await chat.send('/plan Analyze the codebase');
+
+      serverManager.chatClient = _QueueChatClient([
+        jsonEncode({
+          'status': 'completed',
+          'summary': 'Inspection complete.',
+          'memoryUpdate': 'Inspected the codebase.',
+        }),
+      ]);
+
+      await chat.runNextJobPhase();
+
+      final stepMessage = chat.messageStore.messages.last.text;
+      expect(stepMessage, contains('Job step finished'));
+      expect(stepMessage, isNot(contains('final_report.md')));
+      expect(stepMessage, isNot(contains('Artifacts:')));
+      expect(chat.activeJob?.status, JobStatus.paused);
+    });
+
     test(
       'renders job model reasoning and tool calls as chat bubbles',
       () async {

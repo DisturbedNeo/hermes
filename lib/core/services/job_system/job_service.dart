@@ -856,7 +856,7 @@ $userPrompt
           if (finalContent.isNotEmpty) finalContent,
         ].join('\n\n').trim();
         if (_isStepResultJson(finalContent)) {
-          forcedOutput = _parseStepOutput(finalContent, step, toolCalls);
+          forcedOutput = _parseStepOutput(finalContent, job, step, toolCalls);
         } else {
           forcedOutput = _StepExecutionOutput(
             status: _StepExecutionStatus.failed,
@@ -864,7 +864,7 @@ $userPrompt
             summary:
                 'Stopped step after a tool-call loop guard fired. $loopGuardReason',
             memoryUpdate: '',
-            artifacts: step.artifacts,
+            artifacts: const [],
             toolCalls: toolCalls,
             error: loopGuardReason,
           );
@@ -883,6 +883,7 @@ $userPrompt
     return forcedOutput ??
         _parseStepOutput(
           finalContent.isEmpty ? finalText : finalContent,
+          job,
           step,
           toolCalls,
         );
@@ -924,8 +925,18 @@ $userPrompt
       return _executeReadOnlyArtifactWrite(
         call: call,
         job: job,
+        step: step,
         context: context,
       );
+    }
+    if (step.mayEditFiles && call.name == 'write_file') {
+      final artifactWriteError = await _jobArtifactWriteError(
+        call: call,
+        job: job,
+        step: step,
+        context: context,
+      );
+      if (artifactWriteError != null) return artifactWriteError;
     }
 
     return _toolService.execute(
@@ -938,6 +949,7 @@ $userPrompt
   Future<String> _executeReadOnlyArtifactWrite({
     required ChatCompletionToolCall call,
     required JobDocument job,
+    required JobStep step,
     required WorkspaceToolContext context,
   }) async {
     try {
@@ -969,6 +981,15 @@ $userPrompt
           'allowedPrefix': path.join('.agent', 'jobs', job.id),
         });
       }
+      final allowedPaths = _declaredCurrentStepArtifactPaths(job.id, step);
+      if (!allowedPaths.contains(path.normalize(resolved.relativePath))) {
+        return jsonEncode({
+          'error':
+              'Read-only steps may only create artifacts declared on the current step.',
+          'path': resolved.relativePath,
+          'allowedArtifactPaths': allowedPaths.toList()..sort(),
+        });
+      }
 
       final existingType = await FileSystemEntity.type(resolved.absolutePath);
       if (existingType != FileSystemEntityType.notFound) {
@@ -989,12 +1010,81 @@ $userPrompt
     }
   }
 
+  Future<String?> _jobArtifactWriteError({
+    required ChatCompletionToolCall call,
+    required JobDocument job,
+    required JobStep step,
+    required WorkspaceToolContext context,
+  }) async {
+    try {
+      final decoded = JobJson.decodeJsonOrString(call.arguments);
+      if (decoded is! Map) return null;
+      final rawPath = decoded['path'];
+      if (rawPath is! String || rawPath.trim().isEmpty) return null;
+
+      final resolved = await _sandbox.resolve(
+        context.workspace.rootPath,
+        rawPath,
+        mustExist: false,
+      );
+      final artifactPath = path.normalize(resolved.relativePath);
+      if (!_isInsideJobDirectory(artifactPath, job.id)) return null;
+
+      final allowedPaths = _declaredCurrentStepArtifactPaths(job.id, step);
+      if (allowedPaths.contains(artifactPath)) return null;
+
+      return jsonEncode({
+        'error':
+            'Job steps may only create artifacts declared on the current step.',
+        'path': resolved.relativePath,
+        'allowedArtifactPaths': allowedPaths.toList()..sort(),
+      });
+    } catch (e) {
+      return jsonEncode({'error': e.toString()});
+    }
+  }
+
   bool _isInsideJobDirectory(String relativePath, String jobId) {
     final segments = path.split(path.normalize(relativePath));
     return segments.length > 3 &&
         segments[0] == '.agent' &&
         segments[1] == 'jobs' &&
         segments[2] == jobId;
+  }
+
+  Set<String> _declaredCurrentStepArtifactPaths(String jobId, JobStep step) {
+    return {
+          for (final artifact in step.artifacts)
+            if (artifact.path.trim().isNotEmpty)
+              path.normalize(artifact.path.trim()),
+        }
+        .where((artifactPath) => _isInsideJobDirectory(artifactPath, jobId))
+        .toSet();
+  }
+
+  List<JobArtifact> _filterCurrentStepArtifacts(
+    String jobId,
+    JobStep step,
+    List<JobArtifact> artifacts,
+  ) {
+    final allowedPaths = _declaredCurrentStepArtifactPaths(jobId, step);
+    final seen = <String>{};
+    final filtered = <JobArtifact>[];
+    for (final artifact in artifacts) {
+      final normalizedPath = path.normalize(artifact.path.trim());
+      if (!allowedPaths.contains(normalizedPath) || !seen.add(normalizedPath)) {
+        continue;
+      }
+      filtered.add(
+        JobArtifact(
+          path: normalizedPath,
+          description: artifact.description,
+          stepId: step.id,
+          createdAt: artifact.createdAt,
+        ),
+      );
+    }
+    return filtered;
   }
 
   Future<ChatCompletionResponse> _finalizeStepAfterToolGuard({
@@ -1157,6 +1247,7 @@ ${_encoder.convert(snapshot.toJson())}
 
   _StepExecutionOutput _parseStepOutput(
     String raw,
+    JobDocument job,
     JobStep step,
     List<JobToolCallRecord> toolCalls,
   ) {
@@ -1167,13 +1258,17 @@ ${_encoder.convert(snapshot.toJson())}
         runStatus: JobRunStatus.completed,
         summary: raw.trim().isEmpty ? 'Step completed.' : raw.trim(),
         memoryUpdate: raw.trim(),
-        artifacts: step.artifacts,
+        artifacts: const [],
         toolCalls: toolCalls,
       );
     }
 
     final status = _parseStepExecutionStatus(json['status']);
-    final artifacts = _artifactsFromJson(json['artifacts'], step.id);
+    final artifacts = _filterCurrentStepArtifacts(
+      job.id,
+      step,
+      _artifactsFromJson(json['artifacts'], step.id),
+    );
     final summary = _string(
       json['summary'],
       fallback: status == _StepExecutionStatus.completed
@@ -1190,7 +1285,7 @@ ${_encoder.convert(snapshot.toJson())}
       },
       summary: summary,
       memoryUpdate: _string(json['memoryUpdate'] ?? json['memory_update']),
-      artifacts: artifacts.isEmpty ? step.artifacts : artifacts,
+      artifacts: artifacts,
       userQuestion: _nullableString(
         json['userQuestion'] ?? json['user_question'],
       ),
@@ -1208,9 +1303,12 @@ ${_encoder.convert(snapshot.toJson())}
     _StepExecutionOutput output,
     DateTime now,
   ) {
+    final stepArtifacts = output.artifacts.isEmpty
+        ? step.artifacts
+        : output.artifacts;
     final updatedStep = step.copyWith(
       status: JobStepStatus.completed,
-      artifacts: output.artifacts,
+      artifacts: stepArtifacts,
     );
     final updated = _replaceStep(snapshot, step.id, updatedStep).copyWith(
       memorySummary: _appendMemory(
@@ -1320,6 +1418,7 @@ ${_encoder.convert(snapshot.toJson())}
         .where((run) => run.status != JobRunStatus.running)
         .map((run) => '- ${run.stepId}: ${run.summary}')
         .join('\n');
+    final availableArtifacts = _buildAvailableArtifactInputs(job, step);
     return '''
 Job goal:
 ${job.goal}
@@ -1342,8 +1441,11 @@ ${_encoder.convert(job.steps.map((item) => item.toJson()).toList())}
 Current step:
 ${_encoder.convert(step.toJson())}
 
+Available artifact inputs:
+$availableArtifacts
+
 Step tool permissions:
-${step.mayEditFiles ? '- This step may edit files after any required user approval. Mutating workspace tools and terminal commands may be available.' : '- This is a read-only step. It may read workspace files and create new job-owned artifact files under `.agent/jobs/${job.id}/`, but it must not overwrite existing files, edit source files, rename paths, delete paths, or run terminal commands.'}
+${step.mayEditFiles ? '- This step may edit files after any required user approval. Mutating workspace tools and terminal commands may be available.' : '- This is a read-only step. It may read workspace files and create only this step\'s declared job-owned artifact files under `.agent/jobs/${job.id}/`, but it must not overwrite existing files, edit source files, rename paths, delete paths, or run terminal commands.'}
 
 Previous run summaries:
 ${previousRuns.trim().isEmpty ? 'None yet.' : previousRuns}
@@ -1359,6 +1461,39 @@ When finished, return only JSON:
   "error": "only when failed"
 }
 ''';
+  }
+
+  String _buildAvailableArtifactInputs(JobDocument job, JobStep step) {
+    final currentIndex = job.steps.indexWhere((item) => item.id == step.id);
+    final priorStepIds = <String>{};
+    if (currentIndex > 0) {
+      for (final priorStep in job.steps.take(currentIndex)) {
+        if (priorStep.status == JobStepStatus.completed ||
+            priorStep.status == JobStepStatus.skipped) {
+          priorStepIds.add(priorStep.id);
+        }
+      }
+    }
+
+    final artifacts = <JobArtifact>[
+      for (final run in job.runs)
+        if (priorStepIds.contains(run.stepId)) ...run.artifacts,
+      for (final priorStep in job.steps)
+        if (priorStepIds.contains(priorStep.id)) ...priorStep.artifacts,
+      ...step.artifacts,
+    ];
+
+    final seen = <String>{};
+    final lines = <String>[];
+    for (final artifact in artifacts) {
+      final artifactPath = path.normalize(artifact.path.trim());
+      if (artifactPath.isEmpty || !seen.add(artifactPath)) continue;
+      final suffix = artifact.description == null
+          ? ''
+          : ' - ${artifact.description}';
+      lines.add('- $artifactPath$suffix');
+    }
+    return lines.isEmpty ? 'None.' : lines.join('\n');
   }
 
   Future<Map<String, dynamic>> _completeJson({
@@ -1926,6 +2061,8 @@ You create simple linear plans for long-horizon workspace jobs.
 The plan should be small, clear, and robust.
 Each step must be independently executable from the shared goal, plan, memory summary, and previous run summaries.
 Read-only steps may create new job-owned artifact files under `.agent/jobs/<jobId>/`.
+Declare an artifact only on the step that will actually create it.
+Do not split broad "explore" and "analyze" work into separate steps when the exploration exists only to support the analysis.
 Mark mayEditFiles true only when a step may edit existing files, write outside the job folder, rename paths, delete paths, or run terminal commands.
 Keep research/design/planning/reporting-to-job-folder steps read-only when they only read files and create new job-owned artifacts.
 Do not include review, retry, validation, terminal policy, or approval policy fields.
@@ -1938,7 +2075,10 @@ Use the full plan and memory to keep long-horizon context.
 Complete only the current step.
 Do not perform future steps early.
 Use tools only when needed. When you have enough information, stop using tools and return the requested JSON.
-If the current step is read-only, you may create new job-owned artifact files under `.agent/jobs/<jobId>/`, but you must not overwrite existing files, edit source files, rename paths, delete paths, or try to use terminal commands as a workaround.
+You may read artifacts from completed prior steps and any artifact already created during the current step.
+Write and report only artifacts declared on the current step.
+If the current step needs a different artifact path, return status "needs_replan" instead of writing it.
+If the current step is read-only, you may create only the current step's declared job-owned artifact files under `.agent/jobs/<jobId>/`, but you must not overwrite existing files, edit source files, rename paths, delete paths, or try to use terminal commands as a workaround.
 If a later step is responsible for writing a report or changing files, leave that work for the later step.
 If the current plan is wrong or missing necessary follow-up work, return status "needs_replan" with a concrete replanRequest.
 If user input is required, return status "blocked" with userQuestion.
@@ -1950,6 +2090,8 @@ You replan unfinished work for a linear long-horizon job.
 Preserve completed and skipped steps.
 Rewrite only unfinished work into a short, concrete sequence.
 Read-only steps may create new job-owned artifact files under `.agent/jobs/<jobId>/`.
+Declare an artifact only on the step that will actually create it.
+Do not split broad "explore" and "analyze" work into separate steps when the exploration exists only to support the analysis.
 Mark mayEditFiles true only when a step may edit existing files, write outside the job folder, rename paths, delete paths, or run terminal commands.
 Do not include review, retry, validation, terminal policy, or approval policy fields.
 Return only valid JSON.

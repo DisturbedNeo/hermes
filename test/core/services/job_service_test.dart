@@ -59,7 +59,17 @@ void main() {
     });
 
     test('runs one step and records structured memory and history', () async {
-      final job = _job();
+      final job = _job(
+        step: const JobStep(
+          id: 'step_1',
+          title: 'Step 1',
+          objective: 'Do the work',
+          instructions: ['Work carefully'],
+          mayEditFiles: false,
+          artifacts: [JobArtifact(path: '.agent/jobs/job_test/notes.md')],
+          status: JobStepStatus.pending,
+        ),
+      );
       await service.storage.saveSnapshot(root.path, job);
       final client = _QueueChatClient([
         jsonEncode({
@@ -317,6 +327,304 @@ void main() {
       expect(report.readAsStringSync(), '# Report\n');
       expect(updated.runs.single.toolCalls.single.error, isNull);
       expect(updated.status, JobStatus.completed);
+    });
+
+    test('read-only steps reject future step artifact writes', () async {
+      final job = _job(
+        steps: const [
+          JobStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Write overview',
+            instructions: ['Write overview'],
+            mayEditFiles: false,
+            artifacts: [JobArtifact(path: '.agent/jobs/job_test/overview.md')],
+            status: JobStepStatus.pending,
+          ),
+          JobStep(
+            id: 'step_2',
+            title: 'Step 2',
+            objective: 'Write final report',
+            instructions: ['Write final report'],
+            mayEditFiles: false,
+            artifacts: [
+              JobArtifact(path: '.agent/jobs/job_test/final_report.md'),
+            ],
+            status: JobStepStatus.pending,
+          ),
+        ],
+      );
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'write_file',
+              arguments: jsonEncode({
+                'path': '.agent/jobs/job_test/final_report.md',
+                'content': '# Final\n',
+              }),
+            ),
+          ],
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Stayed on current step.',
+            'memoryUpdate': 'No future artifacts were written.',
+          }),
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: job,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(
+        File(
+          path.join(root.path, '.agent', 'jobs', 'job_test', 'final_report.md'),
+        ).existsSync(),
+        isFalse,
+      );
+      expect(
+        updated.runs.single.toolCalls.single.error,
+        contains('current step'),
+      );
+      expect(updated.runs.single.artifacts, isEmpty);
+      expect(updated.status, JobStatus.paused);
+      expect(updated.currentStepId, 'step_2');
+    });
+
+    test('mutating steps reject future step artifact writes', () async {
+      final job = _job(
+        steps: const [
+          JobStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Edit files',
+            instructions: ['Edit files'],
+            mayEditFiles: true,
+            artifacts: [
+              JobArtifact(path: '.agent/jobs/job_test/edit_summary.md'),
+            ],
+            status: JobStepStatus.pending,
+          ),
+          JobStep(
+            id: 'step_2',
+            title: 'Step 2',
+            objective: 'Write final report',
+            instructions: ['Write final report'],
+            mayEditFiles: false,
+            artifacts: [
+              JobArtifact(path: '.agent/jobs/job_test/final_report.md'),
+            ],
+            status: JobStepStatus.pending,
+          ),
+        ],
+      );
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'write_file',
+              arguments: jsonEncode({
+                'path': '.agent/jobs/job_test/final_report.md',
+                'content': '# Final\n',
+              }),
+            ),
+          ],
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Did not write a future artifact.',
+            'memoryUpdate': 'Future artifact write was rejected.',
+          }),
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: job,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(
+        File(
+          path.join(root.path, '.agent', 'jobs', 'job_test', 'final_report.md'),
+        ).existsSync(),
+        isFalse,
+      );
+      expect(
+        updated.runs.single.toolCalls.single.error,
+        contains('current step'),
+      );
+      expect(updated.status, JobStatus.paused);
+      expect(updated.currentStepId, 'step_2');
+    });
+
+    test('step output filters artifacts to the current step', () async {
+      final job = _job(
+        steps: const [
+          JobStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Write overview',
+            instructions: ['Write overview'],
+            mayEditFiles: false,
+            artifacts: [JobArtifact(path: '.agent/jobs/job_test/overview.md')],
+            status: JobStepStatus.pending,
+          ),
+          JobStep(
+            id: 'step_2',
+            title: 'Step 2',
+            objective: 'Write final report',
+            instructions: ['Write final report'],
+            mayEditFiles: false,
+            artifacts: [
+              JobArtifact(path: '.agent/jobs/job_test/final_report.md'),
+            ],
+            status: JobStepStatus.pending,
+          ),
+        ],
+      );
+      final client = _QueueChatClient([
+        jsonEncode({
+          'status': 'completed',
+          'summary': 'Overview complete.',
+          'memoryUpdate': 'Created overview only.',
+          'artifacts': [
+            {'path': '.agent/jobs/job_test/overview.md'},
+            {'path': '.agent/jobs/job_test/final_report.md'},
+          ],
+        }),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: job,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(updated.runs.single.artifacts, hasLength(1));
+      expect(
+        updated.runs.single.artifacts.single.path,
+        contains('overview.md'),
+      );
+      expect(updated.steps.first.artifacts, hasLength(1));
+      expect(
+        updated.steps.first.artifacts.single.path,
+        contains('overview.md'),
+      );
+      expect(
+        updated.steps.last.artifacts.single.path,
+        contains('final_report'),
+      );
+    });
+
+    test('later steps can read artifacts from earlier steps', () async {
+      final artifact = File(
+        path.join(root.path, '.agent', 'jobs', 'job_test', 'overview.md'),
+      );
+      await artifact.create(recursive: true);
+      await artifact.writeAsString('Prior analysis');
+
+      final job = _job(
+        steps: const [
+          JobStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Write overview',
+            instructions: ['Write overview'],
+            mayEditFiles: false,
+            artifacts: [JobArtifact(path: '.agent/jobs/job_test/overview.md')],
+            status: JobStepStatus.completed,
+          ),
+          JobStep(
+            id: 'step_2',
+            title: 'Step 2',
+            objective: 'Use overview',
+            instructions: ['Read overview'],
+            mayEditFiles: false,
+            artifacts: [
+              JobArtifact(path: '.agent/jobs/job_test/final_report.md'),
+            ],
+            status: JobStepStatus.pending,
+          ),
+        ],
+        currentStepId: 'step_2',
+      );
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'read_file',
+              arguments: jsonEncode({
+                'path': '.agent/jobs/job_test/overview.md',
+              }),
+            ),
+          ],
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Read prior artifact.',
+            'memoryUpdate': 'Used prior analysis.',
+          }),
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: job,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(updated.runs.single.toolCalls.single.error, isNull);
+      expect(
+        updated.runs.single.toolCalls.single.resultSummary,
+        contains('Prior analysis'),
+      );
+      expect(updated.status, JobStatus.completed);
+    });
+
+    test('planned artifacts are not marked produced when omitted', () async {
+      final job = _job(
+        step: const JobStep(
+          id: 'step_1',
+          title: 'Step 1',
+          objective: 'Write report',
+          instructions: ['Write report'],
+          mayEditFiles: false,
+          artifacts: [JobArtifact(path: '.agent/jobs/job_test/report.md')],
+          status: JobStepStatus.pending,
+        ),
+      );
+      final client = _QueueChatClient([
+        jsonEncode({
+          'status': 'completed',
+          'summary': 'No artifact was produced.',
+          'memoryUpdate': 'Finished without writing report.',
+        }),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: job,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(updated.runs.single.artifacts, isEmpty);
+      expect(updated.steps.single.artifacts.single.path, contains('report.md'));
     });
 
     test('finalizes instead of looping on repeated tool calls', () async {

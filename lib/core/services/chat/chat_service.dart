@@ -2055,10 +2055,7 @@ Workspace rules:
         ..writeln()
         ..writeln(latestRun.summary);
     }
-    final artifacts = [
-      for (final step in snapshot.steps) ...step.artifacts,
-      if (latestRun != null) ...latestRun.artifacts,
-    ];
+    final artifacts = latestRun?.artifacts ?? const [];
     if (artifacts.isNotEmpty) {
       buffer
         ..writeln()
