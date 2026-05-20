@@ -299,7 +299,8 @@ Return only JSON:
 }
 
 Use this exact job id when referencing job-owned artifacts: $jobId
-Prefer 2-6 concrete steps. Artifacts are optional.
+Create only as many steps as are necessary to accomplish the task.
+Artifacts are optional.
 
 Workspace metadata:
 ${_encoder.convert(metadata.toJson())}
