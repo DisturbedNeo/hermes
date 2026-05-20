@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -6,130 +7,77 @@ import 'package:hermes/core/services/job_system/job_storage_service.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
-  group('JobStorageService', () {
+  group('JobStorageService v2', () {
     late Directory root;
     late JobStorageService storage;
 
     setUp(() async {
-      root = await Directory.systemTemp.createTemp('hermes_jobs_');
+      root = await Directory.systemTemp.createTemp('hermes_job_storage_');
       storage = JobStorageService();
     });
 
     tearDown(() async {
-      if (await root.exists()) await root.delete(recursive: true);
+      if (await root.exists()) {
+        await root.delete(recursive: true);
+      }
     });
 
-    test('saves and loads canonical job artifacts', () async {
-      final snapshot = _snapshot();
+    test('saves and loads a single job document', () async {
+      final job = _job(id: 'job_test');
 
-      await storage.saveSnapshot(root.path, snapshot);
+      await storage.saveSnapshot(root.path, job);
 
-      expect(
-        File(
-          path.join(
-            root.path,
-            '.agent',
-            'jobs',
-            snapshot.spec.id,
-            'task-brief.yaml',
-          ),
-        ).existsSync(),
-        isTrue,
+      final file = File(
+        path.join(root.path, '.agent', 'jobs', 'job_test', 'job.json'),
       );
-      expect(
-        File(
-          path.join(
-            root.path,
-            '.agent',
-            'jobs',
-            snapshot.spec.id,
-            'job-spec.yaml',
-          ),
-        ).existsSync(),
-        isTrue,
-      );
-      expect(
-        File(
-          path.join(
-            root.path,
-            '.agent',
-            'jobs',
-            snapshot.spec.id,
-            'job-state.yaml',
-          ),
-        ).existsSync(),
-        isTrue,
-      );
+      expect(file.existsSync(), isTrue);
 
-      final loaded = await storage.loadJob(root.path, snapshot.spec.id);
-
-      expect(loaded?.taskBrief.title, snapshot.taskBrief.title);
-      expect(loaded?.spec.phases.single.id, 'phase_1');
-      expect(loaded?.state.status, JobStatus.planned);
+      final loaded = await storage.loadJob(root.path, 'job_test');
+      expect(loaded?.id, 'job_test');
+      expect(loaded?.steps.single.title, 'Step 1');
+      expect(loaded?.status, JobStatus.paused);
     });
 
-    test('lists jobs newest first', () async {
-      final old = _snapshot(id: 'job_old', updatedAt: DateTime(2026, 1, 1));
-      final recent = _snapshot(
-        id: 'job_recent',
-        updatedAt: DateTime(2026, 1, 2),
+    test('lists v2 jobs newest first and ignores legacy folders', () async {
+      final oldJobDir = Directory(
+        path.join(root.path, '.agent', 'jobs', 'legacy_job'),
       );
+      await oldJobDir.create(recursive: true);
+      await File(
+        path.join(oldJobDir.path, 'job-spec.yaml'),
+      ).writeAsString('{}');
 
-      await storage.saveSnapshot(root.path, old);
-      await storage.saveSnapshot(root.path, recent);
+      await storage.saveSnapshot(
+        root.path,
+        _job(id: 'job_old', updatedAt: DateTime(2026, 1, 1)),
+      );
+      await storage.saveSnapshot(
+        root.path,
+        _job(id: 'job_new', updatedAt: DateTime(2026, 1, 2)),
+      );
 
       final jobs = await storage.listJobs(root.path);
 
-      expect(jobs.map((job) => job.id), ['job_recent', 'job_old']);
+      expect(jobs.map((job) => job.id), ['job_new', 'job_old']);
     });
 
-    test('filters jobs by chat session', () async {
-      final chatAOld = _snapshot(
-        id: 'job_a_old',
-        updatedAt: DateTime(2026, 1, 1),
-        chatSessionId: 'chat_a',
-      );
-      final chatARecent = _snapshot(
-        id: 'job_a_recent',
-        updatedAt: DateTime(2026, 1, 3),
-        chatSessionId: 'chat_a',
-      );
-      final chatB = _snapshot(
-        id: 'job_b',
-        updatedAt: DateTime(2026, 1, 2),
-        chatSessionId: 'chat_b',
-      );
-
-      await storage.saveSnapshot(root.path, chatAOld);
-      await storage.saveSnapshot(root.path, chatARecent);
-      await storage.saveSnapshot(root.path, chatB);
-
-      final chatAJobs = await storage.listJobs(
+    test('filters and deletes by chat session', () async {
+      await storage.saveSnapshot(
         root.path,
-        chatSessionId: 'chat_a',
+        _job(id: 'job_a', chatSessionId: 'chat_a'),
       );
-      final latestChatA = await storage.loadLatestJob(
+      await storage.saveSnapshot(
         root.path,
-        chatSessionId: 'chat_a',
-      );
-      final crossScopedJob = await storage.loadJob(
-        root.path,
-        'job_b',
-        chatSessionId: 'chat_a',
+        _job(id: 'job_b', chatSessionId: 'chat_b'),
       );
 
-      expect(chatAJobs.map((job) => job.id), ['job_a_recent', 'job_a_old']);
-      expect(chatAJobs.every((job) => job.chatSessionId == 'chat_a'), isTrue);
-      expect(latestChatA?.spec.id, 'job_a_recent');
-      expect(crossScopedJob, isNull);
-    });
-
-    test('deletes jobs for one chat session only', () async {
-      final chatA = _snapshot(id: 'job_a', chatSessionId: 'chat_a');
-      final chatB = _snapshot(id: 'job_b', chatSessionId: 'chat_b');
-
-      await storage.saveSnapshot(root.path, chatA);
-      await storage.saveSnapshot(root.path, chatB);
+      expect(
+        (await storage.listJobs(
+          root.path,
+          chatSessionId: 'chat_a',
+        )).map((job) => job.id),
+        ['job_a'],
+      );
 
       final deleted = await storage.deleteJobsForChatSession(
         root.path,
@@ -141,99 +89,52 @@ void main() {
       expect(await storage.loadJob(root.path, 'job_b'), isNotNull);
     });
 
-    test('deletes orphaned chat-scoped jobs', () async {
-      final retained = _snapshot(id: 'job_saved', chatSessionId: 'chat_saved');
-      final orphaned = _snapshot(
-        id: 'job_orphaned',
-        chatSessionId: 'chat_deleted',
+    test('round-trips the raw job json shape', () async {
+      final job = _job(id: 'job_json');
+      await storage.saveSnapshot(root.path, job);
+
+      final file = File(
+        path.join(root.path, '.agent', 'jobs', 'job_json', 'job.json'),
       );
-      final unscoped = _snapshot(id: 'job_unscoped');
+      final decoded = jsonDecode(await file.readAsString());
 
-      await storage.saveSnapshot(root.path, retained);
-      await storage.saveSnapshot(root.path, orphaned);
-      await storage.saveSnapshot(root.path, unscoped);
-
-      final deleted = await storage.deleteOrphanedChatJobs(
-        root.path,
-        retainedChatSessionIds: {'chat_saved'},
-      );
-
-      expect(deleted, 1);
-      expect(await storage.loadJob(root.path, 'job_saved'), isNotNull);
-      expect(await storage.loadJob(root.path, 'job_orphaned'), isNull);
-      expect(await storage.loadJob(root.path, 'job_unscoped'), isNotNull);
+      expect(decoded['schemaVersion'], 2);
+      expect(decoded['steps'], isA<List>());
+      expect(decoded['runs'], isA<List>());
     });
   });
 }
 
-JobSnapshot _snapshot({
-  String id = 'job_test',
+JobDocument _job({
+  required String id,
   DateTime? updatedAt,
   String? chatSessionId,
 }) {
-  final now = updatedAt ?? DateTime(2026, 1, 1);
-  final brief = TaskBrief(
-    id: 'task_$id',
-    createdAt: now,
-    updatedAt: now,
-    title: 'Test job',
-    originalPrompt: 'Do the thing',
-    objective: 'Do the thing',
-    successCriteria: const ['Produces output'],
-    constraints: const ['Stay inside workspace'],
-    nonGoals: const [],
-    assumptions: const [],
-    clarifyingQuestions: const [],
-    recommendedMode: ExecutionMode.job,
-    recommendedAutonomy: AutonomyLevel.checkpointed,
-    requiredOutputs: const [RequiredOutput(path: 'output.md', required: true)],
-    domain: JobDomain.general,
-    riskLevel: RiskLevel.low,
-  );
-  final spec = JobSpec(
-    version: 1,
+  final now = DateTime(2026, 1, 1);
+  return JobDocument(
     id: id,
     title: 'Test job',
-    createdAt: now,
-    updatedAt: now,
-    taskBriefId: brief.id,
-    status: JobStatus.planned,
-    domain: JobDomain.general,
-    autonomy: AutonomyLevel.checkpointed,
-    globalConstraints: brief.constraints,
-    globalSuccessCriteria: brief.successCriteria,
-    toolPolicy: const ToolPolicy(defaultAllowed: ['read_file']),
-    stopPolicy: const StopPolicy(),
-    phases: const [
-      JobPhase(
-        id: 'phase_1',
-        title: 'Phase 1',
-        objective: 'Produce output',
-        status: PhaseStatus.pending,
-        inputs: [],
-        expectedOutputs: [PhaseOutput(path: 'output.md', required: true)],
-        allowedTools: ['read_file'],
-        terminalPolicy: TerminalPolicy.none,
-        completionCriteria: ['Output exists'],
-        review: ReviewPolicy(required: true, reviewer: ReviewerType.hybrid),
-        humanCheckpoint: false,
+    originalPrompt: 'Run the job',
+    goal: 'Run the job',
+    constraints: const ['Stay in workspace'],
+    successCriteria: const ['Finish'],
+    steps: const [
+      JobStep(
+        id: 'step_1',
+        title: 'Step 1',
+        objective: 'Do step 1',
+        instructions: ['Work carefully'],
+        mayEditFiles: false,
+        artifacts: [],
+        status: JobStepStatus.pending,
       ),
     ],
-  );
-  final state = JobState(
-    jobId: id,
+    status: JobStatus.paused,
+    currentStepId: 'step_1',
+    memorySummary: '',
+    runs: const [],
     chatSessionId: chatSessionId,
-    status: JobStatus.planned,
-    updatedAt: now,
-    completedPhases: const [],
-    failedPhases: const [],
-    skippedPhases: const [],
-    artifacts: const [],
-    openQuestions: const [],
-    assumptions: const [],
-    risks: const [],
-    phaseRuns: const [],
-    latestSummary: 'Planned',
+    createdAt: now,
+    updatedAt: updatedAt ?? now,
   );
-  return JobSnapshot(taskBrief: brief, spec: spec, state: state);
 }

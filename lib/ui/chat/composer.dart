@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hermes/core/enums/message_role.dart';
@@ -105,7 +107,7 @@ class _ComposerState extends State<Composer> {
 
   ComposerMode _modeFor(String text) {
     final chat = widget.chat;
-    if (chat.chatStream.isStreaming) return ComposerMode.cancel;
+    if (chat.chatStream.isStreaming || chat.jobBusy) return ComposerMode.cancel;
 
     final isEmpty = text.trim().isEmpty;
     if (!isEmpty) return ComposerMode.send;
@@ -193,7 +195,7 @@ class _ComposerState extends State<Composer> {
     final effectiveToolIds = _effectiveToolIds();
     final hasTools = effectiveToolIds.isNotEmpty;
     final chat = widget.chat;
-    final enabled = widget.enabled && !chat.jobBusy;
+    final inputEnabled = widget.enabled && !chat.jobBusy;
 
     return SafeArea(
       top: false,
@@ -202,7 +204,7 @@ class _ComposerState extends State<Composer> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _ExecutionModeSelector(chat: chat, enabled: enabled),
+            _ExecutionModeSelector(chat: chat, enabled: inputEnabled),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -217,7 +219,7 @@ class _ComposerState extends State<Composer> {
                     child: DropdownButtonFormField<MessageRole>(
                       initialValue: _selectedRole,
                       isDense: true,
-                      onChanged: enabled
+                      onChanged: inputEnabled
                           ? (v) {
                               if (v == null) return;
                               setState(() => _selectedRole = v);
@@ -256,7 +258,7 @@ class _ComposerState extends State<Composer> {
                       tooltip: hasTools
                           ? 'Tools (${effectiveToolIds.length})'
                           : 'Select tools',
-                      onPressed: enabled ? _openToolSelector : null,
+                      onPressed: inputEnabled ? _openToolSelector : null,
                       icon: Stack(
                         clipBehavior: Clip.none,
                         children: [
@@ -300,7 +302,7 @@ class _ComposerState extends State<Composer> {
                     focusNode: _focusNode,
                     minLines: 1,
                     maxLines: 6,
-                    enabled: enabled,
+                    enabled: inputEnabled,
                     keyboardType: TextInputType.multiline,
                     textInputAction:
                         (roleIsUser && !chat.chatStream.isStreaming)
@@ -319,7 +321,7 @@ class _ComposerState extends State<Composer> {
                       border: const OutlineInputBorder(),
                     ),
                     onSubmitted: (_) {
-                      if (!enabled) return;
+                      if (!inputEnabled) return;
                       if (_selectedRole != MessageRole.user) {
                         _insertMessage();
                         return;
@@ -361,7 +363,12 @@ class _ComposerState extends State<Composer> {
                                 FilledButton.icon(
                                   icon: const Icon(Icons.stop),
                                   label: const Text('Cancel'),
-                                  onPressed: chat.cancelGeneration,
+                                  onPressed: chat.jobBusy
+                                      ? chat.jobCancellationRequested
+                                            ? null
+                                            : () =>
+                                                  unawaited(chat.cancelJobRun())
+                                      : chat.cancelGeneration,
                                 ),
                               );
                               break;
@@ -370,7 +377,7 @@ class _ComposerState extends State<Composer> {
                                 FilledButton.icon(
                                   icon: const Icon(Icons.auto_awesome),
                                   label: const Text('Generate'),
-                                  onPressed: enabled
+                                  onPressed: inputEnabled
                                       ? () => chat.generateOrContinue(
                                           tools: _effectiveToolIds(),
                                         )
@@ -383,7 +390,7 @@ class _ComposerState extends State<Composer> {
                                 FilledButton.icon(
                                   icon: const Icon(Icons.more_horiz),
                                   label: const Text('Continue'),
-                                  onPressed: enabled
+                                  onPressed: inputEnabled
                                       ? () => chat.generateOrContinue(
                                           tools: _effectiveToolIds(),
                                         )
@@ -404,7 +411,7 @@ class _ComposerState extends State<Composer> {
                                         ? 'Send'
                                         : chat.executionMode.label,
                                   ),
-                                  onPressed: enabled
+                                  onPressed: inputEnabled
                                       ? () {
                                           final trimmed = value.text.trim();
                                           _controller.clear();
@@ -432,7 +439,7 @@ class _ComposerState extends State<Composer> {
                               child: FilledButton.icon(
                                 icon: const Icon(Icons.add),
                                 label: const Text('Insert'),
-                                onPressed: enabled ? _insertMessage : null,
+                                onPressed: inputEnabled ? _insertMessage : null,
                               ),
                             ),
                           );

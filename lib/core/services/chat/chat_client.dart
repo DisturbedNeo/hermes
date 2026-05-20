@@ -14,6 +14,8 @@ class ChatClient {
     : _model = model,
       _baseUrl = baseUrl;
 
+  bool get supportsStreamingCancellation => runtimeType == ChatClient;
+
   void dispose() {
     _client.close();
   }
@@ -451,6 +453,19 @@ class ChatClient {
     }
     if (completion.content.isNotEmpty) {
       onToken(ChatToken(content: completion.content));
+    }
+    for (var i = 0; i < completion.toolCalls.length; i++) {
+      final call = completion.toolCalls[i];
+      onToken(
+        ChatToken(
+          tool: ToolCallDelta(
+            index: i,
+            id: call.id,
+            name: call.name,
+            argumentsChunk: call.arguments,
+          ),
+        ),
+      );
     }
   }
 

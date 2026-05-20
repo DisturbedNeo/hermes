@@ -30,7 +30,7 @@ class ChatView extends StatefulWidget {
 
 class _ChatViewState extends State<ChatView> {
   final _scroll = ScrollController();
-  bool _jobPanelExpanded = true;
+  bool _jobPanelExpanded = false;
 
   @override
   void dispose() {
@@ -57,18 +57,20 @@ class _ChatViewState extends State<ChatView> {
                 expanded: false,
                 onToggleExpanded: _toggleJobPanel,
               ),
+            if (showJobPanel && _jobPanelExpanded)
+              Expanded(
+                child: JobPanel(
+                  chat: chat,
+                  expanded: true,
+                  onToggleExpanded: _toggleJobPanel,
+                ),
+              ),
             Expanded(
-              child: showJobPanel && _jobPanelExpanded
-                  ? JobPanel(
-                      chat: chat,
-                      expanded: true,
-                      onToggleExpanded: _toggleJobPanel,
-                    )
-                  : _MessageList(
-                      scroll: _scroll,
-                      displayItems: displayItems,
-                      chat: chat,
-                    ),
+              child: _MessageList(
+                scroll: _scroll,
+                displayItems: displayItems,
+                chat: chat,
+              ),
             ),
             const Divider(height: 1),
             const DiagnosticsBar(),
@@ -91,8 +93,7 @@ class _ChatViewState extends State<ChatView> {
   bool _showJobPanel(ChatService chat) {
     return chat.activeJob != null ||
         chat.availableJobs.isNotEmpty ||
-        chat.jobBusy ||
-        chat.jobModelOutputTitle != null;
+        chat.jobBusy;
   }
 
   List<_DisplayItem> _displayItems(List<Bubble> messages) {

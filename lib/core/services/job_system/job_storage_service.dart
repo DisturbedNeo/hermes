@@ -7,6 +7,7 @@ import 'package:path/path.dart' as path;
 
 class JobStorageService {
   static const String jobsRoot = '.agent/jobs';
+  static const String documentFileName = 'job.json';
 
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
 
@@ -20,24 +21,23 @@ class JobStorageService {
     final summaries = <JobSummary>[];
     await for (final entity in root.list(followLinks: false)) {
       if (entity is! Directory) continue;
-      final stateFile = File(path.join(entity.path, 'job-state.yaml'));
-      final specFile = File(path.join(entity.path, 'job-spec.yaml'));
-      if (!await stateFile.exists() || !await specFile.exists()) continue;
+      final file = File(path.join(entity.path, documentFileName));
+      if (!await file.exists()) continue;
 
       try {
-        final spec = JobSpec.fromJson(await _readMap(specFile));
-        final state = JobState.fromJson(await _readMap(stateFile));
-        if (chatSessionId != null && state.chatSessionId != chatSessionId) {
+        final job = JobDocument.fromJson(await _readMap(file));
+        if (job.schemaVersion != JobDocument.currentSchemaVersion) continue;
+        if (chatSessionId != null && job.chatSessionId != chatSessionId) {
           continue;
         }
         summaries.add(
           JobSummary(
-            id: spec.id,
-            title: spec.title,
-            chatSessionId: state.chatSessionId,
-            status: state.status,
-            updatedAt: state.updatedAt,
-            currentPhaseId: state.currentPhaseId,
+            id: job.id,
+            title: job.title,
+            chatSessionId: job.chatSessionId,
+            status: job.status,
+            updatedAt: job.updatedAt,
+            currentPhaseId: job.currentStepId,
           ),
         );
       } catch (_) {
@@ -49,7 +49,7 @@ class JobStorageService {
     return summaries;
   }
 
-  Future<JobSnapshot?> loadLatestJob(
+  Future<JobDocument?> loadLatestJob(
     String workspaceRoot, {
     String? chatSessionId,
   }) async {
@@ -58,53 +58,28 @@ class JobStorageService {
     return loadJob(workspaceRoot, jobs.first.id, chatSessionId: chatSessionId);
   }
 
-  Future<JobSnapshot?> loadJob(
+  Future<JobDocument?> loadJob(
     String workspaceRoot,
     String jobId, {
     String? chatSessionId,
   }) async {
-    final dir = _jobDirectory(workspaceRoot, jobId);
-    final taskBriefFile = File(path.join(dir.path, 'task-brief.yaml'));
-    final specFile = File(path.join(dir.path, 'job-spec.yaml'));
-    final stateFile = File(path.join(dir.path, 'job-state.yaml'));
-
-    if (!await taskBriefFile.exists() ||
-        !await specFile.exists() ||
-        !await stateFile.exists()) {
-      return null;
-    }
-
-    final snapshot = JobSnapshot(
-      taskBrief: TaskBrief.fromJson(await _readMap(taskBriefFile)),
-      spec: JobSpec.fromJson(await _readMap(specFile)),
-      state: JobState.fromJson(await _readMap(stateFile)),
+    final file = File(
+      path.join(_jobDirectory(workspaceRoot, jobId).path, documentFileName),
     );
-    if (chatSessionId != null &&
-        snapshot.state.chatSessionId != chatSessionId) {
+    if (!await file.exists()) return null;
+
+    final job = JobDocument.fromJson(await _readMap(file));
+    if (job.schemaVersion != JobDocument.currentSchemaVersion) return null;
+    if (chatSessionId != null && job.chatSessionId != chatSessionId) {
       return null;
     }
-    return snapshot;
+    return job;
   }
 
-  Future<void> saveSnapshot(String workspaceRoot, JobSnapshot snapshot) async {
-    final dir = _jobDirectory(workspaceRoot, snapshot.spec.id);
+  Future<void> saveSnapshot(String workspaceRoot, JobDocument job) async {
+    final dir = _jobDirectory(workspaceRoot, job.id);
     await dir.create(recursive: true);
-    await _writeMap(
-      File(path.join(dir.path, 'task-brief.yaml')),
-      snapshot.taskBrief.toJson(),
-    );
-    await _writeMap(
-      File(path.join(dir.path, 'job-spec.yaml')),
-      snapshot.spec.toJson(),
-    );
-    await _writeMap(
-      File(path.join(dir.path, 'job-state.yaml')),
-      snapshot.state.toJson(),
-    );
-    await _writeText(
-      File(path.join(dir.path, 'refined-prompt.md')),
-      _renderTaskBrief(snapshot.taskBrief),
-    );
+    await _writeMap(File(path.join(dir.path, documentFileName)), job.toJson());
   }
 
   Future<bool> deleteJob(String workspaceRoot, String jobId) async {
@@ -145,22 +120,6 @@ class JobStorageService {
     return deleted;
   }
 
-  Future<void> saveReview(
-    String workspaceRoot,
-    String jobId,
-    String phaseId,
-    ReviewResult review,
-  ) async {
-    final dir = Directory(
-      path.join(_jobDirectory(workspaceRoot, jobId).path, 'reviews'),
-    );
-    await dir.create(recursive: true);
-    await _writeMap(
-      File(path.join(dir.path, 'review-$phaseId.yaml')),
-      review.toJson(),
-    );
-  }
-
   Future<void> saveLog(
     String workspaceRoot,
     String jobId,
@@ -195,7 +154,7 @@ class JobStorageService {
     final decoded = jsonDecode(content);
     if (decoded is Map<String, dynamic>) return decoded;
     if (decoded is Map) return Map<String, dynamic>.from(decoded);
-    throw const FormatException('Expected a JSON/YAML object');
+    throw const FormatException('Expected a JSON object');
   }
 
   Future<void> _writeMap(File file, Map<String, dynamic> map) {
@@ -205,31 +164,5 @@ class JobStorageService {
   Future<void> _writeText(File file, String content) async {
     await file.parent.create(recursive: true);
     await file.writeAsString(content);
-  }
-
-  String _renderTaskBrief(TaskBrief brief) {
-    final buffer = StringBuffer()
-      ..writeln('# ${brief.title}')
-      ..writeln()
-      ..writeln('## Objective')
-      ..writeln(brief.objective)
-      ..writeln()
-      ..writeln('## Success Criteria');
-    for (final item in brief.successCriteria) {
-      buffer.writeln('- $item');
-    }
-    buffer
-      ..writeln()
-      ..writeln('## Constraints');
-    for (final item in brief.constraints) {
-      buffer.writeln('- $item');
-    }
-    buffer
-      ..writeln()
-      ..writeln('## Assumptions');
-    for (final item in brief.assumptions) {
-      buffer.writeln('- $item');
-    }
-    return buffer.toString();
   }
 }

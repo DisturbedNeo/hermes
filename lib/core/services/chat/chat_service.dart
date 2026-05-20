@@ -74,6 +74,7 @@ class ChatService extends ChangeNotifier {
   List<JobSummary> availableJobs = const [];
   JobSystemSettings jobSystemSettings = const JobSystemSettings();
   bool jobBusy = false;
+  bool jobCancellationRequested = false;
   String? jobStatusMessage;
   Object? jobError;
   String? jobModelOutputTitle;
@@ -83,6 +84,8 @@ class ChatService extends ChangeNotifier {
   String? _jobModelOutputLabel;
   String? _jobModelOutputTextSection;
   String? _jobModelOutputReasoningLabel;
+  String? _jobModelOutputMessageId;
+  JobCancellationToken? _jobCancellationToken;
 
   ChatService({
     String? tabId,
@@ -128,12 +131,8 @@ class ChatService extends ChangeNotifier {
 
   bool get workspaceToolsEnabled => hasActiveWorkspace;
 
-  String? get activeTaskBriefJson => activeJob == null
-      ? null
-      : _jobService.encodeTaskBrief(activeJob!.taskBrief);
-
-  String? get activeJobSpecJson =>
-      activeJob == null ? null : _jobService.encodeJobSpec(activeJob!.spec);
+  String? get activeJobJson =>
+      activeJob == null ? null : _jobService.encodeJob(activeJob!);
 
   List<String> get defaultToolIds => workspaceToolsEnabled
       ? _toolService.defaultToolIds(includeWorkspaceTools: true)
@@ -465,6 +464,16 @@ class ChatService extends ChangeNotifier {
     await chatStream.stop();
   }
 
+  Future<void> cancelJobRun() async {
+    if (!jobBusy) return;
+    final token = _jobCancellationToken;
+    jobCancellationRequested = true;
+    jobStatusMessage = 'Cancelling job...';
+    notifyListeners();
+    if (token == null) return;
+    await token.cancel();
+  }
+
   Future<void> reloadJobs() async {
     final current = workspace;
     if (current == null || current.missing) {
@@ -475,7 +484,7 @@ class ChatService extends ChangeNotifier {
     }
 
     final scopeId = _jobScopeId;
-    final activeScopeId = activeJob?.state.chatSessionId;
+    final activeScopeId = activeJob?.chatSessionId;
     final scopedActiveJob =
         activeJob != null && (activeScopeId == null || activeScopeId == scopeId)
         ? activeJob
@@ -524,71 +533,15 @@ class ChatService extends ChangeNotifier {
   }
 
   Future<void> runNextJobPhase() async {
-    await _runNextJobPhaseInternal();
+    await _runNextJobStepInternal();
   }
 
   Future<void> runJob() async {
-    if (activeJob?.spec.status == JobStatus.draft) {
-      await planActiveJob(runAfterPlanning: true);
-      return;
-    }
     await _runJobInternal();
   }
 
   Future<void> planActiveJob({bool runAfterPlanning = false}) async {
-    final currentWorkspace = workspace;
-    final client = serverManager.chatClient;
-    final snapshot = activeJob;
-    if (currentWorkspace == null ||
-        currentWorkspace.missing ||
-        client == null ||
-        snapshot == null ||
-        jobBusy) {
-      return;
-    }
-
-    final settings = await _refreshJobSystemSettings();
-    if (!settings.enabled) {
-      _insertJobAssistantMessage('Structured jobs are disabled in Settings.');
-      return;
-    }
-
-    jobBusy = true;
-    jobError = null;
-    jobStatusMessage = 'Creating job plan...';
-    _beginJobModelOutput('Job Plan Model Output');
-    notifyListeners();
-    try {
-      activeJob = await _jobService.planDraftJob(
-        client: client,
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-        baseSystemPrompt: _buildJobSystemPrompt(snapshot),
-        autonomyPreference: settings.defaultAutonomy,
-        maxPhaseRetries: settings.maxPhaseRetries,
-        onModelOutput: _handleJobModelOutput,
-      );
-      await reloadJobs();
-      _insertJobAssistantMessage(_jobCreatedMessage(activeJob!));
-      if (runAfterPlanning) {
-        await _runJobInternal(keepBusy: true);
-      }
-    } catch (e) {
-      jobError = e;
-      messageStore.upsert(
-        Bubble(
-          id: uuid.v7(),
-          role: MessageRole.assistant,
-          text: 'Failed to create job plan: $e',
-          reasoning: '',
-        ),
-      );
-    } finally {
-      jobBusy = false;
-      jobStatusMessage = null;
-      _finishJobModelOutput();
-      notifyListeners();
-    }
+    if (runAfterPlanning) await runJob();
   }
 
   Future<void> _runJobInternal({bool keepBusy = false}) async {
@@ -602,6 +555,8 @@ class ChatService extends ChangeNotifier {
       return;
     }
 
+    final token = _beginJobCancellationScope(reuseExisting: keepBusy);
+
     if (!keepBusy) {
       jobBusy = true;
       jobError = null;
@@ -613,49 +568,25 @@ class ChatService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      var phasesRun = 0;
       while (true) {
+        if (token.isCancelled) break;
         final snapshot = activeJob;
         if (snapshot == null) break;
-        final nextPhase = _nextRunnablePhase(snapshot);
-        if (nextPhase == null) break;
-
-        if (_shouldPauseBeforePhase(snapshot, nextPhase, phasesRun)) {
-          activeJob = await _jobService.pauseAtCheckpoint(
-            workspace: currentWorkspace,
-            snapshot: snapshot,
-            phase: nextPhase,
-          );
-          await reloadJobs();
-          _insertJobAssistantMessage(
-            'Job paused before checkpoint phase: **${nextPhase.title}**.',
-          );
-          break;
-        }
-
-        await _runNextJobPhaseInternal(keepBusy: true);
-        phasesRun++;
+        if (snapshot.nextRunnableStep == null) break;
+        await _runNextJobStepInternal(keepBusy: true);
+        if (token.isCancelled) break;
 
         final updated = activeJob;
         if (updated == null ||
-            updated.state.status == JobStatus.completed ||
-            updated.state.status == JobStatus.blocked ||
-            updated.state.status == JobStatus.failed ||
-            updated.state.status == JobStatus.cancelled) {
-          break;
-        }
-
-        final maxPhases = updated.spec.stopPolicy.maxTotalPhases;
-        if (maxPhases != null && phasesRun >= maxPhases) {
-          activeJob = await _jobService.pauseAtCheckpoint(
-            workspace: currentWorkspace,
-            snapshot: updated,
-            phase: _nextRunnablePhase(updated) ?? updated.spec.phases.last,
-          );
-          await reloadJobs();
+            updated.status == JobStatus.completed ||
+            updated.status == JobStatus.blocked ||
+            updated.status == JobStatus.failed ||
+            updated.status == JobStatus.cancelled) {
           break;
         }
       }
+    } on JobCancelledException {
+      _insertJobAssistantMessage('Job run cancelled.');
     } catch (e) {
       jobError = e;
       messageStore.upsert(
@@ -669,6 +600,7 @@ class ChatService extends ChangeNotifier {
     } finally {
       if (!keepBusy) {
         jobBusy = false;
+        _endJobCancellationScope(token);
         jobStatusMessage = null;
         _finishJobModelOutput();
         notifyListeners();
@@ -686,7 +618,7 @@ class ChatService extends ChangeNotifier {
       return;
     }
 
-    activeJob = await _jobService.retryCurrentPhase(
+    activeJob = await _jobService.retryCurrentStep(
       workspace: currentWorkspace,
       snapshot: snapshot,
     );
@@ -703,7 +635,7 @@ class ChatService extends ChangeNotifier {
       return;
     }
 
-    activeJob = await _jobService.skipCurrentPhase(
+    activeJob = await _jobService.skipCurrentStep(
       workspace: currentWorkspace,
       snapshot: snapshot,
     );
@@ -715,8 +647,12 @@ class ChatService extends ChangeNotifier {
     final snapshot = activeJob;
     if (currentWorkspace == null ||
         currentWorkspace.missing ||
-        snapshot == null ||
-        jobBusy) {
+        snapshot == null) {
+      return;
+    }
+
+    if (jobBusy) {
+      await cancelJobRun();
       return;
     }
 
@@ -727,7 +663,7 @@ class ChatService extends ChangeNotifier {
     await reloadJobs();
   }
 
-  Future<void> answerJobQuestion(String questionId, String answer) async {
+  Future<void> answerJobQuestion(String answer) async {
     final currentWorkspace = workspace;
     final snapshot = activeJob;
     if (currentWorkspace == null ||
@@ -740,13 +676,12 @@ class ChatService extends ChangeNotifier {
     activeJob = await _jobService.answerOpenQuestion(
       workspace: currentWorkspace,
       snapshot: snapshot,
-      questionId: questionId,
       answer: answer,
     );
     await reloadJobs();
   }
 
-  Future<void> dismissJobQuestion(String questionId) async {
+  Future<void> approveJobStep() async {
     final currentWorkspace = workspace;
     final snapshot = activeJob;
     if (currentWorkspace == null ||
@@ -756,52 +691,11 @@ class ChatService extends ChangeNotifier {
       return;
     }
 
-    activeJob = await _jobService.dismissOpenQuestion(
-      workspace: currentWorkspace,
-      snapshot: snapshot,
-      questionId: questionId,
-    );
-    await reloadJobs();
-  }
-
-  Future<void> dismissOptionalJobQuestions() async {
-    final currentWorkspace = workspace;
-    final snapshot = activeJob;
-    if (currentWorkspace == null ||
-        currentWorkspace.missing ||
-        snapshot == null ||
-        jobBusy) {
-      return;
-    }
-
-    activeJob = await _jobService.dismissOptionalQuestions(
+    activeJob = await _jobService.approvePendingStep(
       workspace: currentWorkspace,
       snapshot: snapshot,
     );
     await reloadJobs();
-  }
-
-  Future<void> resolveFileApproval(
-    String approvalId,
-    Set<String> approvedHunkIds,
-  ) async {
-    final currentWorkspace = workspace;
-    final snapshot = activeJob;
-    if (currentWorkspace == null ||
-        currentWorkspace.missing ||
-        snapshot == null ||
-        jobBusy) {
-      return;
-    }
-
-    activeJob = await _jobService.resolveFileApproval(
-      workspace: currentWorkspace,
-      snapshot: snapshot,
-      approvalId: approvalId,
-      approvedHunkIds: approvedHunkIds,
-    );
-    await reloadJobs();
-    notifyListeners();
   }
 
   Future<void> _handleSlashCommand(_SlashCommand command) async {
@@ -866,6 +760,7 @@ class ChatService extends ChangeNotifier {
     );
 
     jobBusy = true;
+    final token = _beginJobCancellationScope();
     jobError = null;
     jobStatusMessage = 'Refining task brief...';
     _beginJobModelOutput('Task Brief Model Output');
@@ -878,6 +773,7 @@ class ChatService extends ChangeNotifier {
         userPrompt: prompt,
         selectedMode: ExecutionMode.refine,
         onModelOutput: _handleJobModelOutput,
+        cancellationToken: token,
       );
       messageStore.upsert(
         Bubble(
@@ -887,6 +783,8 @@ class ChatService extends ChangeNotifier {
           reasoning: '',
         ),
       );
+    } on JobCancelledException {
+      _insertJobAssistantMessage('Task brief refinement cancelled.');
     } catch (e) {
       jobError = e;
       messageStore.upsert(
@@ -899,6 +797,7 @@ class ChatService extends ChangeNotifier {
       );
     } finally {
       jobBusy = false;
+      _endJobCancellationScope(token);
       jobStatusMessage = null;
       _finishJobModelOutput();
       notifyListeners();
@@ -971,40 +870,14 @@ class ChatService extends ChangeNotifier {
   }
 
   Future<void> updateJobTaskBrief(String rawJson) async {
-    final currentWorkspace = workspace;
-    final snapshot = activeJob;
-    if (currentWorkspace == null ||
-        currentWorkspace.missing ||
-        snapshot == null ||
-        jobBusy) {
-      return;
-    }
-
-    jobBusy = true;
-    jobError = null;
-    jobStatusMessage = 'Updating task brief...';
-    notifyListeners();
-    try {
-      activeJob = await _jobService.updateTaskBrief(
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-        rawJson: rawJson,
-      );
-      await reloadJobs();
-      _insertJobAssistantMessage(
-        'Task brief updated for **${activeJob!.spec.title}**.',
-      );
-    } catch (e) {
-      jobError = e;
-      rethrow;
-    } finally {
-      jobBusy = false;
-      jobStatusMessage = null;
-      notifyListeners();
-    }
+    await updateJobPlan(rawJson);
   }
 
   Future<void> updateJobSpec(String rawJson) async {
+    await updateJobPlan(rawJson);
+  }
+
+  Future<void> updateJobPlan(String rawJson) async {
     final currentWorkspace = workspace;
     final snapshot = activeJob;
     if (currentWorkspace == null ||
@@ -1016,17 +889,17 @@ class ChatService extends ChangeNotifier {
 
     jobBusy = true;
     jobError = null;
-    jobStatusMessage = 'Updating job spec...';
+    jobStatusMessage = 'Updating job plan...';
     notifyListeners();
     try {
-      activeJob = await _jobService.updateJobSpec(
+      activeJob = await _jobService.updateJobPlan(
         workspace: currentWorkspace,
         snapshot: snapshot,
         rawJson: rawJson,
       );
       await reloadJobs();
       _insertJobAssistantMessage(
-        'Job spec updated for **${activeJob!.spec.title}**.',
+        'Job plan updated for **${activeJob!.title}**.',
       );
     } catch (e) {
       jobError = e;
@@ -1039,18 +912,6 @@ class ChatService extends ChangeNotifier {
   }
 
   Future<void> replanRemainingJob() async {
-    return replanJob(ReplanScope.remainingPhases);
-  }
-
-  Future<void> replanCurrentJobPhase() async {
-    return replanJob(ReplanScope.currentPhase);
-  }
-
-  Future<void> replanEntireJob() async {
-    return replanJob(ReplanScope.entireJob);
-  }
-
-  Future<JobSnapshot?> proposeReplanJob(ReplanScope scope) async {
     final currentWorkspace = workspace;
     final client = serverManager.chatClient;
     final snapshot = activeJob;
@@ -1059,122 +920,36 @@ class ChatService extends ChangeNotifier {
         client == null ||
         snapshot == null ||
         jobBusy) {
-      return null;
+      return;
     }
 
     jobBusy = true;
+    final token = _beginJobCancellationScope();
     jobError = null;
-    jobStatusMessage =
-        'Preparing ${scope.label.toLowerCase()} replan preview...';
-    _beginJobModelOutput('${scope.label} Replan Preview Model Output');
+    jobStatusMessage = 'Replanning unfinished work...';
+    _beginJobModelOutput('Replan Model Output');
     notifyListeners();
     try {
-      return await _jobService.proposeReplanJob(
+      activeJob = await _jobService.replanUnfinished(
         client: client,
         workspace: currentWorkspace,
         snapshot: snapshot,
         baseSystemPrompt: _buildJobSystemPrompt(snapshot),
-        scope: scope,
         onModelOutput: _handleJobModelOutput,
-      );
-    } catch (e) {
-      jobError = e;
-      rethrow;
-    } finally {
-      jobBusy = false;
-      jobStatusMessage = null;
-      _finishJobModelOutput();
-      notifyListeners();
-    }
-  }
-
-  Future<void> applyReplanProposal(
-    JobSnapshot proposal,
-    ReplanScope scope,
-  ) async {
-    final currentWorkspace = workspace;
-    final snapshot = activeJob;
-    if (currentWorkspace == null ||
-        currentWorkspace.missing ||
-        snapshot == null ||
-        jobBusy) {
-      return;
-    }
-
-    jobBusy = true;
-    jobError = null;
-    jobStatusMessage = 'Applying ${scope.label.toLowerCase()} replan...';
-    notifyListeners();
-    try {
-      activeJob = await _jobService.applyReplanProposal(
-        workspace: currentWorkspace,
-        current: snapshot,
-        proposal: proposal,
+        cancellationToken: token,
       );
       await reloadJobs();
       _insertJobAssistantMessage(
-        '${scope.label} replan approved for **${activeJob!.spec.title}**. Next phase: `${activeJob!.state.currentPhaseId ?? 'none'}`.',
+        'Unfinished work replanned for **${activeJob!.title}**. Next step: `${activeJob!.currentStepId ?? 'none'}`.',
       );
+    } on JobCancelledException {
+      _insertJobAssistantMessage('Replan cancelled.');
     } catch (e) {
       jobError = e;
       rethrow;
     } finally {
       jobBusy = false;
-      jobStatusMessage = null;
-      notifyListeners();
-    }
-  }
-
-  Future<void> replanJob(ReplanScope scope) async {
-    final currentWorkspace = workspace;
-    final client = serverManager.chatClient;
-    final snapshot = activeJob;
-    if (currentWorkspace == null ||
-        currentWorkspace.missing ||
-        client == null ||
-        snapshot == null ||
-        jobBusy) {
-      return;
-    }
-
-    jobBusy = true;
-    jobError = null;
-    jobStatusMessage = 'Replanning ${scope.label.toLowerCase()}...';
-    _beginJobModelOutput('${scope.label} Replan Model Output');
-    notifyListeners();
-    try {
-      activeJob = switch (scope) {
-        ReplanScope.currentPhase => await _jobService.replanCurrentPhase(
-          client: client,
-          workspace: currentWorkspace,
-          snapshot: snapshot,
-          baseSystemPrompt: _buildJobSystemPrompt(snapshot),
-          onModelOutput: _handleJobModelOutput,
-        ),
-        ReplanScope.remainingPhases => await _jobService.replanRemaining(
-          client: client,
-          workspace: currentWorkspace,
-          snapshot: snapshot,
-          baseSystemPrompt: _buildJobSystemPrompt(snapshot),
-          onModelOutput: _handleJobModelOutput,
-        ),
-        ReplanScope.entireJob => await _jobService.replanEntireJob(
-          client: client,
-          workspace: currentWorkspace,
-          snapshot: snapshot,
-          baseSystemPrompt: _buildJobSystemPrompt(snapshot),
-          onModelOutput: _handleJobModelOutput,
-        ),
-      };
-      await reloadJobs();
-      _insertJobAssistantMessage(
-        '${scope.label} replanned for **${activeJob!.spec.title}**. Next phase: `${activeJob!.state.currentPhaseId ?? 'none'}`.',
-      );
-    } catch (e) {
-      jobError = e;
-      rethrow;
-    } finally {
-      jobBusy = false;
+      _endJobCancellationScope(token);
       jobStatusMessage = null;
       _finishJobModelOutput();
       notifyListeners();
@@ -1221,6 +996,7 @@ class ChatService extends ChangeNotifier {
     }
 
     jobBusy = true;
+    final token = _beginJobCancellationScope();
     jobError = null;
     jobStatusMessage = runFirstPhase
         ? 'Creating job plan and preparing first phase...'
@@ -1237,9 +1013,8 @@ class ChatService extends ChangeNotifier {
         selectedMode: runFirstPhase ? ExecutionMode.job : ExecutionMode.plan,
         baseSystemPrompt: _buildSystemPrompt(currentUserRequest: prompt),
         chatSessionId: scopeId,
-        autonomyPreference: settings.defaultAutonomy,
-        maxPhaseRetries: settings.maxPhaseRetries,
         onModelOutput: _handleJobModelOutput,
+        cancellationToken: token,
       );
       activeJob = snapshot;
       await reloadJobs();
@@ -1249,6 +1024,8 @@ class ChatService extends ChangeNotifier {
         activeJob = snapshot;
         await _runJobInternal(keepBusy: true);
       }
+    } on JobCancelledException {
+      _insertJobAssistantMessage('Job creation cancelled.');
     } catch (e) {
       jobError = e;
       messageStore.upsert(
@@ -1261,13 +1038,14 @@ class ChatService extends ChangeNotifier {
       );
     } finally {
       jobBusy = false;
+      _endJobCancellationScope(token);
       jobStatusMessage = null;
       _finishJobModelOutput();
       notifyListeners();
     }
   }
 
-  Future<void> _runNextJobPhaseInternal({bool keepBusy = false}) async {
+  Future<void> _runNextJobStepInternal({bool keepBusy = false}) async {
     final currentWorkspace = workspace;
     final client = serverManager.chatClient;
     final snapshot = activeJob;
@@ -1279,131 +1057,59 @@ class ChatService extends ChangeNotifier {
       return;
     }
 
-    final nextPhase = snapshot.spec.phases
-        .where(
-          (phase) =>
-              phase.status == PhaseStatus.pending ||
-              phase.status == PhaseStatus.failed ||
-              phase.status == PhaseStatus.blocked,
-        )
-        .firstOrNull;
-    if (nextPhase == null) {
+    final nextStep = snapshot.nextRunnableStep;
+    if (nextStep == null) {
       _insertJobAssistantMessage(
-        'Job `${snapshot.spec.title}` has no pending phases.',
+        'Job `${snapshot.title}` has no pending steps.',
       );
       return;
     }
 
+    final token = _beginJobCancellationScope(reuseExisting: keepBusy);
+
     if (!keepBusy) {
       jobBusy = true;
       jobError = null;
-      _beginJobModelOutput('Job Phase Model Output');
+      _beginJobModelOutput('Job Step Model Output');
       notifyListeners();
     }
-    jobStatusMessage = 'Running phase ${nextPhase.id}: ${nextPhase.title}';
+    jobStatusMessage = 'Running step ${nextStep.id}: ${nextStep.title}';
     notifyListeners();
 
     try {
-      final updated = await _jobService.runNextPhase(
+      final updated = await _jobService.runNextStep(
         client: client,
         workspace: currentWorkspace,
         snapshot: snapshot,
-        baseSystemPrompt: _buildJobSystemPrompt(snapshot, phase: nextPhase),
-        requireFileEditApproval:
-            jobSystemSettings.requireApprovalBeforeFileEdits,
+        baseSystemPrompt: _buildJobSystemPrompt(snapshot),
+        requirePhaseApproval: jobSystemSettings.requireApprovalBeforeFileEdits,
         onModelOutput: _handleJobModelOutput,
+        cancellationToken: token,
       );
       activeJob = updated;
       await reloadJobs();
-      _insertJobAssistantMessage(_phaseFinishedMessage(updated));
+      _insertJobAssistantMessage(_stepFinishedMessage(updated));
+    } on JobCancelledException {
+      _insertJobAssistantMessage('Job step cancelled.');
     } catch (e) {
       jobError = e;
       messageStore.upsert(
         Bubble(
           id: uuid.v7(),
           role: MessageRole.assistant,
-          text: 'Failed to run job phase: $e',
+          text: 'Failed to run job step: $e',
           reasoning: '',
         ),
       );
     } finally {
       if (!keepBusy) {
         jobBusy = false;
+        _endJobCancellationScope(token);
         jobStatusMessage = null;
         _finishJobModelOutput();
         notifyListeners();
       }
     }
-  }
-
-  JobPhase? _nextRunnablePhase(JobSnapshot snapshot) {
-    return snapshot.spec.phases
-        .where(
-          (phase) =>
-              phase.status == PhaseStatus.pending ||
-              phase.status == PhaseStatus.failed ||
-              phase.status == PhaseStatus.blocked,
-        )
-        .firstOrNull;
-  }
-
-  bool _shouldPauseBeforePhase(
-    JobSnapshot snapshot,
-    JobPhase phase,
-    int phasesRun,
-  ) {
-    if (snapshot.state.openQuestions.any(
-      (question) =>
-          question.required && question.status == OpenQuestionStatus.open,
-    )) {
-      return false;
-    }
-
-    final terminalPolicy = _effectiveTerminalPolicy(snapshot.spec, phase);
-    final terminalNeedsApproval =
-        jobSystemSettings.requireApprovalBeforeTerminal &&
-        (terminalPolicy == TerminalPolicy.workspaceMutating ||
-            terminalPolicy == TerminalPolicy.unrestrictedWorkspace);
-    final fileEditsNeedApproval =
-        jobSystemSettings.requireApprovalBeforeFileEdits &&
-        _phaseUsesMutatingTools(phase);
-
-    return switch (snapshot.spec.autonomy) {
-      AutonomyLevel.manual => true,
-      AutonomyLevel.automatic => false,
-      AutonomyLevel.checkpointed =>
-        phase.humanCheckpoint || terminalNeedsApproval || fileEditsNeedApproval,
-    };
-  }
-
-  bool _phaseUsesMutatingTools(JobPhase phase) {
-    const mutating = {
-      'write_file',
-      'patch_file',
-      'create_directory',
-      'rename_path',
-      'delete_path',
-    };
-    return phase.allowedTools.any(mutating.contains);
-  }
-
-  TerminalPolicy _effectiveTerminalPolicy(JobSpec spec, JobPhase phase) {
-    final terminal = spec.toolPolicy.terminal;
-    if (terminal?.allowed == false) return TerminalPolicy.none;
-    final global = terminal?.policy ?? phase.terminalPolicy;
-    return _terminalPolicyRank(global) <=
-            _terminalPolicyRank(phase.terminalPolicy)
-        ? global
-        : phase.terminalPolicy;
-  }
-
-  int _terminalPolicyRank(TerminalPolicy policy) {
-    return switch (policy) {
-      TerminalPolicy.none => 0,
-      TerminalPolicy.readonly => 1,
-      TerminalPolicy.workspaceMutating => 2,
-      TerminalPolicy.unrestrictedWorkspace => 3,
-    };
   }
 
   Future<void> _streamAssistantResponse({
@@ -1758,7 +1464,27 @@ class ChatService extends ChangeNotifier {
     }
   }
 
+  JobCancellationToken _beginJobCancellationScope({
+    bool reuseExisting = false,
+  }) {
+    if (reuseExisting) {
+      final existing = _jobCancellationToken;
+      if (existing != null) return existing;
+    }
+    final token = JobCancellationToken();
+    _jobCancellationToken = token;
+    jobCancellationRequested = false;
+    return token;
+  }
+
+  void _endJobCancellationScope(JobCancellationToken token) {
+    if (!identical(_jobCancellationToken, token)) return;
+    _jobCancellationToken = null;
+    jobCancellationRequested = false;
+  }
+
   void _beginJobModelOutput(String title) {
+    _finishJobModelOutputBubble(clearCurrent: true);
     jobModelOutputTitle = title;
     jobModelOutputText = '';
     jobModelOutputReasoning = '';
@@ -1766,9 +1492,11 @@ class ChatService extends ChangeNotifier {
     _jobModelOutputLabel = null;
     _jobModelOutputTextSection = null;
     _jobModelOutputReasoningLabel = null;
+    _jobModelOutputMessageId = null;
   }
 
   void _clearJobModelOutput({bool notify = true}) {
+    _finishJobModelOutputBubble(clearCurrent: true);
     jobModelOutputTitle = null;
     jobModelOutputText = '';
     jobModelOutputReasoning = '';
@@ -1776,6 +1504,7 @@ class ChatService extends ChangeNotifier {
     _jobModelOutputLabel = null;
     _jobModelOutputTextSection = null;
     _jobModelOutputReasoningLabel = null;
+    _jobModelOutputMessageId = null;
     if (notify && !_disposed) notifyListeners();
   }
 
@@ -1786,29 +1515,116 @@ class ChatService extends ChangeNotifier {
 
     switch (event.type) {
       case JobModelOutputEventType.start:
+        _startJobModelOutputBubble();
         _jobModelOutputLabel = event.label;
         _jobModelOutputTextSection = null;
         _appendJobModelText('\n\n## ${event.label}\n');
       case JobModelOutputEventType.content:
         _ensureJobModelTextSection(event.label, 'output');
         _appendJobModelText(event.text);
+        _appendJobModelToken(event);
       case JobModelOutputEventType.reasoning:
         _ensureJobModelReasoningSection(event.label);
         jobModelOutputReasoning += event.text;
+        _appendJobModelToken(event);
       case JobModelOutputEventType.toolCall:
         _ensureJobModelTextSection(event.label, 'tool-call');
         _appendJobModelText('\nTool call:\n${event.text}\n');
+        _appendJobModelToken(event);
       case JobModelOutputEventType.toolResult:
         _ensureJobModelTextSection(event.label, 'tool-result');
         _appendJobModelText('\nTool result:\n${event.text}\n');
+        _appendJobToolResult(event);
       case JobModelOutputEventType.done:
         _jobModelOutputTextSection = null;
+        _normaliseJobModelOutputBubble();
       case JobModelOutputEventType.error:
         _ensureJobModelTextSection(event.label, 'error');
         _appendJobModelText('\nError: ${event.text}\n');
+        messageStore.appendCurrentError(event.text);
     }
 
     if (!_disposed) notifyListeners();
+  }
+
+  void _startJobModelOutputBubble() {
+    _finishJobModelOutputBubble(clearCurrent: true);
+    final bubble = Bubble(
+      id: uuid.v7(),
+      role: MessageRole.assistant,
+      text: '',
+      reasoning: '',
+    );
+    messageStore.upsert(bubble);
+    messageStore.setCurrentId(bubble.id);
+    _jobModelOutputMessageId = bubble.id;
+  }
+
+  void _appendJobModelToken(JobModelOutputEvent event) {
+    final token = event.token;
+    if (token == null) return;
+    if (!_jobModelOutputCurrentBubbleIsActive()) {
+      _startJobModelOutputBubble();
+    }
+    messageStore.appendToken(switch (event.type) {
+      JobModelOutputEventType.content => ChatToken(content: token.content),
+      JobModelOutputEventType.reasoning => ChatToken(
+        reasoning: token.reasoning,
+      ),
+      JobModelOutputEventType.toolCall => ChatToken(tool: token.tool),
+      _ => token,
+    });
+  }
+
+  void _appendJobToolResult(JobModelOutputEvent event) {
+    if (!_jobModelOutputCurrentBubbleIsActive()) return;
+    final current = messageStore.currentMessage;
+    final index = event.toolIndex;
+    if (current == null || index == null) return;
+    final updated = Map<int, BubbleToolCall>.from(current.tools);
+    final existing = updated[index] ?? const BubbleToolCall();
+    updated[index] = existing.copyWith(result: event.text);
+    messageStore.upsert(current.copyWith(tools: updated));
+  }
+
+  bool _jobModelOutputCurrentBubbleIsActive() {
+    final id = _jobModelOutputMessageId;
+    final current = messageStore.currentMessage;
+    return id != null && current != null && current.id == id;
+  }
+
+  void _normaliseJobModelOutputBubble() {
+    final id = _jobModelOutputMessageId;
+    if (id == null) return;
+    final index = messageStore.messages.indexWhere(
+      (message) => message.id == id,
+    );
+    if (index < 0) return;
+    final message = messageStore.messages[index];
+    if (message.role == MessageRole.assistant) {
+      messageStore.upsert(ContentNormaliser.normalise(message));
+    }
+  }
+
+  void _finishJobModelOutputBubble({required bool clearCurrent}) {
+    final id = _jobModelOutputMessageId;
+    if (id == null) return;
+    _normaliseJobModelOutputBubble();
+    final index = messageStore.messages.indexWhere(
+      (message) => message.id == id,
+    );
+    if (index >= 0) {
+      final message = messageStore.messages[index];
+      if (message.text.trim().isEmpty &&
+          message.reasoning.trim().isEmpty &&
+          message.tools.isEmpty) {
+        messageStore.removeById(id);
+      }
+    }
+    if (clearCurrent && messageStore.currentMessage?.id == id) {
+      messageStore.clearCurrentId();
+    }
+    _jobModelOutputMessageId = null;
   }
 
   void _ensureJobModelTextSection(String label, String section) {
@@ -1843,6 +1659,7 @@ class ChatService extends ChangeNotifier {
   }
 
   void _finishJobModelOutput() {
+    _finishJobModelOutputBubble(clearCurrent: true);
     jobModelOutputActive = false;
   }
 
@@ -1937,7 +1754,7 @@ class ChatService extends ChangeNotifier {
     final currentWorkspace = workspace;
     if (currentWorkspace == null || currentWorkspace.missing) return;
 
-    final activeJobId = activeJob?.spec.id;
+    final activeJobId = activeJob?.id;
     final jobs = await _jobService.listJobs(
       currentWorkspace,
       chatSessionId: previousScopeId,
@@ -1954,7 +1771,7 @@ class ChatService extends ChangeNotifier {
         snapshot: snapshot,
         chatSessionId: savedChatId,
       );
-      if (updated.spec.id == activeJobId) {
+      if (updated.id == activeJobId) {
         activeJob = updated;
       }
     }
@@ -2062,15 +1879,8 @@ Workspace rules:
         .trim();
   }
 
-  String _buildJobSystemPrompt(JobSnapshot snapshot, {JobPhase? phase}) {
-    return _buildSystemPrompt(
-      currentUserRequest: snapshot.taskBrief.originalPrompt,
-      additionalModuleIds: _jobPromptModuleIds(snapshot, phase: phase),
-    );
-  }
-
-  List<String> _jobPromptModuleIds(JobSnapshot snapshot, {JobPhase? phase}) {
-    return {...snapshot.spec.promptModules, ...?phase?.promptModules}.toList();
+  String _buildJobSystemPrompt(JobSnapshot snapshot) {
+    return _buildSystemPrompt(currentUserRequest: snapshot.originalPrompt);
   }
 
   List<Bubble> _withCurrentSystemPrompt(
@@ -2179,12 +1989,12 @@ Workspace rules:
     notifyListeners();
   }
 
-  String _taskBriefMessage(TaskBrief brief) {
+  String _taskBriefMessage(RefinedJobBrief brief) {
     final buffer = StringBuffer()
       ..writeln('Task brief refined: **${brief.title}**')
       ..writeln()
-      ..writeln('Objective:')
-      ..writeln(brief.objective)
+      ..writeln('Goal:')
+      ..writeln(brief.goal)
       ..writeln()
       ..writeln('Success criteria:');
     for (final item in brief.successCriteria) {
@@ -2206,97 +2016,54 @@ Workspace rules:
         buffer.writeln('- $item');
       }
     }
-    if (brief.clarifyingQuestions.isNotEmpty) {
+    if (brief.questions.isNotEmpty) {
       buffer
         ..writeln()
-        ..writeln('Clarifying questions:');
-      for (final question in brief.clarifyingQuestions.take(3)) {
-        final required = question.required ? 'required' : 'optional';
-        buffer.writeln('- [$required] ${question.question}');
+        ..writeln('Questions:');
+      for (final question in brief.questions.take(3)) {
+        buffer.writeln('- $question');
       }
     }
-    if (brief.requiredOutputs.isNotEmpty) {
-      buffer
-        ..writeln()
-        ..writeln('Required outputs:');
-      for (final output in brief.requiredOutputs) {
-        buffer.writeln('- `${output.path}`');
-      }
-    }
-    buffer
-      ..writeln()
-      ..writeln('Recommended mode: `${brief.recommendedMode.wire}`')
-      ..writeln('Recommended autonomy: `${brief.recommendedAutonomy.wire}`')
-      ..writeln('Risk level: `${brief.riskLevel.wire}`');
     return buffer.toString().trim();
   }
 
   String _jobCreatedMessage(JobSnapshot snapshot) {
-    final spec = snapshot.spec;
-    if (spec.status == JobStatus.draft) {
-      final requiredQuestions = snapshot.state.openQuestions
-          .where(
-            (question) =>
-                question.required && question.status == OpenQuestionStatus.open,
-          )
-          .length;
-      final buffer = StringBuffer()
-        ..writeln('Task brief created: **${spec.title}**')
-        ..writeln()
-        ..writeln('Status: `${snapshot.state.status.wire}`')
-        ..writeln('Planning is paused at the clarification gate.');
-      if (requiredQuestions > 0) {
-        buffer.writeln(
-          'Answer $requiredQuestions required question${requiredQuestions == 1 ? '' : 's'} before generating the job plan.',
-        );
-      }
-      buffer
-        ..writeln()
-        ..writeln('Artifacts are stored under `.agent/jobs/${spec.id}/`.');
-      return buffer.toString().trim();
-    }
-
     final buffer = StringBuffer()
-      ..writeln('Job created: **${spec.title}**')
+      ..writeln('Job created: **${snapshot.title}**')
       ..writeln()
-      ..writeln('Status: `${spec.status.wire}`')
-      ..writeln('Autonomy: `${spec.autonomy.wire}`')
+      ..writeln('Status: `${snapshot.status.wire}`')
       ..writeln()
-      ..writeln('Phases:');
-    for (var i = 0; i < spec.phases.length; i++) {
-      final phase = spec.phases[i];
-      buffer.writeln('${i + 1}. ${phase.title}');
+      ..writeln('Steps:');
+    for (var i = 0; i < snapshot.steps.length; i++) {
+      final step = snapshot.steps[i];
+      buffer.writeln('${i + 1}. ${step.title}');
     }
     buffer
       ..writeln()
-      ..writeln('Artifacts are stored under `.agent/jobs/${spec.id}/`.');
+      ..writeln('Job state is stored under `.agent/jobs/${snapshot.id}/`.');
     return buffer.toString().trim();
   }
 
-  String _phaseFinishedMessage(JobSnapshot snapshot) {
-    final latestRun = snapshot.state.phaseRuns.isEmpty
-        ? null
-        : snapshot.state.phaseRuns.last;
-    final review = latestRun?.reviewResult;
+  String _stepFinishedMessage(JobSnapshot snapshot) {
+    final latestRun = snapshot.runs.isEmpty ? null : snapshot.runs.last;
     final buffer = StringBuffer()
-      ..writeln('Job phase finished: **${latestRun?.phaseId ?? 'phase'}**')
+      ..writeln('Job step finished: **${latestRun?.stepId ?? 'step'}**')
       ..writeln()
-      ..writeln('Job status: `${snapshot.state.status.wire}`');
-    if (review != null) {
-      buffer
-        ..writeln('Review: `${review.status.wire}`')
-        ..writeln()
-        ..writeln(review.summary);
-    } else if (latestRun != null) {
+      ..writeln('Job status: `${snapshot.status.wire}`');
+    if (latestRun != null) {
       buffer
         ..writeln()
         ..writeln(latestRun.summary);
     }
-    if (snapshot.state.artifacts.isNotEmpty) {
+    final artifacts = [
+      for (final step in snapshot.steps) ...step.artifacts,
+      if (latestRun != null) ...latestRun.artifacts,
+    ];
+    if (artifacts.isNotEmpty) {
       buffer
         ..writeln()
         ..writeln('Artifacts:');
-      for (final artifact in snapshot.state.artifacts.take(8)) {
+      for (final artifact in artifacts.take(8)) {
         buffer.writeln('- `${artifact.path}`');
       }
     }
