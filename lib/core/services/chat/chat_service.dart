@@ -85,6 +85,7 @@ class ChatService extends ChangeNotifier {
   String? _jobModelOutputTextSection;
   String? _jobModelOutputReasoningLabel;
   String? _jobModelOutputMessageId;
+  int? _jobModelOutputContextEstimate;
   JobCancellationToken? _jobCancellationToken;
 
   ChatService({
@@ -155,6 +156,10 @@ class ChatService extends ChangeNotifier {
       serverManager.current == null
       ? null
       : serverManager.diagnostics.modelSnapshot;
+
+  int? get _diagnosticsContextLimit =>
+      currentModelSnapshot?.nCtx ??
+      serverManager.diagnostics.modelSnapshot?.nCtx;
 
   Future<void> newChat({SystemPromptSnapshot? systemPromptSnapshot}) async {
     await flushCurrentChat();
@@ -1493,6 +1498,7 @@ class ChatService extends ChangeNotifier {
     _jobModelOutputTextSection = null;
     _jobModelOutputReasoningLabel = null;
     _jobModelOutputMessageId = null;
+    _jobModelOutputContextEstimate = null;
   }
 
   void _clearJobModelOutput({bool notify = true}) {
@@ -1505,6 +1511,7 @@ class ChatService extends ChangeNotifier {
     _jobModelOutputTextSection = null;
     _jobModelOutputReasoningLabel = null;
     _jobModelOutputMessageId = null;
+    _jobModelOutputContextEstimate = null;
     if (notify && !_disposed) notifyListeners();
   }
 
@@ -1515,6 +1522,11 @@ class ChatService extends ChangeNotifier {
 
     switch (event.type) {
       case JobModelOutputEventType.start:
+        _jobModelOutputContextEstimate = event.estimatedContextTokens;
+        serverManager.diagnostics.recordStreamStarted(
+          estimatedContextTokens: event.estimatedContextTokens,
+          contextLimitTokens: _diagnosticsContextLimit,
+        );
         _startJobModelOutputBubble();
         _jobModelOutputLabel = event.label;
         _jobModelOutputTextSection = null;
@@ -1522,25 +1534,30 @@ class ChatService extends ChangeNotifier {
       case JobModelOutputEventType.content:
         _ensureJobModelTextSection(event.label, 'output');
         _appendJobModelText(event.text);
+        serverManager.diagnostics.recordStreamOutput(event.text);
         _appendJobModelToken(event);
       case JobModelOutputEventType.reasoning:
         _ensureJobModelReasoningSection(event.label);
         jobModelOutputReasoning += event.text;
+        serverManager.diagnostics.recordStreamOutput(event.text);
         _appendJobModelToken(event);
       case JobModelOutputEventType.toolCall:
         _ensureJobModelTextSection(event.label, 'tool-call');
         _appendJobModelText('\nTool call:\n${event.text}\n');
+        serverManager.diagnostics.recordStreamOutput(event.text);
         _appendJobModelToken(event);
       case JobModelOutputEventType.toolResult:
         _ensureJobModelTextSection(event.label, 'tool-result');
         _appendJobModelText('\nTool result:\n${event.text}\n');
         _appendJobToolResult(event);
       case JobModelOutputEventType.done:
+        serverManager.diagnostics.recordStreamEnded();
         _jobModelOutputTextSection = null;
         _normaliseJobModelOutputBubble();
       case JobModelOutputEventType.error:
         _ensureJobModelTextSection(event.label, 'error');
         _appendJobModelText('\nError: ${event.text}\n');
+        serverManager.diagnostics.recordStreamError(event.text);
         messageStore.appendCurrentError(event.text);
     }
 
@@ -1661,6 +1678,8 @@ class ChatService extends ChangeNotifier {
   void _finishJobModelOutput() {
     _finishJobModelOutputBubble(clearCurrent: true);
     jobModelOutputActive = false;
+    _jobModelOutputContextEstimate = null;
+    _updateContextEstimate();
   }
 
   void _insertJobAssistantMessage(String text) {
@@ -1676,6 +1695,14 @@ class ChatService extends ChangeNotifier {
   }
 
   void _updateContextEstimate() {
+    if (jobModelOutputActive && _jobModelOutputContextEstimate != null) {
+      serverManager.diagnostics.updateContextEstimate(
+        _jobModelOutputContextEstimate,
+        contextLimitTokens: _diagnosticsContextLimit,
+      );
+      return;
+    }
+
     final snapshot = currentModelSnapshot;
     if (snapshot == null || messageStore.messages.isEmpty) {
       serverManager.diagnostics.updateContextEstimate(null);

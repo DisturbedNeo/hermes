@@ -18,6 +18,7 @@ class JobModelOutputEvent {
   final String text;
   final ChatToken? token;
   final int? toolIndex;
+  final int? estimatedContextTokens;
 
   const JobModelOutputEvent({
     required this.type,
@@ -25,5 +26,6 @@ class JobModelOutputEvent {
     this.text = '',
     this.token,
     this.toolIndex,
+    this.estimatedContextTokens,
   });
 }

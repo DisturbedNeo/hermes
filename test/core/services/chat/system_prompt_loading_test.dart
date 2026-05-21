@@ -4,9 +4,11 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/enums/message_role.dart';
+import 'package:hermes/core/helpers/chat/context_estimator.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/models/job.dart';
+import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
@@ -296,6 +298,31 @@ void main() {
         expect(chat.activeJob?.runs.single.summary, 'Calculated result.');
       },
     );
+
+    test('uses the active job phase payload for diagnostics context', () async {
+      final client = _StuckJobClient(_planJson(title: 'Diagnostic task'));
+      serverManager.chatClient = client;
+      chat.setCurrentModelSnapshot(
+        ModelConfigurationSnapshot.fromJson({
+          'modelName': 'test',
+          'nCtx': 4096,
+        }),
+      );
+      await chat.attachWorkspace(tempDir.path);
+
+      final sendFuture = chat.send('/job Build the reporting screen');
+      await client.stepStarted.future.timeout(const Duration(seconds: 2));
+
+      expect(client.requestEstimates, hasLength(2));
+      expect(
+        serverManager.diagnostics.estimatedContextTokens,
+        client.requestEstimates.last,
+      );
+      expect(serverManager.diagnostics.isStreaming, isTrue);
+
+      await chat.cancelJobRun();
+      await sendFuture.timeout(const Duration(seconds: 2));
+    });
 
     test('cancels a stuck job run and keeps the transcript and job', () async {
       final client = _StuckJobClient(_planJson(title: 'Cancellable task'));
@@ -604,6 +631,7 @@ class _StuckJobClient extends ChatClient {
   final Map<String, dynamic> _plan;
   final Completer<void> stepStarted = Completer<void>();
   final Completer<void> stepCancelled = Completer<void>();
+  final List<int> requestEstimates = [];
   var _streamCalls = 0;
 
   @override
@@ -614,6 +642,12 @@ class _StuckJobClient extends ChatClient {
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
   }) {
+    requestEstimates.add(
+      ContextEstimator.estimateChatCompletionRequest(
+        messages: messages,
+        extraParams: extraParams ?? const {},
+      ),
+    );
     _streamCalls++;
     final controller = StreamController<ChatToken>(sync: true);
 

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:hermes/core/helpers/chat/context_estimator.dart';
 import 'package:hermes/core/helpers/chat/tool_caller.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/chat_message.dart';
@@ -1530,9 +1531,18 @@ When finished, return only JSON:
     JobCancellationToken? cancellationToken,
   }) async {
     cancellationToken?.throwIfCancelled();
+    final estimatedContextTokens =
+        ContextEstimator.estimateChatCompletionRequest(
+          messages: messages,
+          extraParams: extraParams ?? const {},
+        );
     _emitJobModelOutput(
       onModelOutput,
-      JobModelOutputEvent(type: JobModelOutputEventType.start, label: label),
+      JobModelOutputEvent(
+        type: JobModelOutputEventType.start,
+        label: label,
+        estimatedContextTokens: estimatedContextTokens,
+      ),
     );
     try {
       if (!client.supportsStreamingCancellation) {

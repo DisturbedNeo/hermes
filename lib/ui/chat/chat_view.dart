@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:hermes/core/enums/message_role.dart';
+import 'package:hermes/core/enums/stream_state.dart';
+import 'package:hermes/core/helpers/scroll.dart';
 import 'package:hermes/core/helpers/style.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/llama_server_handle.dart';
@@ -29,13 +33,56 @@ class ChatView extends StatefulWidget {
 }
 
 class _ChatViewState extends State<ChatView> {
-  final _scroll = ScrollController();
+  final _scroll = SmartScrollController();
   bool _jobPanelExpanded = false;
+  bool _autoScrollEnabled = true;
+  Timer? _scrollDebounceTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.chat.messageStore.addListener(_onMessagesChanged);
+    widget.chat.chatStream.addListener(_onStreamStateChanged);
+  }
 
   @override
   void dispose() {
+    widget.chat.messageStore.removeListener(_onMessagesChanged);
+    widget.chat.chatStream.removeListener(_onStreamStateChanged);
     _scroll.dispose();
+    _scrollDebounceTimer?.cancel();
     super.dispose();
+  }
+
+  void _onMessagesChanged() {
+    // Debounce rapid message updates (e.g., streaming text chunks) to avoid
+    // excessive scroll animations during active generation.
+    _scrollDebounceTimer?.cancel();
+    if (_autoScrollEnabled && mounted) {
+      _scrollDebounceTimer = Timer(const Duration(milliseconds: 100), () {
+        if (mounted && _autoScrollEnabled) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _scroll.scrollToBottom(duration: const Duration(milliseconds: 150));
+          });
+        }
+      });
+    }
+  }
+
+  void _onStreamStateChanged() {
+    // When streaming ends, ensure auto-scroll is enabled and scroll to bottom
+    if (widget.chat.chatStream.state == StreamState.idle) {
+      setState(() => _autoScrollEnabled = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scroll.scrollToBottom();
+      });
+    }
+  }
+
+  void _handleScrollToBottom() {
+    setState(() => _autoScrollEnabled = true);
+    _scroll.enableAutoScroll();
+    _scroll.scrollToBottom();
   }
 
   @override
@@ -70,6 +117,8 @@ class _ChatViewState extends State<ChatView> {
                 scroll: _scroll,
                 displayItems: displayItems,
                 chat: chat,
+                autoScrollEnabled: _autoScrollEnabled,
+                onScrollToBottom: _handleScrollToBottom,
               ),
             ),
             const Divider(height: 1),
@@ -118,28 +167,88 @@ class _ChatViewState extends State<ChatView> {
   }
 }
 
-class _MessageList extends StatelessWidget {
-  final ScrollController scroll;
+class _MessageList extends StatefulWidget {
+  final SmartScrollController scroll;
   final List<_DisplayItem> displayItems;
   final ChatService chat;
+  final bool autoScrollEnabled;
+  final VoidCallback onScrollToBottom;
 
   const _MessageList({
     required this.scroll,
     required this.displayItems,
     required this.chat,
+    required this.autoScrollEnabled,
+    required this.onScrollToBottom,
   });
+
+  @override
+  State<_MessageList> createState() => _MessageListState();
+}
+
+class _MessageListState extends State<_MessageList> {
+  bool _showScrollButton = false;
+
+  void _attachListener() {
+    final position = widget.scroll.positions.firstOrNull;
+    if (position != null) {
+      position.isScrollingNotifier.addListener(_onScrollingChanged);
+    }
+  }
+
+  void _detachListener() {
+    final position = widget.scroll.positions.firstOrNull;
+    if (position != null) {
+      position.isScrollingNotifier.removeListener(_onScrollingChanged);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Defer listener attachment until after the first build when the controller
+    // is attached to its scroll position.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _attachListener());
+  }
+
+  @override
+  void didUpdateWidget(_MessageList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.scroll != oldWidget.scroll) {
+      _detachListener();
+      _attachListener();
+    }
+  }
+
+  @override
+  void dispose() {
+    _detachListener();
+    super.dispose();
+  }
+
+  void _onScrollingChanged() {
+    final position = widget.scroll.positions.firstOrNull;
+    if (position == null) return;
+    if (!position.isScrollingNotifier.value) {
+      final atBottom = position.pixels >= position.maxScrollExtent - 50;
+      // Only show button when auto-scroll is enabled and user scrolled away
+      setState(() {
+        _showScrollButton = !atBottom && widget.autoScrollEnabled;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
         ListView.builder(
-          controller: scroll,
+          controller: widget.scroll,
           reverse: true,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-          itemCount: displayItems.length,
+          itemCount: widget.displayItems.length,
           itemBuilder: (_, i) {
-            final item = displayItems[displayItems.length - 1 - i];
+            final item = widget.displayItems[widget.displayItems.length - 1 - i];
             final b = item.message;
             final isUser = item is _SummaryDisplayItem
                 ? false
@@ -160,21 +269,57 @@ class _MessageList extends StatelessWidget {
                         key: ValueKey('bubble_${b.id}'),
                         b: b,
                         onSave: (newReasoning, newText) {
-                          chat.messageStore.upsert(
+                          widget.chat.messageStore.upsert(
                             b.copyWith(reasoning: newReasoning, text: newText),
                           );
                         },
-                        editable: !chat.chatStream.isStreaming,
+                        editable: !widget.chat.chatStream.isStreaming,
                       ),
                 actions: MessageActions(
                   key: ValueKey('actions_${b.id}'),
                   message: b,
-                  chat: chat,
+                  chat: widget.chat,
                 ),
               ),
             );
           },
         ),
+        // Floating scroll-to-bottom button that appears when user scrolls away
+        if (_showScrollButton)
+          Positioned(
+            bottom: 16,
+            right: 16,
+            child: Material(
+              elevation: 4,
+              color: Theme.of(context).colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(20),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: widget.onScrollToBottom,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.expand_more,
+                        size: 20,
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Scroll to bottom',
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onPrimaryContainer,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
