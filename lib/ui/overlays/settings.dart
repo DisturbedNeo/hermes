@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hermes/core/enums/diagnostics_visibility.dart';
+import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/core/models/job_system_settings.dart';
 import 'package:hermes/core/services/preferences_service.dart';
@@ -110,24 +111,28 @@ class _SettingsState extends State<Settings> {
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
-            DropdownButtonFormField<DiagnosticsVisibility>(
-              initialValue: _diagnosticsVisibility,
-              decoration: const InputDecoration(
-                labelText: 'Session diagnostics',
-                prefixIcon: Icon(Icons.monitor_heart_outlined),
-                border: OutlineInputBorder(),
+            AccessibleWidget(
+              label: 'Session diagnostics',
+
+              child: DropdownButtonFormField<DiagnosticsVisibility>(
+                initialValue: _diagnosticsVisibility,
+                decoration: const InputDecoration(
+                  labelText: 'Session diagnostics',
+                  prefixIcon: Icon(Icons.monitor_heart_outlined),
+                  border: OutlineInputBorder(),
+                ),
+                items: DiagnosticsVisibility.values.map((visibility) {
+                  return DropdownMenuItem(
+                    value: visibility,
+                    child: Text(visibility.label),
+                  );
+                }).toList(),
+                onChanged: (visibility) async {
+                  if (visibility == null) return;
+                  setState(() => _diagnosticsVisibility = visibility);
+                  await preferencesService.setDiagnosticsVisibility(visibility);
+                },
               ),
-              items: DiagnosticsVisibility.values.map((visibility) {
-                return DropdownMenuItem(
-                  value: visibility,
-                  child: Text(visibility.label),
-                );
-              }).toList(),
-              onChanged: (visibility) async {
-                if (visibility == null) return;
-                setState(() => _diagnosticsVisibility = visibility);
-                await preferencesService.setDiagnosticsVisibility(visibility);
-              },
             ),
             const SizedBox(height: 16),
 
@@ -199,7 +204,7 @@ class _SettingsState extends State<Settings> {
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Approve mutating job steps'),
+              title: const Text('Require approval before file edits'),
               value: _jobSystemSettings.requireApprovalBeforeFileEdits,
               onChanged: _jobSystemSettings.enabled
                   ? (enabled) => _setJobSystemSettings(
@@ -223,22 +228,26 @@ class _SettingsState extends State<Settings> {
             ),
             const SizedBox(height: 16),
 
-            FilledButton(
-              onPressed: () async {
-                final llamaCppDir = _llamaCppDirCtrl.text.trim();
-                final modelsDir = _modelsDirCtrl.text.trim();
+            AccessibleWidget(
+              label: 'Save settings',
+              isButton: true,
+              child: FilledButton(
+                onPressed: () async {
+                  final llamaCppDir = _llamaCppDirCtrl.text.trim();
+                  final modelsDir = _modelsDirCtrl.text.trim();
 
-                await preferencesService.setLlamaCppDirectory(llamaCppDir);
-                await preferencesService.setModelsDirectory(modelsDir);
+                  await preferencesService.setLlamaCppDirectory(llamaCppDir);
+                  await preferencesService.setModelsDirectory(modelsDir);
 
-                if (context.mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('Saved')));
-                  setState(() {});
-                }
-              },
-              child: const Text('Save'),
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(const SnackBar(content: Text('Saved')));
+                    setState(() {});
+                  }
+                },
+                child: const Text('Save'),
+              ),
             ),
           ],
         ),

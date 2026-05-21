@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/core/models/job.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 
@@ -95,7 +96,10 @@ class _CollapsedJobPanel extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               else if (job != null)
-                _StatusChip(label: job!.status.wire),
+                AccessibleWidget(
+                  label: 'Job status: ${job!.status.wire}',
+                  child: _StatusChip(label: job!.status.wire),
+                ),
               IconButton(
                 tooltip: 'Open job panel',
                 icon: const Icon(Icons.expand_less),
@@ -147,15 +151,26 @@ class _Header extends StatelessWidget {
             ),
             const SizedBox(width: 8),
           ],
-          IconButton(
-            tooltip: 'Reload jobs',
-            icon: const Icon(Icons.refresh),
-            onPressed: chat.jobBusy ? null : () => unawaited(chat.reloadJobs()),
+          AccessibleWidget(
+            label: 'Reload jobs',
+            isButton: true,
+            enabled: !chat.jobBusy,
+            child: IconButton(
+              tooltip: 'Reload jobs',
+              icon: const Icon(Icons.refresh),
+              onPressed: chat.jobBusy
+                  ? null
+                  : () => unawaited(chat.reloadJobs()),
+            ),
           ),
-          IconButton(
-            tooltip: 'Collapse job panel',
-            icon: const Icon(Icons.expand_more),
-            onPressed: onToggleExpanded,
+          AccessibleWidget(
+            label: 'Collapse job panel',
+            isButton: true,
+            child: IconButton(
+              tooltip: 'Collapse job panel',
+              icon: const Icon(Icons.expand_more),
+              onPressed: onToggleExpanded,
+            ),
           ),
         ],
       ),
@@ -189,9 +204,18 @@ class _JobBody extends StatelessWidget {
           runSpacing: 8,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            _StatusChip(label: job.status.wire),
-            _StatusChip(label: '$completed/${job.steps.length} steps'),
-            _StatusChip(label: '.agent/jobs/${job.id}'),
+            AccessibleWidget(
+              label: 'Job status: ${job.status.wire}',
+              child: _StatusChip(label: job.status.wire),
+            ),
+            AccessibleWidget(
+              label: '$completed of ${job.steps.length} steps completed',
+              child: _StatusChip(label: '$completed/${job.steps.length} steps'),
+            ),
+            AccessibleWidget(
+              label: 'Job ID: .agent/jobs/${job.id}',
+              child: _StatusChip(label: '.agent/jobs/${job.id}'),
+            ),
           ],
         ),
         if (chat.jobStatusMessage != null) ...[
@@ -263,65 +287,111 @@ class _Actions extends StatelessWidget {
       runSpacing: 8,
       children: [
         if (chat.jobBusy)
-          FilledButton.tonalIcon(
-            icon: const Icon(Icons.stop),
-            label: Text(
-              chat.jobCancellationRequested ? 'Cancelling...' : 'Cancel Run',
+          AccessibleWidget(
+            label: chat.jobCancellationRequested
+                ? 'Cancelling job...'
+                : 'Cancel job run',
+            isButton: true,
+            enabled: !chat.jobCancellationRequested,
+            child: FilledButton.tonalIcon(
+              icon: const Icon(Icons.stop),
+              label: Text(
+                chat.jobCancellationRequested ? 'Cancelling...' : 'Cancel Run',
+              ),
+              onPressed: chat.jobCancellationRequested
+                  ? null
+                  : () => unawaited(chat.cancelJobRun()),
             ),
-            onPressed: chat.jobCancellationRequested
-                ? null
-                : () => unawaited(chat.cancelJobRun()),
           ),
-        FilledButton.icon(
-          icon: const Icon(Icons.play_arrow),
-          label: const Text('Run Next'),
-          onPressed: canRun ? () => unawaited(chat.runNextJobPhase()) : null,
+        AccessibleWidget(
+          label: 'Run next step',
+          isButton: true,
+          enabled: canRun,
+          child: FilledButton.icon(
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Run Next'),
+            onPressed: canRun ? () => unawaited(chat.runNextJobPhase()) : null,
+          ),
         ),
-        FilledButton.tonalIcon(
-          icon: const Icon(Icons.fast_forward),
-          label: const Text('Run Job'),
-          onPressed: canRun ? () => unawaited(chat.runJob()) : null,
+        AccessibleWidget(
+          label: 'Run entire job',
+          isButton: true,
+          enabled: canRun,
+          child: FilledButton.tonalIcon(
+            icon: const Icon(Icons.fast_forward),
+            label: const Text('Run Job'),
+            onPressed: canRun ? () => unawaited(chat.runJob()) : null,
+          ),
         ),
-        OutlinedButton.icon(
-          icon: const Icon(Icons.check_circle_outline),
-          label: const Text('Approve Phase'),
-          onPressed: !chat.jobBusy && job.pendingApproval != null
-              ? () => unawaited(chat.approveJobStep())
-              : null,
+        AccessibleWidget(
+          label: 'Approve current phase',
+          isButton: true,
+          enabled: !chat.jobBusy && job.pendingApproval != null,
+          child: OutlinedButton.icon(
+            icon: const Icon(Icons.check_circle_outline),
+            label: const Text('Approve Phase'),
+            onPressed: !chat.jobBusy && job.pendingApproval != null
+                ? () => unawaited(chat.approveJobStep())
+                : null,
+          ),
         ),
-        OutlinedButton.icon(
-          icon: const Icon(Icons.edit_note),
-          label: const Text('Edit Plan'),
-          onPressed: chat.jobBusy
-              ? null
-              : () => unawaited(_editPlan(context, chat)),
+        AccessibleWidget(
+          label: 'Edit job plan',
+          isButton: true,
+          enabled: !chat.jobBusy,
+          child: OutlinedButton.icon(
+            icon: const Icon(Icons.edit_note),
+            label: const Text('Edit Plan'),
+            onPressed: chat.jobBusy
+                ? null
+                : () => unawaited(_editPlan(context, chat)),
+          ),
         ),
-        OutlinedButton.icon(
-          icon: const Icon(Icons.route_outlined),
-          label: const Text('Replan Unfinished'),
-          onPressed: chat.jobBusy
-              ? null
-              : () => unawaited(chat.replanRemainingJob()),
+        AccessibleWidget(
+          label: 'Replan unfinished steps',
+          isButton: true,
+          enabled: !chat.jobBusy,
+          child: OutlinedButton.icon(
+            icon: const Icon(Icons.route_outlined),
+            label: const Text('Replan Unfinished'),
+            onPressed: chat.jobBusy
+                ? null
+                : () => unawaited(chat.replanRemainingJob()),
+          ),
         ),
         if (canRetry)
-          TextButton.icon(
-            icon: const Icon(Icons.replay),
-            label: const Text('Retry Step'),
-            onPressed: () => unawaited(chat.retryJobPhase()),
+          AccessibleWidget(
+            label: 'Retry failed step',
+            isButton: true,
+            child: TextButton.icon(
+              icon: const Icon(Icons.replay),
+              label: const Text('Retry Step'),
+              onPressed: () => unawaited(chat.retryJobPhase()),
+            ),
           ),
-        TextButton.icon(
-          icon: const Icon(Icons.skip_next),
-          label: const Text('Skip Step'),
-          onPressed: !chat.jobBusy && next != null
-              ? () => unawaited(chat.skipJobPhase())
-              : null,
+        AccessibleWidget(
+          label: 'Skip current step',
+          isButton: true,
+          enabled: !chat.jobBusy && next != null,
+          child: TextButton.icon(
+            icon: const Icon(Icons.skip_next),
+            label: const Text('Skip Step'),
+            onPressed: !chat.jobBusy && next != null
+                ? () => unawaited(chat.skipJobPhase())
+                : null,
+          ),
         ),
-        TextButton.icon(
-          icon: const Icon(Icons.stop_circle_outlined),
-          label: const Text('Stop'),
-          onPressed: !chat.jobBusy && !job.isTerminal
-              ? () => unawaited(chat.stopJob())
-              : null,
+        AccessibleWidget(
+          label: 'Stop job',
+          isButton: true,
+          enabled: !chat.jobBusy && !job.isTerminal,
+          child: TextButton.icon(
+            icon: const Icon(Icons.stop_circle_outlined),
+            label: const Text('Stop'),
+            onPressed: !chat.jobBusy && !job.isTerminal
+                ? () => unawaited(chat.stopJob())
+                : null,
+          ),
         ),
       ],
     );
@@ -552,9 +622,15 @@ class _StepTile extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    _StatusChip(label: step.status.wire),
+                    AccessibleWidget(
+                      label: 'Step status: ${step.status.wire}',
+                      child: _StatusChip(label: step.status.wire),
+                    ),
                     if (step.mayEditFiles)
-                      const _StatusChip(label: 'edits files'),
+                      const AccessibleWidget(
+                        label: 'This step edits files',
+                        child: _StatusChip(label: 'edits files'),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 3),
@@ -601,15 +677,20 @@ class _ArtifactList extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (final artifact in artifacts)
-          ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.insert_drive_file_outlined),
-            title: Text(artifact.path),
-            subtitle: artifact.description == null
-                ? null
-                : Text(artifact.description!),
-            onTap: () => unawaited(_showArtifact(context, artifact.path)),
+          AccessibleWidget(
+            label:
+                'Artifact: ${artifact.path}${artifact.description != null ? '. ${artifact.description}' : ''}',
+            isButton: true,
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.insert_drive_file_outlined),
+              title: Text(artifact.path),
+              subtitle: artifact.description == null
+                  ? null
+                  : Text(artifact.description!),
+              onTap: () => unawaited(_showArtifact(context, artifact.path)),
+            ),
           ),
       ],
     );
@@ -664,12 +745,15 @@ class _RunList extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (final run in runs)
-          ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(_runIcon(run.status)),
-            title: Text('${run.stepId} - ${run.status.wire}'),
-            subtitle: Text(run.summary),
+          AccessibleWidget(
+            label: 'Job run: ${run.stepId}, status ${run.status.wire}',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(_runIcon(run.status)),
+              title: Text('${run.stepId} - ${run.status.wire}'),
+              subtitle: Text(run.summary),
+            ),
           ),
       ],
     );
@@ -684,7 +768,12 @@ class _JobList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (chat.availableJobs.isEmpty) {
-      return const Center(child: Text('No jobs in this workspace.'));
+      return Center(
+        child: AccessibleWidget(
+          label: 'No jobs in this workspace',
+          child: const Text('No jobs in this workspace.'),
+        ),
+      );
     }
     return ListView.builder(
       padding: const EdgeInsets.all(12),

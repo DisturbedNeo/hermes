@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 
 class WorkspaceBar extends StatelessWidget {
@@ -38,45 +39,66 @@ class WorkspaceBar extends StatelessWidget {
             Flexible(
               child: Tooltip(
                 message: workspace.rootPath,
-                child: Text(
-                  missing
-                      ? '${workspace.displayName} missing'
-                      : workspace.displayName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: missing
-                        ? scheme.onErrorContainer
-                        : scheme.onSecondaryContainer,
-                    fontWeight: FontWeight.w600,
+                child: AccessibleWidget(
+                  label: missing
+                      ? 'Workspace ${workspace.displayName} is missing'
+                      : 'Active workspace: ${workspace.displayName}',
+                  value: workspace.rootPath,
+                  child: Text(
+                    missing
+                        ? '${workspace.displayName} missing'
+                        : workspace.displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: missing
+                          ? scheme.onErrorContainer
+                          : scheme.onSecondaryContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
             ),
             const SizedBox(width: 8),
             if (!missing)
-              FilterChip(
-                label: const Text('Terminal'),
-                avatar: const Icon(Icons.terminal, size: 16),
+              AccessibleWidget(
+                label:
+                    'Terminal execution${workspace.commandExecutionApproved ? '' : ' not'} approved',
                 selected: workspace.commandExecutionApproved,
-                onSelected: chat.chatStream.isStreaming
-                    ? null
-                    : chat.setCommandExecutionApproved,
+
+                child: FilterChip(
+                  label: const Text('Terminal'),
+                  avatar: const Icon(Icons.terminal, size: 16),
+                  selected: workspace.commandExecutionApproved,
+                  onSelected: chat.chatStream.isStreaming
+                      ? null
+                      : chat.setCommandExecutionApproved,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            AccessibleWidget(
+              label: 'Change workspace',
+              isButton: true,
+              child: IconButton(
+                tooltip: 'Change Workspace',
+                icon: const Icon(Icons.swap_horiz),
+                onPressed: onOpenWorkspace,
                 visualDensity: VisualDensity.compact,
               ),
-            IconButton(
-              tooltip: 'Change Workspace',
-              icon: const Icon(Icons.swap_horiz),
-              onPressed: onOpenWorkspace,
-              visualDensity: VisualDensity.compact,
             ),
-            IconButton(
-              tooltip: 'Detach workspace',
-              icon: const Icon(Icons.close),
-              onPressed: chat.chatStream.isStreaming
-                  ? null
-                  : chat.detachWorkspace,
-              visualDensity: VisualDensity.compact,
+            AccessibleWidget(
+              label: 'Detach workspace',
+              isButton: true,
+              enabled: !chat.chatStream.isStreaming,
+              child: IconButton(
+                tooltip: 'Detach workspace',
+                icon: const Icon(Icons.close),
+                onPressed: chat.chatStream.isStreaming
+                    ? null
+                    : chat.detachWorkspace,
+                visualDensity: VisualDensity.compact,
+              ),
             ),
           ],
         ),

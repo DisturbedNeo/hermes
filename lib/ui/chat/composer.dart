@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/enums/stream_state.dart';
+import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/core/models/job.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
@@ -95,6 +96,19 @@ class _ComposerState extends State<Composer> {
 
   String _labelForRole(MessageRole role) =>
       "${role.wire[0].toUpperCase()}${role.wire.substring(1).toLowerCase()}";
+
+  /// Builds an accessibility label for the role dropdown.
+  String _buildRoleSemanticLabel(MessageRole role) {
+    final label = _labelForRole(role);
+    return 'Message role: $label';
+  }
+
+  /// Builds an accessibility label for the tool selector button.
+  String _buildToolButtonSemanticLabel(int toolCount, bool isEnabled) {
+    if (!isEnabled) return 'Select tools, disabled';
+    if (toolCount == 0) return 'Select tools';
+    return 'Tools selected: $toolCount';
+  }
 
   void _insertMessage() {
     final trimmed = _controller.text.trim();
@@ -216,36 +230,42 @@ class _ComposerState extends State<Composer> {
                   child: Tooltip(
                     message: 'Message role',
                     waitDuration: const Duration(milliseconds: 400),
-                    child: DropdownButtonFormField<MessageRole>(
-                      initialValue: _selectedRole,
-                      isDense: true,
-                      onChanged: inputEnabled
-                          ? (v) {
-                              if (v == null) return;
-                              setState(() => _selectedRole = v);
-                              _focusNode.requestFocus();
-                            }
-                          : null,
-                      decoration: const InputDecoration(
-                        labelText: 'Role',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                      ),
-                      items: MessageRole.values.map((role) {
-                        return DropdownMenuItem<MessageRole>(
-                          value: role,
-                          child: Row(
-                            children: [
-                              Icon(_iconForRole(role), size: 18),
-                              const SizedBox(width: 8),
-                              Text(_labelForRole(role)),
-                            ],
+                    child: AccessibleWidget(
+                      label: _buildRoleSemanticLabel(_selectedRole),
+                      isButton: true,
+
+                      enabled: inputEnabled,
+                      child: DropdownButtonFormField<MessageRole>(
+                        initialValue: _selectedRole,
+                        isDense: true,
+                        onChanged: inputEnabled
+                            ? (v) {
+                                if (v == null) return;
+                                setState(() => _selectedRole = v);
+                                _focusNode.requestFocus();
+                              }
+                            : null,
+                        decoration: const InputDecoration(
+                          labelText: 'Role',
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
                           ),
-                        );
-                      }).toList(),
+                        ),
+                        items: MessageRole.values.map((role) {
+                          return DropdownMenuItem<MessageRole>(
+                            value: role,
+                            child: Row(
+                              children: [
+                                Icon(_iconForRole(role), size: 18),
+                                const SizedBox(width: 8),
+                                Text(_labelForRole(role)),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
                     ),
                   ),
                 ),
@@ -254,35 +274,43 @@ class _ComposerState extends State<Composer> {
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    IconButton(
-                      tooltip: hasTools
-                          ? 'Tools (${effectiveToolIds.length})'
-                          : 'Select tools',
-                      onPressed: inputEnabled ? _openToolSelector : null,
-                      icon: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          const Icon(Icons.build),
-                          if (hasTools)
-                            Positioned(
-                              right: -4,
-                              top: -4,
-                              child: Container(
-                                padding: const EdgeInsets.all(3),
-                                decoration: BoxDecoration(
-                                  color: Colors.redAccent,
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  effectiveToolIds.length.toString(),
-                                  style: const TextStyle(
-                                    fontSize: 9,
-                                    color: Colors.white,
+                    AccessibleWidget(
+                      label: _buildToolButtonSemanticLabel(
+                        effectiveToolIds.length,
+                        inputEnabled,
+                      ),
+                      isButton: true,
+                      enabled: inputEnabled,
+                      child: IconButton(
+                        tooltip: hasTools
+                            ? 'Tools (${effectiveToolIds.length})'
+                            : 'Select tools',
+                        onPressed: inputEnabled ? _openToolSelector : null,
+                        icon: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            const Icon(Icons.build),
+                            if (hasTools)
+                              Positioned(
+                                right: -4,
+                                top: -4,
+                                child: Container(
+                                  padding: const EdgeInsets.all(3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.redAccent,
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    effectiveToolIds.length.toString(),
+                                    style: const TextStyle(
+                                      fontSize: 9,
+                                      color: Colors.white,
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                     if (hasTools)

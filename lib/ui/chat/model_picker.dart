@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/core/helpers/models_directory.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
@@ -77,33 +78,48 @@ class _ModelPickerState extends State<ModelPicker> {
     final Color bgColor = Theme.of(context).colorScheme.surfaceContainerHighest;
 
     if (_loading) {
-      return Row(
-        children: [
-          SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          SizedBox(width: 8),
-          Text('Loading…'),
-          SizedBox(width: 8),
-          SizedBox(
-            width: 10,
-            height: 10,
-            child: DotPulse(color: bgColor.withValues(alpha: 0.25)),
-          ),
-        ],
+      return AccessibleWidget(
+        label: 'Loading models',
+        value: 'Please wait while models are loaded',
+        child: Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 8),
+            Text('Loading…'),
+            SizedBox(width: 8),
+            SizedBox(
+              width: 10,
+              height: 10,
+              child: DotPulse(color: bgColor.withValues(alpha: 0.25)),
+            ),
+          ],
+        ),
       );
     }
 
     if (_error != null) {
-      return Row(
-        children: [
-          const Icon(Icons.error_outline),
-          const SizedBox(width: 8),
-          Expanded(child: Text('Failed to load models: $_error')),
-          TextButton(onPressed: _loadModels, child: const Text('Retry')),
-        ],
+      return AccessibleWidget(
+        label: 'Failed to load models',
+        value: 'Error: $_error. Tap Retry to attempt loading again.',
+        child: Row(
+          children: [
+            const Icon(Icons.error_outline),
+            const SizedBox(width: 8),
+            Expanded(child: Text('Failed to load models: $_error')),
+            AccessibleWidget(
+              label: 'Retry loading models',
+              isButton: true,
+              child: TextButton(
+                onPressed: _loadModels,
+                child: const Text('Retry'),
+              ),
+            ),
+          ],
+        ),
       );
     }
 
@@ -125,84 +141,94 @@ class _ModelPickerState extends State<ModelPicker> {
               child: Material(
                 color: bgColor,
                 borderRadius: BorderRadius.circular(8),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    isExpanded: true,
-                    value: _selected,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    dropdownColor: bgColor,
-                    items: aliases.map((alias) {
-                      final modelIsAvailable = _models.containsKey(alias);
-                      return DropdownMenuItem(
-                        value: alias,
-                        enabled: modelIsAvailable,
-                        child: Text(
-                          modelIsAvailable ? alias : '$alias (loaded)',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (v) async {
-                      if (v == null || !_models.containsKey(v)) return;
-                      final file = _models[v]!;
-                      final llamaCppDirectory =
-                          await _preferencesService.getLlamaCppDirectory() ??
-                          '';
-                      if (!context.mounted) return;
+                child: AccessibleWidget(
+                  label: _selected != null
+                      ? 'Model: $_selected'
+                      : 'Select a model',
 
-                      showDialog<void>(
-                        context: context,
-                        barrierDismissible: false,
-                        builder: (_) => ModelConfiguration(
-                          modelName: v,
-                          modelPath: file.path,
-                          llamaCppDirectory: llamaCppDirectory,
-                          onCancel: _tabs.serverManager.stop,
-                          onConfirm: (snapshot) async {
-                            setState(() {
-                              _selected = v;
-                              _loading = true;
-                              _error = null;
-                            });
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      isExpanded: true,
+                      value: _selected,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      dropdownColor: bgColor,
+                      items: aliases.map((alias) {
+                        final modelIsAvailable = _models.containsKey(alias);
+                        return DropdownMenuItem(
+                          value: alias,
+                          enabled: modelIsAvailable,
+                          child: Text(
+                            modelIsAvailable ? alias : '$alias (loaded)',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (v) async {
+                        if (v == null || !_models.containsKey(v)) return;
+                        final file = _models[v]!;
+                        final llamaCppDirectory =
+                            await _preferencesService.getLlamaCppDirectory() ??
+                            '';
+                        if (!context.mounted) return;
 
-                            try {
-                              await _tabs.serverManager.startWithSnapshot(
-                                snapshot,
-                              );
-                              _tabs.activeChat?.setCurrentModelSnapshot(
-                                snapshot,
-                              );
-                            } catch (_) {
-                              if (mounted) {
-                                setState(
-                                  () => _selected =
-                                      _tabs.serverManager.currentModelName,
+                        showDialog<void>(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (_) => ModelConfiguration(
+                            modelName: v,
+                            modelPath: file.path,
+                            llamaCppDirectory: llamaCppDirectory,
+                            onCancel: _tabs.serverManager.stop,
+                            onConfirm: (snapshot) async {
+                              setState(() {
+                                _selected = v;
+                                _loading = true;
+                                _error = null;
+                              });
+
+                              try {
+                                await _tabs.serverManager.startWithSnapshot(
+                                  snapshot,
                                 );
-                              }
+                                _tabs.activeChat?.setCurrentModelSnapshot(
+                                  snapshot,
+                                );
+                              } catch (_) {
+                                if (mounted) {
+                                  setState(
+                                    () => _selected =
+                                        _tabs.serverManager.currentModelName,
+                                  );
+                                }
 
-                              rethrow;
-                            } finally {
-                              if (mounted) {
-                                setState(() => _loading = false);
+                                rethrow;
+                              } finally {
+                                if (mounted) {
+                                  setState(() => _loading = false);
+                                }
                               }
-                            }
-                          },
-                        ),
-                      );
-                    },
+                            },
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),
             ),
           ),
         ),
-        IconButton(
-          tooltip: 'Refresh',
-          onPressed: _loadModels,
-          icon: const Icon(Icons.refresh),
+        AccessibleWidget(
+          label: 'Refresh model list',
+          isButton: true,
+          child: IconButton(
+            tooltip: 'Refresh',
+            onPressed: _loadModels,
+            icon: const Icon(Icons.refresh),
+          ),
         ),
       ],
     );

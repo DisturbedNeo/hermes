@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hermes/core/enums/delete_choice.dart';
 import 'package:hermes/core/enums/message_role.dart';
+import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/core/models/action_spec.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
@@ -135,44 +136,57 @@ class MessageActions extends StatelessWidget {
   }
 
   Widget _iconButton(BuildContext context, ActionSpec action) {
-    return Tooltip(
-      message: action.tooltip,
-      waitDuration: const Duration(milliseconds: 300),
-      child: IconButton(
-        icon: Icon(action.icon, color: action.iconColor),
-        iconSize: _iconSize,
-        padding: EdgeInsets.symmetric(horizontal: 2),
-        constraints: const BoxConstraints(),
-        onPressed: action.isEnabled ? () => action.onTap(_message) : null,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
+    return AccessibleWidget(
+      label: action.tooltip,
+      isButton: true,
+      enabled: action.isEnabled,
+      child: Tooltip(
+        message: action.tooltip,
+        waitDuration: const Duration(milliseconds: 300),
+        child: IconButton(
+          icon: Icon(action.icon, color: action.iconColor),
+          iconSize: _iconSize,
+          padding: EdgeInsets.symmetric(horizontal: 2),
+          constraints: const BoxConstraints(),
+          onPressed: action.isEnabled ? () => action.onTap(_message) : null,
+          visualDensity: VisualDensity.adaptivePlatformDensity,
+        ),
       ),
     );
   }
 
   Widget _overflowButton(BuildContext context, List<ActionSpec> overflow) {
-    return PopupMenuButton<int>(
-      tooltip: 'More',
-      itemBuilder: (ctx) => [
-        for (int i = 0; i < overflow.length; i++)
-          PopupMenuItem<int>(
-            value: i,
-            enabled: overflow[i].isEnabled,
-            child: Row(
-              children: [
-                Icon(overflow[i].icon, size: 18, color: overflow[i].iconColor),
-                const SizedBox(width: 8),
-                Text(overflow[i].tooltip),
-              ],
+    return AccessibleWidget(
+      label: 'More actions',
+      isButton: true,
+      child: PopupMenuButton<int>(
+        tooltip: 'More',
+        itemBuilder: (ctx) => [
+          for (int i = 0; i < overflow.length; i++)
+            PopupMenuItem<int>(
+              value: i,
+              enabled: overflow[i].isEnabled,
+              child: Row(
+                children: [
+                  Icon(
+                    overflow[i].icon,
+                    size: 18,
+                    color: overflow[i].iconColor,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(overflow[i].tooltip),
+                ],
+              ),
             ),
-          ),
-      ],
-      onSelected: (i) => overflow[i].onTap(_message),
-      icon: Icon(
-        Icons.more_horiz,
-        size: _iconSize,
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ],
+        onSelected: (i) => overflow[i].onTap(_message),
+        icon: Icon(
+          Icons.more_horiz,
+          size: _iconSize,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        padding: EdgeInsets.zero,
       ),
-      padding: EdgeInsets.zero,
     );
   }
 }

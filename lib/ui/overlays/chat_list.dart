@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/core/models/saved_chat.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
@@ -159,12 +160,16 @@ class _ChatListState extends State<ChatList> {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: TextField(
-            controller: _searchController,
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search),
-              hintText: 'Search saved chats',
-              isDense: true,
+          child: AccessibleWidget(
+            label: 'Search saved chats',
+            isButton: false,
+            child: TextField(
+              controller: _searchController,
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                hintText: 'Search saved chats',
+                isDense: true,
+              ),
             ),
           ),
         ),
@@ -176,22 +181,36 @@ class _ChatListState extends State<ChatList> {
 
   Widget _buildChatList(bool canMutate) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return AccessibleWidget(
+        label: 'Loading chats',
+        value: 'Please wait while chats are loaded',
+        child: const Center(child: CircularProgressIndicator()),
+      );
     }
 
     final error = _error;
     if (error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text('Failed to load chats: $error'),
+      return AccessibleWidget(
+        label: 'Failed to load chats',
+        value: 'Error: $error',
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text('Failed to load chats: $error'),
+          ),
         ),
       );
     }
 
     if (_chats.isEmpty) {
-      return Center(
-        child: Text(_query.isEmpty ? 'No saved chats' : 'No matching chats'),
+      return AccessibleWidget(
+        label: _query.isEmpty ? 'No saved chats' : 'No matching chats',
+        value: _query.isEmpty
+            ? 'Create a new chat to get started'
+            : 'Try a different search term',
+        child: Center(
+          child: Text(_query.isEmpty ? 'No saved chats' : 'No matching chats'),
+        ),
       );
     }
 
@@ -203,49 +222,71 @@ class _ChatListState extends State<ChatList> {
         final active = c.id == _tabs.activeChat?.currentChatId;
         final open = _tabs.isSavedChatOpen(c.id);
 
-        return ListTile(
+        return AccessibleWidget(
+          label: 'Chat: ${c.title}${active ? ', currently active' : ''}',
+          value: _formatDate(c.updatedAt),
           selected: active,
-          leading: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Icon(
-                active || open ? Icons.chat_bubble : Icons.chat_bubble_outline,
-              ),
-              if (c.workspace != null)
-                const Positioned(
-                  right: -6,
-                  bottom: -4,
-                  child: Icon(Icons.folder, size: 14),
+          enabled: canMutate,
+
+          child: ListTile(
+            selected: active,
+            leading: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  active || open
+                      ? Icons.chat_bubble
+                      : Icons.chat_bubble_outline,
                 ),
-            ],
-          ),
-          title: Text(c.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(_formatDate(c.updatedAt)),
-          onTap: canMutate ? () => widget.onOpenChat(c.id) : null,
-          trailing: PopupMenuButton<_ChatAction>(
-            tooltip: 'Chat actions',
-            enabled: canMutate,
-            onSelected: (action) {
-              switch (action) {
-                case _ChatAction.rename:
-                  unawaited(_renameChat(c));
-                  break;
-                case _ChatAction.openInNewTab:
-                  unawaited(Future.sync(() => widget.onOpenChatInNewTab(c.id)));
-                  break;
-                case _ChatAction.delete:
-                  unawaited(_deleteChat(c));
-                  break;
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: _ChatAction.openInNewTab,
-                child: Text('Open in new tab'),
+                if (c.workspace != null)
+                  const Positioned(
+                    right: -6,
+                    bottom: -4,
+                    child: Icon(Icons.folder, size: 14),
+                  ),
+              ],
+            ),
+            title: Text(c.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            subtitle: Text(_formatDate(c.updatedAt)),
+            onTap: canMutate ? () => widget.onOpenChat(c.id) : null,
+            trailing: AccessibleWidget(
+              label: 'Chat actions',
+              isButton: true,
+              enabled: canMutate,
+              child: PopupMenuButton<_ChatAction>(
+                tooltip: 'Chat actions',
+                enabled: canMutate,
+                onSelected: (action) {
+                  switch (action) {
+                    case _ChatAction.rename:
+                      unawaited(_renameChat(c));
+                      break;
+                    case _ChatAction.openInNewTab:
+                      unawaited(
+                        Future.sync(() => widget.onOpenChatInNewTab(c.id)),
+                      );
+                      break;
+                    case _ChatAction.delete:
+                      unawaited(_deleteChat(c));
+                      break;
+                  }
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: _ChatAction.openInNewTab,
+                    child: Text('Open in new tab'),
+                  ),
+                  PopupMenuItem(
+                    value: _ChatAction.rename,
+                    child: Text('Rename'),
+                  ),
+                  PopupMenuItem(
+                    value: _ChatAction.delete,
+                    child: Text('Delete'),
+                  ),
+                ],
               ),
-              PopupMenuItem(value: _ChatAction.rename, child: Text('Rename')),
-              PopupMenuItem(value: _ChatAction.delete, child: Text('Delete')),
-            ],
+            ),
           ),
         );
       },
