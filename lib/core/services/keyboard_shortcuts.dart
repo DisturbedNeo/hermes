@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 /// Represents a registered keyboard shortcut in the Hermes application.
 enum HermesShortcut {
   newChat(label: 'N', description: 'Create a new chat'),
+  closeChat(label: 'W', description: 'Close current chat'),
   saveChat(label: 'S', description: 'Save current chat'),
   openSettings(label: ',', description: 'Open settings panel'),
   toggleTheme(label: 'T', description: 'Toggle dark/light mode'),
@@ -20,6 +21,7 @@ enum HermesShortcut {
 
   LogicalKeyboardKey get key => switch (this) {
     newChat => LogicalKeyboardKey.keyN,
+    closeChat => LogicalKeyboardKey.keyW,
     saveChat => LogicalKeyboardKey.keyS,
     openSettings => LogicalKeyboardKey.comma,
     toggleTheme => LogicalKeyboardKey.keyT,
@@ -43,6 +45,15 @@ enum HermesShortcut {
       shift: true,
     ),
     _ => SingleActivator(key, control: true),
+  };
+
+  Iterable<ShortcutActivator> get activators => switch (this) {
+    showShortcuts => const [
+      SingleActivator(LogicalKeyboardKey.slash, control: true, shift: true),
+      SingleActivator(LogicalKeyboardKey.question, control: true, shift: true),
+      SingleActivator(LogicalKeyboardKey.question, control: true),
+    ],
+    _ => [activator],
   };
 }
 
@@ -79,7 +90,9 @@ class KeyboardShortcutsService extends ChangeNotifier {
     final result = <ShortcutActivator, Intent>{};
     for (final entry in _handlers.entries) {
       final shortcut = entry.key;
-      result[shortcut.activator] = HermesShortcutIntent(shortcut);
+      for (final activator in shortcut.activators) {
+        result[activator] = HermesShortcutIntent(shortcut);
+      }
     }
     return result;
   }
@@ -87,16 +100,79 @@ class KeyboardShortcutsService extends ChangeNotifier {
   /// Returns the set of [CallbackAction] instances for use with the [Actions]
   /// widget. Each action maps a [HermesShortcut] enum value to its handler.
   Map<Type, Action<Intent>> get actions {
+    return actionsWithFallback();
+  }
+
+  /// Returns actions that fall back to the next ancestor [Actions] scope when
+  /// this service has no handler for a dispatched shortcut.
+  Map<Type, Action<Intent>> actionsWithFallback([
+    BuildContext? fallbackContext,
+  ]) {
     return <Type, Action<Intent>>{
-      HermesShortcutIntent: CallbackAction<HermesShortcutIntent>(
-        onInvoke: (intent) {
-          _handlers[intent.shortcut]?.call();
-          return null;
-        },
+      HermesShortcutIntent: _HermesShortcutAction(
+        this,
+        fallbackContext: fallbackContext,
       ),
     };
   }
 
   /// Checks whether any registered shortcut is currently active.
   bool get hasActiveShortcuts => _handlers.isNotEmpty;
+
+  bool _canHandle(HermesShortcut shortcut) => _handlers.containsKey(shortcut);
+
+  bool _invoke(HermesShortcut shortcut) {
+    final handler = _handlers[shortcut];
+    if (handler == null) return false;
+    handler();
+    return true;
+  }
+}
+
+class _HermesShortcutAction extends ContextAction<HermesShortcutIntent> {
+  final KeyboardShortcutsService service;
+  final BuildContext? fallbackContext;
+
+  _HermesShortcutAction(this.service, {this.fallbackContext});
+
+  @override
+  bool isEnabled(HermesShortcutIntent intent, [BuildContext? context]) {
+    if (service._canHandle(intent.shortcut)) return true;
+    final fallbackContext = this.fallbackContext;
+    if (fallbackContext == null) return false;
+    final action = Actions.maybeFind<HermesShortcutIntent>(
+      fallbackContext,
+      intent: intent,
+    );
+    return action != null && !identical(action, this);
+  }
+
+  @override
+  Object? invoke(HermesShortcutIntent intent, [BuildContext? context]) {
+    if (service._invoke(intent.shortcut)) return true;
+
+    final fallbackContext = this.fallbackContext;
+    if (fallbackContext == null) return false;
+
+    final action = Actions.maybeFind<HermesShortcutIntent>(
+      fallbackContext,
+      intent: intent,
+    );
+    if (action == null || identical(action, this)) return false;
+
+    final (enabled, _) = Actions.of(
+      fallbackContext,
+    ).invokeActionIfEnabled(action, intent, fallbackContext);
+    return enabled;
+  }
+
+  @override
+  KeyEventResult toKeyEventResult(
+    HermesShortcutIntent intent,
+    Object? invokeResult,
+  ) {
+    return invokeResult == true
+        ? KeyEventResult.handled
+        : KeyEventResult.ignored;
+  }
 }

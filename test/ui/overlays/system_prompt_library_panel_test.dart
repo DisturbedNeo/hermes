@@ -232,6 +232,27 @@ void main() {
 
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('uses the unified state display for load errors', (tester) async {
+    promptLibrary.failLoads = true;
+
+    await tester.pumpWidget(
+      _panelApp(tabs: tabs, promptLibrary: promptLibrary),
+    );
+    await _pumpAsyncWork(tester);
+
+    expect(
+      find.textContaining('Failed to load prompt library'),
+      findsOneWidget,
+    );
+    expect(find.widgetWithText(FilledButton, 'Retry'), findsOneWidget);
+
+    promptLibrary.failLoads = false;
+    await tester.tap(find.widgetWithText(FilledButton, 'Retry'));
+    await _pumpAsyncWork(tester);
+
+    expect(find.text('No prompt presets'), findsOneWidget);
+  });
 }
 
 Widget _panelApp({
@@ -268,6 +289,7 @@ class _FakeSystemPromptLibraryService extends SystemPromptLibraryService {
   final List<PromptPreset> _presets = [];
   final List<PromptModule> _modules = [];
   int _nextId = 0;
+  bool failLoads = false;
 
   void seedPreset(PromptPreset preset) {
     _presets.add(preset);
@@ -279,11 +301,13 @@ class _FakeSystemPromptLibraryService extends SystemPromptLibraryService {
 
   @override
   Future<List<PromptPreset>> listPresets() async {
+    if (failLoads) throw StateError('load failed');
     return List<PromptPreset>.of(_presets);
   }
 
   @override
   Future<List<PromptPreset>> searchPresets(String query) async {
+    if (failLoads) throw StateError('load failed');
     final lower = query.toLowerCase();
     return _presets
         .where((preset) => preset.name.toLowerCase().contains(lower))
@@ -367,11 +391,13 @@ class _FakeSystemPromptLibraryService extends SystemPromptLibraryService {
 
   @override
   Future<List<PromptModule>> listModules() async {
+    if (failLoads) throw StateError('load failed');
     return List<PromptModule>.of(_modules);
   }
 
   @override
   Future<List<PromptModule>> searchModules(String query) async {
+    if (failLoads) throw StateError('load failed');
     final lower = query.toLowerCase();
     return _modules
         .where((module) => module.name.toLowerCase().contains(lower))

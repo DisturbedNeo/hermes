@@ -16,6 +16,7 @@ class KeyboardShortcutsPanel extends StatelessWidget {
           children: [
             _sectionHeader(theme.textTheme, 'Navigation'),
             _shortcutRow(context, 'New chat', 'Ctrl+N'),
+            _shortcutRow(context, 'Close chat', 'Ctrl+W'),
             _shortcutRow(context, 'Open chat list', 'Ctrl+O'),
             _shortcutRow(context, 'Toggle job panel', 'Ctrl+J'),
             const SizedBox(height: 12),

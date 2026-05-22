@@ -100,6 +100,7 @@ class _ChatState extends State<Chat> {
   void _registerPanelShortcuts() {
     _shortcuts.register(HermesShortcut.openChatList, toggleChatList);
     _shortcuts.register(HermesShortcut.openSettings, toggleSettings);
+    _shortcuts.register(HermesShortcut.closeChat, _closeActiveTab);
   }
 
   @override
@@ -109,7 +110,7 @@ class _ChatState extends State<Chat> {
           ? _shortcuts.activeShortcuts
           : const {},
       child: Actions(
-        actions: _shortcuts.actions,
+        actions: _shortcuts.actionsWithFallback(context),
         child: _buildScaffold(context),
       ),
     );
@@ -444,6 +445,12 @@ class _ChatState extends State<Chat> {
       return;
     }
     setState(() => isChatListOpen = false);
+  }
+
+  void _closeActiveTab() {
+    final activeChat = _tabs.activeChat;
+    if (activeChat == null) return;
+    unawaited(_closeTab(activeChat));
   }
 
   Future<void> _closeTab(ChatService tab) async {

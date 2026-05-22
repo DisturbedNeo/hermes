@@ -7,6 +7,7 @@ import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/prompt_assembler.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
+import 'package:hermes/ui/common/state_display.dart';
 
 class SystemPromptLibraryPanel extends StatefulWidget {
   final VoidCallback? onPromptLoaded;
@@ -345,11 +346,17 @@ class _SystemPromptLibraryPanelState extends State<SystemPromptLibraryPanel> {
           final compact =
               constraints.hasBoundedHeight &&
               constraints.maxHeight < _shortPanelHeight;
-          final tabView = _loading
-              ? const Center(child: CircularProgressIndicator())
-              : _error != null
-              ? _ErrorView(error: _error!)
-              : TabBarView(children: [_buildPresetTab(), _buildModuleTab()]);
+          final state = _loading
+              ? DisplayState.loading
+              : (_error != null ? DisplayState.error : DisplayState.content);
+          final tabView = StateDisplay(
+            state: state,
+            content: TabBarView(
+              children: [_buildPresetTab(), _buildModuleTab()],
+            ),
+            errorMessage: 'Failed to load prompt library: $_error',
+            onRetry: _error != null ? _reload : null,
+          );
           final content = Column(
             mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
             children: [
@@ -452,13 +459,15 @@ class _SystemPromptLibraryPanelState extends State<SystemPromptLibraryPanel> {
 
   Widget _buildPresetTabBody({required bool scrollable}) {
     if (_presets.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Center(
-          child: Text(
-            _presetQuery.isEmpty ? 'No prompt presets' : 'No matching presets',
-          ),
-        ),
+      return StateDisplay(
+        state: DisplayState.empty,
+        emptyMessage: _presetQuery.isEmpty
+            ? 'No prompt presets'
+            : 'No matching presets',
+        emptyHint: _presetQuery.isEmpty
+            ? 'Create a preset to reuse prompt modules'
+            : 'Try a different search term',
+        icon: Icons.display_settings_outlined,
       );
     }
 
@@ -484,13 +493,15 @@ class _SystemPromptLibraryPanelState extends State<SystemPromptLibraryPanel> {
 
   Widget _buildModuleTabBody({required bool scrollable}) {
     if (_modules.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Center(
-          child: Text(
-            _moduleQuery.isEmpty ? 'No prompt modules' : 'No matching modules',
-          ),
-        ),
+      return StateDisplay(
+        state: DisplayState.empty,
+        emptyMessage: _moduleQuery.isEmpty
+            ? 'No prompt modules'
+            : 'No matching modules',
+        emptyHint: _moduleQuery.isEmpty
+            ? 'Create a module to build reusable prompts'
+            : 'Try a different search term',
+        icon: Icons.extension_outlined,
       );
     }
 
@@ -1419,22 +1430,6 @@ class _PreviewDialog extends StatelessWidget {
           child: const Text('Close'),
         ),
       ],
-    );
-  }
-}
-
-class _ErrorView extends StatelessWidget {
-  final Object error;
-
-  const _ErrorView({required this.error});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Text('Failed to load prompt library: $error'),
-      ),
     );
   }
 }

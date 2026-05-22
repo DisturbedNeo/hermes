@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/enums/diagnostics_visibility.dart';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/models/bubble.dart';
+import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
@@ -165,6 +168,30 @@ void main() {
     expect(_isVisible(tester, find.byKey(const ValueKey('message_m39'))), true);
     expect(find.text('Scroll to bottom'), findsNothing);
   });
+
+  testWidgets('Ctrl slash focuses the composer', (tester) async {
+    await _setViewport(tester, const Size(420, 640));
+    final chat = tabs.activeChat!;
+    chat.serverManager.handle.value = LlamaServerHandle(
+      process: _FakeProcess(),
+      stdoutSub: const Stream<List<int>>.empty().listen((_) {}),
+      stderrSub: const Stream<List<int>>.empty().listen((_) {}),
+    );
+
+    await tester.pumpWidget(_chatViewApp(tabs));
+    await tester.pumpAndSettle();
+
+    final field = find.byType(TextField);
+    expect(tester.widget<TextField>(field).focusNode?.hasFocus, isFalse);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.slash);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+
+    expect(tester.widget<TextField>(field).focusNode?.hasFocus, isTrue);
+    chat.serverManager.handle.value = null;
+  });
 }
 
 Widget _chatViewApp(ChatTabsService tabs) {
@@ -205,4 +232,31 @@ bool _isVisible(WidgetTester tester, Finder finder) {
   final rect = tester.getRect(find.byWidget(element.widget));
   final screenRect = Offset.zero & tester.view.physicalSize;
   return rect.overlaps(screenRect);
+}
+
+class _FakeProcess implements Process {
+  final _exitCode = Completer<int>();
+  final _stdinController = StreamController<List<int>>();
+
+  @override
+  Future<int> get exitCode => _exitCode.future;
+
+  @override
+  int get pid => 1;
+
+  @override
+  IOSink get stdin => IOSink(_stdinController.sink);
+
+  @override
+  Stream<List<int>> get stderr => const Stream.empty();
+
+  @override
+  Stream<List<int>> get stdout => const Stream.empty();
+
+  @override
+  bool kill([ProcessSignal signal = ProcessSignal.sigterm]) {
+    if (!_exitCode.isCompleted) _exitCode.complete(0);
+    unawaited(_stdinController.close());
+    return true;
+  }
 }

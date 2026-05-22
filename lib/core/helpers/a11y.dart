@@ -85,7 +85,8 @@ class ScalableText extends StatelessWidget {
     final textScale = effectiveTextScale(context);
     return Text(
       data,
-      style: baseStyle.copyWith(fontSize: baseStyle.fontSize! * textScale),
+      style: baseStyle,
+      textScaler: TextScaler.linear(textScale),
       textAlign: textAlign,
       maxLines: maxLines,
       overflow: maxLines != null ? TextOverflow.ellipsis : null,

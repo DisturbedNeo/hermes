@@ -25,6 +25,8 @@ void main() {
 
     preferences = PreferencesService();
     final toolService = ToolService();
+    final workspaceService = WorkspaceService();
+    final jobService = JobService(toolService: toolService);
     chatLibrary = ChatLibraryService(
       preferencesService: preferences,
       databasePath: ':memory:',
@@ -37,20 +39,23 @@ void main() {
       chatLibrary: chatLibrary,
       systemPromptLibrary: promptLibrary,
       toolService: toolService,
-      jobService: JobService(toolService: toolService),
-      workspaceService: WorkspaceService(),
+      jobService: jobService,
+      workspaceService: workspaceService,
       preferencesService: preferences,
     );
 
     serviceProvider.registerSingleton<PreferencesService>(preferences);
     serviceProvider.registerSingleton<ToolService>(toolService);
+    serviceProvider.registerSingleton<WorkspaceService>(workspaceService);
+    serviceProvider.registerSingleton<ChatLibraryService>(chatLibrary);
+    serviceProvider.registerSingleton<SystemPromptLibraryService>(
+      promptLibrary,
+    );
     serviceProvider.registerSingleton<ChatTabsService>(tabs);
   });
 
   tearDown(() async {
     await serviceProvider.dispose();
-    await promptLibrary.dispose();
-    await chatLibrary.dispose();
   });
 
   testWidgets('lays out when the scaffold body is smaller than the tab strip', (

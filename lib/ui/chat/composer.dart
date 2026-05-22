@@ -17,8 +17,14 @@ enum ComposerMode { send, generate, cont, cancel }
 class Composer extends StatefulWidget {
   final ChatService chat;
   final bool enabled;
+  final FocusNode? focusNode;
 
-  const Composer({super.key, required this.chat, required this.enabled});
+  const Composer({
+    super.key,
+    required this.chat,
+    required this.enabled,
+    this.focusNode,
+  });
 
   @override
   State<Composer> createState() => _ComposerState();
@@ -28,7 +34,9 @@ class _ComposerState extends State<Composer> {
   final _toolService = serviceProvider.get<ToolService>();
 
   late final TextEditingController _controller;
-  late final FocusNode _focusNode;
+  late FocusNode _focusNode;
+  late bool _ownsFocusNode;
+  FocusOnKeyEventCallback? _previousOnKeyEvent;
 
   StreamState _previousStreamState = StreamState.idle;
 
@@ -41,7 +49,7 @@ class _ComposerState extends State<Composer> {
   void initState() {
     super.initState();
     _controller = TextEditingController();
-    _focusNode = FocusNode()..onKeyEvent = _onKey;
+    _configureFocusNode();
     _previousStreamState = widget.chat.chatStream.state;
     widget.chat.chatStream.addListener(_onStreamChanged);
   }
@@ -49,13 +57,38 @@ class _ComposerState extends State<Composer> {
   @override
   void didUpdateWidget(covariant Composer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.chat == widget.chat) return;
-    oldWidget.chat.chatStream.removeListener(_onStreamChanged);
-    _previousStreamState = widget.chat.chatStream.state;
-    widget.chat.chatStream.addListener(_onStreamChanged);
-    _controller.clear();
-    _selectedToolIds.clear();
-    _usingDefaultTools = true;
+    if (oldWidget.focusNode != widget.focusNode) {
+      _releaseFocusNode();
+      _configureFocusNode();
+    }
+    if (oldWidget.chat != widget.chat) {
+      oldWidget.chat.chatStream.removeListener(_onStreamChanged);
+      _previousStreamState = widget.chat.chatStream.state;
+      widget.chat.chatStream.addListener(_onStreamChanged);
+      _controller.clear();
+      _selectedToolIds.clear();
+      _usingDefaultTools = true;
+    }
+  }
+
+  void _configureFocusNode() {
+    final provided = widget.focusNode;
+    _ownsFocusNode = provided == null;
+    _focusNode = provided ?? FocusNode();
+    _previousOnKeyEvent = _focusNode.onKeyEvent;
+    _focusNode.onKeyEvent = _handleFocusKeyEvent;
+  }
+
+  void _releaseFocusNode() {
+    _focusNode.onKeyEvent = _previousOnKeyEvent;
+    _previousOnKeyEvent = null;
+    if (_ownsFocusNode) _focusNode.dispose();
+  }
+
+  KeyEventResult _handleFocusKeyEvent(FocusNode node, KeyEvent event) {
+    final result = _onKey(node, event);
+    if (result != KeyEventResult.ignored) return result;
+    return _previousOnKeyEvent?.call(node, event) ?? KeyEventResult.ignored;
   }
 
   List<String> _effectiveToolIds() {
@@ -67,7 +100,7 @@ class _ComposerState extends State<Composer> {
   @override
   void dispose() {
     widget.chat.chatStream.removeListener(_onStreamChanged);
-    _focusNode.dispose();
+    _releaseFocusNode();
     _controller.dispose();
     super.dispose();
   }

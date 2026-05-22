@@ -42,6 +42,7 @@ class _ChatViewState extends State<ChatView> {
 
   final _scroll = SmartScrollController();
   final _shortcuts = KeyboardShortcutsService();
+  final _composerFocusNode = FocusNode();
   bool _jobPanelExpanded = false;
   Timer? _scrollDebounceTimer;
 
@@ -49,6 +50,7 @@ class _ChatViewState extends State<ChatView> {
   void initState() {
     super.initState();
     _shortcuts.register(HermesShortcut.toggleJobPanel, _toggleJobPanel);
+    _shortcuts.register(HermesShortcut.focusComposer, _focusComposer);
     widget.chat.messageStore.addListener(_onMessagesChanged);
     widget.chat.chatStream.addListener(_onStreamStateChanged);
   }
@@ -58,6 +60,7 @@ class _ChatViewState extends State<ChatView> {
     widget.chat.messageStore.removeListener(_onMessagesChanged);
     widget.chat.chatStream.removeListener(_onStreamStateChanged);
     _shortcuts.dispose();
+    _composerFocusNode.dispose();
     _scroll.dispose();
     _scrollDebounceTimer?.cancel();
     super.dispose();
@@ -106,80 +109,83 @@ class _ChatViewState extends State<ChatView> {
     return Shortcuts(
       shortcuts: _shortcuts.activeShortcuts,
       child: Actions(
-        actions: _shortcuts.actions,
-        child: AnimatedBuilder(
-          animation: Listenable.merge([
-            chat,
-            chat.messageStore,
-            chat.chatStream,
-          ]),
-          builder: (_, _) {
-            final displayItems = _displayItems(chat.messageStore.messages);
-            final showJobPanel = _showJobPanel(chat);
+        actions: _shortcuts.actionsWithFallback(context),
+        child: Focus(
+          autofocus: true,
+          child: AnimatedBuilder(
+            animation: Listenable.merge([
+              chat,
+              chat.messageStore,
+              chat.chatStream,
+            ]),
+            builder: (_, _) {
+              final displayItems = _displayItems(chat.messageStore.messages);
+              final showJobPanel = _showJobPanel(chat);
 
-            return LayoutBuilder(
-              builder: (context, constraints) {
-                final boundedHeight =
-                    constraints.hasBoundedHeight &&
-                    constraints.maxHeight.isFinite;
-                final boundedWidth =
-                    constraints.hasBoundedWidth &&
-                    constraints.maxWidth.isFinite;
+              return LayoutBuilder(
+                builder: (context, constraints) {
+                  final boundedHeight =
+                      constraints.hasBoundedHeight &&
+                      constraints.maxHeight.isFinite;
+                  final boundedWidth =
+                      constraints.hasBoundedWidth &&
+                      constraints.maxWidth.isFinite;
 
-                if ((boundedHeight &&
-                        constraints.maxHeight < _tinyHeightBreakpoint) ||
-                    (boundedWidth &&
-                        constraints.maxWidth < _tinyWidthBreakpoint)) {
-                  return const SizedBox.shrink();
-                }
+                  if ((boundedHeight &&
+                          constraints.maxHeight < _tinyHeightBreakpoint) ||
+                      (boundedWidth &&
+                          constraints.maxWidth < _tinyWidthBreakpoint)) {
+                    return const SizedBox.shrink();
+                  }
 
-                final useScrollableFooter =
-                    boundedHeight &&
-                    constraints.maxHeight < _shortHeightBreakpoint;
-                final footerMaxHeight = useScrollableFooter
-                    ? constraints.maxHeight * _shortFooterHeightRatio
-                    : null;
+                  final useScrollableFooter =
+                      boundedHeight &&
+                      constraints.maxHeight < _shortHeightBreakpoint;
+                  final footerMaxHeight = useScrollableFooter
+                      ? constraints.maxHeight * _shortFooterHeightRatio
+                      : null;
 
-                final mainColumn = _buildMainColumn(
-                  chat: chat,
-                  displayItems: displayItems,
-                  showJobPanel: showJobPanel,
-                  includeInlineJobPanel:
-                      !(isNarrow && _jobPanelExpanded && showJobPanel),
-                  useScrollableFooter: useScrollableFooter,
-                  footerMaxHeight: footerMaxHeight,
-                );
-
-                // On narrow screens, job panel becomes a bottom sheet overlay.
-                if (isNarrow && _jobPanelExpanded && showJobPanel) {
-                  return Stack(
-                    children: [
-                      mainColumn,
-                      Positioned(
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        child: DraggableScrollableSheet(
-                          initialChildSize: 0.5,
-                          minChildSize: 0.3,
-                          maxChildSize: 0.85,
-                          builder: (context, scrollController) {
-                            return JobPanel(
-                              chat: chat,
-                              expanded: true,
-                              onToggleExpanded: _toggleJobPanel,
-                            );
-                          },
-                        ),
-                      ),
-                    ],
+                  final mainColumn = _buildMainColumn(
+                    chat: chat,
+                    displayItems: displayItems,
+                    showJobPanel: showJobPanel,
+                    includeInlineJobPanel:
+                        !(isNarrow && _jobPanelExpanded && showJobPanel),
+                    useScrollableFooter: useScrollableFooter,
+                    footerMaxHeight: footerMaxHeight,
                   );
-                }
 
-                return mainColumn;
-              },
-            );
-          },
+                  // On narrow screens, job panel becomes a bottom sheet overlay.
+                  if (isNarrow && _jobPanelExpanded && showJobPanel) {
+                    return Stack(
+                      children: [
+                        mainColumn,
+                        Positioned(
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          child: DraggableScrollableSheet(
+                            initialChildSize: 0.5,
+                            minChildSize: 0.3,
+                            maxChildSize: 0.85,
+                            builder: (context, scrollController) {
+                              return JobPanel(
+                                chat: chat,
+                                expanded: true,
+                                onToggleExpanded: _toggleJobPanel,
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    );
+                  }
+
+                  return mainColumn;
+                },
+              );
+            },
+          ),
         ),
       ),
     );
@@ -241,7 +247,11 @@ class _ChatViewState extends State<ChatView> {
         ValueListenableBuilder<LlamaServerHandle?>(
           valueListenable: chat.serverManager.handle,
           builder: (_, handle, _) {
-            return Composer(chat: chat, enabled: handle != null);
+            return Composer(
+              chat: chat,
+              enabled: handle != null,
+              focusNode: _composerFocusNode,
+            );
           },
         ),
       ],
@@ -258,6 +268,11 @@ class _ChatViewState extends State<ChatView> {
   void _toggleJobPanel() {
     if (!_showJobPanel(widget.chat)) return;
     setState(() => _jobPanelExpanded = !_jobPanelExpanded);
+  }
+
+  void _focusComposer() {
+    if (!mounted) return;
+    _composerFocusNode.requestFocus();
   }
 
   bool _showJobPanel(ChatService chat) {

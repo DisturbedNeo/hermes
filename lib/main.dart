@@ -62,7 +62,14 @@ class _AppState extends State<App> with WidgetsBindingObserver {
     );
     _shortcuts.register(HermesShortcut.cancelGeneration, () {
       final activeChat = tabs.activeChat;
-      if (activeChat != null) unawaited(activeChat.cancelGeneration());
+      if (activeChat == null) return;
+      if (activeChat.jobBusy) {
+        if (!activeChat.jobCancellationRequested) {
+          unawaited(activeChat.cancelJobRun());
+        }
+      } else {
+        unawaited(activeChat.cancelGeneration());
+      }
     });
     _shortcuts.register(HermesShortcut.showShortcuts, _showShortcutsDialog);
   }
