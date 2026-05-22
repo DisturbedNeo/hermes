@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/enums/diagnostics_visibility.dart';
 import 'package:hermes/core/enums/message_role.dart';
+import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
@@ -125,6 +126,45 @@ void main() {
 
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('scroll to bottom button returns to the latest message', (
+    tester,
+  ) async {
+    await _setViewport(tester, const Size(420, 640));
+    final chat = tabs.activeChat!;
+    chat.messageStore.setMessages([
+      chat.systemPrompt,
+      for (var i = 0; i < 40; i++)
+        Bubble(
+          id: 'm$i',
+          role: i.isEven ? MessageRole.user : MessageRole.assistant,
+          text: 'Chat message $i',
+          reasoning: '',
+        ),
+    ]);
+
+    await tester.pumpWidget(_chatViewApp(tabs));
+    await tester.pumpAndSettle();
+
+    expect(_isVisible(tester, find.byKey(const ValueKey('message_m39'))), true);
+
+    final listView = tester.widget<ListView>(find.byType(ListView));
+    final controller = listView.controller!;
+    controller.jumpTo(controller.position.maxScrollExtent);
+    await tester.pump();
+
+    expect(find.text('Scroll to bottom'), findsOneWidget);
+    expect(
+      _isVisible(tester, find.byKey(const ValueKey('message_m39'))),
+      false,
+    );
+
+    await tester.tap(find.text('Scroll to bottom'));
+    await tester.pumpAndSettle();
+
+    expect(_isVisible(tester, find.byKey(const ValueKey('message_m39'))), true);
+    expect(find.text('Scroll to bottom'), findsNothing);
+  });
 }
 
 Widget _chatViewApp(ChatTabsService tabs) {
@@ -156,4 +196,13 @@ Future<void> _setViewport(WidgetTester tester, Size size) async {
   tester.view.physicalSize = size;
   addTearDown(tester.view.resetDevicePixelRatio);
   addTearDown(tester.view.resetPhysicalSize);
+}
+
+bool _isVisible(WidgetTester tester, Finder finder) {
+  final element = finder.evaluate().firstOrNull;
+  if (element == null) return false;
+
+  final rect = tester.getRect(find.byWidget(element.widget));
+  final screenRect = Offset.zero & tester.view.physicalSize;
+  return rect.overlaps(screenRect);
 }

@@ -357,7 +357,7 @@ class _ChatState extends State<Chat> {
                         open: isSettingsOpen,
                         width: Responsive.isNarrow(context)
                             ? double.infinity
-                            : 420,
+                            : 640,
                         child: const Settings(),
                       ),
                     ],

@@ -9,14 +9,13 @@ import 'package:flutter/material.dart';
 class SmartScrollController extends ScrollController {
   bool _autoScrollEnabled = true;
   bool _userScrolledAway = false;
-  final Duration scrollBackThresholdMs;
+  final double bottomThreshold;
 
-  SmartScrollController({this.scrollBackThresholdMs = const Duration(milliseconds: 50)});
+  SmartScrollController({this.bottomThreshold = 50});
 
   @override
   void attach(ScrollPosition position) {
     super.attach(position);
-    if (position is ScrollActivity) return;
     position.isScrollingNotifier.addListener(_onScrollingChanged);
   }
 
@@ -30,29 +29,32 @@ class SmartScrollController extends ScrollController {
     final position = positions.firstOrNull;
     if (position == null) return;
 
-    // When scrolling stops, check if user is near the bottom
-    if (!position.isScrollingNotifier.value && _autoScrollEnabled) {
-      final atBottom = position.pixels >= position.maxScrollExtent - scrollBackThresholdMs.inMilliseconds.toDouble();
-      if (atBottom) {
-        _userScrolledAway = false;
-      } else {
-        _userScrolledAway = true;
-        _autoScrollEnabled = false;
-      }
+    if (!position.isScrollingNotifier.value) {
+      updateAutoScrollState();
     }
   }
 
   /// Enable auto-scrolling to the bottom.
   void enableAutoScroll() {
-    _autoScrollEnabled = true;
-    _userScrolledAway = false;
+    _setAutoScrollState(enabled: true, userScrolledAway: false);
   }
+
+  /// Update auto-scroll state from the current position.
+  void updateAutoScrollState() {
+    final nearBottom = isNearBottom;
+    _setAutoScrollState(enabled: nearBottom, userScrolledAway: !nearBottom);
+  }
+
+  /// Whether automatic scrolling is currently enabled.
+  bool get autoScrollEnabled => _autoScrollEnabled;
 
   /// Whether the scroll position is near the bottom of the list.
   bool get isNearBottom {
     final position = positions.firstOrNull;
     if (position == null) return true;
-    return position.pixels >= position.maxScrollExtent - scrollBackThresholdMs.inMilliseconds.toDouble();
+    final distanceFromBottom = (position.pixels - _bottomExtent(position))
+        .abs();
+    return distanceFromBottom <= bottomThreshold;
   }
 
   /// Whether the user has scrolled away from the bottom.
@@ -64,9 +66,30 @@ class SmartScrollController extends ScrollController {
     if (position == null) return;
     final dur = duration ?? const Duration(milliseconds: 200);
     await position.animateTo(
-      position.maxScrollExtent,
+      _bottomExtent(position),
       duration: dur,
       curve: Curves.easeOutCubic,
     );
+  }
+
+  double _bottomExtent(ScrollPosition position) {
+    return switch (position.axisDirection) {
+      AxisDirection.down || AxisDirection.right => position.maxScrollExtent,
+      AxisDirection.up || AxisDirection.left => position.minScrollExtent,
+    };
+  }
+
+  void _setAutoScrollState({
+    required bool enabled,
+    required bool userScrolledAway,
+  }) {
+    if (_autoScrollEnabled == enabled &&
+        _userScrolledAway == userScrolledAway) {
+      return;
+    }
+
+    _autoScrollEnabled = enabled;
+    _userScrolledAway = userScrolledAway;
+    notifyListeners();
   }
 }
