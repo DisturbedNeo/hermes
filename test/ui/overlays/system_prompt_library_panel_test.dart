@@ -168,17 +168,84 @@ void main() {
       csharp.id,
     ]);
   });
+
+  testWidgets('lays out built-in rows in a narrow panel', (tester) async {
+    final now = DateTime(2024, 1, 1);
+    promptLibrary.seedPreset(
+      PromptPreset(
+        id: 'preset-built-in',
+        name: 'Built-in coding workflow preset with a long display name',
+        baseModuleIds: const [],
+        optionalModuleIds: const [],
+        customInstructions: 'Prefer concise responses.',
+        legacyFullPrompt: null,
+        isBuiltIn: true,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    promptLibrary.seedModule(
+      PromptModule(
+        id: 'module-built-in',
+        name: 'Built-in workspace context module with a long display name',
+        category: 'Context',
+        content: 'Use the attached workspace context.',
+        priority: 20,
+        isBuiltIn: true,
+        requiredModuleIds: const [],
+        conflictingModuleIds: const [],
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _panelApp(tabs: tabs, promptLibrary: promptLibrary, width: 240),
+    );
+    await _pumpAsyncWork(tester);
+
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text('Modules'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('lays out with very short panel heights', (tester) async {
+    await tester.pumpWidget(
+      _panelApp(
+        tabs: tabs,
+        promptLibrary: promptLibrary,
+        width: 431,
+        height: 185,
+      ),
+    );
+    await _pumpAsyncWork(tester);
+
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(
+      _panelApp(tabs: tabs, promptLibrary: promptLibrary, width: 1, height: 1),
+    );
+    await _pumpAsyncWork(tester);
+
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Widget _panelApp({
   required ChatTabsService tabs,
   required SystemPromptLibraryService promptLibrary,
   VoidCallback? onPromptLoaded,
+  double width = 520,
+  double? height,
 }) {
   return MaterialApp(
     home: Scaffold(
       body: SizedBox(
-        width: 520,
+        width: width,
+        height: height,
         child: SystemPromptLibraryPanel(
           onPromptLoaded: onPromptLoaded,
           tabs: tabs,
@@ -201,6 +268,14 @@ class _FakeSystemPromptLibraryService extends SystemPromptLibraryService {
   final List<PromptPreset> _presets = [];
   final List<PromptModule> _modules = [];
   int _nextId = 0;
+
+  void seedPreset(PromptPreset preset) {
+    _presets.add(preset);
+  }
+
+  void seedModule(PromptModule module) {
+    _modules.add(module);
+  }
 
   @override
   Future<List<PromptPreset>> listPresets() async {

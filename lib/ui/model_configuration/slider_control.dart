@@ -168,6 +168,87 @@ class _SliderControlState<T extends num> extends State<SliderControl<T>> {
     return count > 0 ? count : null;
   }
 
+  Widget _slider(BuildContext context) {
+    return Semantics(
+      label:
+          "${widget.label} (Min: ${widget.min}, Max: ${widget.max}, Step: ${widget.step})",
+      value: _format(_dValue),
+      child: Slider(
+        value: _dValue,
+        min: _dMin,
+        max: _dMax,
+        divisions: _divisions,
+        label: _format(_dValue),
+        onChanged: (d) => _setDouble(d),
+      ),
+    );
+  }
+
+  Widget _valueField(BuildContext context) {
+    return SizedBox(
+      width: 88,
+      child: TextFormField(
+        controller: _controller,
+        decoration: const InputDecoration(labelText: 'Value', isDense: true),
+        keyboardType: const TextInputType.numberWithOptions(
+          decimal: true,
+          signed: true,
+        ),
+        onChanged: _setFromText,
+        onEditingComplete: () =>
+            _setFromText(_controller.text, normalise: true),
+        onFieldSubmitted: (s) => _setFromText(s, normalise: true),
+        onTapOutside: (_) {
+          _setFromText(_controller.text, normalise: true);
+          FocusScope.of(context).unfocus();
+        },
+      ),
+    );
+  }
+
+  Widget _rangeMetadata(ThemeData theme) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text('Min: ${widget.min}', style: theme.textTheme.bodySmall),
+        Text('Step: ${widget.step}', style: theme.textTheme.bodySmall),
+        Text('Max: ${widget.max}', style: theme.textTheme.bodySmall),
+      ],
+    );
+  }
+
+  Widget _buildControl(BuildContext context, ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            IconButton(
+              tooltip: 'Decrease',
+              onPressed: () => _setDouble(_dValue - _dStep),
+              icon: const Icon(Icons.remove_circle_outline),
+            ),
+            Expanded(child: _slider(context)),
+            IconButton(
+              tooltip: 'Increase',
+              onPressed: () => _setDouble(_dValue + _dStep),
+              icon: const Icon(Icons.add_circle_outline),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [_valueField(context), _rangeMetadata(theme)],
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -175,69 +256,7 @@ class _SliderControlState<T extends num> extends State<SliderControl<T>> {
     return LabelledSection(
       label: widget.label,
       helper: widget.helperText,
-      child: Row(
-        children: [
-          IconButton(
-            tooltip: 'Decrease',
-            onPressed: () => _setDouble(_dValue - _dStep),
-            icon: const Icon(Icons.remove_circle_outline),
-          ),
-          Expanded(
-            child: Semantics(
-              label:
-                  "${widget.label} (Min: ${widget.min}, Max: ${widget.max}, Step: ${widget.step})",
-              value: _format(_dValue),
-              child: Slider(
-                value: _dValue,
-                min: _dMin,
-                max: _dMax,
-                divisions: _divisions,
-                label: _format(_dValue),
-                onChanged: (d) => _setDouble(d),
-              ),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Increase',
-            onPressed: () => _setDouble(_dValue + _dStep),
-            icon: const Icon(Icons.add_circle_outline),
-          ),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 88,
-            child: TextFormField(
-              controller: _controller,
-              decoration: const InputDecoration(
-                labelText: 'Value',
-                isDense: true,
-              ),
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-                signed: true,
-              ),
-              onChanged: _setFromText,
-              onEditingComplete: () =>
-                  _setFromText(_controller.text, normalise: true),
-              onFieldSubmitted: (s) => _setFromText(s, normalise: true),
-              onTapOutside: (_) {
-                _setFromText(_controller.text, normalise: true);
-                FocusScope.of(context).unfocus();
-              },
-            ),
-          ),
-          const SizedBox(width: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Min: ${widget.min}', style: theme.textTheme.bodySmall),
-              const SizedBox(width: 8),
-              Text('Step: ${widget.step}', style: theme.textTheme.bodySmall),
-              const SizedBox(width: 8),
-              Text('Max: ${widget.max}', style: theme.textTheme.bodySmall),
-            ],
-          ),
-        ],
-      ),
+      child: _buildControl(context, theme),
     );
   }
 }

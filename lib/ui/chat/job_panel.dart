@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/core/models/job.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
+import 'package:hermes/ui/common/state_display.dart';
 
 class JobPanel extends StatelessWidget {
   final ChatService chat;
@@ -767,15 +768,9 @@ class _JobList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (chat.availableJobs.isEmpty) {
-      return Center(
-        child: AccessibleWidget(
-          label: 'No jobs in this workspace',
-          child: const Text('No jobs in this workspace.'),
-        ),
-      );
-    }
-    return ListView.builder(
+    return StateDisplay(
+      state: chat.availableJobs.isEmpty ? DisplayState.empty : DisplayState.content,
+      content: ListView.builder(
       padding: const EdgeInsets.all(12),
       itemCount: chat.availableJobs.length,
       itemBuilder: (context, index) {
@@ -787,6 +782,9 @@ class _JobList extends StatelessWidget {
           onTap: chat.jobBusy ? null : () => unawaited(chat.loadJob(job.id)),
         );
       },
+      ),
+      emptyMessage: 'No jobs in this workspace.',
+      emptyHint: 'Run a job from the chat to see it here',
     );
   }
 }

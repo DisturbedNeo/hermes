@@ -19,6 +19,7 @@ class SolarpunkTheme {
       palette: HermesPalette.custom(
         primary: const Color(0xFF324F33),
         secondary: const Color(0xFF94860E),
+        onSecondary: Colors.black,
         tertiary: const Color(0xFF13645C),
 
         surface: const Color(0xFF0D1711),

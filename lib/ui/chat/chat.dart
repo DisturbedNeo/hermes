@@ -3,8 +3,10 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:hermes/core/helpers/responsive.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
+import 'package:hermes/core/services/keyboard_shortcuts.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/ui/overlays/chat_list.dart';
 import 'package:hermes/ui/chat/chat_view.dart';
@@ -12,6 +14,8 @@ import 'package:hermes/ui/chat/model_picker.dart';
 import 'package:hermes/ui/overlays/settings.dart';
 import 'package:hermes/ui/overlays/system_prompt_library_panel.dart';
 import 'package:hermes/ui/overlays/workspace_panel.dart';
+
+enum _ChatAppBarAction { model, prompts, workspace, settings }
 
 class Chat extends StatefulWidget {
   const Chat({super.key});
@@ -21,13 +25,19 @@ class Chat extends StatefulWidget {
 }
 
 class _ChatState extends State<Chat> {
+  static const double _tinyBodyHeight = 56;
+  static const double _tinyViewportHeight = 56;
+  static const double _tinyViewportWidth = 120;
+
   final _tabs = serviceProvider.get<ChatTabsService>();
+  final _shortcuts = KeyboardShortcutsService();
 
   var isChatListOpen = false;
   var isSettingsOpen = false;
   var isPromptLibraryOpen = false;
   var isWorkspaceOpen = false;
 
+  /// Toggles the chat list side panel. Public for keyboard shortcut access.
   void toggleChatList() {
     setState(() {
       isChatListOpen = !isChatListOpen;
@@ -39,6 +49,7 @@ class _ChatState extends State<Chat> {
     });
   }
 
+  /// Toggles the settings side panel. Public for keyboard shortcut access.
   void toggleSettings() {
     setState(() {
       isSettingsOpen = !isSettingsOpen;
@@ -50,6 +61,7 @@ class _ChatState extends State<Chat> {
     });
   }
 
+  /// Toggles the prompt library side panel.
   void togglePromptLibrary() {
     setState(() {
       isPromptLibraryOpen = !isPromptLibraryOpen;
@@ -61,6 +73,7 @@ class _ChatState extends State<Chat> {
     });
   }
 
+  /// Toggles the workspace side panel.
   void toggleWorkspace() {
     setState(() {
       isWorkspaceOpen = !isWorkspaceOpen;
@@ -75,148 +88,286 @@ class _ChatState extends State<Chat> {
   @override
   void initState() {
     super.initState();
+    _registerPanelShortcuts();
+  }
+
+  @override
+  void dispose() {
+    _shortcuts.dispose();
+    super.dispose();
+  }
+
+  void _registerPanelShortcuts() {
+    _shortcuts.register(HermesShortcut.openChatList, toggleChatList);
+    _shortcuts.register(HermesShortcut.openSettings, toggleSettings);
   }
 
   @override
   Widget build(BuildContext context) {
+    return Shortcuts(
+      shortcuts: _shortcuts.activeShortcuts.isNotEmpty
+          ? _shortcuts.activeShortcuts
+          : const {},
+      child: Actions(
+        actions: _shortcuts.actions,
+        child: _buildScaffold(context),
+      ),
+    );
+  }
+
+  Scaffold _buildScaffold(BuildContext context) {
+    final width = Responsive.availableWidth(context);
+    final height = Responsive.availableHeight(context);
+    final showAppBar =
+        width >= _tinyViewportWidth && height >= _tinyViewportHeight;
+    final showFullActions = width >= 720;
+    final showModelPicker = width >= 520;
+
     return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          tooltip: 'Chats',
-          icon: const Icon(Icons.menu),
-          onPressed: () => toggleChatList(),
+      appBar: showAppBar
+          ? AppBar(
+              leading: IconButton(
+                tooltip: 'Chats (Ctrl+O)',
+                icon: const Icon(Icons.menu),
+                onPressed: () => toggleChatList(),
+              ),
+              actions: showFullActions
+                  ? _fullAppBarActions()
+                  : _compactAppBarActions(showModelPicker: showModelPicker),
+            )
+          : null,
+      body: _buildBody(context),
+    );
+  }
+
+  List<Widget> _fullAppBarActions() {
+    return [
+      const ModelPicker(),
+      IconButton(
+        tooltip: 'System prompts',
+        icon: const Icon(Icons.display_settings_outlined),
+        onPressed: () => togglePromptLibrary(),
+      ),
+      IconButton(
+        tooltip: 'Workspace',
+        icon: AnimatedBuilder(
+          animation: _tabs,
+          builder: (_, _) => Icon(_workspaceIcon()),
         ),
-        actions: [
-          ModelPicker(),
-          IconButton(
-            tooltip: 'System prompts',
-            icon: const Icon(Icons.display_settings_outlined),
-            onPressed: () => togglePromptLibrary(),
-          ),
-          IconButton(
-            tooltip: 'Workspace',
-            icon: AnimatedBuilder(
-              animation: _tabs,
-              builder: (_, _) {
-                final workspace = _tabs.activeChat?.workspace;
-                return Icon(
-                  workspace == null
-                      ? Icons.folder_open_outlined
-                      : workspace.missing
-                      ? Icons.folder_off_outlined
-                      : Icons.folder_special_outlined,
-                );
-              },
+        onPressed: () => toggleWorkspace(),
+      ),
+      IconButton(
+        tooltip: 'Settings (Ctrl+,)',
+        icon: const Icon(Icons.settings_outlined),
+        onPressed: () => toggleSettings(),
+      ),
+    ];
+  }
+
+  List<Widget> _compactAppBarActions({required bool showModelPicker}) {
+    return [
+      if (showModelPicker) const ModelPicker(),
+      PopupMenuButton<_ChatAppBarAction>(
+        tooltip: 'More',
+        icon: const Icon(Icons.more_vert),
+        onSelected: _handleAppBarMenuAction,
+        itemBuilder: (context) => [
+          if (!showModelPicker)
+            const PopupMenuItem(
+              value: _ChatAppBarAction.model,
+              child: ListTile(
+                leading: Icon(Icons.memory_outlined),
+                title: Text('Model'),
+                contentPadding: EdgeInsets.zero,
+              ),
             ),
-            onPressed: () => toggleWorkspace(),
+          const PopupMenuItem(
+            value: _ChatAppBarAction.prompts,
+            child: ListTile(
+              leading: Icon(Icons.display_settings_outlined),
+              title: Text('System prompts'),
+              contentPadding: EdgeInsets.zero,
+            ),
           ),
-          IconButton(
-            tooltip: 'Settings',
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () => toggleSettings(),
+          PopupMenuItem(
+            value: _ChatAppBarAction.workspace,
+            child: ListTile(
+              leading: Icon(_workspaceIcon()),
+              title: const Text('Workspace'),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
+          const PopupMenuItem(
+            value: _ChatAppBarAction.settings,
+            child: ListTile(
+              leading: Icon(Icons.settings_outlined),
+              title: Text('Settings'),
+              contentPadding: EdgeInsets.zero,
+            ),
           ),
         ],
       ),
-      body: AnimatedBuilder(
-        animation: _tabs,
-        builder: (context, _) {
-          final activeChat = _tabs.activeChat;
+    ];
+  }
 
-          return Column(
-            children: [
-              _ChatTabStrip(
-                tabs: _tabs.tabs,
-                activeTabId: _tabs.activeTabId,
-                onSelect: (tab) => unawaited(_tabs.selectTab(tab.tabId)),
-                onClose: (tab) => unawaited(_closeTab(tab)),
-              ),
-              const Divider(height: 1),
-              Expanded(
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Positioned.fill(
-                      child: activeChat == null
-                          ? const SizedBox.shrink()
-                          : ChatView(
-                              key: ValueKey('chat_${activeChat.tabId}'),
-                              chat: activeChat,
-                              onOpenWorkspace: _selectWorkspaceForActiveChat,
-                            ),
-                    ),
+  IconData _workspaceIcon() {
+    final workspace = _tabs.activeChat?.workspace;
+    return workspace == null
+        ? Icons.folder_open_outlined
+        : workspace.missing
+        ? Icons.folder_off_outlined
+        : Icons.folder_special_outlined;
+  }
 
-                    if (isChatListOpen ||
-                        isSettingsOpen ||
-                        isPromptLibraryOpen ||
-                        isWorkspaceOpen) ...[
+  void _handleAppBarMenuAction(_ChatAppBarAction action) {
+    switch (action) {
+      case _ChatAppBarAction.model:
+        _showModelPickerDialog();
+        break;
+      case _ChatAppBarAction.prompts:
+        togglePromptLibrary();
+        break;
+      case _ChatAppBarAction.workspace:
+        toggleWorkspace();
+        break;
+      case _ChatAppBarAction.settings:
+        toggleSettings();
+        break;
+    }
+  }
+
+  void _showModelPickerDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Model'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: const ModelPicker(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBody(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _tabs,
+      builder: (context, _) {
+        final activeChat = _tabs.activeChat;
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final tiny =
+                constraints.hasBoundedHeight &&
+                constraints.maxHeight.isFinite &&
+                constraints.maxHeight < _tinyBodyHeight;
+            if (tiny) return const SizedBox.shrink();
+
+            return Column(
+              children: [
+                _ChatTabStrip(
+                  tabs: _tabs.tabs,
+                  activeTabId: _tabs.activeTabId,
+                  onSelect: (tab) => unawaited(_tabs.selectTab(tab.tabId)),
+                  onClose: (tab) => unawaited(_closeTab(tab)),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
                       Positioned.fill(
-                        child: GestureDetector(
-                          onTap: () => setState(() {
-                            isChatListOpen = false;
-                            isSettingsOpen = false;
-                            isPromptLibraryOpen = false;
-                            isWorkspaceOpen = false;
-                          }),
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
-                            child: Container(
-                              color: Colors.black.withValues(alpha: 0.1),
+                        child: activeChat == null
+                            ? const SizedBox.shrink()
+                            : ChatView(
+                                key: ValueKey('chat_${activeChat.tabId}'),
+                                chat: activeChat,
+                                onOpenWorkspace: _selectWorkspaceForActiveChat,
+                              ),
+                      ),
+
+                      if (isChatListOpen ||
+                          isSettingsOpen ||
+                          isPromptLibraryOpen ||
+                          isWorkspaceOpen) ...[
+                        Positioned.fill(
+                          child: GestureDetector(
+                            onTap: () => setState(() {
+                              isChatListOpen = false;
+                              isSettingsOpen = false;
+                              isPromptLibraryOpen = false;
+                              isWorkspaceOpen = false;
+                            }),
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
+                              child: Container(
+                                color: Colors.black.withValues(alpha: 0.1),
+                              ),
                             ),
                           ),
                         ),
+                      ],
+
+                      _SideSheet(
+                        side: AxisDirection.left,
+                        open: isChatListOpen,
+                        width: Responsive.isNarrow(context)
+                            ? double.infinity
+                            : 360,
+                        child: ChatList(
+                          onOpenChat: _openSavedChatInCurrentTab,
+                          onOpenChatInNewTab: _openSavedChatInNewTab,
+                          onNewChat: () {
+                            _tabs.newTab();
+                            setState(() => isChatListOpen = false);
+                          },
+                        ),
+                      ),
+
+                      _SideSheet(
+                        side: AxisDirection.right,
+                        open: isPromptLibraryOpen,
+                        width: 440,
+                        child: SystemPromptLibraryPanel(
+                          onPromptLoaded: () {
+                            if (mounted) {
+                              setState(() => isPromptLibraryOpen = false);
+                            }
+                          },
+                        ),
+                      ),
+
+                      _SideSheet(
+                        side: AxisDirection.right,
+                        open: isWorkspaceOpen,
+                        width: 420,
+                        child: WorkspacePanel(
+                          chat: activeChat,
+                          onSelectWorkspace: _selectWorkspaceForActiveChat,
+                        ),
+                      ),
+
+                      _SideSheet(
+                        side: AxisDirection.right,
+                        open: isSettingsOpen,
+                        width: Responsive.isNarrow(context)
+                            ? double.infinity
+                            : 420,
+                        child: const Settings(),
                       ),
                     ],
-
-                    _SideSheet(
-                      side: AxisDirection.left,
-                      open: isChatListOpen,
-                      width: 360,
-                      child: ChatList(
-                        onOpenChat: _openSavedChatInCurrentTab,
-                        onOpenChatInNewTab: _openSavedChatInNewTab,
-                        onNewChat: () {
-                          _tabs.newTab();
-                          setState(() => isChatListOpen = false);
-                        },
-                      ),
-                    ),
-
-                    _SideSheet(
-                      side: AxisDirection.right,
-                      open: isPromptLibraryOpen,
-                      width: 440,
-                      child: SystemPromptLibraryPanel(
-                        onPromptLoaded: () {
-                          if (mounted) {
-                            setState(() => isPromptLibraryOpen = false);
-                          }
-                        },
-                      ),
-                    ),
-
-                    _SideSheet(
-                      side: AxisDirection.right,
-                      open: isWorkspaceOpen,
-                      width: 420,
-                      child: WorkspacePanel(
-                        chat: activeChat,
-                        onSelectWorkspace: _selectWorkspaceForActiveChat,
-                      ),
-                    ),
-
-                    _SideSheet(
-                      side: AxisDirection.right,
-                      open: isSettingsOpen,
-                      width: 420,
-                      child: const Settings(),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ],
-          );
-        },
-      ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 

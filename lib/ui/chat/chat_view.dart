@@ -3,11 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/enums/stream_state.dart';
+import 'package:hermes/core/helpers/responsive.dart';
 import 'package:hermes/core/helpers/scroll.dart';
 import 'package:hermes/core/helpers/style.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
+import 'package:hermes/core/services/keyboard_shortcuts.dart';
 import 'package:hermes/ui/chat/message/bubble_surface.dart';
 import 'package:hermes/ui/chat/message/message_actions.dart';
 import 'package:hermes/ui/chat/composer.dart';
@@ -33,7 +35,13 @@ class ChatView extends StatefulWidget {
 }
 
 class _ChatViewState extends State<ChatView> {
+  static const double _shortHeightBreakpoint = 420;
+  static const double _shortFooterHeightRatio = 0.62;
+  static const double _tinyHeightBreakpoint = 48;
+  static const double _tinyWidthBreakpoint = 80;
+
   final _scroll = SmartScrollController();
+  final _shortcuts = KeyboardShortcutsService();
   bool _jobPanelExpanded = false;
   bool _autoScrollEnabled = true;
   Timer? _scrollDebounceTimer;
@@ -41,6 +49,7 @@ class _ChatViewState extends State<ChatView> {
   @override
   void initState() {
     super.initState();
+    _shortcuts.register(HermesShortcut.toggleJobPanel, _toggleJobPanel);
     widget.chat.messageStore.addListener(_onMessagesChanged);
     widget.chat.chatStream.addListener(_onStreamStateChanged);
   }
@@ -49,6 +58,7 @@ class _ChatViewState extends State<ChatView> {
   void dispose() {
     widget.chat.messageStore.removeListener(_onMessagesChanged);
     widget.chat.chatStream.removeListener(_onStreamStateChanged);
+    _shortcuts.dispose();
     _scroll.dispose();
     _scrollDebounceTimer?.cancel();
     super.dispose();
@@ -88,54 +98,163 @@ class _ChatViewState extends State<ChatView> {
   @override
   Widget build(BuildContext context) {
     final chat = widget.chat;
-    return AnimatedBuilder(
-      animation: Listenable.merge([chat, chat.messageStore, chat.chatStream]),
-      builder: (_, _) {
-        final displayItems = _displayItems(chat.messageStore.messages);
-        final showJobPanel = _showJobPanel(chat);
-        return Column(
-          children: [
-            if (chat.pendingModelRestore != null)
-              _ModelRestoreBanner(chat: chat),
-            WorkspaceBar(chat: chat, onOpenWorkspace: widget.onOpenWorkspace),
-            if (showJobPanel && !_jobPanelExpanded)
-              JobPanel(
-                chat: chat,
-                expanded: false,
-                onToggleExpanded: _toggleJobPanel,
-              ),
-            if (showJobPanel && _jobPanelExpanded)
-              Expanded(
-                child: JobPanel(
+    final isNarrow = Responsive.isNarrow(context);
+
+    return Shortcuts(
+      shortcuts: _shortcuts.activeShortcuts,
+      child: Actions(
+        actions: _shortcuts.actions,
+        child: AnimatedBuilder(
+          animation: Listenable.merge([
+            chat,
+            chat.messageStore,
+            chat.chatStream,
+          ]),
+          builder: (_, _) {
+            final displayItems = _displayItems(chat.messageStore.messages);
+            final showJobPanel = _showJobPanel(chat);
+
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                final boundedHeight =
+                    constraints.hasBoundedHeight &&
+                    constraints.maxHeight.isFinite;
+                final boundedWidth =
+                    constraints.hasBoundedWidth &&
+                    constraints.maxWidth.isFinite;
+
+                if ((boundedHeight &&
+                        constraints.maxHeight < _tinyHeightBreakpoint) ||
+                    (boundedWidth &&
+                        constraints.maxWidth < _tinyWidthBreakpoint)) {
+                  return const SizedBox.shrink();
+                }
+
+                final useScrollableFooter =
+                    boundedHeight &&
+                    constraints.maxHeight < _shortHeightBreakpoint;
+                final footerMaxHeight = useScrollableFooter
+                    ? constraints.maxHeight * _shortFooterHeightRatio
+                    : null;
+
+                final mainColumn = _buildMainColumn(
                   chat: chat,
-                  expanded: true,
-                  onToggleExpanded: _toggleJobPanel,
-                ),
-              ),
-            Expanded(
-              child: _MessageList(
-                scroll: _scroll,
-                displayItems: displayItems,
-                chat: chat,
-                autoScrollEnabled: _autoScrollEnabled,
-                onScrollToBottom: _handleScrollToBottom,
-              ),
-            ),
-            const Divider(height: 1),
-            const DiagnosticsBar(),
-            ValueListenableBuilder<LlamaServerHandle?>(
-              valueListenable: chat.serverManager.handle,
-              builder: (_, handle, _) {
-                return Composer(chat: chat, enabled: handle != null);
+                  displayItems: displayItems,
+                  showJobPanel: showJobPanel,
+                  includeInlineJobPanel:
+                      !(isNarrow && _jobPanelExpanded && showJobPanel),
+                  useScrollableFooter: useScrollableFooter,
+                  footerMaxHeight: footerMaxHeight,
+                );
+
+                // On narrow screens, job panel becomes a bottom sheet overlay.
+                if (isNarrow && _jobPanelExpanded && showJobPanel) {
+                  return Stack(
+                    children: [
+                      mainColumn,
+                      Positioned(
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        child: DraggableScrollableSheet(
+                          initialChildSize: 0.5,
+                          minChildSize: 0.3,
+                          maxChildSize: 0.85,
+                          builder: (context, scrollController) {
+                            return JobPanel(
+                              chat: chat,
+                              expanded: true,
+                              onToggleExpanded: _toggleJobPanel,
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  );
+                }
+
+                return mainColumn;
               },
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMainColumn({
+    required ChatService chat,
+    required List<_DisplayItem> displayItems,
+    required bool showJobPanel,
+    required bool includeInlineJobPanel,
+    required bool useScrollableFooter,
+    required double? footerMaxHeight,
+  }) {
+    return Column(
+      children: [
+        if (chat.pendingModelRestore != null) _ModelRestoreBanner(chat: chat),
+        WorkspaceBar(chat: chat, onOpenWorkspace: widget.onOpenWorkspace),
+        if (includeInlineJobPanel && showJobPanel && !_jobPanelExpanded)
+          JobPanel(
+            chat: chat,
+            expanded: false,
+            onToggleExpanded: _toggleJobPanel,
+          ),
+        if (includeInlineJobPanel && showJobPanel && _jobPanelExpanded)
+          Expanded(
+            child: JobPanel(
+              chat: chat,
+              expanded: true,
+              onToggleExpanded: _toggleJobPanel,
             ),
-          ],
-        );
-      },
+          ),
+        Expanded(
+          child: _MessageList(
+            scroll: _scroll,
+            displayItems: displayItems,
+            chat: chat,
+            autoScrollEnabled: _autoScrollEnabled,
+            onScrollToBottom: _handleScrollToBottom,
+          ),
+        ),
+        const Divider(height: 1),
+        _buildFooter(
+          chat: chat,
+          scrollable: useScrollableFooter,
+          maxHeight: footerMaxHeight,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFooter({
+    required ChatService chat,
+    required bool scrollable,
+    required double? maxHeight,
+  }) {
+    final footer = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const DiagnosticsBar(),
+        ValueListenableBuilder<LlamaServerHandle?>(
+          valueListenable: chat.serverManager.handle,
+          builder: (_, handle, _) {
+            return Composer(chat: chat, enabled: handle != null);
+          },
+        ),
+      ],
+    );
+
+    if (!scrollable || maxHeight == null) return footer;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: SingleChildScrollView(child: footer),
     );
   }
 
   void _toggleJobPanel() {
+    if (!_showJobPanel(widget.chat)) return;
     setState(() => _jobPanelExpanded = !_jobPanelExpanded);
   }
 
@@ -248,7 +367,8 @@ class _MessageListState extends State<_MessageList> {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
           itemCount: widget.displayItems.length,
           itemBuilder: (_, i) {
-            final item = widget.displayItems[widget.displayItems.length - 1 - i];
+            final item =
+                widget.displayItems[widget.displayItems.length - 1 - i];
             final b = item.message;
             final isUser = item is _SummaryDisplayItem
                 ? false
@@ -297,7 +417,10 @@ class _MessageListState extends State<_MessageList> {
                 borderRadius: BorderRadius.circular(20),
                 onTap: widget.onScrollToBottom,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -309,10 +432,13 @@ class _MessageListState extends State<_MessageList> {
                       const SizedBox(width: 4),
                       Text(
                         'Scroll to bottom',
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onPrimaryContainer,
-                          fontWeight: FontWeight.w500,
-                        ),
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onPrimaryContainer,
+                              fontWeight: FontWeight.w500,
+                            ),
                       ),
                     ],
                   ),

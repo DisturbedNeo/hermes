@@ -26,4 +26,29 @@ void main() {
 
     expect(value, 256);
   });
+
+  testWidgets('lays out without overflow at narrow widths', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 327,
+              child: SliderControl.integer(
+                label: 'Context (K)',
+                value: 8,
+                min: 1,
+                max: 256,
+                step: 8,
+                onChanged: (_) {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(SliderControl<int>), findsOneWidget);
+  });
 }

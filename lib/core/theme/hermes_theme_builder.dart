@@ -9,7 +9,8 @@ import 'package:hermes/core/theme/extensions/input_theme.dart';
 
 /// Calculates the WCAG contrast ratio between two colors.
 double _contrastRatio(Color fg, Color bg) {
-  final fgLuminance = _relativeLuminance(fg);
+  final effectiveFg = fg.a < 1 ? Color.alphaBlend(fg, bg) : fg;
+  final fgLuminance = _relativeLuminance(effectiveFg);
   final bgLuminance = _relativeLuminance(bg);
   final lighter = fgLuminance > bgLuminance ? fgLuminance : bgLuminance;
   final darker = fgLuminance < bgLuminance ? fgLuminance : bgLuminance;
@@ -18,9 +19,9 @@ double _contrastRatio(Color fg, Color bg) {
 
 /// Calculates the relative luminance of a color per WCAG 2.x specification.
 double _relativeLuminance(Color c) {
-  final r = _linearize(c.r / 255.0);
-  final g = _linearize(c.g / 255.0);
-  final b = _linearize(c.b / 255.0);
+  final r = _linearize(c.r);
+  final g = _linearize(c.g);
+  final b = _linearize(c.b);
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
@@ -93,6 +94,13 @@ class HermesThemeBuilder {
     return this;
   }
 
+  Color _headlineColor() {
+    final preferred = _isDark ? _palette.secondary : _palette.primary;
+    return _contrastRatio(preferred, _palette.surface) >= 4.5
+        ? preferred
+        : _palette.onSurface;
+  }
+
   ThemeData build() {
     // Validate contrast ratios in debug mode (WCAG AA minimums)
     if (kDebugMode) {
@@ -105,10 +113,9 @@ class HermesThemeBuilder {
       );
 
       // Headline text on surface background — normal text requires 4.5:1
-      final headlineColor = _isDark ? _palette.secondary : _palette.primary;
       _validateContrast(
         'headline text on surface',
-        headlineColor,
+        _headlineColor(),
         _palette.surface,
         minRatio: 4.5,
       );
@@ -278,7 +285,7 @@ class HermesThemeBuilder {
   }
 
   TextTheme _createDefaultTextTheme() {
-    final headlineColor = _isDark ? _palette.secondary : _palette.primary;
+    final headlineColor = _headlineColor();
     final bodyColor = _palette.onSurface;
 
     return TextTheme(

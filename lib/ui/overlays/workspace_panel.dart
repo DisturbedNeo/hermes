@@ -6,6 +6,7 @@ import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/core/services/workspace_service.dart';
+import 'package:hermes/ui/common/state_display.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class WorkspacePanel extends StatefulWidget {
@@ -23,6 +24,10 @@ class WorkspacePanel extends StatefulWidget {
 }
 
 class _WorkspacePanelState extends State<WorkspacePanel> {
+  static const double _shortPanelHeight = 180;
+  static const double _compactBodyHeight = 160;
+  static const double _compactActionWidth = 240;
+
   final WorkspaceService _workspaceService = serviceProvider
       .get<WorkspaceService>();
 
@@ -120,31 +125,124 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
     final workspace = chat?.workspace;
     final canMutate = !(chat?.chatStream.isStreaming ?? false);
 
-    return Column(
-      children: [
-        ListTile(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final boundedHeight =
+            constraints.hasBoundedHeight && constraints.maxHeight.isFinite;
+        final compactHeight =
+            !boundedHeight || constraints.maxHeight < _shortPanelHeight;
+        final body = _buildBody(canMutate);
+        final content = Column(
+          mainAxisSize: compactHeight ? MainAxisSize.min : MainAxisSize.max,
+          children: [
+            _buildHeader(workspace, canMutate),
+            _buildActions(chat, workspace, canMutate),
+            const Divider(height: 1),
+            if (compactHeight)
+              SizedBox(height: _compactBodyHeight, child: body)
+            else
+              Expanded(child: body),
+          ],
+        );
+
+        if (!compactHeight) return content;
+
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: boundedHeight ? constraints.maxHeight : 0,
+            ),
+            child: content,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildHeader(WorkspaceAttachment? workspace, bool canMutate) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact =
+            constraints.hasBoundedWidth && constraints.maxWidth < 220;
+        return ListTile(
+          contentPadding: EdgeInsets.symmetric(horizontal: compact ? 8 : 16),
           title: const Text(
             'Workspace',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(fontWeight: FontWeight.w600),
           ),
           subtitle: workspace == null
-              ? const Text('No folder attached')
+              ? const Text(
+                  'No folder attached',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                )
               : Text(
                   workspace.rootPath,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-          trailing: IconButton(
-            tooltip: 'Open in file explorer',
-            icon: const Icon(Icons.folder_open_outlined),
-            onPressed: canMutate && workspace != null
-                ? () => _openInExplorer(workspace.rootPath)
-                : null,
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: Row(
+          trailing: compact
+              ? null
+              : IconButton(
+                  tooltip: 'Open in file explorer',
+                  icon: const Icon(Icons.folder_open_outlined),
+                  onPressed: canMutate && workspace != null
+                      ? () => _openInExplorer(workspace.rootPath)
+                      : null,
+                ),
+        );
+      },
+    );
+  }
+
+  Widget _buildActions(
+    ChatService? chat,
+    WorkspaceAttachment? workspace,
+    bool canMutate,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact =
+              constraints.hasBoundedWidth &&
+              constraints.maxWidth < _compactActionWidth;
+
+          if (compact) {
+            return Align(
+              alignment: Alignment.centerLeft,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton.outlined(
+                      tooltip: workspace == null
+                          ? 'Attach workspace'
+                          : 'Change workspace',
+                      icon: const Icon(Icons.swap_horiz),
+                      onPressed: canMutate
+                          ? () => widget.onSelectWorkspace()
+                          : null,
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton.outlined(
+                      tooltip: 'Detach workspace',
+                      icon: const Icon(Icons.link_off),
+                      onPressed: workspace != null && canMutate
+                          ? chat?.detachWorkspace
+                          : null,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          return Row(
             children: [
               Expanded(
                 child: OutlinedButton.icon(
@@ -166,92 +264,90 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
                 ),
               ),
             ],
-          ),
-        ),
-        const Divider(height: 1),
-        Expanded(child: _buildBody(canMutate)),
-      ],
+          );
+        },
+      ),
     );
   }
 
   Widget _buildBody(bool canMutate) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
-    if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text('Failed to load workspace: $_error'),
-        ),
-      );
-    }
+    final hasData =
+        _entries.isNotEmpty ||
+        (widget.chat?.availableJobs.isNotEmpty ?? false) ||
+        _recent.isNotEmpty;
 
-    return ListView(
-      children: [
-        if (_entries.isNotEmpty) ...[
-          const _SectionHeader('Files'),
-          for (final entry in _entries.take(80))
-            ListTile(
-              dense: true,
-              leading: Icon(
-                entry['type'] == 'directory'
-                    ? Icons.folder_outlined
-                    : Icons.description_outlined,
+    return StateDisplay(
+      state: _loading
+          ? DisplayState.loading
+          : (_error != null
+                ? DisplayState.error
+                : (hasData ? DisplayState.content : DisplayState.empty)),
+      content: ListView(
+        children: [
+          if (_entries.isNotEmpty) ...[
+            const _SectionHeader('Files'),
+            for (final entry in _entries.take(80))
+              ListTile(
+                dense: true,
+                leading: Icon(
+                  entry['type'] == 'directory'
+                      ? Icons.folder_outlined
+                      : Icons.description_outlined,
+                ),
+                title: Text(
+                  entry['name'] as String,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(entry['path'] as String),
               ),
-              title: Text(
-                entry['name'] as String,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+          ],
+          if ((widget.chat?.availableJobs.isNotEmpty ?? false)) ...[
+            const _SectionHeader('Jobs In This Chat'),
+            for (final job in widget.chat!.availableJobs.take(12))
+              ListTile(
+                dense: true,
+                leading: Icon(_iconForJobStatus(job.status)),
+                title: Text(
+                  job.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  '${job.status.wire} - ${job.id}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: canMutate
+                    ? () => unawaited(widget.chat?.loadJob(job.id))
+                    : null,
               ),
-              subtitle: Text(entry['path'] as String),
-            ),
+          ],
+          if (_recent.isNotEmpty) ...[
+            const _SectionHeader('Recent'),
+            for (final workspace in _recent)
+              ListTile(
+                leading: const Icon(Icons.history),
+                title: Text(
+                  workspace.displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  workspace.rootPath,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: canMutate
+                    ? () => unawaited(_attachRecent(workspace))
+                    : null,
+              ),
+          ],
         ],
-        if ((widget.chat?.availableJobs.isNotEmpty ?? false)) ...[
-          const _SectionHeader('Jobs In This Chat'),
-          for (final job in widget.chat!.availableJobs.take(12))
-            ListTile(
-              dense: true,
-              leading: Icon(_iconForJobStatus(job.status)),
-              title: Text(
-                job.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: Text(
-                '${job.status.wire} - ${job.id}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              onTap: canMutate
-                  ? () => unawaited(widget.chat?.loadJob(job.id))
-                  : null,
-            ),
-        ],
-        if (_recent.isNotEmpty) ...[
-          const _SectionHeader('Recent'),
-          for (final workspace in _recent)
-            ListTile(
-              leading: const Icon(Icons.history),
-              title: Text(
-                workspace.displayName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: Text(
-                workspace.rootPath,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              onTap: canMutate
-                  ? () => unawaited(_attachRecent(workspace))
-                  : null,
-            ),
-        ],
-        if (_entries.isEmpty && _recent.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(24),
-            child: Center(child: Text('No recent workspaces')),
-          ),
-      ],
+      ),
+      errorMessage: 'Failed to load workspace: $_error',
+      emptyMessage: 'No recent workspaces',
+      onRetry: _error != null ? () => _load() : null,
     );
   }
 }

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/enums/stream_state.dart';
 import 'package:hermes/core/helpers/a11y.dart';
+import 'package:hermes/core/helpers/responsive.dart';
 import 'package:hermes/core/models/job.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
@@ -96,6 +97,70 @@ class _ComposerState extends State<Composer> {
 
   String _labelForRole(MessageRole role) =>
       "${role.wire[0].toUpperCase()}${role.wire.substring(1).toLowerCase()}";
+
+  Widget _roleDropdownItem(MessageRole role, {required double iconSize}) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final hasTightLabelSpace =
+            constraints.hasBoundedWidth && constraints.maxWidth < 56;
+
+        if (!constraints.hasBoundedWidth) {
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(_iconForRole(role), size: iconSize),
+              const SizedBox(width: 6),
+              Text(_labelForRole(role)),
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            Icon(_iconForRole(role), size: iconSize),
+            if (!hasTightLabelSpace) ...[
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  _labelForRole(role),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _roleDropdownSelectedItem(
+    MessageRole role, {
+    required double iconSize,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final showLabel =
+            !constraints.hasBoundedWidth || constraints.maxWidth >= 56;
+
+        return Row(
+          children: [
+            Icon(_iconForRole(role), size: iconSize),
+            if (showLabel) ...[
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  _labelForRole(role),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
 
   /// Builds an accessibility label for the role dropdown.
   String _buildRoleSemanticLabel(MessageRole role) {
@@ -203,11 +268,427 @@ class _ComposerState extends State<Composer> {
     return KeyEventResult.ignored;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final roleIsUser = _selectedRole == MessageRole.user;
+  Widget _buildActionControls(
+    ChatService chat,
+    TextEditingValue value,
+    bool inputEnabled,
+  ) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact =
+            constraints.hasBoundedWidth && constraints.maxWidth < 180;
+
+        if (_selectedRole != MessageRole.user) {
+          return Align(
+            alignment: Alignment.centerRight,
+            child: _actionButton(
+              icon: Icons.add,
+              label: 'Insert',
+              tooltip: 'Insert ${_labelForRole(_selectedRole)} message',
+              onPressed: inputEnabled ? _insertMessage : null,
+              compact: compact,
+            ),
+          );
+        }
+
+        final mode = _modeFor(value.text);
+        return Align(
+          alignment: Alignment.centerRight,
+          child: switch (mode) {
+            ComposerMode.cancel => _actionButton(
+              icon: Icons.stop,
+              label: 'Cancel',
+              onPressed: chat.jobBusy
+                  ? chat.jobCancellationRequested
+                        ? null
+                        : () => unawaited(chat.cancelJobRun())
+                  : chat.cancelGeneration,
+              compact: compact,
+            ),
+            ComposerMode.generate => _actionButton(
+              icon: Icons.auto_awesome,
+              label: 'Generate',
+              onPressed: inputEnabled
+                  ? () => chat.generateOrContinue(tools: _effectiveToolIds())
+                  : null,
+              compact: compact,
+            ),
+            ComposerMode.cont => _actionButton(
+              icon: Icons.more_horiz,
+              label: 'Continue',
+              onPressed: inputEnabled
+                  ? () => chat.generateOrContinue(tools: _effectiveToolIds())
+                  : null,
+              compact: compact,
+            ),
+            ComposerMode.send => _actionButton(
+              icon: chat.executionMode == ExecutionMode.chat
+                  ? Icons.send
+                  : Icons.account_tree_outlined,
+              label: chat.executionMode == ExecutionMode.chat
+                  ? 'Send'
+                  : chat.executionMode.label,
+              onPressed: inputEnabled
+                  ? () {
+                      final trimmed = value.text.trim();
+                      _controller.clear();
+                      _controller.selection = const TextSelection.collapsed(
+                        offset: 0,
+                      );
+                      _focusNode.requestFocus();
+                      chat.send(trimmed, tools: _effectiveToolIds());
+                    }
+                  : null,
+              compact: compact,
+            ),
+          },
+        );
+      },
+    );
+  }
+
+  Widget _actionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onPressed,
+    required bool compact,
+    String? tooltip,
+  }) {
+    if (compact) {
+      return IconButton.filled(
+        icon: Icon(icon),
+        tooltip: tooltip ?? label,
+        onPressed: onPressed,
+      );
+    }
+
+    final button = FilledButton.icon(
+      icon: Icon(icon),
+      label: Text(label),
+      onPressed: onPressed,
+    );
+
+    if (tooltip == null) return button;
+
+    return Tooltip(
+      message: tooltip,
+      waitDuration: const Duration(milliseconds: 400),
+      child: button,
+    );
+  }
+
+  /// Builds the wide-screen composer layout with all controls in a single row.
+  List<Widget> _buildWideLayout(BuildContext context) {
+    final chat = widget.chat;
+    final inputEnabled = widget.enabled && !chat.jobBusy;
     final effectiveToolIds = _effectiveToolIds();
     final hasTools = effectiveToolIds.isNotEmpty;
+
+    return [
+      ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 140, maxWidth: 180),
+        child: Tooltip(
+          message: 'Message role',
+          waitDuration: const Duration(milliseconds: 400),
+          child: AccessibleWidget(
+            label: _buildRoleSemanticLabel(_selectedRole),
+            isButton: true,
+            enabled: inputEnabled,
+            child: DropdownButtonFormField<MessageRole>(
+              initialValue: _selectedRole,
+              isExpanded: true,
+              isDense: true,
+              selectedItemBuilder: (context) => MessageRole.values
+                  .map((role) => _roleDropdownSelectedItem(role, iconSize: 18))
+                  .toList(),
+              onChanged: inputEnabled
+                  ? (v) {
+                      if (v == null) return;
+                      setState(() => _selectedRole = v);
+                      _focusNode.requestFocus();
+                    }
+                  : null,
+              decoration: const InputDecoration(
+                labelText: 'Role',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+              ),
+              items: MessageRole.values.map((role) {
+                return DropdownMenuItem<MessageRole>(
+                  value: role,
+                  child: _roleDropdownItem(role, iconSize: 18),
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AccessibleWidget(
+            label: _buildToolButtonSemanticLabel(
+              effectiveToolIds.length,
+              inputEnabled,
+            ),
+            isButton: true,
+            enabled: inputEnabled,
+            child: IconButton(
+              tooltip: hasTools
+                  ? 'Tools (${effectiveToolIds.length})'
+                  : 'Select tools',
+              onPressed: inputEnabled ? _openToolSelector : null,
+              icon: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  const Icon(Icons.build),
+                  if (hasTools)
+                    Positioned(
+                      right: -4,
+                      top: -4,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          effectiveToolIds.length.toString(),
+                          style: const TextStyle(
+                            fontSize: 9,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          if (hasTools)
+            Text(
+              '${effectiveToolIds.length}',
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(fontSize: 10),
+            ),
+        ],
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: TextField(
+          controller: _controller,
+          focusNode: _focusNode,
+          minLines: 1,
+          maxLines: 6,
+          enabled: inputEnabled,
+          keyboardType: TextInputType.multiline,
+          textInputAction:
+              (_selectedRole == MessageRole.user &&
+                  !chat.chatStream.isStreaming)
+              ? TextInputAction.send
+              : TextInputAction.newline,
+          decoration: InputDecoration(
+            hintText: !widget.enabled
+                ? 'Load a model to chat...'
+                : chat.jobBusy
+                ? 'Job is running...'
+                : chat.chatStream.isStreaming
+                ? 'Streaming response...'
+                : chat.executionMode == ExecutionMode.chat
+                ? 'Type a message...'
+                : 'Describe the job...',
+            border: const OutlineInputBorder(),
+          ),
+          onSubmitted: _handleSubmitted,
+          onEditingComplete: () => _focusNode.requestFocus(),
+        ),
+      ),
+      const SizedBox(width: 8),
+      AnimatedBuilder(
+        animation: chat.chatStream,
+        builder: (_, _) {
+          return ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _controller,
+            builder: (_, value, _) =>
+                _buildActionControls(chat, value, inputEnabled),
+          );
+        },
+      ),
+    ];
+  }
+
+  /// Builds the narrow-screen composer layout with controls stacked vertically.
+  List<Widget> _buildNarrowLayout(BuildContext context) {
+    final chat = widget.chat;
+    final inputEnabled = widget.enabled && !chat.jobBusy;
+    final effectiveToolIds = _effectiveToolIds();
+    final hasTools = effectiveToolIds.isNotEmpty;
+
+    return [
+      // Top row: role dropdown + tool button
+      Row(
+        children: [
+          Expanded(
+            flex: 2,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 100, maxWidth: 180),
+              child: Tooltip(
+                message: 'Message role',
+                waitDuration: const Duration(milliseconds: 400),
+                child: AccessibleWidget(
+                  label: _buildRoleSemanticLabel(_selectedRole),
+                  isButton: true,
+                  enabled: inputEnabled,
+                  child: DropdownButtonFormField<MessageRole>(
+                    initialValue: _selectedRole,
+                    isExpanded: true,
+                    isDense: true,
+                    selectedItemBuilder: (context) => MessageRole.values
+                        .map(
+                          (role) =>
+                              _roleDropdownSelectedItem(role, iconSize: 16),
+                        )
+                        .toList(),
+                    onChanged: inputEnabled
+                        ? (v) {
+                            if (v == null) return;
+                            setState(() => _selectedRole = v);
+                            _focusNode.requestFocus();
+                          }
+                        : null,
+                    decoration: const InputDecoration(
+                      labelText: 'Role',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 8,
+                      ),
+                    ),
+                    items: MessageRole.values.map((role) {
+                      return DropdownMenuItem<MessageRole>(
+                        value: role,
+                        child: _roleDropdownItem(role, iconSize: 16),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 1,
+            child: Center(
+              child: AccessibleWidget(
+                label: _buildToolButtonSemanticLabel(
+                  effectiveToolIds.length,
+                  inputEnabled,
+                ),
+                isButton: true,
+                enabled: inputEnabled,
+                child: IconButton(
+                  tooltip: hasTools
+                      ? 'Tools (${effectiveToolIds.length})'
+                      : 'Select tools',
+                  onPressed: inputEnabled ? _openToolSelector : null,
+                  icon: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      const Icon(Icons.build),
+                      if (hasTools)
+                        Positioned(
+                          right: -4,
+                          top: -4,
+                          child: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              effectiveToolIds.length.toString(),
+                              style: const TextStyle(
+                                fontSize: 9,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      // Full-width text field
+      TextField(
+        controller: _controller,
+        focusNode: _focusNode,
+        minLines: 1,
+        maxLines: 6,
+        enabled: inputEnabled,
+        keyboardType: TextInputType.multiline,
+        textInputAction:
+            (_selectedRole == MessageRole.user && !chat.chatStream.isStreaming)
+            ? TextInputAction.send
+            : TextInputAction.newline,
+        decoration: InputDecoration(
+          hintText: !widget.enabled
+              ? 'Load a model to chat...'
+              : chat.jobBusy
+              ? 'Job is running...'
+              : chat.chatStream.isStreaming
+              ? 'Streaming response...'
+              : chat.executionMode == ExecutionMode.chat
+              ? 'Type a message...'
+              : 'Describe the job...',
+          border: const OutlineInputBorder(),
+        ),
+        onSubmitted: _handleSubmitted,
+        onEditingComplete: () => _focusNode.requestFocus(),
+      ),
+      const SizedBox(height: 8),
+      // Action buttons
+      AnimatedBuilder(
+        animation: chat.chatStream,
+        builder: (_, _) {
+          return ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _controller,
+            builder: (_, value, _) =>
+                _buildActionControls(chat, value, inputEnabled),
+          );
+        },
+      ),
+    ];
+  }
+
+  void _handleSubmitted(String text) {
+    if (!widget.enabled || widget.chat.jobBusy) return;
+    if (_selectedRole != MessageRole.user) {
+      _insertMessage();
+      return;
+    }
+    final trimmed = text.trim();
+    _controller.clear();
+    _controller.selection = const TextSelection.collapsed(offset: 0);
+    _focusNode.requestFocus();
+    if (trimmed.isNotEmpty) {
+      widget.chat.send(trimmed, tools: _effectiveToolIds());
+    } else {
+      widget.chat.generateOrContinue(tools: _effectiveToolIds());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final chat = widget.chat;
     final inputEnabled = widget.enabled && !chat.jobBusy;
 
@@ -215,275 +696,22 @@ class _ComposerState extends State<Composer> {
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _ExecutionModeSelector(chat: chat, enabled: inputEnabled),
-            const SizedBox(height: 8),
-            Row(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isNarrow = Responsive.isNarrow(context);
+
+            return Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    minWidth: 140,
-                    maxWidth: 180,
-                  ),
-                  child: Tooltip(
-                    message: 'Message role',
-                    waitDuration: const Duration(milliseconds: 400),
-                    child: AccessibleWidget(
-                      label: _buildRoleSemanticLabel(_selectedRole),
-                      isButton: true,
-
-                      enabled: inputEnabled,
-                      child: DropdownButtonFormField<MessageRole>(
-                        initialValue: _selectedRole,
-                        isDense: true,
-                        onChanged: inputEnabled
-                            ? (v) {
-                                if (v == null) return;
-                                setState(() => _selectedRole = v);
-                                _focusNode.requestFocus();
-                              }
-                            : null,
-                        decoration: const InputDecoration(
-                          labelText: 'Role',
-                          border: OutlineInputBorder(),
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
-                          ),
-                        ),
-                        items: MessageRole.values.map((role) {
-                          return DropdownMenuItem<MessageRole>(
-                            value: role,
-                            child: Row(
-                              children: [
-                                Icon(_iconForRole(role), size: 18),
-                                const SizedBox(width: 8),
-                                Text(_labelForRole(role)),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AccessibleWidget(
-                      label: _buildToolButtonSemanticLabel(
-                        effectiveToolIds.length,
-                        inputEnabled,
-                      ),
-                      isButton: true,
-                      enabled: inputEnabled,
-                      child: IconButton(
-                        tooltip: hasTools
-                            ? 'Tools (${effectiveToolIds.length})'
-                            : 'Select tools',
-                        onPressed: inputEnabled ? _openToolSelector : null,
-                        icon: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            const Icon(Icons.build),
-                            if (hasTools)
-                              Positioned(
-                                right: -4,
-                                top: -4,
-                                child: Container(
-                                  padding: const EdgeInsets.all(3),
-                                  decoration: BoxDecoration(
-                                    color: Colors.redAccent,
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                  child: Text(
-                                    effectiveToolIds.length.toString(),
-                                    style: const TextStyle(
-                                      fontSize: 9,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    if (hasTools)
-                      Text(
-                        '${effectiveToolIds.length}',
-                        style: Theme.of(
-                          context,
-                        ).textTheme.labelSmall?.copyWith(fontSize: 10),
-                      ),
-                  ],
-                ),
-                const SizedBox(width: 8),
-
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    focusNode: _focusNode,
-                    minLines: 1,
-                    maxLines: 6,
-                    enabled: inputEnabled,
-                    keyboardType: TextInputType.multiline,
-                    textInputAction:
-                        (roleIsUser && !chat.chatStream.isStreaming)
-                        ? TextInputAction.send
-                        : TextInputAction.newline,
-                    decoration: InputDecoration(
-                      hintText: !widget.enabled
-                          ? 'Load a model to chat...'
-                          : chat.jobBusy
-                          ? 'Job is running...'
-                          : chat.chatStream.isStreaming
-                          ? 'Streaming response...'
-                          : chat.executionMode == ExecutionMode.chat
-                          ? 'Type a message...'
-                          : 'Describe the job...',
-                      border: const OutlineInputBorder(),
-                    ),
-                    onSubmitted: (_) {
-                      if (!inputEnabled) return;
-                      if (_selectedRole != MessageRole.user) {
-                        _insertMessage();
-                        return;
-                      }
-                      if (!chat.chatStream.isStreaming && !chat.jobBusy) {
-                        final trimmed = _controller.text.trim();
-                        _controller.clear();
-                        _controller.selection = const TextSelection.collapsed(
-                          offset: 0,
-                        );
-                        _focusNode.requestFocus();
-
-                        if (trimmed.isNotEmpty) {
-                          chat.send(trimmed, tools: _effectiveToolIds());
-                        } else {
-                          chat.generateOrContinue(tools: _effectiveToolIds());
-                        }
-                      }
-                    },
-                    onEditingComplete: () {
-                      _focusNode.requestFocus();
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                AnimatedBuilder(
-                  animation: chat.chatStream,
-                  builder: (_, _) {
-                    return ValueListenableBuilder<TextEditingValue>(
-                      valueListenable: _controller,
-                      builder: (_, value, _) {
-                        final mode = _modeFor(value.text);
-                        final List<Widget> buttons = [];
-
-                        if (_selectedRole == MessageRole.user) {
-                          switch (mode) {
-                            case ComposerMode.cancel:
-                              buttons.add(
-                                FilledButton.icon(
-                                  icon: const Icon(Icons.stop),
-                                  label: const Text('Cancel'),
-                                  onPressed: chat.jobBusy
-                                      ? chat.jobCancellationRequested
-                                            ? null
-                                            : () =>
-                                                  unawaited(chat.cancelJobRun())
-                                      : chat.cancelGeneration,
-                                ),
-                              );
-                              break;
-                            case ComposerMode.generate:
-                              buttons.add(
-                                FilledButton.icon(
-                                  icon: const Icon(Icons.auto_awesome),
-                                  label: const Text('Generate'),
-                                  onPressed: inputEnabled
-                                      ? () => chat.generateOrContinue(
-                                          tools: _effectiveToolIds(),
-                                        )
-                                      : null,
-                                ),
-                              );
-                              break;
-                            case ComposerMode.cont:
-                              buttons.add(
-                                FilledButton.icon(
-                                  icon: const Icon(Icons.more_horiz),
-                                  label: const Text('Continue'),
-                                  onPressed: inputEnabled
-                                      ? () => chat.generateOrContinue(
-                                          tools: _effectiveToolIds(),
-                                        )
-                                      : null,
-                                ),
-                              );
-                              break;
-                            case ComposerMode.send:
-                              buttons.add(
-                                FilledButton.icon(
-                                  icon: Icon(
-                                    chat.executionMode == ExecutionMode.chat
-                                        ? Icons.send
-                                        : Icons.account_tree_outlined,
-                                  ),
-                                  label: Text(
-                                    chat.executionMode == ExecutionMode.chat
-                                        ? 'Send'
-                                        : chat.executionMode.label,
-                                  ),
-                                  onPressed: inputEnabled
-                                      ? () {
-                                          final trimmed = value.text.trim();
-                                          _controller.clear();
-                                          _controller.selection =
-                                              const TextSelection.collapsed(
-                                                offset: 0,
-                                              );
-                                          _focusNode.requestFocus();
-                                          chat.send(
-                                            trimmed,
-                                            tools: _effectiveToolIds(),
-                                          );
-                                        }
-                                      : null,
-                                ),
-                              );
-                              break;
-                          }
-                        } else {
-                          buttons.add(
-                            Tooltip(
-                              message:
-                                  'Insert ${_labelForRole(_selectedRole)} message',
-                              waitDuration: const Duration(milliseconds: 400),
-                              child: FilledButton.icon(
-                                icon: const Icon(Icons.add),
-                                label: const Text('Insert'),
-                                onPressed: inputEnabled ? _insertMessage : null,
-                              ),
-                            ),
-                          );
-                        }
-
-                        return Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: buttons,
-                        );
-                      },
-                    );
-                  },
-                ),
+                _ExecutionModeSelector(chat: chat, enabled: inputEnabled),
+                const SizedBox(height: 8),
+                if (isNarrow)
+                  ..._buildNarrowLayout(context)
+                else
+                  Row(children: _buildWideLayout(context)),
               ],
-            ),
-          ],
+            );
+          },
         ),
       ),
     );

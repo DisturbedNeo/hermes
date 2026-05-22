@@ -26,6 +26,10 @@ class SystemPromptLibraryPanel extends StatefulWidget {
 }
 
 class _SystemPromptLibraryPanelState extends State<SystemPromptLibraryPanel> {
+  static const double _shortPanelHeight = 220;
+  static const double _shortTabHeight = 96;
+  static const double _compactTabViewHeight = 180;
+
   final _presetSearchController = TextEditingController();
   final _moduleSearchController = TextEditingController();
 
@@ -336,109 +340,175 @@ class _SystemPromptLibraryPanelState extends State<SystemPromptLibraryPanel> {
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 2,
-      child: Column(
-        children: [
-          const ListTile(
-            title: Text(
-              'System Prompts',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text('Presets assemble reusable prompt modules'),
-          ),
-          const TabBar(
-            tabs: [
-              Tab(text: 'Presets'),
-              Tab(text: 'Modules'),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact =
+              constraints.hasBoundedHeight &&
+              constraints.maxHeight < _shortPanelHeight;
+          final tabView = _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+              ? _ErrorView(error: _error!)
+              : TabBarView(children: [_buildPresetTab(), _buildModuleTab()]);
+          final content = Column(
+            mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
+            children: [
+              const ListTile(
+                title: Text(
+                  'System Prompts',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text('Presets assemble reusable prompt modules'),
+              ),
+              const TabBar(
+                tabs: [
+                  Tab(text: 'Presets'),
+                  Tab(text: 'Modules'),
+                ],
+              ),
+              const Divider(height: 1),
+              if (compact)
+                SizedBox(height: _compactTabViewHeight, child: tabView)
+              else
+                Expanded(child: tabView),
             ],
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                ? _ErrorView(error: _error!)
-                : TabBarView(children: [_buildPresetTab(), _buildModuleTab()]),
-          ),
-        ],
+          );
+
+          if (!compact) return content;
+
+          return SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: content,
+            ),
+          );
+        },
       ),
     );
   }
 
   Widget _buildPresetTab() {
-    return Column(
-      children: [
-        _PanelToolbar(
-          controller: _presetSearchController,
-          hintText: 'Search presets',
-          createTooltip: 'Create preset',
-          onCreate: _createPreset,
-        ),
-        const Divider(height: 1),
-        Expanded(
-          child: _presets.isEmpty
-              ? Center(
-                  child: Text(
-                    _presetQuery.isEmpty
-                        ? 'No prompt presets'
-                        : 'No matching presets',
-                  ),
-                )
-              : ListView.separated(
-                  itemCount: _presets.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (_, i) => _PresetTile(
-                    preset: _presets[i],
-                    onLoad: () => unawaited(_loadPreset(_presets[i])),
-                    onPreview: () => unawaited(_previewPreset(_presets[i])),
-                    onEdit: _presets[i].isBuiltIn
-                        ? null
-                        : () => unawaited(_editPreset(_presets[i])),
-                    onDuplicate: () => unawaited(_duplicatePreset(_presets[i])),
-                    onDelete: _presets[i].isBuiltIn
-                        ? null
-                        : () => unawaited(_deletePreset(_presets[i])),
-                  ),
-                ),
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact =
+            constraints.hasBoundedHeight &&
+            constraints.maxHeight < _shortTabHeight;
+        final body = _buildPresetTabBody(scrollable: !compact);
+
+        return _buildLibraryTab(
+          compact: compact,
+          toolbar: _PanelToolbar(
+            controller: _presetSearchController,
+            hintText: 'Search presets',
+            createTooltip: 'Create preset',
+            onCreate: _createPreset,
+          ),
+          body: body,
+        );
+      },
     );
   }
 
   Widget _buildModuleTab() {
-    return Column(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact =
+            constraints.hasBoundedHeight &&
+            constraints.maxHeight < _shortTabHeight;
+        final body = _buildModuleTabBody(scrollable: !compact);
+
+        return _buildLibraryTab(
+          compact: compact,
+          toolbar: _PanelToolbar(
+            controller: _moduleSearchController,
+            hintText: 'Search modules',
+            createTooltip: 'Create module',
+            onCreate: _createModule,
+          ),
+          body: body,
+        );
+      },
+    );
+  }
+
+  Widget _buildLibraryTab({
+    required bool compact,
+    required Widget toolbar,
+    required Widget body,
+  }) {
+    final content = Column(
+      mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
       children: [
-        _PanelToolbar(
-          controller: _moduleSearchController,
-          hintText: 'Search modules',
-          createTooltip: 'Create module',
-          onCreate: _createModule,
-        ),
+        toolbar,
         const Divider(height: 1),
-        Expanded(
-          child: _modules.isEmpty
-              ? Center(
-                  child: Text(
-                    _moduleQuery.isEmpty
-                        ? 'No prompt modules'
-                        : 'No matching modules',
-                  ),
-                )
-              : ListView.separated(
-                  itemCount: _modules.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (_, i) => _ModuleTile(
-                    module: _modules[i],
-                    onEdit: _modules[i].isBuiltIn
-                        ? null
-                        : () => unawaited(_editModule(_modules[i])),
-                    onDuplicate: () => unawaited(_duplicateModule(_modules[i])),
-                    onDelete: _modules[i].isBuiltIn
-                        ? null
-                        : () => unawaited(_deleteModule(_modules[i])),
-                  ),
-                ),
-        ),
+        if (compact) body else Expanded(child: body),
       ],
+    );
+
+    if (!compact) return content;
+
+    return SingleChildScrollView(child: content);
+  }
+
+  Widget _buildPresetTabBody({required bool scrollable}) {
+    if (_presets.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Center(
+          child: Text(
+            _presetQuery.isEmpty ? 'No prompt presets' : 'No matching presets',
+          ),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      shrinkWrap: !scrollable,
+      physics: scrollable ? null : const NeverScrollableScrollPhysics(),
+      itemCount: _presets.length,
+      separatorBuilder: (_, _) => const Divider(height: 1),
+      itemBuilder: (_, i) => _PresetTile(
+        preset: _presets[i],
+        onLoad: () => unawaited(_loadPreset(_presets[i])),
+        onPreview: () => unawaited(_previewPreset(_presets[i])),
+        onEdit: _presets[i].isBuiltIn
+            ? null
+            : () => unawaited(_editPreset(_presets[i])),
+        onDuplicate: () => unawaited(_duplicatePreset(_presets[i])),
+        onDelete: _presets[i].isBuiltIn
+            ? null
+            : () => unawaited(_deletePreset(_presets[i])),
+      ),
+    );
+  }
+
+  Widget _buildModuleTabBody({required bool scrollable}) {
+    if (_modules.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Center(
+          child: Text(
+            _moduleQuery.isEmpty ? 'No prompt modules' : 'No matching modules',
+          ),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      shrinkWrap: !scrollable,
+      physics: scrollable ? null : const NeverScrollableScrollPhysics(),
+      itemCount: _modules.length,
+      separatorBuilder: (_, _) => const Divider(height: 1),
+      itemBuilder: (_, i) => _ModuleTile(
+        module: _modules[i],
+        onEdit: _modules[i].isBuiltIn
+            ? null
+            : () => unawaited(_editModule(_modules[i])),
+        onDuplicate: () => unawaited(_duplicateModule(_modules[i])),
+        onDelete: _modules[i].isBuiltIn
+            ? null
+            : () => unawaited(_deleteModule(_modules[i])),
+      ),
     );
   }
 }
@@ -485,6 +555,8 @@ class _PanelToolbar extends StatelessWidget {
 }
 
 class _PresetTile extends StatelessWidget {
+  static const double _compactWidth = 360;
+
   final PromptPreset preset;
   final VoidCallback onLoad;
   final VoidCallback onPreview;
@@ -503,60 +575,41 @@ class _PresetTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(
-        preset.isLegacy ? Icons.article_outlined : Icons.account_tree_outlined,
-      ),
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              preset.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          if (preset.isBuiltIn)
-            const Padding(
-              padding: EdgeInsets.only(left: 6),
-              child: Icon(Icons.lock_outline, size: 14),
-            ),
-        ],
-      ),
-      subtitle: Text(
-        preset.isLegacy
-            ? _preview(preset.legacyFullPrompt ?? '')
-            : '${preset.baseModuleIds.length} base, ${preset.optionalModuleIds.length} optional${preset.customInstructions.trim().isEmpty ? '' : ' + custom instructions'}',
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FilledButton.icon(
-            icon: const Icon(Icons.play_arrow),
-            label: const Text('Load'),
-            onPressed: onLoad,
-          ),
-          PopupMenuButton<_PresetAction>(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact =
+            constraints.hasBoundedWidth && constraints.maxWidth < _compactWidth;
+
+        void handleAction(_PresetAction action) {
+          switch (action) {
+            case _PresetAction.load:
+              onLoad();
+              break;
+            case _PresetAction.preview:
+              onPreview();
+              break;
+            case _PresetAction.edit:
+              onEdit?.call();
+              break;
+            case _PresetAction.duplicate:
+              onDuplicate();
+              break;
+            case _PresetAction.delete:
+              onDelete?.call();
+              break;
+          }
+        }
+
+        Widget actionMenu({required bool includeLoad}) {
+          return PopupMenuButton<_PresetAction>(
             tooltip: 'Preset actions',
-            onSelected: (action) {
-              switch (action) {
-                case _PresetAction.preview:
-                  onPreview();
-                  break;
-                case _PresetAction.edit:
-                  onEdit?.call();
-                  break;
-                case _PresetAction.duplicate:
-                  onDuplicate();
-                  break;
-                case _PresetAction.delete:
-                  onDelete?.call();
-                  break;
-              }
-            },
+            onSelected: handleAction,
             itemBuilder: (_) => [
+              if (includeLoad)
+                const PopupMenuItem(
+                  value: _PresetAction.load,
+                  child: Text('Load'),
+                ),
               const PopupMenuItem(
                 value: _PresetAction.preview,
                 child: Text('Preview'),
@@ -576,9 +629,41 @@ class _PresetTile extends StatelessWidget {
                 child: const Text('Delete'),
               ),
             ],
+          );
+        }
+
+        return ListTile(
+          contentPadding: EdgeInsets.symmetric(horizontal: compact ? 8 : 16),
+          minLeadingWidth: compact ? 28 : 40,
+          leading: Icon(
+            preset.isLegacy
+                ? Icons.article_outlined
+                : Icons.account_tree_outlined,
           ),
-        ],
-      ),
+          title: _LockableTitle(text: preset.name, locked: preset.isBuiltIn),
+          subtitle: Text(
+            preset.isLegacy
+                ? _preview(preset.legacyFullPrompt ?? '')
+                : '${preset.baseModuleIds.length} base, ${preset.optionalModuleIds.length} optional${preset.customInstructions.trim().isEmpty ? '' : ' + custom instructions'}',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: compact
+              ? actionMenu(includeLoad: true)
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    FilledButton.icon(
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text('Load'),
+                      onPressed: onLoad,
+                    ),
+                    actionMenu(includeLoad: false),
+                  ],
+                ),
+          onTap: compact ? onLoad : null,
+        );
+      },
     );
   }
 }
@@ -598,61 +683,55 @@ class _ModuleTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: const Icon(Icons.view_module_outlined),
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              module.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact =
+            constraints.hasBoundedWidth && constraints.maxWidth < 320;
+
+        return ListTile(
+          contentPadding: EdgeInsets.symmetric(horizontal: compact ? 8 : 16),
+          minLeadingWidth: compact ? 28 : 40,
+          leading: const Icon(Icons.view_module_outlined),
+          title: _LockableTitle(text: module.name, locked: module.isBuiltIn),
+          subtitle: Text(
+            '${module.category} - priority ${module.priority} - ${_preview(module.content)}',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
-          if (module.isBuiltIn)
-            const Padding(
-              padding: EdgeInsets.only(left: 6),
-              child: Icon(Icons.lock_outline, size: 14),
-            ),
-        ],
-      ),
-      subtitle: Text(
-        '${module.category} - priority ${module.priority} - ${_preview(module.content)}',
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: PopupMenuButton<_ModuleAction>(
-        tooltip: 'Module actions',
-        onSelected: (action) {
-          switch (action) {
-            case _ModuleAction.edit:
-              onEdit?.call();
-              break;
-            case _ModuleAction.duplicate:
-              onDuplicate();
-              break;
-            case _ModuleAction.delete:
-              onDelete?.call();
-              break;
-          }
-        },
-        itemBuilder: (_) => [
-          PopupMenuItem(
-            value: _ModuleAction.edit,
-            enabled: onEdit != null,
-            child: Text(module.isBuiltIn ? 'View' : 'Edit'),
+          trailing: PopupMenuButton<_ModuleAction>(
+            tooltip: 'Module actions',
+            onSelected: (action) {
+              switch (action) {
+                case _ModuleAction.edit:
+                  onEdit?.call();
+                  break;
+                case _ModuleAction.duplicate:
+                  onDuplicate();
+                  break;
+                case _ModuleAction.delete:
+                  onDelete?.call();
+                  break;
+              }
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: _ModuleAction.edit,
+                enabled: onEdit != null,
+                child: Text(module.isBuiltIn ? 'View' : 'Edit'),
+              ),
+              const PopupMenuItem(
+                value: _ModuleAction.duplicate,
+                child: Text('Duplicate'),
+              ),
+              PopupMenuItem(
+                value: _ModuleAction.delete,
+                enabled: onDelete != null,
+                child: const Text('Delete'),
+              ),
+            ],
           ),
-          const PopupMenuItem(
-            value: _ModuleAction.duplicate,
-            child: Text('Duplicate'),
-          ),
-          PopupMenuItem(
-            value: _ModuleAction.delete,
-            enabled: onDelete != null,
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -772,7 +851,41 @@ class _PresetLoadDialogState extends State<_PresetLoadDialog> {
   }
 }
 
-enum _PresetAction { preview, edit, duplicate, delete }
+class _LockableTitle extends StatelessWidget {
+  static const double _minimumLockWidth = 32;
+
+  final String text;
+  final bool locked;
+
+  const _LockableTitle({required this.text, required this.locked});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final showLock =
+            locked &&
+            constraints.hasBoundedWidth &&
+            constraints.maxWidth >= _minimumLockWidth;
+
+        return Row(
+          children: [
+            Expanded(
+              child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+            if (showLock)
+              const Padding(
+                padding: EdgeInsets.only(left: 6),
+                child: Icon(Icons.lock_outline, size: 14),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+enum _PresetAction { load, preview, edit, duplicate, delete }
 
 enum _ModuleAction { edit, duplicate, delete }
 
@@ -1044,34 +1157,47 @@ class _ModuleEditorDialogState extends State<_ModuleEditorDialog> {
                     : null,
               ),
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _categoryController,
-                      readOnly: readOnly,
-                      decoration: const InputDecoration(labelText: 'Category'),
-                      validator: (value) =>
-                          value == null || value.trim().isEmpty
-                          ? 'Enter a category'
-                          : null,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  SizedBox(
-                    width: 140,
-                    child: TextFormField(
-                      controller: _priorityController,
-                      readOnly: readOnly,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Priority'),
-                      validator: (value) =>
-                          int.tryParse(value?.trim() ?? '') == null
-                          ? 'Enter a number'
-                          : null,
-                    ),
-                  ),
-                ],
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final compact =
+                      constraints.hasBoundedWidth && constraints.maxWidth < 360;
+                  final categoryField = TextFormField(
+                    controller: _categoryController,
+                    readOnly: readOnly,
+                    decoration: const InputDecoration(labelText: 'Category'),
+                    validator: (value) => value == null || value.trim().isEmpty
+                        ? 'Enter a category'
+                        : null,
+                  );
+                  final priorityField = TextFormField(
+                    controller: _priorityController,
+                    readOnly: readOnly,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Priority'),
+                    validator: (value) =>
+                        int.tryParse(value?.trim() ?? '') == null
+                        ? 'Enter a number'
+                        : null,
+                  );
+
+                  if (compact) {
+                    return Column(
+                      children: [
+                        categoryField,
+                        const SizedBox(height: 12),
+                        priorityField,
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    children: [
+                      Expanded(child: categoryField),
+                      const SizedBox(width: 12),
+                      SizedBox(width: 140, child: priorityField),
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: 12),
               TextFormField(
