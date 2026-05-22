@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/ui/model_configuration/slider_control.dart';
@@ -30,6 +31,11 @@ class ModelConfiguration extends StatefulWidget {
 }
 
 class _ModelConfigurationState extends State<ModelConfiguration> {
+  static const double _dialogWidthFraction = 0.5;
+  static const double _dialogMinWidth = 480;
+  static const double _dialogMaxWidth = 760;
+  static const double _dialogHorizontalInset = 40;
+
   int _ctx = 64;
   int _threads = (Platform.numberOfProcessors * 0.875).ceil();
   int _gpuLayers = 999;
@@ -106,9 +112,27 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
     Navigator.of(context).pop();
   }
 
+  double _dialogWidth(BuildContext context) {
+    final viewportWidth = MediaQuery.sizeOf(context).width;
+    final availableWidth = math.max(
+      0.0,
+      viewportWidth - (_dialogHorizontalInset * 2),
+    );
+    if (availableWidth <= _dialogMinWidth) {
+      return availableWidth;
+    }
+
+    final maxWidth = math.min(_dialogMaxWidth, availableWidth);
+    final preferredWidth = availableWidth * _dialogWidthFraction;
+    return preferredWidth.clamp(_dialogMinWidth, maxWidth).toDouble();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final dialogWidth = _dialogWidth(context);
+
     return AlertDialog(
+      constraints: BoxConstraints.tightFor(width: dialogWidth),
       title: const Text(
         'Configure Model',
         style: TextStyle(color: Colors.black),
@@ -153,9 +177,7 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                   min: 1,
                   max: Platform.numberOfProcessors,
                   step: 1,
-                  onChanged: (v) => setState(
-                    () => _threads = v,
-                  ),
+                  onChanged: (v) => setState(() => _threads = v),
                 ),
                 SliderControl.integer(
                   label: 'GPU Layers',
@@ -235,9 +257,8 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                   min: 0.5,
                   max: 2.0,
                   step: 0.05,
-                  onChanged: (v) => setState(
-                    () => _repeatPenalty = v.toDouble(),
-                  ),
+                  onChanged: (v) =>
+                      setState(() => _repeatPenalty = v.toDouble()),
                 ),
                 SliderControl.integer(
                   label: 'Repeat Last N',
@@ -245,8 +266,7 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                   min: 0,
                   max: 2048,
                   step: 16,
-                  onChanged: (v) =>
-                      setState(() => _repeatLastN = v),
+                  onChanged: (v) => setState(() => _repeatLastN = v),
                 ),
                 SliderControl.decimal(
                   label: 'Presence Penalty',
@@ -254,9 +274,8 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                   min: -2.0,
                   max: 2.0,
                   step: 0.1,
-                  onChanged: (v) => setState(
-                    () => _presencePenalty = v.toDouble(),
-                  ),
+                  onChanged: (v) =>
+                      setState(() => _presencePenalty = v.toDouble()),
                 ),
                 SliderControl.decimal(
                   label: 'Frequency Penalty',
@@ -264,9 +283,8 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                   min: -2.0,
                   max: 2.0,
                   step: 0.1,
-                  onChanged: (v) => setState(
-                    () => _frequencyPenalty = v.toDouble(),
-                  ),
+                  onChanged: (v) =>
+                      setState(() => _frequencyPenalty = v.toDouble()),
                 ),
               ],
             ),

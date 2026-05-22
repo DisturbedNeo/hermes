@@ -4,6 +4,39 @@ import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/ui/model_configuration/model_configuration.dart';
 
 void main() {
+  testWidgets('sizes dialog from available width with min and max bounds', (
+    tester,
+  ) async {
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+
+    Future<double> dialogWidthFor(double width) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = Size(width, 800);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ModelConfiguration(
+              modelName: 'model',
+              modelPath: '/models/model.gguf',
+              llamaCppDirectory: '/llama.cpp',
+              onConfirm: (_) async {},
+            ),
+          ),
+        ),
+      );
+
+      final dialog = tester.widget<AlertDialog>(find.byType(AlertDialog));
+      return dialog.constraints!.maxWidth;
+    }
+
+    expect(await dialogWidthFor(800), 480);
+    expect(await dialogWidthFor(1200), 560);
+    expect(await dialogWidthFor(2000), 760);
+  });
+
   testWidgets('auto-expands core settings and collapses other categories', (
     tester,
   ) async {
