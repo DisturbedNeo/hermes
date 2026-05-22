@@ -1,3 +1,6 @@
+import 'package:hermes/core/helpers/json_parsing.dart';
+import 'package:hermes/core/helpers/sentinel.dart';
+
 class BuiltInPromptIds {
   const BuiltInPromptIds._();
 
@@ -82,10 +85,10 @@ class PromptModule {
       content: json['content'] as String,
       priority: json['priority'] as int? ?? 100,
       isBuiltIn: json['isBuiltIn'] as bool? ?? false,
-      requiredModuleIds: _stringList(json['requiredModuleIds']),
-      conflictingModuleIds: _stringList(json['conflictingModuleIds']),
-      createdAt: _date(json['createdAt']),
-      updatedAt: _date(json['updatedAt']),
+      requiredModuleIds: jsonStringList(json['requiredModuleIds']),
+      conflictingModuleIds: jsonStringList(json['conflictingModuleIds']),
+      createdAt: jsonDate(json['createdAt'], fallback: DateTime.now()),
+      updatedAt: jsonDate(json['updatedAt'], fallback: DateTime.now()),
     );
   }
 }
@@ -124,11 +127,11 @@ class PromptPreset {
     List<String>? baseModuleIds,
     List<String>? optionalModuleIds,
     String? customInstructions,
-    Object? legacyFullPrompt = _sentinel,
+    Object? legacyFullPrompt = kSentinel,
     bool? isBuiltIn,
     DateTime? createdAt,
     DateTime? updatedAt,
-    Object? lastUsedAt = _sentinel,
+    Object? lastUsedAt = kSentinel,
   }) {
     return PromptPreset(
       id: id ?? this.id,
@@ -136,13 +139,13 @@ class PromptPreset {
       baseModuleIds: baseModuleIds ?? this.baseModuleIds,
       optionalModuleIds: optionalModuleIds ?? this.optionalModuleIds,
       customInstructions: customInstructions ?? this.customInstructions,
-      legacyFullPrompt: identical(legacyFullPrompt, _sentinel)
+      legacyFullPrompt: identical(legacyFullPrompt, kSentinel)
           ? this.legacyFullPrompt
           : legacyFullPrompt as String?,
       isBuiltIn: isBuiltIn ?? this.isBuiltIn,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
-      lastUsedAt: identical(lastUsedAt, _sentinel)
+      lastUsedAt: identical(lastUsedAt, kSentinel)
           ? this.lastUsedAt
           : lastUsedAt as DateTime?,
     );
@@ -167,14 +170,14 @@ class PromptPreset {
     return PromptPreset(
       id: json['id'] as String,
       name: json['name'] as String,
-      baseModuleIds: _stringList(json['baseModuleIds']),
-      optionalModuleIds: _stringList(json['optionalModuleIds']),
+      baseModuleIds: jsonStringList(json['baseModuleIds']),
+      optionalModuleIds: jsonStringList(json['optionalModuleIds']),
       customInstructions: json['customInstructions'] as String? ?? '',
       legacyFullPrompt: json['legacyFullPrompt'] as String?,
       isBuiltIn: json['isBuiltIn'] as bool? ?? false,
-      createdAt: _date(json['createdAt']),
-      updatedAt: _date(json['updatedAt']),
-      lastUsedAt: _nullableDate(json['lastUsedAt']),
+      createdAt: jsonDate(json['createdAt'], fallback: DateTime.now()),
+      updatedAt: jsonDate(json['updatedAt'], fallback: DateTime.now()),
+      lastUsedAt: jsonNullableDate(json['lastUsedAt']),
     );
   }
 }
@@ -318,8 +321,8 @@ class SystemPromptSnapshot {
           .whereType<Map>()
           .map((item) => PromptModule.fromJson(Map<String, dynamic>.from(item)))
           .toList(),
-      selectedModuleIds: _stringList(json['selectedModuleIds']),
-      diagnostics: _stringList(json['diagnostics']),
+      selectedModuleIds: jsonStringList(json['selectedModuleIds']),
+      diagnostics: jsonStringList(json['diagnostics']),
     );
   }
 }
@@ -344,26 +347,4 @@ class SavedSystemPrompt {
   SystemPromptSnapshot toSnapshot() {
     return SystemPromptSnapshot.legacy(id: id, name: name, text: content);
   }
-}
-
-const Object _sentinel = Object();
-
-List<String> _stringList(Object? value) {
-  if (value is List) {
-    return value.whereType<String>().toList();
-  }
-  return const [];
-}
-
-DateTime _date(Object? value) {
-  if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
-  if (value is String) {
-    return DateTime.tryParse(value) ?? DateTime.fromMillisecondsSinceEpoch(0);
-  }
-  return DateTime.fromMillisecondsSinceEpoch(0);
-}
-
-DateTime? _nullableDate(Object? value) {
-  if (value == null) return null;
-  return _date(value);
 }

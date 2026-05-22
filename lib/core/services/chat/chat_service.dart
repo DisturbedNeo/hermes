@@ -32,7 +32,9 @@ import 'package:hermes/core/services/prompt_assembler.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_service.dart';
 
-class ChatService extends ChangeNotifier {
+import '../disposable.dart';
+
+class ChatService extends ChangeNotifier implements Disposable {
   static const String defaultSystemPromptName = 'Default';
   static const String defaultSystemPromptText = 'You are a helpful assistant.';
 

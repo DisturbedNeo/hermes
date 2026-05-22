@@ -14,7 +14,9 @@ import 'package:hermes/core/services/preferences_service.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-class ChatLibraryService extends ChangeNotifier {
+import '../disposable.dart';
+
+class ChatLibraryService extends ChangeNotifier implements Disposable {
   final PreferencesService _preferencesService;
   final DatabaseFactory _databaseFactory;
   final String? _databasePath;

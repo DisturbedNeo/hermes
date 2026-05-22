@@ -10,7 +10,9 @@ import 'package:hermes/core/models/model_session_diagnostics.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:path/path.dart' as p;
 
-class LlamaServerManager {
+import 'disposable.dart';
+
+class LlamaServerManager implements Disposable {
   static const Duration _healthRequestTimeout = Duration(seconds: 2);
   static const Duration _startupStallTimeout = Duration(minutes: 2);
 
@@ -433,6 +435,7 @@ class LlamaServerManager {
     return '$message\nRecent llama-server output:\n$recentOutput';
   }
 
+  @override
   Future<void> dispose() async {
     if (_isDisposed) return;
     _isDisposed = true;

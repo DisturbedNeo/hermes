@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
+import 'package:hermes/core/services/disposable.dart';
 import 'package:hermes/core/services/job_system/job_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_factory.dart';
@@ -93,16 +94,11 @@ class ServiceProvider {
   }
 
   Future<void> _disposeIfPossible(dynamic service) async {
-    if (service != null) {
+    if (service is Disposable) {
       try {
-        if (service.dispose is Function) {
-          final result = service.dispose();
-          if (result is Future) {
-            await result;
-          }
-          if (kDebugMode) {
-            print('Disposed ${service.runtimeType}');
-          }
+        await service.dispose();
+        if (kDebugMode) {
+          print('Disposed ${service.runtimeType}');
         }
       } catch (_) {}
     }

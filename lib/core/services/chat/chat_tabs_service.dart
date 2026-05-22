@@ -14,11 +14,13 @@ import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_service.dart';
 import 'package:hermes/core/models/workspace.dart';
 
+import '../disposable.dart';
+
 enum OpenChatTarget { currentTab, newTab }
 
 enum SystemPromptLoadTarget { currentChat, newTab }
 
-class ChatTabsService extends ChangeNotifier {
+class ChatTabsService extends ChangeNotifier implements Disposable {
   final ChatLibraryService _chatLibrary;
   final SystemPromptLibraryService _systemPromptLibrary;
   final ToolService _toolService;
@@ -67,8 +69,8 @@ class ChatTabsService extends ChangeNotifier {
   void _handleServerAvailabilityChanged() {
     if (serverManager.chatClient != null) {
       _subagentService ??= SubagentService(
-          chatClientFactory: () => serverManager.chatClient!,
-        );
+        chatClientFactory: () => serverManager.chatClient!,
+      );
       // Update the reference in ToolService
       _toolService.setSubagentService(_subagentService!);
     } else {

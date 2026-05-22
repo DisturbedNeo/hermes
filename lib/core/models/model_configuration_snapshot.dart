@@ -1,3 +1,5 @@
+import 'package:hermes/core/helpers/json_parsing.dart';
+
 class ModelConfigurationSnapshot {
   static const String defaultKvCacheType = 'q8_0';
   static const List<String> allowedKvCacheTypes = [
@@ -61,19 +63,19 @@ class ModelConfigurationSnapshot {
       modelName: json['modelName'] as String? ?? '',
       modelPath: json['modelPath'] as String? ?? '',
       llamaCppDirectory: json['llamaCppDirectory'] as String? ?? '',
-      nCtx: _int(json['nCtx'], 4096),
-      nThreads: _int(json['nThreads'], 1),
-      nGpuLayers: _int(json['nGpuLayers'], 0),
-      temperature: _double(json['temperature'], 0.7),
-      topP: _double(json['topP'], 0.9),
-      topK: _int(json['topK'], 40),
-      nBatch: _int(json['nBatch'], 2048),
-      nUBatch: _int(json['nUBatch'], 512),
-      mirostat: _int(json['mirostat'], 0),
-      repeatPenalty: _double(json['repeatPenalty'], 1.1),
-      repeatLastN: _int(json['repeatLastN'], 256),
-      presencePenalty: _double(json['presencePenalty'], 1.2),
-      frequencyPenalty: _double(json['frequencyPenalty'], 0.5),
+      nCtx: jsonInt(json['nCtx'], fallback: 4096),
+      nThreads: jsonInt(json['nThreads'], fallback: 1),
+      nGpuLayers: jsonInt(json['nGpuLayers'], fallback: 0),
+      temperature: jsonDouble(json['temperature'], fallback: 0.7),
+      topP: jsonDouble(json['topP'], fallback: 0.9),
+      topK: jsonInt(json['topK'], fallback: 40),
+      nBatch: jsonInt(json['nBatch'], fallback: 2048),
+      nUBatch: jsonInt(json['nUBatch'], fallback: 512),
+      mirostat: jsonInt(json['mirostat'], fallback: 0),
+      repeatPenalty: jsonDouble(json['repeatPenalty'], fallback: 1.1),
+      repeatLastN: jsonInt(json['repeatLastN'], fallback: 256),
+      presencePenalty: jsonDouble(json['presencePenalty'], fallback: 1.2),
+      frequencyPenalty: jsonDouble(json['frequencyPenalty'], fallback: 0.5),
       thinking: json['thinking'] as bool? ?? true,
       kvCacheQuantizationEnabled:
           json['kvCacheQuantizationEnabled'] as bool? ?? true,
@@ -129,18 +131,6 @@ class ModelConfigurationSnapshot {
         kvCacheQuantizationEnabled == other.kvCacheQuantizationEnabled &&
         kvCacheTypeK == other.kvCacheTypeK &&
         kvCacheTypeV == other.kvCacheTypeV;
-  }
-
-  static int _int(Object? value, int fallback) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    return fallback;
-  }
-
-  static double _double(Object? value, double fallback) {
-    if (value is double) return value;
-    if (value is num) return value.toDouble();
-    return fallback;
   }
 
   static String _kvCacheType(Object? value) {

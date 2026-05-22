@@ -28,9 +28,40 @@ Route<dynamic> generateRoute(RouteSettings settings) {
   switch (settings.name) {
     case AppRoutes.home:
       return _buildChatRoute(settings);
-
     default:
-      return _buildChatRoute(settings);
+      return _buildUnknownRoute(settings);
+  }
+}
+
+Route<dynamic> _buildUnknownRoute(RouteSettings settings) => PageRouteBuilder(
+  settings: settings,
+  pageBuilder: (context, animation, secondaryAnimation) =>
+      const _UnknownRoutePage(),
+);
+
+class _UnknownRoutePage extends StatelessWidget {
+  const _UnknownRoutePage();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: Colors.red),
+            SizedBox(height: 16),
+            Text('Page not found', style: TextStyle(fontSize: 20)),
+            SizedBox(height: 8),
+            Text(
+              'The requested route does not exist.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

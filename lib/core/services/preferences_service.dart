@@ -1,6 +1,8 @@
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:hermes/core/enums/diagnostics_visibility.dart';
+import 'package:hermes/core/helpers/preferences_keys.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/core/models/job_system_settings.dart';
 import 'package:path/path.dart' as path;
@@ -10,31 +12,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 class PreferencesService extends ChangeNotifier {
   final Future<SharedPreferences> _prefs = SharedPreferences.getInstance();
 
-  static const String _dataLocationKey = 'data_location_path';
-  static const String _darkModeKey = 'is_dark_mode';
-  static const String _modelsDirectory = 'models_directory';
-  static const String _llamaCppDirectory = 'llama_cpp_directory';
-  static const String _diagnosticsVisibility = 'diagnostics_visibility';
-  static const String _themeIdKey = 'theme_id';
-  static const String _worldOverviewTabPrefKey = 'last_tab_index_';
-  static const String _contextCompactionEnabledKey =
-      'context_compaction_enabled';
-  static const String _contextCompactionTriggerKey =
-      'context_compaction_trigger_threshold';
-  static const String _contextCompactionHardLimitKey =
-      'context_compaction_hard_limit_threshold';
-  static const String _contextCompactionRecentWindowKey =
-      'context_compaction_recent_window_units';
-  static const String _contextCompactionEmergencyTruncationKey =
-      'context_compaction_emergency_truncation';
-  static const String _jobSystemEnabledKey = 'job_system_enabled';
-  static const String _jobSystemApprovalBeforeFileEditsKey =
-      'job_system_approval_before_file_edits';
-  static const String _jobSystemShowMessagesKey =
-      'job_system_show_messages_in_chat';
-
   Future<String> getDataDirectoryPath() async {
-    final savedPath = (await _prefs).getString(_dataLocationKey);
+    final savedPath = (await _prefs).getString(PreferencesKeys.dataLocation);
 
     if (savedPath != null) {
       final dir = Directory(savedPath);
@@ -64,7 +43,10 @@ class PreferencesService extends ChangeNotifier {
       }
     }
 
-    if (!(await (await _prefs).setString(_dataLocationKey, directoryPath))) {
+    if (!(await (await _prefs).setString(
+      PreferencesKeys.dataLocation,
+      directoryPath,
+    ))) {
       if (dataMoved) {
         await newDbFile.delete();
       }
@@ -88,39 +70,43 @@ class PreferencesService extends ChangeNotifier {
       path.join(await getDataDirectoryPath(), getDatabaseFileName());
 
   Future<bool> isDarkMode() async =>
-      (await _prefs).getBool(_darkModeKey) ?? false;
+      (await _prefs).getBool(PreferencesKeys.darkMode) ?? false;
   Future<bool> setDarkMode(bool isDarkMode) async =>
-      (await _prefs).setBool(_darkModeKey, isDarkMode);
+      (await _prefs).setBool(PreferencesKeys.darkMode, isDarkMode);
 
-  Future<String?> getThemeId() async => (await _prefs).getString(_themeIdKey);
+  Future<String?> getThemeId() async =>
+      (await _prefs).getString(PreferencesKeys.themeId);
   Future<bool> setThemeId(String themeId) async =>
-      (await _prefs).setString(_themeIdKey, themeId);
+      (await _prefs).setString(PreferencesKeys.themeId, themeId);
 
   Future<int> getTabIndex(String worldId) async =>
-      (await _prefs).getInt('$_worldOverviewTabPrefKey$worldId') ?? 0;
-  Future<bool> setTabIndex(String worldId, int index) async =>
-      (await _prefs).setInt('$_worldOverviewTabPrefKey$worldId', index);
+      (await _prefs).getInt(
+        '${PreferencesKeys.worldOverviewTabPrefix}$worldId',
+      ) ??
+      0;
+  Future<bool> setTabIndex(String worldId, int index) async => (await _prefs)
+      .setInt('${PreferencesKeys.worldOverviewTabPrefix}$worldId', index);
 
   Future<String?> getLlamaCppDirectory() async =>
-      (await _prefs).getString(_llamaCppDirectory);
+      (await _prefs).getString(PreferencesKeys.llamaCppDirectory);
   Future<bool> setLlamaCppDirectory(String path) async =>
-      (await _prefs).setString(_llamaCppDirectory, path);
+      (await _prefs).setString(PreferencesKeys.llamaCppDirectory, path);
 
   Future<String?> getModelsDirectory() async =>
-      (await _prefs).getString(_modelsDirectory);
+      (await _prefs).getString(PreferencesKeys.modelsDirectory);
   Future<bool> setModelsDirectory(String directory) async =>
-      (await _prefs).setString(_modelsDirectory, directory);
+      (await _prefs).setString(PreferencesKeys.modelsDirectory, directory);
 
   Future<DiagnosticsVisibility> getDiagnosticsVisibility() async =>
       DiagnosticsVisibilityLabel.fromName(
-        (await _prefs).getString(_diagnosticsVisibility),
+        (await _prefs).getString(PreferencesKeys.diagnosticsVisibility),
       );
 
   Future<bool> setDiagnosticsVisibility(
     DiagnosticsVisibility visibility,
   ) async {
     final saved = await (await _prefs).setString(
-      _diagnosticsVisibility,
+      PreferencesKeys.diagnosticsVisibility,
       visibility.name,
     );
 
@@ -131,13 +117,16 @@ class PreferencesService extends ChangeNotifier {
   Future<CompactionSettings> getCompactionSettings() async {
     final prefs = await _prefs;
     return CompactionSettings(
-      enabled: prefs.getBool(_contextCompactionEnabledKey) ?? true,
-      triggerThreshold: prefs.getDouble(_contextCompactionTriggerKey) ?? 0.80,
+      enabled: prefs.getBool(PreferencesKeys.contextCompactionEnabled) ?? true,
+      triggerThreshold:
+          prefs.getDouble(PreferencesKeys.contextCompactionTrigger) ?? 0.80,
       hardLimitThreshold:
-          prefs.getDouble(_contextCompactionHardLimitKey) ?? 0.95,
-      recentWindowUnits: prefs.getInt(_contextCompactionRecentWindowKey) ?? 6,
+          prefs.getDouble(PreferencesKeys.contextCompactionHardLimit) ?? 0.95,
+      recentWindowUnits:
+          prefs.getInt(PreferencesKeys.contextCompactionRecentWindow) ?? 6,
       allowEmergencyPayloadTruncation:
-          prefs.getBool(_contextCompactionEmergencyTruncationKey) ?? false,
+          prefs.getBool(PreferencesKeys.contextCompactionEmergencyTruncation) ??
+          false,
     ).normalised();
   }
 
@@ -145,21 +134,24 @@ class PreferencesService extends ChangeNotifier {
     final prefs = await _prefs;
     final normalised = settings.normalised();
     final saved =
-        await prefs.setBool(_contextCompactionEnabledKey, normalised.enabled) &&
+        await prefs.setBool(
+          PreferencesKeys.contextCompactionEnabled,
+          normalised.enabled,
+        ) &&
         await prefs.setDouble(
-          _contextCompactionTriggerKey,
+          PreferencesKeys.contextCompactionTrigger,
           normalised.triggerThreshold,
         ) &&
         await prefs.setDouble(
-          _contextCompactionHardLimitKey,
+          PreferencesKeys.contextCompactionHardLimit,
           normalised.hardLimitThreshold,
         ) &&
         await prefs.setInt(
-          _contextCompactionRecentWindowKey,
+          PreferencesKeys.contextCompactionRecentWindow,
           normalised.recentWindowUnits,
         ) &&
         await prefs.setBool(
-          _contextCompactionEmergencyTruncationKey,
+          PreferencesKeys.contextCompactionEmergencyTruncation,
           normalised.allowEmergencyPayloadTruncation,
         );
 
@@ -170,10 +162,12 @@ class PreferencesService extends ChangeNotifier {
   Future<JobSystemSettings> getJobSystemSettings() async {
     final prefs = await _prefs;
     return JobSystemSettings(
-      enabled: prefs.getBool(_jobSystemEnabledKey) ?? true,
+      enabled: prefs.getBool(PreferencesKeys.jobSystemEnabled) ?? true,
       requireApprovalBeforeFileEdits:
-          prefs.getBool(_jobSystemApprovalBeforeFileEditsKey) ?? true,
-      showJobMessagesInChat: prefs.getBool(_jobSystemShowMessagesKey) ?? true,
+          prefs.getBool(PreferencesKeys.jobSystemApprovalBeforeFileEdits) ??
+          true,
+      showJobMessagesInChat:
+          prefs.getBool(PreferencesKeys.jobSystemShowMessagesInChat) ?? true,
     ).normalised();
   }
 
@@ -181,13 +175,16 @@ class PreferencesService extends ChangeNotifier {
     final prefs = await _prefs;
     final normalised = settings.normalised();
     final saved =
-        await prefs.setBool(_jobSystemEnabledKey, normalised.enabled) &&
         await prefs.setBool(
-          _jobSystemApprovalBeforeFileEditsKey,
+          PreferencesKeys.jobSystemEnabled,
+          normalised.enabled,
+        ) &&
+        await prefs.setBool(
+          PreferencesKeys.jobSystemApprovalBeforeFileEdits,
           normalised.requireApprovalBeforeFileEdits,
         ) &&
         await prefs.setBool(
-          _jobSystemShowMessagesKey,
+          PreferencesKeys.jobSystemShowMessagesInChat,
           normalised.showJobMessagesInChat,
         );
 

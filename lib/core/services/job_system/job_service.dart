@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:hermes/core/helpers/chat/context_estimator.dart';
+import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/helpers/chat/tool_caller.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/chat_message.dart';
@@ -1030,7 +1031,7 @@ $userPrompt
 
     final json = Map<String, dynamic>.from(args);
     final finalContent = _encoder.convert(json);
-    final status = _string(json['status'], fallback: 'completed');
+    final status = jsonString(json['status'], fallback: 'completed');
     return _FinishToolCallResult(
       resultJson: jsonEncode({'finished': true, 'status': status}),
       finalContent: finalContent,
@@ -1439,7 +1440,7 @@ ${_encoder.convert(snapshot.toJson())}
       step,
       _artifactsFromJson(json['artifacts'], step.id),
     );
-    final summary = _string(
+    final summary = jsonString(
       json['summary'],
       fallback: status == _StepExecutionStatus.completed
           ? 'Step completed.'
@@ -1454,15 +1455,15 @@ ${_encoder.convert(snapshot.toJson())}
         _StepExecutionStatus.needsReplan => JobRunStatus.needsReplan,
       },
       summary: summary,
-      memoryUpdate: _string(json['memoryUpdate'] ?? json['memory_update']),
+      memoryUpdate: jsonString(json['memoryUpdate'] ?? json['memory_update']),
       artifacts: artifacts,
-      userQuestion: _nullableString(
+      userQuestion: jsonNullableString(
         json['userQuestion'] ?? json['user_question'],
       ),
-      replanRequest: _nullableString(
+      replanRequest: jsonNullableString(
         json['replanRequest'] ?? json['replan_request'],
       ),
-      error: _nullableString(json['error']),
+      error: jsonNullableString(json['error']),
       toolCalls: toolCalls,
     );
   }
@@ -1885,14 +1886,17 @@ When finished, call finish_job_step with this result object. If finish_job_step 
         : steps;
     return JobDocument(
       id: jobId,
-      title: _string(json['title'], fallback: _titleFromPrompt(originalPrompt)),
+      title: jsonString(
+        json['title'],
+        fallback: _titleFromPrompt(originalPrompt),
+      ),
       originalPrompt: originalPrompt,
-      goal: _string(
+      goal: jsonString(
         json['goal'] ?? json['objective'],
         fallback: originalPrompt,
       ),
-      constraints: _stringList(json['constraints']),
-      successCriteria: _stringList(
+      constraints: jsonStringList(json['constraints']),
+      successCriteria: jsonStringList(
         json['successCriteria'] ?? json['success_criteria'],
       ),
       steps: safeSteps,
@@ -1943,16 +1947,21 @@ When finished, call finish_job_step with this result object. If finish_job_step 
       if (raw is! Map) continue;
       final map = Map<String, dynamic>.from(raw);
       final fallbackId = 'step_${i + 1}';
-      final id = _safeId(_string(map['id'], fallback: fallbackId), fallbackId);
+      final id = _safeId(
+        jsonString(map['id'], fallback: fallbackId),
+        fallbackId,
+      );
       final uniqueId = usedIds.add(id) ? id : '${id}_${i + 1}';
       steps.add(
         _normaliseStep(
           JobStep(
             id: uniqueId,
-            title: _string(map['title'], fallback: 'Step ${i + 1}'),
-            objective: _string(map['objective']),
-            instructions: _stringList(map['instructions']),
-            mayEditFiles: _bool(map['mayEditFiles'] ?? map['may_edit_files']),
+            title: jsonString(map['title'], fallback: 'Step ${i + 1}'),
+            objective: jsonString(map['objective']),
+            instructions: jsonStringList(map['instructions']),
+            mayEditFiles: jsonBool(
+              map['mayEditFiles'] ?? map['may_edit_files'],
+            ),
             artifacts: _artifactsFromJson(map['artifacts'], uniqueId)
                 .map(
                   (artifact) => artifact.path.contains('{{job_id}}')
@@ -2215,44 +2224,6 @@ class _FinishToolCallResult {
     required this.output,
     this.error,
   });
-}
-
-String _string(Object? value, {String fallback = ''}) {
-  if (value == null) return fallback;
-  final string = value.toString();
-  return string.trim().isEmpty ? fallback : string;
-}
-
-String? _nullableString(Object? value) {
-  if (value == null) return null;
-  final string = value.toString().trim();
-  return string.isEmpty ? null : string;
-}
-
-List<String> _stringList(Object? value) {
-  if (value is List) {
-    return value
-        .map((item) => item.toString())
-        .where((item) => item.trim().isNotEmpty)
-        .toList();
-  }
-  if (value is String && value.trim().isNotEmpty) return [value.trim()];
-  return const [];
-}
-
-bool _bool(Object? value, {bool fallback = false}) {
-  if (value is bool) return value;
-  if (value is num) return value != 0;
-  if (value is String) {
-    final normalised = value.trim().toLowerCase();
-    if (normalised == 'true' || normalised == 'yes' || normalised == '1') {
-      return true;
-    }
-    if (normalised == 'false' || normalised == 'no' || normalised == '0') {
-      return false;
-    }
-  }
-  return fallback;
 }
 
 const String _refinerSystemInstruction = '''

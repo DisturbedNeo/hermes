@@ -89,22 +89,6 @@ class _AppState extends State<App> with WidgetsBindingObserver {
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    switch (state) {
-      case AppLifecycleState.paused:
-        break;
-      case AppLifecycleState.detached:
-        break;
-      case AppLifecycleState.resumed:
-        break;
-      case AppLifecycleState.inactive:
-        break;
-      case AppLifecycleState.hidden:
-        break;
-    }
-  }
-
-  @override
   Future<AppExitResponse> didRequestAppExit() async {
     if (_exitAfterCleanup) return AppExitResponse.exit;
     if (_exitCleanupStarted) return AppExitResponse.cancel;
@@ -128,7 +112,7 @@ class _AppState extends State<App> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final shortcutKeys = _shortcuts.activeShortcuts;
     return MaterialApp(
-      title: 'Codex',
+      title: 'Hermes',
       theme: _themeManager.currentTheme,
       initialRoute: AppRoutes.home,
       onGenerateRoute: generateRoute,

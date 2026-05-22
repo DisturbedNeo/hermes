@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
+import 'package:hermes/core/services/disposable.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -45,11 +46,12 @@ void main() {
   });
 }
 
-class _SlowDisposable {
+class _SlowDisposable implements Disposable {
   final Completer<void> started = Completer<void>();
   final Completer<void> release = Completer<void>();
   bool disposed = false;
 
+  @override
   Future<void> dispose() async {
     started.complete();
     await release.future;

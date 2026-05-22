@@ -2,28 +2,38 @@ import 'package:flutter/material.dart';
 
 /// Utility class providing breakpoint-aware responsive layout helpers.
 ///
-/// Follows Material Design's recommended breakpoints:
-/// - Mobile: < 600px
-/// - Tablet: 600px – 1200px
-/// - Desktop: >= 1200px
+/// **Actual breakpoints** (used in the code):
+/// - Mobile: < 600px (`mobile`)
+/// - Tablet: 600px – 900px (`tablet`)
+/// - Desktop: >= 1200px (`desktop`)
+///
+/// Note: The tablet range (600–900) is narrower than Material Design's
+/// recommended 600–1200. This was chosen to keep more mid-size screens in
+/// the "mobile" layout path where the UI has been tested and validated.
 class Responsive {
   Responsive._();
 
+  /// Viewport width below which the mobile layout is used.
   static const double mobile = 600;
+
+  /// Upper bound of the tablet range. Widths from [mobile] up to (but not
+  /// including) this value are considered tablet.
   static const double tablet = 900;
+
+  /// Viewport width at or above which the desktop layout is used.
   static const double desktop = 1200;
 
-  /// Returns true if the current viewport width is below [mobile] breakpoint.
+  /// Returns `true` when the viewport is narrower than [mobile].
   static bool isMobile(BuildContext context) =>
       MediaQuery.of(context).size.width < mobile;
 
-  /// Returns true if the current viewport width is between [mobile] and [tablet].
+  /// Returns `true` when the viewport width falls between [mobile] and [tablet].
   static bool isTablet(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     return width >= mobile && width < tablet;
   }
 
-  /// Returns true if the current viewport width is at or above [desktop] breakpoint.
+  /// Returns `true` when the viewport width is at or above [desktop].
   static bool isDesktop(BuildContext context) =>
       MediaQuery.of(context).size.width >= desktop;
 

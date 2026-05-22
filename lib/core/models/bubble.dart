@@ -1,4 +1,5 @@
 import 'package:hermes/core/enums/message_role.dart';
+import 'package:hermes/core/helpers/sentinel.dart';
 
 class Bubble {
   final String id;
@@ -30,9 +31,9 @@ class Bubble {
     String? reasoning,
     Map<int, BubbleToolCall>? tools,
     bool? omittedFromModelPayload,
-    Object? summaryId = _sentinel,
+    Object? summaryId = kSentinel,
     bool? isSummaryMemory,
-    Object? summarySchemaVersion = _sentinel,
+    Object? summarySchemaVersion = kSentinel,
   }) {
     return Bubble(
       id: id ?? this.id,
@@ -42,18 +43,16 @@ class Bubble {
       tools: tools ?? this.tools,
       omittedFromModelPayload:
           omittedFromModelPayload ?? this.omittedFromModelPayload,
-      summaryId: identical(summaryId, _sentinel)
+      summaryId: identical(summaryId, kSentinel)
           ? this.summaryId
           : summaryId as String?,
       isSummaryMemory: isSummaryMemory ?? this.isSummaryMemory,
-      summarySchemaVersion: identical(summarySchemaVersion, _sentinel)
+      summarySchemaVersion: identical(summarySchemaVersion, kSentinel)
           ? this.summarySchemaVersion
           : summarySchemaVersion as int?,
     );
   }
 }
-
-const Object _sentinel = Object();
 
 class BubbleToolCall {
   final String? id;

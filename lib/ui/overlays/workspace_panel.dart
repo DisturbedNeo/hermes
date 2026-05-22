@@ -285,7 +285,7 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
       content: ListView(
         children: [
           if (_entries.isNotEmpty) ...[
-            const _SectionHeader('Files'),
+            const _SectionHeader(label: 'Files'),
             for (final entry in _entries.take(80))
               ListTile(
                 dense: true,
@@ -303,7 +303,7 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
               ),
           ],
           if ((widget.chat?.availableJobs.isNotEmpty ?? false)) ...[
-            const _SectionHeader('Jobs In This Chat'),
+            const _SectionHeader(label: 'Jobs In This Chat'),
             for (final job in widget.chat!.availableJobs.take(12))
               ListTile(
                 dense: true,
@@ -324,7 +324,7 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
               ),
           ],
           if (_recent.isNotEmpty) ...[
-            const _SectionHeader('Recent'),
+            const _SectionHeader(label: 'Recent'),
             for (final workspace in _recent)
               ListTile(
                 leading: const Icon(Icons.history),
@@ -365,7 +365,7 @@ IconData _iconForJobStatus(JobStatus status) => switch (status) {
 class _SectionHeader extends StatelessWidget {
   final String label;
 
-  const _SectionHeader(this.label);
+  const _SectionHeader({required this.label});
 
   @override
   Widget build(BuildContext context) {

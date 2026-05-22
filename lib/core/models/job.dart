@@ -1,3 +1,6 @@
+import 'package:hermes/core/helpers/json_parsing.dart';
+import 'package:hermes/core/helpers/sentinel.dart';
+
 enum ExecutionMode { chat, refine, plan, job, continueJob }
 
 enum JobStatus {
@@ -118,14 +121,16 @@ class RefinedJobBrief {
 
   factory RefinedJobBrief.fromJson(Map<String, dynamic> json) {
     return RefinedJobBrief(
-      title: _string(json['title'], fallback: 'Untitled job'),
-      goal: _string(json['goal'] ?? json['objective']),
-      constraints: _stringList(json['constraints']),
-      successCriteria: _stringList(
+      title: jsonString(json['title'], fallback: 'Untitled job'),
+      goal: jsonString(json['goal'] ?? json['objective']),
+      constraints: jsonStringList(json['constraints']),
+      successCriteria: jsonStringList(
         json['successCriteria'] ?? json['success_criteria'],
       ),
-      assumptions: _stringList(json['assumptions']),
-      questions: _stringList(json['questions'] ?? json['clarifyingQuestions']),
+      assumptions: jsonStringList(json['assumptions']),
+      questions: jsonStringList(
+        json['questions'] ?? json['clarifyingQuestions'],
+      ),
     );
   }
 
@@ -192,15 +197,15 @@ class JobDocument {
     List<String>? successCriteria,
     List<JobStep>? steps,
     JobStatus? status,
-    Object? currentStepId = _sentinel,
+    Object? currentStepId = kSentinel,
     String? memorySummary,
     List<JobRun>? runs,
-    Object? pendingApproval = _sentinel,
-    Object? pendingQuestion = _sentinel,
-    Object? chatSessionId = _sentinel,
+    Object? pendingApproval = kSentinel,
+    Object? pendingQuestion = kSentinel,
+    Object? chatSessionId = kSentinel,
     DateTime? createdAt,
     DateTime? updatedAt,
-    Object? completedAt = _sentinel,
+    Object? completedAt = kSentinel,
   }) {
     return JobDocument(
       schemaVersion: schemaVersion ?? this.schemaVersion,
@@ -212,23 +217,23 @@ class JobDocument {
       successCriteria: successCriteria ?? this.successCriteria,
       steps: steps ?? this.steps,
       status: status ?? this.status,
-      currentStepId: identical(currentStepId, _sentinel)
+      currentStepId: identical(currentStepId, kSentinel)
           ? this.currentStepId
           : currentStepId as String?,
       memorySummary: memorySummary ?? this.memorySummary,
       runs: runs ?? this.runs,
-      pendingApproval: identical(pendingApproval, _sentinel)
+      pendingApproval: identical(pendingApproval, kSentinel)
           ? this.pendingApproval
           : pendingApproval as PendingJobApproval?,
-      pendingQuestion: identical(pendingQuestion, _sentinel)
+      pendingQuestion: identical(pendingQuestion, kSentinel)
           ? this.pendingQuestion
           : pendingQuestion as PendingJobQuestion?,
-      chatSessionId: identical(chatSessionId, _sentinel)
+      chatSessionId: identical(chatSessionId, kSentinel)
           ? this.chatSessionId
           : chatSessionId as String?,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
-      completedAt: identical(completedAt, _sentinel)
+      completedAt: identical(completedAt, kSentinel)
           ? this.completedAt
           : completedAt as DateTime?,
     );
@@ -262,42 +267,52 @@ class JobDocument {
   factory JobDocument.fromJson(Map<String, dynamic> json) {
     final now = DateTime.now();
     return JobDocument(
-      schemaVersion: _int(json['schemaVersion'] ?? json['schema_version']),
-      id: _string(json['id']),
-      title: _string(json['title'], fallback: 'Untitled job'),
-      originalPrompt: _string(
+      schemaVersion: jsonInt(json['schemaVersion'] ?? json['schema_version']),
+      id: jsonString(json['id']),
+      title: jsonString(json['title'], fallback: 'Untitled job'),
+      originalPrompt: jsonString(
         json['originalPrompt'] ?? json['original_prompt'],
       ),
-      goal: _string(json['goal'] ?? json['objective']),
-      constraints: _stringList(json['constraints']),
-      successCriteria: _stringList(
+      goal: jsonString(json['goal'] ?? json['objective']),
+      constraints: jsonStringList(json['constraints']),
+      successCriteria: jsonStringList(
         json['successCriteria'] ?? json['success_criteria'],
       ),
-      steps: _mapList(json['steps']).map(JobStep.fromJson).toList(),
+      steps: jsonMapList(json['steps']).map(JobStep.fromJson).toList(),
       status: parseJobStatus(json['status']),
-      currentStepId: _nullableString(
+      currentStepId: jsonNullableString(
         json['currentStepId'] ?? json['current_step_id'],
       ),
-      memorySummary: _string(json['memorySummary'] ?? json['memory_summary']),
-      runs: _mapList(json['runs']).map(JobRun.fromJson).toList(),
+      memorySummary: jsonString(
+        json['memorySummary'] ?? json['memory_summary'],
+      ),
+      runs: jsonMapList(json['runs']).map(JobRun.fromJson).toList(),
       pendingApproval:
           json['pendingApproval'] == null && json['pending_approval'] == null
           ? null
           : PendingJobApproval.fromJson(
-              _map(json['pendingApproval'] ?? json['pending_approval']),
+              jsonMap(json['pendingApproval'] ?? json['pending_approval']),
             ),
       pendingQuestion:
           json['pendingQuestion'] == null && json['pending_question'] == null
           ? null
           : PendingJobQuestion.fromJson(
-              _map(json['pendingQuestion'] ?? json['pending_question']),
+              jsonMap(json['pendingQuestion'] ?? json['pending_question']),
             ),
-      chatSessionId: _nullableString(
+      chatSessionId: jsonNullableString(
         json['chatSessionId'] ?? json['chat_session_id'],
       ),
-      createdAt: _date(json['createdAt'] ?? json['created_at'], fallback: now),
-      updatedAt: _date(json['updatedAt'] ?? json['updated_at'], fallback: now),
-      completedAt: _nullableDate(json['completedAt'] ?? json['completed_at']),
+      createdAt: jsonDate(
+        json['createdAt'] ?? json['created_at'],
+        fallback: now,
+      ),
+      updatedAt: jsonDate(
+        json['updatedAt'] ?? json['updated_at'],
+        fallback: now,
+      ),
+      completedAt: jsonNullableDate(
+        json['completedAt'] ?? json['completed_at'],
+      ),
     );
   }
 
@@ -366,12 +381,14 @@ class JobStep {
 
   factory JobStep.fromJson(Map<String, dynamic> json) {
     return JobStep(
-      id: _string(json['id']),
-      title: _string(json['title'], fallback: 'Untitled step'),
-      objective: _string(json['objective']),
-      instructions: _stringList(json['instructions']),
-      mayEditFiles: _bool(json['mayEditFiles'] ?? json['may_edit_files']),
-      artifacts: _mapList(json['artifacts']).map(JobArtifact.fromJson).toList(),
+      id: jsonString(json['id']),
+      title: jsonString(json['title'], fallback: 'Untitled step'),
+      objective: jsonString(json['objective']),
+      instructions: jsonStringList(json['instructions']),
+      mayEditFiles: jsonBool(json['mayEditFiles'] ?? json['may_edit_files']),
+      artifacts: jsonMapList(
+        json['artifacts'],
+      ).map(JobArtifact.fromJson).toList(),
       status: parseJobStepStatus(json['status']),
     );
   }
@@ -402,10 +419,10 @@ class JobArtifact {
 
   factory JobArtifact.fromJson(Map<String, dynamic> json) {
     return JobArtifact(
-      path: _string(json['path']),
-      description: _nullableString(json['description']),
-      stepId: _nullableString(json['stepId'] ?? json['step_id']),
-      createdAt: _nullableDate(json['createdAt'] ?? json['created_at']),
+      path: jsonString(json['path']),
+      description: jsonNullableString(json['description']),
+      stepId: jsonNullableString(json['stepId'] ?? json['step_id']),
+      createdAt: jsonNullableDate(json['createdAt'] ?? json['created_at']),
     );
   }
 
@@ -453,9 +470,9 @@ class JobRun {
     List<JobToolCallRecord>? toolCalls,
     List<JobArtifact>? artifacts,
     DateTime? startedAt,
-    Object? completedAt = _sentinel,
-    Object? replanReason = _sentinel,
-    Object? error = _sentinel,
+    Object? completedAt = kSentinel,
+    Object? replanReason = kSentinel,
+    Object? error = kSentinel,
   }) {
     return JobRun(
       runId: runId ?? this.runId,
@@ -466,34 +483,41 @@ class JobRun {
       toolCalls: toolCalls ?? this.toolCalls,
       artifacts: artifacts ?? this.artifacts,
       startedAt: startedAt ?? this.startedAt,
-      completedAt: identical(completedAt, _sentinel)
+      completedAt: identical(completedAt, kSentinel)
           ? this.completedAt
           : completedAt as DateTime?,
-      replanReason: identical(replanReason, _sentinel)
+      replanReason: identical(replanReason, kSentinel)
           ? this.replanReason
           : replanReason as String?,
-      error: identical(error, _sentinel) ? this.error : error as String?,
+      error: identical(error, kSentinel) ? this.error : error as String?,
     );
   }
 
   factory JobRun.fromJson(Map<String, dynamic> json) {
     final now = DateTime.now();
     return JobRun(
-      runId: _string(json['runId'] ?? json['run_id']),
-      stepId: _string(json['stepId'] ?? json['step_id']),
+      runId: jsonString(json['runId'] ?? json['run_id']),
+      stepId: jsonString(json['stepId'] ?? json['step_id']),
       status: parseJobRunStatus(json['status']),
-      summary: _string(json['summary']),
-      memoryUpdate: _string(json['memoryUpdate'] ?? json['memory_update']),
-      toolCalls: _mapList(
+      summary: jsonString(json['summary']),
+      memoryUpdate: jsonString(json['memoryUpdate'] ?? json['memory_update']),
+      toolCalls: jsonMapList(
         json['toolCalls'] ?? json['tool_calls'],
       ).map(JobToolCallRecord.fromJson).toList(),
-      artifacts: _mapList(json['artifacts']).map(JobArtifact.fromJson).toList(),
-      startedAt: _date(json['startedAt'] ?? json['started_at'], fallback: now),
-      completedAt: _nullableDate(json['completedAt'] ?? json['completed_at']),
-      replanReason: _nullableString(
+      artifacts: jsonMapList(
+        json['artifacts'],
+      ).map(JobArtifact.fromJson).toList(),
+      startedAt: jsonDate(
+        json['startedAt'] ?? json['started_at'],
+        fallback: now,
+      ),
+      completedAt: jsonNullableDate(
+        json['completedAt'] ?? json['completed_at'],
+      ),
+      replanReason: jsonNullableString(
         json['replanReason'] ?? json['replan_reason'],
       ),
-      error: _nullableString(json['error']),
+      error: jsonNullableString(json['error']),
     );
   }
 
@@ -535,16 +559,16 @@ class JobToolCallRecord {
 
   factory JobToolCallRecord.fromJson(Map<String, dynamic> json) {
     return JobToolCallRecord(
-      id: _string(json['id']),
-      stepId: _string(json['stepId'] ?? json['step_id']),
-      runId: _string(json['runId'] ?? json['run_id']),
-      toolName: _string(json['toolName'] ?? json['tool_name']),
+      id: jsonString(json['id']),
+      stepId: jsonString(json['stepId'] ?? json['step_id']),
+      runId: jsonString(json['runId'] ?? json['run_id']),
+      toolName: jsonString(json['toolName'] ?? json['tool_name']),
       arguments: json['arguments'],
-      resultSummary: _nullableString(
+      resultSummary: jsonNullableString(
         json['resultSummary'] ?? json['result_summary'],
       ),
-      error: _nullableString(json['error']),
-      timestamp: _date(json['timestamp'], fallback: DateTime.now()),
+      error: jsonNullableString(json['error']),
+      timestamp: jsonDate(json['timestamp'], fallback: DateTime.now()),
     );
   }
 
@@ -573,9 +597,9 @@ class PendingJobApproval {
 
   factory PendingJobApproval.fromJson(Map<String, dynamic> json) {
     return PendingJobApproval(
-      stepId: _string(json['stepId'] ?? json['step_id']),
-      reason: _string(json['reason']),
-      createdAt: _date(
+      stepId: jsonString(json['stepId'] ?? json['step_id']),
+      reason: jsonString(json['reason']),
+      createdAt: jsonDate(
         json['createdAt'] ?? json['created_at'],
         fallback: DateTime.now(),
       ),
@@ -604,10 +628,10 @@ class PendingJobQuestion {
 
   factory PendingJobQuestion.fromJson(Map<String, dynamic> json) {
     return PendingJobQuestion(
-      id: _string(json['id']),
-      stepId: _string(json['stepId'] ?? json['step_id']),
-      question: _string(json['question']),
-      createdAt: _date(
+      id: jsonString(json['id']),
+      stepId: jsonString(json['stepId'] ?? json['step_id']),
+      question: jsonString(json['question']),
+      createdAt: jsonDate(
         json['createdAt'] ?? json['created_at'],
         fallback: DateTime.now(),
       ),
@@ -621,79 +645,3 @@ class PendingJobQuestion {
     'createdAt': createdAt.toIso8601String(),
   };
 }
-
-Map<String, dynamic> _map(Object? value) {
-  if (value is Map<String, dynamic>) return value;
-  if (value is Map) return Map<String, dynamic>.from(value);
-  return <String, dynamic>{};
-}
-
-List<Map<String, dynamic>> _mapList(Object? value) {
-  if (value is! List) return const [];
-  return value
-      .whereType<Map>()
-      .map((item) => Map<String, dynamic>.from(item))
-      .toList();
-}
-
-List<String> _stringList(Object? value) {
-  if (value is List) {
-    return value
-        .map((item) {
-          if (item is Map && item['question'] != null) {
-            return item['question'].toString();
-          }
-          return item.toString();
-        })
-        .where((item) => item.trim().isNotEmpty)
-        .toList();
-  }
-  if (value is String && value.trim().isNotEmpty) return [value.trim()];
-  return const [];
-}
-
-String _string(Object? value, {String fallback = ''}) {
-  if (value == null) return fallback;
-  final string = value.toString();
-  return string.trim().isEmpty ? fallback : string;
-}
-
-String? _nullableString(Object? value) {
-  if (value == null) return null;
-  final string = value.toString().trim();
-  return string.isEmpty ? null : string;
-}
-
-bool _bool(Object? value, {bool fallback = false}) {
-  if (value is bool) return value;
-  if (value is num) return value != 0;
-  if (value is String) {
-    final normalised = value.trim().toLowerCase();
-    if (normalised == 'true' || normalised == 'yes' || normalised == '1') {
-      return true;
-    }
-    if (normalised == 'false' || normalised == 'no' || normalised == '0') {
-      return false;
-    }
-  }
-  return fallback;
-}
-
-int _int(Object? value, {int fallback = 0}) {
-  if (value is int) return value;
-  if (value is num) return value.toInt();
-  return int.tryParse(value?.toString() ?? '') ?? fallback;
-}
-
-DateTime _date(Object? value, {required DateTime fallback}) {
-  return _nullableDate(value) ?? fallback;
-}
-
-DateTime? _nullableDate(Object? value) {
-  if (value == null) return null;
-  if (value is DateTime) return value;
-  if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
-  return DateTime.tryParse(value.toString());
-}
-
-const Object _sentinel = Object();

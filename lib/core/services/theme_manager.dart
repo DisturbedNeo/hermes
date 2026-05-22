@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:hermes/core/models/hermes_theme_data.dart';
 import 'package:hermes/core/models/themes/nexus_theme.dart';
 import 'package:hermes/core/models/themes/solarpunk_theme.dart';
+import 'package:hermes/core/services/disposable.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 
-class ThemeManager with ChangeNotifier {
+class ThemeManager with ChangeNotifier implements Disposable {
   bool _isDarkMode = false;
   HermesThemeData _currentTheme = allThemes.first;
   bool _disposed = false;
@@ -76,7 +77,7 @@ class ThemeManager with ChangeNotifier {
   }
 
   @override
-  void dispose() {
+  Future<void> dispose() async {
     _disposed = true;
     super.dispose();
   }

@@ -12,7 +12,9 @@ import 'package:hermes/core/services/prompt_library_seed_data.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-class SystemPromptLibraryService extends ChangeNotifier {
+import 'disposable.dart';
+
+class SystemPromptLibraryService extends ChangeNotifier implements Disposable {
   static const String coreDefaultModuleId = BuiltInPromptIds.coreDefaultModule;
   static const String workspaceRulesModuleId =
       BuiltInPromptIds.workspaceRulesModule;
