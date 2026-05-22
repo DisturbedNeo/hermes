@@ -8,6 +8,7 @@ import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/models/job.dart';
+import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/job_system/job_json.dart';
@@ -82,6 +83,66 @@ const Set<String> _mutatingJobToolIds = {
   'delete_path',
   'run_command',
 };
+
+const String _finishJobStepToolId = 'finish_job_step';
+
+const ToolDefinition _finishJobStepToolDefinition = ToolDefinition(
+  id: _finishJobStepToolId,
+  name: 'Finish job step',
+  description:
+      'Finish the current job step. Use this when the current step is done, blocked, needs replanning, or has failed. Calling this ends the step; do not call workspace tools after it.',
+  schema: {
+    'type': 'object',
+    'properties': {
+      'status': {
+        'type': 'string',
+        'enum': ['completed', 'blocked', 'needs_replan', 'failed'],
+        'description': 'Final status for the current step.',
+      },
+      'summary': {
+        'type': 'string',
+        'description': 'Concise summary of what happened in this step.',
+      },
+      'memoryUpdate': {
+        'type': 'string',
+        'description':
+            'Useful context from this step that later job steps should remember.',
+      },
+      'artifacts': {
+        'type': 'array',
+        'description':
+            'Current-step artifacts that were actually created. Only include declared artifact paths.',
+        'items': {
+          'type': 'object',
+          'properties': {
+            'path': {
+              'type': 'string',
+              'description': 'Workspace-relative artifact path.',
+            },
+            'description': {
+              'type': 'string',
+              'description': 'Short artifact description.',
+            },
+          },
+          'required': ['path'],
+        },
+      },
+      'userQuestion': {
+        'type': 'string',
+        'description': 'Question to ask the user when status is blocked.',
+      },
+      'replanRequest': {
+        'type': 'string',
+        'description': 'Concrete replan request when status is needs_replan.',
+      },
+      'error': {
+        'type': 'string',
+        'description': 'Failure details when status is failed.',
+      },
+    },
+    'required': ['status', 'summary'],
+  },
+);
 
 class JobService {
   JobService({
@@ -702,10 +763,13 @@ $userPrompt
     JobCancellationToken? cancellationToken,
   }) async {
     final allowedToolIds = _allowedToolIdsForStep(step);
-    final toolDefs = _toolService.getToolDefinitions(
-      ids: allowedToolIds.toList(),
-      includeWorkspaceTools: true,
-    );
+    final toolDefs = [
+      ..._toolService.getToolDefinitions(
+        ids: allowedToolIds.toList(),
+        includeWorkspaceTools: true,
+      ),
+      _finishJobStepToolDefinition,
+    ];
     final messages = <ChatMessage>[
       ChatMessage(role: 'system', content: baseSystemPrompt),
       const ChatMessage(role: 'system', content: _executorSystemInstruction),
@@ -742,6 +806,49 @@ $userPrompt
       ].join('\n\n').trim();
 
       if (completion.toolCalls.isEmpty) break;
+
+      final finishCallIndex = completion.toolCalls.indexWhere(
+        (call) => call.name == _finishJobStepToolId,
+      );
+      if (finishCallIndex >= 0) {
+        final finishCall = completion.toolCalls[finishCallIndex];
+        final callId = finishCall.id ?? 'call_$finishCallIndex';
+        final args = JobJson.decodeJsonOrString(finishCall.arguments);
+        final finish = _finishStepFromToolCall(
+          args: args,
+          job: job,
+          step: step,
+          existingToolCalls: toolCalls,
+        );
+        final resultJson = finish.resultJson;
+        toolCalls.add(
+          JobToolCallRecord(
+            id: callId,
+            stepId: step.id,
+            runId: run.runId,
+            toolName: finishCall.name,
+            arguments: args,
+            resultSummary: _cap(resultJson, 1200),
+            error: finish.error,
+            timestamp: DateTime.now(),
+          ),
+        );
+        _emitFinishToolResults(
+          onModelOutput: onModelOutput,
+          label: 'Step Executor: ${step.title}',
+          calls: completion.toolCalls,
+          finishCallIndex: finishCallIndex,
+          finishResultJson: resultJson,
+        );
+        finalContent = finish.finalContent;
+        finalText = [
+          if (completion.reasoning.trim().isNotEmpty)
+            'Reasoning summary:\n${completion.reasoning.trim()}',
+          if (finalContent.isNotEmpty) finalContent,
+        ].join('\n\n').trim();
+        forcedOutput = finish.output.copyWith(toolCalls: toolCalls);
+        break;
+      }
 
       if (_isStepResultJson(finalContent)) {
         for (var i = 0; i < completion.toolCalls.length; i++) {
@@ -894,6 +1001,67 @@ $userPrompt
   Set<String> _allowedToolIdsForStep(JobStep step) {
     if (!step.mayEditFiles) return _readOnlyJobToolIds;
     return {..._readOnlyJobToolIds, ..._mutatingJobToolIds};
+  }
+
+  _FinishToolCallResult _finishStepFromToolCall({
+    required Object args,
+    required JobDocument job,
+    required JobStep step,
+    required List<JobToolCallRecord> existingToolCalls,
+  }) {
+    if (args is! Map) {
+      const error = 'finish_job_step arguments must be a JSON object.';
+      final resultJson = jsonEncode({'error': error});
+      return _FinishToolCallResult(
+        resultJson: resultJson,
+        finalContent: resultJson,
+        error: error,
+        output: _StepExecutionOutput(
+          status: _StepExecutionStatus.failed,
+          runStatus: JobRunStatus.failed,
+          summary: error,
+          memoryUpdate: '',
+          artifacts: const [],
+          toolCalls: existingToolCalls,
+          error: error,
+        ),
+      );
+    }
+
+    final json = Map<String, dynamic>.from(args);
+    final finalContent = _encoder.convert(json);
+    final status = _string(json['status'], fallback: 'completed');
+    return _FinishToolCallResult(
+      resultJson: jsonEncode({'finished': true, 'status': status}),
+      finalContent: finalContent,
+      output: _parseStepOutput(finalContent, job, step, existingToolCalls),
+    );
+  }
+
+  void _emitFinishToolResults({
+    required JobModelOutputSink? onModelOutput,
+    required String label,
+    required List<ChatCompletionToolCall> calls,
+    required int finishCallIndex,
+    required String finishResultJson,
+  }) {
+    for (var i = 0; i < calls.length; i++) {
+      _emitJobModelOutput(
+        onModelOutput,
+        JobModelOutputEvent(
+          type: JobModelOutputEventType.toolResult,
+          label: label,
+          text: i == finishCallIndex
+              ? finishResultJson
+              : jsonEncode({
+                  'skipped': true,
+                  'reason':
+                      'finish_job_step ended the step, so this tool call was ignored.',
+                }),
+          toolIndex: i,
+        ),
+      );
+    }
   }
 
   Future<String> _executeJobToolCall({
@@ -1452,7 +1620,7 @@ ${step.mayEditFiles ? '- This step may edit files after any required user approv
 Previous run summaries:
 ${previousRuns.trim().isEmpty ? 'None yet.' : previousRuns}
 
-When finished, return only JSON:
+When finished, call finish_job_step with this result object. If finish_job_step is unavailable, return only JSON:
 {
   "status": "completed|blocked|needs_replan|failed",
   "summary": "...",
@@ -2019,6 +2187,34 @@ class _StepExecutionOutput {
     this.replanRequest,
     this.error,
   });
+
+  _StepExecutionOutput copyWith({List<JobToolCallRecord>? toolCalls}) {
+    return _StepExecutionOutput(
+      status: status,
+      runStatus: runStatus,
+      summary: summary,
+      memoryUpdate: memoryUpdate,
+      artifacts: artifacts,
+      toolCalls: toolCalls ?? this.toolCalls,
+      userQuestion: userQuestion,
+      replanRequest: replanRequest,
+      error: error,
+    );
+  }
+}
+
+class _FinishToolCallResult {
+  final String resultJson;
+  final String finalContent;
+  final _StepExecutionOutput output;
+  final String? error;
+
+  const _FinishToolCallResult({
+    required this.resultJson,
+    required this.finalContent,
+    required this.output,
+    this.error,
+  });
 }
 
 String _string(Object? value, {String fallback = ''}) {
@@ -2093,7 +2289,8 @@ If the current step is read-only, you may create only the current step's declare
 If a later step is responsible for writing a report or changing files, leave that work for the later step.
 If the current plan is wrong or missing necessary follow-up work, return status "needs_replan" with a concrete replanRequest.
 If user input is required, return status "blocked" with userQuestion.
-When done, return only the requested JSON object.
+When done, call finish_job_step with the requested result object.
+If finish_job_step is unavailable, return only the requested JSON object.
 ''';
 
 const String _replannerSystemInstruction = '''

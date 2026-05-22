@@ -96,6 +96,83 @@ void main() {
       expect(updated.runs.single.artifacts.single.path, contains('notes.md'));
     });
 
+    test('runs one step from finish job step tool call', () async {
+      final job = _job();
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'finish_job_step',
+              arguments: jsonEncode({
+                'status': 'completed',
+                'summary': 'Inspected the workspace.',
+                'memoryUpdate': 'Found a Flutter app.',
+              }),
+            ),
+          ],
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: job,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(client.requestCount, 1);
+      expect(client.seenToolNames.single, contains('finish_job_step'));
+      expect(updated.status, JobStatus.completed);
+      expect(updated.runs.single.status, JobRunStatus.completed);
+      expect(updated.runs.single.summary, 'Inspected the workspace.');
+      expect(updated.memorySummary, contains('Found a Flutter app.'));
+      expect(updated.runs.single.toolCalls.single.toolName, 'finish_job_step');
+    });
+
+    test(
+      'finish job step tool call skips sibling workspace tool calls',
+      () async {
+        final job = _job();
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'read_file',
+                arguments: jsonEncode({'path': 'missing.txt'}),
+              ),
+              ChatCompletionToolCall(
+                name: 'finish_job_step',
+                arguments: jsonEncode({
+                  'status': 'completed',
+                  'summary': 'Finished without more reads.',
+                  'memoryUpdate': 'Existing context was sufficient.',
+                }),
+              ),
+            ],
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: job,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(client.requestCount, 1);
+        expect(updated.status, JobStatus.completed);
+        expect(updated.runs.single.summary, 'Finished without more reads.');
+        expect(updated.runs.single.toolCalls, hasLength(1));
+        expect(
+          updated.runs.single.toolCalls.single.toolName,
+          'finish_job_step',
+        );
+        expect(updated.runs.single.toolCalls.single.error, isNull);
+      },
+    );
+
     test('pauses for phase approval before mutating steps', () async {
       final job = _job(
         step: const JobStep(
