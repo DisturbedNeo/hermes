@@ -15,6 +15,49 @@ export 'package:hermes/core/helpers/server_health_checker.dart'
 
 import 'disposable.dart';
 
+@visibleForTesting
+List<String> buildLlamaServerArguments({
+  required ModelConfigurationSnapshot snapshot,
+  required int port,
+}) {
+  final nThreads = snapshot.nThreads;
+
+  return <String>[
+    '-m', snapshot.modelPath,
+    '--host', '127.0.0.1',
+    '--port', '$port',
+    '-c', '${snapshot.nCtx}',
+    '-t', '$nThreads',
+    '--threads-batch', '$nThreads',
+    '-ngl', '${snapshot.nGpuLayers}',
+    '--temp', '${snapshot.temperature}',
+    '--top-p', '${snapshot.topP}',
+    '--top-k', '${snapshot.topK}',
+    '--mirostat', '${snapshot.mirostat}',
+    '-b', '${snapshot.nBatch}',
+    '-ub', '${snapshot.nUBatch}',
+    '--repeat-penalty', '${snapshot.repeatPenalty}',
+    '--repeat-last-n', '${snapshot.repeatLastN}',
+    '--presence-penalty', '${snapshot.presencePenalty}',
+    '--frequency-penalty', '${snapshot.frequencyPenalty}',
+    '--flash-attn', snapshot.flashAttention ? 'on' : 'off',
+    '--no-mmap',
+    if (snapshot.cachePrompt) ...[
+      '--cache-prompt',
+      '--cache-reuse', '${snapshot.cacheReuse}',
+    ] else
+      '--no-cache-prompt',
+    if (!snapshot.thinking) ...[
+      '--chat-template-kwargs', '{"enable_thinking": false}',
+    ],
+    if (snapshot.kvCacheQuantizationEnabled) ...[
+      '--cache-type-k', snapshot.kvCacheTypeK,
+      '--cache-type-v', snapshot.kvCacheTypeV,
+    ],
+    '--jinja',
+  ];
+}
+
 class LlamaServerManager implements Disposable {
   final ValueNotifier<LlamaServerHandle?> handle = ValueNotifier(null);
   final ModelSessionDiagnostics diagnostics = ModelSessionDiagnostics();
@@ -42,6 +85,9 @@ class LlamaServerManager implements Disposable {
       presencePenalty: snapshot.presencePenalty,
       frequencyPenalty: snapshot.frequencyPenalty,
       thinking: snapshot.thinking,
+      flashAttention: snapshot.flashAttention,
+      cachePrompt: snapshot.cachePrompt,
+      cacheReuse: snapshot.cacheReuse,
       kvCacheQuantizationEnabled: snapshot.kvCacheQuantizationEnabled,
       kvCacheTypeK: snapshot.kvCacheTypeK,
       kvCacheTypeV: snapshot.kvCacheTypeV,
@@ -57,7 +103,7 @@ class LlamaServerManager implements Disposable {
     required String modelPath,
     required String modelName,
     int nCtx = 4096,
-    int nThreads = 1,
+    int? nThreads,
     int nGpuLayers = 0,
     double temperature = 0.7,
     double topP = 0.9,
@@ -70,17 +116,22 @@ class LlamaServerManager implements Disposable {
     double presencePenalty = 1.2,
     double frequencyPenalty = 0.5,
     bool thinking = true,
+    bool flashAttention = true,
+    bool cachePrompt = true,
+    int cacheReuse = ModelConfigurationSnapshot.defaultCacheReuse,
     bool kvCacheQuantizationEnabled = true,
     String kvCacheTypeK = ModelConfigurationSnapshot.defaultKvCacheType,
     String kvCacheTypeV = ModelConfigurationSnapshot.defaultKvCacheType,
   }) async {
     final generation = ++_startGeneration;
+    final effectiveNThreads =
+        nThreads ?? ModelConfigurationSnapshot.defaultNThreads;
     final snapshot = ModelConfigurationSnapshot(
       modelName: modelName,
       modelPath: modelPath,
       llamaCppDirectory: llamaCppDirectory,
       nCtx: nCtx,
-      nThreads: nThreads,
+      nThreads: effectiveNThreads,
       nGpuLayers: nGpuLayers,
       temperature: temperature,
       topP: topP,
@@ -93,6 +144,9 @@ class LlamaServerManager implements Disposable {
       presencePenalty: presencePenalty,
       frequencyPenalty: frequencyPenalty,
       thinking: thinking,
+      flashAttention: flashAttention,
+      cachePrompt: cachePrompt,
+      cacheReuse: ModelConfigurationSnapshot.clampCacheReuse(cacheReuse),
       kvCacheQuantizationEnabled: kvCacheQuantizationEnabled,
       kvCacheTypeK: kvCacheTypeK,
       kvCacheTypeV: kvCacheTypeV,
@@ -104,7 +158,9 @@ class LlamaServerManager implements Disposable {
       throw error;
     }
 
-    final llamaServerExe = await resolveLlamaServerExecutable(llamaCppDirectory);
+    final llamaServerExe = await resolveLlamaServerExecutable(
+      llamaCppDirectory,
+    );
 
     if (llamaServerExe == null) {
       final error = FlutterError(
@@ -118,52 +174,7 @@ class LlamaServerManager implements Disposable {
     final port = await _getFreePort();
     _throwIfCancelled(generation);
 
-    final args = <String>[
-      '-m',
-      modelPath,
-      '--host',
-      '127.0.0.1',
-      '--port',
-      '$port',
-      '-c',
-      '$nCtx',
-      '-t',
-      '$nThreads',
-      '-ngl',
-      '$nGpuLayers',
-      '--temp',
-      '$temperature',
-      '--top-p',
-      '$topP',
-      '--top-k',
-      '$topK',
-      '--mirostat',
-      '$mirostat',
-      '-b',
-      '$nBatch',
-      '-ub',
-      '$nUBatch',
-      '--repeat-penalty',
-      '$repeatPenalty',
-      '--repeat-last-n',
-      '$repeatLastN',
-      '--presence-penalty',
-      '$presencePenalty',
-      '--frequency-penalty',
-      '$frequencyPenalty',
-      '--no-mmap',
-      if (!thinking) ...[
-        '--chat-template-kwargs',
-        '{"enable_thinking": false}',
-      ],
-      if (kvCacheQuantizationEnabled) ...[
-        '--cache-type-k',
-        kvCacheTypeK,
-        '--cache-type-v',
-        kvCacheTypeV,
-      ],
-      '--jinja',
-    ];
+    final args = buildLlamaServerArguments(snapshot: snapshot, port: port);
 
     await _stopHandles();
     _throwIfCancelled(generation);

@@ -37,19 +37,22 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
   static const double _dialogHorizontalInset = 40;
 
   int _ctx = 64;
-  int _threads = (Platform.numberOfProcessors * 0.875).ceil();
+  int _threads = ModelConfigurationSnapshot.defaultNThreads;
   int _gpuLayers = 999;
   double _temperature = 0.7;
   double _topP = 0.8;
   int _topK = 20;
   int _batch = 8192;
-  int _uBatch = 2048;
+  int _uBatch = 4096;
   int _miroStatMode = 0;
   double _repeatPenalty = 1.0;
   int _repeatLastN = 64;
   double _presencePenalty = 1.5;
   double _frequencyPenalty = 0.0;
   bool _thinking = false;
+  bool _flashAttention = true;
+  bool _cachePrompt = true;
+  int _cacheReuse = ModelConfigurationSnapshot.defaultCacheReuse;
   bool _kvCacheQuantizationEnabled = true;
   String _kvCacheTypeK = ModelConfigurationSnapshot.defaultKvCacheType;
   String _kvCacheTypeV = ModelConfigurationSnapshot.defaultKvCacheType;
@@ -80,6 +83,9 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
           presencePenalty: _presencePenalty,
           frequencyPenalty: _frequencyPenalty,
           thinking: _thinking,
+          flashAttention: _flashAttention,
+          cachePrompt: _cachePrompt,
+          cacheReuse: _cacheReuse,
           kvCacheQuantizationEnabled: _kvCacheQuantizationEnabled,
           kvCacheTypeK: _kvCacheTypeK,
           kvCacheTypeV: _kvCacheTypeV,
@@ -199,9 +205,15 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                   label: 'uBatch',
                   value: _uBatch,
                   min: 256,
-                  max: 2048,
+                  max: 8192,
                   step: 256,
                   onChanged: (v) => setState(() => _uBatch = v),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Flash Attention'),
+                  value: _flashAttention,
+                  onChanged: (v) => setState(() => _flashAttention = v),
                 ),
               ],
             ),
@@ -291,9 +303,25 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
             const SizedBox(height: 8),
             _ConfigurationSection(
               title: 'Cache',
-              subtitle: 'KV cache memory format',
+              subtitle: 'Prompt reuse and KV cache format',
               icon: Icons.storage_outlined,
               children: [
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Cache Prompt'),
+                  value: _cachePrompt,
+                  onChanged: (v) => setState(() => _cachePrompt = v),
+                ),
+                if (_cachePrompt) ...[
+                  SliderControl.integer(
+                    label: 'Cache Reuse',
+                    value: _cacheReuse,
+                    min: ModelConfigurationSnapshot.minCacheReuse,
+                    max: ModelConfigurationSnapshot.maxCacheReuse,
+                    step: 1,
+                    onChanged: (v) => setState(() => _cacheReuse = v),
+                  )
+                ],
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Quantise KV Cache'),

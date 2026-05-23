@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
@@ -82,13 +84,15 @@ void main() {
 
     expect(find.text('K cache type'), findsOneWidget);
     expect(find.text('V cache type'), findsOneWidget);
+    expect(find.text('Cache Prompt'), findsOneWidget);
+    expect(find.text('Cache Reuse'), findsOneWidget);
     expect(
       find.text(ModelConfigurationSnapshot.defaultKvCacheType),
       findsNWidgets(2),
     );
 
     await tester.ensureVisible(find.text('Quantise KV Cache'));
-    await tester.tap(find.byType(SwitchListTile).last);
+    await tester.tap(find.widgetWithText(SwitchListTile, 'Quantise KV Cache'));
     await tester.pumpAndSettle();
 
     expect(find.text('K cache type'), findsNothing);
@@ -115,6 +119,10 @@ void main() {
     await tester.tap(find.text('Confirm'));
     await tester.pumpAndSettle();
 
+    expect(submitted?.nThreads, Platform.numberOfProcessors);
+    expect(submitted?.flashAttention, isTrue);
+    expect(submitted?.cachePrompt, isTrue);
+    expect(submitted?.cacheReuse, ModelConfigurationSnapshot.defaultCacheReuse);
     expect(submitted?.kvCacheQuantizationEnabled, isTrue);
     expect(
       submitted?.kvCacheTypeK,
