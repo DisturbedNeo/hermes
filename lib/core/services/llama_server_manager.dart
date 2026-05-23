@@ -3,19 +3,19 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:hermes/core/helpers/file.dart';
+import 'package:hermes/core/helpers/llama_server_finder.dart';
+import 'package:hermes/core/helpers/server_health_checker.dart';
 import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/model_session_diagnostics.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
-import 'package:path/path.dart' as p;
+
+export 'package:hermes/core/helpers/server_health_checker.dart'
+    show LlamaServerStartupCancelled;
 
 import 'disposable.dart';
 
 class LlamaServerManager implements Disposable {
-  static const Duration _healthRequestTimeout = Duration(seconds: 2);
-  static const Duration _startupStallTimeout = Duration(minutes: 2);
-
   final ValueNotifier<LlamaServerHandle?> handle = ValueNotifier(null);
   final ModelSessionDiagnostics diagnostics = ModelSessionDiagnostics();
   ChatClient? chatClient;
@@ -104,9 +104,7 @@ class LlamaServerManager implements Disposable {
       throw error;
     }
 
-    final llamaServerExe = await _resolveLlamaServerExecutable(
-      llamaCppDirectory,
-    );
+    final llamaServerExe = await resolveLlamaServerExecutable(llamaCppDirectory);
 
     if (llamaServerExe == null) {
       final error = FlutterError(
@@ -228,10 +226,12 @@ class LlamaServerManager implements Disposable {
     );
 
     try {
-      await _waitUntilReady(
-        Uri.parse(baseUrl),
-        process,
-        startupOutput: startupOutput,
+      final healthChecker = ServerHealthChecker(
+        baseUrl: Uri.parse(baseUrl),
+        process: process,
+        recentOutputGetter: () => startupOutput.recentOutput,
+      );
+      await healthChecker.waitForReady(
         isCancelled: () => generation != _startGeneration,
       );
 
@@ -302,137 +302,11 @@ class LlamaServerManager implements Disposable {
     }
   }
 
-  Future<String?> _resolveLlamaServerExecutable(String llamaCppDir) async {
-    final candidates = <String>[
-      // make / default in repo root
-      p.join(llamaCppDir, 'llama-server'),
-      p.join(llamaCppDir, 'llama-server.exe'),
-      // common CMake layouts
-      p.join(llamaCppDir, 'build', 'bin', 'llama-server'),
-      p.join(llamaCppDir, 'build', 'bin', 'llama-server.exe'),
-      p.join(llamaCppDir, 'build', 'bin', 'Release', 'llama-server.exe'),
-      p.join(llamaCppDir, 'bin', 'llama-server'),
-      p.join(llamaCppDir, 'bin', 'llama-server.exe'),
-    ];
-
-    for (final path in candidates) {
-      final f = File(path);
-
-      if (await f.exists()) {
-        if (!Platform.isWindows && !await isExecutable(f)) {
-          try {
-            await Process.run('chmod', ['+x', f.path]);
-          } catch (_) {}
-        }
-
-        return f.path;
-      }
-    }
-
-    return null;
-  }
-
   Future<int> _getFreePort() async {
     final socket = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
     final port = socket.port;
     await socket.close();
     return port;
-  }
-
-  Future<void> _waitUntilReady(
-    Uri base,
-    Process process, {
-    required _StartupOutput startupOutput,
-    required bool Function() isCancelled,
-  }) async {
-    final client = HttpClient();
-    Object? lastError;
-    var processExited = false;
-    int? processExitCode;
-    final exitCode = process.exitCode;
-
-    unawaited(
-      exitCode.then((code) {
-        processExited = true;
-        processExitCode = code;
-      }),
-    );
-
-    var delay = const Duration(milliseconds: 100);
-    var lastProgressAt = DateTime.now();
-    final maxDelay = const Duration(seconds: 1);
-
-    try {
-      while (true) {
-        if (startupOutput.lastOutputAt.isAfter(lastProgressAt)) {
-          lastProgressAt = startupOutput.lastOutputAt;
-        }
-
-        if (isCancelled()) {
-          throw const LlamaServerStartupCancelled();
-        }
-
-        if (processExited) {
-          throw StateError(
-            _startupFailureMessage(
-              'llama-server exited before it was ready (exit code $processExitCode)',
-              startupOutput,
-            ),
-          );
-        }
-
-        try {
-          final req = await client
-              .getUrl(base.replace(path: '/health'))
-              .timeout(_healthRequestTimeout);
-          final res = await req.close().timeout(_healthRequestTimeout);
-
-          if (res.statusCode == 200) {
-            await res.drain();
-            return;
-          }
-
-          if (res.statusCode == 503) {
-            lastProgressAt = DateTime.now();
-          }
-
-          lastError = 'health check returned HTTP ${res.statusCode}';
-          await res.drain();
-        } catch (e) {
-          lastError = e;
-        }
-
-        if (DateTime.now().difference(lastProgressAt) > _startupStallTimeout) {
-          throw StateError(
-            _startupFailureMessage(
-              'llama-server startup appears stalled. Last readiness error: $lastError',
-              startupOutput,
-            ),
-          );
-        }
-
-        await Future.any<void>([Future.delayed(delay), exitCode.then((_) {})]);
-
-        final nextDelayMs = (delay.inMilliseconds * 1.5).round();
-        delay = Duration(
-          milliseconds: nextDelayMs > maxDelay.inMilliseconds
-              ? maxDelay.inMilliseconds
-              : nextDelayMs,
-        );
-      }
-    } finally {
-      client.close(force: true);
-    }
-  }
-
-  String _startupFailureMessage(String message, _StartupOutput startupOutput) {
-    final recentOutput = startupOutput.recentOutput;
-
-    if (recentOutput.isEmpty) {
-      return message;
-    }
-
-    return '$message\nRecent llama-server output:\n$recentOutput';
   }
 
   @override
@@ -443,13 +317,6 @@ class LlamaServerManager implements Disposable {
     await stop();
     diagnostics.dispose();
   }
-}
-
-class LlamaServerStartupCancelled implements Exception {
-  const LlamaServerStartupCancelled();
-
-  @override
-  String toString() => 'llama-server startup cancelled';
 }
 
 class _StartupOutput {

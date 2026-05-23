@@ -282,21 +282,27 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
     super.dispose();
   }
 
+  /// Collects unique workspaces from the given attachments, keyed by root path.
+  Map<String, WorkspaceAttachment> _collectWorkspacesByRoot(
+    List<WorkspaceAttachment?> attachments,
+  ) {
+    final byRoot = <String, WorkspaceAttachment>{};
+    for (final workspace in attachments) {
+      if (workspace == null || workspace.missing) continue;
+      byRoot[workspace.rootPath] = workspace;
+    }
+    return byRoot;
+  }
+
   List<WorkspaceAttachment> _workspacesForDeletedChat(
     String chatId,
     WorkspaceAttachment? savedWorkspace,
   ) {
-    final byRoot = <String, WorkspaceAttachment>{};
-    void add(WorkspaceAttachment? workspace) {
-      if (workspace == null || workspace.missing) return;
-      byRoot[workspace.rootPath] = workspace;
-    }
-
-    add(savedWorkspace);
+    final attachments = <WorkspaceAttachment?>[savedWorkspace];
     for (final tab in _tabs.where((tab) => tab.currentChatId == chatId)) {
-      add(tab.workspace);
+      attachments.add(tab.workspace);
     }
-    return byRoot.values.toList();
+    return _collectWorkspacesByRoot(attachments).values.toList();
   }
 
   Future<void> _deleteJobsForChatSessionInWorkspaces(
@@ -314,22 +320,17 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
   Future<void> _cleanupOrphanedJobs() async {
     final savedChats = await _chatLibrary.listChats();
     final retainedChatSessionIds = savedChats.map((chat) => chat.id).toSet();
-    final byRoot = <String, WorkspaceAttachment>{};
-    void add(WorkspaceAttachment? workspace) {
-      if (workspace == null || workspace.missing) return;
-      byRoot[workspace.rootPath] = workspace;
-    }
 
+    final allWorkspaces = <WorkspaceAttachment?>[];
     for (final chat in savedChats) {
-      add(chat.workspace);
+      allWorkspaces.add(chat.workspace);
     }
     for (final tab in _tabs) {
-      add(tab.workspace);
+      allWorkspaces.add(tab.workspace);
     }
-    for (final workspace in await _workspaceService.recentWorkspaces()) {
-      add(workspace);
-    }
+    allWorkspaces.addAll(await _workspaceService.recentWorkspaces());
 
+    final byRoot = _collectWorkspacesByRoot(allWorkspaces);
     for (final workspace in byRoot.values) {
       await _jobService.deleteOrphanedChatJobs(
         workspace,

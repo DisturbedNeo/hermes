@@ -208,6 +208,77 @@ class _ComposerState extends State<Composer> {
     return 'Tools selected: $toolCount';
   }
 
+  /// Builds the role dropdown widget used in both wide and narrow layouts.
+  Widget _buildRoleDropdown(
+    ChatService chat,
+    bool inputEnabled, {
+    required double iconSize,
+    required EdgeInsetsGeometry contentPadding,
+  }) {
+    return AccessibleWidget(
+      label: _buildRoleSemanticLabel(_selectedRole),
+      isButton: true,
+      enabled: inputEnabled,
+      child: DropdownButtonFormField<MessageRole>(
+        initialValue: _selectedRole,
+        isExpanded: true,
+        isDense: true,
+        selectedItemBuilder: (context) => MessageRole.values
+            .map((role) => _roleDropdownSelectedItem(role, iconSize: iconSize))
+            .toList(),
+        onChanged: inputEnabled
+            ? (v) {
+                if (v == null) return;
+                setState(() => _selectedRole = v);
+                _focusNode.requestFocus();
+              }
+            : null,
+        decoration: InputDecoration(
+          labelText: 'Role',
+          border: const OutlineInputBorder(),
+          contentPadding: contentPadding,
+        ),
+        items: MessageRole.values.map((role) {
+          return DropdownMenuItem<MessageRole>(
+            value: role,
+            child: _roleDropdownItem(role, iconSize: iconSize),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  /// Builds the composer's text input field, shared across wide and narrow layouts.
+  Widget _buildTextField(ChatService chat, bool inputEnabled) {
+    return TextField(
+      controller: _controller,
+      focusNode: _focusNode,
+      minLines: 1,
+      maxLines: 6,
+      enabled: inputEnabled,
+      keyboardType: TextInputType.multiline,
+      textInputAction: (_selectedRole == MessageRole.user &&
+              !chat.chatStream.isStreaming)
+          ? TextInputAction.send
+          : TextInputAction.newline,
+      decoration: InputDecoration(
+        hintText: _hintTextForMode(chat),
+        border: const OutlineInputBorder(),
+      ),
+      onSubmitted: _handleSubmitted,
+      onEditingComplete: () => _focusNode.requestFocus(),
+    );
+  }
+
+  /// Returns the hint text appropriate for the current chat mode.
+  String _hintTextForMode(ChatService chat) {
+    if (!widget.enabled) return 'Load a model to chat...';
+    if (chat.jobBusy) return 'Job is running...';
+    if (chat.chatStream.isStreaming) return 'Streaming response...';
+    if (chat.executionMode == ExecutionMode.chat) return 'Type a message...';
+    return 'Describe the job...';
+  }
+
   void _insertMessage() {
     final trimmed = _controller.text.trim();
     if (trimmed.isEmpty) return;
@@ -423,38 +494,13 @@ class _ComposerState extends State<Composer> {
         child: Tooltip(
           message: 'Message role',
           waitDuration: const Duration(milliseconds: 400),
-          child: AccessibleWidget(
-            label: _buildRoleSemanticLabel(_selectedRole),
-            isButton: true,
-            enabled: inputEnabled,
-            child: DropdownButtonFormField<MessageRole>(
-              initialValue: _selectedRole,
-              isExpanded: true,
-              isDense: true,
-              selectedItemBuilder: (context) => MessageRole.values
-                  .map((role) => _roleDropdownSelectedItem(role, iconSize: 18))
-                  .toList(),
-              onChanged: inputEnabled
-                  ? (v) {
-                      if (v == null) return;
-                      setState(() => _selectedRole = v);
-                      _focusNode.requestFocus();
-                    }
-                  : null,
-              decoration: const InputDecoration(
-                labelText: 'Role',
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-              ),
-              items: MessageRole.values.map((role) {
-                return DropdownMenuItem<MessageRole>(
-                  value: role,
-                  child: _roleDropdownItem(role, iconSize: 18),
-                );
-              }).toList(),
+          child: _buildRoleDropdown(
+            chat,
+            inputEnabled,
+            iconSize: 18,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 10,
             ),
           ),
         ),
@@ -512,35 +558,7 @@ class _ComposerState extends State<Composer> {
         ],
       ),
       const SizedBox(width: 8),
-      Expanded(
-        child: TextField(
-          controller: _controller,
-          focusNode: _focusNode,
-          minLines: 1,
-          maxLines: 6,
-          enabled: inputEnabled,
-          keyboardType: TextInputType.multiline,
-          textInputAction:
-              (_selectedRole == MessageRole.user &&
-                  !chat.chatStream.isStreaming)
-              ? TextInputAction.send
-              : TextInputAction.newline,
-          decoration: InputDecoration(
-            hintText: !widget.enabled
-                ? 'Load a model to chat...'
-                : chat.jobBusy
-                ? 'Job is running...'
-                : chat.chatStream.isStreaming
-                ? 'Streaming response...'
-                : chat.executionMode == ExecutionMode.chat
-                ? 'Type a message...'
-                : 'Describe the job...',
-            border: const OutlineInputBorder(),
-          ),
-          onSubmitted: _handleSubmitted,
-          onEditingComplete: () => _focusNode.requestFocus(),
-        ),
-      ),
+      Expanded(child: _buildTextField(chat, inputEnabled)),
       const SizedBox(width: 8),
       AnimatedBuilder(
         animation: chat.chatStream,
@@ -573,41 +591,13 @@ class _ComposerState extends State<Composer> {
               child: Tooltip(
                 message: 'Message role',
                 waitDuration: const Duration(milliseconds: 400),
-                child: AccessibleWidget(
-                  label: _buildRoleSemanticLabel(_selectedRole),
-                  isButton: true,
-                  enabled: inputEnabled,
-                  child: DropdownButtonFormField<MessageRole>(
-                    initialValue: _selectedRole,
-                    isExpanded: true,
-                    isDense: true,
-                    selectedItemBuilder: (context) => MessageRole.values
-                        .map(
-                          (role) =>
-                              _roleDropdownSelectedItem(role, iconSize: 16),
-                        )
-                        .toList(),
-                    onChanged: inputEnabled
-                        ? (v) {
-                            if (v == null) return;
-                            setState(() => _selectedRole = v);
-                            _focusNode.requestFocus();
-                          }
-                        : null,
-                    decoration: const InputDecoration(
-                      labelText: 'Role',
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 8,
-                      ),
-                    ),
-                    items: MessageRole.values.map((role) {
-                      return DropdownMenuItem<MessageRole>(
-                        value: role,
-                        child: _roleDropdownItem(role, iconSize: 16),
-                      );
-                    }).toList(),
+                child: _buildRoleDropdown(
+                  chat,
+                  inputEnabled,
+                  iconSize: 16,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 8,
                   ),
                 ),
               ),
@@ -662,32 +652,7 @@ class _ComposerState extends State<Composer> {
       ),
       const SizedBox(height: 8),
       // Full-width text field
-      TextField(
-        controller: _controller,
-        focusNode: _focusNode,
-        minLines: 1,
-        maxLines: 6,
-        enabled: inputEnabled,
-        keyboardType: TextInputType.multiline,
-        textInputAction:
-            (_selectedRole == MessageRole.user && !chat.chatStream.isStreaming)
-            ? TextInputAction.send
-            : TextInputAction.newline,
-        decoration: InputDecoration(
-          hintText: !widget.enabled
-              ? 'Load a model to chat...'
-              : chat.jobBusy
-              ? 'Job is running...'
-              : chat.chatStream.isStreaming
-              ? 'Streaming response...'
-              : chat.executionMode == ExecutionMode.chat
-              ? 'Type a message...'
-              : 'Describe the job...',
-          border: const OutlineInputBorder(),
-        ),
-        onSubmitted: _handleSubmitted,
-        onEditingComplete: () => _focusNode.requestFocus(),
-      ),
+      _buildTextField(chat, inputEnabled),
       const SizedBox(height: 8),
       // Action buttons
       AnimatedBuilder(

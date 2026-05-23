@@ -596,14 +596,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       _insertJobAssistantMessage('Job run cancelled.');
     } catch (e) {
       jobError = e;
-      messageStore.upsert(
-        Bubble(
-          id: uuid.v7(),
-          role: MessageRole.assistant,
-          text: 'Failed to run job: $e',
-          reasoning: '',
-        ),
-      );
+      _insertJobErrorBubble('Failed to run job: $e');
     } finally {
       if (!keepBusy) {
         jobBusy = false;
@@ -794,14 +787,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       _insertJobAssistantMessage('Task brief refinement cancelled.');
     } catch (e) {
       jobError = e;
-      messageStore.upsert(
-        Bubble(
-          id: uuid.v7(),
-          role: MessageRole.assistant,
-          text: 'Failed to refine task brief: $e',
-          reasoning: '',
-        ),
-      );
+      _insertJobErrorBubble('Failed to refine task brief: $e');
     } finally {
       jobBusy = false;
       _endJobCancellationScope(token);
@@ -1035,14 +1021,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       _insertJobAssistantMessage('Job creation cancelled.');
     } catch (e) {
       jobError = e;
-      messageStore.upsert(
-        Bubble(
-          id: uuid.v7(),
-          role: MessageRole.assistant,
-          text: 'Failed to create job: $e',
-          reasoning: '',
-        ),
-      );
+      _insertJobErrorBubble('Failed to create job: $e');
     } finally {
       jobBusy = false;
       _endJobCancellationScope(token);
@@ -1100,14 +1079,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       _insertJobAssistantMessage('Job step cancelled.');
     } catch (e) {
       jobError = e;
-      messageStore.upsert(
-        Bubble(
-          id: uuid.v7(),
-          role: MessageRole.assistant,
-          text: 'Failed to run job step: $e',
-          reasoning: '',
-        ),
-      );
+      _insertJobErrorBubble('Failed to run job step: $e');
     } finally {
       if (!keepBusy) {
         jobBusy = false;
@@ -1691,6 +1663,18 @@ class ChatService extends ChangeNotifier implements Disposable {
         id: uuid.v7(),
         role: MessageRole.assistant,
         text: text,
+        reasoning: '',
+      ),
+    );
+  }
+
+  /// Inserts a bubble indicating that a job operation failed.
+  void _insertJobErrorBubble(String errorMessage) {
+    messageStore.upsert(
+      Bubble(
+        id: uuid.v7(),
+        role: MessageRole.assistant,
+        text: errorMessage,
         reasoning: '',
       ),
     );

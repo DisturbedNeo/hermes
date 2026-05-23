@@ -27,6 +27,9 @@ class ServiceProvider {
   bool _initialized = false;
   Future<void> _lifecycle = Future.value();
 
+  /// Retrieves a registered service by type.
+  ///
+  /// Throws [Exception] if no service of type [T] is registered.
   T get<T extends Object>() {
     if (_singletonServices.containsKey(T)) {
       return _singletonServices[T]! as T;
@@ -37,6 +40,22 @@ class ServiceProvider {
     }
 
     throw Exception('Service of type $T is not registered.');
+  }
+
+  /// Retrieves a registered service by type, or returns `null` if not found.
+  ///
+  /// Unlike [get], this method never throws — it safely returns `null` when
+  /// the requested service is not registered. Useful for optional dependencies.
+  T? tryGet<T extends Object>() {
+    if (_singletonServices.containsKey(T)) {
+      return _singletonServices[T] as T;
+    }
+
+    if (_transientServices.containsKey(T)) {
+      return _transientServices[T]!.create() as T;
+    }
+
+    return null;
   }
 
   Future<void> initialize() {

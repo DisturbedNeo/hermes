@@ -138,8 +138,23 @@ class _HermesShortcutAction extends ContextAction<HermesShortcutIntent> {
   @override
   bool isEnabled(HermesShortcutIntent intent, [BuildContext? context]) {
     if (service._canHandle(intent.shortcut)) return true;
+    return _hasFallback(intent);
+  }
+
+  @override
+  Object? invoke(HermesShortcutIntent intent, [BuildContext? context]) {
+    // Try the service's own handler first.
+    if (service._invoke(intent.shortcut)) return true;
+
+    // Fall back to the next ancestor Actions scope.
+    return _tryFallback(intent);
+  }
+
+  /// Returns whether there is a usable fallback action in an ancestor scope.
+  bool _hasFallback(HermesShortcutIntent intent) {
     final fallbackContext = this.fallbackContext;
     if (fallbackContext == null) return false;
+
     final action = Actions.maybeFind<HermesShortcutIntent>(
       fallbackContext,
       intent: intent,
@@ -147,10 +162,11 @@ class _HermesShortcutAction extends ContextAction<HermesShortcutIntent> {
     return action != null && !identical(action, this);
   }
 
-  @override
-  Object? invoke(HermesShortcutIntent intent, [BuildContext? context]) {
-    if (service._invoke(intent.shortcut)) return true;
-
+  /// Attempts to dispatch the intent to a fallback action in an ancestor scope.
+  ///
+  /// Returns `true` if a fallback was found and invoked successfully,
+  /// `false` otherwise.
+  Object? _tryFallback(HermesShortcutIntent intent) {
     final fallbackContext = this.fallbackContext;
     if (fallbackContext == null) return false;
 
@@ -160,9 +176,8 @@ class _HermesShortcutAction extends ContextAction<HermesShortcutIntent> {
     );
     if (action == null || identical(action, this)) return false;
 
-    final (enabled, _) = Actions.of(
-      fallbackContext,
-    ).invokeActionIfEnabled(action, intent, fallbackContext);
+    final (enabled, _) = Actions.of(fallbackContext)
+        .invokeActionIfEnabled(action, intent, fallbackContext);
     return enabled;
   }
 
