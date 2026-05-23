@@ -204,6 +204,6 @@ class HermesPalette extends ThemeExtension<HermesPalette> {
   }
 }
 
-extension CodexPaletteExtension on ThemeData {
+extension HermesPaletteExtension on ThemeData {
   HermesPalette get palette => extension<HermesPalette>()!;
 }

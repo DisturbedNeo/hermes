@@ -5,8 +5,8 @@ import 'package:hermes/core/theme/extensions/hermes_palette.dart';
 import 'package:hermes/core/theme/extensions/input_theme.dart';
 
 extension HermesThemeExtensions on ThemeData {
-  HermesButtonTheme? get codexButtonTheme => extension<HermesButtonTheme>();
-  HermesCardTheme? get codexCardTheme => extension<HermesCardTheme>();
-  HermesInputTheme? get codexInputTheme => extension<HermesInputTheme>();
-  HermesPalette? get codexPalette => extension<HermesPalette>();
+  HermesButtonTheme? get hermesButtonTheme => extension<HermesButtonTheme>();
+  HermesCardTheme? get hermesCardTheme => extension<HermesCardTheme>();
+  HermesInputTheme? get hermesInputTheme => extension<HermesInputTheme>();
+  HermesPalette? get hermesPalette => extension<HermesPalette>();
 }

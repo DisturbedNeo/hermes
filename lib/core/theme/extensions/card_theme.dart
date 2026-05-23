@@ -98,6 +98,6 @@ class HermesCardTheme extends ThemeExtension<HermesCardTheme> {
   }
 }
 
-extension CodexCardThemeExtension on ThemeData {
-  HermesCardTheme? get codexCard => extension<HermesCardTheme>();
+extension HermesCardThemeExtension on ThemeData {
+  HermesCardTheme? get hermesCard => extension<HermesCardTheme>();
 }

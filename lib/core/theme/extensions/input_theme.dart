@@ -136,6 +136,6 @@ class HermesInputTheme extends ThemeExtension<HermesInputTheme> {
   );
 }
 
-extension CodexInputThemeExtension on ThemeData {
-  HermesInputTheme? get codexInput => extension<HermesInputTheme>();
+extension HermesInputThemeExtension on ThemeData {
+  HermesInputTheme? get hermesInput => extension<HermesInputTheme>();
 }

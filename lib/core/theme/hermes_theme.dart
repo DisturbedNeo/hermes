@@ -208,6 +208,6 @@ class HermesTheme extends ThemeExtension<HermesTheme> {
   }
 }
 
-extension CodexThemeExtension on ThemeData {
-  HermesTheme get codex => extension<HermesTheme>()!;
+extension HermesThemeExtension on ThemeData {
+  HermesTheme get hermes => extension<HermesTheme>()!;
 }

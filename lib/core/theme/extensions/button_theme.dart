@@ -303,6 +303,6 @@ class HermesButtonTheme extends ThemeExtension<HermesButtonTheme> {
   }
 }
 
-extension CodexButtonThemeExtension on ThemeData {
-  HermesButtonTheme get codexButton => extension<HermesButtonTheme>()!;
+extension HermesButtonThemeExtension on ThemeData {
+  HermesButtonTheme get hermesButton => extension<HermesButtonTheme>()!;
 }
