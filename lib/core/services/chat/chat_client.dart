@@ -40,7 +40,7 @@ class ChatClient {
       'model': _model,
       'messages': messages.map((m) => m.toJson()).toList(),
       'stream': false,
-      if (extraParams != null) ...extraParams,
+      ...?extraParams,
     };
 
     final chatUri = Uri.parse('$_baseUrl/v1/chat/completions');
@@ -78,7 +78,7 @@ class ChatClient {
       'model': _model,
       'messages': messages.map((m) => m.toJson()).toList(),
       'stream': true,
-      if (extraParams != null) ...extraParams,
+      ...?extraParams,
     };
 
     final chatUri = Uri.parse('$_baseUrl/v1/chat/completions');
@@ -212,7 +212,7 @@ class ChatClient {
       'model': _model,
       'messages': messages.map((m) => m.toJson()).toList(),
       'stream': true,
-      if (extraParams != null) ...extraParams,
+      ...?extraParams,
     };
 
     final chatUri = Uri.parse('$_baseUrl/v1/chat/completions');
