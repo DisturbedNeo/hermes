@@ -40,7 +40,7 @@ class _SseParser {
     }
 
     return _chatUri != null
-        ? tokensFromPayload(payload, _chatUri!)
+        ? tokensFromPayload(payload, _chatUri)
         : tokensFromPayload(payload);
   }
 }
