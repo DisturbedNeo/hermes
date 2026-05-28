@@ -769,19 +769,21 @@ class _JobList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StateDisplay(
-      state: chat.availableJobs.isEmpty ? DisplayState.empty : DisplayState.content,
+      state: chat.availableJobs.isEmpty
+          ? DisplayState.empty
+          : DisplayState.content,
       content: ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: chat.availableJobs.length,
-      itemBuilder: (context, index) {
-        final job = chat.availableJobs[index];
-        return ListTile(
-          leading: const Icon(Icons.account_tree_outlined),
-          title: Text(job.title),
-          subtitle: Text('${job.status.wire} - ${job.id}'),
-          onTap: chat.jobBusy ? null : () => unawaited(chat.loadJob(job.id)),
-        );
-      },
+        padding: const EdgeInsets.all(12),
+        itemCount: chat.availableJobs.length,
+        itemBuilder: (context, index) {
+          final job = chat.availableJobs[index];
+          return ListTile(
+            leading: const Icon(Icons.account_tree_outlined),
+            title: Text(job.title),
+            subtitle: Text('${job.status.wire} - ${job.id}'),
+            onTap: chat.jobBusy ? null : () => unawaited(chat.loadJob(job.id)),
+          );
+        },
       ),
       emptyMessage: 'No jobs in this workspace.',
       emptyHint: 'Run a job from the chat to see it here',

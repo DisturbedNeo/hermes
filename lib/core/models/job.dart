@@ -1,5 +1,5 @@
 import 'package:hermes/core/helpers/json_parsing.dart';
-import 'package:hermes/core/helpers/sentinel.dart';
+import 'package:hermes/core/helpers/sentinel.dart' show kSentinel, resolve;
 
 enum ExecutionMode { chat, refine, plan, job, continueJob }
 
@@ -217,25 +217,15 @@ class JobDocument {
       successCriteria: successCriteria ?? this.successCriteria,
       steps: steps ?? this.steps,
       status: status ?? this.status,
-      currentStepId: identical(currentStepId, kSentinel)
-          ? this.currentStepId
-          : currentStepId as String?,
+      currentStepId: resolve(currentStepId, this.currentStepId),
       memorySummary: memorySummary ?? this.memorySummary,
       runs: runs ?? this.runs,
-      pendingApproval: identical(pendingApproval, kSentinel)
-          ? this.pendingApproval
-          : pendingApproval as PendingJobApproval?,
-      pendingQuestion: identical(pendingQuestion, kSentinel)
-          ? this.pendingQuestion
-          : pendingQuestion as PendingJobQuestion?,
-      chatSessionId: identical(chatSessionId, kSentinel)
-          ? this.chatSessionId
-          : chatSessionId as String?,
+      pendingApproval: resolve(pendingApproval, this.pendingApproval),
+      pendingQuestion: resolve(pendingQuestion, this.pendingQuestion),
+      chatSessionId: resolve(chatSessionId, this.chatSessionId),
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
-      completedAt: identical(completedAt, kSentinel)
-          ? this.completedAt
-          : completedAt as DateTime?,
+      completedAt: resolve(completedAt, this.completedAt),
     );
   }
 
@@ -483,13 +473,9 @@ class JobRun {
       toolCalls: toolCalls ?? this.toolCalls,
       artifacts: artifacts ?? this.artifacts,
       startedAt: startedAt ?? this.startedAt,
-      completedAt: identical(completedAt, kSentinel)
-          ? this.completedAt
-          : completedAt as DateTime?,
-      replanReason: identical(replanReason, kSentinel)
-          ? this.replanReason
-          : replanReason as String?,
-      error: identical(error, kSentinel) ? this.error : error as String?,
+      completedAt: resolve(completedAt, this.completedAt),
+      replanReason: resolve(replanReason, this.replanReason),
+      error: resolve(error, this.error),
     );
   }
 

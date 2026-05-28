@@ -320,7 +320,7 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                     max: ModelConfigurationSnapshot.maxCacheReuse,
                     step: 1,
                     onChanged: (v) => setState(() => _cacheReuse = v),
-                  )
+                  ),
                 ],
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,

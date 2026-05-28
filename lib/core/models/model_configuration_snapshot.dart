@@ -138,16 +138,16 @@ class ModelConfigurationSnapshot {
         nCtx == other.nCtx &&
         nThreads == other.nThreads &&
         nGpuLayers == other.nGpuLayers &&
-        temperature == other.temperature &&
-        topP == other.topP &&
+        _doubleMatches(temperature, other.temperature) &&
+        _doubleMatches(topP, other.topP) &&
         topK == other.topK &&
         nBatch == other.nBatch &&
         nUBatch == other.nUBatch &&
         mirostat == other.mirostat &&
-        repeatPenalty == other.repeatPenalty &&
+        _doubleMatches(repeatPenalty, other.repeatPenalty) &&
         repeatLastN == other.repeatLastN &&
-        presencePenalty == other.presencePenalty &&
-        frequencyPenalty == other.frequencyPenalty &&
+        _doubleMatches(presencePenalty, other.presencePenalty) &&
+        _doubleMatches(frequencyPenalty, other.frequencyPenalty) &&
         thinking == other.thinking &&
         flashAttention == other.flashAttention &&
         cachePrompt == other.cachePrompt &&
@@ -157,8 +157,48 @@ class ModelConfigurationSnapshot {
         kvCacheTypeV == other.kvCacheTypeV;
   }
 
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ModelConfigurationSnapshot && matches(other);
+
+  @override
+  int get hashCode => Object.hashAll([
+    modelName,
+    modelPath,
+    llamaCppDirectory,
+    nCtx,
+    nThreads,
+    nGpuLayers,
+    _doubleHashValue(temperature),
+    _doubleHashValue(topP),
+    topK,
+    nBatch,
+    nUBatch,
+    mirostat,
+    _doubleHashValue(repeatPenalty),
+    repeatLastN,
+    _doubleHashValue(presencePenalty),
+    _doubleHashValue(frequencyPenalty),
+    thinking,
+    flashAttention,
+    cachePrompt,
+    cacheReuse,
+    kvCacheQuantizationEnabled,
+    kvCacheTypeK,
+    kvCacheTypeV,
+  ]);
+
   static int clampCacheReuse(int value) =>
       value.clamp(minCacheReuse, maxCacheReuse).toInt();
+
+  static bool _doubleMatches(double value, double other) =>
+      value == other || (value.isNaN && other.isNaN);
+
+  static final Object _nanHashValue = Object();
+
+  static Object _doubleHashValue(double value) =>
+      value.isNaN ? _nanHashValue : value;
 
   static String _kvCacheType(Object? value) {
     if (value is String && allowedKvCacheTypes.contains(value)) return value;

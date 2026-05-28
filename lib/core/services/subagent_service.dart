@@ -22,7 +22,8 @@ class SubagentService {
   }) async {
     final client = _chatClientFactory();
 
-    final systemPrompt = '''You are a precise information extraction agent. Your ONLY job is to return the exact information requested by the user. You must NEVER include:
+    final systemPrompt =
+        '''You are a precise information extraction agent. Your ONLY job is to return the exact information requested by the user. You must NEVER include:
 - Greetings or pleasantries
 - Explanations of what you found
 - File paths unless specifically requested
@@ -33,7 +34,8 @@ If the requested information is not present in the file, return: "NOT_FOUND"
 
 Return ONLY the extracted information. Be concise and direct.''';
 
-    final userPrompt = '''File path: $filePath
+    final userPrompt =
+        '''File path: $filePath
 
 Extract the following from this file:
 
@@ -45,7 +47,7 @@ $fileContent
 --- END FILE CONTENT ---''';
 
     try {
-      final response = await client.completeMessage(
+      final completion = await client.completeChat(
         messages: [
           ChatMessage(role: 'system', content: systemPrompt),
           ChatMessage(role: 'user', content: userPrompt),
@@ -53,10 +55,14 @@ $fileContent
         extraParams: {
           'max_tokens': maxTokens,
           'temperature': 0.1,
+          'chat_template_kwargs': {
+            'enable_thinking': false,
+            'reasoning_budget': 0,
+          },
         },
       );
 
-      return response.trim();
+      return _visibleModelOutput(completion.content);
     } catch (e) {
       if (kDebugMode) {
         print('[SubagentService] Extraction failed: $e');
@@ -110,5 +116,15 @@ $fileContent
       filePath: filePath,
       maxTokens: maxTokens,
     );
+  }
+
+  String _visibleModelOutput(String content) {
+    final withoutClosedThinkBlocks = content.replaceAll(
+      RegExp(r'<think>[\s\S]*?</think>\s*', caseSensitive: false),
+      '',
+    );
+    return withoutClosedThinkBlocks
+        .replaceAll(RegExp(r'<think>[\s\S]*$', caseSensitive: false), '')
+        .trim();
   }
 }

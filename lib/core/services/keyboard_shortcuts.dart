@@ -176,8 +176,9 @@ class _HermesShortcutAction extends ContextAction<HermesShortcutIntent> {
     );
     if (action == null || identical(action, this)) return false;
 
-    final (enabled, _) = Actions.of(fallbackContext)
-        .invokeActionIfEnabled(action, intent, fallbackContext);
+    final (enabled, _) = Actions.of(
+      fallbackContext,
+    ).invokeActionIfEnabled(action, intent, fallbackContext);
     return enabled;
   }
 

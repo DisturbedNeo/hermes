@@ -17,9 +17,9 @@ class ThemeManager with ChangeNotifier implements Disposable {
   static List<HermesThemeData> allThemes = _buildAllThemes();
 
   static List<HermesThemeData> _buildAllThemes() => [
-        SolarpunkTheme.build(),
-        NexusTheme.build(),
-      ];
+    SolarpunkTheme.build(),
+    NexusTheme.build(),
+  ];
 
   final Duration _themeSwitchDuration = const Duration(milliseconds: 300);
 

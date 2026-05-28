@@ -257,8 +257,8 @@ class _ComposerState extends State<Composer> {
       maxLines: 6,
       enabled: inputEnabled,
       keyboardType: TextInputType.multiline,
-      textInputAction: (_selectedRole == MessageRole.user &&
-              !chat.chatStream.isStreaming)
+      textInputAction:
+          (_selectedRole == MessageRole.user && !chat.chatStream.isStreaming)
           ? TextInputAction.send
           : TextInputAction.newline,
       decoration: InputDecoration(
@@ -277,6 +277,46 @@ class _ComposerState extends State<Composer> {
     if (chat.chatStream.isStreaming) return 'Streaming response...';
     if (chat.executionMode == ExecutionMode.chat) return 'Type a message...';
     return 'Describe the job...';
+  }
+
+  /// Builds the tool selector button with badge showing the selected tool count.
+  Widget _toolButtonWidget(
+    bool inputEnabled,
+    int toolCount,
+    VoidCallback? onPressed,
+  ) {
+    final hasTools = toolCount > 0;
+    return AccessibleWidget(
+      label: _buildToolButtonSemanticLabel(toolCount, inputEnabled),
+      isButton: true,
+      enabled: inputEnabled,
+      child: IconButton(
+        tooltip: hasTools ? 'Tools ($toolCount)' : 'Select tools',
+        onPressed: onPressed,
+        icon: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            const Icon(Icons.build),
+            if (hasTools)
+              Positioned(
+                right: -4,
+                top: -4,
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    toolCount.toString(),
+                    style: const TextStyle(fontSize: 9, color: Colors.white),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _insertMessage() {
@@ -486,7 +526,6 @@ class _ComposerState extends State<Composer> {
     final chat = widget.chat;
     final inputEnabled = widget.enabled && !chat.jobBusy;
     final effectiveToolIds = _effectiveToolIds();
-    final hasTools = effectiveToolIds.isNotEmpty;
 
     return [
       ConstrainedBox(
@@ -509,46 +548,12 @@ class _ComposerState extends State<Composer> {
       Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          AccessibleWidget(
-            label: _buildToolButtonSemanticLabel(
-              effectiveToolIds.length,
-              inputEnabled,
-            ),
-            isButton: true,
-            enabled: inputEnabled,
-            child: IconButton(
-              tooltip: hasTools
-                  ? 'Tools (${effectiveToolIds.length})'
-                  : 'Select tools',
-              onPressed: inputEnabled ? _openToolSelector : null,
-              icon: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  const Icon(Icons.build),
-                  if (hasTools)
-                    Positioned(
-                      right: -4,
-                      top: -4,
-                      child: Container(
-                        padding: const EdgeInsets.all(3),
-                        decoration: BoxDecoration(
-                          color: Colors.redAccent,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          effectiveToolIds.length.toString(),
-                          style: const TextStyle(
-                            fontSize: 9,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
+          _toolButtonWidget(
+            inputEnabled,
+            effectiveToolIds.length,
+            inputEnabled ? _openToolSelector : null,
           ),
-          if (hasTools)
+          if (effectiveToolIds.isNotEmpty)
             Text(
               '${effectiveToolIds.length}',
               style: Theme.of(
@@ -578,7 +583,6 @@ class _ComposerState extends State<Composer> {
     final chat = widget.chat;
     final inputEnabled = widget.enabled && !chat.jobBusy;
     final effectiveToolIds = _effectiveToolIds();
-    final hasTools = effectiveToolIds.isNotEmpty;
 
     return [
       // Top row: role dropdown + tool button
@@ -607,44 +611,10 @@ class _ComposerState extends State<Composer> {
           Expanded(
             flex: 1,
             child: Center(
-              child: AccessibleWidget(
-                label: _buildToolButtonSemanticLabel(
-                  effectiveToolIds.length,
-                  inputEnabled,
-                ),
-                isButton: true,
-                enabled: inputEnabled,
-                child: IconButton(
-                  tooltip: hasTools
-                      ? 'Tools (${effectiveToolIds.length})'
-                      : 'Select tools',
-                  onPressed: inputEnabled ? _openToolSelector : null,
-                  icon: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      const Icon(Icons.build),
-                      if (hasTools)
-                        Positioned(
-                          right: -4,
-                          top: -4,
-                          child: Container(
-                            padding: const EdgeInsets.all(3),
-                            decoration: BoxDecoration(
-                              color: Colors.redAccent,
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              effectiveToolIds.length.toString(),
-                              style: const TextStyle(
-                                fontSize: 9,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
+              child: _toolButtonWidget(
+                inputEnabled,
+                effectiveToolIds.length,
+                inputEnabled ? _openToolSelector : null,
               ),
             ),
           ),

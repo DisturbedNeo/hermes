@@ -46,9 +46,7 @@ class ServerHealthChecker {
   /// Throws [StateError] if the process exits before becoming healthy or
   /// if the startup appears stalled (no output for too long).
   /// Returns `true` when the server is ready.
-  Future<bool> waitForReady({
-    required bool Function() isCancelled,
-  }) async {
+  Future<bool> waitForReady({required bool Function() isCancelled}) async {
     final client = HttpClient();
     Object? lastError;
     var processExited = false;

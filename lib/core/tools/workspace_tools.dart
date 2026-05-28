@@ -120,10 +120,7 @@ class ReadFileTool extends WorkspaceTool {
 
     if (request.isEmpty) {
       // Standard read - return full file content
-      return sandbox.readFile(
-        context.workspace.rootPath,
-        filePath,
-      );
+      return sandbox.readFile(context.workspace.rootPath, filePath);
     }
 
     // Request mode - extract specific information using subagent
@@ -149,11 +146,7 @@ class ReadFileTool extends WorkspaceTool {
       final content = fileContent['content'] as String? ?? '';
 
       if (content.isEmpty) {
-        return {
-          'extracted': '',
-          'request': request,
-          'note': 'File is empty or could not be read.',
-        };
+        return {'extracted': ''};
       }
 
       final extracted = await subagentService.extract(
@@ -162,16 +155,9 @@ class ReadFileTool extends WorkspaceTool {
         filePath: filePath,
       );
 
-      return {
-        'extracted': extracted,
-        'request': request,
-        'file_path': filePath,
-      };
+      return {'extracted': extracted};
     } catch (e) {
-      return {
-        'error': 'Failed to extract information: $e',
-        'request': request,
-      };
+      return {'error': 'Failed to extract information: $e'};
     }
   }
 }

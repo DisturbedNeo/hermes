@@ -5,6 +5,101 @@ import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/chat_token.dart';
 import 'package:http/http.dart' as http;
 
+/// Parses SSE (Server-Sent Events) stream payloads into [ChatToken]s.
+///
+/// Handles line buffering, event aggregation, `[DONE]` detection, and JSON
+/// decoding of chat completion deltas including reasoning, content, and tool calls.
+class _SseParser {
+  final List<String> _eventData = [];
+  bool _sawDone = false;
+  final Uri? _chatUri;
+
+  _SseParser([this._chatUri]);
+
+  /// Accumulates a single line from the SSE stream.
+  void addLine(String line) {
+    if (line.startsWith(':')) return; // comment
+    if (line.startsWith('data:')) {
+      var value = line.substring(5);
+      if (value.startsWith(' ')) value = value.substring(1);
+      _eventData.add(value);
+    }
+  }
+
+  bool get sawDone => _sawDone;
+
+  /// Parses buffered event data into tokens and clears the buffer.
+  List<ChatToken> flush() {
+    if (_eventData.isEmpty) return const [];
+    final payload = _eventData.join('\n').trim();
+    _eventData.clear();
+
+    if (payload == '[DONE]') {
+      _sawDone = true;
+      return const [];
+    }
+
+    return _chatUri != null
+        ? tokensFromPayload(payload, _chatUri!)
+        : tokensFromPayload(payload);
+  }
+}
+
+/// Parses an SSE event payload string into a list of [ChatToken]s.
+///
+/// Returns an empty list for malformed JSON or unrecognized structures.
+/// Throws [HttpException] if the payload contains an error field.
+List<ChatToken> tokensFromPayload(String payload, [Uri? chatUri]) {
+  try {
+    final obj = jsonDecode(payload);
+
+    if (obj is Map && obj['error'] != null) {
+      final msg = obj['error']['message'] ?? obj['error'].toString();
+      if (chatUri != null) {
+        throw HttpException('Stream error: $msg', uri: chatUri);
+      }
+      // No URI available — log and skip.
+      return const [];
+    }
+
+    final choices = (obj is Map) ? obj['choices'] : null;
+    if (choices is List && choices.isNotEmpty) {
+      final delta = choices[0]?['delta'];
+      if (delta is Map) return _tokensFromDelta(delta, chatUri);
+    }
+  } on FormatException {
+    // Malformed JSON — silently skip.
+  }
+
+  return const [];
+}
+
+List<ChatToken> _tokensFromDelta(Map delta, Uri? chatUri) {
+  final tokens = <ChatToken>[];
+
+  final reasoningToken = delta['reasoning_content'] ?? delta['reasoning'];
+  if (reasoningToken is String && reasoningToken.isNotEmpty) {
+    tokens.add(ChatToken(reasoning: reasoningToken));
+  }
+
+  final contentToken = delta['content'];
+  if (contentToken is String && contentToken.isNotEmpty) {
+    tokens.add(ChatToken(content: contentToken));
+  }
+
+  final toolCalls = delta['tool_calls'];
+  if (toolCalls is List && toolCalls.isNotEmpty) {
+    tokens.addAll(
+      toolCalls.whereType<Map>().map(_toolDeltaFromWire).whereType(),
+    );
+  } else if (toolCalls is Map) {
+    final token = _toolDeltaFromWire(toolCalls);
+    if (token != null) tokens.add(token);
+  }
+
+  return tokens;
+}
+
 class ChatClient {
   final String _baseUrl;
   final String _model;
@@ -132,36 +227,21 @@ class ChatClient {
     final lines = streamed.stream
         .transform(utf8.decoder)
         .transform(const LineSplitter());
-    final eventData = <String>[];
-    var sawDone = false;
-
-    void flushEvent() {
-      if (eventData.isEmpty) return;
-      final payload = eventData.join('\n').trim();
-      eventData.clear();
-      if (payload.trim() == '[DONE]') {
-        sawDone = true;
-        return;
-      }
-      for (final token in _tokensFromStreamPayload(payload, chatUri)) {
-        record(token);
-      }
-    }
+    final parser = _SseParser(chatUri);
 
     await for (final line in lines) {
+      parser.addLine(line);
       if (line.isEmpty) {
-        flushEvent();
-        if (sawDone) break;
-        continue;
-      }
-      if (line.startsWith(':')) continue;
-      if (line.startsWith('data:')) {
-        var v = line.substring(5);
-        if (v.startsWith(' ')) v = v.substring(1);
-        eventData.add(v);
+        for (final token in parser.flush()) {
+          record(token);
+        }
+        if (parser.sawDone) break;
       }
     }
-    flushEvent();
+
+    for (final token in parser.flush()) {
+      record(token);
+    }
 
     return ChatCompletionResponse(
       content: content.toString(),
@@ -236,170 +316,21 @@ class ChatClient {
     final lines = streamed.stream
         .transform(utf8.decoder)
         .transform(const LineSplitter());
-
-    final eventData = <String>[];
-    var sawDone = false;
-
-    List<ChatToken> flushEvent() {
-      if (eventData.isEmpty) return const [];
-      final payload = eventData.join('\n').trim();
-      eventData.clear();
-
-      if (payload.trim() == '[DONE]') {
-        sawDone = true;
-        return const [];
-      }
-
-      try {
-        final obj = jsonDecode(payload);
-
-        if (obj is Map && obj['error'] != null) {
-          final msg = obj['error']['message'] ?? obj['error'].toString();
-          throw HttpException('Stream error: $msg', uri: chatUri);
-        }
-
-        final choices = (obj is Map) ? obj['choices'] : null;
-        if (choices is List && choices.isNotEmpty) {
-          final delta = choices[0]?['delta'];
-          if (delta is Map) {
-            final tokens = <ChatToken>[];
-
-            final reasoningToken =
-                delta['reasoning_content'] ?? delta['reasoning'];
-            if (reasoningToken is String && reasoningToken.isNotEmpty) {
-              tokens.add(ChatToken(reasoning: reasoningToken));
-            }
-
-            final contentToken = delta['content'];
-            if (contentToken is String && contentToken.isNotEmpty) {
-              tokens.add(ChatToken(content: contentToken));
-            }
-
-            final toolCalls = delta['tool_calls'];
-            if (toolCalls is List && toolCalls.isNotEmpty) {
-              tokens.addAll(
-                toolCalls.whereType<Map>().map(_toolDeltaFromWire).whereType(),
-              );
-            } else if (toolCalls is Map) {
-              final token = _toolDeltaFromWire(toolCalls);
-              if (token != null) tokens.add(token);
-            }
-
-            return tokens;
-          }
-        }
-      } on FormatException {
-        return const [];
-      }
-
-      return const [];
-    }
+    final parser = _SseParser(chatUri);
 
     await for (final line in lines) {
+      parser.addLine(line);
       if (line.isEmpty) {
-        for (final token in flushEvent()) {
+        for (final token in parser.flush()) {
           yield token;
         }
-        if (sawDone) break;
-        continue;
-      }
-
-      if (line.startsWith(':')) continue;
-
-      if (line.startsWith('data:')) {
-        var v = line.substring(5);
-        if (v.startsWith(' ')) v = v.substring(1);
-        eventData.add(v);
+        if (parser.sawDone) break;
       }
     }
 
-    for (final token in flushEvent()) {
+    for (final token in parser.flush()) {
       yield token;
     }
-  }
-
-  static List<ChatToken> _tokensFromStreamPayload(String payload, Uri chatUri) {
-    try {
-      final obj = jsonDecode(payload);
-
-      if (obj is Map && obj['error'] != null) {
-        final msg = obj['error']['message'] ?? obj['error'].toString();
-        throw HttpException('Stream error: $msg', uri: chatUri);
-      }
-
-      final choices = (obj is Map) ? obj['choices'] : null;
-      if (choices is List && choices.isNotEmpty) {
-        final delta = choices[0]?['delta'];
-        if (delta is Map) {
-          final tokens = <ChatToken>[];
-
-          final reasoningToken =
-              delta['reasoning_content'] ?? delta['reasoning'];
-          if (reasoningToken is String && reasoningToken.isNotEmpty) {
-            tokens.add(ChatToken(reasoning: reasoningToken));
-          }
-
-          final contentToken = delta['content'];
-          if (contentToken is String && contentToken.isNotEmpty) {
-            tokens.add(ChatToken(content: contentToken));
-          }
-
-          final toolCalls = delta['tool_calls'];
-          if (toolCalls is List && toolCalls.isNotEmpty) {
-            tokens.addAll(
-              toolCalls.whereType<Map>().map(_toolDeltaFromWire).whereType(),
-            );
-          } else if (toolCalls is Map) {
-            final token = _toolDeltaFromWire(toolCalls);
-            if (token != null) tokens.add(token);
-          }
-
-          return tokens;
-        }
-      }
-    } on FormatException {
-      return const [];
-    }
-
-    return const [];
-  }
-
-  static ChatToken? _toolDeltaFromWire(Map tc) {
-    final rawIndex = tc['index'];
-    final index = rawIndex is int
-        ? rawIndex
-        : int.tryParse(rawIndex?.toString() ?? '') ?? 0;
-    final id = tc['id']?.toString();
-
-    String? name;
-    String? argsChunk;
-
-    final func = tc['function'];
-    Object? args;
-    if (func is Map) {
-      name = func['name']?.toString();
-      args = func['arguments'];
-    } else {
-      name = tc['name']?.toString() ?? tc['tool_name']?.toString();
-      args = tc['arguments'] ?? tc['parameters'];
-    }
-
-    if (args is String && args.isNotEmpty) {
-      argsChunk = args;
-    } else if (args != null) {
-      argsChunk = jsonEncode(args);
-    }
-
-    if (id == null && name == null && argsChunk == null) return null;
-
-    return ChatToken(
-      tool: ToolCallDelta(
-        index: index,
-        id: id,
-        name: name,
-        argumentsChunk: argsChunk,
-      ),
-    );
   }
 
   static List<ChatCompletionToolCall> _completionToolCallsFromWire(
@@ -479,6 +410,48 @@ class ChatClient {
     }
     throw HttpException('$statusCode: $message', uri: uri);
   }
+}
+
+/// Converts a tool delta from wire format into a [ChatToken].
+///
+/// Handles both the newer `function`/`arguments` naming and the older
+/// `name`/`parameters` variants used by some LLM servers.
+ChatToken? _toolDeltaFromWire(Map tc) {
+  final rawIndex = tc['index'];
+  final index = rawIndex is int
+      ? rawIndex
+      : int.tryParse(rawIndex?.toString() ?? '') ?? 0;
+  final id = tc['id']?.toString();
+
+  String? name;
+  String? argsChunk;
+
+  final func = tc['function'];
+  Object? args;
+  if (func is Map) {
+    name = func['name']?.toString();
+    args = func['arguments'];
+  } else {
+    name = tc['name']?.toString() ?? tc['tool_name']?.toString();
+    args = tc['arguments'] ?? tc['parameters'];
+  }
+
+  if (args is String && args.isNotEmpty) {
+    argsChunk = args;
+  } else if (args != null) {
+    argsChunk = jsonEncode(args);
+  }
+
+  if (id == null && name == null && argsChunk == null) return null;
+
+  return ChatToken(
+    tool: ToolCallDelta(
+      index: index,
+      id: id,
+      name: name,
+      argumentsChunk: argsChunk,
+    ),
+  );
 }
 
 class _StreamingToolCall {
