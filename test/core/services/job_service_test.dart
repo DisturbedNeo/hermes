@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/chat_message.dart';
+import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/core/models/job.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
@@ -704,6 +705,86 @@ void main() {
       expect(updated.steps.single.artifacts.single.path, contains('report.md'));
     });
 
+    test('compacts long step executor context before continuing', () async {
+      final largeFile = File(path.join(root.path, 'large.txt'));
+      await largeFile.writeAsString(List.filled(1200, 'old context').join(' '));
+
+      final job = _job();
+      final statuses = <String>[];
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'read_file',
+              arguments: jsonEncode({'path': 'large.txt'}),
+            ),
+          ],
+        ),
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'read_file',
+              arguments: jsonEncode({'path': 'missing_2.txt'}),
+            ),
+          ],
+        ),
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'read_file',
+              arguments: jsonEncode({'path': 'missing_3.txt'}),
+            ),
+          ],
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'schema_version': 1,
+            'task': 'Continue the job step.',
+            'current_state': 'A large file was inspected earlier.',
+          }),
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Finished after compacting older context.',
+            'memoryUpdate': 'Large file context was summarized.',
+          }),
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: job,
+        baseSystemPrompt: 'system',
+        compactionSettings: const CompactionSettings(
+          triggerThreshold: 0.60,
+          hardLimitThreshold: 0.95,
+          recentWindowUnits: 2,
+        ),
+        contextLimitTokens: 256,
+        onCompactionStatus: statuses.add,
+      );
+
+      final finalRequest = jsonEncode(
+        client.seenMessages.last.map((message) => message.toJson()).toList(),
+      );
+
+      expect(updated.status, JobStatus.completed);
+      expect(client.requestCount, 5);
+      expect(
+        statuses.any((status) => status.contains('Compacting context')),
+        isTrue,
+      );
+      expect(finalRequest, contains('Context Summary'));
+      expect(finalRequest, contains('missing_2.txt'));
+      expect(finalRequest, contains('missing_3.txt'));
+      expect(finalRequest, isNot(contains('old context old context')));
+    });
+
     test('finalizes instead of looping on repeated tool calls', () async {
       final job = _job();
       final repeatedCall = ChatCompletionToolCall(
@@ -824,6 +905,7 @@ class _QueueCompletionClient extends ChatClient {
 
   final List<ChatCompletionResponse> _responses;
   final List<Set<String>> seenToolNames = [];
+  final List<List<ChatMessage>> seenMessages = [];
   var _index = 0;
 
   int get requestCount => _index;
@@ -833,6 +915,7 @@ class _QueueCompletionClient extends ChatClient {
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
   }) async {
+    seenMessages.add(List<ChatMessage>.of(messages));
     seenToolNames.add(_toolNames(extraParams));
     final index = _index >= _responses.length ? _responses.length - 1 : _index;
     _index++;

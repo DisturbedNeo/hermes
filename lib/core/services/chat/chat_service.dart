@@ -1063,12 +1063,20 @@ class ChatService extends ChangeNotifier implements Disposable {
     notifyListeners();
 
     try {
+      final compactionSettings = await _preferencesService
+          .getCompactionSettings();
       final updated = await _jobService.runNextStep(
         client: client,
         workspace: currentWorkspace,
         snapshot: snapshot,
         baseSystemPrompt: _buildJobSystemPrompt(snapshot),
         requirePhaseApproval: jobSystemSettings.requireApprovalBeforeFileEdits,
+        compactionSettings: compactionSettings,
+        contextLimitTokens: _diagnosticsContextLimit,
+        onCompactionStatus: (status) {
+          jobStatusMessage = status;
+          notifyListeners();
+        },
         onModelOutput: _handleJobModelOutput,
         cancellationToken: token,
       );

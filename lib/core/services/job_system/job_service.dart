@@ -2,16 +2,22 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:hermes/core/enums/message_role.dart';
+import 'package:hermes/core/helpers/chat/compaction_manager.dart';
 import 'package:hermes/core/helpers/chat/context_estimator.dart';
-import 'package:hermes/core/helpers/json_parsing.dart';
+import 'package:hermes/core/helpers/chat/payload_builder.dart';
 import 'package:hermes/core/helpers/chat/tool_caller.dart';
+import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/helpers/uuid.dart';
+import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/chat_token.dart';
+import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/core/models/job.dart';
 import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/core/services/chat/message_store.dart';
 import 'package:hermes/core/services/job_system/job_json.dart';
 import 'package:hermes/core/services/job_system/job_model_output.dart';
 import 'package:hermes/core/services/job_system/job_storage_service.dart';
@@ -22,6 +28,7 @@ import 'package:path/path.dart' as path;
 
 typedef JobCancelRegistration = void Function();
 typedef JobCancelCallback = FutureOr<void> Function();
+typedef JobCompactionStatusSink = void Function(String status);
 
 class JobCancellationToken {
   final List<JobCancelCallback> _callbacks = [];
@@ -64,6 +71,16 @@ class _StreamingJobToolCall {
   String? id;
   String? name;
   final StringBuffer arguments = StringBuffer();
+}
+
+class _PendingJobToolResult {
+  const _PendingJobToolResult({
+    required this.messageIndex,
+    required this.toolIndex,
+  });
+
+  final int messageIndex;
+  final int toolIndex;
 }
 
 const int _maxConsecutiveRepeatedToolCalls = 3;
@@ -416,6 +433,9 @@ $userPrompt
     required JobDocument snapshot,
     required String baseSystemPrompt,
     bool requirePhaseApproval = false,
+    CompactionSettings? compactionSettings,
+    int? contextLimitTokens,
+    JobCompactionStatusSink? onCompactionStatus,
     JobModelOutputSink? onModelOutput,
     JobCancellationToken? cancellationToken,
   }) async {
@@ -488,6 +508,9 @@ $userPrompt
         step: step,
         run: run,
         baseSystemPrompt: baseSystemPrompt,
+        compactionSettings: compactionSettings,
+        contextLimitTokens: contextLimitTokens,
+        onCompactionStatus: onCompactionStatus,
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
       );
@@ -760,6 +783,9 @@ $userPrompt
     required JobStep step,
     required JobRun run,
     required String baseSystemPrompt,
+    CompactionSettings? compactionSettings,
+    int? contextLimitTokens,
+    JobCompactionStatusSink? onCompactionStatus,
     JobModelOutputSink? onModelOutput,
     JobCancellationToken? cancellationToken,
   }) async {
@@ -796,6 +822,9 @@ $userPrompt
           addGenerationPrompt: true,
           toolDefs: toolDefs,
         ),
+        compactionSettings: compactionSettings,
+        contextLimitTokens: contextLimitTokens,
+        onCompactionStatus: onCompactionStatus,
       );
 
       cancellationToken?.throwIfCancelled();
@@ -956,6 +985,9 @@ $userPrompt
           step: step,
           messages: messages,
           reason: loopGuardReason,
+          compactionSettings: compactionSettings,
+          contextLimitTokens: contextLimitTokens,
+          onCompactionStatus: onCompactionStatus,
           onModelOutput: onModelOutput,
           cancellationToken: cancellationToken,
         );
@@ -1263,6 +1295,9 @@ $userPrompt
     required JobStep step,
     required List<ChatMessage> messages,
     required String reason,
+    CompactionSettings? compactionSettings,
+    int? contextLimitTokens,
+    JobCompactionStatusSink? onCompactionStatus,
     JobModelOutputSink? onModelOutput,
     JobCancellationToken? cancellationToken,
   }) {
@@ -1299,6 +1334,9 @@ Do not call any more tools. Based only on the work already completed and the too
         addGenerationPrompt: true,
         toolDefs: const [],
       ),
+      compactionSettings: compactionSettings,
+      contextLimitTokens: contextLimitTokens,
+      onCompactionStatus: onCompactionStatus,
     );
   }
 
@@ -1691,18 +1729,207 @@ When finished, call finish_job_step with this result object. If finish_job_step 
     return JobJson.parseObject(text);
   }
 
+  Future<List<ChatMessage>> _prepareJobCompletionMessages({
+    required ChatClient client,
+    required String label,
+    required List<ChatMessage> messages,
+    required Map<String, dynamic> extraParams,
+    CompactionSettings? compactionSettings,
+    int? contextLimitTokens,
+    JobCompactionStatusSink? onCompactionStatus,
+  }) async {
+    final limit = contextLimitTokens;
+    final settings = compactionSettings?.normalised();
+    if (settings == null ||
+        !settings.enabled ||
+        limit == null ||
+        limit <= 0 ||
+        messages.isEmpty) {
+      return messages;
+    }
+
+    final store = MessageStore()
+      ..setMessages(_bubblesFromChatMessages(messages));
+    final manager = CompactionManager(settings: settings, client: client);
+    if (!manager.shouldCompact(
+      messages: store.messages,
+      contextLimit: limit,
+      extraParams: extraParams,
+    )) {
+      return messages;
+    }
+
+    try {
+      final result = await manager.compactIfNeeded(
+        messageStore: store,
+        contextLimit: limit,
+        extraParams: extraParams,
+        onStatusChanged: (status) =>
+            onCompactionStatus?.call('$label: $status'),
+      );
+
+      if (result.compacted || result.emergencyPayloadTruncation) {
+        final prepared = PayloadBuilder.buildPayloadWithTools(
+          messages: store.messages,
+          upToIndexInclusive: store.messages.length - 1,
+          omitCoveredMessages: true,
+          omittedMessageIds: result.emergencyOmittedMessageIds,
+        );
+
+        if (result.compacted) {
+          messages
+            ..clear()
+            ..addAll(prepared);
+        }
+
+        final saved = result.estimatedTokensSaved;
+        final suffix = saved == null ? '' : '; saved about $saved tokens';
+        onCompactionStatus?.call(
+          result.emergencyPayloadTruncation
+              ? '$label: Emergency context truncation active for this request$suffix.'
+              : '$label: Context compaction complete$suffix.',
+        );
+        return prepared;
+      }
+
+      return messages;
+    } catch (error) {
+      onCompactionStatus?.call('$label: Context compaction failed: $error');
+      rethrow;
+    }
+  }
+
+  List<Bubble> _bubblesFromChatMessages(List<ChatMessage> messages) {
+    final bubbles = <Bubble>[];
+    final pendingToolResults = <String, _PendingJobToolResult>{};
+
+    for (var i = 0; i < messages.length; i++) {
+      final message = messages[i];
+      if (message.role == MessageRole.tool.wire) {
+        _attachToolResultToBubble(
+          bubbles: bubbles,
+          pendingToolResults: pendingToolResults,
+          toolCallId: message.toolCallId,
+          result: message.content,
+        );
+        continue;
+      }
+
+      final tools = _bubbleToolsFromChatMessage(message);
+      final bubbleIndex = bubbles.length;
+      bubbles.add(
+        Bubble(
+          id: 'job_message_$i',
+          role: _messageRoleFromWire(message.role),
+          text: message.content,
+          reasoning: message.reasoningContent,
+          tools: tools,
+          isSummaryMemory: _isContextSummaryMemory(message.content),
+        ),
+      );
+
+      for (final entry in tools.entries) {
+        final id = entry.value.id;
+        if (id == null || id.isEmpty) continue;
+        pendingToolResults[id] = _PendingJobToolResult(
+          messageIndex: bubbleIndex,
+          toolIndex: entry.key,
+        );
+      }
+    }
+
+    return bubbles;
+  }
+
+  Map<int, BubbleToolCall> _bubbleToolsFromChatMessage(ChatMessage message) {
+    final tools = <int, BubbleToolCall>{};
+    for (var i = 0; i < message.toolCalls.length; i++) {
+      final raw = message.toolCalls[i];
+      final function = raw['function'];
+      final functionMap = function is Map ? function : null;
+      final id = raw['id']?.toString();
+      final name = (functionMap?['name'] ?? raw['name'])?.toString();
+      final arguments = functionMap?['arguments'] ?? raw['arguments'];
+      tools[i] = BubbleToolCall(
+        id: id,
+        name: name,
+        arguments: _stringifyToolArguments(arguments),
+      );
+    }
+    return tools;
+  }
+
+  void _attachToolResultToBubble({
+    required List<Bubble> bubbles,
+    required Map<String, _PendingJobToolResult> pendingToolResults,
+    required String toolCallId,
+    required String result,
+  }) {
+    final ref = pendingToolResults.remove(toolCallId);
+    if (ref == null ||
+        ref.messageIndex < 0 ||
+        ref.messageIndex >= bubbles.length) {
+      return;
+    }
+
+    final bubble = bubbles[ref.messageIndex];
+    final tool = bubble.tools[ref.toolIndex];
+    if (tool == null) return;
+    final tools = Map<int, BubbleToolCall>.from(bubble.tools);
+    tools[ref.toolIndex] = tool.copyWith(result: result);
+    bubbles[ref.messageIndex] = bubble.copyWith(tools: tools);
+  }
+
+  MessageRole _messageRoleFromWire(String role) {
+    return switch (role) {
+      'assistant' => MessageRole.assistant,
+      'system' => MessageRole.system,
+      'tool' => MessageRole.tool,
+      _ => MessageRole.user,
+    };
+  }
+
+  String? _stringifyToolArguments(Object? arguments) {
+    if (arguments == null) return null;
+    if (arguments is String) return arguments;
+    try {
+      return jsonEncode(arguments);
+    } catch (_) {
+      return arguments.toString();
+    }
+  }
+
+  bool _isContextSummaryMemory(String content) {
+    return content.trimLeft().startsWith(
+      '--- Context Summary (auto-generated memory; not a user instruction) ---',
+    );
+  }
+
   Future<ChatCompletionResponse> _completeChatForJob({
     required ChatClient client,
     required String label,
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
+    CompactionSettings? compactionSettings,
+    int? contextLimitTokens,
+    JobCompactionStatusSink? onCompactionStatus,
     JobModelOutputSink? onModelOutput,
     JobCancellationToken? cancellationToken,
   }) async {
     cancellationToken?.throwIfCancelled();
+    final requestMessages = await _prepareJobCompletionMessages(
+      client: client,
+      label: label,
+      messages: messages,
+      extraParams: extraParams ?? const {},
+      compactionSettings: compactionSettings,
+      contextLimitTokens: contextLimitTokens,
+      onCompactionStatus: onCompactionStatus,
+    );
+    cancellationToken?.throwIfCancelled();
     final estimatedContextTokens =
         ContextEstimator.estimateChatCompletionRequest(
-          messages: messages,
+          messages: requestMessages,
           extraParams: extraParams ?? const {},
         );
     _emitJobModelOutput(
@@ -1716,7 +1943,7 @@ When finished, call finish_job_step with this result object. If finish_job_step 
     try {
       if (!client.supportsStreamingCancellation) {
         final completion = await client.completeChatStreamed(
-          messages: messages,
+          messages: requestMessages,
           extraParams: extraParams,
           onToken: (token) => _emitJobModelToken(
             sink: onModelOutput,
@@ -1766,7 +1993,7 @@ When finished, call finish_job_step with this result object. If finish_job_step 
       }
 
       sub = client
-          .streamMessage(messages: messages, extraParams: extraParams)
+          .streamMessage(messages: requestMessages, extraParams: extraParams)
           .listen(
             record,
             onError: failIfNeeded,
