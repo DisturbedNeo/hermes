@@ -408,36 +408,41 @@ class _ConfigurationSection extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.7)),
-      ),
-      child: Theme(
-        data: theme.copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          key: PageStorageKey<String>('model-configuration-$title'),
-          initiallyExpanded: initiallyExpanded,
-          maintainState: true,
-          tilePadding: const EdgeInsets.symmetric(horizontal: 12),
-          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          leading: Icon(icon, color: scheme.primary),
-          title: Text(title, style: theme.textTheme.titleMedium),
-          subtitle: Text(subtitle, style: theme.textTheme.bodySmall),
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(8)),
+    return Material(
+      color: scheme.surface,
+      borderRadius: BorderRadius.circular(8),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: scheme.outlineVariant.withValues(alpha: 0.7),
           ),
-          collapsedShape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(8)),
-          ),
-          children: [
-            const SizedBox(height: 4),
-            for (final child in children) ...[
-              child,
-              if (child != children.last) const SizedBox(height: 16),
+        ),
+        child: Theme(
+          data: theme.copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            key: PageStorageKey<String>('model-configuration-$title'),
+            initiallyExpanded: initiallyExpanded,
+            maintainState: true,
+            tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+            childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            leading: Icon(icon, color: scheme.primary),
+            title: Text(title, style: theme.textTheme.titleMedium),
+            subtitle: Text(subtitle, style: theme.textTheme.bodySmall),
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(8)),
+            ),
+            collapsedShape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(8)),
+            ),
+            children: [
+              const SizedBox(height: 4),
+              for (final child in children) ...[
+                child,
+                if (child != children.last) const SizedBox(height: 16),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

@@ -68,20 +68,22 @@ class _DiagnosticsBand extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final borderColor = scheme.outlineVariant.withValues(alpha: 0.65);
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.42),
-        border: Border(top: BorderSide(color: borderColor)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _scrollingMetrics(context, _compactMetrics(context)),
-          if (visibility == DiagnosticsVisibility.detailed) ...[
-            _scrollingMetrics(context, _detailedMetrics(context)),
-            _LogViewer(diagnostics: diagnostics),
+    return Material(
+      color: scheme.surfaceContainerHighest.withValues(alpha: 0.42),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: borderColor)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _scrollingMetrics(context, _compactMetrics(context)),
+            if (visibility == DiagnosticsVisibility.detailed) ...[
+              _scrollingMetrics(context, _detailedMetrics(context)),
+              _LogViewer(diagnostics: diagnostics),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
