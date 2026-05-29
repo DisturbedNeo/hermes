@@ -30,26 +30,29 @@ class JobPanel extends StatelessWidget {
       );
     }
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _Header(chat: chat, job: job, onToggleExpanded: onToggleExpanded),
-          const Divider(height: 1),
-          if (job == null)
-            Expanded(child: _JobList(chat: chat))
-          else
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(12),
-                child: _JobBody(chat: chat, job: job),
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surface,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: theme.dividerColor)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _Header(chat: chat, job: job, onToggleExpanded: onToggleExpanded),
+            const Divider(height: 1),
+            if (job == null)
+              Expanded(child: _JobList(chat: chat))
+            else
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(12),
+                  child: _JobBody(chat: chat, job: job),
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
