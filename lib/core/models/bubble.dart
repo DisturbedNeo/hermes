@@ -7,6 +7,7 @@ class Bubble {
   final String text;
   final String reasoning;
   final Map<int, BubbleToolCall> tools;
+  final DateTime? createdAt;
   final bool omittedFromModelPayload;
   final String? summaryId;
   final bool isSummaryMemory;
@@ -18,6 +19,7 @@ class Bubble {
     required this.text,
     required this.reasoning,
     this.tools = const {},
+    this.createdAt,
     this.omittedFromModelPayload = false,
     this.summaryId,
     this.isSummaryMemory = false,
@@ -30,6 +32,7 @@ class Bubble {
     String? text,
     String? reasoning,
     Map<int, BubbleToolCall>? tools,
+    Object? createdAt = kSentinel,
     bool? omittedFromModelPayload,
     Object? summaryId = kSentinel,
     bool? isSummaryMemory,
@@ -41,6 +44,9 @@ class Bubble {
       text: text ?? this.text,
       reasoning: reasoning ?? this.reasoning,
       tools: tools ?? this.tools,
+      createdAt: identical(createdAt, kSentinel)
+          ? this.createdAt
+          : createdAt as DateTime?,
       omittedFromModelPayload:
           omittedFromModelPayload ?? this.omittedFromModelPayload,
       summaryId: identical(summaryId, kSentinel)

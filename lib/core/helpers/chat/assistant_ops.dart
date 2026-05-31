@@ -58,6 +58,7 @@ extension AssistantOps on MessageStore {
           role: MessageRole.assistant,
           text: err,
           reasoning: '',
+          createdAt: DateTime.now(),
         ),
       );
     }

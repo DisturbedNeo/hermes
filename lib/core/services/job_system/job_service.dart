@@ -1824,6 +1824,7 @@ When finished, call finish_job_step with this result object. If finish_job_step 
           text: message.content,
           reasoning: message.reasoningContent,
           tools: tools,
+          createdAt: DateTime.now(),
           isSummaryMemory: _isContextSummaryMemory(message.content),
         ),
       );

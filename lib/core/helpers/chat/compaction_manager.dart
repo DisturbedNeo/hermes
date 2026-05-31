@@ -129,6 +129,7 @@ class CompactionManager {
       role: MessageRole.user,
       text: summary.toBubbleText(),
       reasoning: '',
+      createdAt: existingSummary?.createdAt ?? DateTime.now(),
       isSummaryMemory: true,
       summarySchemaVersion: summary.schemaVersion,
     );

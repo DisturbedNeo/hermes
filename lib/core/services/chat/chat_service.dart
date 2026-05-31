@@ -55,6 +55,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     role: MessageRole.system,
     text: _buildSystemPrompt(),
     reasoning: '',
+    createdAt: DateTime.now(),
   );
 
   bool _disposed = false;
@@ -342,7 +343,13 @@ class ChatService extends ChangeNotifier implements Disposable {
     _adoptActiveModelIfRestoreDismissed();
 
     messageStore.upsert(
-      Bubble(id: uuid.v7(), role: role, text: t, reasoning: ''),
+      Bubble(
+        id: uuid.v7(),
+        role: role,
+        text: t,
+        reasoning: '',
+        createdAt: DateTime.now(),
+      ),
     );
   }
 
@@ -423,7 +430,13 @@ class ChatService extends ChangeNotifier implements Disposable {
     _adoptActiveModelIfRestoreDismissed();
 
     messageStore.upsert(
-      Bubble(id: uuid.v7(), role: MessageRole.user, text: t, reasoning: ''),
+      Bubble(
+        id: uuid.v7(),
+        role: MessageRole.user,
+        text: t,
+        reasoning: '',
+        createdAt: DateTime.now(),
+      ),
     );
 
     await _streamAssistantResponse(
@@ -756,6 +769,7 @@ class ChatService extends ChangeNotifier implements Disposable {
         role: MessageRole.user,
         text: command.raw,
         reasoning: '',
+        createdAt: DateTime.now(),
       ),
     );
 
@@ -781,6 +795,7 @@ class ChatService extends ChangeNotifier implements Disposable {
           role: MessageRole.assistant,
           text: _taskBriefMessage(brief),
           reasoning: '',
+          createdAt: DateTime.now(),
         ),
       );
     } on JobCancelledException {
@@ -813,6 +828,7 @@ class ChatService extends ChangeNotifier implements Disposable {
         role: MessageRole.user,
         text: rawCommand,
         reasoning: '',
+        createdAt: DateTime.now(),
       ),
     );
 
@@ -825,6 +841,7 @@ class ChatService extends ChangeNotifier implements Disposable {
           text:
               '`/continue` needs an attached workspace with a saved job under `.agent/jobs`.',
           reasoning: '',
+          createdAt: DateTime.now(),
         ),
       );
       return;
@@ -843,6 +860,7 @@ class ChatService extends ChangeNotifier implements Disposable {
           role: MessageRole.assistant,
           text: 'No saved job was found for this chat.',
           reasoning: '',
+          createdAt: DateTime.now(),
         ),
       );
       return;
@@ -972,6 +990,7 @@ class ChatService extends ChangeNotifier implements Disposable {
         role: MessageRole.user,
         text: prompt,
         reasoning: '',
+        createdAt: DateTime.now(),
       ),
     );
 
@@ -983,6 +1002,7 @@ class ChatService extends ChangeNotifier implements Disposable {
           text:
               'Job mode needs an attached workspace so it can persist `.agent/jobs` artifacts. Attach a workspace and try again.',
           reasoning: '',
+          createdAt: DateTime.now(),
         ),
       );
       return;
@@ -1146,6 +1166,7 @@ class ChatService extends ChangeNotifier implements Disposable {
                 role: MessageRole.assistant,
                 text: '',
                 reasoning: '',
+                createdAt: DateTime.now(),
               );
               messageStore.upsert(bubble);
               messageStore.setCurrentId(bubble.id);
@@ -1553,6 +1574,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       role: MessageRole.assistant,
       text: '',
       reasoning: '',
+      createdAt: DateTime.now(),
     );
     messageStore.upsert(bubble);
     messageStore.setCurrentId(bubble.id);
@@ -1672,6 +1694,7 @@ class ChatService extends ChangeNotifier implements Disposable {
         role: MessageRole.assistant,
         text: text,
         reasoning: '',
+        createdAt: DateTime.now(),
       ),
     );
   }
@@ -1684,6 +1707,7 @@ class ChatService extends ChangeNotifier implements Disposable {
         role: MessageRole.assistant,
         text: errorMessage,
         reasoning: '',
+        createdAt: DateTime.now(),
       ),
     );
   }
@@ -1972,6 +1996,7 @@ Workspace rules:
           role: MessageRole.user,
           text: userText,
           reasoning: '',
+          createdAt: DateTime.now(),
         ),
       )
       ..upsert(
@@ -1980,6 +2005,7 @@ Workspace rules:
           role: MessageRole.assistant,
           text: assistantText,
           reasoning: '',
+          createdAt: DateTime.now(),
         ),
       );
   }

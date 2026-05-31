@@ -18,6 +18,7 @@ import 'package:hermes/ui/chat/job_panel.dart';
 import 'package:hermes/ui/chat/message/markdown_view.dart';
 import 'package:hermes/ui/chat/message/message_bubble.dart';
 import 'package:hermes/ui/chat/message/message_row.dart';
+import 'package:hermes/ui/chat/message/message_timestamp.dart';
 import 'package:hermes/ui/chat/workspace_bar.dart';
 
 class ChatView extends StatefulWidget {
@@ -553,6 +554,10 @@ class _SummaryMemoryGroupState extends State<_SummaryMemoryGroup> {
             ],
           ),
         ),
+        if (widget.summary.createdAt != null) ...[
+          const SizedBox(height: 2),
+          MessageTimestamp(createdAt: widget.summary.createdAt!),
+        ],
         if (_expanded) ...[
           const SizedBox(height: 8),
           for (final message in widget.coveredMessages)

@@ -173,6 +173,7 @@ class MessageStore extends ChangeNotifier {
         role: MessageRole.assistant,
         text: '',
         reasoning: '',
+        createdAt: DateTime.now(),
       );
       upsert(bubble);
       targetId = bubble.id;
@@ -184,6 +185,7 @@ class MessageStore extends ChangeNotifier {
           role: MessageRole.assistant,
           text: '',
           reasoning: '',
+          createdAt: DateTime.now(),
         );
         upsert(bubble);
         targetId = bubble.id;

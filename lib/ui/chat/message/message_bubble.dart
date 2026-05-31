@@ -5,6 +5,7 @@ import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/ui/chat/message/bubble_editor.dart';
 import 'package:hermes/ui/chat/message/bubble_surface.dart';
 import 'package:hermes/ui/chat/message/bubble_view.dart';
+import 'package:hermes/ui/chat/message/message_timestamp.dart';
 
 class MessageBubble extends StatefulWidget {
   final Bubble b;
@@ -119,6 +120,10 @@ class MessageBubbleState extends State<MessageBubble> {
                   ),
           ),
         ),
+        if (widget.b.createdAt != null) ...[
+          const SizedBox(height: 2),
+          MessageTimestamp(createdAt: widget.b.createdAt!),
+        ],
       ],
     );
   }

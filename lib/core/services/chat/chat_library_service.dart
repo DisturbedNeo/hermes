@@ -176,6 +176,7 @@ class ChatLibraryService extends ChangeNotifier implements Disposable {
       final batch = txn.batch();
       for (var i = 0; i < messages.length; i++) {
         final message = messages[i];
+        final messageCreatedAt = message.createdAt ?? now;
         batch.insert('saved_chat_messages', {
           'chat_id': id,
           'message_id': message.id,
@@ -188,7 +189,7 @@ class ChatLibraryService extends ChangeNotifier implements Disposable {
           'is_summary_memory': message.isSummaryMemory ? 1 : 0,
           'summary_schema_version': message.summarySchemaVersion,
           'position': i,
-          'created_at': now.millisecondsSinceEpoch,
+          'created_at': messageCreatedAt.millisecondsSinceEpoch,
           'updated_at': now.millisecondsSinceEpoch,
         }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
@@ -514,12 +515,19 @@ class ChatLibraryService extends ChangeNotifier implements Disposable {
       text: row['text'] as String? ?? '',
       reasoning: row['reasoning'] as String? ?? '',
       tools: _toolsFromJson(row['tools_json'] as String? ?? '{}'),
+      createdAt: _dateTimeFromEpoch(row['created_at']),
       omittedFromModelPayload:
           (row['omitted_from_model_payload'] as int? ?? 0) == 1,
       summaryId: row['summary_id'] as String?,
       isSummaryMemory: (row['is_summary_memory'] as int? ?? 0) == 1,
       summarySchemaVersion: row['summary_schema_version'] as int?,
     );
+  }
+
+  DateTime? _dateTimeFromEpoch(Object? value) {
+    final millis = value as int?;
+    if (millis == null) return null;
+    return DateTime.fromMillisecondsSinceEpoch(millis);
   }
 
   String _deriveTitle(List<Bubble> messages) {

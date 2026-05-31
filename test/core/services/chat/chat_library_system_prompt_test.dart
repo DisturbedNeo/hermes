@@ -122,4 +122,30 @@ void main() {
     expect(restored?.chat.systemPromptSnapshot?.name, 'Legacy prompt');
     expect(restored?.chat.systemPromptSnapshot?.text, 'Legacy prompt text.');
   });
+
+  test(
+    'preserves message creation timestamps when saving and loading',
+    () async {
+      final createdAt = DateTime(2026, 5, 9, 4, 7);
+
+      final saved = await chatLibrary.saveChatSnapshot(
+        title: 'Timestamped chat',
+        messages: [
+          Bubble(
+            id: 'user',
+            role: MessageRole.user,
+            text: 'Timed message',
+            reasoning: '',
+            createdAt: createdAt,
+          ),
+        ],
+        modelSnapshot: null,
+        workspace: null,
+        systemPromptSnapshot: null,
+      );
+
+      final restored = await chatLibrary.getChat(saved.id);
+      expect(restored?.messages.single.createdAt, createdAt);
+    },
+  );
 }

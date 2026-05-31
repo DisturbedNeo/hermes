@@ -169,6 +169,26 @@ void main() {
     expect(find.text('Scroll to bottom'), findsNothing);
   });
 
+  testWidgets('shows creation timestamp under message bubbles', (tester) async {
+    await _setViewport(tester, const Size(420, 640));
+    final chat = tabs.activeChat!;
+    chat.messageStore.setMessages([
+      chat.systemPrompt,
+      Bubble(
+        id: 'timestamped',
+        role: MessageRole.user,
+        text: 'Timed message',
+        reasoning: '',
+        createdAt: DateTime(2026, 5, 9, 4, 7),
+      ),
+    ]);
+
+    await tester.pumpWidget(_chatViewApp(tabs));
+    await tester.pumpAndSettle();
+
+    expect(find.text('09/05/26 04:07'), findsOneWidget);
+  });
+
   testWidgets('Ctrl slash focuses the composer', (tester) async {
     await _setViewport(tester, const Size(420, 640));
     final chat = tabs.activeChat!;
