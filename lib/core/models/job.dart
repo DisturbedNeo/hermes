@@ -1,7 +1,7 @@
 import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/helpers/sentinel.dart' show kSentinel, resolve;
 
-enum ExecutionMode { chat, refine, plan, job, continueJob }
+enum ExecutionMode { chat, refine, job, continueJob }
 
 enum JobStatus {
   draft,
@@ -44,7 +44,6 @@ extension ExecutionModeWire on ExecutionMode {
   String get label => switch (this) {
     ExecutionMode.chat => 'Chat',
     ExecutionMode.refine => 'Refine',
-    ExecutionMode.plan => 'Plan',
     ExecutionMode.job => 'Job',
     ExecutionMode.continueJob => 'Continue Job',
   };

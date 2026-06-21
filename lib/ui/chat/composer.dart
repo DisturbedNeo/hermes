@@ -707,12 +707,6 @@ class _ExecutionModeSelector extends StatelessWidget {
             tooltip: 'Chat',
           ),
           ButtonSegment(
-            value: ExecutionMode.plan,
-            icon: Icon(Icons.format_list_numbered),
-            label: Text('Plan'),
-            tooltip: 'Plan',
-          ),
-          ButtonSegment(
             value: ExecutionMode.job,
             icon: Icon(Icons.account_tree_outlined),
             label: Text('Job'),

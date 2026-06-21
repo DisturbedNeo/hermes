@@ -42,7 +42,7 @@ void main() {
         client: client,
         workspace: workspace,
         userPrompt: 'Build the reporting screen',
-        selectedMode: ExecutionMode.plan,
+        selectedMode: ExecutionMode.job,
         baseSystemPrompt: 'system',
         chatSessionId: 'chat_1',
       );

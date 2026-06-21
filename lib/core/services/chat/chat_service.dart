@@ -418,11 +418,11 @@ class ChatService extends ChangeNotifier implements Disposable {
       return;
     }
 
-    if (executionMode == ExecutionMode.plan ||
-        executionMode == ExecutionMode.job) {
+    if (executionMode == ExecutionMode.job) {
+      final settings = await _refreshJobSystemSettings();
       await _startJobFromPrompt(
         t,
-        runFirstPhase: executionMode == ExecutionMode.job,
+        runFirstPhase: !settings.requireApprovalBeforeExecution,
       );
       return;
     }
@@ -1023,7 +1023,7 @@ class ChatService extends ChangeNotifier implements Disposable {
         client: client,
         workspace: currentWorkspace,
         userPrompt: prompt,
-        selectedMode: runFirstPhase ? ExecutionMode.job : ExecutionMode.plan,
+        selectedMode: ExecutionMode.job,
         baseSystemPrompt: _buildSystemPrompt(currentUserRequest: prompt),
         chatSessionId: scopeId,
         onModelOutput: _handleJobModelOutput,

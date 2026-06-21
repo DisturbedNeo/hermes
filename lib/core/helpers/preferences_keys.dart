@@ -56,6 +56,10 @@ abstract final class PreferencesKeys {
   static const String jobSystemApprovalBeforeFileEdits =
       'job_system_approval_before_file_edits';
 
+  /// Whether to require approval before executing a job's first phase.
+  static const String jobSystemRequireApprovalBeforeExecution =
+      'job_system_require_approval_before_execution';
+
   /// Whether to show job messages in the chat stream.
   static const String jobSystemShowMessagesInChat =
       'job_system_show_messages_in_chat';

@@ -276,6 +276,18 @@ class _SettingsContent extends StatelessWidget {
     ),
     SwitchListTile(
       contentPadding: EdgeInsets.zero,
+      title: const Text('Require approval before execution'),
+      value: jobSystemSettings.requireApprovalBeforeExecution,
+      onChanged: jobSystemSettings.enabled
+          ? (enabled) => onJobSystemChanged(
+              jobSystemSettings.copyWith(
+                requireApprovalBeforeExecution: enabled,
+              ),
+            )
+          : null,
+    ),
+    SwitchListTile(
+      contentPadding: EdgeInsets.zero,
       title: const Text('Require approval before file edits'),
       value: jobSystemSettings.requireApprovalBeforeFileEdits,
       onChanged: jobSystemSettings.enabled

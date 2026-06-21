@@ -163,6 +163,9 @@ class PreferencesService extends ChangeNotifier {
     final prefs = await _prefs;
     return JobSystemSettings(
       enabled: prefs.getBool(PreferencesKeys.jobSystemEnabled) ?? true,
+      requireApprovalBeforeExecution:
+          prefs.getBool(PreferencesKeys.jobSystemRequireApprovalBeforeExecution) ??
+          true,
       requireApprovalBeforeFileEdits:
           prefs.getBool(PreferencesKeys.jobSystemApprovalBeforeFileEdits) ??
           true,
@@ -178,6 +181,10 @@ class PreferencesService extends ChangeNotifier {
         await prefs.setBool(
           PreferencesKeys.jobSystemEnabled,
           normalised.enabled,
+        ) &&
+        await prefs.setBool(
+          PreferencesKeys.jobSystemRequireApprovalBeforeExecution,
+          normalised.requireApprovalBeforeExecution,
         ) &&
         await prefs.setBool(
           PreferencesKeys.jobSystemApprovalBeforeFileEdits,
