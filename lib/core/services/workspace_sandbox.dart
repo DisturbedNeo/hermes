@@ -197,6 +197,10 @@ class WorkspaceSandbox {
     return {'path': resolved.relativePath};
   }
 
+  /// Returns true if the given [basename] is a hidden dot-folder/file.
+  static bool _isDotEntry(String basename) =>
+      basename.isNotEmpty && basename.startsWith('.');
+
   Future<List<Map<String, dynamic>>> searchFiles(
     String rootPath,
     String query, {
@@ -208,12 +212,25 @@ class WorkspaceSandbox {
     }
 
     final root = await resolve(rootPath, relativePath, directory: true);
+
+    // Determine whether we are explicitly searching inside a dot-folder.
+    // If the resolved relative path starts with '.', the agent explicitly
+    // targeted that location and we should not filter dot-folders within it.
+    final isExplicitDotSearch = root.relativePath.startsWith('.');
+
     final results = <Map<String, dynamic>>[];
 
     await for (final entity in Directory(
       root.absolutePath,
     ).list(recursive: true, followLinks: false)) {
       if (results.length >= maxSearchResults) break;
+
+      // Skip dot-folders unless the search explicitly targets one.
+      final basename = path.basename(entity.path);
+      if (entity is Directory && _isDotEntry(basename) && !isExplicitDotSearch) {
+        continue; // skip this directory and everything inside it
+      }
+
       if (entity is! File) continue;
       if (await entity.length() > maxReadBytes) continue;
 
@@ -230,6 +247,14 @@ class WorkspaceSandbox {
       } on FileSystemException {
         continue;
       }
+    }
+
+    // Graceful error when the search was too broad.
+    if (results.length >= maxSearchResults) {
+      throw WorkspaceSandboxException(
+        'Search returned too many results ($maxSearchResults+ matches). '
+        'Narrow your query or specify a more targeted path to continue.',
+      );
     }
 
     return results;

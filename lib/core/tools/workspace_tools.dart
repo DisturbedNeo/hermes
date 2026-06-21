@@ -249,7 +249,8 @@ class SearchFilesTool extends WorkspaceTool {
   @override
   final String name = 'Search files';
   @override
-  final String description = 'Searches text files inside the workspace.';
+  final String description =
+      'Searches text files inside the workspace. Hidden dot-folders (e.g. .git, .pub-cache) are excluded by default. To search inside a dot-folder, provide its path explicitly via the path parameter.';
   @override
   final Map<String, dynamic> schema = {
     'type': 'object',
@@ -257,7 +258,8 @@ class SearchFilesTool extends WorkspaceTool {
       'query': {'type': 'string', 'description': 'Text to search for.'},
       'path': {
         'type': 'string',
-        'description': 'Workspace-relative directory path. Defaults to root.',
+        'description':
+            'Workspace-relative directory path. Defaults to root (which excludes dot-folders). Provide an explicit path like ".agent" to search inside a dot-folder.',
       },
     },
     'required': ['query'],
