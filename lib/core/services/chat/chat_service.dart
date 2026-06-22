@@ -2458,6 +2458,10 @@ class ChatService extends ChangeNotifier implements Disposable {
       return '$basePrompt\n\nA workspace was attached to this chat, but the folder is currently missing, so workspace tools are unavailable.';
     }
 
+    final terminalStatus = currentWorkspace.commandExecutionApproved
+        ? 'enabled for this chat'
+        : 'disabled for this chat until the user enables it from the workspace chip';
+
     return '''
 $basePrompt
 
@@ -2470,7 +2474,7 @@ Workspace rules:
 - Inspect relevant files before editing them.
 - Prefer small, precise changes.
 - Explain destructive file operations before performing them.
-- Terminal commands are guarded and may be unavailable unless the user enables them for this chat.
+- Terminal commands are guarded and are currently $terminalStatus.
 '''
         .trim();
   }

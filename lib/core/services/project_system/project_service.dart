@@ -618,6 +618,7 @@ ${_encoder.convert(project.toJson())}
       'workspaceName': workspace.displayName,
       'rootFiles': rootFiles,
       'gitAvailable': rootFiles.contains('.git'),
+      'commandExecutionApproved': workspace.commandExecutionApproved,
       'projectTaskIds': projectTasks.map((task) => task.id).toList(),
     };
   }

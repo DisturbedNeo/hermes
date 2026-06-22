@@ -59,6 +59,25 @@ void main() {
       );
     });
 
+    test('passes terminal approval into task planner metadata', () async {
+      workspace = workspace.copyWith(commandExecutionApproved: true);
+      final client = _QueueChatClient([
+        jsonEncode(_planJson(title: 'Planned task')),
+      ]);
+
+      await service.createTask(
+        client: client,
+        workspace: workspace,
+        userPrompt: 'Inspect the design document',
+        selectedMode: ExecutionMode.task,
+        baseSystemPrompt: 'system',
+        chatSessionId: 'chat_1',
+      );
+
+      final plannerRequest = client.seenMessages.single.last.content;
+      expect(plannerRequest, contains('"commandExecutionApproved": true'));
+    });
+
     test('runs one step and records structured memory and history', () async {
       final task = _task(
         step: const TaskStep(
@@ -343,6 +362,44 @@ void main() {
         updated.runs.single.toolCalls.single.error,
         contains('task-owned artifact'),
       );
+      expect(updated.status, TaskStatus.completed);
+    });
+
+    test('mutating steps expose approved terminal state to executor', () async {
+      workspace = workspace.copyWith(commandExecutionApproved: true);
+      final task = _task(
+        step: const TaskStep(
+          id: 'inspect_binary',
+          title: 'Inspect binary document',
+          objective: 'Extract readable text from a binary document.',
+          instructions: ['Use terminal extraction if needed.'],
+          mayEditFiles: true,
+          artifacts: [],
+          status: TaskStepStatus.pending,
+        ),
+      );
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Inspected the document.',
+            'memoryUpdate': 'Document text was available.',
+          }),
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      final executorPrompt = client.seenMessages.single.last.content;
+      expect(client.seenToolNames.single, contains('run_command'));
+      expect(executorPrompt, contains('Terminal commands are enabled'));
+      expect(executorPrompt, contains('Tools exposed to this step'));
+      expect(executorPrompt, contains('run_command'));
       expect(updated.status, TaskStatus.completed);
     });
 
@@ -905,6 +962,7 @@ class _QueueChatClient extends ChatClient {
     : super(baseUrl: 'http://localhost', model: 'test');
 
   final List<String> _responses;
+  final List<List<ChatMessage>> seenMessages = [];
   var _index = 0;
 
   @override
@@ -912,6 +970,7 @@ class _QueueChatClient extends ChatClient {
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
   }) async {
+    seenMessages.add(List<ChatMessage>.of(messages));
     final index = _index >= _responses.length ? _responses.length - 1 : _index;
     _index++;
     return ChatCompletionResponse(content: _responses[index]);

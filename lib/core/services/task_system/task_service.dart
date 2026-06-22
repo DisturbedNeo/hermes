@@ -786,6 +786,7 @@ $userPrompt
       workspaceName: workspace.displayName,
       rootFiles: rootFiles,
       gitAvailable: rootFiles.contains('.git'),
+      commandExecutionApproved: workspace.commandExecutionApproved,
       existingTaskIds: (await _storage.listTasks(
         workspace.rootPath,
         chatSessionId: chatSessionId,
@@ -817,7 +818,10 @@ $userPrompt
     final messages = <ChatMessage>[
       ChatMessage(role: 'system', content: baseSystemPrompt),
       const ChatMessage(role: 'system', content: _executorSystemInstruction),
-      ChatMessage(role: 'user', content: _buildStepPrompt(task, step)),
+      ChatMessage(
+        role: 'user',
+        content: _buildStepPrompt(task, step, workspace),
+      ),
     ];
     final context = WorkspaceToolContext(workspace: workspace);
     final toolCalls = <TaskToolCallRecord>[];
@@ -1643,7 +1647,11 @@ ${_encoder.convert(snapshot.toJson())}
     return null;
   }
 
-  String _buildStepPrompt(TaskDocument task, TaskStep step) {
+  String _buildStepPrompt(
+    TaskDocument task,
+    TaskStep step,
+    WorkspaceAttachment workspace,
+  ) {
     final previousRuns = task.runs
         .where((run) => run.status != TaskRunStatus.running)
         .map((run) => '- ${run.stepId}: ${run.summary}')
@@ -1675,7 +1683,7 @@ Available artifact inputs:
 $availableArtifacts
 
 Step tool permissions:
-${step.mayEditFiles ? '- This step may edit files after any required user approval. Mutating workspace tools and terminal commands may be available.' : '- This is a read-only step. It may read workspace files and create only this step\'s declared task-owned artifact files under `.agent/tasks/${task.id}/`, but it must not overwrite existing files, edit source files, rename paths, delete paths, or run terminal commands.'}
+${_stepToolPermissionText(task, step, workspace)}
 
 Previous run summaries:
 ${previousRuns.trim().isEmpty ? 'None yet.' : previousRuns}
@@ -1691,6 +1699,28 @@ When finished, call finish_task_step with this result object. If finish_task_ste
   "error": "only when failed"
 }
 ''';
+  }
+
+  String _stepToolPermissionText(
+    TaskDocument task,
+    TaskStep step,
+    WorkspaceAttachment workspace,
+  ) {
+    final terminalStatus = workspace.commandExecutionApproved
+        ? 'Terminal commands are enabled for this chat.'
+        : 'Terminal commands are disabled for this chat until the user enables them from the workspace chip.';
+    final availableTools = (_allowedToolIdsForStep(
+      step,
+    ).toList()..sort()).join(', ');
+    final stepPolicy = step.mayEditFiles
+        ? 'This step may edit files after any required user approval. Mutating workspace tools and terminal commands may be available.'
+        : 'This is a read-only step. It may read workspace files and create only this step\'s declared task-owned artifact files under `.agent/tasks/${task.id}/`, but it must not overwrite existing files, edit source files, rename paths, delete paths, or run terminal commands.';
+    return '''
+- $terminalStatus
+- $stepPolicy
+- Tools exposed to this step: $availableTools.
+'''
+        .trim();
   }
 
   String _buildAvailableArtifactInputs(TaskDocument task, TaskStep step) {
@@ -2410,12 +2440,14 @@ class _WorkspaceMetadata {
   final String? workspaceName;
   final List<String> rootFiles;
   final bool gitAvailable;
+  final bool commandExecutionApproved;
   final List<String> existingTaskIds;
 
   const _WorkspaceMetadata({
     this.workspaceName,
     this.rootFiles = const [],
     this.gitAvailable = false,
+    this.commandExecutionApproved = false,
     this.existingTaskIds = const [],
   });
 
@@ -2423,6 +2455,7 @@ class _WorkspaceMetadata {
     if (workspaceName != null) 'workspaceName': workspaceName,
     'rootFiles': rootFiles,
     'gitAvailable': gitAvailable,
+    'commandExecutionApproved': commandExecutionApproved,
     'existingTaskIds': existingTaskIds,
   };
 }
@@ -2497,6 +2530,7 @@ Read-only steps may create new task-owned artifact files under `.agent/tasks/<ta
 Declare an artifact only on the step that will actually create it.
 Do not split broad "explore" and "analyze" work into separate steps when the exploration exists only to support the analysis.
 Mark mayEditFiles true only when a step may edit existing files, write outside the task folder, rename paths, delete paths, or run terminal commands.
+If the request involves opaque or binary documents such as .odt, .docx, .pdf, .xlsx, or archives, mark inspection/extraction steps mayEditFiles true when terminal commands may be needed and commandExecutionApproved is true in workspace metadata.
 Keep research/design/planning/reporting-to-task-folder steps read-only when they only read files and create new task-owned artifacts.
 Do not include review, retry, validation, terminal policy, or approval policy fields.
 Return only valid JSON.
@@ -2527,6 +2561,7 @@ Read-only steps may create new task-owned artifact files under `.agent/tasks/<ta
 Declare an artifact only on the step that will actually create it.
 Do not split broad "explore" and "analyze" work into separate steps when the exploration exists only to support the analysis.
 Mark mayEditFiles true only when a step may edit existing files, write outside the task folder, rename paths, delete paths, or run terminal commands.
+If unfinished work involves opaque or binary documents such as .odt, .docx, .pdf, .xlsx, or archives, mark inspection/extraction steps mayEditFiles true when terminal commands may be needed and commandExecutionApproved is true in workspace metadata.
 Do not include review, retry, validation, terminal policy, or approval policy fields.
 Return only valid JSON.
 ''';
