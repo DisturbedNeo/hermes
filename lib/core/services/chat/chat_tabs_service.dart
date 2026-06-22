@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
-import 'package:hermes/core/services/job_system/job_service.dart';
+import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/subagent_service.dart';
@@ -24,7 +24,7 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
   final ChatLibraryService _chatLibrary;
   final SystemPromptLibraryService _systemPromptLibrary;
   final ToolService _toolService;
-  final JobService _jobService;
+  final TaskService _taskService;
   final WorkspaceService _workspaceService;
   final PreferencesService _preferencesService;
 
@@ -39,13 +39,13 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
     required ChatLibraryService chatLibrary,
     required SystemPromptLibraryService systemPromptLibrary,
     required ToolService toolService,
-    required JobService jobService,
+    required TaskService taskService,
     required WorkspaceService workspaceService,
     required PreferencesService preferencesService,
   }) : _chatLibrary = chatLibrary,
        _systemPromptLibrary = systemPromptLibrary,
        _toolService = toolService,
-       _jobService = jobService,
+       _taskService = taskService,
        _workspaceService = workspaceService,
        _preferencesService = preferencesService {
     newTab();
@@ -219,7 +219,7 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
     );
     await _chatLibrary.deleteChat(chatId);
     try {
-      await _deleteJobsForChatSessionInWorkspaces(chatId, workspaces);
+      await _deleteTasksForChatSessionInWorkspaces(chatId, workspaces);
     } finally {
       for (final tab in _tabs.where((tab) => tab.currentChatId == chatId)) {
         await tab.resetIfCurrentSavedChatDeleted(chatId);
@@ -232,7 +232,7 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
     final tab = ChatService(
       serverManager: serverManager,
       toolService: _toolService,
-      jobService: _jobService,
+      taskService: _taskService,
       chatLibrary: _chatLibrary,
       workspaceService: _workspaceService,
       preferencesService: _preferencesService,
@@ -277,7 +277,7 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
     for (final tab in List<ChatService>.of(_tabs)) {
       await _removeTab(tab);
     }
-    await _cleanupOrphanedJobs();
+    await _cleanupOrphanedTasks();
     await serverManager.dispose();
     super.dispose();
   }
@@ -305,19 +305,19 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
     return _collectWorkspacesByRoot(attachments).values.toList();
   }
 
-  Future<void> _deleteJobsForChatSessionInWorkspaces(
+  Future<void> _deleteTasksForChatSessionInWorkspaces(
     String chatSessionId,
     Iterable<WorkspaceAttachment> workspaces,
   ) async {
     for (final workspace in workspaces) {
-      await _jobService.deleteJobsForChatSession(
+      await _taskService.deleteTasksForChatSession(
         workspace,
         chatSessionId: chatSessionId,
       );
     }
   }
 
-  Future<void> _cleanupOrphanedJobs() async {
+  Future<void> _cleanupOrphanedTasks() async {
     final savedChats = await _chatLibrary.listChats();
     final retainedChatSessionIds = savedChats.map((chat) => chat.id).toSet();
 
@@ -332,7 +332,7 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
 
     final byRoot = _collectWorkspacesByRoot(allWorkspaces);
     for (final workspace in byRoot.values) {
-      await _jobService.deleteOrphanedChatJobs(
+      await _taskService.deleteOrphanedChatTasks(
         workspace,
         retainedChatSessionIds: retainedChatSessionIds,
       );

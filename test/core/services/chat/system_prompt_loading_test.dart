@@ -7,15 +7,15 @@ import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/helpers/chat/context_estimator.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/chat_token.dart';
-import 'package:hermes/core/models/job.dart';
+import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
-import 'package:hermes/core/services/job_system/job_service.dart';
-import 'package:hermes/core/services/job_system/job_storage_service.dart';
+import 'package:hermes/core/services/task_system/task_service.dart';
+import 'package:hermes/core/services/task_system/task_storage_service.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
@@ -27,7 +27,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('ChatService system prompts and jobs', () {
+  group('ChatService system prompts and tasks', () {
     late Directory tempDir;
     late ChatLibraryService chatLibrary;
     late PreferencesService preferences;
@@ -140,7 +140,7 @@ void main() {
       );
     });
 
-    test('supports /refine without creating a job', () async {
+    test('supports /refine without creating a task', () async {
       serverManager.chatClient = _QueueChatClient([
         jsonEncode({
           'title': 'Refined task',
@@ -153,7 +153,7 @@ void main() {
 
       await chat.send('/refine Build the reporting screen');
 
-      expect(chat.activeJob, isNull);
+      expect(chat.activeTask, isNull);
       expect(chat.messageStore.messages.last.text, contains('Refined task'));
       expect(chat.messageStore.messages.last.text, contains('Goal:'));
     });
@@ -166,14 +166,14 @@ void main() {
 
       await chat.send('/plan Build the reporting screen');
 
-      expect(chat.activeJob?.title, 'Planned task');
-      expect(chat.activeJob?.runs, isEmpty);
-      expect(chat.activeJob?.status, JobStatus.paused);
-      expect(chat.jobModelOutputTitle, 'Job Creation Model Output');
-      expect(chat.jobModelOutputText, contains('Job Planner'));
+      expect(chat.activeTask?.title, 'Planned task');
+      expect(chat.activeTask?.runs, isEmpty);
+      expect(chat.activeTask?.status, TaskStatus.paused);
+      expect(chat.taskModelOutputTitle, 'Task Creation Model Output');
+      expect(chat.taskModelOutputText, contains('Task Planner'));
     });
 
-    test('supports /job command by creating and running steps', () async {
+    test('supports /task command by creating and running steps', () async {
       serverManager.chatClient = _QueueChatClient([
         jsonEncode(_planJson(title: 'Runnable task')),
         jsonEncode({
@@ -184,10 +184,10 @@ void main() {
       ]);
       await chat.attachWorkspace(tempDir.path);
 
-      await chat.send('/job Build the reporting screen');
+      await chat.send('/task Build the reporting screen');
 
-      expect(chat.activeJob?.status, JobStatus.completed);
-      expect(chat.activeJob?.runs.single.summary, 'Step complete.');
+      expect(chat.activeTask?.status, TaskStatus.completed);
+      expect(chat.activeTask?.runs.single.summary, 'Step complete.');
     });
 
     test('step finished message omits future planned artifacts', () async {
@@ -205,7 +205,7 @@ void main() {
               'instructions': ['Read relevant files.'],
               'mayEditFiles': false,
               'artifacts': [
-                {'path': '.agent/jobs/{{job_id}}/overview.md'},
+                {'path': '.agent/tasks/{{task_id}}/overview.md'},
               ],
             },
             {
@@ -215,7 +215,7 @@ void main() {
               'instructions': ['Write final report.'],
               'mayEditFiles': false,
               'artifacts': [
-                {'path': '.agent/jobs/{{job_id}}/final_report.md'},
+                {'path': '.agent/tasks/{{task_id}}/final_report.md'},
               ],
             },
           ],
@@ -232,17 +232,17 @@ void main() {
         }),
       ]);
 
-      await chat.runNextJobPhase();
+      await chat.runNextTaskPhase();
 
       final stepMessage = chat.messageStore.messages.last.text;
-      expect(stepMessage, contains('Job step finished'));
+      expect(stepMessage, contains('Task step finished'));
       expect(stepMessage, isNot(contains('final_report.md')));
       expect(stepMessage, isNot(contains('Artifacts:')));
-      expect(chat.activeJob?.status, JobStatus.paused);
+      expect(chat.activeTask?.status, TaskStatus.paused);
     });
 
     test(
-      'renders job model reasoning and tool calls as chat bubbles',
+      'renders task model reasoning and tool calls as chat bubbles',
       () async {
         serverManager.chatClient = _QueueCompletionClient([
           ChatCompletionResponse(
@@ -275,7 +275,7 @@ void main() {
         ]);
         await chat.attachWorkspace(tempDir.path);
 
-        await chat.send('/job Build the reporting screen');
+        await chat.send('/task Build the reporting screen');
 
         final plannerBubble = chat.messageStore.messages.firstWhere(
           (message) => message.text.contains('Visible task'),
@@ -295,83 +295,89 @@ void main() {
               message.reasoning.contains('Finalizing from tool output.'),
         );
         expect(finalBubble.text, contains('Calculated result.'));
-        expect(chat.activeJob?.runs.single.summary, 'Calculated result.');
+        expect(chat.activeTask?.runs.single.summary, 'Calculated result.');
       },
     );
 
-    test('uses the active job phase payload for diagnostics context', () async {
-      final client = _StuckJobClient(_planJson(title: 'Diagnostic task'));
-      serverManager.chatClient = client;
-      chat.setCurrentModelSnapshot(
-        ModelConfigurationSnapshot.fromJson({
-          'modelName': 'test',
-          'nCtx': 4096,
-        }),
-      );
-      await chat.attachWorkspace(tempDir.path);
+    test(
+      'uses the active task phase payload for diagnostics context',
+      () async {
+        final client = _StuckTaskClient(_planJson(title: 'Diagnostic task'));
+        serverManager.chatClient = client;
+        chat.setCurrentModelSnapshot(
+          ModelConfigurationSnapshot.fromJson({
+            'modelName': 'test',
+            'nCtx': 4096,
+          }),
+        );
+        await chat.attachWorkspace(tempDir.path);
 
-      final sendFuture = chat.send('/job Build the reporting screen');
-      await client.stepStarted.future.timeout(const Duration(seconds: 2));
+        final sendFuture = chat.send('/task Build the reporting screen');
+        await client.stepStarted.future.timeout(const Duration(seconds: 2));
 
-      expect(client.requestEstimates, hasLength(2));
-      expect(
-        serverManager.diagnostics.estimatedContextTokens,
-        client.requestEstimates.last,
-      );
-      expect(serverManager.diagnostics.isStreaming, isTrue);
+        expect(client.requestEstimates, hasLength(2));
+        expect(
+          serverManager.diagnostics.estimatedContextTokens,
+          client.requestEstimates.last,
+        );
+        expect(serverManager.diagnostics.isStreaming, isTrue);
 
-      await chat.cancelJobRun();
-      await sendFuture.timeout(const Duration(seconds: 2));
-    });
+        await chat.cancelTaskRun();
+        await sendFuture.timeout(const Duration(seconds: 2));
+      },
+    );
 
-    test('cancels a stuck job run and keeps the transcript and job', () async {
-      final client = _StuckJobClient(_planJson(title: 'Cancellable task'));
-      serverManager.chatClient = client;
-      await chat.attachWorkspace(tempDir.path);
+    test(
+      'cancels a stuck task run and keeps the transcript and task',
+      () async {
+        final client = _StuckTaskClient(_planJson(title: 'Cancellable task'));
+        serverManager.chatClient = client;
+        await chat.attachWorkspace(tempDir.path);
 
-      final sendFuture = chat.send('/job Build the reporting screen');
-      await client.stepStarted.future.timeout(const Duration(seconds: 2));
+        final sendFuture = chat.send('/task Build the reporting screen');
+        await client.stepStarted.future.timeout(const Duration(seconds: 2));
 
-      expect(chat.jobBusy, isTrue);
-      expect(
-        chat.messageStore.messages.any(
-          (message) => message.reasoning.contains('Still thinking.'),
-        ),
-        isTrue,
-      );
-
-      await chat.cancelJobRun();
-      await sendFuture.timeout(const Duration(seconds: 2));
-
-      expect(client.stepCancelled.isCompleted, isTrue);
-      expect(chat.jobBusy, isFalse);
-      expect(chat.jobCancellationRequested, isFalse);
-      expect(chat.activeJob?.status, JobStatus.paused);
-      expect(chat.activeJob?.currentStepId, 'build');
-      expect(chat.activeJob?.steps.single.status, JobStepStatus.pending);
-      expect(chat.activeJob?.runs.single.status, JobRunStatus.cancelled);
-      expect(chat.activeJob?.runs.single.summary, contains('cancelled'));
-      expect(
-        chat.messageStore.messages.any(
-          (message) => message.reasoning.contains('Still thinking.'),
-        ),
-        isTrue,
-      );
-      expect(
-        File(
-          path.join(
-            tempDir.path,
-            '.agent',
-            'jobs',
-            chat.activeJob!.id,
-            'job.json',
+        expect(chat.taskBusy, isTrue);
+        expect(
+          chat.messageStore.messages.any(
+            (message) => message.reasoning.contains('Still thinking.'),
           ),
-        ).existsSync(),
-        isTrue,
-      );
-    });
+          isTrue,
+        );
 
-    test('scopes transient jobs and deletes them on new chat', () async {
+        await chat.cancelTaskRun();
+        await sendFuture.timeout(const Duration(seconds: 2));
+
+        expect(client.stepCancelled.isCompleted, isTrue);
+        expect(chat.taskBusy, isFalse);
+        expect(chat.taskCancellationRequested, isFalse);
+        expect(chat.activeTask?.status, TaskStatus.paused);
+        expect(chat.activeTask?.currentStepId, 'build');
+        expect(chat.activeTask?.steps.single.status, TaskStepStatus.pending);
+        expect(chat.activeTask?.runs.single.status, TaskRunStatus.cancelled);
+        expect(chat.activeTask?.runs.single.summary, contains('cancelled'));
+        expect(
+          chat.messageStore.messages.any(
+            (message) => message.reasoning.contains('Still thinking.'),
+          ),
+          isTrue,
+        );
+        expect(
+          File(
+            path.join(
+              tempDir.path,
+              '.agent',
+              'tasks',
+              chat.activeTask!.id,
+              'task.json',
+            ),
+          ).existsSync(),
+          isTrue,
+        );
+      },
+    );
+
+    test('scopes transient tasks and deletes them on new chat', () async {
       serverManager.chatClient = _QueueChatClient([
         jsonEncode(_planJson(title: 'Scoped task')),
       ]);
@@ -379,20 +385,20 @@ void main() {
 
       await chat.send('/plan Build the reporting screen');
 
-      final job = chat.activeJob!;
-      final jobDir = Directory(
-        path.join(tempDir.path, '.agent', 'jobs', job.id),
+      final task = chat.activeTask!;
+      final taskDir = Directory(
+        path.join(tempDir.path, '.agent', 'tasks', task.id),
       );
       expect(chat.currentChatId, isNull);
-      expect(job.chatSessionId, isNotNull);
-      expect(jobDir.existsSync(), isTrue);
+      expect(task.chatSessionId, isNotNull);
+      expect(taskDir.existsSync(), isTrue);
 
       await chat.newChat();
 
-      expect(jobDir.existsSync(), isFalse);
+      expect(taskDir.existsSync(), isFalse);
     });
 
-    test('moves transient job scope when the chat is saved', () async {
+    test('moves transient task scope when the chat is saved', () async {
       serverManager.chatClient = _QueueChatClient([
         jsonEncode(_planJson(title: 'Saved scoped task')),
       ]);
@@ -402,20 +408,20 @@ void main() {
 
       final saved = await chat.saveCurrentChat(title: 'Reporting plan');
 
-      expect(chat.activeJob?.chatSessionId, saved.id);
-      expect(chat.availableJobs.single.chatSessionId, saved.id);
+      expect(chat.activeTask?.chatSessionId, saved.id);
+      expect(chat.availableTasks.single.chatSessionId, saved.id);
 
       await chat.newChat();
       await chat.attachWorkspace(tempDir.path);
-      expect(chat.activeJob, isNull);
+      expect(chat.activeTask, isNull);
 
       await chat.openChat(saved.id);
 
-      expect(chat.activeJob?.title, 'Saved scoped task');
-      expect(chat.activeJob?.chatSessionId, saved.id);
+      expect(chat.activeTask?.title, 'Saved scoped task');
+      expect(chat.activeTask?.chatSessionId, saved.id);
     });
 
-    test('supports /continue command for the active job', () async {
+    test('supports /continue command for the active task', () async {
       serverManager.chatClient = _QueueChatClient([
         jsonEncode({
           'status': 'completed',
@@ -424,12 +430,12 @@ void main() {
         }),
       ]);
       await chat.attachWorkspace(tempDir.path);
-      chat.activeJob = _jobDocument();
-      await JobStorageService().saveSnapshot(tempDir.path, chat.activeJob!);
+      chat.activeTask = _taskDocument();
+      await TaskStorageService().saveSnapshot(tempDir.path, chat.activeTask!);
 
       await chat.send('/continue');
 
-      expect(chat.activeJob?.status, JobStatus.completed);
+      expect(chat.activeTask?.status, TaskStatus.completed);
       expect(
         chat.messageStore.messages.firstWhere((m) => m.text == '/continue'),
         isNotNull,
@@ -437,7 +443,7 @@ void main() {
     });
   });
 
-  group('ChatTabsService job cleanup', () {
+  group('ChatTabsService task cleanup', () {
     late Directory tempDir;
     late PreferencesService preferences;
     late ChatLibraryService chatLibrary;
@@ -462,7 +468,7 @@ void main() {
         chatLibrary: chatLibrary,
         systemPromptLibrary: promptLibrary,
         toolService: toolService,
-        jobService: JobService(toolService: toolService),
+        taskService: TaskService(toolService: toolService),
         workspaceService: WorkspaceService(),
         preferencesService: preferences,
       );
@@ -490,7 +496,7 @@ void main() {
       expect(tabs.activeChat?.messageStore.first.text, reviewer.content);
     });
 
-    test('deletes saved chat job folders from the chat list path', () async {
+    test('deletes saved chat task folders from the chat list path', () async {
       tabs.serverManager.chatClient = _QueueChatClient([
         jsonEncode(_planJson(title: 'Deleted tab task')),
       ]);
@@ -500,36 +506,36 @@ void main() {
       final saved = await tabs.activeChat!.saveCurrentChat(
         title: 'Deleted tab plan',
       );
-      final jobId = tabs.activeChat!.activeJob!.id;
-      final jobDir = Directory(
-        path.join(tempDir.path, '.agent', 'jobs', jobId),
+      final taskId = tabs.activeChat!.activeTask!.id;
+      final taskDir = Directory(
+        path.join(tempDir.path, '.agent', 'tasks', taskId),
       );
 
-      expect(jobDir.existsSync(), isTrue);
+      expect(taskDir.existsSync(), isTrue);
 
       await tabs.deleteSavedChat(saved.id);
 
       expect(await chatLibrary.getChat(saved.id), isNull);
-      expect(jobDir.existsSync(), isFalse);
+      expect(taskDir.existsSync(), isFalse);
       expect(tabs.activeChat?.currentChatId, isNull);
     });
 
-    test('deletes orphaned chat-scoped jobs when disposed', () async {
+    test('deletes orphaned chat-scoped tasks when disposed', () async {
       await tabs.activeChat?.attachWorkspace(tempDir.path);
-      final orphaned = _jobDocument(
-        id: 'job_orphaned',
+      final orphaned = _taskDocument(
+        id: 'task_orphaned',
         chatSessionId: 'deleted_chat',
       );
-      await JobStorageService().saveSnapshot(tempDir.path, orphaned);
-      final jobDir = Directory(
-        path.join(tempDir.path, '.agent', 'jobs', 'job_orphaned'),
+      await TaskStorageService().saveSnapshot(tempDir.path, orphaned);
+      final taskDir = Directory(
+        path.join(tempDir.path, '.agent', 'tasks', 'task_orphaned'),
       );
 
-      expect(jobDir.existsSync(), isTrue);
+      expect(taskDir.existsSync(), isTrue);
 
       await tabs.dispose();
 
-      expect(jobDir.existsSync(), isFalse);
+      expect(taskDir.existsSync(), isFalse);
     });
   });
 }
@@ -552,27 +558,27 @@ Map<String, dynamic> _planJson({required String title}) {
   };
 }
 
-JobDocument _jobDocument({String id = 'job_test', String? chatSessionId}) {
+TaskDocument _taskDocument({String id = 'task_test', String? chatSessionId}) {
   final now = DateTime(2026, 1, 1);
-  return JobDocument(
+  return TaskDocument(
     id: id,
-    title: 'Test job',
-    originalPrompt: 'Run the job',
-    goal: 'Run the job',
+    title: 'Test task',
+    originalPrompt: 'Run the task',
+    goal: 'Run the task',
     constraints: const [],
     successCriteria: const ['Finish'],
     steps: const [
-      JobStep(
+      TaskStep(
         id: 'step_1',
         title: 'Step 1',
         objective: 'Do the work',
         instructions: ['Work carefully'],
         mayEditFiles: false,
         artifacts: [],
-        status: JobStepStatus.pending,
+        status: TaskStepStatus.pending,
       ),
     ],
-    status: JobStatus.paused,
+    status: TaskStatus.paused,
     currentStepId: 'step_1',
     memorySummary: '',
     runs: const [],
@@ -624,8 +630,8 @@ class _QueueCompletionClient extends ChatClient {
   void dispose() {}
 }
 
-class _StuckJobClient extends ChatClient {
-  _StuckJobClient(this._plan)
+class _StuckTaskClient extends ChatClient {
+  _StuckTaskClient(this._plan)
     : super(baseUrl: 'http://localhost', model: 'test');
 
   final Map<String, dynamic> _plan;

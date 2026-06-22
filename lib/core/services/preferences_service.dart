@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hermes/core/enums/diagnostics_visibility.dart';
 import 'package:hermes/core/helpers/preferences_keys.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
-import 'package:hermes/core/models/job_system_settings.dart';
+import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -159,40 +159,42 @@ class PreferencesService extends ChangeNotifier {
     return saved;
   }
 
-  Future<JobSystemSettings> getJobSystemSettings() async {
+  Future<TaskSystemSettings> getTaskSystemSettings() async {
     final prefs = await _prefs;
-    return JobSystemSettings(
-      enabled: prefs.getBool(PreferencesKeys.jobSystemEnabled) ?? true,
+    return TaskSystemSettings(
+      enabled: prefs.getBool(PreferencesKeys.taskSystemEnabled) ?? true,
       requireApprovalBeforeExecution:
-          prefs.getBool(PreferencesKeys.jobSystemRequireApprovalBeforeExecution) ??
+          prefs.getBool(
+            PreferencesKeys.taskSystemRequireApprovalBeforeExecution,
+          ) ??
           true,
       requireApprovalBeforeFileEdits:
-          prefs.getBool(PreferencesKeys.jobSystemApprovalBeforeFileEdits) ??
+          prefs.getBool(PreferencesKeys.taskSystemApprovalBeforeFileEdits) ??
           true,
-      showJobMessagesInChat:
-          prefs.getBool(PreferencesKeys.jobSystemShowMessagesInChat) ?? true,
+      showTaskMessagesInChat:
+          prefs.getBool(PreferencesKeys.taskSystemShowMessagesInChat) ?? true,
     ).normalised();
   }
 
-  Future<bool> setJobSystemSettings(JobSystemSettings settings) async {
+  Future<bool> setTaskSystemSettings(TaskSystemSettings settings) async {
     final prefs = await _prefs;
     final normalised = settings.normalised();
     final saved =
         await prefs.setBool(
-          PreferencesKeys.jobSystemEnabled,
+          PreferencesKeys.taskSystemEnabled,
           normalised.enabled,
         ) &&
         await prefs.setBool(
-          PreferencesKeys.jobSystemRequireApprovalBeforeExecution,
+          PreferencesKeys.taskSystemRequireApprovalBeforeExecution,
           normalised.requireApprovalBeforeExecution,
         ) &&
         await prefs.setBool(
-          PreferencesKeys.jobSystemApprovalBeforeFileEdits,
+          PreferencesKeys.taskSystemApprovalBeforeFileEdits,
           normalised.requireApprovalBeforeFileEdits,
         ) &&
         await prefs.setBool(
-          PreferencesKeys.jobSystemShowMessagesInChat,
-          normalised.showJobMessagesInChat,
+          PreferencesKeys.taskSystemShowMessagesInChat,
+          normalised.showTaskMessagesInChat,
         );
 
     if (saved) notifyListeners();

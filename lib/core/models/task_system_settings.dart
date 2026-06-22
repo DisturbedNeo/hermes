@@ -1,51 +1,53 @@
-class JobSystemSettings {
+class TaskSystemSettings {
   final bool enabled;
-  /// Whether to require manual approval before executing a job's first phase.
-  /// When true (default), submitting a job in the composer creates a plan and
-  /// waits for the user to explicitly start it. When false, the job runs
+
+  /// Whether to require manual approval before executing a task's first phase.
+  /// When true (default), submitting a task in the composer creates a plan and
+  /// waits for the user to explicitly start it. When false, the task runs
   /// immediately after planning.
   final bool requireApprovalBeforeExecution;
-  /// Whether to require manual approval before file edits by jobs during
+
+  /// Whether to require manual approval before file edits by tasks during
   /// step execution.
   final bool requireApprovalBeforeFileEdits;
-  final bool showJobMessagesInChat;
+  final bool showTaskMessagesInChat;
 
-  const JobSystemSettings({
+  const TaskSystemSettings({
     this.enabled = true,
     this.requireApprovalBeforeExecution = true,
     this.requireApprovalBeforeFileEdits = true,
-    this.showJobMessagesInChat = true,
+    this.showTaskMessagesInChat = true,
   });
 
-  JobSystemSettings copyWith({
+  TaskSystemSettings copyWith({
     bool? enabled,
     bool? requireApprovalBeforeExecution,
     bool? requireApprovalBeforeFileEdits,
-    bool? showJobMessagesInChat,
+    bool? showTaskMessagesInChat,
   }) {
-    return JobSystemSettings(
+    return TaskSystemSettings(
       enabled: enabled ?? this.enabled,
       requireApprovalBeforeExecution:
           requireApprovalBeforeExecution ?? this.requireApprovalBeforeExecution,
       requireApprovalBeforeFileEdits:
           requireApprovalBeforeFileEdits ?? this.requireApprovalBeforeFileEdits,
-      showJobMessagesInChat:
-          showJobMessagesInChat ?? this.showJobMessagesInChat,
+      showTaskMessagesInChat:
+          showTaskMessagesInChat ?? this.showTaskMessagesInChat,
     );
   }
 
-  JobSystemSettings normalised() => this;
+  TaskSystemSettings normalised() => this;
 
   @override
   bool operator ==(Object other) {
     return identical(this, other) ||
-        other is JobSystemSettings &&
+        other is TaskSystemSettings &&
             enabled == other.enabled &&
             requireApprovalBeforeExecution ==
                 other.requireApprovalBeforeExecution &&
             requireApprovalBeforeFileEdits ==
                 other.requireApprovalBeforeFileEdits &&
-            showJobMessagesInChat == other.showJobMessagesInChat;
+            showTaskMessagesInChat == other.showTaskMessagesInChat;
   }
 
   @override
@@ -53,6 +55,6 @@ class JobSystemSettings {
     enabled,
     requireApprovalBeforeExecution,
     requireApprovalBeforeFileEdits,
-    showJobMessagesInChat,
+    showTaskMessagesInChat,
   );
 }

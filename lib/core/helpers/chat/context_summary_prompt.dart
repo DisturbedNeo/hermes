@@ -6,7 +6,7 @@ class ContextSummaryPrompt {
   static const int schemaVersion = 1;
 
   static const String systemPrompt = '''
-You are a context compression assistant. Your job is to summarise a conversation
+You are a context compression assistant. Your task is to summarise a conversation
 history so that an AI agent can continue its work without losing track of what it
 was doing.
 

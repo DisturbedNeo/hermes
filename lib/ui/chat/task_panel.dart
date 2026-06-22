@@ -3,16 +3,16 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:hermes/core/helpers/a11y.dart';
-import 'package:hermes/core/models/job.dart';
+import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/ui/common/state_display.dart';
 
-class JobPanel extends StatelessWidget {
+class TaskPanel extends StatelessWidget {
   final ChatService chat;
   final bool expanded;
   final VoidCallback onToggleExpanded;
 
-  const JobPanel({
+  const TaskPanel({
     super.key,
     required this.chat,
     required this.expanded,
@@ -21,11 +21,11 @@ class JobPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final job = chat.activeJob;
+    final task = chat.activeTask;
     if (!expanded) {
-      return _CollapsedJobPanel(
+      return _CollapsedTaskPanel(
         chat: chat,
-        job: job,
+        task: task,
         onToggleExpanded: onToggleExpanded,
       );
     }
@@ -40,15 +40,15 @@ class JobPanel extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _Header(chat: chat, job: job, onToggleExpanded: onToggleExpanded),
+            _Header(chat: chat, task: task, onToggleExpanded: onToggleExpanded),
             const Divider(height: 1),
-            if (job == null)
-              Expanded(child: _JobList(chat: chat))
+            if (task == null)
+              Expanded(child: _TaskList(chat: chat))
             else
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(12),
-                  child: _JobBody(chat: chat, job: job),
+                  child: _TaskBody(chat: chat, task: task),
                 ),
               ),
           ],
@@ -58,14 +58,14 @@ class JobPanel extends StatelessWidget {
   }
 }
 
-class _CollapsedJobPanel extends StatelessWidget {
+class _CollapsedTaskPanel extends StatelessWidget {
   final ChatService chat;
-  final JobDocument? job;
+  final TaskDocument? task;
   final VoidCallback onToggleExpanded;
 
-  const _CollapsedJobPanel({
+  const _CollapsedTaskPanel({
     required this.chat,
-    required this.job,
+    required this.task,
     required this.onToggleExpanded,
   });
 
@@ -87,25 +87,25 @@ class _CollapsedJobPanel extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  job?.title ?? 'Workspace Jobs',
+                  task?.title ?? 'Workspace Tasks',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.labelLarge,
                 ),
               ),
-              if (chat.jobBusy)
+              if (chat.taskBusy)
                 const SizedBox(
                   width: 16,
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              else if (job != null)
+              else if (task != null)
                 AccessibleWidget(
-                  label: 'Job status: ${job!.status.wire}',
-                  child: _StatusChip(label: job!.status.wire),
+                  label: 'Task status: ${task!.status.wire}',
+                  child: _StatusChip(label: task!.status.wire),
                 ),
               IconButton(
-                tooltip: 'Open job panel',
+                tooltip: 'Open task panel',
                 icon: const Icon(Icons.expand_less),
                 onPressed: onToggleExpanded,
               ),
@@ -119,12 +119,12 @@ class _CollapsedJobPanel extends StatelessWidget {
 
 class _Header extends StatelessWidget {
   final ChatService chat;
-  final JobDocument? job;
+  final TaskDocument? task;
   final VoidCallback onToggleExpanded;
 
   const _Header({
     required this.chat,
-    required this.job,
+    required this.task,
     required this.onToggleExpanded,
   });
 
@@ -139,7 +139,7 @@ class _Header extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              job?.title ?? 'Workspace Jobs',
+              task?.title ?? 'Workspace Tasks',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.titleSmall?.copyWith(
@@ -147,7 +147,7 @@ class _Header extends StatelessWidget {
               ),
             ),
           ),
-          if (chat.jobBusy) ...[
+          if (chat.taskBusy) ...[
             const SizedBox(
               width: 18,
               height: 18,
@@ -156,22 +156,22 @@ class _Header extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           AccessibleWidget(
-            label: 'Reload jobs',
+            label: 'Reload tasks',
             isButton: true,
-            enabled: !chat.jobBusy,
+            enabled: !chat.taskBusy,
             child: IconButton(
-              tooltip: 'Reload jobs',
+              tooltip: 'Reload tasks',
               icon: const Icon(Icons.refresh),
-              onPressed: chat.jobBusy
+              onPressed: chat.taskBusy
                   ? null
-                  : () => unawaited(chat.reloadJobs()),
+                  : () => unawaited(chat.reloadTasks()),
             ),
           ),
           AccessibleWidget(
-            label: 'Collapse job panel',
+            label: 'Collapse task panel',
             isButton: true,
             child: IconButton(
-              tooltip: 'Collapse job panel',
+              tooltip: 'Collapse task panel',
               icon: const Icon(Icons.expand_more),
               onPressed: onToggleExpanded,
             ),
@@ -182,21 +182,21 @@ class _Header extends StatelessWidget {
   }
 }
 
-class _JobBody extends StatelessWidget {
+class _TaskBody extends StatelessWidget {
   final ChatService chat;
-  final JobDocument job;
+  final TaskDocument task;
 
-  const _JobBody({required this.chat, required this.job});
+  const _TaskBody({required this.chat, required this.task});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final next = job.nextRunnableStep;
-    final completed = job.steps
+    final next = task.nextRunnableStep;
+    final completed = task.steps
         .where(
           (step) =>
-              step.status == JobStepStatus.completed ||
-              step.status == JobStepStatus.skipped,
+              step.status == TaskStepStatus.completed ||
+              step.status == TaskStepStatus.skipped,
         )
         .length;
 
@@ -209,59 +209,61 @@ class _JobBody extends StatelessWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             AccessibleWidget(
-              label: 'Job status: ${job.status.wire}',
-              child: _StatusChip(label: job.status.wire),
+              label: 'Task status: ${task.status.wire}',
+              child: _StatusChip(label: task.status.wire),
             ),
             AccessibleWidget(
-              label: '$completed of ${job.steps.length} steps completed',
-              child: _StatusChip(label: '$completed/${job.steps.length} steps'),
+              label: '$completed of ${task.steps.length} steps completed',
+              child: _StatusChip(
+                label: '$completed/${task.steps.length} steps',
+              ),
             ),
             AccessibleWidget(
-              label: 'Job ID: .agent/jobs/${job.id}',
-              child: _StatusChip(label: '.agent/jobs/${job.id}'),
+              label: 'Task ID: .agent/tasks/${task.id}',
+              child: _StatusChip(label: '.agent/tasks/${task.id}'),
             ),
           ],
         ),
-        if (chat.jobStatusMessage != null) ...[
+        if (chat.taskStatusMessage != null) ...[
           const SizedBox(height: 8),
-          Text(chat.jobStatusMessage!, style: theme.textTheme.bodySmall),
+          Text(chat.taskStatusMessage!, style: theme.textTheme.bodySmall),
         ],
         const SizedBox(height: 10),
-        _Actions(chat: chat, job: job, next: next),
-        if (job.pendingApproval != null) ...[
+        _Actions(chat: chat, task: task, next: next),
+        if (task.pendingApproval != null) ...[
           const SizedBox(height: 10),
-          _ApprovalCard(chat: chat, job: job),
+          _ApprovalCard(chat: chat, task: task),
         ],
-        if (job.pendingQuestion != null) ...[
+        if (task.pendingQuestion != null) ...[
           const SizedBox(height: 10),
-          _QuestionCard(chat: chat, job: job),
+          _QuestionCard(chat: chat, task: task),
         ],
         const SizedBox(height: 12),
         _Section(
           title: 'Goal',
-          child: Text(job.goal, style: theme.textTheme.bodyMedium),
+          child: Text(task.goal, style: theme.textTheme.bodyMedium),
         ),
-        if (job.memorySummary.trim().isNotEmpty) ...[
+        if (task.memorySummary.trim().isNotEmpty) ...[
           const SizedBox(height: 10),
           _Section(
             title: 'Memory',
-            child: Text(job.memorySummary, style: theme.textTheme.bodySmall),
+            child: Text(task.memorySummary, style: theme.textTheme.bodySmall),
           ),
         ],
         const SizedBox(height: 10),
         _Section(
           title: 'Plan',
-          child: _StepList(job: job),
+          child: _StepList(task: task),
         ),
         const SizedBox(height: 10),
         _Section(
           title: 'Artifacts',
-          child: _ArtifactList(chat: chat, job: job),
+          child: _ArtifactList(chat: chat, task: task),
         ),
         const SizedBox(height: 10),
         _Section(
           title: 'Recent Runs',
-          child: _RunList(job: job),
+          child: _RunList(task: task),
         ),
         const SizedBox(height: 16),
       ],
@@ -271,40 +273,40 @@ class _JobBody extends StatelessWidget {
 
 class _Actions extends StatelessWidget {
   final ChatService chat;
-  final JobDocument job;
-  final JobStep? next;
+  final TaskDocument task;
+  final TaskStep? next;
 
-  const _Actions({required this.chat, required this.job, required this.next});
+  const _Actions({required this.chat, required this.task, required this.next});
 
   @override
   Widget build(BuildContext context) {
     final canRun =
-        !chat.jobBusy &&
+        !chat.taskBusy &&
         next != null &&
-        job.status != JobStatus.completed &&
-        job.status != JobStatus.cancelled;
+        task.status != TaskStatus.completed &&
+        task.status != TaskStatus.cancelled;
     final canRetry =
-        !chat.jobBusy &&
-        (job.status == JobStatus.blocked || job.status == JobStatus.failed);
+        !chat.taskBusy &&
+        (task.status == TaskStatus.blocked || task.status == TaskStatus.failed);
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       children: [
-        if (chat.jobBusy)
+        if (chat.taskBusy)
           AccessibleWidget(
-            label: chat.jobCancellationRequested
-                ? 'Cancelling job...'
-                : 'Cancel job run',
+            label: chat.taskCancellationRequested
+                ? 'Cancelling task...'
+                : 'Cancel task run',
             isButton: true,
-            enabled: !chat.jobCancellationRequested,
+            enabled: !chat.taskCancellationRequested,
             child: FilledButton.tonalIcon(
               icon: const Icon(Icons.stop),
               label: Text(
-                chat.jobCancellationRequested ? 'Cancelling...' : 'Cancel Run',
+                chat.taskCancellationRequested ? 'Cancelling...' : 'Cancel Run',
               ),
-              onPressed: chat.jobCancellationRequested
+              onPressed: chat.taskCancellationRequested
                   ? null
-                  : () => unawaited(chat.cancelJobRun()),
+                  : () => unawaited(chat.cancelTaskRun()),
             ),
           ),
         AccessibleWidget(
@@ -314,39 +316,39 @@ class _Actions extends StatelessWidget {
           child: FilledButton.icon(
             icon: const Icon(Icons.play_arrow),
             label: const Text('Run Next'),
-            onPressed: canRun ? () => unawaited(chat.runNextJobPhase()) : null,
+            onPressed: canRun ? () => unawaited(chat.runNextTaskPhase()) : null,
           ),
         ),
         AccessibleWidget(
-          label: 'Run entire job',
+          label: 'Run entire task',
           isButton: true,
           enabled: canRun,
           child: FilledButton.tonalIcon(
             icon: const Icon(Icons.fast_forward),
-            label: const Text('Run Job'),
-            onPressed: canRun ? () => unawaited(chat.runJob()) : null,
+            label: const Text('Run Task'),
+            onPressed: canRun ? () => unawaited(chat.runTask()) : null,
           ),
         ),
         AccessibleWidget(
           label: 'Approve current phase',
           isButton: true,
-          enabled: !chat.jobBusy && job.pendingApproval != null,
+          enabled: !chat.taskBusy && task.pendingApproval != null,
           child: OutlinedButton.icon(
             icon: const Icon(Icons.check_circle_outline),
             label: const Text('Approve Phase'),
-            onPressed: !chat.jobBusy && job.pendingApproval != null
-                ? () => unawaited(chat.approveJobStep())
+            onPressed: !chat.taskBusy && task.pendingApproval != null
+                ? () => unawaited(chat.approveTaskStep())
                 : null,
           ),
         ),
         AccessibleWidget(
-          label: 'Edit job plan',
+          label: 'Edit task plan',
           isButton: true,
-          enabled: !chat.jobBusy,
+          enabled: !chat.taskBusy,
           child: OutlinedButton.icon(
             icon: const Icon(Icons.edit_note),
             label: const Text('Edit Plan'),
-            onPressed: chat.jobBusy
+            onPressed: chat.taskBusy
                 ? null
                 : () => unawaited(_editPlan(context, chat)),
           ),
@@ -354,13 +356,13 @@ class _Actions extends StatelessWidget {
         AccessibleWidget(
           label: 'Replan unfinished steps',
           isButton: true,
-          enabled: !chat.jobBusy,
+          enabled: !chat.taskBusy,
           child: OutlinedButton.icon(
             icon: const Icon(Icons.route_outlined),
             label: const Text('Replan Unfinished'),
-            onPressed: chat.jobBusy
+            onPressed: chat.taskBusy
                 ? null
-                : () => unawaited(chat.replanRemainingJob()),
+                : () => unawaited(chat.replanRemainingTask()),
           ),
         ),
         if (canRetry)
@@ -370,30 +372,30 @@ class _Actions extends StatelessWidget {
             child: TextButton.icon(
               icon: const Icon(Icons.replay),
               label: const Text('Retry Step'),
-              onPressed: () => unawaited(chat.retryJobPhase()),
+              onPressed: () => unawaited(chat.retryTaskPhase()),
             ),
           ),
         AccessibleWidget(
           label: 'Skip current step',
           isButton: true,
-          enabled: !chat.jobBusy && next != null,
+          enabled: !chat.taskBusy && next != null,
           child: TextButton.icon(
             icon: const Icon(Icons.skip_next),
             label: const Text('Skip Step'),
-            onPressed: !chat.jobBusy && next != null
-                ? () => unawaited(chat.skipJobPhase())
+            onPressed: !chat.taskBusy && next != null
+                ? () => unawaited(chat.skipTaskPhase())
                 : null,
           ),
         ),
         AccessibleWidget(
-          label: 'Stop job',
+          label: 'Stop task',
           isButton: true,
-          enabled: !chat.jobBusy && !job.isTerminal,
+          enabled: !chat.taskBusy && !task.isTerminal,
           child: TextButton.icon(
             icon: const Icon(Icons.stop_circle_outlined),
             label: const Text('Stop'),
-            onPressed: !chat.jobBusy && !job.isTerminal
-                ? () => unawaited(chat.stopJob())
+            onPressed: !chat.taskBusy && !task.isTerminal
+                ? () => unawaited(chat.stopTask())
                 : null,
           ),
         ),
@@ -402,7 +404,7 @@ class _Actions extends StatelessWidget {
   }
 
   Future<void> _editPlan(BuildContext context, ChatService chat) async {
-    final initial = chat.activeJobJson;
+    final initial = chat.activeTaskJson;
     if (initial == null) return;
     final controller = TextEditingController(text: initial);
     final saved = await showDialog<bool>(
@@ -452,7 +454,7 @@ class _Actions extends StatelessWidget {
                           });
                           try {
                             jsonDecode(controller.text);
-                            await chat.updateJobPlan(controller.text);
+                            await chat.updateTaskPlan(controller.text);
                             if (dialogContext.mounted) {
                               Navigator.of(dialogContext).pop(true);
                             }
@@ -474,21 +476,21 @@ class _Actions extends StatelessWidget {
     if (saved == true && context.mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Job plan saved')));
+      ).showSnackBar(const SnackBar(content: Text('Task plan saved')));
     }
   }
 }
 
 class _ApprovalCard extends StatelessWidget {
   final ChatService chat;
-  final JobDocument job;
+  final TaskDocument task;
 
-  const _ApprovalCard({required this.chat, required this.job});
+  const _ApprovalCard({required this.chat, required this.task});
 
   @override
   Widget build(BuildContext context) {
-    final approval = job.pendingApproval!;
-    final step = job.stepById(approval.stepId);
+    final approval = task.pendingApproval!;
+    final step = task.stepById(approval.stepId);
     return _Panel(
       icon: Icons.verified_user_outlined,
       title: 'Approval Required',
@@ -506,9 +508,9 @@ class _ApprovalCard extends StatelessWidget {
             child: FilledButton.icon(
               icon: const Icon(Icons.check_circle_outline),
               label: const Text('Approve Phase'),
-              onPressed: chat.jobBusy
+              onPressed: chat.taskBusy
                   ? null
-                  : () => unawaited(chat.approveJobStep()),
+                  : () => unawaited(chat.approveTaskStep()),
             ),
           ),
         ],
@@ -519,9 +521,9 @@ class _ApprovalCard extends StatelessWidget {
 
 class _QuestionCard extends StatefulWidget {
   final ChatService chat;
-  final JobDocument job;
+  final TaskDocument task;
 
-  const _QuestionCard({required this.chat, required this.job});
+  const _QuestionCard({required this.chat, required this.task});
 
   @override
   State<_QuestionCard> createState() => _QuestionCardState();
@@ -538,7 +540,7 @@ class _QuestionCardState extends State<_QuestionCard> {
 
   @override
   Widget build(BuildContext context) {
-    final question = widget.job.pendingQuestion!;
+    final question = widget.task.pendingQuestion!;
     return _Panel(
       icon: Icons.help_outline,
       title: 'Input Required',
@@ -562,10 +564,10 @@ class _QuestionCardState extends State<_QuestionCard> {
             child: FilledButton.icon(
               icon: const Icon(Icons.send_outlined),
               label: const Text('Submit Answer'),
-              onPressed: widget.chat.jobBusy
+              onPressed: widget.chat.taskBusy
                   ? null
                   : () => unawaited(
-                      widget.chat.answerJobQuestion(_controller.text),
+                      widget.chat.answerTaskQuestion(_controller.text),
                     ),
             ),
           ),
@@ -576,16 +578,16 @@ class _QuestionCardState extends State<_QuestionCard> {
 }
 
 class _StepList extends StatelessWidget {
-  final JobDocument job;
+  final TaskDocument task;
 
-  const _StepList({required this.job});
+  const _StepList({required this.task});
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        for (var i = 0; i < job.steps.length; i++)
-          _StepTile(index: i + 1, step: job.steps[i]),
+        for (var i = 0; i < task.steps.length; i++)
+          _StepTile(index: i + 1, step: task.steps[i]),
       ],
     );
   }
@@ -593,7 +595,7 @@ class _StepList extends StatelessWidget {
 
 class _StepTile extends StatelessWidget {
   final int index;
-  final JobStep step;
+  final TaskStep step;
 
   const _StepTile({required this.index, required this.step});
 
@@ -657,16 +659,16 @@ class _StepTile extends StatelessWidget {
 
 class _ArtifactList extends StatelessWidget {
   final ChatService chat;
-  final JobDocument job;
+  final TaskDocument task;
 
-  const _ArtifactList({required this.chat, required this.job});
+  const _ArtifactList({required this.chat, required this.task});
 
   @override
   Widget build(BuildContext context) {
     final artifacts = {
-      for (final step in job.steps)
+      for (final step in task.steps)
         for (final artifact in step.artifacts) artifact.path: artifact,
-      for (final run in job.runs)
+      for (final run in task.runs)
         for (final artifact in run.artifacts) artifact.path: artifact,
     }.values.toList();
 
@@ -702,7 +704,7 @@ class _ArtifactList extends StatelessWidget {
 
   Future<void> _showArtifact(BuildContext context, String path) async {
     try {
-      final content = await chat.readJobArtifact(path);
+      final content = await chat.readTaskArtifact(path);
       if (!context.mounted) return;
       await showDialog<void>(
         context: context,
@@ -735,13 +737,13 @@ class _ArtifactList extends StatelessWidget {
 }
 
 class _RunList extends StatelessWidget {
-  final JobDocument job;
+  final TaskDocument task;
 
-  const _RunList({required this.job});
+  const _RunList({required this.task});
 
   @override
   Widget build(BuildContext context) {
-    final runs = job.runs.reversed.take(8).toList();
+    final runs = task.runs.reversed.take(8).toList();
     if (runs.isEmpty) {
       return Text('No runs yet.', style: Theme.of(context).textTheme.bodySmall);
     }
@@ -750,7 +752,7 @@ class _RunList extends StatelessWidget {
       children: [
         for (final run in runs)
           AccessibleWidget(
-            label: 'Job run: ${run.stepId}, status ${run.status.wire}',
+            label: 'Task run: ${run.stepId}, status ${run.status.wire}',
             child: ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
@@ -764,32 +766,34 @@ class _RunList extends StatelessWidget {
   }
 }
 
-class _JobList extends StatelessWidget {
+class _TaskList extends StatelessWidget {
   final ChatService chat;
 
-  const _JobList({required this.chat});
+  const _TaskList({required this.chat});
 
   @override
   Widget build(BuildContext context) {
     return StateDisplay(
-      state: chat.availableJobs.isEmpty
+      state: chat.availableTasks.isEmpty
           ? DisplayState.empty
           : DisplayState.content,
       content: ListView.builder(
         padding: const EdgeInsets.all(12),
-        itemCount: chat.availableJobs.length,
+        itemCount: chat.availableTasks.length,
         itemBuilder: (context, index) {
-          final job = chat.availableJobs[index];
+          final task = chat.availableTasks[index];
           return ListTile(
             leading: const Icon(Icons.account_tree_outlined),
-            title: Text(job.title),
-            subtitle: Text('${job.status.wire} - ${job.id}'),
-            onTap: chat.jobBusy ? null : () => unawaited(chat.loadJob(job.id)),
+            title: Text(task.title),
+            subtitle: Text('${task.status.wire} - ${task.id}'),
+            onTap: chat.taskBusy
+                ? null
+                : () => unawaited(chat.loadTask(task.id)),
           );
         },
       ),
-      emptyMessage: 'No jobs in this workspace.',
-      emptyHint: 'Run a job from the chat to see it here',
+      emptyMessage: 'No tasks in this workspace.',
+      emptyHint: 'Run a task from the chat to see it here',
     );
   }
 }
@@ -871,31 +875,31 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-IconData _stepIcon(JobStepStatus status) => switch (status) {
-  JobStepStatus.completed => Icons.check_circle,
-  JobStepStatus.running => Icons.sync,
-  JobStepStatus.blocked => Icons.block,
-  JobStepStatus.failed => Icons.error_outline,
-  JobStepStatus.skipped => Icons.skip_next,
-  JobStepStatus.approved => Icons.verified_user_outlined,
-  JobStepStatus.pending => Icons.radio_button_unchecked,
+IconData _stepIcon(TaskStepStatus status) => switch (status) {
+  TaskStepStatus.completed => Icons.check_circle,
+  TaskStepStatus.running => Icons.sync,
+  TaskStepStatus.blocked => Icons.block,
+  TaskStepStatus.failed => Icons.error_outline,
+  TaskStepStatus.skipped => Icons.skip_next,
+  TaskStepStatus.approved => Icons.verified_user_outlined,
+  TaskStepStatus.pending => Icons.radio_button_unchecked,
 };
 
-Color _stepColor(ThemeData theme, JobStepStatus status) => switch (status) {
-  JobStepStatus.completed => theme.colorScheme.primary,
-  JobStepStatus.running => theme.colorScheme.primary,
-  JobStepStatus.blocked || JobStepStatus.failed => theme.colorScheme.error,
-  JobStepStatus.approved => theme.colorScheme.tertiary,
-  JobStepStatus.skipped ||
-  JobStepStatus.pending => theme.colorScheme.onSurfaceVariant,
+Color _stepColor(ThemeData theme, TaskStepStatus status) => switch (status) {
+  TaskStepStatus.completed => theme.colorScheme.primary,
+  TaskStepStatus.running => theme.colorScheme.primary,
+  TaskStepStatus.blocked || TaskStepStatus.failed => theme.colorScheme.error,
+  TaskStepStatus.approved => theme.colorScheme.tertiary,
+  TaskStepStatus.skipped ||
+  TaskStepStatus.pending => theme.colorScheme.onSurfaceVariant,
 };
 
-IconData _runIcon(JobRunStatus status) => switch (status) {
-  JobRunStatus.completed => Icons.check_circle_outline,
-  JobRunStatus.running => Icons.sync,
-  JobRunStatus.blocked => Icons.block,
-  JobRunStatus.failed => Icons.error_outline,
-  JobRunStatus.cancelled => Icons.cancel_outlined,
-  JobRunStatus.skipped => Icons.skip_next,
-  JobRunStatus.needsReplan || JobRunStatus.replanned => Icons.route_outlined,
+IconData _runIcon(TaskRunStatus status) => switch (status) {
+  TaskRunStatus.completed => Icons.check_circle_outline,
+  TaskRunStatus.running => Icons.sync,
+  TaskRunStatus.blocked => Icons.block,
+  TaskRunStatus.failed => Icons.error_outline,
+  TaskRunStatus.cancelled => Icons.cancel_outlined,
+  TaskRunStatus.skipped => Icons.skip_next,
+  TaskRunStatus.needsReplan || TaskRunStatus.replanned => Icons.route_outlined,
 };

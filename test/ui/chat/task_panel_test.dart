@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/models/job.dart';
+import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
@@ -8,7 +8,7 @@ import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_service.dart';
-import 'package:hermes/ui/chat/job_panel.dart';
+import 'package:hermes/ui/chat/task_panel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -52,14 +52,14 @@ void main() {
   testWidgets(
     'expanded panel renders artifact tiles without ListTile asserts',
     (tester) async {
-      chat.activeJob = _jobWithArtifact();
+      chat.activeTask = _taskWithArtifact();
 
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
             body: SizedBox(
               height: 640,
-              child: JobPanel(
+              child: TaskPanel(
                 chat: chat,
                 expanded: true,
                 onToggleExpanded: () {},
@@ -71,44 +71,44 @@ void main() {
       await tester.pump();
 
       expect(tester.takeException(), isNull);
-      expect(find.text('.agent/jobs/job_test/output.md'), findsOneWidget);
+      expect(find.text('.agent/tasks/task_test/output.md'), findsOneWidget);
     },
   );
 }
 
-JobDocument _jobWithArtifact() {
+TaskDocument _taskWithArtifact() {
   final now = DateTime(2024, 1, 1);
-  return JobDocument(
-    id: 'job_test',
-    title: 'Test job',
+  return TaskDocument(
+    id: 'task_test',
+    title: 'Test task',
     originalPrompt: 'Create an artifact.',
     goal: 'Create an artifact.',
     constraints: const [],
     successCriteria: const [],
     steps: const [
-      JobStep(
+      TaskStep(
         id: 'write',
         title: 'Write artifact',
         objective: 'Write the output artifact.',
         instructions: [],
         mayEditFiles: false,
         artifacts: [
-          JobArtifact(
-            path: '.agent/jobs/job_test/output.md',
+          TaskArtifact(
+            path: '.agent/tasks/task_test/output.md',
             description: 'Generated output',
           ),
         ],
-        status: JobStepStatus.completed,
+        status: TaskStepStatus.completed,
       ),
     ],
-    status: JobStatus.completed,
+    status: TaskStatus.completed,
     currentStepId: null,
     memorySummary: '',
     runs: [
-      JobRun(
+      TaskRun(
         runId: 'run_test',
         stepId: 'write',
-        status: JobRunStatus.completed,
+        status: TaskRunStatus.completed,
         summary: 'Wrote the artifact.',
         memoryUpdate: '',
         toolCalls: [],

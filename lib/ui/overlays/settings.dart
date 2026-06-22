@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hermes/core/enums/diagnostics_visibility.dart';
 import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
-import 'package:hermes/core/models/job_system_settings.dart';
+import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/ui/model_configuration/slider_control.dart';
@@ -18,7 +18,7 @@ class _SettingsState extends State<Settings> {
   late final TextEditingController _modelsDirCtrl;
   DiagnosticsVisibility _diagnosticsVisibility = DiagnosticsVisibility.off;
   CompactionSettings _compactionSettings = const CompactionSettings();
-  JobSystemSettings _jobSystemSettings = const JobSystemSettings();
+  TaskSystemSettings _taskSystemSettings = const TaskSystemSettings();
 
   final PreferencesService preferencesService = serviceProvider
       .get<PreferencesService>();
@@ -29,7 +29,7 @@ class _SettingsState extends State<Settings> {
     final diagnosticsVisibility = await preferencesService
         .getDiagnosticsVisibility();
     final compactionSettings = await preferencesService.getCompactionSettings();
-    final jobSystemSettings = await preferencesService.getJobSystemSettings();
+    final taskSystemSettings = await preferencesService.getTaskSystemSettings();
     if (!mounted) return;
     if (llamaCppDir is String && llamaCppDir.isNotEmpty) {
       _llamaCppDirCtrl.text = llamaCppDir;
@@ -39,7 +39,7 @@ class _SettingsState extends State<Settings> {
     }
     _diagnosticsVisibility = diagnosticsVisibility;
     _compactionSettings = compactionSettings;
-    _jobSystemSettings = jobSystemSettings;
+    _taskSystemSettings = taskSystemSettings;
     setState(() {});
   }
 
@@ -49,10 +49,10 @@ class _SettingsState extends State<Settings> {
     await preferencesService.setCompactionSettings(normalised);
   }
 
-  Future<void> _setJobSystemSettings(JobSystemSettings settings) async {
+  Future<void> _setTaskSystemSettings(TaskSystemSettings settings) async {
     final normalised = settings.normalised();
-    setState(() => _jobSystemSettings = normalised);
-    await preferencesService.setJobSystemSettings(normalised);
+    setState(() => _taskSystemSettings = normalised);
+    await preferencesService.setTaskSystemSettings(normalised);
   }
 
   @override
@@ -81,14 +81,14 @@ class _SettingsState extends State<Settings> {
           modelsDirCtrl: _modelsDirCtrl,
           diagnosticsVisibility: _diagnosticsVisibility,
           compactionSettings: _compactionSettings,
-          jobSystemSettings: _jobSystemSettings,
+          taskSystemSettings: _taskSystemSettings,
           onDiagnosticsChanged: (v) async {
             if (v == null) return;
             setState(() => _diagnosticsVisibility = v);
             await preferencesService.setDiagnosticsVisibility(v);
           },
           onCompactionChanged: _setCompactionSettings,
-          onJobSystemChanged: _setJobSystemSettings,
+          onTaskSystemChanged: _setTaskSystemSettings,
           onSave: () async {
             final llamaCppDir = _llamaCppDirCtrl.text.trim();
             final modelsDir = _modelsDirCtrl.text.trim();
@@ -114,10 +114,10 @@ class _SettingsContent extends StatelessWidget {
   final TextEditingController modelsDirCtrl;
   final DiagnosticsVisibility diagnosticsVisibility;
   final CompactionSettings compactionSettings;
-  final JobSystemSettings jobSystemSettings;
+  final TaskSystemSettings taskSystemSettings;
   final Future<void> Function(DiagnosticsVisibility?) onDiagnosticsChanged;
   final Future<void> Function(CompactionSettings) onCompactionChanged;
-  final Future<void> Function(JobSystemSettings) onJobSystemChanged;
+  final Future<void> Function(TaskSystemSettings) onTaskSystemChanged;
   final Future<void> Function() onSave;
 
   const _SettingsContent({
@@ -125,10 +125,10 @@ class _SettingsContent extends StatelessWidget {
     required this.modelsDirCtrl,
     required this.diagnosticsVisibility,
     required this.compactionSettings,
-    required this.jobSystemSettings,
+    required this.taskSystemSettings,
     required this.onDiagnosticsChanged,
     required this.onCompactionChanged,
-    required this.onJobSystemChanged,
+    required this.onTaskSystemChanged,
     required this.onSave,
   });
 
@@ -148,7 +148,7 @@ class _SettingsContent extends StatelessWidget {
         const SizedBox(height: 28),
         ..._compactionSection(context),
         const SizedBox(height: 28),
-        ..._jobSystemSection(context),
+        ..._taskSystemSection(context),
         const SizedBox(height: 24),
         AccessibleWidget(
           label: 'Save settings',
@@ -261,26 +261,26 @@ class _SettingsContent extends StatelessWidget {
     ),
   ];
 
-  List<Widget> _jobSystemSection(BuildContext context) => [
+  List<Widget> _taskSystemSection(BuildContext context) => [
     const Text(
-      'Job System',
+      'Task System',
       style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
     ),
     const SizedBox(height: 8),
     SwitchListTile(
       contentPadding: EdgeInsets.zero,
-      title: const Text('Enable structured jobs'),
-      value: jobSystemSettings.enabled,
+      title: const Text('Enable structured tasks'),
+      value: taskSystemSettings.enabled,
       onChanged: (enabled) =>
-          onJobSystemChanged(jobSystemSettings.copyWith(enabled: enabled)),
+          onTaskSystemChanged(taskSystemSettings.copyWith(enabled: enabled)),
     ),
     SwitchListTile(
       contentPadding: EdgeInsets.zero,
       title: const Text('Require approval before execution'),
-      value: jobSystemSettings.requireApprovalBeforeExecution,
-      onChanged: jobSystemSettings.enabled
-          ? (enabled) => onJobSystemChanged(
-              jobSystemSettings.copyWith(
+      value: taskSystemSettings.requireApprovalBeforeExecution,
+      onChanged: taskSystemSettings.enabled
+          ? (enabled) => onTaskSystemChanged(
+              taskSystemSettings.copyWith(
                 requireApprovalBeforeExecution: enabled,
               ),
             )
@@ -289,10 +289,10 @@ class _SettingsContent extends StatelessWidget {
     SwitchListTile(
       contentPadding: EdgeInsets.zero,
       title: const Text('Require approval before file edits'),
-      value: jobSystemSettings.requireApprovalBeforeFileEdits,
-      onChanged: jobSystemSettings.enabled
-          ? (enabled) => onJobSystemChanged(
-              jobSystemSettings.copyWith(
+      value: taskSystemSettings.requireApprovalBeforeFileEdits,
+      onChanged: taskSystemSettings.enabled
+          ? (enabled) => onTaskSystemChanged(
+              taskSystemSettings.copyWith(
                 requireApprovalBeforeFileEdits: enabled,
               ),
             )
@@ -300,11 +300,11 @@ class _SettingsContent extends StatelessWidget {
     ),
     SwitchListTile(
       contentPadding: EdgeInsets.zero,
-      title: const Text('Show job messages in chat'),
-      value: jobSystemSettings.showJobMessagesInChat,
-      onChanged: jobSystemSettings.enabled
-          ? (enabled) => onJobSystemChanged(
-              jobSystemSettings.copyWith(showJobMessagesInChat: enabled),
+      title: const Text('Show task messages in chat'),
+      value: taskSystemSettings.showTaskMessagesInChat,
+      onChanged: taskSystemSettings.enabled
+          ? (enabled) => onTaskSystemChanged(
+              taskSystemSettings.copyWith(showTaskMessagesInChat: enabled),
             )
           : null,
     ),

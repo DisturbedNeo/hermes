@@ -10,8 +10,8 @@ import 'package:hermes/core/helpers/chat/context_estimator.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_token.dart';
-import 'package:hermes/core/models/job.dart';
-import 'package:hermes/core/models/job_system_settings.dart';
+import 'package:hermes/core/models/task.dart';
+import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/saved_chat.dart';
 import 'package:hermes/core/models/system_prompt.dart';
@@ -22,9 +22,9 @@ import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
 import 'package:hermes/core/helpers/chat/tool_caller.dart';
-import 'package:hermes/core/services/job_system/job_model_output.dart';
-import 'package:hermes/core/services/job_system/job_service.dart';
-import 'package:hermes/core/services/job_system/job_summary.dart';
+import 'package:hermes/core/services/task_system/task_model_output.dart';
+import 'package:hermes/core/services/task_system/task_service.dart';
+import 'package:hermes/core/services/task_system/task_summary.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/helpers/chat/payload_builder.dart';
@@ -44,7 +44,7 @@ class ChatService extends ChangeNotifier implements Disposable {
   final ChatStream chatStream = ChatStream<ChatToken>();
 
   final ToolService _toolService;
-  final JobService _jobService;
+  final TaskService _taskService;
   final ChatLibraryService _chatLibrary;
   final WorkspaceService _workspaceService;
   final PreferencesService _preferencesService;
@@ -73,36 +73,36 @@ class ChatService extends ChangeNotifier implements Disposable {
   WorkspaceAttachment? workspace;
   SystemPromptSnapshot? currentSystemPromptSnapshot;
   ExecutionMode executionMode = ExecutionMode.chat;
-  JobSnapshot? activeJob;
-  List<JobSummary> availableJobs = const [];
-  JobSystemSettings jobSystemSettings = const JobSystemSettings();
-  bool jobBusy = false;
-  bool jobCancellationRequested = false;
-  String? jobStatusMessage;
-  Object? jobError;
-  String? jobModelOutputTitle;
-  String jobModelOutputText = '';
-  String jobModelOutputReasoning = '';
-  bool jobModelOutputActive = false;
-  String? _jobModelOutputLabel;
-  String? _jobModelOutputTextSection;
-  String? _jobModelOutputReasoningLabel;
-  String? _jobModelOutputMessageId;
-  int? _jobModelOutputContextEstimate;
-  JobCancellationToken? _jobCancellationToken;
+  TaskSnapshot? activeTask;
+  List<TaskSummary> availableTasks = const [];
+  TaskSystemSettings taskSystemSettings = const TaskSystemSettings();
+  bool taskBusy = false;
+  bool taskCancellationRequested = false;
+  String? taskStatusMessage;
+  Object? taskError;
+  String? taskModelOutputTitle;
+  String taskModelOutputText = '';
+  String taskModelOutputReasoning = '';
+  bool taskModelOutputActive = false;
+  String? _taskModelOutputLabel;
+  String? _taskModelOutputTextSection;
+  String? _taskModelOutputReasoningLabel;
+  String? _taskModelOutputMessageId;
+  int? _taskModelOutputContextEstimate;
+  TaskCancellationToken? _taskCancellationToken;
 
   ChatService({
     String? tabId,
     required this.serverManager,
     required ToolService toolService,
-    JobService? jobService,
+    TaskService? taskService,
     required ChatLibraryService chatLibrary,
     required WorkspaceService workspaceService,
     required PreferencesService preferencesService,
     SystemPromptSnapshot? initialSystemPromptSnapshot,
   }) : tabId = tabId ?? uuid.v7(),
        _toolService = toolService,
-       _jobService = jobService ?? JobService(toolService: toolService),
+       _taskService = taskService ?? TaskService(toolService: toolService),
        _chatLibrary = chatLibrary,
        _workspaceService = workspaceService,
        _preferencesService = preferencesService {
@@ -110,7 +110,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     messageStore.setMessages([systemPrompt]);
     messageStore.addListener(_handleMessagesChanged);
     _preferencesService.addListener(_handlePreferencesChanged);
-    unawaited(_loadJobSystemSettings());
+    unawaited(_loadTaskSystemSettings());
     chatStream.onStop = serverManager.diagnostics.recordStreamEnded;
     currentModelSnapshot = _activeServerSnapshot;
   }
@@ -135,8 +135,8 @@ class ChatService extends ChangeNotifier implements Disposable {
 
   bool get workspaceToolsEnabled => hasActiveWorkspace;
 
-  String? get activeJobJson =>
-      activeJob == null ? null : _jobService.encodeJob(activeJob!);
+  String? get activeTaskJson =>
+      activeTask == null ? null : _taskService.encodeTask(activeTask!);
 
   List<String> get defaultToolIds => workspaceToolsEnabled
       ? _toolService.defaultToolIds(includeWorkspaceTools: true)
@@ -172,14 +172,14 @@ class ChatService extends ChangeNotifier implements Disposable {
       await chatStream.stop();
     }
 
-    await _deleteTransientJobsForCurrentScope();
+    await _deleteTransientTasksForCurrentScope();
     _clearSavedState();
     currentSystemPromptSnapshot = systemPromptSnapshot;
-    activeJob = null;
-    availableJobs = const [];
-    jobError = null;
-    jobStatusMessage = null;
-    _clearJobModelOutput(notify: false);
+    activeTask = null;
+    availableTasks = const [];
+    taskError = null;
+    taskStatusMessage = null;
+    _clearTaskModelOutput(notify: false);
     currentModelSnapshot = _activeServerSnapshot;
     messageStore.setMessages([
       systemPrompt.copyWith(text: _buildSystemPrompt()),
@@ -197,30 +197,30 @@ class ChatService extends ChangeNotifier implements Disposable {
     final snapshot = await _chatLibrary.getChat(id);
     if (snapshot == null) return false;
 
-    await _deleteTransientJobsForCurrentScope();
+    await _deleteTransientTasksForCurrentScope();
     _loadingSnapshot = true;
     try {
       currentChatId = snapshot.chat.id;
       _chatSessionScopeId = snapshot.chat.id;
       currentSavedChat = snapshot.chat;
       currentModelSnapshot = snapshot.chat.modelSnapshot;
-      _clearJobModelOutput(notify: false);
+      _clearTaskModelOutput(notify: false);
       workspace = await _restoreWorkspace(snapshot.chat.workspace);
       if (workspace != null && workspace?.missing != true) {
-        activeJob = await _recoverJobSnapshot(
+        activeTask = await _recoverTaskSnapshot(
           workspace!,
-          await _jobService.loadLatestJob(
+          await _taskService.loadLatestTask(
             workspace!,
             chatSessionId: snapshot.chat.id,
           ),
         );
-        availableJobs = await _jobService.listJobs(
+        availableTasks = await _taskService.listTasks(
           workspace!,
           chatSessionId: snapshot.chat.id,
         );
       } else {
-        availableJobs = const [];
-        activeJob = null;
+        availableTasks = const [];
+        activeTask = null;
       }
       currentSystemPromptSnapshot = snapshot.chat.systemPromptSnapshot;
       _dirty = false;
@@ -247,7 +247,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     );
     await _chatLibrary.deleteChat(chatId);
     try {
-      await _deleteJobsForChatSessionInWorkspaces(chatId, workspaces);
+      await _deleteTasksForChatSessionInWorkspaces(chatId, workspaces);
     } finally {
       await resetIfCurrentSavedChatDeleted(chatId);
     }
@@ -363,19 +363,19 @@ class ChatService extends ChangeNotifier implements Disposable {
         previousWorkspace != null &&
         !previousWorkspace.missing &&
         previousWorkspace.rootPath != nextWorkspace.rootPath) {
-      await _jobService.deleteJobsForChatSession(
+      await _taskService.deleteTasksForChatSession(
         previousWorkspace,
         chatSessionId: previousScopeId,
       );
     }
     workspace = nextWorkspace;
     _syncSystemPrompt();
-    final scopeId = _jobScopeId;
-    activeJob = await _recoverJobSnapshot(
+    final scopeId = _taskScopeId;
+    activeTask = await _recoverTaskSnapshot(
       workspace!,
-      await _jobService.loadLatestJob(workspace!, chatSessionId: scopeId),
+      await _taskService.loadLatestTask(workspace!, chatSessionId: scopeId),
     );
-    availableJobs = await _jobService.listJobs(
+    availableTasks = await _taskService.listTasks(
       workspace!,
       chatSessionId: scopeId,
     );
@@ -384,10 +384,10 @@ class ChatService extends ChangeNotifier implements Disposable {
 
   Future<void> detachWorkspace() async {
     if (chatStream.isStreaming) return;
-    await _deleteTransientJobsForCurrentScope();
+    await _deleteTransientTasksForCurrentScope();
     workspace = null;
-    activeJob = null;
-    availableJobs = const [];
+    activeTask = null;
+    availableTasks = const [];
     _syncSystemPrompt();
     _markWorkspaceChanged();
   }
@@ -400,14 +400,14 @@ class ChatService extends ChangeNotifier implements Disposable {
   }
 
   void setExecutionMode(ExecutionMode mode) {
-    if (chatStream.isStreaming || jobBusy) return;
+    if (chatStream.isStreaming || taskBusy) return;
     if (executionMode == mode) return;
     executionMode = mode;
     notifyListeners();
   }
 
   Future<void> send(String text, {List<String>? tools = const []}) async {
-    if (chatStream.isStreaming || jobBusy) return;
+    if (chatStream.isStreaming || taskBusy) return;
 
     final t = text.trim();
     if (t.isEmpty) return;
@@ -418,9 +418,9 @@ class ChatService extends ChangeNotifier implements Disposable {
       return;
     }
 
-    if (executionMode == ExecutionMode.job) {
-      final settings = await _refreshJobSystemSettings();
-      await _startJobFromPrompt(
+    if (executionMode == ExecutionMode.task) {
+      final settings = await _refreshTaskSystemSettings();
+      await _startTaskFromPrompt(
         t,
         runFirstPhase: !settings.requireApprovalBeforeExecution,
       );
@@ -448,7 +448,7 @@ class ChatService extends ChangeNotifier implements Disposable {
   }
 
   Future<void> generateOrContinue({List<String>? tools = const []}) async {
-    if (chatStream.isStreaming || jobBusy || messageStore.isEmpty) return;
+    if (chatStream.isStreaming || taskBusy || messageStore.isEmpty) return;
 
     _adoptActiveModelIfRestoreDismissed();
 
@@ -484,260 +484,264 @@ class ChatService extends ChangeNotifier implements Disposable {
     await chatStream.stop();
   }
 
-  Future<void> cancelJobRun() async {
-    if (!jobBusy) return;
-    final token = _jobCancellationToken;
-    jobCancellationRequested = true;
-    jobStatusMessage = 'Cancelling job...';
+  Future<void> cancelTaskRun() async {
+    if (!taskBusy) return;
+    final token = _taskCancellationToken;
+    taskCancellationRequested = true;
+    taskStatusMessage = 'Cancelling task...';
     notifyListeners();
     if (token == null) return;
     await token.cancel();
   }
 
-  Future<void> reloadJobs() async {
+  Future<void> reloadTasks() async {
     final current = workspace;
     if (current == null || current.missing) {
-      availableJobs = const [];
-      activeJob = null;
+      availableTasks = const [];
+      activeTask = null;
       notifyListeners();
       return;
     }
 
-    final scopeId = _jobScopeId;
-    final activeScopeId = activeJob?.chatSessionId;
-    final scopedActiveJob =
-        activeJob != null && (activeScopeId == null || activeScopeId == scopeId)
-        ? activeJob
+    final scopeId = _taskScopeId;
+    final activeScopeId = activeTask?.chatSessionId;
+    final scopedActiveTask =
+        activeTask != null &&
+            (activeScopeId == null || activeScopeId == scopeId)
+        ? activeTask
         : null;
-    activeJob = await _recoverJobSnapshot(
+    activeTask = await _recoverTaskSnapshot(
       current,
-      scopedActiveJob ??
-          await _jobService.loadLatestJob(current, chatSessionId: scopeId),
+      scopedActiveTask ??
+          await _taskService.loadLatestTask(current, chatSessionId: scopeId),
     );
-    availableJobs = await _jobService.listJobs(current, chatSessionId: scopeId);
+    availableTasks = await _taskService.listTasks(
+      current,
+      chatSessionId: scopeId,
+    );
     notifyListeners();
   }
 
-  Future<JobSnapshot?> _recoverJobSnapshot(
+  Future<TaskSnapshot?> _recoverTaskSnapshot(
     WorkspaceAttachment current,
-    JobSnapshot? snapshot,
+    TaskSnapshot? snapshot,
   ) {
     if (snapshot == null) return Future.value();
-    return _jobService.recoverJob(workspace: current, snapshot: snapshot);
+    return _taskService.recoverTask(workspace: current, snapshot: snapshot);
   }
 
-  Future<void> resumeLatestJob() async {
+  Future<void> resumeLatestTask() async {
     final current = workspace;
-    final scopeId = _jobScopeId;
-    if (current == null || current.missing || jobBusy) {
+    final scopeId = _taskScopeId;
+    if (current == null || current.missing || taskBusy) {
       return;
     }
-    activeJob = await _recoverJobSnapshot(
+    activeTask = await _recoverTaskSnapshot(
       current,
-      await _jobService.loadLatestJob(current, chatSessionId: scopeId),
+      await _taskService.loadLatestTask(current, chatSessionId: scopeId),
     );
-    await reloadJobs();
+    await reloadTasks();
   }
 
-  Future<void> loadJob(String jobId) async {
+  Future<void> loadTask(String taskId) async {
     final current = workspace;
-    final scopeId = _jobScopeId;
-    if (current == null || current.missing || jobBusy) {
+    final scopeId = _taskScopeId;
+    if (current == null || current.missing || taskBusy) {
       return;
     }
-    activeJob = await _recoverJobSnapshot(
+    activeTask = await _recoverTaskSnapshot(
       current,
-      await _jobService.loadJob(current, jobId, chatSessionId: scopeId),
+      await _taskService.loadTask(current, taskId, chatSessionId: scopeId),
     );
-    await reloadJobs();
+    await reloadTasks();
   }
 
-  Future<void> runNextJobPhase() async {
-    await _runNextJobStepInternal();
+  Future<void> runNextTaskPhase() async {
+    await _runNextTaskStepInternal();
   }
 
-  Future<void> runJob() async {
-    await _runJobInternal();
+  Future<void> runTask() async {
+    await _runTaskInternal();
   }
 
-  Future<void> planActiveJob({bool runAfterPlanning = false}) async {
-    if (runAfterPlanning) await runJob();
+  Future<void> planActiveTask({bool runAfterPlanning = false}) async {
+    if (runAfterPlanning) await runTask();
   }
 
-  Future<void> _runJobInternal({bool keepBusy = false}) async {
+  Future<void> _runTaskInternal({bool keepBusy = false}) async {
     final currentWorkspace = workspace;
     final client = serverManager.chatClient;
     if (currentWorkspace == null ||
         currentWorkspace.missing ||
         client == null ||
-        activeJob == null ||
-        jobBusy && !keepBusy) {
+        activeTask == null ||
+        taskBusy && !keepBusy) {
       return;
     }
 
-    final token = _beginJobCancellationScope(reuseExisting: keepBusy);
+    final token = _beginTaskCancellationScope(reuseExisting: keepBusy);
 
     if (!keepBusy) {
-      jobBusy = true;
-      jobError = null;
-      _beginJobModelOutput('Job Run Model Output');
+      taskBusy = true;
+      taskError = null;
+      _beginTaskModelOutput('Task Run Model Output');
       notifyListeners();
     }
-    await _refreshJobSystemSettings();
-    jobStatusMessage = 'Running job...';
+    await _refreshTaskSystemSettings();
+    taskStatusMessage = 'Running task...';
     notifyListeners();
 
     try {
       while (true) {
         if (token.isCancelled) break;
-        final snapshot = activeJob;
+        final snapshot = activeTask;
         if (snapshot == null) break;
         if (snapshot.nextRunnableStep == null) break;
-        await _runNextJobStepInternal(keepBusy: true);
+        await _runNextTaskStepInternal(keepBusy: true);
         if (token.isCancelled) break;
 
-        final updated = activeJob;
+        final updated = activeTask;
         if (updated == null ||
-            updated.status == JobStatus.completed ||
-            updated.status == JobStatus.blocked ||
-            updated.status == JobStatus.failed ||
-            updated.status == JobStatus.cancelled) {
+            updated.status == TaskStatus.completed ||
+            updated.status == TaskStatus.blocked ||
+            updated.status == TaskStatus.failed ||
+            updated.status == TaskStatus.cancelled) {
           break;
         }
       }
-    } on JobCancelledException {
-      _insertJobAssistantMessage('Job run cancelled.');
+    } on TaskCancelledException {
+      _insertTaskAssistantMessage('Task run cancelled.');
     } catch (e) {
-      jobError = e;
-      _insertJobErrorBubble('Failed to run job: $e');
+      taskError = e;
+      _insertTaskErrorBubble('Failed to run task: $e');
     } finally {
       if (!keepBusy) {
-        jobBusy = false;
-        _endJobCancellationScope(token);
-        jobStatusMessage = null;
-        _finishJobModelOutput();
+        taskBusy = false;
+        _endTaskCancellationScope(token);
+        taskStatusMessage = null;
+        _finishTaskModelOutput();
         notifyListeners();
       }
     }
   }
 
-  Future<void> retryJobPhase() async {
+  Future<void> retryTaskPhase() async {
     final currentWorkspace = workspace;
-    final snapshot = activeJob;
+    final snapshot = activeTask;
     if (currentWorkspace == null ||
         currentWorkspace.missing ||
         snapshot == null ||
-        jobBusy) {
+        taskBusy) {
       return;
     }
 
-    activeJob = await _jobService.retryCurrentStep(
+    activeTask = await _taskService.retryCurrentStep(
       workspace: currentWorkspace,
       snapshot: snapshot,
     );
-    await reloadJobs();
+    await reloadTasks();
   }
 
-  Future<void> skipJobPhase() async {
+  Future<void> skipTaskPhase() async {
     final currentWorkspace = workspace;
-    final snapshot = activeJob;
+    final snapshot = activeTask;
     if (currentWorkspace == null ||
         currentWorkspace.missing ||
         snapshot == null ||
-        jobBusy) {
+        taskBusy) {
       return;
     }
 
-    activeJob = await _jobService.skipCurrentStep(
+    activeTask = await _taskService.skipCurrentStep(
       workspace: currentWorkspace,
       snapshot: snapshot,
     );
-    await reloadJobs();
+    await reloadTasks();
   }
 
-  Future<void> stopJob() async {
+  Future<void> stopTask() async {
     final currentWorkspace = workspace;
-    final snapshot = activeJob;
+    final snapshot = activeTask;
     if (currentWorkspace == null ||
         currentWorkspace.missing ||
         snapshot == null) {
       return;
     }
 
-    if (jobBusy) {
-      await cancelJobRun();
+    if (taskBusy) {
+      await cancelTaskRun();
       return;
     }
 
-    activeJob = await _jobService.stopJob(
+    activeTask = await _taskService.stopTask(
       workspace: currentWorkspace,
       snapshot: snapshot,
     );
-    await reloadJobs();
+    await reloadTasks();
   }
 
-  Future<void> answerJobQuestion(String answer) async {
+  Future<void> answerTaskQuestion(String answer) async {
     final currentWorkspace = workspace;
-    final snapshot = activeJob;
+    final snapshot = activeTask;
     if (currentWorkspace == null ||
         currentWorkspace.missing ||
         snapshot == null ||
-        jobBusy) {
+        taskBusy) {
       return;
     }
 
-    activeJob = await _jobService.answerOpenQuestion(
+    activeTask = await _taskService.answerOpenQuestion(
       workspace: currentWorkspace,
       snapshot: snapshot,
       answer: answer,
     );
-    await reloadJobs();
+    await reloadTasks();
   }
 
-  Future<void> approveJobStep() async {
+  Future<void> approveTaskStep() async {
     final currentWorkspace = workspace;
-    final snapshot = activeJob;
+    final snapshot = activeTask;
     if (currentWorkspace == null ||
         currentWorkspace.missing ||
         snapshot == null ||
-        jobBusy) {
+        taskBusy) {
       return;
     }
 
-    activeJob = await _jobService.approvePendingStep(
+    activeTask = await _taskService.approvePendingStep(
       workspace: currentWorkspace,
       snapshot: snapshot,
     );
-    await reloadJobs();
+    await reloadTasks();
   }
 
   Future<void> _handleSlashCommand(_SlashCommand command) async {
     switch (command.name) {
-      case 'job':
+      case 'task':
         if (command.argument.trim().isEmpty) {
           _insertUserAndAssistant(
             command.raw,
-            'Usage: `/job <request>` creates and runs a structured job.',
+            'Usage: `/task <request>` creates and runs a structured task.',
           );
           return;
         }
-        await _startJobFromPrompt(command.argument, runFirstPhase: true);
+        await _startTaskFromPrompt(command.argument, runFirstPhase: true);
         break;
       case 'plan':
         if (command.argument.trim().isEmpty) {
           _insertUserAndAssistant(
             command.raw,
-            'Usage: `/plan <request>` creates a job plan without running it.',
+            'Usage: `/plan <request>` creates a task plan without running it.',
           );
           return;
         }
-        await _startJobFromPrompt(command.argument, runFirstPhase: false);
+        await _startTaskFromPrompt(command.argument, runFirstPhase: false);
         break;
       case 'refine':
         await _refinePromptFromCommand(command);
         break;
       case 'continue':
-        await _continueJobFromCommand(command.raw);
+        await _continueTaskFromCommand(command.raw);
         break;
     }
   }
@@ -750,14 +754,14 @@ class ChatService extends ChangeNotifier implements Disposable {
     if (prompt.isEmpty) {
       _insertUserAndAssistant(
         command.raw,
-        'Usage: `/refine <request>` creates a Task Brief without planning or running a job.',
+        'Usage: `/refine <request>` creates a Task Brief without planning or running a task.',
       );
       return;
     }
-    if (!await _jobSystemEnabled()) {
+    if (!await _taskSystemEnabled()) {
       _insertUserAndAssistant(
         command.raw,
-        'Structured jobs are disabled in Settings.',
+        'Structured tasks are disabled in Settings.',
       );
       return;
     }
@@ -773,20 +777,20 @@ class ChatService extends ChangeNotifier implements Disposable {
       ),
     );
 
-    jobBusy = true;
-    final token = _beginJobCancellationScope();
-    jobError = null;
-    jobStatusMessage = 'Refining task brief...';
-    _beginJobModelOutput('Task Brief Model Output');
+    taskBusy = true;
+    final token = _beginTaskCancellationScope();
+    taskError = null;
+    taskStatusMessage = 'Refining task brief...';
+    _beginTaskModelOutput('Task Brief Model Output');
     notifyListeners();
 
     try {
-      final brief = await _jobService.refineTaskBrief(
+      final brief = await _taskService.refineTaskBrief(
         client: client,
         workspace: workspace?.missing == true ? null : workspace,
         userPrompt: prompt,
         selectedMode: ExecutionMode.refine,
-        onModelOutput: _handleJobModelOutput,
+        onModelOutput: _handleTaskModelOutput,
         cancellationToken: token,
       );
       messageStore.upsert(
@@ -798,25 +802,25 @@ class ChatService extends ChangeNotifier implements Disposable {
           createdAt: DateTime.now(),
         ),
       );
-    } on JobCancelledException {
-      _insertJobAssistantMessage('Task brief refinement cancelled.');
+    } on TaskCancelledException {
+      _insertTaskAssistantMessage('Task brief refinement cancelled.');
     } catch (e) {
-      jobError = e;
-      _insertJobErrorBubble('Failed to refine task brief: $e');
+      taskError = e;
+      _insertTaskErrorBubble('Failed to refine task brief: $e');
     } finally {
-      jobBusy = false;
-      _endJobCancellationScope(token);
-      jobStatusMessage = null;
-      _finishJobModelOutput();
+      taskBusy = false;
+      _endTaskCancellationScope(token);
+      taskStatusMessage = null;
+      _finishTaskModelOutput();
       notifyListeners();
     }
   }
 
-  Future<void> _continueJobFromCommand(String rawCommand) async {
-    if (!await _jobSystemEnabled()) {
+  Future<void> _continueTaskFromCommand(String rawCommand) async {
+    if (!await _taskSystemEnabled()) {
       _insertUserAndAssistant(
         rawCommand,
-        'Structured jobs are disabled in Settings.',
+        'Structured tasks are disabled in Settings.',
       );
       return;
     }
@@ -839,7 +843,7 @@ class ChatService extends ChangeNotifier implements Disposable {
           id: uuid.v7(),
           role: MessageRole.assistant,
           text:
-              '`/continue` needs an attached workspace with a saved job under `.agent/jobs`.',
+              '`/continue` needs an attached workspace with a saved task under `.agent/tasks`.',
           reasoning: '',
           createdAt: DateTime.now(),
         ),
@@ -847,18 +851,21 @@ class ChatService extends ChangeNotifier implements Disposable {
       return;
     }
 
-    final scopeId = _jobScopeId;
-    activeJob ??= await _recoverJobSnapshot(
+    final scopeId = _taskScopeId;
+    activeTask ??= await _recoverTaskSnapshot(
       currentWorkspace,
-      await _jobService.loadLatestJob(currentWorkspace, chatSessionId: scopeId),
+      await _taskService.loadLatestTask(
+        currentWorkspace,
+        chatSessionId: scopeId,
+      ),
     );
-    await reloadJobs();
-    if (activeJob == null) {
+    await reloadTasks();
+    if (activeTask == null) {
       messageStore.upsert(
         Bubble(
           id: uuid.v7(),
           role: MessageRole.assistant,
-          text: 'No saved job was found for this chat.',
+          text: 'No saved task was found for this chat.',
           reasoning: '',
           createdAt: DateTime.now(),
         ),
@@ -866,119 +873,119 @@ class ChatService extends ChangeNotifier implements Disposable {
       return;
     }
 
-    await _runJobInternal();
+    await _runTaskInternal();
   }
 
-  Future<String> readJobArtifact(String artifactPath) async {
+  Future<String> readTaskArtifact(String artifactPath) async {
     final currentWorkspace = workspace;
     if (currentWorkspace == null || currentWorkspace.missing) {
       throw StateError('No active workspace is attached.');
     }
-    return _jobService.readArtifact(
+    return _taskService.readArtifact(
       workspace: currentWorkspace,
       artifactPath: artifactPath,
     );
   }
 
-  Future<void> updateJobTaskBrief(String rawJson) async {
-    await updateJobPlan(rawJson);
+  Future<void> updateTaskTaskBrief(String rawJson) async {
+    await updateTaskPlan(rawJson);
   }
 
-  Future<void> updateJobSpec(String rawJson) async {
-    await updateJobPlan(rawJson);
+  Future<void> updateTaskSpec(String rawJson) async {
+    await updateTaskPlan(rawJson);
   }
 
-  Future<void> updateJobPlan(String rawJson) async {
+  Future<void> updateTaskPlan(String rawJson) async {
     final currentWorkspace = workspace;
-    final snapshot = activeJob;
+    final snapshot = activeTask;
     if (currentWorkspace == null ||
         currentWorkspace.missing ||
         snapshot == null ||
-        jobBusy) {
+        taskBusy) {
       return;
     }
 
-    jobBusy = true;
-    jobError = null;
-    jobStatusMessage = 'Updating job plan...';
+    taskBusy = true;
+    taskError = null;
+    taskStatusMessage = 'Updating task plan...';
     notifyListeners();
     try {
-      activeJob = await _jobService.updateJobPlan(
+      activeTask = await _taskService.updateTaskPlan(
         workspace: currentWorkspace,
         snapshot: snapshot,
         rawJson: rawJson,
       );
-      await reloadJobs();
-      _insertJobAssistantMessage(
-        'Job plan updated for **${activeJob!.title}**.',
+      await reloadTasks();
+      _insertTaskAssistantMessage(
+        'Task plan updated for **${activeTask!.title}**.',
       );
     } catch (e) {
-      jobError = e;
+      taskError = e;
       rethrow;
     } finally {
-      jobBusy = false;
-      jobStatusMessage = null;
+      taskBusy = false;
+      taskStatusMessage = null;
       notifyListeners();
     }
   }
 
-  Future<void> replanRemainingJob() async {
+  Future<void> replanRemainingTask() async {
     final currentWorkspace = workspace;
     final client = serverManager.chatClient;
-    final snapshot = activeJob;
+    final snapshot = activeTask;
     if (currentWorkspace == null ||
         currentWorkspace.missing ||
         client == null ||
         snapshot == null ||
-        jobBusy) {
+        taskBusy) {
       return;
     }
 
-    jobBusy = true;
-    final token = _beginJobCancellationScope();
-    jobError = null;
-    jobStatusMessage = 'Replanning unfinished work...';
-    _beginJobModelOutput('Replan Model Output');
+    taskBusy = true;
+    final token = _beginTaskCancellationScope();
+    taskError = null;
+    taskStatusMessage = 'Replanning unfinished work...';
+    _beginTaskModelOutput('Replan Model Output');
     notifyListeners();
     try {
-      activeJob = await _jobService.replanUnfinished(
+      activeTask = await _taskService.replanUnfinished(
         client: client,
         workspace: currentWorkspace,
         snapshot: snapshot,
-        baseSystemPrompt: _buildJobSystemPrompt(snapshot),
-        onModelOutput: _handleJobModelOutput,
+        baseSystemPrompt: _buildTaskSystemPrompt(snapshot),
+        onModelOutput: _handleTaskModelOutput,
         cancellationToken: token,
       );
-      await reloadJobs();
-      _insertJobAssistantMessage(
-        'Unfinished work replanned for **${activeJob!.title}**. Next step: `${activeJob!.currentStepId ?? 'none'}`.',
+      await reloadTasks();
+      _insertTaskAssistantMessage(
+        'Unfinished work replanned for **${activeTask!.title}**. Next step: `${activeTask!.currentStepId ?? 'none'}`.',
       );
-    } on JobCancelledException {
-      _insertJobAssistantMessage('Replan cancelled.');
+    } on TaskCancelledException {
+      _insertTaskAssistantMessage('Replan cancelled.');
     } catch (e) {
-      jobError = e;
+      taskError = e;
       rethrow;
     } finally {
-      jobBusy = false;
-      _endJobCancellationScope(token);
-      jobStatusMessage = null;
-      _finishJobModelOutput();
+      taskBusy = false;
+      _endTaskCancellationScope(token);
+      taskStatusMessage = null;
+      _finishTaskModelOutput();
       notifyListeners();
     }
   }
 
-  Future<void> _startJobFromPrompt(
+  Future<void> _startTaskFromPrompt(
     String prompt, {
     required bool runFirstPhase,
   }) async {
     final currentWorkspace = workspace;
     final client = serverManager.chatClient;
     if (client == null) return;
-    final settings = await _refreshJobSystemSettings();
+    final settings = await _refreshTaskSystemSettings();
     if (!settings.enabled) {
       _insertUserAndAssistant(
         prompt,
-        'Structured jobs are disabled in Settings.',
+        'Structured tasks are disabled in Settings.',
       );
       return;
     }
@@ -1000,7 +1007,7 @@ class ChatService extends ChangeNotifier implements Disposable {
           id: uuid.v7(),
           role: MessageRole.assistant,
           text:
-              'Job mode needs an attached workspace so it can persist `.agent/jobs` artifacts. Attach a workspace and try again.',
+              'Task mode needs an attached workspace so it can persist `.agent/tasks` artifacts. Attach a workspace and try again.',
           reasoning: '',
           createdAt: DateTime.now(),
         ),
@@ -1008,112 +1015,112 @@ class ChatService extends ChangeNotifier implements Disposable {
       return;
     }
 
-    jobBusy = true;
-    final token = _beginJobCancellationScope();
-    jobError = null;
-    jobStatusMessage = runFirstPhase
-        ? 'Creating job plan and preparing first phase...'
-        : 'Creating job plan...';
-    _beginJobModelOutput('Job Creation Model Output');
+    taskBusy = true;
+    final token = _beginTaskCancellationScope();
+    taskError = null;
+    taskStatusMessage = runFirstPhase
+        ? 'Creating task plan and preparing first phase...'
+        : 'Creating task plan...';
+    _beginTaskModelOutput('Task Creation Model Output');
     notifyListeners();
 
     try {
-      final scopeId = await _ensureJobScopeId();
-      final snapshot = await _jobService.createJob(
+      final scopeId = await _ensureTaskScopeId();
+      final snapshot = await _taskService.createTask(
         client: client,
         workspace: currentWorkspace,
         userPrompt: prompt,
-        selectedMode: ExecutionMode.job,
+        selectedMode: ExecutionMode.task,
         baseSystemPrompt: _buildSystemPrompt(currentUserRequest: prompt),
         chatSessionId: scopeId,
-        onModelOutput: _handleJobModelOutput,
+        onModelOutput: _handleTaskModelOutput,
         cancellationToken: token,
       );
-      activeJob = snapshot;
-      await reloadJobs();
-      _insertJobAssistantMessage(_jobCreatedMessage(snapshot));
+      activeTask = snapshot;
+      await reloadTasks();
+      _insertTaskAssistantMessage(_taskCreatedMessage(snapshot));
 
       if (runFirstPhase) {
-        activeJob = snapshot;
-        await _runJobInternal(keepBusy: true);
+        activeTask = snapshot;
+        await _runTaskInternal(keepBusy: true);
       }
-    } on JobCancelledException {
-      _insertJobAssistantMessage('Job creation cancelled.');
+    } on TaskCancelledException {
+      _insertTaskAssistantMessage('Task creation cancelled.');
     } catch (e) {
-      jobError = e;
-      _insertJobErrorBubble('Failed to create job: $e');
+      taskError = e;
+      _insertTaskErrorBubble('Failed to create task: $e');
     } finally {
-      jobBusy = false;
-      _endJobCancellationScope(token);
-      jobStatusMessage = null;
-      _finishJobModelOutput();
+      taskBusy = false;
+      _endTaskCancellationScope(token);
+      taskStatusMessage = null;
+      _finishTaskModelOutput();
       notifyListeners();
     }
   }
 
-  Future<void> _runNextJobStepInternal({bool keepBusy = false}) async {
+  Future<void> _runNextTaskStepInternal({bool keepBusy = false}) async {
     final currentWorkspace = workspace;
     final client = serverManager.chatClient;
-    final snapshot = activeJob;
+    final snapshot = activeTask;
     if (currentWorkspace == null ||
         currentWorkspace.missing ||
         client == null ||
         snapshot == null ||
-        jobBusy && !keepBusy) {
+        taskBusy && !keepBusy) {
       return;
     }
 
     final nextStep = snapshot.nextRunnableStep;
     if (nextStep == null) {
-      _insertJobAssistantMessage(
-        'Job `${snapshot.title}` has no pending steps.',
+      _insertTaskAssistantMessage(
+        'Task `${snapshot.title}` has no pending steps.',
       );
       return;
     }
 
-    final token = _beginJobCancellationScope(reuseExisting: keepBusy);
+    final token = _beginTaskCancellationScope(reuseExisting: keepBusy);
 
     if (!keepBusy) {
-      jobBusy = true;
-      jobError = null;
-      _beginJobModelOutput('Job Step Model Output');
+      taskBusy = true;
+      taskError = null;
+      _beginTaskModelOutput('Task Step Model Output');
       notifyListeners();
     }
-    jobStatusMessage = 'Running step ${nextStep.id}: ${nextStep.title}';
+    taskStatusMessage = 'Running step ${nextStep.id}: ${nextStep.title}';
     notifyListeners();
 
     try {
       final compactionSettings = await _preferencesService
           .getCompactionSettings();
-      final updated = await _jobService.runNextStep(
+      final updated = await _taskService.runNextStep(
         client: client,
         workspace: currentWorkspace,
         snapshot: snapshot,
-        baseSystemPrompt: _buildJobSystemPrompt(snapshot),
-        requirePhaseApproval: jobSystemSettings.requireApprovalBeforeFileEdits,
+        baseSystemPrompt: _buildTaskSystemPrompt(snapshot),
+        requirePhaseApproval: taskSystemSettings.requireApprovalBeforeFileEdits,
         compactionSettings: compactionSettings,
         contextLimitTokens: _diagnosticsContextLimit,
         onCompactionStatus: (status) {
-          jobStatusMessage = status;
+          taskStatusMessage = status;
           notifyListeners();
         },
-        onModelOutput: _handleJobModelOutput,
+        onModelOutput: _handleTaskModelOutput,
         cancellationToken: token,
       );
-      activeJob = updated;
-      await reloadJobs();
-      _insertJobAssistantMessage(_stepFinishedMessage(updated));
-    } on JobCancelledException {
-      _insertJobAssistantMessage('Job step cancelled.');
+      activeTask = updated;
+      await reloadTasks();
+      _insertTaskAssistantMessage(_stepFinishedMessage(updated));
+    } on TaskCancelledException {
+      _insertTaskAssistantMessage('Task step cancelled.');
     } catch (e) {
-      jobError = e;
-      _insertJobErrorBubble('Failed to run job step: $e');
+      taskError = e;
+      _insertTaskErrorBubble('Failed to run task step: $e');
     } finally {
       if (!keepBusy) {
-        jobBusy = false;
-        _endJobCancellationScope(token);
-        jobStatusMessage = null;
-        _finishJobModelOutput();
+        taskBusy = false;
+        _endTaskCancellationScope(token);
+        taskStatusMessage = null;
+        _finishTaskModelOutput();
         notifyListeners();
       }
     }
@@ -1389,7 +1396,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     _preferencesService.removeListener(_handlePreferencesChanged);
     _autosaveTimer?.cancel();
     await flushCurrentChat();
-    await _deleteTransientJobsForCurrentScope();
+    await _deleteTransientTasksForCurrentScope();
     _disposed = true;
     messageStore.clearCurrentId();
     messageStore.clearToolBuffers();
@@ -1408,41 +1415,41 @@ class ChatService extends ChangeNotifier implements Disposable {
   }
 
   void _handlePreferencesChanged() {
-    unawaited(_loadJobSystemSettings());
+    unawaited(_loadTaskSystemSettings());
   }
 
-  Future<JobSystemSettings> _loadJobSystemSettings() async {
-    final settings = await _preferencesService.getJobSystemSettings();
+  Future<TaskSystemSettings> _loadTaskSystemSettings() async {
+    final settings = await _preferencesService.getTaskSystemSettings();
     if (_disposed) return settings;
-    if (jobSystemSettings != settings) {
-      jobSystemSettings = settings;
+    if (taskSystemSettings != settings) {
+      taskSystemSettings = settings;
       notifyListeners();
     }
     return settings;
   }
 
-  Future<JobSystemSettings> _refreshJobSystemSettings() {
-    return _loadJobSystemSettings();
+  Future<TaskSystemSettings> _refreshTaskSystemSettings() {
+    return _loadTaskSystemSettings();
   }
 
-  Future<bool> _jobSystemEnabled() async {
-    return (await _refreshJobSystemSettings()).enabled;
+  Future<bool> _taskSystemEnabled() async {
+    return (await _refreshTaskSystemSettings()).enabled;
   }
 
-  String get _jobScopeId => currentChatId ?? _chatSessionScopeId;
+  String get _taskScopeId => currentChatId ?? _chatSessionScopeId;
 
-  Future<String> _ensureJobScopeId() async => _jobScopeId;
+  Future<String> _ensureTaskScopeId() async => _taskScopeId;
 
-  Future<void> _deleteTransientJobsForCurrentScope() async {
+  Future<void> _deleteTransientTasksForCurrentScope() async {
     if (currentChatId != null) return;
     final currentWorkspace = workspace;
     if (currentWorkspace == null || currentWorkspace.missing) return;
-    await _jobService.deleteJobsForChatSession(
+    await _taskService.deleteTasksForChatSession(
       currentWorkspace,
       chatSessionId: _chatSessionScopeId,
     );
-    activeJob = null;
-    availableJobs = const [];
+    activeTask = null;
+    availableTasks = const [];
   }
 
   List<WorkspaceAttachment> _workspacesForSavedChatDeletion(
@@ -1460,106 +1467,106 @@ class ChatService extends ChangeNotifier implements Disposable {
     return byRoot.values.toList();
   }
 
-  Future<void> _deleteJobsForChatSessionInWorkspaces(
+  Future<void> _deleteTasksForChatSessionInWorkspaces(
     String chatSessionId,
     Iterable<WorkspaceAttachment> workspaces,
   ) async {
     for (final workspace in workspaces) {
-      await _jobService.deleteJobsForChatSession(
+      await _taskService.deleteTasksForChatSession(
         workspace,
         chatSessionId: chatSessionId,
       );
     }
   }
 
-  JobCancellationToken _beginJobCancellationScope({
+  TaskCancellationToken _beginTaskCancellationScope({
     bool reuseExisting = false,
   }) {
     if (reuseExisting) {
-      final existing = _jobCancellationToken;
+      final existing = _taskCancellationToken;
       if (existing != null) return existing;
     }
-    final token = JobCancellationToken();
-    _jobCancellationToken = token;
-    jobCancellationRequested = false;
+    final token = TaskCancellationToken();
+    _taskCancellationToken = token;
+    taskCancellationRequested = false;
     return token;
   }
 
-  void _endJobCancellationScope(JobCancellationToken token) {
-    if (!identical(_jobCancellationToken, token)) return;
-    _jobCancellationToken = null;
-    jobCancellationRequested = false;
+  void _endTaskCancellationScope(TaskCancellationToken token) {
+    if (!identical(_taskCancellationToken, token)) return;
+    _taskCancellationToken = null;
+    taskCancellationRequested = false;
   }
 
-  void _beginJobModelOutput(String title) {
-    _finishJobModelOutputBubble(clearCurrent: true);
-    jobModelOutputTitle = title;
-    jobModelOutputText = '';
-    jobModelOutputReasoning = '';
-    jobModelOutputActive = true;
-    _jobModelOutputLabel = null;
-    _jobModelOutputTextSection = null;
-    _jobModelOutputReasoningLabel = null;
-    _jobModelOutputMessageId = null;
-    _jobModelOutputContextEstimate = null;
+  void _beginTaskModelOutput(String title) {
+    _finishTaskModelOutputBubble(clearCurrent: true);
+    taskModelOutputTitle = title;
+    taskModelOutputText = '';
+    taskModelOutputReasoning = '';
+    taskModelOutputActive = true;
+    _taskModelOutputLabel = null;
+    _taskModelOutputTextSection = null;
+    _taskModelOutputReasoningLabel = null;
+    _taskModelOutputMessageId = null;
+    _taskModelOutputContextEstimate = null;
   }
 
-  void _clearJobModelOutput({bool notify = true}) {
-    _finishJobModelOutputBubble(clearCurrent: true);
-    jobModelOutputTitle = null;
-    jobModelOutputText = '';
-    jobModelOutputReasoning = '';
-    jobModelOutputActive = false;
-    _jobModelOutputLabel = null;
-    _jobModelOutputTextSection = null;
-    _jobModelOutputReasoningLabel = null;
-    _jobModelOutputMessageId = null;
-    _jobModelOutputContextEstimate = null;
+  void _clearTaskModelOutput({bool notify = true}) {
+    _finishTaskModelOutputBubble(clearCurrent: true);
+    taskModelOutputTitle = null;
+    taskModelOutputText = '';
+    taskModelOutputReasoning = '';
+    taskModelOutputActive = false;
+    _taskModelOutputLabel = null;
+    _taskModelOutputTextSection = null;
+    _taskModelOutputReasoningLabel = null;
+    _taskModelOutputMessageId = null;
+    _taskModelOutputContextEstimate = null;
     if (notify && !_disposed) notifyListeners();
   }
 
-  void _handleJobModelOutput(JobModelOutputEvent event) {
-    if (jobModelOutputTitle == null) {
-      _beginJobModelOutput('Job Model Output');
+  void _handleTaskModelOutput(TaskModelOutputEvent event) {
+    if (taskModelOutputTitle == null) {
+      _beginTaskModelOutput('Task Model Output');
     }
 
     switch (event.type) {
-      case JobModelOutputEventType.start:
-        _jobModelOutputContextEstimate = event.estimatedContextTokens;
+      case TaskModelOutputEventType.start:
+        _taskModelOutputContextEstimate = event.estimatedContextTokens;
         serverManager.diagnostics.recordStreamStarted(
           estimatedContextTokens: event.estimatedContextTokens,
           contextLimitTokens: _diagnosticsContextLimit,
         );
-        _startJobModelOutputBubble();
-        _jobModelOutputLabel = event.label;
-        _jobModelOutputTextSection = null;
-        _appendJobModelText('\n\n## ${event.label}\n');
-      case JobModelOutputEventType.content:
-        _ensureJobModelTextSection(event.label, 'output');
-        _appendJobModelText(event.text);
+        _startTaskModelOutputBubble();
+        _taskModelOutputLabel = event.label;
+        _taskModelOutputTextSection = null;
+        _appendTaskModelText('\n\n## ${event.label}\n');
+      case TaskModelOutputEventType.content:
+        _ensureTaskModelTextSection(event.label, 'output');
+        _appendTaskModelText(event.text);
         serverManager.diagnostics.recordStreamOutput(event.text);
-        _appendJobModelToken(event);
-      case JobModelOutputEventType.reasoning:
-        _ensureJobModelReasoningSection(event.label);
-        jobModelOutputReasoning += event.text;
+        _appendTaskModelToken(event);
+      case TaskModelOutputEventType.reasoning:
+        _ensureTaskModelReasoningSection(event.label);
+        taskModelOutputReasoning += event.text;
         serverManager.diagnostics.recordStreamOutput(event.text);
-        _appendJobModelToken(event);
-      case JobModelOutputEventType.toolCall:
-        _ensureJobModelTextSection(event.label, 'tool-call');
-        _appendJobModelText('\nTool call:\n${event.text}\n');
+        _appendTaskModelToken(event);
+      case TaskModelOutputEventType.toolCall:
+        _ensureTaskModelTextSection(event.label, 'tool-call');
+        _appendTaskModelText('\nTool call:\n${event.text}\n');
         serverManager.diagnostics.recordStreamOutput(event.text);
-        _appendJobModelToken(event);
-      case JobModelOutputEventType.toolResult:
-        _ensureJobModelTextSection(event.label, 'tool-result');
-        _appendJobModelText('\nTool result:\n${event.text}\n');
-        _appendJobToolResult(event);
-      case JobModelOutputEventType.done:
+        _appendTaskModelToken(event);
+      case TaskModelOutputEventType.toolResult:
+        _ensureTaskModelTextSection(event.label, 'tool-result');
+        _appendTaskModelText('\nTool result:\n${event.text}\n');
+        _appendTaskToolResult(event);
+      case TaskModelOutputEventType.done:
         serverManager.diagnostics.recordStreamEnded();
-        _jobModelOutputTextSection = null;
-        _normaliseJobModelOutputBubble();
-      case JobModelOutputEventType.error:
-        _ensureJobModelTextSection(event.label, 'error');
-        _appendJobModelText('\nError: ${event.text}\n');
+        _taskModelOutputTextSection = null;
+        _normaliseTaskModelOutputBubble();
+      case TaskModelOutputEventType.error:
+        _ensureTaskModelTextSection(event.label, 'error');
+        _appendTaskModelText('\nError: ${event.text}\n');
         serverManager.diagnostics.recordStreamError(event.text);
         messageStore.appendCurrentError(event.text);
     }
@@ -1567,8 +1574,8 @@ class ChatService extends ChangeNotifier implements Disposable {
     if (!_disposed) notifyListeners();
   }
 
-  void _startJobModelOutputBubble() {
-    _finishJobModelOutputBubble(clearCurrent: true);
+  void _startTaskModelOutputBubble() {
+    _finishTaskModelOutputBubble(clearCurrent: true);
     final bubble = Bubble(
       id: uuid.v7(),
       role: MessageRole.assistant,
@@ -1578,27 +1585,27 @@ class ChatService extends ChangeNotifier implements Disposable {
     );
     messageStore.upsert(bubble);
     messageStore.setCurrentId(bubble.id);
-    _jobModelOutputMessageId = bubble.id;
+    _taskModelOutputMessageId = bubble.id;
   }
 
-  void _appendJobModelToken(JobModelOutputEvent event) {
+  void _appendTaskModelToken(TaskModelOutputEvent event) {
     final token = event.token;
     if (token == null) return;
-    if (!_jobModelOutputCurrentBubbleIsActive()) {
-      _startJobModelOutputBubble();
+    if (!_taskModelOutputCurrentBubbleIsActive()) {
+      _startTaskModelOutputBubble();
     }
     messageStore.appendToken(switch (event.type) {
-      JobModelOutputEventType.content => ChatToken(content: token.content),
-      JobModelOutputEventType.reasoning => ChatToken(
+      TaskModelOutputEventType.content => ChatToken(content: token.content),
+      TaskModelOutputEventType.reasoning => ChatToken(
         reasoning: token.reasoning,
       ),
-      JobModelOutputEventType.toolCall => ChatToken(tool: token.tool),
+      TaskModelOutputEventType.toolCall => ChatToken(tool: token.tool),
       _ => token,
     });
   }
 
-  void _appendJobToolResult(JobModelOutputEvent event) {
-    if (!_jobModelOutputCurrentBubbleIsActive()) return;
+  void _appendTaskToolResult(TaskModelOutputEvent event) {
+    if (!_taskModelOutputCurrentBubbleIsActive()) return;
     final current = messageStore.currentMessage;
     final index = event.toolIndex;
     if (current == null || index == null) return;
@@ -1608,14 +1615,14 @@ class ChatService extends ChangeNotifier implements Disposable {
     messageStore.upsert(current.copyWith(tools: updated));
   }
 
-  bool _jobModelOutputCurrentBubbleIsActive() {
-    final id = _jobModelOutputMessageId;
+  bool _taskModelOutputCurrentBubbleIsActive() {
+    final id = _taskModelOutputMessageId;
     final current = messageStore.currentMessage;
     return id != null && current != null && current.id == id;
   }
 
-  void _normaliseJobModelOutputBubble() {
-    final id = _jobModelOutputMessageId;
+  void _normaliseTaskModelOutputBubble() {
+    final id = _taskModelOutputMessageId;
     if (id == null) return;
     final index = messageStore.messages.indexWhere(
       (message) => message.id == id,
@@ -1627,10 +1634,10 @@ class ChatService extends ChangeNotifier implements Disposable {
     }
   }
 
-  void _finishJobModelOutputBubble({required bool clearCurrent}) {
-    final id = _jobModelOutputMessageId;
+  void _finishTaskModelOutputBubble({required bool clearCurrent}) {
+    final id = _taskModelOutputMessageId;
     if (id == null) return;
-    _normaliseJobModelOutputBubble();
+    _normaliseTaskModelOutputBubble();
     final index = messageStore.messages.indexWhere(
       (message) => message.id == id,
     );
@@ -1645,49 +1652,49 @@ class ChatService extends ChangeNotifier implements Disposable {
     if (clearCurrent && messageStore.currentMessage?.id == id) {
       messageStore.clearCurrentId();
     }
-    _jobModelOutputMessageId = null;
+    _taskModelOutputMessageId = null;
   }
 
-  void _ensureJobModelTextSection(String label, String section) {
-    if (_jobModelOutputLabel != label) {
-      _jobModelOutputLabel = label;
-      _jobModelOutputTextSection = null;
-      _appendJobModelText('\n\n## $label\n');
+  void _ensureTaskModelTextSection(String label, String section) {
+    if (_taskModelOutputLabel != label) {
+      _taskModelOutputLabel = label;
+      _taskModelOutputTextSection = null;
+      _appendTaskModelText('\n\n## $label\n');
     }
-    if (_jobModelOutputTextSection == section) return;
-    _jobModelOutputTextSection = section;
+    if (_taskModelOutputTextSection == section) return;
+    _taskModelOutputTextSection = section;
     switch (section) {
       case 'output':
-        _appendJobModelText('\n');
+        _appendTaskModelText('\n');
       case 'tool-call':
-        _appendJobModelText('\n');
+        _appendTaskModelText('\n');
       case 'tool-result':
-        _appendJobModelText('\n');
+        _appendTaskModelText('\n');
       case 'error':
-        _appendJobModelText('\n');
+        _appendTaskModelText('\n');
     }
   }
 
-  void _ensureJobModelReasoningSection(String label) {
-    if (_jobModelOutputReasoningLabel == label) return;
-    _jobModelOutputReasoningLabel = label;
-    jobModelOutputReasoning +=
-        '${jobModelOutputReasoning.trim().isEmpty ? '' : '\n\n'}## $label\n';
+  void _ensureTaskModelReasoningSection(String label) {
+    if (_taskModelOutputReasoningLabel == label) return;
+    _taskModelOutputReasoningLabel = label;
+    taskModelOutputReasoning +=
+        '${taskModelOutputReasoning.trim().isEmpty ? '' : '\n\n'}## $label\n';
   }
 
-  void _appendJobModelText(String text) {
-    jobModelOutputText += text;
+  void _appendTaskModelText(String text) {
+    taskModelOutputText += text;
   }
 
-  void _finishJobModelOutput() {
-    _finishJobModelOutputBubble(clearCurrent: true);
-    jobModelOutputActive = false;
-    _jobModelOutputContextEstimate = null;
+  void _finishTaskModelOutput() {
+    _finishTaskModelOutputBubble(clearCurrent: true);
+    taskModelOutputActive = false;
+    _taskModelOutputContextEstimate = null;
     _updateContextEstimate();
   }
 
-  void _insertJobAssistantMessage(String text) {
-    if (!jobSystemSettings.showJobMessagesInChat) return;
+  void _insertTaskAssistantMessage(String text) {
+    if (!taskSystemSettings.showTaskMessagesInChat) return;
     messageStore.upsert(
       Bubble(
         id: uuid.v7(),
@@ -1699,8 +1706,8 @@ class ChatService extends ChangeNotifier implements Disposable {
     );
   }
 
-  /// Inserts a bubble indicating that a job operation failed.
-  void _insertJobErrorBubble(String errorMessage) {
+  /// Inserts a bubble indicating that a task operation failed.
+  void _insertTaskErrorBubble(String errorMessage) {
     messageStore.upsert(
       Bubble(
         id: uuid.v7(),
@@ -1713,9 +1720,9 @@ class ChatService extends ChangeNotifier implements Disposable {
   }
 
   void _updateContextEstimate() {
-    if (jobModelOutputActive && _jobModelOutputContextEstimate != null) {
+    if (taskModelOutputActive && _taskModelOutputContextEstimate != null) {
       serverManager.diagnostics.updateContextEstimate(
-        _jobModelOutputContextEstimate,
+        _taskModelOutputContextEstimate,
         contextLimitTokens: _diagnosticsContextLimit,
       );
       return;
@@ -1762,7 +1769,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       }
 
       final previousChatId = currentChatId;
-      final previousScopeId = _jobScopeId;
+      final previousScopeId = _taskScopeId;
       final saved = await _chatLibrary.saveChatSnapshot(
         chatId: currentChatId,
         title: title,
@@ -1776,7 +1783,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       _chatSessionScopeId = saved.id;
       currentSavedChat = saved;
       if (previousChatId == null) {
-        await _migrateJobScope(
+        await _migrateTaskScope(
           previousScopeId: previousScopeId,
           savedChatId: saved.id,
         );
@@ -1791,7 +1798,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     return completer.future;
   }
 
-  Future<void> _migrateJobScope({
+  Future<void> _migrateTaskScope({
     required String previousScopeId,
     required String savedChatId,
   }) async {
@@ -1799,28 +1806,28 @@ class ChatService extends ChangeNotifier implements Disposable {
     final currentWorkspace = workspace;
     if (currentWorkspace == null || currentWorkspace.missing) return;
 
-    final activeJobId = activeJob?.id;
-    final jobs = await _jobService.listJobs(
+    final activeTaskId = activeTask?.id;
+    final tasks = await _taskService.listTasks(
       currentWorkspace,
       chatSessionId: previousScopeId,
     );
-    for (final job in jobs) {
-      final snapshot = await _jobService.loadJob(
+    for (final task in tasks) {
+      final snapshot = await _taskService.loadTask(
         currentWorkspace,
-        job.id,
+        task.id,
         chatSessionId: previousScopeId,
       );
       if (snapshot == null) continue;
-      final updated = await _jobService.updateJobChatSessionId(
+      final updated = await _taskService.updateTaskChatSessionId(
         workspace: currentWorkspace,
         snapshot: snapshot,
         chatSessionId: savedChatId,
       );
-      if (updated.id == activeJobId) {
-        activeJob = updated;
+      if (updated.id == activeTaskId) {
+        activeTask = updated;
       }
     }
-    availableJobs = await _jobService.listJobs(
+    availableTasks = await _taskService.listTasks(
       currentWorkspace,
       chatSessionId: savedChatId,
     );
@@ -1846,10 +1853,10 @@ class ChatService extends ChangeNotifier implements Disposable {
     _chatSessionScopeId = uuid.v7();
     currentSavedChat = null;
     workspace = null;
-    activeJob = null;
-    availableJobs = const [];
-    jobError = null;
-    jobStatusMessage = null;
+    activeTask = null;
+    availableTasks = const [];
+    taskError = null;
+    taskStatusMessage = null;
     currentSystemPromptSnapshot = null;
     pendingModelRestore = null;
     pendingModelRestoreIssue = null;
@@ -1924,7 +1931,7 @@ Workspace rules:
         .trim();
   }
 
-  String _buildJobSystemPrompt(JobSnapshot snapshot) {
+  String _buildTaskSystemPrompt(TaskSnapshot snapshot) {
     return _buildSystemPrompt(currentUserRequest: snapshot.originalPrompt);
   }
 
@@ -1978,7 +1985,7 @@ Workspace rules:
 
   _SlashCommand? _parseSlashCommand(String text) {
     final match = RegExp(
-      r'^/(job|plan|refine|continue)\b(.*)$',
+      r'^/(task|plan|refine|continue)\b(.*)$',
     ).firstMatch(text.trim());
     if (match == null) return null;
     return _SlashCommand(
@@ -2036,7 +2043,7 @@ Workspace rules:
     notifyListeners();
   }
 
-  String _taskBriefMessage(RefinedJobBrief brief) {
+  String _taskBriefMessage(RefinedTaskBrief brief) {
     final buffer = StringBuffer()
       ..writeln('Task brief refined: **${brief.title}**')
       ..writeln()
@@ -2074,9 +2081,9 @@ Workspace rules:
     return buffer.toString().trim();
   }
 
-  String _jobCreatedMessage(JobSnapshot snapshot) {
+  String _taskCreatedMessage(TaskSnapshot snapshot) {
     final buffer = StringBuffer()
-      ..writeln('Job created: **${snapshot.title}**')
+      ..writeln('Task created: **${snapshot.title}**')
       ..writeln()
       ..writeln('Status: `${snapshot.status.wire}`')
       ..writeln()
@@ -2087,16 +2094,16 @@ Workspace rules:
     }
     buffer
       ..writeln()
-      ..writeln('Job state is stored under `.agent/jobs/${snapshot.id}/`.');
+      ..writeln('Task state is stored under `.agent/tasks/${snapshot.id}/`.');
     return buffer.toString().trim();
   }
 
-  String _stepFinishedMessage(JobSnapshot snapshot) {
+  String _stepFinishedMessage(TaskSnapshot snapshot) {
     final latestRun = snapshot.runs.isEmpty ? null : snapshot.runs.last;
     final buffer = StringBuffer()
-      ..writeln('Job step finished: **${latestRun?.stepId ?? 'step'}**')
+      ..writeln('Task step finished: **${latestRun?.stepId ?? 'step'}**')
       ..writeln()
-      ..writeln('Job status: `${snapshot.status.wire}`');
+      ..writeln('Task status: `${snapshot.status.wire}`');
     if (latestRun != null) {
       buffer
         ..writeln()

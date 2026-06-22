@@ -1,14 +1,14 @@
-import 'package:hermes/core/models/job.dart';
+import 'package:hermes/core/models/task.dart';
 
-class JobSummary {
+class TaskSummary {
   final String id;
   final String title;
   final String? chatSessionId;
-  final JobStatus status;
+  final TaskStatus status;
   final DateTime updatedAt;
   final String? currentPhaseId;
 
-  const JobSummary({
+  const TaskSummary({
     required this.id,
     required this.title,
     required this.status,

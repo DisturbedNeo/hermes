@@ -1,6 +1,6 @@
 import 'package:hermes/core/models/chat_token.dart';
 
-enum JobModelOutputEventType {
+enum TaskModelOutputEventType {
   start,
   content,
   reasoning,
@@ -10,17 +10,17 @@ enum JobModelOutputEventType {
   error,
 }
 
-typedef JobModelOutputSink = void Function(JobModelOutputEvent event);
+typedef TaskModelOutputSink = void Function(TaskModelOutputEvent event);
 
-class JobModelOutputEvent {
-  final JobModelOutputEventType type;
+class TaskModelOutputEvent {
+  final TaskModelOutputEventType type;
   final String label;
   final String text;
   final ChatToken? token;
   final int? toolIndex;
   final int? estimatedContextTokens;
 
-  const JobModelOutputEvent({
+  const TaskModelOutputEvent({
     required this.type,
     required this.label,
     this.text = '',

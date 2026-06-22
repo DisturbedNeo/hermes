@@ -11,7 +11,7 @@ import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
-import 'package:hermes/core/services/job_system/job_service.dart';
+import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
@@ -28,7 +28,7 @@ void main() {
   late ChatLibraryService chatLibrary;
   late SystemPromptLibraryService promptLibrary;
   late ToolService toolService;
-  late JobService jobService;
+  late TaskService taskService;
   late WorkspaceService workspaceService;
   late ChatTabsService tabs;
 
@@ -41,7 +41,7 @@ void main() {
     await preferences.setDiagnosticsVisibility(DiagnosticsVisibility.compact);
 
     toolService = ToolService();
-    jobService = JobService(toolService: toolService);
+    taskService = TaskService(toolService: toolService);
     workspaceService = WorkspaceService();
     chatLibrary = ChatLibraryService(
       preferencesService: preferences,
@@ -55,7 +55,7 @@ void main() {
       chatLibrary: chatLibrary,
       systemPromptLibrary: promptLibrary,
       toolService: toolService,
-      jobService: jobService,
+      taskService: taskService,
       workspaceService: workspaceService,
       preferencesService: preferences,
     );

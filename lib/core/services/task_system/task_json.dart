@@ -1,7 +1,7 @@
 import 'dart:convert';
 
-class JobJson {
-  const JobJson._();
+class TaskJson {
+  const TaskJson._();
 
   static Map<String, dynamic> parseObject(String rawJson) {
     final parsed = tryParseObject(rawJson);

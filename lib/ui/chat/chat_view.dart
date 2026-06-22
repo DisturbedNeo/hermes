@@ -14,7 +14,7 @@ import 'package:hermes/ui/chat/message/bubble_surface.dart';
 import 'package:hermes/ui/chat/message/message_actions.dart';
 import 'package:hermes/ui/chat/composer.dart';
 import 'package:hermes/ui/chat/diagnostics_bar.dart';
-import 'package:hermes/ui/chat/job_panel.dart';
+import 'package:hermes/ui/chat/task_panel.dart';
 import 'package:hermes/ui/chat/message/markdown_view.dart';
 import 'package:hermes/ui/chat/message/message_bubble.dart';
 import 'package:hermes/ui/chat/message/message_row.dart';
@@ -44,13 +44,13 @@ class _ChatViewState extends State<ChatView> {
   final _scroll = SmartScrollController();
   final _shortcuts = KeyboardShortcutsService();
   final _composerFocusNode = FocusNode();
-  bool _jobPanelExpanded = false;
+  bool _taskPanelExpanded = false;
   Timer? _scrollDebounceTimer;
 
   @override
   void initState() {
     super.initState();
-    _shortcuts.register(HermesShortcut.toggleJobPanel, _toggleJobPanel);
+    _shortcuts.register(HermesShortcut.toggleTaskPanel, _toggleTaskPanel);
     _shortcuts.register(HermesShortcut.focusComposer, _focusComposer);
     widget.chat.messageStore.addListener(_onMessagesChanged);
     widget.chat.chatStream.addListener(_onStreamStateChanged);
@@ -121,7 +121,7 @@ class _ChatViewState extends State<ChatView> {
             ]),
             builder: (_, _) {
               final displayItems = _displayItems(chat.messageStore.messages);
-              final showJobPanel = _showJobPanel(chat);
+              final showTaskPanel = _showTaskPanel(chat);
 
               return LayoutBuilder(
                 builder: (context, constraints) {
@@ -149,15 +149,15 @@ class _ChatViewState extends State<ChatView> {
                   final mainColumn = _buildMainColumn(
                     chat: chat,
                     displayItems: displayItems,
-                    showJobPanel: showJobPanel,
-                    includeInlineJobPanel:
-                        !(isNarrow && _jobPanelExpanded && showJobPanel),
+                    showTaskPanel: showTaskPanel,
+                    includeInlineTaskPanel:
+                        !(isNarrow && _taskPanelExpanded && showTaskPanel),
                     useScrollableFooter: useScrollableFooter,
                     footerMaxHeight: footerMaxHeight,
                   );
 
-                  // On narrow screens, job panel becomes a bottom sheet overlay.
-                  if (isNarrow && _jobPanelExpanded && showJobPanel) {
+                  // On narrow screens, task panel becomes a bottom sheet overlay.
+                  if (isNarrow && _taskPanelExpanded && showTaskPanel) {
                     return Stack(
                       children: [
                         mainColumn,
@@ -170,10 +170,10 @@ class _ChatViewState extends State<ChatView> {
                             minChildSize: 0.3,
                             maxChildSize: 0.85,
                             builder: (context, scrollController) {
-                              return JobPanel(
+                              return TaskPanel(
                                 chat: chat,
                                 expanded: true,
-                                onToggleExpanded: _toggleJobPanel,
+                                onToggleExpanded: _toggleTaskPanel,
                               );
                             },
                           ),
@@ -195,8 +195,8 @@ class _ChatViewState extends State<ChatView> {
   Widget _buildMainColumn({
     required ChatService chat,
     required List<_DisplayItem> displayItems,
-    required bool showJobPanel,
-    required bool includeInlineJobPanel,
+    required bool showTaskPanel,
+    required bool includeInlineTaskPanel,
     required bool useScrollableFooter,
     required double? footerMaxHeight,
   }) {
@@ -204,18 +204,18 @@ class _ChatViewState extends State<ChatView> {
       children: [
         if (chat.pendingModelRestore != null) _ModelRestoreBanner(chat: chat),
         WorkspaceBar(chat: chat, onOpenWorkspace: widget.onOpenWorkspace),
-        if (includeInlineJobPanel && showJobPanel && !_jobPanelExpanded)
-          JobPanel(
+        if (includeInlineTaskPanel && showTaskPanel && !_taskPanelExpanded)
+          TaskPanel(
             chat: chat,
             expanded: false,
-            onToggleExpanded: _toggleJobPanel,
+            onToggleExpanded: _toggleTaskPanel,
           ),
-        if (includeInlineJobPanel && showJobPanel && _jobPanelExpanded)
+        if (includeInlineTaskPanel && showTaskPanel && _taskPanelExpanded)
           Expanded(
-            child: JobPanel(
+            child: TaskPanel(
               chat: chat,
               expanded: true,
-              onToggleExpanded: _toggleJobPanel,
+              onToggleExpanded: _toggleTaskPanel,
             ),
           ),
         Expanded(
@@ -266,9 +266,9 @@ class _ChatViewState extends State<ChatView> {
     );
   }
 
-  void _toggleJobPanel() {
-    if (!_showJobPanel(widget.chat)) return;
-    setState(() => _jobPanelExpanded = !_jobPanelExpanded);
+  void _toggleTaskPanel() {
+    if (!_showTaskPanel(widget.chat)) return;
+    setState(() => _taskPanelExpanded = !_taskPanelExpanded);
   }
 
   void _focusComposer() {
@@ -276,10 +276,10 @@ class _ChatViewState extends State<ChatView> {
     _composerFocusNode.requestFocus();
   }
 
-  bool _showJobPanel(ChatService chat) {
-    return chat.activeJob != null ||
-        chat.availableJobs.isNotEmpty ||
-        chat.jobBusy;
+  bool _showTaskPanel(ChatService chat) {
+    return chat.activeTask != null ||
+        chat.availableTasks.isNotEmpty ||
+        chat.taskBusy;
   }
 
   List<_DisplayItem> _displayItems(List<Bubble> messages) {

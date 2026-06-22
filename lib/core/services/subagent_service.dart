@@ -23,7 +23,7 @@ class SubagentService {
     final client = _chatClientFactory();
 
     final systemPrompt =
-        '''You are a precise information extraction agent. Your ONLY job is to return the exact information requested by the user. You must NEVER include:
+        '''You are a precise information extraction agent. Your ONLY task is to return the exact information requested by the user. You must NEVER include:
 - Greetings or pleasantries
 - Explanations of what you found
 - File paths unless specifically requested

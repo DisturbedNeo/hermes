@@ -11,7 +11,7 @@ enum HermesShortcut {
   focusComposer(label: '/', description: 'Focus the message composer'),
   cancelGeneration(label: 'Esc', description: 'Cancel streaming/generation'),
   openChatList(label: 'O', description: 'Open chat list panel'),
-  toggleJobPanel(label: 'J', description: 'Toggle job panel visibility'),
+  toggleTaskPanel(label: 'J', description: 'Toggle task panel visibility'),
   showShortcuts(label: '?', description: 'Show keyboard shortcuts help');
 
   final String label;
@@ -28,7 +28,7 @@ enum HermesShortcut {
     focusComposer => LogicalKeyboardKey.slash,
     cancelGeneration => LogicalKeyboardKey.escape,
     openChatList => LogicalKeyboardKey.keyO,
-    toggleJobPanel => LogicalKeyboardKey.keyJ,
+    toggleTaskPanel => LogicalKeyboardKey.keyJ,
     showShortcuts => LogicalKeyboardKey.question,
   };
 

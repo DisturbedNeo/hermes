@@ -6,7 +6,7 @@ import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/enums/stream_state.dart';
 import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/core/helpers/responsive.dart';
-import 'package:hermes/core/models/job.dart';
+import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/core/services/tool_service.dart';
@@ -273,10 +273,10 @@ class _ComposerState extends State<Composer> {
   /// Returns the hint text appropriate for the current chat mode.
   String _hintTextForMode(ChatService chat) {
     if (!widget.enabled) return 'Load a model to chat...';
-    if (chat.jobBusy) return 'Job is running...';
+    if (chat.taskBusy) return 'Task is running...';
     if (chat.chatStream.isStreaming) return 'Streaming response...';
     if (chat.executionMode == ExecutionMode.chat) return 'Type a message...';
-    return 'Describe the job...';
+    return 'Describe the task...';
   }
 
   /// Builds the tool selector button with badge showing the selected tool count.
@@ -330,7 +330,9 @@ class _ComposerState extends State<Composer> {
 
   ComposerMode _modeFor(String text) {
     final chat = widget.chat;
-    if (chat.chatStream.isStreaming || chat.jobBusy) return ComposerMode.cancel;
+    if (chat.chatStream.isStreaming || chat.taskBusy) {
+      return ComposerMode.cancel;
+    }
 
     final isEmpty = text.trim().isEmpty;
     if (!isEmpty) return ComposerMode.send;
@@ -398,7 +400,7 @@ class _ComposerState extends State<Composer> {
     }
 
     final chat = widget.chat;
-    if (!chat.chatStream.isStreaming && !chat.jobBusy) {
+    if (!chat.chatStream.isStreaming && !chat.taskBusy) {
       final trimmed = _controller.text.trim();
       _controller.clear();
       if (trimmed.isNotEmpty) {
@@ -442,10 +444,10 @@ class _ComposerState extends State<Composer> {
             ComposerMode.cancel => _actionButton(
               icon: Icons.stop,
               label: 'Cancel',
-              onPressed: chat.jobBusy
-                  ? chat.jobCancellationRequested
+              onPressed: chat.taskBusy
+                  ? chat.taskCancellationRequested
                         ? null
-                        : () => unawaited(chat.cancelJobRun())
+                        : () => unawaited(chat.cancelTaskRun())
                   : chat.cancelGeneration,
               compact: compact,
             ),
@@ -524,7 +526,7 @@ class _ComposerState extends State<Composer> {
   /// Builds the wide-screen composer layout with all controls in a single row.
   List<Widget> _buildWideLayout(BuildContext context) {
     final chat = widget.chat;
-    final inputEnabled = widget.enabled && !chat.jobBusy;
+    final inputEnabled = widget.enabled && !chat.taskBusy;
     final effectiveToolIds = _effectiveToolIds();
 
     return [
@@ -581,7 +583,7 @@ class _ComposerState extends State<Composer> {
   /// Builds the narrow-screen composer layout with controls stacked vertically.
   List<Widget> _buildNarrowLayout(BuildContext context) {
     final chat = widget.chat;
-    final inputEnabled = widget.enabled && !chat.jobBusy;
+    final inputEnabled = widget.enabled && !chat.taskBusy;
     final effectiveToolIds = _effectiveToolIds();
 
     return [
@@ -639,7 +641,7 @@ class _ComposerState extends State<Composer> {
   }
 
   void _handleSubmitted(String text) {
-    if (!widget.enabled || widget.chat.jobBusy) return;
+    if (!widget.enabled || widget.chat.taskBusy) return;
     if (_selectedRole != MessageRole.user) {
       _insertMessage();
       return;
@@ -658,7 +660,7 @@ class _ComposerState extends State<Composer> {
   @override
   Widget build(BuildContext context) {
     final chat = widget.chat;
-    final inputEnabled = widget.enabled && !chat.jobBusy;
+    final inputEnabled = widget.enabled && !chat.taskBusy;
 
     return SafeArea(
       top: false,
@@ -707,10 +709,10 @@ class _ExecutionModeSelector extends StatelessWidget {
             tooltip: 'Chat',
           ),
           ButtonSegment(
-            value: ExecutionMode.job,
+            value: ExecutionMode.task,
             icon: Icon(Icons.account_tree_outlined),
-            label: Text('Job'),
-            tooltip: 'Job',
+            label: Text('Task'),
+            tooltip: 'Task',
           ),
         ],
         selected: {chat.executionMode},

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
-import 'package:hermes/core/services/job_system/job_service.dart';
+import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
@@ -26,7 +26,7 @@ void main() {
     preferences = PreferencesService();
     final toolService = ToolService();
     final workspaceService = WorkspaceService();
-    final jobService = JobService(toolService: toolService);
+    final taskService = TaskService(toolService: toolService);
     chatLibrary = ChatLibraryService(
       preferencesService: preferences,
       databasePath: ':memory:',
@@ -39,7 +39,7 @@ void main() {
       chatLibrary: chatLibrary,
       systemPromptLibrary: promptLibrary,
       toolService: toolService,
-      jobService: jobService,
+      taskService: taskService,
       workspaceService: workspaceService,
       preferencesService: preferences,
     );

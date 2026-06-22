@@ -4,27 +4,27 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
-import 'package:hermes/core/models/job.dart';
+import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
-import 'package:hermes/core/services/job_system/job_service.dart';
+import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
-  group('JobService linear runner', () {
+  group('TaskService linear runner', () {
     late Directory root;
     late WorkspaceAttachment workspace;
-    late JobService service;
+    late TaskService service;
 
     setUp(() async {
-      root = await Directory.systemTemp.createTemp('hermes_job_service_');
+      root = await Directory.systemTemp.createTemp('hermes_task_service_');
       workspace = WorkspaceAttachment(
         rootPath: root.path,
         displayName: 'Workspace',
         lastOpenedAt: DateTime(2026, 1, 1),
       );
-      service = JobService(toolService: ToolService());
+      service = TaskService(toolService: ToolService());
     });
 
     tearDown(() async {
@@ -33,52 +33,52 @@ void main() {
       }
     });
 
-    test('creates a persisted paused multi-step job', () async {
+    test('creates a persisted paused multi-step task', () async {
       final client = _QueueChatClient([
         jsonEncode(_planJson(title: 'Planned task')),
       ]);
 
-      final job = await service.createJob(
+      final task = await service.createTask(
         client: client,
         workspace: workspace,
         userPrompt: 'Build the reporting screen',
-        selectedMode: ExecutionMode.job,
+        selectedMode: ExecutionMode.task,
         baseSystemPrompt: 'system',
         chatSessionId: 'chat_1',
       );
 
-      expect(job.title, 'Planned task');
-      expect(job.status, JobStatus.paused);
-      expect(job.currentStepId, 'inspect');
-      expect(job.steps, hasLength(2));
+      expect(task.title, 'Planned task');
+      expect(task.status, TaskStatus.paused);
+      expect(task.currentStepId, 'inspect');
+      expect(task.steps, hasLength(2));
       expect(
         File(
-          path.join(root.path, '.agent', 'jobs', job.id, 'job.json'),
+          path.join(root.path, '.agent', 'tasks', task.id, 'task.json'),
         ).existsSync(),
         isTrue,
       );
     });
 
     test('runs one step and records structured memory and history', () async {
-      final job = _job(
-        step: const JobStep(
+      final task = _task(
+        step: const TaskStep(
           id: 'step_1',
           title: 'Step 1',
           objective: 'Do the work',
           instructions: ['Work carefully'],
           mayEditFiles: false,
-          artifacts: [JobArtifact(path: '.agent/jobs/job_test/notes.md')],
-          status: JobStepStatus.pending,
+          artifacts: [TaskArtifact(path: '.agent/tasks/task_test/notes.md')],
+          status: TaskStepStatus.pending,
         ),
       );
-      await service.storage.saveSnapshot(root.path, job);
+      await service.storage.saveSnapshot(root.path, task);
       final client = _QueueChatClient([
         jsonEncode({
           'status': 'completed',
           'summary': 'Inspected the workspace.',
           'memoryUpdate': 'Found a Flutter app.',
           'artifacts': [
-            {'path': '.agent/jobs/job_test/notes.md'},
+            {'path': '.agent/tasks/task_test/notes.md'},
           ],
         }),
       ]);
@@ -86,25 +86,25 @@ void main() {
       final updated = await service.runNextStep(
         client: client,
         workspace: workspace,
-        snapshot: job,
+        snapshot: task,
         baseSystemPrompt: 'system',
       );
 
-      expect(updated.status, JobStatus.completed);
-      expect(updated.steps.single.status, JobStepStatus.completed);
-      expect(updated.runs.single.status, JobRunStatus.completed);
+      expect(updated.status, TaskStatus.completed);
+      expect(updated.steps.single.status, TaskStepStatus.completed);
+      expect(updated.runs.single.status, TaskRunStatus.completed);
       expect(updated.memorySummary, contains('Found a Flutter app.'));
       expect(updated.runs.single.artifacts.single.path, contains('notes.md'));
     });
 
-    test('runs one step from finish job step tool call', () async {
-      final job = _job();
+    test('runs one step from finish task step tool call', () async {
+      final task = _task();
       final client = _QueueCompletionClient([
         ChatCompletionResponse(
           content: '',
           toolCalls: [
             ChatCompletionToolCall(
-              name: 'finish_job_step',
+              name: 'finish_task_step',
               arguments: jsonEncode({
                 'status': 'completed',
                 'summary': 'Inspected the workspace.',
@@ -118,23 +118,23 @@ void main() {
       final updated = await service.runNextStep(
         client: client,
         workspace: workspace,
-        snapshot: job,
+        snapshot: task,
         baseSystemPrompt: 'system',
       );
 
       expect(client.requestCount, 1);
-      expect(client.seenToolNames.single, contains('finish_job_step'));
-      expect(updated.status, JobStatus.completed);
-      expect(updated.runs.single.status, JobRunStatus.completed);
+      expect(client.seenToolNames.single, contains('finish_task_step'));
+      expect(updated.status, TaskStatus.completed);
+      expect(updated.runs.single.status, TaskRunStatus.completed);
       expect(updated.runs.single.summary, 'Inspected the workspace.');
       expect(updated.memorySummary, contains('Found a Flutter app.'));
-      expect(updated.runs.single.toolCalls.single.toolName, 'finish_job_step');
+      expect(updated.runs.single.toolCalls.single.toolName, 'finish_task_step');
     });
 
     test(
-      'finish job step tool call skips sibling workspace tool calls',
+      'finish task step tool call skips sibling workspace tool calls',
       () async {
-        final job = _job();
+        final task = _task();
         final client = _QueueCompletionClient([
           ChatCompletionResponse(
             content: '',
@@ -144,7 +144,7 @@ void main() {
                 arguments: jsonEncode({'path': 'missing.txt'}),
               ),
               ChatCompletionToolCall(
-                name: 'finish_job_step',
+                name: 'finish_task_step',
                 arguments: jsonEncode({
                   'status': 'completed',
                   'summary': 'Finished without more reads.',
@@ -158,32 +158,32 @@ void main() {
         final updated = await service.runNextStep(
           client: client,
           workspace: workspace,
-          snapshot: job,
+          snapshot: task,
           baseSystemPrompt: 'system',
         );
 
         expect(client.requestCount, 1);
-        expect(updated.status, JobStatus.completed);
+        expect(updated.status, TaskStatus.completed);
         expect(updated.runs.single.summary, 'Finished without more reads.');
         expect(updated.runs.single.toolCalls, hasLength(1));
         expect(
           updated.runs.single.toolCalls.single.toolName,
-          'finish_job_step',
+          'finish_task_step',
         );
         expect(updated.runs.single.toolCalls.single.error, isNull);
       },
     );
 
     test('pauses for phase approval before mutating steps', () async {
-      final job = _job(
-        step: const JobStep(
+      final task = _task(
+        step: const TaskStep(
           id: 'edit',
           title: 'Edit files',
           objective: 'Edit files',
           instructions: ['Patch files'],
           mayEditFiles: true,
           artifacts: [],
-          status: JobStepStatus.pending,
+          status: TaskStepStatus.pending,
         ),
       );
 
@@ -192,27 +192,27 @@ void main() {
           jsonEncode({'status': 'completed'}),
         ]),
         workspace: workspace,
-        snapshot: job,
+        snapshot: task,
         baseSystemPrompt: 'system',
         requirePhaseApproval: true,
       );
 
-      expect(blocked.status, JobStatus.blocked);
+      expect(blocked.status, TaskStatus.blocked);
       expect(blocked.pendingApproval?.stepId, 'edit');
-      expect(blocked.steps.single.status, JobStepStatus.blocked);
+      expect(blocked.steps.single.status, TaskStepStatus.blocked);
 
       final approved = await service.approvePendingStep(
         workspace: workspace,
         snapshot: blocked,
       );
 
-      expect(approved.status, JobStatus.paused);
+      expect(approved.status, TaskStatus.paused);
       expect(approved.pendingApproval, isNull);
-      expect(approved.steps.single.status, JobStepStatus.approved);
+      expect(approved.steps.single.status, TaskStepStatus.approved);
     });
 
     test('records blocked user questions and resumes after answer', () async {
-      final job = _job();
+      final task = _task();
       final blocked = await service.runNextStep(
         client: _QueueChatClient([
           jsonEncode({
@@ -222,11 +222,11 @@ void main() {
           }),
         ]),
         workspace: workspace,
-        snapshot: job,
+        snapshot: task,
         baseSystemPrompt: 'system',
       );
 
-      expect(blocked.status, JobStatus.blocked);
+      expect(blocked.status, TaskStatus.blocked);
       expect(blocked.pendingQuestion?.question, contains('platform'));
 
       final answered = await service.answerOpenQuestion(
@@ -235,32 +235,32 @@ void main() {
         answer: 'Desktop first.',
       );
 
-      expect(answered.status, JobStatus.paused);
+      expect(answered.status, TaskStatus.paused);
       expect(answered.pendingQuestion, isNull);
-      expect(answered.steps.single.status, JobStepStatus.pending);
+      expect(answered.steps.single.status, TaskStepStatus.pending);
       expect(answered.memorySummary, contains('Desktop first.'));
     });
 
     test('automatically replans unfinished work when requested', () async {
-      final job = _job(
+      final task = _task(
         steps: const [
-          JobStep(
+          TaskStep(
             id: 'done',
             title: 'Done',
             objective: 'Already done',
             instructions: [],
             mayEditFiles: false,
             artifacts: [],
-            status: JobStepStatus.completed,
+            status: TaskStepStatus.completed,
           ),
-          JobStep(
+          TaskStep(
             id: 'next',
             title: 'Next',
             objective: 'Next work',
             instructions: [],
             mayEditFiles: false,
             artifacts: [],
-            status: JobStepStatus.pending,
+            status: TaskStepStatus.pending,
           ),
         ],
         currentStepId: 'next',
@@ -287,21 +287,21 @@ void main() {
       final updated = await service.runNextStep(
         client: client,
         workspace: workspace,
-        snapshot: job,
+        snapshot: task,
         baseSystemPrompt: 'system',
       );
 
       expect(updated.steps.map((step) => step.id), ['done', 'verify']);
       expect(updated.currentStepId, 'verify');
       expect(updated.runs.map((run) => run.status), [
-        JobRunStatus.needsReplan,
-        JobRunStatus.replanned,
+        TaskRunStatus.needsReplan,
+        TaskRunStatus.replanned,
       ]);
       expect(updated.memorySummary, contains('Add a verification step.'));
     });
 
-    test('read-only steps reject writes outside the job folder', () async {
-      final job = _job();
+    test('read-only steps reject writes outside the task folder', () async {
+      final task = _task();
       final client = _QueueCompletionClient([
         ChatCompletionResponse(
           content: '',
@@ -327,7 +327,7 @@ void main() {
       final updated = await service.runNextStep(
         client: client,
         workspace: workspace,
-        snapshot: job,
+        snapshot: task,
         baseSystemPrompt: 'system',
       );
 
@@ -341,26 +341,26 @@ void main() {
       expect(updated.runs.single.toolCalls.single.toolName, 'write_file');
       expect(
         updated.runs.single.toolCalls.single.error,
-        contains('job-owned artifact'),
+        contains('task-owned artifact'),
       );
-      expect(updated.status, JobStatus.completed);
+      expect(updated.status, TaskStatus.completed);
     });
 
-    test('read-only steps can create new job artifacts', () async {
-      final job = _job(
-        step: const JobStep(
+    test('read-only steps can create new task artifacts', () async {
+      final task = _task(
+        step: const TaskStep(
           id: 'step_1',
           title: 'Step 1',
           objective: 'Write a report artifact',
           instructions: ['Write report'],
           mayEditFiles: false,
           artifacts: [
-            JobArtifact(
-              path: '.agent/jobs/job_test/report.md',
+            TaskArtifact(
+              path: '.agent/tasks/task_test/report.md',
               description: 'Report',
             ),
           ],
-          status: JobStepStatus.pending,
+          status: TaskStepStatus.pending,
         ),
       );
       final client = _QueueCompletionClient([
@@ -370,7 +370,7 @@ void main() {
             ChatCompletionToolCall(
               name: 'write_file',
               arguments: jsonEncode({
-                'path': '.agent/jobs/job_test/report.md',
+                'path': '.agent/tasks/task_test/report.md',
                 'content': '# Report\n',
               }),
             ),
@@ -383,7 +383,7 @@ void main() {
             'memoryUpdate': 'Created the report artifact.',
             'artifacts': [
               {
-                'path': '.agent/jobs/job_test/report.md',
+                'path': '.agent/tasks/task_test/report.md',
                 'description': 'Report',
               },
             ],
@@ -394,41 +394,43 @@ void main() {
       final updated = await service.runNextStep(
         client: client,
         workspace: workspace,
-        snapshot: job,
+        snapshot: task,
         baseSystemPrompt: 'system',
       );
 
       final report = File(
-        path.join(root.path, '.agent', 'jobs', 'job_test', 'report.md'),
+        path.join(root.path, '.agent', 'tasks', 'task_test', 'report.md'),
       );
       expect(report.existsSync(), isTrue);
       expect(report.readAsStringSync(), '# Report\n');
       expect(updated.runs.single.toolCalls.single.error, isNull);
-      expect(updated.status, JobStatus.completed);
+      expect(updated.status, TaskStatus.completed);
     });
 
     test('read-only steps reject future step artifact writes', () async {
-      final job = _job(
+      final task = _task(
         steps: const [
-          JobStep(
+          TaskStep(
             id: 'step_1',
             title: 'Step 1',
             objective: 'Write overview',
             instructions: ['Write overview'],
             mayEditFiles: false,
-            artifacts: [JobArtifact(path: '.agent/jobs/job_test/overview.md')],
-            status: JobStepStatus.pending,
+            artifacts: [
+              TaskArtifact(path: '.agent/tasks/task_test/overview.md'),
+            ],
+            status: TaskStepStatus.pending,
           ),
-          JobStep(
+          TaskStep(
             id: 'step_2',
             title: 'Step 2',
             objective: 'Write final report',
             instructions: ['Write final report'],
             mayEditFiles: false,
             artifacts: [
-              JobArtifact(path: '.agent/jobs/job_test/final_report.md'),
+              TaskArtifact(path: '.agent/tasks/task_test/final_report.md'),
             ],
-            status: JobStepStatus.pending,
+            status: TaskStepStatus.pending,
           ),
         ],
       );
@@ -439,7 +441,7 @@ void main() {
             ChatCompletionToolCall(
               name: 'write_file',
               arguments: jsonEncode({
-                'path': '.agent/jobs/job_test/final_report.md',
+                'path': '.agent/tasks/task_test/final_report.md',
                 'content': '# Final\n',
               }),
             ),
@@ -457,13 +459,19 @@ void main() {
       final updated = await service.runNextStep(
         client: client,
         workspace: workspace,
-        snapshot: job,
+        snapshot: task,
         baseSystemPrompt: 'system',
       );
 
       expect(
         File(
-          path.join(root.path, '.agent', 'jobs', 'job_test', 'final_report.md'),
+          path.join(
+            root.path,
+            '.agent',
+            'tasks',
+            'task_test',
+            'final_report.md',
+          ),
         ).existsSync(),
         isFalse,
       );
@@ -472,34 +480,34 @@ void main() {
         contains('current step'),
       );
       expect(updated.runs.single.artifacts, isEmpty);
-      expect(updated.status, JobStatus.paused);
+      expect(updated.status, TaskStatus.paused);
       expect(updated.currentStepId, 'step_2');
     });
 
     test('mutating steps reject future step artifact writes', () async {
-      final job = _job(
+      final task = _task(
         steps: const [
-          JobStep(
+          TaskStep(
             id: 'step_1',
             title: 'Step 1',
             objective: 'Edit files',
             instructions: ['Edit files'],
             mayEditFiles: true,
             artifacts: [
-              JobArtifact(path: '.agent/jobs/job_test/edit_summary.md'),
+              TaskArtifact(path: '.agent/tasks/task_test/edit_summary.md'),
             ],
-            status: JobStepStatus.pending,
+            status: TaskStepStatus.pending,
           ),
-          JobStep(
+          TaskStep(
             id: 'step_2',
             title: 'Step 2',
             objective: 'Write final report',
             instructions: ['Write final report'],
             mayEditFiles: false,
             artifacts: [
-              JobArtifact(path: '.agent/jobs/job_test/final_report.md'),
+              TaskArtifact(path: '.agent/tasks/task_test/final_report.md'),
             ],
-            status: JobStepStatus.pending,
+            status: TaskStepStatus.pending,
           ),
         ],
       );
@@ -510,7 +518,7 @@ void main() {
             ChatCompletionToolCall(
               name: 'write_file',
               arguments: jsonEncode({
-                'path': '.agent/jobs/job_test/final_report.md',
+                'path': '.agent/tasks/task_test/final_report.md',
                 'content': '# Final\n',
               }),
             ),
@@ -528,13 +536,19 @@ void main() {
       final updated = await service.runNextStep(
         client: client,
         workspace: workspace,
-        snapshot: job,
+        snapshot: task,
         baseSystemPrompt: 'system',
       );
 
       expect(
         File(
-          path.join(root.path, '.agent', 'jobs', 'job_test', 'final_report.md'),
+          path.join(
+            root.path,
+            '.agent',
+            'tasks',
+            'task_test',
+            'final_report.md',
+          ),
         ).existsSync(),
         isFalse,
       );
@@ -542,32 +556,34 @@ void main() {
         updated.runs.single.toolCalls.single.error,
         contains('current step'),
       );
-      expect(updated.status, JobStatus.paused);
+      expect(updated.status, TaskStatus.paused);
       expect(updated.currentStepId, 'step_2');
     });
 
     test('step output filters artifacts to the current step', () async {
-      final job = _job(
+      final task = _task(
         steps: const [
-          JobStep(
+          TaskStep(
             id: 'step_1',
             title: 'Step 1',
             objective: 'Write overview',
             instructions: ['Write overview'],
             mayEditFiles: false,
-            artifacts: [JobArtifact(path: '.agent/jobs/job_test/overview.md')],
-            status: JobStepStatus.pending,
+            artifacts: [
+              TaskArtifact(path: '.agent/tasks/task_test/overview.md'),
+            ],
+            status: TaskStepStatus.pending,
           ),
-          JobStep(
+          TaskStep(
             id: 'step_2',
             title: 'Step 2',
             objective: 'Write final report',
             instructions: ['Write final report'],
             mayEditFiles: false,
             artifacts: [
-              JobArtifact(path: '.agent/jobs/job_test/final_report.md'),
+              TaskArtifact(path: '.agent/tasks/task_test/final_report.md'),
             ],
-            status: JobStepStatus.pending,
+            status: TaskStepStatus.pending,
           ),
         ],
       );
@@ -577,8 +593,8 @@ void main() {
           'summary': 'Overview complete.',
           'memoryUpdate': 'Created overview only.',
           'artifacts': [
-            {'path': '.agent/jobs/job_test/overview.md'},
-            {'path': '.agent/jobs/job_test/final_report.md'},
+            {'path': '.agent/tasks/task_test/overview.md'},
+            {'path': '.agent/tasks/task_test/final_report.md'},
           ],
         }),
       ]);
@@ -586,7 +602,7 @@ void main() {
       final updated = await service.runNextStep(
         client: client,
         workspace: workspace,
-        snapshot: job,
+        snapshot: task,
         baseSystemPrompt: 'system',
       );
 
@@ -608,32 +624,34 @@ void main() {
 
     test('later steps can read artifacts from earlier steps', () async {
       final artifact = File(
-        path.join(root.path, '.agent', 'jobs', 'job_test', 'overview.md'),
+        path.join(root.path, '.agent', 'tasks', 'task_test', 'overview.md'),
       );
       await artifact.create(recursive: true);
       await artifact.writeAsString('Prior analysis');
 
-      final job = _job(
+      final task = _task(
         steps: const [
-          JobStep(
+          TaskStep(
             id: 'step_1',
             title: 'Step 1',
             objective: 'Write overview',
             instructions: ['Write overview'],
             mayEditFiles: false,
-            artifacts: [JobArtifact(path: '.agent/jobs/job_test/overview.md')],
-            status: JobStepStatus.completed,
+            artifacts: [
+              TaskArtifact(path: '.agent/tasks/task_test/overview.md'),
+            ],
+            status: TaskStepStatus.completed,
           ),
-          JobStep(
+          TaskStep(
             id: 'step_2',
             title: 'Step 2',
             objective: 'Use overview',
             instructions: ['Read overview'],
             mayEditFiles: false,
             artifacts: [
-              JobArtifact(path: '.agent/jobs/job_test/final_report.md'),
+              TaskArtifact(path: '.agent/tasks/task_test/final_report.md'),
             ],
-            status: JobStepStatus.pending,
+            status: TaskStepStatus.pending,
           ),
         ],
         currentStepId: 'step_2',
@@ -645,7 +663,7 @@ void main() {
             ChatCompletionToolCall(
               name: 'read_file',
               arguments: jsonEncode({
-                'path': '.agent/jobs/job_test/overview.md',
+                'path': '.agent/tasks/task_test/overview.md',
               }),
             ),
           ],
@@ -662,7 +680,7 @@ void main() {
       final updated = await service.runNextStep(
         client: client,
         workspace: workspace,
-        snapshot: job,
+        snapshot: task,
         baseSystemPrompt: 'system',
       );
 
@@ -671,19 +689,19 @@ void main() {
         updated.runs.single.toolCalls.single.resultSummary,
         contains('Prior analysis'),
       );
-      expect(updated.status, JobStatus.completed);
+      expect(updated.status, TaskStatus.completed);
     });
 
     test('planned artifacts are not marked produced when omitted', () async {
-      final job = _job(
-        step: const JobStep(
+      final task = _task(
+        step: const TaskStep(
           id: 'step_1',
           title: 'Step 1',
           objective: 'Write report',
           instructions: ['Write report'],
           mayEditFiles: false,
-          artifacts: [JobArtifact(path: '.agent/jobs/job_test/report.md')],
-          status: JobStepStatus.pending,
+          artifacts: [TaskArtifact(path: '.agent/tasks/task_test/report.md')],
+          status: TaskStepStatus.pending,
         ),
       );
       final client = _QueueChatClient([
@@ -697,7 +715,7 @@ void main() {
       final updated = await service.runNextStep(
         client: client,
         workspace: workspace,
-        snapshot: job,
+        snapshot: task,
         baseSystemPrompt: 'system',
       );
 
@@ -709,7 +727,7 @@ void main() {
       final largeFile = File(path.join(root.path, 'large.txt'));
       await largeFile.writeAsString(List.filled(1200, 'old context').join(' '));
 
-      final job = _job();
+      final task = _task();
       final statuses = <String>[];
       final client = _QueueCompletionClient([
         ChatCompletionResponse(
@@ -742,7 +760,7 @@ void main() {
         ChatCompletionResponse(
           content: jsonEncode({
             'schema_version': 1,
-            'task': 'Continue the job step.',
+            'task': 'Continue the task step.',
             'current_state': 'A large file was inspected earlier.',
           }),
         ),
@@ -758,7 +776,7 @@ void main() {
       final updated = await service.runNextStep(
         client: client,
         workspace: workspace,
-        snapshot: job,
+        snapshot: task,
         baseSystemPrompt: 'system',
         compactionSettings: const CompactionSettings(
           triggerThreshold: 0.60,
@@ -773,7 +791,7 @@ void main() {
         client.seenMessages.last.map((message) => message.toJson()).toList(),
       );
 
-      expect(updated.status, JobStatus.completed);
+      expect(updated.status, TaskStatus.completed);
       expect(client.requestCount, 5);
       expect(
         statuses.any((status) => status.contains('Compacting context')),
@@ -786,7 +804,7 @@ void main() {
     });
 
     test('finalizes instead of looping on repeated tool calls', () async {
-      final job = _job();
+      final task = _task();
       final repeatedCall = ChatCompletionToolCall(
         name: 'read_file',
         arguments: jsonEncode({'path': 'missing.txt'}),
@@ -807,13 +825,13 @@ void main() {
       final updated = await service.runNextStep(
         client: client,
         workspace: workspace,
-        snapshot: job,
+        snapshot: task,
         baseSystemPrompt: 'system',
       );
 
       expect(client.requestCount, 4);
-      expect(updated.status, JobStatus.completed);
-      expect(updated.runs.single.status, JobRunStatus.completed);
+      expect(updated.status, TaskStatus.completed);
+      expect(updated.runs.single.status, TaskRunStatus.completed);
       expect(updated.runs.single.summary, 'Stopped repeating and finalized.');
       expect(updated.runs.single.toolCalls, hasLength(3));
       expect(updated.runs.single.toolCalls.last.error, contains('skipped'));
@@ -821,18 +839,22 @@ void main() {
   });
 }
 
-JobDocument _job({JobStep? step, List<JobStep>? steps, String? currentStepId}) {
+TaskDocument _task({
+  TaskStep? step,
+  List<TaskStep>? steps,
+  String? currentStepId,
+}) {
   final now = DateTime(2026, 1, 1);
   final resolvedSteps = steps ?? [step ?? _step()];
-  return JobDocument(
-    id: 'job_test',
-    title: 'Test job',
-    originalPrompt: 'Run the job',
-    goal: 'Run the job',
+  return TaskDocument(
+    id: 'task_test',
+    title: 'Test task',
+    originalPrompt: 'Run the task',
+    goal: 'Run the task',
     constraints: const ['Stay inside workspace.'],
-    successCriteria: const ['Finish the job.'],
+    successCriteria: const ['Finish the task.'],
     steps: resolvedSteps,
-    status: JobStatus.paused,
+    status: TaskStatus.paused,
     currentStepId: currentStepId ?? resolvedSteps.first.id,
     memorySummary: '',
     runs: const [],
@@ -841,15 +863,15 @@ JobDocument _job({JobStep? step, List<JobStep>? steps, String? currentStepId}) {
   );
 }
 
-JobStep _step() {
-  return const JobStep(
+TaskStep _step() {
+  return const TaskStep(
     id: 'step_1',
     title: 'Step 1',
     objective: 'Do the work',
     instructions: ['Work carefully'],
     mayEditFiles: false,
     artifacts: [],
-    status: JobStepStatus.pending,
+    status: TaskStepStatus.pending,
   );
 }
 

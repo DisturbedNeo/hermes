@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:hermes/core/models/job.dart';
+import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
@@ -273,7 +273,7 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
   Widget _buildBody(bool canMutate) {
     final hasData =
         _entries.isNotEmpty ||
-        (widget.chat?.availableJobs.isNotEmpty ?? false) ||
+        (widget.chat?.availableTasks.isNotEmpty ?? false) ||
         _recent.isNotEmpty;
 
     return StateDisplay(
@@ -302,24 +302,24 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
                 subtitle: Text(entry['path'] as String),
               ),
           ],
-          if ((widget.chat?.availableJobs.isNotEmpty ?? false)) ...[
-            const _SectionHeader(label: 'Jobs In This Chat'),
-            for (final job in widget.chat!.availableJobs.take(12))
+          if ((widget.chat?.availableTasks.isNotEmpty ?? false)) ...[
+            const _SectionHeader(label: 'Tasks In This Chat'),
+            for (final task in widget.chat!.availableTasks.take(12))
               ListTile(
                 dense: true,
-                leading: Icon(_iconForJobStatus(job.status)),
+                leading: Icon(_iconForTaskStatus(task.status)),
                 title: Text(
-                  job.title,
+                  task.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 subtitle: Text(
-                  '${job.status.wire} - ${job.id}',
+                  '${task.status.wire} - ${task.id}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 onTap: canMutate
-                    ? () => unawaited(widget.chat?.loadJob(job.id))
+                    ? () => unawaited(widget.chat?.loadTask(task.id))
                     : null,
               ),
           ],
@@ -352,14 +352,14 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
   }
 }
 
-IconData _iconForJobStatus(JobStatus status) => switch (status) {
-  JobStatus.completed => Icons.check_circle_outline,
-  JobStatus.running => Icons.sync,
-  JobStatus.paused => Icons.pause_circle_outline,
-  JobStatus.blocked => Icons.block,
-  JobStatus.failed => Icons.error_outline,
-  JobStatus.cancelled => Icons.cancel_outlined,
-  JobStatus.draft || JobStatus.planned => Icons.account_tree_outlined,
+IconData _iconForTaskStatus(TaskStatus status) => switch (status) {
+  TaskStatus.completed => Icons.check_circle_outline,
+  TaskStatus.running => Icons.sync,
+  TaskStatus.paused => Icons.pause_circle_outline,
+  TaskStatus.blocked => Icons.block,
+  TaskStatus.failed => Icons.error_outline,
+  TaskStatus.cancelled => Icons.cancel_outlined,
+  TaskStatus.draft || TaskStatus.planned => Icons.account_tree_outlined,
 };
 
 class _SectionHeader extends StatelessWidget {

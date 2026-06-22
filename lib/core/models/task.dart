@@ -1,9 +1,9 @@
 import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/helpers/sentinel.dart' show kSentinel, resolve;
 
-enum ExecutionMode { chat, refine, job, continueJob }
+enum ExecutionMode { chat, refine, task, continueTask }
 
-enum JobStatus {
+enum TaskStatus {
   draft,
   planned,
   running,
@@ -14,7 +14,7 @@ enum JobStatus {
   cancelled,
 }
 
-enum JobStepStatus {
+enum TaskStepStatus {
   pending,
   approved,
   running,
@@ -24,7 +24,7 @@ enum JobStepStatus {
   skipped,
 }
 
-enum JobRunStatus {
+enum TaskRunStatus {
   running,
   completed,
   blocked,
@@ -37,29 +37,29 @@ enum JobRunStatus {
 
 extension ExecutionModeWire on ExecutionMode {
   String get wire => switch (this) {
-    ExecutionMode.continueJob => 'continue_job',
+    ExecutionMode.continueTask => 'continue_task',
     _ => name,
   };
 
   String get label => switch (this) {
     ExecutionMode.chat => 'Chat',
     ExecutionMode.refine => 'Refine',
-    ExecutionMode.job => 'Job',
-    ExecutionMode.continueJob => 'Continue Job',
+    ExecutionMode.task => 'Task',
+    ExecutionMode.continueTask => 'Continue Task',
   };
 }
 
-extension JobStatusWire on JobStatus {
+extension TaskStatusWire on TaskStatus {
   String get wire => name;
 }
 
-extension JobStepStatusWire on JobStepStatus {
+extension TaskStepStatusWire on TaskStepStatus {
   String get wire => name;
 }
 
-extension JobRunStatusWire on JobRunStatus {
+extension TaskRunStatusWire on TaskRunStatus {
   String get wire => switch (this) {
-    JobRunStatus.needsReplan => 'needs_replan',
+    TaskRunStatus.needsReplan => 'needs_replan',
     _ => name,
   };
 }
@@ -68,20 +68,20 @@ ExecutionMode parseExecutionMode(Object? value) => _parseEnum(
   ExecutionMode.values,
   value,
   ExecutionMode.chat,
-  aliases: {'continue_job': ExecutionMode.continueJob},
+  aliases: {'continue_task': ExecutionMode.continueTask},
 );
 
-JobStatus parseJobStatus(Object? value) =>
-    _parseEnum(JobStatus.values, value, JobStatus.paused);
+TaskStatus parseTaskStatus(Object? value) =>
+    _parseEnum(TaskStatus.values, value, TaskStatus.paused);
 
-JobStepStatus parseJobStepStatus(Object? value) =>
-    _parseEnum(JobStepStatus.values, value, JobStepStatus.pending);
+TaskStepStatus parseTaskStepStatus(Object? value) =>
+    _parseEnum(TaskStepStatus.values, value, TaskStepStatus.pending);
 
-JobRunStatus parseJobRunStatus(Object? value) => _parseEnum(
-  JobRunStatus.values,
+TaskRunStatus parseTaskRunStatus(Object? value) => _parseEnum(
+  TaskRunStatus.values,
   value,
-  JobRunStatus.completed,
-  aliases: {'needs_replan': JobRunStatus.needsReplan},
+  TaskRunStatus.completed,
+  aliases: {'needs_replan': TaskRunStatus.needsReplan},
 );
 
 T _parseEnum<T extends Enum>(
@@ -101,7 +101,7 @@ T _parseEnum<T extends Enum>(
   return fallback;
 }
 
-class RefinedJobBrief {
+class RefinedTaskBrief {
   final String title;
   final String goal;
   final List<String> constraints;
@@ -109,7 +109,7 @@ class RefinedJobBrief {
   final List<String> assumptions;
   final List<String> questions;
 
-  const RefinedJobBrief({
+  const RefinedTaskBrief({
     required this.title,
     required this.goal,
     this.constraints = const [],
@@ -118,9 +118,9 @@ class RefinedJobBrief {
     this.questions = const [],
   });
 
-  factory RefinedJobBrief.fromJson(Map<String, dynamic> json) {
-    return RefinedJobBrief(
-      title: jsonString(json['title'], fallback: 'Untitled job'),
+  factory RefinedTaskBrief.fromJson(Map<String, dynamic> json) {
+    return RefinedTaskBrief(
+      title: jsonString(json['title'], fallback: 'Untitled task'),
       goal: jsonString(json['goal'] ?? json['objective']),
       constraints: jsonStringList(json['constraints']),
       successCriteria: jsonStringList(
@@ -143,7 +143,7 @@ class RefinedJobBrief {
   };
 }
 
-class JobDocument {
+class TaskDocument {
   static const int currentSchemaVersion = 2;
 
   final int schemaVersion;
@@ -153,19 +153,19 @@ class JobDocument {
   final String goal;
   final List<String> constraints;
   final List<String> successCriteria;
-  final List<JobStep> steps;
-  final JobStatus status;
+  final List<TaskStep> steps;
+  final TaskStatus status;
   final String? currentStepId;
   final String memorySummary;
-  final List<JobRun> runs;
-  final PendingJobApproval? pendingApproval;
-  final PendingJobQuestion? pendingQuestion;
+  final List<TaskRun> runs;
+  final PendingTaskApproval? pendingApproval;
+  final PendingTaskQuestion? pendingQuestion;
   final String? chatSessionId;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? completedAt;
 
-  const JobDocument({
+  const TaskDocument({
     this.schemaVersion = currentSchemaVersion,
     required this.id,
     required this.title,
@@ -186,7 +186,7 @@ class JobDocument {
     this.completedAt,
   });
 
-  JobDocument copyWith({
+  TaskDocument copyWith({
     int? schemaVersion,
     String? id,
     String? title,
@@ -194,11 +194,11 @@ class JobDocument {
     String? goal,
     List<String>? constraints,
     List<String>? successCriteria,
-    List<JobStep>? steps,
-    JobStatus? status,
+    List<TaskStep>? steps,
+    TaskStatus? status,
     Object? currentStepId = kSentinel,
     String? memorySummary,
-    List<JobRun>? runs,
+    List<TaskRun>? runs,
     Object? pendingApproval = kSentinel,
     Object? pendingQuestion = kSentinel,
     Object? chatSessionId = kSentinel,
@@ -206,7 +206,7 @@ class JobDocument {
     DateTime? updatedAt,
     Object? completedAt = kSentinel,
   }) {
-    return JobDocument(
+    return TaskDocument(
       schemaVersion: schemaVersion ?? this.schemaVersion,
       id: id ?? this.id,
       title: title ?? this.title,
@@ -228,37 +228,37 @@ class JobDocument {
     );
   }
 
-  JobStep? get currentStep =>
+  TaskStep? get currentStep =>
       currentStepId == null ? null : stepById(currentStepId!);
 
-  JobStep? get nextRunnableStep => steps
+  TaskStep? get nextRunnableStep => steps
       .where(
         (step) =>
-            step.status == JobStepStatus.pending ||
-            step.status == JobStepStatus.approved ||
-            step.status == JobStepStatus.blocked ||
-            step.status == JobStepStatus.failed,
+            step.status == TaskStepStatus.pending ||
+            step.status == TaskStepStatus.approved ||
+            step.status == TaskStepStatus.blocked ||
+            step.status == TaskStepStatus.failed,
       )
       .firstOrNull;
 
   bool get isTerminal =>
-      status == JobStatus.completed ||
-      status == JobStatus.cancelled ||
-      status == JobStatus.failed;
+      status == TaskStatus.completed ||
+      status == TaskStatus.cancelled ||
+      status == TaskStatus.failed;
 
-  JobStep? stepById(String id) {
+  TaskStep? stepById(String id) {
     for (final step in steps) {
       if (step.id == id) return step;
     }
     return null;
   }
 
-  factory JobDocument.fromJson(Map<String, dynamic> json) {
+  factory TaskDocument.fromJson(Map<String, dynamic> json) {
     final now = DateTime.now();
-    return JobDocument(
+    return TaskDocument(
       schemaVersion: jsonInt(json['schemaVersion'] ?? json['schema_version']),
       id: jsonString(json['id']),
-      title: jsonString(json['title'], fallback: 'Untitled job'),
+      title: jsonString(json['title'], fallback: 'Untitled task'),
       originalPrompt: jsonString(
         json['originalPrompt'] ?? json['original_prompt'],
       ),
@@ -267,25 +267,25 @@ class JobDocument {
       successCriteria: jsonStringList(
         json['successCriteria'] ?? json['success_criteria'],
       ),
-      steps: jsonMapList(json['steps']).map(JobStep.fromJson).toList(),
-      status: parseJobStatus(json['status']),
+      steps: jsonMapList(json['steps']).map(TaskStep.fromJson).toList(),
+      status: parseTaskStatus(json['status']),
       currentStepId: jsonNullableString(
         json['currentStepId'] ?? json['current_step_id'],
       ),
       memorySummary: jsonString(
         json['memorySummary'] ?? json['memory_summary'],
       ),
-      runs: jsonMapList(json['runs']).map(JobRun.fromJson).toList(),
+      runs: jsonMapList(json['runs']).map(TaskRun.fromJson).toList(),
       pendingApproval:
           json['pendingApproval'] == null && json['pending_approval'] == null
           ? null
-          : PendingJobApproval.fromJson(
+          : PendingTaskApproval.fromJson(
               jsonMap(json['pendingApproval'] ?? json['pending_approval']),
             ),
       pendingQuestion:
           json['pendingQuestion'] == null && json['pending_question'] == null
           ? null
-          : PendingJobQuestion.fromJson(
+          : PendingTaskQuestion.fromJson(
               jsonMap(json['pendingQuestion'] ?? json['pending_question']),
             ),
       chatSessionId: jsonNullableString(
@@ -327,18 +327,18 @@ class JobDocument {
   };
 }
 
-typedef JobSnapshot = JobDocument;
+typedef TaskSnapshot = TaskDocument;
 
-class JobStep {
+class TaskStep {
   final String id;
   final String title;
   final String objective;
   final List<String> instructions;
   final bool mayEditFiles;
-  final List<JobArtifact> artifacts;
-  final JobStepStatus status;
+  final List<TaskArtifact> artifacts;
+  final TaskStepStatus status;
 
-  const JobStep({
+  const TaskStep({
     required this.id,
     required this.title,
     required this.objective,
@@ -348,16 +348,16 @@ class JobStep {
     required this.status,
   });
 
-  JobStep copyWith({
+  TaskStep copyWith({
     String? id,
     String? title,
     String? objective,
     List<String>? instructions,
     bool? mayEditFiles,
-    List<JobArtifact>? artifacts,
-    JobStepStatus? status,
+    List<TaskArtifact>? artifacts,
+    TaskStepStatus? status,
   }) {
-    return JobStep(
+    return TaskStep(
       id: id ?? this.id,
       title: title ?? this.title,
       objective: objective ?? this.objective,
@@ -368,8 +368,8 @@ class JobStep {
     );
   }
 
-  factory JobStep.fromJson(Map<String, dynamic> json) {
-    return JobStep(
+  factory TaskStep.fromJson(Map<String, dynamic> json) {
+    return TaskStep(
       id: jsonString(json['id']),
       title: jsonString(json['title'], fallback: 'Untitled step'),
       objective: jsonString(json['objective']),
@@ -377,8 +377,8 @@ class JobStep {
       mayEditFiles: jsonBool(json['mayEditFiles'] ?? json['may_edit_files']),
       artifacts: jsonMapList(
         json['artifacts'],
-      ).map(JobArtifact.fromJson).toList(),
-      status: parseJobStepStatus(json['status']),
+      ).map(TaskArtifact.fromJson).toList(),
+      status: parseTaskStepStatus(json['status']),
     );
   }
 
@@ -393,21 +393,21 @@ class JobStep {
   };
 }
 
-class JobArtifact {
+class TaskArtifact {
   final String path;
   final String? description;
   final String? stepId;
   final DateTime? createdAt;
 
-  const JobArtifact({
+  const TaskArtifact({
     required this.path,
     this.description,
     this.stepId,
     this.createdAt,
   });
 
-  factory JobArtifact.fromJson(Map<String, dynamic> json) {
-    return JobArtifact(
+  factory TaskArtifact.fromJson(Map<String, dynamic> json) {
+    return TaskArtifact(
       path: jsonString(json['path']),
       description: jsonNullableString(json['description']),
       stepId: jsonNullableString(json['stepId'] ?? json['step_id']),
@@ -423,20 +423,20 @@ class JobArtifact {
   };
 }
 
-class JobRun {
+class TaskRun {
   final String runId;
   final String stepId;
-  final JobRunStatus status;
+  final TaskRunStatus status;
   final String summary;
   final String memoryUpdate;
-  final List<JobToolCallRecord> toolCalls;
-  final List<JobArtifact> artifacts;
+  final List<TaskToolCallRecord> toolCalls;
+  final List<TaskArtifact> artifacts;
   final DateTime startedAt;
   final DateTime? completedAt;
   final String? replanReason;
   final String? error;
 
-  const JobRun({
+  const TaskRun({
     required this.runId,
     required this.stepId,
     required this.status,
@@ -450,20 +450,20 @@ class JobRun {
     this.error,
   });
 
-  JobRun copyWith({
+  TaskRun copyWith({
     String? runId,
     String? stepId,
-    JobRunStatus? status,
+    TaskRunStatus? status,
     String? summary,
     String? memoryUpdate,
-    List<JobToolCallRecord>? toolCalls,
-    List<JobArtifact>? artifacts,
+    List<TaskToolCallRecord>? toolCalls,
+    List<TaskArtifact>? artifacts,
     DateTime? startedAt,
     Object? completedAt = kSentinel,
     Object? replanReason = kSentinel,
     Object? error = kSentinel,
   }) {
-    return JobRun(
+    return TaskRun(
       runId: runId ?? this.runId,
       stepId: stepId ?? this.stepId,
       status: status ?? this.status,
@@ -478,20 +478,20 @@ class JobRun {
     );
   }
 
-  factory JobRun.fromJson(Map<String, dynamic> json) {
+  factory TaskRun.fromJson(Map<String, dynamic> json) {
     final now = DateTime.now();
-    return JobRun(
+    return TaskRun(
       runId: jsonString(json['runId'] ?? json['run_id']),
       stepId: jsonString(json['stepId'] ?? json['step_id']),
-      status: parseJobRunStatus(json['status']),
+      status: parseTaskRunStatus(json['status']),
       summary: jsonString(json['summary']),
       memoryUpdate: jsonString(json['memoryUpdate'] ?? json['memory_update']),
       toolCalls: jsonMapList(
         json['toolCalls'] ?? json['tool_calls'],
-      ).map(JobToolCallRecord.fromJson).toList(),
+      ).map(TaskToolCallRecord.fromJson).toList(),
       artifacts: jsonMapList(
         json['artifacts'],
-      ).map(JobArtifact.fromJson).toList(),
+      ).map(TaskArtifact.fromJson).toList(),
       startedAt: jsonDate(
         json['startedAt'] ?? json['started_at'],
         fallback: now,
@@ -521,7 +521,7 @@ class JobRun {
   };
 }
 
-class JobToolCallRecord {
+class TaskToolCallRecord {
   final String id;
   final String stepId;
   final String runId;
@@ -531,7 +531,7 @@ class JobToolCallRecord {
   final String? error;
   final DateTime timestamp;
 
-  const JobToolCallRecord({
+  const TaskToolCallRecord({
     required this.id,
     required this.stepId,
     required this.runId,
@@ -542,8 +542,8 @@ class JobToolCallRecord {
     this.error,
   });
 
-  factory JobToolCallRecord.fromJson(Map<String, dynamic> json) {
-    return JobToolCallRecord(
+  factory TaskToolCallRecord.fromJson(Map<String, dynamic> json) {
+    return TaskToolCallRecord(
       id: jsonString(json['id']),
       stepId: jsonString(json['stepId'] ?? json['step_id']),
       runId: jsonString(json['runId'] ?? json['run_id']),
@@ -569,19 +569,19 @@ class JobToolCallRecord {
   };
 }
 
-class PendingJobApproval {
+class PendingTaskApproval {
   final String stepId;
   final String reason;
   final DateTime createdAt;
 
-  const PendingJobApproval({
+  const PendingTaskApproval({
     required this.stepId,
     required this.reason,
     required this.createdAt,
   });
 
-  factory PendingJobApproval.fromJson(Map<String, dynamic> json) {
-    return PendingJobApproval(
+  factory PendingTaskApproval.fromJson(Map<String, dynamic> json) {
+    return PendingTaskApproval(
       stepId: jsonString(json['stepId'] ?? json['step_id']),
       reason: jsonString(json['reason']),
       createdAt: jsonDate(
@@ -598,21 +598,21 @@ class PendingJobApproval {
   };
 }
 
-class PendingJobQuestion {
+class PendingTaskQuestion {
   final String id;
   final String stepId;
   final String question;
   final DateTime createdAt;
 
-  const PendingJobQuestion({
+  const PendingTaskQuestion({
     required this.id,
     required this.stepId,
     required this.question,
     required this.createdAt,
   });
 
-  factory PendingJobQuestion.fromJson(Map<String, dynamic> json) {
-    return PendingJobQuestion(
+  factory PendingTaskQuestion.fromJson(Map<String, dynamic> json) {
+    return PendingTaskQuestion(
       id: jsonString(json['id']),
       stepId: jsonString(json['stepId'] ?? json['step_id']),
       question: jsonString(json['question']),

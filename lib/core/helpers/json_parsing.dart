@@ -2,7 +2,7 @@
 ///
 /// Each function handles type coercion, nullability, and empty-string edge
 /// cases consistently. Where the original code had slight variations (e.g.
-/// [_stringList] in job.dart handled Map items with a `question` key), this
+/// [_stringList] in task.dart handled Map items with a `question` key), this
 /// module preserves that richer behavior as the default.
 library;
 
@@ -29,7 +29,7 @@ String? jsonNullableString(Object? value) {
 /// Parses a list of strings. Handles:
 /// - `List<dynamic>` where each item is converted via [toString]
 /// - `List<Map<String, dynamic>>` where items with a `question` key yield
-///   that value's string representation (for compatibility with job models)
+///   that value's string representation (for compatibility with task models)
 /// - A single non-empty string (wrapped in a one-element list)
 /// - Empty or non-list values return an empty list.
 List<String> jsonStringList(Object? value) {

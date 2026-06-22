@@ -13,34 +13,34 @@ import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
-import 'package:hermes/core/models/job.dart';
+import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
-import 'package:hermes/core/services/job_system/job_json.dart';
-import 'package:hermes/core/services/job_system/job_model_output.dart';
-import 'package:hermes/core/services/job_system/job_storage_service.dart';
-import 'package:hermes/core/services/job_system/job_summary.dart';
+import 'package:hermes/core/services/task_system/task_json.dart';
+import 'package:hermes/core/services/task_system/task_model_output.dart';
+import 'package:hermes/core/services/task_system/task_storage_service.dart';
+import 'package:hermes/core/services/task_system/task_summary.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:path/path.dart' as path;
 
-typedef JobCancelRegistration = void Function();
-typedef JobCancelCallback = FutureOr<void> Function();
-typedef JobCompactionStatusSink = void Function(String status);
+typedef TaskCancelRegistration = void Function();
+typedef TaskCancelCallback = FutureOr<void> Function();
+typedef TaskCompactionStatusSink = void Function(String status);
 
-class JobCancellationToken {
-  final List<JobCancelCallback> _callbacks = [];
+class TaskCancellationToken {
+  final List<TaskCancelCallback> _callbacks = [];
   bool _isCancelled = false;
 
   bool get isCancelled => _isCancelled;
 
   void throwIfCancelled() {
-    if (_isCancelled) throw const JobCancelledException();
+    if (_isCancelled) throw const TaskCancelledException();
   }
 
-  JobCancelRegistration onCancel(JobCancelCallback callback) {
+  TaskCancelRegistration onCancel(TaskCancelCallback callback) {
     if (_isCancelled) {
       Future.microtask(callback);
       return () {};
@@ -52,7 +52,7 @@ class JobCancellationToken {
   Future<void> cancel() async {
     if (_isCancelled) return;
     _isCancelled = true;
-    final callbacks = List<JobCancelCallback>.of(_callbacks);
+    final callbacks = List<TaskCancelCallback>.of(_callbacks);
     _callbacks.clear();
     for (final callback in callbacks) {
       await callback();
@@ -60,21 +60,21 @@ class JobCancellationToken {
   }
 }
 
-class JobCancelledException implements Exception {
-  const JobCancelledException();
+class TaskCancelledException implements Exception {
+  const TaskCancelledException();
 
   @override
-  String toString() => 'Job execution cancelled';
+  String toString() => 'Task execution cancelled';
 }
 
-class _StreamingJobToolCall {
+class _StreamingTaskToolCall {
   String? id;
   String? name;
   final StringBuffer arguments = StringBuffer();
 }
 
-class _PendingJobToolResult {
-  const _PendingJobToolResult({
+class _PendingTaskToolResult {
+  const _PendingTaskToolResult({
     required this.messageIndex,
     required this.toolIndex,
   });
@@ -85,7 +85,7 @@ class _PendingJobToolResult {
 
 const int _maxConsecutiveRepeatedToolCalls = 3;
 
-const Set<String> _readOnlyJobToolIds = {
+const Set<String> _readOnlyTaskToolIds = {
   'calculator',
   'list_directory',
   'read_file',
@@ -93,7 +93,7 @@ const Set<String> _readOnlyJobToolIds = {
   'write_file',
 };
 
-const Set<String> _mutatingJobToolIds = {
+const Set<String> _mutatingTaskToolIds = {
   'write_file',
   'patch_file',
   'create_directory',
@@ -102,13 +102,13 @@ const Set<String> _mutatingJobToolIds = {
   'run_command',
 };
 
-const String _finishJobStepToolId = 'finish_job_step';
+const String _finishTaskStepToolId = 'finish_task_step';
 
-const ToolDefinition _finishJobStepToolDefinition = ToolDefinition(
-  id: _finishJobStepToolId,
-  name: 'Finish job step',
+const ToolDefinition _finishTaskStepToolDefinition = ToolDefinition(
+  id: _finishTaskStepToolId,
+  name: 'Finish task step',
   description:
-      'Finish the current job step. Use this when the current step is done, blocked, needs replanning, or has failed. Calling this ends the step; do not call workspace tools after it.',
+      'Finish the current task step. Use this when the current step is done, blocked, needs replanning, or has failed. Calling this ends the step; do not call workspace tools after it.',
   schema: {
     'type': 'object',
     'properties': {
@@ -124,7 +124,7 @@ const ToolDefinition _finishJobStepToolDefinition = ToolDefinition(
       'memoryUpdate': {
         'type': 'string',
         'description':
-            'Useful context from this step that later job steps should remember.',
+            'Useful context from this step that later task steps should remember.',
       },
       'artifacts': {
         'type': 'array',
@@ -162,76 +162,76 @@ const ToolDefinition _finishJobStepToolDefinition = ToolDefinition(
   },
 );
 
-class JobService {
-  JobService({
+class TaskService {
+  TaskService({
     required ToolService toolService,
-    JobStorageService? storage,
+    TaskStorageService? storage,
     WorkspaceSandbox? sandbox,
   }) : _toolService = toolService,
-       _storage = storage ?? JobStorageService(),
+       _storage = storage ?? TaskStorageService(),
        _sandbox = sandbox ?? WorkspaceSandbox();
 
   final ToolService _toolService;
-  final JobStorageService _storage;
+  final TaskStorageService _storage;
   final WorkspaceSandbox _sandbox;
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
 
-  JobStorageService get storage => _storage;
+  TaskStorageService get storage => _storage;
 
-  Future<List<JobSummary>> listJobs(
+  Future<List<TaskSummary>> listTasks(
     WorkspaceAttachment workspace, {
     String? chatSessionId,
   }) {
-    return _storage.listJobs(workspace.rootPath, chatSessionId: chatSessionId);
+    return _storage.listTasks(workspace.rootPath, chatSessionId: chatSessionId);
   }
 
-  Future<JobDocument?> loadLatestJob(
+  Future<TaskDocument?> loadLatestTask(
     WorkspaceAttachment workspace, {
     String? chatSessionId,
   }) {
-    return _storage.loadLatestJob(
+    return _storage.loadLatestTask(
       workspace.rootPath,
       chatSessionId: chatSessionId,
     );
   }
 
-  Future<JobDocument?> loadJob(
+  Future<TaskDocument?> loadTask(
     WorkspaceAttachment workspace,
-    String jobId, {
+    String taskId, {
     String? chatSessionId,
   }) {
-    return _storage.loadJob(
+    return _storage.loadTask(
       workspace.rootPath,
-      jobId,
+      taskId,
       chatSessionId: chatSessionId,
     );
   }
 
-  Future<int> deleteJobsForChatSession(
+  Future<int> deleteTasksForChatSession(
     WorkspaceAttachment workspace, {
     required String chatSessionId,
   }) {
     if (workspace.missing) return Future.value(0);
-    return _storage.deleteJobsForChatSession(
+    return _storage.deleteTasksForChatSession(
       workspace.rootPath,
       chatSessionId: chatSessionId,
     );
   }
 
-  Future<int> deleteOrphanedChatJobs(
+  Future<int> deleteOrphanedChatTasks(
     WorkspaceAttachment workspace, {
     required Set<String> retainedChatSessionIds,
   }) {
     if (workspace.missing) return Future.value(0);
-    return _storage.deleteOrphanedChatJobs(
+    return _storage.deleteOrphanedChatTasks(
       workspace.rootPath,
       retainedChatSessionIds: retainedChatSessionIds,
     );
   }
 
-  Future<JobDocument> updateJobChatSessionId({
+  Future<TaskDocument> updateTaskChatSessionId({
     required WorkspaceAttachment workspace,
-    required JobDocument snapshot,
+    required TaskDocument snapshot,
     required String chatSessionId,
   }) async {
     if (snapshot.chatSessionId == chatSessionId) return snapshot;
@@ -243,32 +243,33 @@ class JobService {
     return updated;
   }
 
-  Future<JobDocument> recoverJob({
+  Future<TaskDocument> recoverTask({
     required WorkspaceAttachment workspace,
-    required JobDocument snapshot,
+    required TaskDocument snapshot,
   }) async {
-    if (snapshot.status != JobStatus.running) return snapshot;
+    if (snapshot.status != TaskStatus.running) return snapshot;
     final now = DateTime.now();
     final steps = snapshot.steps.map((step) {
-      if (step.status == JobStepStatus.running) {
-        return step.copyWith(status: JobStepStatus.blocked);
+      if (step.status == TaskStepStatus.running) {
+        return step.copyWith(status: TaskStepStatus.blocked);
       }
       return step;
     }).toList();
     final recovered = snapshot.copyWith(
-      status: JobStatus.blocked,
+      status: TaskStatus.blocked,
       steps: steps,
       updatedAt: now,
       memorySummary: _appendMemory(
         snapshot.memorySummary,
-        'Recovered an interrupted job. Review the current step before continuing.',
+        'Recovered an interrupted task. Review the current step before continuing.',
       ),
     );
     await _storage.saveSnapshot(workspace.rootPath, recovered);
     return recovered;
   }
 
-  String encodeJob(JobDocument job) => '${_encoder.convert(job.toJson())}\n';
+  String encodeTask(TaskDocument task) =>
+      '${_encoder.convert(task.toJson())}\n';
 
   Future<String> readArtifact({
     required WorkspaceAttachment workspace,
@@ -282,13 +283,13 @@ class JobService {
     return _cap(await file.readAsString(), 240000);
   }
 
-  Future<RefinedJobBrief> refineTaskBrief({
+  Future<RefinedTaskBrief> refineTaskBrief({
     required ChatClient client,
     WorkspaceAttachment? workspace,
     required String userPrompt,
     ExecutionMode selectedMode = ExecutionMode.refine,
-    JobModelOutputSink? onModelOutput,
-    JobCancellationToken? cancellationToken,
+    TaskModelOutputSink? onModelOutput,
+    TaskCancellationToken? cancellationToken,
   }) async {
     final metadata = workspace == null || workspace.missing
         ? const _WorkspaceMetadata()
@@ -303,7 +304,7 @@ class JobService {
         cancellationToken: cancellationToken,
         user:
             '''
-Refine this request into a concise brief for a long-horizon job planner.
+Refine this request into a concise brief for a long-horizon task planner.
 
 Return only JSON:
 {
@@ -323,42 +324,42 @@ Request:
 $userPrompt
 ''',
       );
-      return _normaliseBrief(RefinedJobBrief.fromJson(json), userPrompt);
-    } on JobCancelledException {
+      return _normaliseBrief(RefinedTaskBrief.fromJson(json), userPrompt);
+    } on TaskCancelledException {
       rethrow;
     } catch (_) {
       return _fallbackBrief(userPrompt);
     }
   }
 
-  Future<JobDocument> createJob({
+  Future<TaskDocument> createTask({
     required ChatClient client,
     required WorkspaceAttachment workspace,
     required String userPrompt,
     required ExecutionMode selectedMode,
     required String baseSystemPrompt,
     String? chatSessionId,
-    JobModelOutputSink? onModelOutput,
-    JobCancellationToken? cancellationToken,
+    TaskModelOutputSink? onModelOutput,
+    TaskCancellationToken? cancellationToken,
   }) async {
     final now = DateTime.now();
-    final jobId = _newJobId(userPrompt);
+    final taskId = _newTaskId(userPrompt);
     final metadata = await _collectWorkspaceMetadata(
       workspace,
       chatSessionId: chatSessionId,
     );
 
-    JobDocument job;
+    TaskDocument task;
     try {
       final json = await _completeJson(
         client: client,
         system: '$baseSystemPrompt\n\n$_plannerSystemInstruction',
-        label: 'Job Planner',
+        label: 'Task Planner',
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
         user:
             '''
-Create a linear multi-step job plan.
+Create a linear multi-step task plan.
 
 Return only JSON:
 {
@@ -373,12 +374,12 @@ Return only JSON:
       "objective": "...",
       "instructions": ["..."],
       "mayEditFiles": false,
-      "artifacts": [{"path": ".agent/jobs/$jobId/output.md", "description": "..."}]
+      "artifacts": [{"path": ".agent/tasks/$taskId/output.md", "description": "..."}]
     }
   ]
 }
 
-Use this exact job id when referencing job-owned artifacts: $jobId
+Use this exact task id when referencing task-owned artifacts: $taskId
 Create only as many steps as are necessary to accomplish the task.
 Artifacts are optional.
 
@@ -389,36 +390,36 @@ Request:
 $userPrompt
 ''',
       );
-      job = _jobFromPlannerJson(
+      task = _taskFromPlannerJson(
         json,
-        jobId: jobId,
+        taskId: taskId,
         originalPrompt: userPrompt,
         chatSessionId: chatSessionId,
         now: now,
       );
-    } on JobCancelledException {
+    } on TaskCancelledException {
       rethrow;
     } catch (_) {
-      job = _fallbackJob(
-        jobId: jobId,
+      task = _fallbackTask(
+        taskId: taskId,
         userPrompt: userPrompt,
         chatSessionId: chatSessionId,
         now: now,
       );
     }
 
-    await _storage.saveSnapshot(workspace.rootPath, job);
-    return job;
+    await _storage.saveSnapshot(workspace.rootPath, task);
+    return task;
   }
 
-  Future<JobDocument> updateJobPlan({
+  Future<TaskDocument> updateTaskPlan({
     required WorkspaceAttachment workspace,
-    required JobDocument snapshot,
+    required TaskDocument snapshot,
     required String rawJson,
   }) async {
-    final parsed = JobDocument.fromJson(JobJson.parseObject(rawJson));
+    final parsed = TaskDocument.fromJson(TaskJson.parseObject(rawJson));
     final now = DateTime.now();
-    final normalised = _normaliseEditedJob(
+    final normalised = _normaliseEditedTask(
       parsed.copyWith(id: snapshot.id, chatSessionId: snapshot.chatSessionId),
       snapshot,
       now,
@@ -427,20 +428,20 @@ $userPrompt
     return normalised;
   }
 
-  Future<JobDocument> runNextStep({
+  Future<TaskDocument> runNextStep({
     required ChatClient client,
     required WorkspaceAttachment workspace,
-    required JobDocument snapshot,
+    required TaskDocument snapshot,
     required String baseSystemPrompt,
     bool requirePhaseApproval = false,
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
-    JobCompactionStatusSink? onCompactionStatus,
-    JobModelOutputSink? onModelOutput,
-    JobCancellationToken? cancellationToken,
+    TaskCompactionStatusSink? onCompactionStatus,
+    TaskModelOutputSink? onModelOutput,
+    TaskCancellationToken? cancellationToken,
   }) async {
     cancellationToken?.throwIfCancelled();
-    var working = await recoverJob(workspace: workspace, snapshot: snapshot);
+    var working = await recoverTask(workspace: workspace, snapshot: snapshot);
     if (working.isTerminal) return working;
     final step = working.nextRunnableStep;
     if (step == null) {
@@ -453,16 +454,16 @@ $userPrompt
 
     if (requirePhaseApproval &&
         step.mayEditFiles &&
-        step.status != JobStepStatus.approved) {
+        step.status != TaskStepStatus.approved) {
       final blocked =
           _replaceStep(
             working,
             step.id,
-            step.copyWith(status: JobStepStatus.blocked),
+            step.copyWith(status: TaskStepStatus.blocked),
           ).copyWith(
-            status: JobStatus.blocked,
+            status: TaskStatus.blocked,
             currentStepId: step.id,
-            pendingApproval: PendingJobApproval(
+            pendingApproval: PendingTaskApproval(
               stepId: step.id,
               reason: 'Step "${step.title}" may edit workspace files.',
               createdAt: DateTime.now(),
@@ -474,10 +475,10 @@ $userPrompt
     }
 
     final now = DateTime.now();
-    final run = JobRun(
+    final run = TaskRun(
       runId: 'run_${uuid.v7()}',
       stepId: step.id,
-      status: JobRunStatus.running,
+      status: TaskRunStatus.running,
       summary: '',
       memoryUpdate: '',
       toolCalls: const [],
@@ -489,9 +490,9 @@ $userPrompt
         _replaceStep(
           working,
           step.id,
-          step.copyWith(status: JobStepStatus.running),
+          step.copyWith(status: TaskStepStatus.running),
         ).copyWith(
-          status: JobStatus.running,
+          status: TaskStatus.running,
           currentStepId: step.id,
           runs: [...working.runs, run],
           pendingApproval: null,
@@ -504,7 +505,7 @@ $userPrompt
       final execution = await _executeStep(
         client: client,
         workspace: workspace,
-        job: working,
+        task: working,
         step: step,
         run: run,
         baseSystemPrompt: baseSystemPrompt,
@@ -555,10 +556,10 @@ $userPrompt
 
       await _storage.saveSnapshot(workspace.rootPath, working);
       return working;
-    } on JobCancelledException catch (e) {
+    } on TaskCancelledException catch (e) {
       final cancelledAt = DateTime.now();
       final cancelledRun = run.copyWith(
-        status: JobRunStatus.cancelled,
+        status: TaskRunStatus.cancelled,
         completedAt: cancelledAt,
         summary: 'Step cancelled by the user.',
         error: e.toString(),
@@ -568,9 +569,9 @@ $userPrompt
           _replaceStep(
             working,
             step.id,
-            step.copyWith(status: JobStepStatus.pending),
+            step.copyWith(status: TaskStepStatus.pending),
           ).copyWith(
-            status: JobStatus.paused,
+            status: TaskStatus.paused,
             currentStepId: step.id,
             pendingApproval: null,
             pendingQuestion: null,
@@ -580,7 +581,7 @@ $userPrompt
       return working;
     } catch (e) {
       final failedRun = run.copyWith(
-        status: JobRunStatus.failed,
+        status: TaskRunStatus.failed,
         completedAt: DateTime.now(),
         summary: 'Step failed: $e',
         error: e.toString(),
@@ -590,9 +591,9 @@ $userPrompt
           _replaceStep(
             working,
             step.id,
-            step.copyWith(status: JobStepStatus.failed),
+            step.copyWith(status: TaskStepStatus.failed),
           ).copyWith(
-            status: JobStatus.failed,
+            status: TaskStatus.failed,
             currentStepId: step.id,
             updatedAt: DateTime.now(),
           );
@@ -601,9 +602,9 @@ $userPrompt
     }
   }
 
-  Future<JobDocument> approvePendingStep({
+  Future<TaskDocument> approvePendingStep({
     required WorkspaceAttachment workspace,
-    required JobDocument snapshot,
+    required TaskDocument snapshot,
   }) async {
     final approval = snapshot.pendingApproval;
     if (approval == null) return snapshot;
@@ -613,9 +614,9 @@ $userPrompt
         _replaceStep(
           snapshot,
           step.id,
-          step.copyWith(status: JobStepStatus.approved),
+          step.copyWith(status: TaskStepStatus.approved),
         ).copyWith(
-          status: JobStatus.paused,
+          status: TaskStatus.paused,
           currentStepId: step.id,
           pendingApproval: null,
           updatedAt: DateTime.now(),
@@ -624,9 +625,9 @@ $userPrompt
     return updated;
   }
 
-  Future<JobDocument> retryCurrentStep({
+  Future<TaskDocument> retryCurrentStep({
     required WorkspaceAttachment workspace,
-    required JobDocument snapshot,
+    required TaskDocument snapshot,
   }) async {
     final step = snapshot.currentStep ?? snapshot.nextRunnableStep;
     if (step == null) return snapshot;
@@ -634,9 +635,9 @@ $userPrompt
         _replaceStep(
           snapshot,
           step.id,
-          step.copyWith(status: JobStepStatus.pending),
+          step.copyWith(status: TaskStepStatus.pending),
         ).copyWith(
-          status: JobStatus.paused,
+          status: TaskStatus.paused,
           currentStepId: step.id,
           pendingApproval: null,
           pendingQuestion: null,
@@ -646,22 +647,22 @@ $userPrompt
     return updated;
   }
 
-  Future<JobDocument> skipCurrentStep({
+  Future<TaskDocument> skipCurrentStep({
     required WorkspaceAttachment workspace,
-    required JobDocument snapshot,
+    required TaskDocument snapshot,
   }) async {
     final step = snapshot.currentStep ?? snapshot.nextRunnableStep;
     if (step == null) return snapshot;
     final now = DateTime.now();
-    final updatedStep = step.copyWith(status: JobStepStatus.skipped);
+    final updatedStep = step.copyWith(status: TaskStepStatus.skipped);
     var updated = _replaceStep(snapshot, step.id, updatedStep);
     updated = _advanceAfterStep(updated, now).copyWith(
       runs: [
         ...updated.runs,
-        JobRun(
+        TaskRun(
           runId: 'run_${uuid.v7()}',
           stepId: step.id,
-          status: JobRunStatus.skipped,
+          status: TaskRunStatus.skipped,
           summary: 'Step skipped by the user.',
           memoryUpdate: '',
           toolCalls: const [],
@@ -675,13 +676,13 @@ $userPrompt
     return updated;
   }
 
-  Future<JobDocument> stopJob({
+  Future<TaskDocument> stopTask({
     required WorkspaceAttachment workspace,
-    required JobDocument snapshot,
+    required TaskDocument snapshot,
   }) async {
     final now = DateTime.now();
     final updated = snapshot.copyWith(
-      status: JobStatus.cancelled,
+      status: TaskStatus.cancelled,
       currentStepId: null,
       pendingApproval: null,
       pendingQuestion: null,
@@ -692,9 +693,9 @@ $userPrompt
     return updated;
   }
 
-  Future<JobDocument> answerOpenQuestion({
+  Future<TaskDocument> answerOpenQuestion({
     required WorkspaceAttachment workspace,
-    required JobDocument snapshot,
+    required TaskDocument snapshot,
     required String answer,
   }) async {
     final question = snapshot.pendingQuestion;
@@ -706,19 +707,19 @@ $userPrompt
           snapshot,
           question.stepId,
           (step ?? snapshot.nextRunnableStep)?.copyWith(
-                status: JobStepStatus.pending,
+                status: TaskStepStatus.pending,
               ) ??
-              JobStep(
+              TaskStep(
                 id: question.stepId,
                 title: question.stepId,
                 objective: '',
                 instructions: const [],
                 mayEditFiles: false,
                 artifacts: const [],
-                status: JobStepStatus.pending,
+                status: TaskStepStatus.pending,
               ),
         ).copyWith(
-          status: JobStatus.paused,
+          status: TaskStatus.paused,
           pendingQuestion: null,
           memorySummary: _appendMemory(
             snapshot.memorySummary,
@@ -730,14 +731,14 @@ $userPrompt
     return updated;
   }
 
-  Future<JobDocument> replanUnfinished({
+  Future<TaskDocument> replanUnfinished({
     required ChatClient client,
     required WorkspaceAttachment workspace,
-    required JobDocument snapshot,
+    required TaskDocument snapshot,
     required String baseSystemPrompt,
     String reason = 'User requested a replan of unfinished work.',
-    JobModelOutputSink? onModelOutput,
-    JobCancellationToken? cancellationToken,
+    TaskModelOutputSink? onModelOutput,
+    TaskCancellationToken? cancellationToken,
   }) async {
     final updated = await _replanUnfinished(
       client: client,
@@ -769,25 +770,25 @@ $userPrompt
       workspaceName: workspace.displayName,
       rootFiles: rootFiles,
       gitAvailable: rootFiles.contains('.git'),
-      existingJobIds: (await _storage.listJobs(
+      existingTaskIds: (await _storage.listTasks(
         workspace.rootPath,
         chatSessionId: chatSessionId,
-      )).map((job) => job.id).toList(),
+      )).map((task) => task.id).toList(),
     );
   }
 
   Future<_StepExecutionOutput> _executeStep({
     required ChatClient client,
     required WorkspaceAttachment workspace,
-    required JobDocument job,
-    required JobStep step,
-    required JobRun run,
+    required TaskDocument task,
+    required TaskStep step,
+    required TaskRun run,
     required String baseSystemPrompt,
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
-    JobCompactionStatusSink? onCompactionStatus,
-    JobModelOutputSink? onModelOutput,
-    JobCancellationToken? cancellationToken,
+    TaskCompactionStatusSink? onCompactionStatus,
+    TaskModelOutputSink? onModelOutput,
+    TaskCancellationToken? cancellationToken,
   }) async {
     final allowedToolIds = _allowedToolIdsForStep(step);
     final toolDefs = [
@@ -795,15 +796,15 @@ $userPrompt
         ids: allowedToolIds.toList(),
         includeWorkspaceTools: true,
       ),
-      _finishJobStepToolDefinition,
+      _finishTaskStepToolDefinition,
     ];
     final messages = <ChatMessage>[
       ChatMessage(role: 'system', content: baseSystemPrompt),
       const ChatMessage(role: 'system', content: _executorSystemInstruction),
-      ChatMessage(role: 'user', content: _buildStepPrompt(job, step)),
+      ChatMessage(role: 'user', content: _buildStepPrompt(task, step)),
     ];
     final context = WorkspaceToolContext(workspace: workspace);
-    final toolCalls = <JobToolCallRecord>[];
+    final toolCalls = <TaskToolCallRecord>[];
     var finalText = '';
     var finalContent = '';
     _StepExecutionOutput? forcedOutput;
@@ -812,7 +813,7 @@ $userPrompt
 
     while (true) {
       cancellationToken?.throwIfCancelled();
-      final completion = await _completeChatForJob(
+      final completion = await _completeChatForTask(
         client: client,
         label: 'Step Executor: ${step.title}',
         onModelOutput: onModelOutput,
@@ -838,21 +839,21 @@ $userPrompt
       if (completion.toolCalls.isEmpty) break;
 
       final finishCallIndex = completion.toolCalls.indexWhere(
-        (call) => call.name == _finishJobStepToolId,
+        (call) => call.name == _finishTaskStepToolId,
       );
       if (finishCallIndex >= 0) {
         final finishCall = completion.toolCalls[finishCallIndex];
         final callId = finishCall.id ?? 'call_$finishCallIndex';
-        final args = JobJson.decodeJsonOrString(finishCall.arguments);
+        final args = TaskJson.decodeJsonOrString(finishCall.arguments);
         final finish = _finishStepFromToolCall(
           args: args,
-          job: job,
+          task: task,
           step: step,
           existingToolCalls: toolCalls,
         );
         final resultJson = finish.resultJson;
         toolCalls.add(
-          JobToolCallRecord(
+          TaskToolCallRecord(
             id: callId,
             stepId: step.id,
             runId: run.runId,
@@ -882,10 +883,10 @@ $userPrompt
 
       if (_isStepResultJson(finalContent)) {
         for (var i = 0; i < completion.toolCalls.length; i++) {
-          _emitJobModelOutput(
+          _emitTaskModelOutput(
             onModelOutput,
-            JobModelOutputEvent(
-              type: JobModelOutputEventType.toolResult,
+            TaskModelOutputEvent(
+              type: TaskModelOutputEventType.toolResult,
               label: 'Step Executor: ${step.title}',
               text: jsonEncode({
                 'skipped': true,
@@ -913,7 +914,7 @@ $userPrompt
                 'type': 'function',
                 'function': {
                   'name': completion.toolCalls[i].name,
-                  'arguments': JobJson.decodeJsonOrString(
+                  'arguments': TaskJson.decodeJsonOrString(
                     completion.toolCalls[i].arguments,
                   ),
                 },
@@ -926,7 +927,7 @@ $userPrompt
         cancellationToken?.throwIfCancelled();
         final call = completion.toolCalls[i];
         final callId = call.id ?? 'call_$i';
-        final args = JobJson.decodeJsonOrString(call.arguments);
+        final args = TaskJson.decodeJsonOrString(call.arguments);
         final toolKey = _toolCallKey(call);
         if (toolKey == previousToolKey) {
           consecutiveRepeatCount++;
@@ -941,9 +942,9 @@ $userPrompt
               'The step repeated the same tool call $consecutiveRepeatCount times: ${call.name}.';
         }
 
-        final resultJson = await _executeJobToolCall(
+        final resultJson = await _executeTaskToolCall(
           call: call,
-          job: job,
+          task: task,
           step: step,
           allowedToolIds: allowedToolIds,
           context: context,
@@ -952,7 +953,7 @@ $userPrompt
         cancellationToken?.throwIfCancelled();
         final error = _toolError(resultJson);
         toolCalls.add(
-          JobToolCallRecord(
+          TaskToolCallRecord(
             id: callId,
             stepId: step.id,
             runId: run.runId,
@@ -963,10 +964,10 @@ $userPrompt
             timestamp: DateTime.now(),
           ),
         );
-        _emitJobModelOutput(
+        _emitTaskModelOutput(
           onModelOutput,
-          JobModelOutputEvent(
-            type: JobModelOutputEventType.toolResult,
+          TaskModelOutputEvent(
+            type: TaskModelOutputEventType.toolResult,
             label: 'Step Executor: ${step.title}',
             text: resultJson,
             toolIndex: i,
@@ -998,11 +999,11 @@ $userPrompt
           if (finalContent.isNotEmpty) finalContent,
         ].join('\n\n').trim();
         if (_isStepResultJson(finalContent)) {
-          forcedOutput = _parseStepOutput(finalContent, job, step, toolCalls);
+          forcedOutput = _parseStepOutput(finalContent, task, step, toolCalls);
         } else {
           forcedOutput = _StepExecutionOutput(
             status: _StepExecutionStatus.failed,
-            runStatus: JobRunStatus.failed,
+            runStatus: TaskRunStatus.failed,
             summary:
                 'Stopped step after a tool-call loop guard fired. $loopGuardReason',
             memoryUpdate: '',
@@ -1017,7 +1018,7 @@ $userPrompt
 
     await _storage.saveLog(
       workspace.rootPath,
-      job.id,
+      task.id,
       '${step.id}-${run.runId}.md',
       finalText,
     );
@@ -1025,25 +1026,25 @@ $userPrompt
     return forcedOutput ??
         _parseStepOutput(
           finalContent.isEmpty ? finalText : finalContent,
-          job,
+          task,
           step,
           toolCalls,
         );
   }
 
-  Set<String> _allowedToolIdsForStep(JobStep step) {
-    if (!step.mayEditFiles) return _readOnlyJobToolIds;
-    return {..._readOnlyJobToolIds, ..._mutatingJobToolIds};
+  Set<String> _allowedToolIdsForStep(TaskStep step) {
+    if (!step.mayEditFiles) return _readOnlyTaskToolIds;
+    return {..._readOnlyTaskToolIds, ..._mutatingTaskToolIds};
   }
 
   _FinishToolCallResult _finishStepFromToolCall({
     required Object args,
-    required JobDocument job,
-    required JobStep step,
-    required List<JobToolCallRecord> existingToolCalls,
+    required TaskDocument task,
+    required TaskStep step,
+    required List<TaskToolCallRecord> existingToolCalls,
   }) {
     if (args is! Map) {
-      const error = 'finish_job_step arguments must be a JSON object.';
+      const error = 'finish_task_step arguments must be a JSON object.';
       final resultJson = jsonEncode({'error': error});
       return _FinishToolCallResult(
         resultJson: resultJson,
@@ -1051,7 +1052,7 @@ $userPrompt
         error: error,
         output: _StepExecutionOutput(
           status: _StepExecutionStatus.failed,
-          runStatus: JobRunStatus.failed,
+          runStatus: TaskRunStatus.failed,
           summary: error,
           memoryUpdate: '',
           artifacts: const [],
@@ -1067,29 +1068,29 @@ $userPrompt
     return _FinishToolCallResult(
       resultJson: jsonEncode({'finished': true, 'status': status}),
       finalContent: finalContent,
-      output: _parseStepOutput(finalContent, job, step, existingToolCalls),
+      output: _parseStepOutput(finalContent, task, step, existingToolCalls),
     );
   }
 
   void _emitFinishToolResults({
-    required JobModelOutputSink? onModelOutput,
+    required TaskModelOutputSink? onModelOutput,
     required String label,
     required List<ChatCompletionToolCall> calls,
     required int finishCallIndex,
     required String finishResultJson,
   }) {
     for (var i = 0; i < calls.length; i++) {
-      _emitJobModelOutput(
+      _emitTaskModelOutput(
         onModelOutput,
-        JobModelOutputEvent(
-          type: JobModelOutputEventType.toolResult,
+        TaskModelOutputEvent(
+          type: TaskModelOutputEventType.toolResult,
           label: label,
           text: i == finishCallIndex
               ? finishResultJson
               : jsonEncode({
                   'skipped': true,
                   'reason':
-                      'finish_job_step ended the step, so this tool call was ignored.',
+                      'finish_task_step ended the step, so this tool call was ignored.',
                 }),
           toolIndex: i,
         ),
@@ -1097,45 +1098,45 @@ $userPrompt
     }
   }
 
-  Future<String> _executeJobToolCall({
+  Future<String> _executeTaskToolCall({
     required ChatCompletionToolCall call,
-    required JobDocument job,
-    required JobStep step,
+    required TaskDocument task,
+    required TaskStep step,
     required Set<String> allowedToolIds,
     required WorkspaceToolContext context,
     required String? blockedReason,
   }) async {
     if (blockedReason != null) {
       return jsonEncode({
-        'error': 'Tool call skipped by job runner.',
+        'error': 'Tool call skipped by task runner.',
         'reason': blockedReason,
       });
     }
 
     if (!allowedToolIds.contains(call.name)) {
       return jsonEncode({
-        'error': 'Tool is not available for this job step.',
+        'error': 'Tool is not available for this task step.',
         'tool': call.name,
         'mayEditFiles': step.mayEditFiles,
         'availableTools': allowedToolIds.toList()..sort(),
         'reason': step.mayEditFiles
-            ? 'The tool was not exposed to the job runner.'
-            : 'This read-only step can read files and create new job-owned artifact files, but cannot edit source files, overwrite files, run terminal commands, rename paths, or delete paths.',
+            ? 'The tool was not exposed to the task runner.'
+            : 'This read-only step can read files and create new task-owned artifact files, but cannot edit source files, overwrite files, run terminal commands, rename paths, or delete paths.',
       });
     }
 
     if (!step.mayEditFiles && call.name == 'write_file') {
       return _executeReadOnlyArtifactWrite(
         call: call,
-        job: job,
+        task: task,
         step: step,
         context: context,
       );
     }
     if (step.mayEditFiles && call.name == 'write_file') {
-      final artifactWriteError = await _jobArtifactWriteError(
+      final artifactWriteError = await _taskArtifactWriteError(
         call: call,
-        job: job,
+        task: task,
         step: step,
         context: context,
       );
@@ -1151,12 +1152,12 @@ $userPrompt
 
   Future<String> _executeReadOnlyArtifactWrite({
     required ChatCompletionToolCall call,
-    required JobDocument job,
-    required JobStep step,
+    required TaskDocument task,
+    required TaskStep step,
     required WorkspaceToolContext context,
   }) async {
     try {
-      final decoded = JobJson.decodeJsonOrString(call.arguments);
+      final decoded = TaskJson.decodeJsonOrString(call.arguments);
       if (decoded is! Map) {
         return jsonEncode({
           'error': 'write_file arguments must be a JSON object.',
@@ -1177,14 +1178,14 @@ $userPrompt
         rawPath,
         mustExist: false,
       );
-      if (!_isInsideJobDirectory(resolved.relativePath, job.id)) {
+      if (!_isInsideTaskDirectory(resolved.relativePath, task.id)) {
         return jsonEncode({
-          'error': 'Read-only steps may only create job-owned artifact files.',
+          'error': 'Read-only steps may only create task-owned artifact files.',
           'path': resolved.relativePath,
-          'allowedPrefix': path.join('.agent', 'jobs', job.id),
+          'allowedPrefix': path.join('.agent', 'tasks', task.id),
         });
       }
-      final allowedPaths = _declaredCurrentStepArtifactPaths(job.id, step);
+      final allowedPaths = _declaredCurrentStepArtifactPaths(task.id, step);
       if (!allowedPaths.contains(path.normalize(resolved.relativePath))) {
         return jsonEncode({
           'error':
@@ -1213,14 +1214,14 @@ $userPrompt
     }
   }
 
-  Future<String?> _jobArtifactWriteError({
+  Future<String?> _taskArtifactWriteError({
     required ChatCompletionToolCall call,
-    required JobDocument job,
-    required JobStep step,
+    required TaskDocument task,
+    required TaskStep step,
     required WorkspaceToolContext context,
   }) async {
     try {
-      final decoded = JobJson.decodeJsonOrString(call.arguments);
+      final decoded = TaskJson.decodeJsonOrString(call.arguments);
       if (decoded is! Map) return null;
       final rawPath = decoded['path'];
       if (rawPath is! String || rawPath.trim().isEmpty) return null;
@@ -1231,14 +1232,14 @@ $userPrompt
         mustExist: false,
       );
       final artifactPath = path.normalize(resolved.relativePath);
-      if (!_isInsideJobDirectory(artifactPath, job.id)) return null;
+      if (!_isInsideTaskDirectory(artifactPath, task.id)) return null;
 
-      final allowedPaths = _declaredCurrentStepArtifactPaths(job.id, step);
+      final allowedPaths = _declaredCurrentStepArtifactPaths(task.id, step);
       if (allowedPaths.contains(artifactPath)) return null;
 
       return jsonEncode({
         'error':
-            'Job steps may only create artifacts declared on the current step.',
+            'Task steps may only create artifacts declared on the current step.',
         'path': resolved.relativePath,
         'allowedArtifactPaths': allowedPaths.toList()..sort(),
       });
@@ -1247,39 +1248,39 @@ $userPrompt
     }
   }
 
-  bool _isInsideJobDirectory(String relativePath, String jobId) {
+  bool _isInsideTaskDirectory(String relativePath, String taskId) {
     final segments = path.split(path.normalize(relativePath));
     return segments.length > 3 &&
         segments[0] == '.agent' &&
-        segments[1] == 'jobs' &&
-        segments[2] == jobId;
+        segments[1] == 'tasks' &&
+        segments[2] == taskId;
   }
 
-  Set<String> _declaredCurrentStepArtifactPaths(String jobId, JobStep step) {
+  Set<String> _declaredCurrentStepArtifactPaths(String taskId, TaskStep step) {
     return {
           for (final artifact in step.artifacts)
             if (artifact.path.trim().isNotEmpty)
               path.normalize(artifact.path.trim()),
         }
-        .where((artifactPath) => _isInsideJobDirectory(artifactPath, jobId))
+        .where((artifactPath) => _isInsideTaskDirectory(artifactPath, taskId))
         .toSet();
   }
 
-  List<JobArtifact> _filterCurrentStepArtifacts(
-    String jobId,
-    JobStep step,
-    List<JobArtifact> artifacts,
+  List<TaskArtifact> _filterCurrentStepArtifacts(
+    String taskId,
+    TaskStep step,
+    List<TaskArtifact> artifacts,
   ) {
-    final allowedPaths = _declaredCurrentStepArtifactPaths(jobId, step);
+    final allowedPaths = _declaredCurrentStepArtifactPaths(taskId, step);
     final seen = <String>{};
-    final filtered = <JobArtifact>[];
+    final filtered = <TaskArtifact>[];
     for (final artifact in artifacts) {
       final normalizedPath = path.normalize(artifact.path.trim());
       if (!allowedPaths.contains(normalizedPath) || !seen.add(normalizedPath)) {
         continue;
       }
       filtered.add(
-        JobArtifact(
+        TaskArtifact(
           path: normalizedPath,
           description: artifact.description,
           stepId: step.id,
@@ -1292,16 +1293,16 @@ $userPrompt
 
   Future<ChatCompletionResponse> _finalizeStepAfterToolGuard({
     required ChatClient client,
-    required JobStep step,
+    required TaskStep step,
     required List<ChatMessage> messages,
     required String reason,
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
-    JobCompactionStatusSink? onCompactionStatus,
-    JobModelOutputSink? onModelOutput,
-    JobCancellationToken? cancellationToken,
+    TaskCompactionStatusSink? onCompactionStatus,
+    TaskModelOutputSink? onModelOutput,
+    TaskCancellationToken? cancellationToken,
   }) {
-    return _completeChatForJob(
+    return _completeChatForTask(
       client: client,
       label: 'Step Finalizer: ${step.title}',
       onModelOutput: onModelOutput,
@@ -1312,7 +1313,7 @@ $userPrompt
           role: 'user',
           content:
               '''
-The job runner has stopped tool use for this step.
+The task runner has stopped tool use for this step.
 
 Reason:
 $reason
@@ -1341,7 +1342,7 @@ Do not call any more tools. Based only on the work already completed and the too
   }
 
   bool _isStepResultJson(String value) {
-    final json = JobJson.tryParseObject(value);
+    final json = TaskJson.tryParseObject(value);
     if (json == null) return false;
     final rawStatus = json['status']?.toString().trim().toLowerCase();
     return rawStatus == 'completed' ||
@@ -1351,30 +1352,30 @@ Do not call any more tools. Based only on the work already completed and the too
   }
 
   String _toolCallKey(ChatCompletionToolCall call) {
-    final decoded = JobJson.decodeJsonOrString(call.arguments);
+    final decoded = TaskJson.decodeJsonOrString(call.arguments);
     final args = decoded is String ? decoded.trim() : _encoder.convert(decoded);
     return '${call.name}:$args';
   }
 
-  Future<JobDocument> _replanUnfinished({
+  Future<TaskDocument> _replanUnfinished({
     required ChatClient client,
     required WorkspaceAttachment workspace,
-    required JobDocument snapshot,
+    required TaskDocument snapshot,
     required String baseSystemPrompt,
     required String reason,
-    JobModelOutputSink? onModelOutput,
-    JobCancellationToken? cancellationToken,
+    TaskModelOutputSink? onModelOutput,
+    TaskCancellationToken? cancellationToken,
   }) async {
     final now = DateTime.now();
     final completed = snapshot.steps
         .where(
           (step) =>
-              step.status == JobStepStatus.completed ||
-              step.status == JobStepStatus.skipped,
+              step.status == TaskStepStatus.completed ||
+              step.status == TaskStepStatus.skipped,
         )
         .toList();
 
-    List<JobStep> replacement;
+    List<TaskStep> replacement;
     try {
       final json = await _completeJson(
         client: client,
@@ -1384,7 +1385,7 @@ Do not call any more tools. Based only on the work already completed and the too
         cancellationToken: cancellationToken,
         user:
             '''
-Rewrite only the unfinished steps for this job.
+Rewrite only the unfinished steps for this task.
 
 Return only JSON:
 {
@@ -1407,7 +1408,7 @@ $reason
 Completed or skipped steps to preserve:
 ${_encoder.convert(completed.map((step) => step.toJson()).toList())}
 
-Current job:
+Current task:
 ${_encoder.convert(snapshot.toJson())}
 ''',
       );
@@ -1415,7 +1416,7 @@ ${_encoder.convert(snapshot.toJson())}
       if (replacement.isEmpty) {
         replacement = [_fallbackExecutionStep(snapshot.id, snapshot.goal)];
       }
-    } on JobCancelledException {
+    } on TaskCancelledException {
       rethrow;
     } catch (_) {
       replacement = [_fallbackExecutionStep(snapshot.id, snapshot.goal)];
@@ -1427,10 +1428,10 @@ ${_encoder.convert(snapshot.toJson())}
         _dedupeStepId(replacement[i], existingIds, i),
     ];
 
-    final replanRun = JobRun(
+    final replanRun = TaskRun(
       runId: 'run_${uuid.v7()}',
       stepId: snapshot.currentStepId ?? 'replan',
-      status: JobRunStatus.replanned,
+      status: TaskRunStatus.replanned,
       summary: 'Replanned unfinished work.',
       memoryUpdate: reason,
       toolCalls: const [],
@@ -1442,7 +1443,7 @@ ${_encoder.convert(snapshot.toJson())}
     final steps = [...completed, ...replacement];
     final currentStepId = _nextStepId(steps);
     return snapshot.copyWith(
-      status: currentStepId == null ? JobStatus.completed : JobStatus.paused,
+      status: currentStepId == null ? TaskStatus.completed : TaskStatus.paused,
       steps: steps,
       currentStepId: currentStepId,
       memorySummary: _appendMemory(snapshot.memorySummary, 'Replan: $reason'),
@@ -1456,15 +1457,15 @@ ${_encoder.convert(snapshot.toJson())}
 
   _StepExecutionOutput _parseStepOutput(
     String raw,
-    JobDocument job,
-    JobStep step,
-    List<JobToolCallRecord> toolCalls,
+    TaskDocument task,
+    TaskStep step,
+    List<TaskToolCallRecord> toolCalls,
   ) {
-    final json = JobJson.tryParseObject(raw);
+    final json = TaskJson.tryParseObject(raw);
     if (json == null) {
       return _StepExecutionOutput(
         status: _StepExecutionStatus.completed,
-        runStatus: JobRunStatus.completed,
+        runStatus: TaskRunStatus.completed,
         summary: raw.trim().isEmpty ? 'Step completed.' : raw.trim(),
         memoryUpdate: raw.trim(),
         artifacts: const [],
@@ -1474,7 +1475,7 @@ ${_encoder.convert(snapshot.toJson())}
 
     final status = _parseStepExecutionStatus(json['status']);
     final artifacts = _filterCurrentStepArtifacts(
-      job.id,
+      task.id,
       step,
       _artifactsFromJson(json['artifacts'], step.id),
     );
@@ -1487,10 +1488,10 @@ ${_encoder.convert(snapshot.toJson())}
     return _StepExecutionOutput(
       status: status,
       runStatus: switch (status) {
-        _StepExecutionStatus.completed => JobRunStatus.completed,
-        _StepExecutionStatus.blocked => JobRunStatus.blocked,
-        _StepExecutionStatus.failed => JobRunStatus.failed,
-        _StepExecutionStatus.needsReplan => JobRunStatus.needsReplan,
+        _StepExecutionStatus.completed => TaskRunStatus.completed,
+        _StepExecutionStatus.blocked => TaskRunStatus.blocked,
+        _StepExecutionStatus.failed => TaskRunStatus.failed,
+        _StepExecutionStatus.needsReplan => TaskRunStatus.needsReplan,
       },
       summary: summary,
       memoryUpdate: jsonString(json['memoryUpdate'] ?? json['memory_update']),
@@ -1506,9 +1507,9 @@ ${_encoder.convert(snapshot.toJson())}
     );
   }
 
-  JobDocument _completeStep(
-    JobDocument snapshot,
-    JobStep step,
+  TaskDocument _completeStep(
+    TaskDocument snapshot,
+    TaskStep step,
     _StepExecutionOutput output,
     DateTime now,
   ) {
@@ -1516,7 +1517,7 @@ ${_encoder.convert(snapshot.toJson())}
         ? step.artifacts
         : output.artifacts;
     final updatedStep = step.copyWith(
-      status: JobStepStatus.completed,
+      status: TaskStepStatus.completed,
       artifacts: stepArtifacts,
     );
     final updated = _replaceStep(snapshot, step.id, updatedStep).copyWith(
@@ -1529,21 +1530,21 @@ ${_encoder.convert(snapshot.toJson())}
     return _advanceAfterStep(updated, now);
   }
 
-  JobDocument _blockStep(
-    JobDocument snapshot,
-    JobStep step,
+  TaskDocument _blockStep(
+    TaskDocument snapshot,
+    TaskStep step,
     _StepExecutionOutput output,
     DateTime now,
   ) {
     return _replaceStep(
       snapshot,
       step.id,
-      step.copyWith(status: JobStepStatus.blocked),
+      step.copyWith(status: TaskStepStatus.blocked),
     ).copyWith(
-      status: JobStatus.blocked,
+      status: TaskStatus.blocked,
       currentStepId: step.id,
       pendingQuestion: output.userQuestion?.trim().isNotEmpty == true
-          ? PendingJobQuestion(
+          ? PendingTaskQuestion(
               id: 'question_${uuid.v7()}',
               stepId: step.id,
               question: output.userQuestion!.trim(),
@@ -1555,28 +1556,28 @@ ${_encoder.convert(snapshot.toJson())}
     );
   }
 
-  JobDocument _failStep(
-    JobDocument snapshot,
-    JobStep step,
+  TaskDocument _failStep(
+    TaskDocument snapshot,
+    TaskStep step,
     _StepExecutionOutput output,
     DateTime now,
   ) {
     return _replaceStep(
       snapshot,
       step.id,
-      step.copyWith(status: JobStepStatus.failed),
+      step.copyWith(status: TaskStepStatus.failed),
     ).copyWith(
-      status: JobStatus.failed,
+      status: TaskStatus.failed,
       currentStepId: step.id,
       memorySummary: _appendMemory(snapshot.memorySummary, output.summary),
       updatedAt: now,
     );
   }
 
-  JobDocument _advanceAfterStep(JobDocument snapshot, DateTime now) {
+  TaskDocument _advanceAfterStep(TaskDocument snapshot, DateTime now) {
     final currentStepId = _nextStepId(snapshot.steps);
     return snapshot.copyWith(
-      status: currentStepId == null ? JobStatus.completed : JobStatus.paused,
+      status: currentStepId == null ? TaskStatus.completed : TaskStatus.paused,
       currentStepId: currentStepId,
       pendingApproval: null,
       pendingQuestion: null,
@@ -1585,17 +1586,21 @@ ${_encoder.convert(snapshot.toJson())}
     );
   }
 
-  JobDocument _markCompleted(JobDocument snapshot) {
+  TaskDocument _markCompleted(TaskDocument snapshot) {
     final now = DateTime.now();
     return snapshot.copyWith(
-      status: JobStatus.completed,
+      status: TaskStatus.completed,
       currentStepId: null,
       completedAt: now,
       updatedAt: now,
     );
   }
 
-  JobDocument _replaceStep(JobDocument snapshot, String stepId, JobStep step) {
+  TaskDocument _replaceStep(
+    TaskDocument snapshot,
+    String stepId,
+    TaskStep step,
+  ) {
     final index = snapshot.steps.indexWhere((item) => item.id == stepId);
     if (index < 0) return snapshot;
     final steps = [...snapshot.steps];
@@ -1603,49 +1608,49 @@ ${_encoder.convert(snapshot.toJson())}
     return snapshot.copyWith(steps: steps);
   }
 
-  JobDocument _replaceLastRun(JobDocument snapshot, JobRun run) {
+  TaskDocument _replaceLastRun(TaskDocument snapshot, TaskRun run) {
     if (snapshot.runs.isEmpty) return snapshot.copyWith(runs: [run]);
     final runs = [...snapshot.runs];
     runs[runs.length - 1] = run;
     return snapshot.copyWith(runs: runs);
   }
 
-  String? _nextStepId(List<JobStep> steps) {
+  String? _nextStepId(List<TaskStep> steps) {
     for (final step in steps) {
-      if (step.status == JobStepStatus.pending ||
-          step.status == JobStepStatus.approved ||
-          step.status == JobStepStatus.blocked ||
-          step.status == JobStepStatus.failed) {
+      if (step.status == TaskStepStatus.pending ||
+          step.status == TaskStepStatus.approved ||
+          step.status == TaskStepStatus.blocked ||
+          step.status == TaskStepStatus.failed) {
         return step.id;
       }
     }
     return null;
   }
 
-  String _buildStepPrompt(JobDocument job, JobStep step) {
-    final previousRuns = job.runs
-        .where((run) => run.status != JobRunStatus.running)
+  String _buildStepPrompt(TaskDocument task, TaskStep step) {
+    final previousRuns = task.runs
+        .where((run) => run.status != TaskRunStatus.running)
         .map((run) => '- ${run.stepId}: ${run.summary}')
         .join('\n');
-    final availableArtifacts = _buildAvailableArtifactInputs(job, step);
+    final availableArtifacts = _buildAvailableArtifactInputs(task, step);
     return '''
-Job goal:
-${job.goal}
+Task goal:
+${task.goal}
 
 Original request:
-${job.originalPrompt}
+${task.originalPrompt}
 
 Constraints:
-${job.constraints.map((item) => '- $item').join('\n')}
+${task.constraints.map((item) => '- $item').join('\n')}
 
 Success criteria:
-${job.successCriteria.map((item) => '- $item').join('\n')}
+${task.successCriteria.map((item) => '- $item').join('\n')}
 
 Current memory:
-${job.memorySummary.trim().isEmpty ? 'None yet.' : job.memorySummary}
+${task.memorySummary.trim().isEmpty ? 'None yet.' : task.memorySummary}
 
 Full plan:
-${_encoder.convert(job.steps.map((item) => item.toJson()).toList())}
+${_encoder.convert(task.steps.map((item) => item.toJson()).toList())}
 
 Current step:
 ${_encoder.convert(step.toJson())}
@@ -1654,12 +1659,12 @@ Available artifact inputs:
 $availableArtifacts
 
 Step tool permissions:
-${step.mayEditFiles ? '- This step may edit files after any required user approval. Mutating workspace tools and terminal commands may be available.' : '- This is a read-only step. It may read workspace files and create only this step\'s declared job-owned artifact files under `.agent/jobs/${job.id}/`, but it must not overwrite existing files, edit source files, rename paths, delete paths, or run terminal commands.'}
+${step.mayEditFiles ? '- This step may edit files after any required user approval. Mutating workspace tools and terminal commands may be available.' : '- This is a read-only step. It may read workspace files and create only this step\'s declared task-owned artifact files under `.agent/tasks/${task.id}/`, but it must not overwrite existing files, edit source files, rename paths, delete paths, or run terminal commands.'}
 
 Previous run summaries:
 ${previousRuns.trim().isEmpty ? 'None yet.' : previousRuns}
 
-When finished, call finish_job_step with this result object. If finish_job_step is unavailable, return only JSON:
+When finished, call finish_task_step with this result object. If finish_task_step is unavailable, return only JSON:
 {
   "status": "completed|blocked|needs_replan|failed",
   "summary": "...",
@@ -1672,22 +1677,22 @@ When finished, call finish_job_step with this result object. If finish_job_step 
 ''';
   }
 
-  String _buildAvailableArtifactInputs(JobDocument job, JobStep step) {
-    final currentIndex = job.steps.indexWhere((item) => item.id == step.id);
+  String _buildAvailableArtifactInputs(TaskDocument task, TaskStep step) {
+    final currentIndex = task.steps.indexWhere((item) => item.id == step.id);
     final priorStepIds = <String>{};
     if (currentIndex > 0) {
-      for (final priorStep in job.steps.take(currentIndex)) {
-        if (priorStep.status == JobStepStatus.completed ||
-            priorStep.status == JobStepStatus.skipped) {
+      for (final priorStep in task.steps.take(currentIndex)) {
+        if (priorStep.status == TaskStepStatus.completed ||
+            priorStep.status == TaskStepStatus.skipped) {
           priorStepIds.add(priorStep.id);
         }
       }
     }
 
-    final artifacts = <JobArtifact>[
-      for (final run in job.runs)
+    final artifacts = <TaskArtifact>[
+      for (final run in task.runs)
         if (priorStepIds.contains(run.stepId)) ...run.artifacts,
-      for (final priorStep in job.steps)
+      for (final priorStep in task.steps)
         if (priorStepIds.contains(priorStep.id)) ...priorStep.artifacts,
       ...step.artifacts,
     ];
@@ -1710,10 +1715,10 @@ When finished, call finish_job_step with this result object. If finish_job_step 
     required String system,
     required String user,
     required String label,
-    JobModelOutputSink? onModelOutput,
-    JobCancellationToken? cancellationToken,
+    TaskModelOutputSink? onModelOutput,
+    TaskCancellationToken? cancellationToken,
   }) async {
-    final completion = await _completeChatForJob(
+    final completion = await _completeChatForTask(
       client: client,
       label: label,
       onModelOutput: onModelOutput,
@@ -1726,17 +1731,17 @@ When finished, call finish_job_step with this result object. If finish_job_step 
     final text = completion.content.trim().isNotEmpty
         ? completion.content
         : completion.reasoning;
-    return JobJson.parseObject(text);
+    return TaskJson.parseObject(text);
   }
 
-  Future<List<ChatMessage>> _prepareJobCompletionMessages({
+  Future<List<ChatMessage>> _prepareTaskCompletionMessages({
     required ChatClient client,
     required String label,
     required List<ChatMessage> messages,
     required Map<String, dynamic> extraParams,
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
-    JobCompactionStatusSink? onCompactionStatus,
+    TaskCompactionStatusSink? onCompactionStatus,
   }) async {
     final limit = contextLimitTokens;
     final settings = compactionSettings?.normalised();
@@ -1801,7 +1806,7 @@ When finished, call finish_job_step with this result object. If finish_job_step 
 
   List<Bubble> _bubblesFromChatMessages(List<ChatMessage> messages) {
     final bubbles = <Bubble>[];
-    final pendingToolResults = <String, _PendingJobToolResult>{};
+    final pendingToolResults = <String, _PendingTaskToolResult>{};
 
     for (var i = 0; i < messages.length; i++) {
       final message = messages[i];
@@ -1819,7 +1824,7 @@ When finished, call finish_job_step with this result object. If finish_job_step 
       final bubbleIndex = bubbles.length;
       bubbles.add(
         Bubble(
-          id: 'job_message_$i',
+          id: 'task_message_$i',
           role: _messageRoleFromWire(message.role),
           text: message.content,
           reasoning: message.reasoningContent,
@@ -1832,7 +1837,7 @@ When finished, call finish_job_step with this result object. If finish_job_step 
       for (final entry in tools.entries) {
         final id = entry.value.id;
         if (id == null || id.isEmpty) continue;
-        pendingToolResults[id] = _PendingJobToolResult(
+        pendingToolResults[id] = _PendingTaskToolResult(
           messageIndex: bubbleIndex,
           toolIndex: entry.key,
         );
@@ -1862,7 +1867,7 @@ When finished, call finish_job_step with this result object. If finish_job_step 
 
   void _attachToolResultToBubble({
     required List<Bubble> bubbles,
-    required Map<String, _PendingJobToolResult> pendingToolResults,
+    required Map<String, _PendingTaskToolResult> pendingToolResults,
     required String toolCallId,
     required String result,
   }) {
@@ -1906,19 +1911,19 @@ When finished, call finish_job_step with this result object. If finish_job_step 
     );
   }
 
-  Future<ChatCompletionResponse> _completeChatForJob({
+  Future<ChatCompletionResponse> _completeChatForTask({
     required ChatClient client,
     required String label,
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
-    JobCompactionStatusSink? onCompactionStatus,
-    JobModelOutputSink? onModelOutput,
-    JobCancellationToken? cancellationToken,
+    TaskCompactionStatusSink? onCompactionStatus,
+    TaskModelOutputSink? onModelOutput,
+    TaskCancellationToken? cancellationToken,
   }) async {
     cancellationToken?.throwIfCancelled();
-    final requestMessages = await _prepareJobCompletionMessages(
+    final requestMessages = await _prepareTaskCompletionMessages(
       client: client,
       label: label,
       messages: messages,
@@ -1933,10 +1938,10 @@ When finished, call finish_job_step with this result object. If finish_job_step 
           messages: requestMessages,
           extraParams: extraParams ?? const {},
         );
-    _emitJobModelOutput(
+    _emitTaskModelOutput(
       onModelOutput,
-      JobModelOutputEvent(
-        type: JobModelOutputEventType.start,
+      TaskModelOutputEvent(
+        type: TaskModelOutputEventType.start,
         label: label,
         estimatedContextTokens: estimatedContextTokens,
       ),
@@ -1946,7 +1951,7 @@ When finished, call finish_job_step with this result object. If finish_job_step 
         final completion = await client.completeChatStreamed(
           messages: requestMessages,
           extraParams: extraParams,
-          onToken: (token) => _emitJobModelToken(
+          onToken: (token) => _emitTaskModelToken(
             sink: onModelOutput,
             label: label,
             token: token,
@@ -1958,7 +1963,7 @@ When finished, call finish_job_step with this result object. If finish_job_step 
 
       final content = StringBuffer();
       final reasoning = StringBuffer();
-      final toolCalls = <int, _StreamingJobToolCall>{};
+      final toolCalls = <int, _StreamingTaskToolCall>{};
       final completer = Completer<ChatCompletionResponse>();
       StreamSubscription<ChatToken>? sub;
 
@@ -1974,7 +1979,7 @@ When finished, call finish_job_step with this result object. If finish_job_step 
 
       void record(ChatToken token) {
         cancellationToken?.throwIfCancelled();
-        _emitJobModelToken(sink: onModelOutput, label: label, token: token);
+        _emitTaskModelToken(sink: onModelOutput, label: label, token: token);
         final contentToken = token.content;
         if (contentToken != null) content.write(contentToken);
         final reasoningToken = token.reasoning;
@@ -1983,7 +1988,7 @@ When finished, call finish_job_step with this result object. If finish_job_step 
         if (tool != null) {
           final call = toolCalls.putIfAbsent(
             tool.index,
-            () => _StreamingJobToolCall(),
+            () => _StreamingTaskToolCall(),
           );
           if (tool.id != null) call.id = tool.id;
           if (tool.name != null) call.name = tool.name;
@@ -2028,7 +2033,7 @@ When finished, call finish_job_step with this result object. If finish_job_step 
 
       final unregister = cancellationToken?.onCancel(() async {
         await sub?.cancel();
-        failIfNeeded(const JobCancelledException());
+        failIfNeeded(const TaskCancelledException());
       });
 
       try {
@@ -2037,24 +2042,24 @@ When finished, call finish_job_step with this result object. If finish_job_step 
         unregister?.call();
       }
     } finally {
-      _emitJobModelOutput(
+      _emitTaskModelOutput(
         onModelOutput,
-        JobModelOutputEvent(type: JobModelOutputEventType.done, label: label),
+        TaskModelOutputEvent(type: TaskModelOutputEventType.done, label: label),
       );
     }
   }
 
-  void _emitJobModelToken({
-    required JobModelOutputSink? sink,
+  void _emitTaskModelToken({
+    required TaskModelOutputSink? sink,
     required String label,
     required ChatToken token,
   }) {
     final content = token.content;
     if (content != null && content.isNotEmpty) {
-      _emitJobModelOutput(
+      _emitTaskModelOutput(
         sink,
-        JobModelOutputEvent(
-          type: JobModelOutputEventType.content,
+        TaskModelOutputEvent(
+          type: TaskModelOutputEventType.content,
           label: label,
           text: content,
           token: token,
@@ -2063,10 +2068,10 @@ When finished, call finish_job_step with this result object. If finish_job_step 
     }
     final reasoning = token.reasoning;
     if (reasoning != null && reasoning.isNotEmpty) {
-      _emitJobModelOutput(
+      _emitTaskModelOutput(
         sink,
-        JobModelOutputEvent(
-          type: JobModelOutputEventType.reasoning,
+        TaskModelOutputEvent(
+          type: TaskModelOutputEventType.reasoning,
           label: label,
           text: reasoning,
           token: token,
@@ -2080,10 +2085,10 @@ When finished, call finish_job_step with this result object. If finish_job_step 
         if (tool.argumentsChunk != null) tool.argumentsChunk,
       ].whereType<String>().join(' ');
       if (text.trim().isNotEmpty) {
-        _emitJobModelOutput(
+        _emitTaskModelOutput(
           sink,
-          JobModelOutputEvent(
-            type: JobModelOutputEventType.toolCall,
+          TaskModelOutputEvent(
+            type: TaskModelOutputEventType.toolCall,
             label: label,
             text: text,
             token: token,
@@ -2094,26 +2099,26 @@ When finished, call finish_job_step with this result object. If finish_job_step 
     }
   }
 
-  void _emitJobModelOutput(
-    JobModelOutputSink? sink,
-    JobModelOutputEvent event,
+  void _emitTaskModelOutput(
+    TaskModelOutputSink? sink,
+    TaskModelOutputEvent event,
   ) {
     sink?.call(event);
   }
 
-  JobDocument _jobFromPlannerJson(
+  TaskDocument _taskFromPlannerJson(
     Map<String, dynamic> json, {
-    required String jobId,
+    required String taskId,
     required String originalPrompt,
     required String? chatSessionId,
     required DateTime now,
   }) {
-    final steps = _stepsFromJson(json['steps'], jobId);
+    final steps = _stepsFromJson(json['steps'], taskId);
     final safeSteps = steps.isEmpty
-        ? [_fallbackExecutionStep(jobId, originalPrompt)]
+        ? [_fallbackExecutionStep(taskId, originalPrompt)]
         : steps;
-    return JobDocument(
-      id: jobId,
+    return TaskDocument(
+      id: taskId,
       title: jsonString(
         json['title'],
         fallback: _titleFromPrompt(originalPrompt),
@@ -2128,7 +2133,7 @@ When finished, call finish_job_step with this result object. If finish_job_step 
         json['successCriteria'] ?? json['success_criteria'],
       ),
       steps: safeSteps,
-      status: JobStatus.paused,
+      status: TaskStatus.paused,
       currentStepId: _nextStepId(safeSteps),
       memorySummary: '',
       runs: const [],
@@ -2138,9 +2143,9 @@ When finished, call finish_job_step with this result object. If finish_job_step 
     );
   }
 
-  JobDocument _normaliseEditedJob(
-    JobDocument candidate,
-    JobDocument original,
+  TaskDocument _normaliseEditedTask(
+    TaskDocument candidate,
+    TaskDocument original,
     DateTime now,
   ) {
     final steps = candidate.steps.isEmpty
@@ -2152,24 +2157,24 @@ When finished, call finish_job_step with this result object. If finish_job_step 
         ? candidate.currentStepId
         : _nextStepId(steps);
     return candidate.copyWith(
-      schemaVersion: JobDocument.currentSchemaVersion,
+      schemaVersion: TaskDocument.currentSchemaVersion,
       title: candidate.title.trim().isEmpty ? original.title : candidate.title,
       originalPrompt: candidate.originalPrompt.trim().isEmpty
           ? original.originalPrompt
           : candidate.originalPrompt,
       goal: candidate.goal.trim().isEmpty ? original.goal : candidate.goal,
       steps: steps,
-      status: currentStepId == null ? JobStatus.completed : JobStatus.paused,
+      status: currentStepId == null ? TaskStatus.completed : TaskStatus.paused,
       currentStepId: currentStepId,
       createdAt: original.createdAt,
       updatedAt: now,
     );
   }
 
-  List<JobStep> _stepsFromJson(Object? value, String jobId) {
+  List<TaskStep> _stepsFromJson(Object? value, String taskId) {
     if (value is! List) return const [];
     final usedIds = <String>{};
-    final steps = <JobStep>[];
+    final steps = <TaskStep>[];
     for (var i = 0; i < value.length; i++) {
       final raw = value[i];
       if (raw is! Map) continue;
@@ -2182,7 +2187,7 @@ When finished, call finish_job_step with this result object. If finish_job_step 
       final uniqueId = usedIds.add(id) ? id : '${id}_${i + 1}';
       steps.add(
         _normaliseStep(
-          JobStep(
+          TaskStep(
             id: uniqueId,
             title: jsonString(map['title'], fallback: 'Step ${i + 1}'),
             objective: jsonString(map['objective']),
@@ -2192,9 +2197,9 @@ When finished, call finish_job_step with this result object. If finish_job_step 
             ),
             artifacts: _artifactsFromJson(map['artifacts'], uniqueId)
                 .map(
-                  (artifact) => artifact.path.contains('{{job_id}}')
-                      ? JobArtifact(
-                          path: artifact.path.replaceAll('{{job_id}}', jobId),
+                  (artifact) => artifact.path.contains('{{task_id}}')
+                      ? TaskArtifact(
+                          path: artifact.path.replaceAll('{{task_id}}', taskId),
                           description: artifact.description,
                           stepId: artifact.stepId ?? uniqueId,
                           createdAt: artifact.createdAt,
@@ -2202,7 +2207,7 @@ When finished, call finish_job_step with this result object. If finish_job_step 
                       : artifact,
                 )
                 .toList(),
-            status: JobStepStatus.pending,
+            status: TaskStepStatus.pending,
           ),
         ),
       );
@@ -2210,13 +2215,15 @@ When finished, call finish_job_step with this result object. If finish_job_step 
     return steps;
   }
 
-  List<JobArtifact> _artifactsFromJson(Object? value, String stepId) {
+  List<TaskArtifact> _artifactsFromJson(Object? value, String stepId) {
     if (value is! List) return const [];
     return value
         .whereType<Map>()
         .map((raw) {
-          final artifact = JobArtifact.fromJson(Map<String, dynamic>.from(raw));
-          return JobArtifact(
+          final artifact = TaskArtifact.fromJson(
+            Map<String, dynamic>.from(raw),
+          );
+          return TaskArtifact(
             path: artifact.path,
             description: artifact.description,
             stepId: artifact.stepId ?? stepId,
@@ -2227,28 +2234,28 @@ When finished, call finish_job_step with this result object. If finish_job_step 
         .toList();
   }
 
-  JobStep _normaliseStep(JobStep step) {
+  TaskStep _normaliseStep(TaskStep step) {
     return step.copyWith(
       id: _safeId(step.id, 'step'),
       title: step.title.trim().isEmpty ? step.id : step.title,
       objective: step.objective.trim().isEmpty ? step.title : step.objective,
       instructions: step.instructions,
       status: switch (step.status) {
-        JobStepStatus.running => JobStepStatus.pending,
+        TaskStepStatus.running => TaskStepStatus.pending,
         _ => step.status,
       },
     );
   }
 
-  JobStep _dedupeStepId(JobStep step, Set<String> existingIds, int index) {
+  TaskStep _dedupeStepId(TaskStep step, Set<String> existingIds, int index) {
     if (existingIds.add(step.id)) return step;
     final next = '${step.id}_${index + 1}';
     existingIds.add(next);
     return step.copyWith(id: next);
   }
 
-  RefinedJobBrief _normaliseBrief(RefinedJobBrief brief, String prompt) {
-    return RefinedJobBrief(
+  RefinedTaskBrief _normaliseBrief(RefinedTaskBrief brief, String prompt) {
+    return RefinedTaskBrief(
       title: brief.title.trim().isEmpty
           ? _titleFromPrompt(prompt)
           : brief.title,
@@ -2260,8 +2267,8 @@ When finished, call finish_job_step with this result object. If finish_job_step 
     );
   }
 
-  RefinedJobBrief _fallbackBrief(String prompt) {
-    return RefinedJobBrief(
+  RefinedTaskBrief _fallbackBrief(String prompt) {
+    return RefinedTaskBrief(
       title: _titleFromPrompt(prompt),
       goal: prompt,
       successCriteria: const ['Complete the requested task.'],
@@ -2269,22 +2276,22 @@ When finished, call finish_job_step with this result object. If finish_job_step 
     );
   }
 
-  JobDocument _fallbackJob({
-    required String jobId,
+  TaskDocument _fallbackTask({
+    required String taskId,
     required String userPrompt,
     required String? chatSessionId,
     required DateTime now,
   }) {
-    final step = _fallbackExecutionStep(jobId, userPrompt);
-    return JobDocument(
-      id: jobId,
+    final step = _fallbackExecutionStep(taskId, userPrompt);
+    return TaskDocument(
+      id: taskId,
       title: _titleFromPrompt(userPrompt),
       originalPrompt: userPrompt,
       goal: userPrompt,
       constraints: const ['Stay within the attached workspace.'],
       successCriteria: const ['Complete the requested task.'],
       steps: [step],
-      status: JobStatus.paused,
+      status: TaskStatus.paused,
       currentStepId: step.id,
       memorySummary: '',
       runs: const [],
@@ -2294,8 +2301,8 @@ When finished, call finish_job_step with this result object. If finish_job_step 
     );
   }
 
-  JobStep _fallbackExecutionStep(String jobId, String objective) {
-    return JobStep(
+  TaskStep _fallbackExecutionStep(String taskId, String objective) {
+    return TaskStep(
       id: 'execute_task',
       title: 'Execute task',
       objective: objective,
@@ -2306,29 +2313,29 @@ When finished, call finish_job_step with this result object. If finish_job_step 
       ],
       mayEditFiles: true,
       artifacts: [
-        JobArtifact(
-          path: '.agent/jobs/$jobId/job-output.md',
-          description: 'Final job output',
+        TaskArtifact(
+          path: '.agent/tasks/$taskId/task-output.md',
+          description: 'Final task output',
           stepId: 'execute_task',
         ),
       ],
-      status: JobStepStatus.pending,
+      status: TaskStepStatus.pending,
     );
   }
 
-  String _newJobId(String prompt) {
+  String _newTaskId(String prompt) {
     final slug = _titleFromPrompt(prompt)
         .toLowerCase()
         .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
         .replaceAll(RegExp(r'_+'), '_')
         .replaceAll(RegExp(r'^_|_$'), '');
-    final prefix = slug.isEmpty ? 'job' : slug;
-    return 'job_${prefix.length > 32 ? prefix.substring(0, 32) : prefix}_${uuid.v7().substring(0, 8)}';
+    final prefix = slug.isEmpty ? 'task' : slug;
+    return 'task_${prefix.length > 32 ? prefix.substring(0, 32) : prefix}_${uuid.v7().substring(0, 8)}';
   }
 
   String _titleFromPrompt(String prompt) {
     final singleLine = prompt.trim().replaceAll(RegExp(r'\s+'), ' ');
-    if (singleLine.isEmpty) return 'Untitled job';
+    if (singleLine.isEmpty) return 'Untitled task';
     return singleLine.length <= 60
         ? singleLine
         : '${singleLine.substring(0, 57)}...';
@@ -2383,20 +2390,20 @@ class _WorkspaceMetadata {
   final String? workspaceName;
   final List<String> rootFiles;
   final bool gitAvailable;
-  final List<String> existingJobIds;
+  final List<String> existingTaskIds;
 
   const _WorkspaceMetadata({
     this.workspaceName,
     this.rootFiles = const [],
     this.gitAvailable = false,
-    this.existingJobIds = const [],
+    this.existingTaskIds = const [],
   });
 
   Map<String, dynamic> toJson() => {
     if (workspaceName != null) 'workspaceName': workspaceName,
     'rootFiles': rootFiles,
     'gitAvailable': gitAvailable,
-    'existingJobIds': existingJobIds,
+    'existingTaskIds': existingTaskIds,
   };
 }
 
@@ -2404,11 +2411,11 @@ enum _StepExecutionStatus { completed, blocked, needsReplan, failed }
 
 class _StepExecutionOutput {
   final _StepExecutionStatus status;
-  final JobRunStatus runStatus;
+  final TaskRunStatus runStatus;
   final String summary;
   final String memoryUpdate;
-  final List<JobArtifact> artifacts;
-  final List<JobToolCallRecord> toolCalls;
+  final List<TaskArtifact> artifacts;
+  final List<TaskToolCallRecord> toolCalls;
   final String? userQuestion;
   final String? replanRequest;
   final String? error;
@@ -2425,7 +2432,7 @@ class _StepExecutionOutput {
     this.error,
   });
 
-  _StepExecutionOutput copyWith({List<JobToolCallRecord>? toolCalls}) {
+  _StepExecutionOutput copyWith({List<TaskToolCallRecord>? toolCalls}) {
     return _StepExecutionOutput(
       status: status,
       runStatus: runStatus,
@@ -2455,7 +2462,7 @@ class _FinishToolCallResult {
 }
 
 const String _refinerSystemInstruction = '''
-You refine user requests for a long-horizon AI job runner.
+You refine user requests for a long-horizon AI task runner.
 Do not perform the task.
 Prefer useful assumptions over broad questioning.
 Ask at most three questions.
@@ -2463,20 +2470,20 @@ Return only valid JSON.
 ''';
 
 const String _plannerSystemInstruction = '''
-You create simple linear plans for long-horizon workspace jobs.
+You create simple linear plans for long-horizon workspace tasks.
 The plan should be small, clear, and robust.
 Each step must be independently executable from the shared goal, plan, memory summary, and previous run summaries.
-Read-only steps may create new job-owned artifact files under `.agent/jobs/<jobId>/`.
+Read-only steps may create new task-owned artifact files under `.agent/tasks/<taskId>/`.
 Declare an artifact only on the step that will actually create it.
 Do not split broad "explore" and "analyze" work into separate steps when the exploration exists only to support the analysis.
-Mark mayEditFiles true only when a step may edit existing files, write outside the job folder, rename paths, delete paths, or run terminal commands.
-Keep research/design/planning/reporting-to-job-folder steps read-only when they only read files and create new job-owned artifacts.
+Mark mayEditFiles true only when a step may edit existing files, write outside the task folder, rename paths, delete paths, or run terminal commands.
+Keep research/design/planning/reporting-to-task-folder steps read-only when they only read files and create new task-owned artifacts.
 Do not include review, retry, validation, terminal policy, or approval policy fields.
 Return only valid JSON.
 ''';
 
 const String _executorSystemInstruction = '''
-You execute one step of a larger linear job.
+You execute one step of a larger linear task.
 Use the full plan and memory to keep long-horizon context.
 Complete only the current step.
 Do not perform future steps early.
@@ -2484,22 +2491,22 @@ Use tools only when needed. When you have enough information, stop using tools a
 You may read artifacts from completed prior steps and any artifact already created during the current step.
 Write and report only artifacts declared on the current step.
 If the current step needs a different artifact path, return status "needs_replan" instead of writing it.
-If the current step is read-only, you may create only the current step's declared job-owned artifact files under `.agent/jobs/<jobId>/`, but you must not overwrite existing files, edit source files, rename paths, delete paths, or try to use terminal commands as a workaround.
+If the current step is read-only, you may create only the current step's declared task-owned artifact files under `.agent/tasks/<taskId>/`, but you must not overwrite existing files, edit source files, rename paths, delete paths, or try to use terminal commands as a workaround.
 If a later step is responsible for writing a report or changing files, leave that work for the later step.
 If the current plan is wrong or missing necessary follow-up work, return status "needs_replan" with a concrete replanRequest.
 If user input is required, return status "blocked" with userQuestion.
-When done, call finish_job_step with the requested result object.
-If finish_job_step is unavailable, return only the requested JSON object.
+When done, call finish_task_step with the requested result object.
+If finish_task_step is unavailable, return only the requested JSON object.
 ''';
 
 const String _replannerSystemInstruction = '''
-You replan unfinished work for a linear long-horizon job.
+You replan unfinished work for a linear long-horizon task.
 Preserve completed and skipped steps.
 Rewrite only unfinished work into a short, concrete sequence.
-Read-only steps may create new job-owned artifact files under `.agent/jobs/<jobId>/`.
+Read-only steps may create new task-owned artifact files under `.agent/tasks/<taskId>/`.
 Declare an artifact only on the step that will actually create it.
 Do not split broad "explore" and "analyze" work into separate steps when the exploration exists only to support the analysis.
-Mark mayEditFiles true only when a step may edit existing files, write outside the job folder, rename paths, delete paths, or run terminal commands.
+Mark mayEditFiles true only when a step may edit existing files, write outside the task folder, rename paths, delete paths, or run terminal commands.
 Do not include review, retry, validation, terminal policy, or approval policy fields.
 Return only valid JSON.
 ''';

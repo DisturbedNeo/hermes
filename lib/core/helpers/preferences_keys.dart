@@ -47,20 +47,20 @@ abstract final class PreferencesKeys {
   static const String contextCompactionEmergencyTruncation =
       'context_compaction_emergency_truncation';
 
-  // ── Job system settings ───────────────────────────────────────────────
+  // ── Task system settings ───────────────────────────────────────────────
 
-  /// Whether the job system is enabled.
-  static const String jobSystemEnabled = 'job_system_enabled';
+  /// Whether the task system is enabled.
+  static const String taskSystemEnabled = 'task_system_enabled';
 
-  /// Whether to require approval before file edits by jobs.
-  static const String jobSystemApprovalBeforeFileEdits =
-      'job_system_approval_before_file_edits';
+  /// Whether to require approval before file edits by tasks.
+  static const String taskSystemApprovalBeforeFileEdits =
+      'task_system_approval_before_file_edits';
 
-  /// Whether to require approval before executing a job's first phase.
-  static const String jobSystemRequireApprovalBeforeExecution =
-      'job_system_require_approval_before_execution';
+  /// Whether to require approval before executing a task's first phase.
+  static const String taskSystemRequireApprovalBeforeExecution =
+      'task_system_require_approval_before_execution';
 
-  /// Whether to show job messages in the chat stream.
-  static const String jobSystemShowMessagesInChat =
-      'job_system_show_messages_in_chat';
+  /// Whether to show task messages in the chat stream.
+  static const String taskSystemShowMessagesInChat =
+      'task_system_show_messages_in_chat';
 }
