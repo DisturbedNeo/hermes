@@ -7,6 +7,7 @@ import 'package:path/path.dart' as path;
 class WorkspaceSandbox {
   static const int maxReadBytes = 1024 * 1024;
   static const int maxSearchResults = 100;
+  static const int maxSearchOutputBytes = 64 * 1024;
   static const int maxCommandOutputBytes = 64 * 1024;
   static const Duration commandTimeout = Duration(seconds: 30);
 
@@ -197,9 +198,18 @@ class WorkspaceSandbox {
     return {'path': resolved.relativePath};
   }
 
-  /// Returns true if the given [basename] is a hidden dot-folder/file.
+  /// Returns true if the given [basename] is a hidden dot entry name.
   static bool _isDotEntry(String basename) =>
-      basename.isNotEmpty && basename.startsWith('.');
+      basename.isNotEmpty &&
+      basename != '.' &&
+      basename != '..' &&
+      basename.startsWith('.');
+
+  static bool _pathContainsDotEntry(String relativePath) {
+    final normalised = path.normalize(relativePath);
+    if (normalised == '.') return false;
+    return path.split(normalised).any(_isDotEntry);
+  }
 
   Future<List<Map<String, dynamic>>> searchFiles(
     String rootPath,
@@ -211,39 +221,54 @@ class WorkspaceSandbox {
       throw WorkspaceSandboxException('Search query is required.');
     }
 
-    final root = await resolve(rootPath, relativePath, directory: true);
+    final searchRootPath = relativePath.trim() == '/' ? '.' : relativePath;
+    final root = await resolve(rootPath, searchRootPath, directory: true);
 
-    // Determine whether we are explicitly searching inside a dot-folder.
-    // If the resolved relative path starts with '.', the agent explicitly
-    // targeted that location and we should not filter dot-folders within it.
-    final isExplicitDotSearch = root.relativePath.startsWith('.');
+    // Only include hidden dot-folders when the requested search root itself is
+    // inside one, e.g. ".agent" or "packages/.cache".
+    final isExplicitDotSearch = _pathContainsDotEntry(root.relativePath);
 
     final results = <Map<String, dynamic>>[];
+    final pendingDirectories = <Directory>[Directory(root.absolutePath)];
 
-    await for (final entity in Directory(
-      root.absolutePath,
-    ).list(recursive: true, followLinks: false)) {
-      if (results.length >= maxSearchResults) break;
-
-      // Skip dot-folders unless the search explicitly targets one.
-      final basename = path.basename(entity.path);
-      if (entity is Directory && _isDotEntry(basename) && !isExplicitDotSearch) {
-        continue; // skip this directory and everything inside it
-      }
-
-      if (entity is! File) continue;
-      if (await entity.length() > maxReadBytes) continue;
-
-      final rel = _relative(root.rootPath, entity.path);
+    while (pendingDirectories.isNotEmpty && results.length < maxSearchResults) {
+      final directory = pendingDirectories.removeLast();
       try {
-        final lines = await entity.readAsLines();
-        for (var i = 0; i < lines.length; i++) {
-          if (!lines[i].toLowerCase().contains(trimmed.toLowerCase())) continue;
-          results.add({'path': rel, 'line': i + 1, 'preview': lines[i].trim()});
+        await for (final entity in directory.list(followLinks: false)) {
           if (results.length >= maxSearchResults) break;
+
+          final basename = path.basename(entity.path);
+          if (entity is Directory) {
+            if (_isDotEntry(basename) && !isExplicitDotSearch) continue;
+            pendingDirectories.add(entity);
+            continue;
+          }
+
+          if (entity is! File) continue;
+          if (await entity.length() > maxReadBytes) continue;
+
+          final rel = _relative(root.rootPath, entity.path);
+          try {
+            final lines = await entity.readAsLines();
+            for (var i = 0; i < lines.length; i++) {
+              if (!lines[i].toLowerCase().contains(trimmed.toLowerCase())) {
+                continue;
+              }
+              final result = {
+                'path': rel,
+                'line': i + 1,
+                'preview': lines[i].trim(),
+              };
+              _throwIfSearchOutputTooLarge([...results, result]);
+              results.add(result);
+              if (results.length >= maxSearchResults) break;
+            }
+          } on FormatException {
+            continue;
+          } on FileSystemException {
+            continue;
+          }
         }
-      } on FormatException {
-        continue;
       } on FileSystemException {
         continue;
       }
@@ -258,6 +283,16 @@ class WorkspaceSandbox {
     }
 
     return results;
+  }
+
+  void _throwIfSearchOutputTooLarge(List<Map<String, dynamic>> results) {
+    final encodedBytes = utf8.encode(jsonEncode({'matches': results})).length;
+    if (encodedBytes <= maxSearchOutputBytes) return;
+    throw WorkspaceSandboxException(
+      'Search results are too large to return safely '
+      '($encodedBytes bytes, limit $maxSearchOutputBytes bytes). '
+      'Narrow your query or specify a more targeted path to continue.',
+    );
   }
 
   Future<Map<String, dynamic>> runCommand(

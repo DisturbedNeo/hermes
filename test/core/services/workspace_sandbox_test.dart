@@ -86,6 +86,123 @@ void main() {
       );
     });
 
+    test('search skips hidden dot-folders from workspace root', () async {
+      await File(
+        '${root.path}/lib/main.dart',
+      ).create(recursive: true).then((file) => file.writeAsString('needle'));
+      await File(
+        '${root.path}/.dart_tool/generated.dart',
+      ).create(recursive: true).then((file) => file.writeAsString('needle'));
+      await File(
+        '${root.path}/.pub-cache/package.dart',
+      ).create(recursive: true).then((file) => file.writeAsString('needle'));
+
+      final results = await sandbox.searchFiles(root.path, 'needle');
+      final paths = results.map((item) => item['path']);
+
+      expect(paths, contains('lib/main.dart'));
+      expect(paths, isNot(contains('.dart_tool/generated.dart')));
+      expect(paths, isNot(contains('.pub-cache/package.dart')));
+    });
+
+    test('search treats slash path as workspace root', () async {
+      await File(
+        '${root.path}/lib/main.dart',
+      ).create(recursive: true).then((file) => file.writeAsString('needle'));
+      await File(
+        '${root.path}/.dart_tool/generated.dart',
+      ).create(recursive: true).then((file) => file.writeAsString('needle'));
+
+      final results = await sandbox.searchFiles(
+        root.path,
+        'needle',
+        relativePath: '/',
+      );
+      final paths = results.map((item) => item['path']);
+
+      expect(paths, contains('lib/main.dart'));
+      expect(paths, isNot(contains('.dart_tool/generated.dart')));
+    });
+
+    test(
+      'search skips hidden dot-folders below non-dot explicit paths',
+      () async {
+        await File(
+          '${root.path}/packages/app/lib/main.dart',
+        ).create(recursive: true).then((file) => file.writeAsString('needle'));
+        await File(
+          '${root.path}/packages/app/.dart_tool/generated.dart',
+        ).create(recursive: true).then((file) => file.writeAsString('needle'));
+
+        final results = await sandbox.searchFiles(
+          root.path,
+          'needle',
+          relativePath: 'packages/app',
+        );
+        final paths = results.map((item) => item['path']);
+
+        expect(paths, contains('packages/app/lib/main.dart'));
+        expect(
+          paths,
+          isNot(contains('packages/app/.dart_tool/generated.dart')),
+        );
+      },
+    );
+
+    test('search includes explicitly requested hidden dot-folders', () async {
+      await File(
+        '${root.path}/.dart_tool/generated.dart',
+      ).create(recursive: true).then((file) => file.writeAsString('needle'));
+
+      final results = await sandbox.searchFiles(
+        root.path,
+        'needle',
+        relativePath: '.dart_tool',
+      );
+
+      expect(
+        results.map((item) => item['path']),
+        contains('.dart_tool/generated.dart'),
+      );
+    });
+
+    test(
+      'search includes explicitly requested nested hidden dot-folders',
+      () async {
+        await File(
+          '${root.path}/packages/app/.cache/index.txt',
+        ).create(recursive: true).then((file) => file.writeAsString('needle'));
+
+        final results = await sandbox.searchFiles(
+          root.path,
+          'needle',
+          relativePath: 'packages/app/.cache',
+        );
+
+        expect(
+          results.map((item) => item['path']),
+          contains('packages/app/.cache/index.txt'),
+        );
+      },
+    );
+
+    test('search reports oversized results as a tool error', () async {
+      final longLine =
+          '${List.filled(WorkspaceSandbox.maxSearchOutputBytes, 'x').join()} needle';
+      await File('${root.path}/huge.txt').writeAsString(longLine);
+
+      final result = await ToolService().execute(
+        toolId: 'search_files',
+        argumentsJson: '{"query":"needle"}',
+        context: WorkspaceToolContext(
+          workspace: WorkspaceAttachment.fromPath(root.path),
+        ),
+      );
+
+      expect(result, contains('"error"'));
+      expect(result, contains('Search results are too large'));
+    });
+
     test('readFile reports directories as the wrong path type', () async {
       await Directory('${root.path}/lib').create();
 
