@@ -201,26 +201,26 @@ void main() {
       () async {
         serverManager.chatClient = _QueueChatClient([
           jsonEncode({
-            'decision': 'create_task',
-            'projectSummary': 'Start with one task.',
-            'memoryUpdate': 'Need implementation.',
-            'nextTask': {
-              'title': 'Build screen',
-              'prompt': 'Build the reporting screen',
-              'successCriteria': ['Screen is built.'],
-            },
+            'title': 'Build screen',
+            'refinedGoal': 'Build the reporting screen',
+            'successCriteria': ['Screen is built.'],
+            'constraints': ['Stay in workspace.'],
+            'knownFacts': [],
+            'openQuestions': [],
+            'backlog': [_projectTaskJson()],
           }),
-          jsonEncode(_planJson(title: 'Project task')),
+          jsonEncode({'task': _projectTaskJson()}),
+          jsonEncode(_projectPlanJson(title: 'Project task')),
           jsonEncode({
             'status': 'completed',
             'summary': 'Project task complete.',
             'memoryUpdate': 'Screen built.',
           }),
           jsonEncode({
-            'decision': 'complete',
-            'projectSummary': 'Project complete.',
-            'memoryUpdate': 'Done.',
-            'completionSummary': 'Reporting screen is complete.',
+            'complete': true,
+            'finalSummary': 'Reporting screen is complete.',
+            'remainingCriteria': [],
+            'openQuestions': [],
           }),
         ]);
         await chat.attachWorkspace(tempDir.path);
@@ -237,10 +237,26 @@ void main() {
     test('supports /continue-project for the active project', () async {
       serverManager.chatClient = _QueueChatClient([
         jsonEncode({
-          'decision': 'complete',
-          'projectSummary': 'Project complete.',
-          'memoryUpdate': 'Done.',
-          'completionSummary': 'All done.',
+          'backlog': [
+            _projectTaskJson(relevantSuccessCriteria: const ['Finish']),
+          ],
+          'knownFacts': [],
+          'openQuestions': [],
+        }),
+        jsonEncode({
+          'task': _projectTaskJson(relevantSuccessCriteria: const ['Finish']),
+        }),
+        jsonEncode(_projectPlanJson(title: 'Project task')),
+        jsonEncode({
+          'status': 'completed',
+          'summary': 'Project task complete.',
+          'memoryUpdate': 'Screen built.',
+        }),
+        jsonEncode({
+          'complete': true,
+          'finalSummary': 'All done.',
+          'remainingCriteria': [],
+          'openQuestions': [],
         }),
       ]);
       await chat.attachWorkspace(tempDir.path);
@@ -715,6 +731,38 @@ Map<String, dynamic> _planJson({required String title}) {
         'mayEditFiles': false,
       },
     ],
+  };
+}
+
+Map<String, dynamic> _projectPlanJson({required String title}) {
+  return {
+    'title': title,
+    'goal': 'Build the reporting screen slice',
+    'constraints': ['Stay inside the workspace.'],
+    'successCriteria': ['The reporting screen slice is complete.'],
+    'steps': [
+      {
+        'id': 'build',
+        'title': 'Build screen slice',
+        'objective': 'Build the reporting screen slice.',
+        'instructions': ['Implement only the bounded screen slice.'],
+        'mayEditFiles': false,
+      },
+    ],
+  };
+}
+
+Map<String, dynamic> _projectTaskJson({
+  List<String> relevantSuccessCriteria = const ['Screen is built.'],
+}) {
+  return {
+    'title': 'Build screen slice',
+    'objective': 'Build the reporting screen slice',
+    'relevantSuccessCriteria': relevantSuccessCriteria,
+    'doneCriteria': ['The reporting screen slice is complete.'],
+    'outOfScope': ['Do not perform unrelated project work.'],
+    'context': ['Use the attached workspace.'],
+    'expectedArtifacts': [],
   };
 }
 

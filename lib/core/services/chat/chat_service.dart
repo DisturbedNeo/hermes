@@ -911,6 +911,40 @@ class ChatService extends ChangeNotifier implements Disposable {
     await reloadTasks();
   }
 
+  Future<void> pauseProject() async {
+    final currentWorkspace = workspace;
+    final snapshot = activeProject;
+    if (currentWorkspace == null ||
+        currentWorkspace.missing ||
+        snapshot == null ||
+        taskBusy) {
+      return;
+    }
+
+    activeProject = await _projectService.pauseProject(
+      workspace: currentWorkspace,
+      snapshot: snapshot,
+    );
+    await reloadTasks();
+  }
+
+  Future<void> approveNextProjectTask() async {
+    final currentWorkspace = workspace;
+    final snapshot = activeProject;
+    if (currentWorkspace == null ||
+        currentWorkspace.missing ||
+        snapshot == null ||
+        taskBusy) {
+      return;
+    }
+
+    activeProject = await _projectService.approveNextProjectTask(
+      workspace: currentWorkspace,
+      snapshot: snapshot,
+    );
+    await reloadTasks();
+  }
+
   Future<void> _handleSlashCommand(_SlashCommand command) async {
     switch (command.name) {
       case 'task':
@@ -1201,6 +1235,10 @@ class ChatService extends ChangeNotifier implements Disposable {
         workspace: currentWorkspace,
         userPrompt: prompt,
         chatSessionId: scopeId,
+        client: client,
+        baseSystemPrompt: _buildSystemPrompt(currentUserRequest: prompt),
+        onModelOutput: _handleTaskModelOutput,
+        cancellationToken: token,
       );
       activeProject = project;
       activeTask = null;
@@ -1972,7 +2010,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       return;
     }
     activeProject = project.copyWith(
-      status: ProjectStatus.paused,
+      status: ProjectStatus.active,
       blocker: null,
       updatedAt: DateTime.now(),
     );

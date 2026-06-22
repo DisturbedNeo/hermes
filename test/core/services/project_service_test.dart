@@ -12,7 +12,7 @@ import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
 
 void main() {
-  group('ProjectService supervised runner', () {
+  group('ProjectService orchestrator runner', () {
     late Directory root;
     late WorkspaceAttachment workspace;
     late ProjectService service;
@@ -34,56 +34,65 @@ void main() {
       }
     });
 
-    test('creates a project, runs a task, and evaluates completion', () async {
-      final project = await service.createProject(
-        workspace: workspace,
-        userPrompt: 'Build the reporting screen',
-        chatSessionId: 'chat_1',
-      );
-      final client = _QueueChatClient([
-        jsonEncode(_projectDecisionCreateTask()),
-        jsonEncode(_taskPlanJson()),
-        jsonEncode({
-          'status': 'completed',
-          'summary': 'Task complete.',
-          'memoryUpdate': 'Implemented the screen.',
-        }),
-        jsonEncode({
-          'decision': 'complete',
-          'projectSummary': 'Project complete.',
-          'memoryUpdate': 'All work is done.',
-          'completionSummary': 'Reporting screen is complete.',
-        }),
-      ]);
+    test(
+      'runs one bounded project task and completes after evaluation',
+      () async {
+        final project = await service.createProject(
+          workspace: workspace,
+          userPrompt: 'Build the reporting screen',
+          chatSessionId: 'chat_1',
+        );
+        final client = _QueueChatClient([
+          jsonEncode({'task': _projectTaskJson()}),
+          jsonEncode(_taskPlanJson()),
+          jsonEncode({
+            'status': 'completed',
+            'summary': 'Task complete.',
+            'memoryUpdate': 'Implemented the first reporting screen slice.',
+          }),
+          jsonEncode({
+            'complete': true,
+            'finalSummary': 'Reporting screen project is complete.',
+            'remainingCriteria': [],
+            'openQuestions': [],
+          }),
+        ]);
 
-      final result = await service.runProject(
-        client: client,
-        workspace: workspace,
-        snapshot: project,
-        baseSystemPrompt: 'system',
-        maxNewTasks: 5,
-      );
+        final result = await service.runProject(
+          client: client,
+          workspace: workspace,
+          snapshot: project,
+          baseSystemPrompt: 'system',
+          maxNewTasks: 5,
+        );
 
-      expect(result.project.status, ProjectStatus.completed);
-      expect(result.project.tasks, hasLength(1));
-      expect(result.project.tasks.single.status, TaskStatus.completed);
-      expect(result.project.completionSummary, contains('complete'));
-      expect(result.activeTask, isNull);
-    });
+        expect(result.project.status, ProjectStatus.completed);
+        expect(result.project.completedTasks, hasLength(1));
+        expect(result.project.failedTasks, isEmpty);
+        expect(result.project.completionSummary, contains('complete'));
+        expect(result.activeTask?.status, TaskStatus.completed);
+      },
+    );
 
-    test('pauses with budget blocker after max new tasks', () async {
+    test('pauses after the per-run project task limit', () async {
       final project = await service.createProject(
         workspace: workspace,
         userPrompt: 'Build the app',
         chatSessionId: 'chat_1',
       );
       final client = _QueueChatClient([
-        jsonEncode(_projectDecisionCreateTask()),
+        jsonEncode({'task': _projectTaskJson()}),
         jsonEncode(_taskPlanJson()),
         jsonEncode({
           'status': 'completed',
           'summary': 'First task complete.',
           'memoryUpdate': 'One slice is done.',
+        }),
+        jsonEncode({
+          'complete': false,
+          'finalSummary': '',
+          'remainingCriteria': ['Complete the stated project goal.'],
+          'openQuestions': [],
         }),
       ]);
 
@@ -95,49 +104,83 @@ void main() {
         maxNewTasks: 1,
       );
 
-      expect(result.project.status, ProjectStatus.blocked);
-      expect(result.project.blocker?.type, ProjectBlockerType.budget);
-      expect(result.project.activeTaskId, isNull);
+      expect(result.project.status, ProjectStatus.paused);
+      expect(result.project.blocker, isNull);
+      expect(result.project.completedTasks, hasLength(1));
     });
 
     test(
       'records project-level user questions and resumes after answer',
       () async {
         final project = await service.createProject(
-          workspace: workspace,
-          userPrompt: 'Build the app',
-          chatSessionId: 'chat_1',
-        );
-        final blocked = await service.runProject(
           client: _QueueChatClient([
             jsonEncode({
-              'decision': 'blocked',
-              'projectSummary': 'Need target platform.',
-              'memoryUpdate': '',
-              'userQuestion': 'Which platform should this target?',
+              'title': 'Build app',
+              'refinedGoal': 'Build the app',
+              'successCriteria': ['App works'],
+              'constraints': ['Stay in workspace'],
+              'knownFacts': [],
+              'openQuestions': [
+                {'question': 'Which platform should this target?'},
+              ],
+              'backlog': [],
             }),
           ]),
           workspace: workspace,
-          snapshot: project,
+          userPrompt: 'Build the app',
+          chatSessionId: 'chat_1',
           baseSystemPrompt: 'system',
-          maxNewTasks: 5,
         );
 
-        expect(blocked.project.status, ProjectStatus.blocked);
-        expect(blocked.project.pendingQuestion?.question, contains('platform'));
+        expect(project.status, ProjectStatus.waitingForUser);
+        expect(project.pendingQuestion?.question, contains('platform'));
 
         final answered = await service.answerOpenQuestion(
           workspace: workspace,
-          snapshot: blocked.project,
+          snapshot: project,
           answer: 'Desktop first.',
         );
 
-        expect(answered.status, ProjectStatus.paused);
+        expect(answered.status, ProjectStatus.active);
         expect(answered.pendingQuestion, isNull);
         expect(answered.blocker, isNull);
-        expect(answered.memorySummary, contains('Desktop first.'));
+        expect(answered.knownFacts.join('\n'), contains('Desktop first.'));
       },
     );
+
+    test('stops when backlog refresh raises an open question', () async {
+      final created = await service.createProject(
+        workspace: workspace,
+        userPrompt: 'Build the app',
+        chatSessionId: 'chat_1',
+      );
+      final project = created.copyWith(
+        backlog: const [],
+        successCriteria: const ['Finish'],
+      );
+
+      final result = await service.runProject(
+        client: _QueueChatClient([
+          jsonEncode({
+            'backlog': [],
+            'knownFacts': ['The API choice is unknown.'],
+            'openQuestions': [
+              {'question': 'Which API should the app use?'},
+            ],
+          }),
+        ]),
+        workspace: workspace,
+        snapshot: project,
+        baseSystemPrompt: 'system',
+        maxNewTasks: 5,
+      );
+
+      expect(result.project.status, ProjectStatus.waitingForUser);
+      expect(result.project.pendingQuestion?.question, contains('API'));
+      expect(result.project.knownFacts, contains('The API choice is unknown.'));
+      expect(result.activeTask, isNull);
+      expect(result.project.completedTasks, isEmpty);
+    });
 
     test('blocks repeated next task proposals', () async {
       final project = await service.createProject(
@@ -160,9 +203,9 @@ void main() {
 
       final result = await service.runProject(
         client: _QueueChatClient([
-          jsonEncode(
-            _projectDecisionCreateTask(prompt: 'Implement the first slice'),
-          ),
+          jsonEncode({
+            'task': _projectTaskJson(objective: 'Implement the first slice'),
+          }),
         ]),
         workspace: workspace,
         snapshot: previous,
@@ -171,39 +214,83 @@ void main() {
       );
 
       expect(result.project.status, ProjectStatus.blocked);
-      expect(result.project.blocker?.type, ProjectBlockerType.error);
+      expect(result.project.blocker?.type, ProjectBlockerType.duplicateTask);
       expect(result.project.blocker?.message, contains('repeated'));
+    });
+
+    test('does not execute one giant task for a broad project goal', () async {
+      final project = await service.createProject(
+        workspace: workspace,
+        userPrompt: 'Build the entire product',
+        chatSessionId: 'chat_1',
+      );
+
+      final result = await service.runProject(
+        client: _QueueChatClient([
+          jsonEncode({
+            'task': _projectTaskJson(
+              objective: 'Complete the entire project end-to-end',
+              relevantSuccessCriteria: ['Complete the stated project goal.'],
+            ),
+          }),
+          jsonEncode({'tasks': []}),
+        ]),
+        workspace: workspace,
+        snapshot: project,
+        baseSystemPrompt: 'system',
+        maxNewTasks: 5,
+      );
+
+      expect(
+        result.project.failedTasks.any(
+          (task) => task.objective.contains('entire project'),
+        ),
+        isTrue,
+      );
+      expect(
+        result.project.completedTasks.any(
+          (task) => task.objective.contains('entire project'),
+        ),
+        isFalse,
+      );
+      expect(
+        result.project.currentTask?.objective.contains('entire project') ??
+            false,
+        isFalse,
+      );
     });
   });
 }
 
-Map<String, dynamic> _projectDecisionCreateTask({
-  String prompt = 'Implement the first slice',
+Map<String, dynamic> _projectTaskJson({
+  String objective = 'Implement the first reporting screen slice',
+  List<String> relevantSuccessCriteria = const [
+    'Complete the stated project goal.',
+  ],
 }) {
   return {
-    'decision': 'create_task',
-    'projectSummary': 'More work is needed.',
-    'memoryUpdate': 'Start with implementation.',
-    'nextTask': {
-      'title': 'Implement slice',
-      'prompt': prompt,
-      'successCriteria': ['Slice is implemented.'],
-    },
+    'title': 'Implement slice',
+    'objective': objective,
+    'relevantSuccessCriteria': relevantSuccessCriteria,
+    'doneCriteria': ['The slice is implemented and summarized.'],
+    'outOfScope': ['Do not implement unrelated project work.'],
+    'context': ['Use the attached workspace.'],
+    'expectedArtifacts': [],
   };
 }
 
 Map<String, dynamic> _taskPlanJson() {
   return {
     'title': 'Implement slice',
-    'goal': 'Implement the first slice',
+    'goal': 'Implement the first reporting screen slice',
     'constraints': ['Stay inside workspace.'],
-    'successCriteria': ['Slice is implemented.'],
+    'successCriteria': ['The slice is implemented and summarized.'],
     'steps': [
       {
         'id': 'build',
         'title': 'Build slice',
         'objective': 'Build the first slice.',
-        'instructions': ['Do the work.'],
+        'instructions': ['Do the bounded work.'],
         'mayEditFiles': false,
       },
     ],

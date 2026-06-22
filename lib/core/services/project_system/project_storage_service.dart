@@ -25,9 +25,6 @@ class ProjectStorageService {
 
       try {
         final project = ProjectDocument.fromJson(await _readMap(file));
-        if (project.schemaVersion != ProjectDocument.currentSchemaVersion) {
-          continue;
-        }
         if (chatSessionId != null && project.chatSessionId != chatSessionId) {
           continue;
         }
@@ -79,12 +76,14 @@ class ProjectStorageService {
     );
     if (!await file.exists()) return null;
 
-    final project = ProjectDocument.fromJson(await _readMap(file));
-    if (project.schemaVersion != ProjectDocument.currentSchemaVersion) {
-      return null;
-    }
+    final raw = await _readMap(file);
+    final rawVersion = _rawSchemaVersion(raw);
+    final project = ProjectDocument.fromJson(raw);
     if (chatSessionId != null && project.chatSessionId != chatSessionId) {
       return null;
+    }
+    if (rawVersion != ProjectDocument.currentSchemaVersion) {
+      await saveSnapshot(workspaceRoot, project);
     }
     return project;
   }
@@ -146,6 +145,22 @@ class ProjectStorageService {
     return path.posix.join(projectsRoot, projectId, fileName);
   }
 
+  Future<void> saveLog(
+    String workspaceRoot,
+    String projectId,
+    String name,
+    String content,
+  ) async {
+    if (path.basename(name) != name || path.isAbsolute(name)) {
+      throw ArgumentError.value(name, 'name', 'Log file name is invalid');
+    }
+    final dir = Directory(
+      path.join(_projectDirectory(workspaceRoot, projectId).path, 'logs'),
+    );
+    await dir.create(recursive: true);
+    await _writeText(File(path.join(dir.path, name)), content);
+  }
+
   Directory _projectDirectory(String workspaceRoot, String projectId) {
     return Directory(path.join(workspaceRoot, projectsRoot, projectId));
   }
@@ -168,6 +183,14 @@ class ProjectStorageService {
     if (decoded is Map<String, dynamic>) return decoded;
     if (decoded is Map) return Map<String, dynamic>.from(decoded);
     throw const FormatException('Expected a JSON object');
+  }
+
+  int _rawSchemaVersion(Map<String, dynamic> map) {
+    final value = map['schemaVersion'] ?? map['schema_version'];
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
   }
 
   Future<void> _writeMap(File file, Map<String, dynamic> map) {

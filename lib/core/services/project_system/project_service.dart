@@ -2,14 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/helpers/uuid.dart';
-import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/core/services/project_system/project_model_calls.dart';
 import 'package:hermes/core/services/project_system/project_storage_service.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
@@ -30,11 +29,14 @@ class ProjectService {
   ProjectService({
     required TaskService taskService,
     ProjectStorageService? storage,
+    ProjectModelCalls? modelCalls,
   }) : _taskService = taskService,
-       _storage = storage ?? ProjectStorageService();
+       _storage = storage ?? ProjectStorageService(),
+       _modelCalls = modelCalls ?? ProjectModelCalls();
 
   final TaskService _taskService;
   final ProjectStorageService _storage;
+  final ProjectModelCalls _modelCalls;
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
 
   ProjectStorageService get storage => _storage;
@@ -114,22 +116,67 @@ class ProjectService {
     required WorkspaceAttachment workspace,
     required String userPrompt,
     String? chatSessionId,
+    ChatClient? client,
+    String baseSystemPrompt = '',
+    TaskModelOutputSink? onModelOutput,
+    TaskCancellationToken? cancellationToken,
   }) async {
+    cancellationToken?.throwIfCancelled();
     final now = DateTime.now();
+    final metadata = await _collectWorkspaceMetadata(
+      workspace,
+      chatSessionId: chatSessionId,
+    );
+    final init = client == null
+        ? _fallbackInitialisation(userPrompt)
+        : await _modelCalls.initializeProject(
+            client: client,
+            baseSystemPrompt: baseSystemPrompt,
+            originalGoal: userPrompt,
+            workspaceMetadata: metadata,
+            onModelOutput: onModelOutput,
+          );
+    cancellationToken?.throwIfCancelled();
     final project = ProjectDocument(
       id: _newProjectId(userPrompt),
-      title: _titleFromPrompt(userPrompt),
-      originalPrompt: userPrompt,
-      goal: userPrompt,
-      constraints: const ['Stay within the attached workspace.'],
-      successCriteria: const ['Complete the stated project goal.'],
-      status: ProjectStatus.paused,
+      title: init.title.trim().isEmpty
+          ? _titleFromPrompt(userPrompt)
+          : init.title,
+      originalGoal: userPrompt,
+      refinedGoal: init.refinedGoal.trim().isEmpty
+          ? userPrompt
+          : init.refinedGoal,
+      constraints: init.constraints.isEmpty
+          ? const ['Stay within the attached workspace.']
+          : init.constraints,
+      successCriteria: init.successCriteria.isEmpty
+          ? const ['Complete the stated project goal.']
+          : init.successCriteria,
+      backlog: _normaliseBacklog(init.backlog),
+      currentTask: null,
+      completedTasks: const [],
+      failedTasks: const [],
+      artifacts: const [],
+      knownFacts: init.knownFacts,
+      openQuestions: init.openQuestions,
+      status: init.openQuestions.isEmpty
+          ? ProjectStatus.active
+          : ProjectStatus.waitingForUser,
+      phase: ProjectPhase.discovery,
+      iterationCount: 0,
+      maxIterations: ProjectDocument.defaultMaxIterations,
+      maxFailedTasks: ProjectDocument.defaultMaxFailedTasks,
       activeTaskId: null,
-      memorySummary: '',
-      completionSummary: '',
-      tasks: const [],
-      decisions: const [],
       chatSessionId: chatSessionId,
+      completionSummary: '',
+      blocker: init.openQuestions.isEmpty
+          ? null
+          : ProjectBlocker(
+              type: ProjectBlockerType.question,
+              message: init.openQuestions.first.question,
+              createdAt: now,
+            ),
+      decisions: const [],
       createdAt: now,
       updatedAt: now,
     );
@@ -143,13 +190,12 @@ class ProjectService {
     required String rawJson,
   }) async {
     final parsed = ProjectDocument.fromJson(TaskJson.parseObject(rawJson));
-    final now = DateTime.now();
     final updated = parsed.copyWith(
       schemaVersion: ProjectDocument.currentSchemaVersion,
       id: snapshot.id,
       chatSessionId: snapshot.chatSessionId,
       createdAt: snapshot.createdAt,
-      updatedAt: now,
+      updatedAt: DateTime.now(),
     );
     await _storage.saveSnapshot(workspace.rootPath, updated);
     return updated;
@@ -160,45 +206,61 @@ class ProjectService {
     required ProjectDocument snapshot,
     ProjectTaskSnapshotSink? onTaskUpdated,
   }) async {
-    if (snapshot.status != ProjectStatus.running) {
+    if (snapshot.isTerminal) {
       return ProjectRunResult(
         project: snapshot,
         activeTask: await _loadActiveTask(workspace, snapshot),
       );
     }
 
+    final activeTask = await _loadActiveTask(workspace, snapshot);
+    if (!_wasInterrupted(snapshot.status)) {
+      return ProjectRunResult(project: snapshot, activeTask: activeTask);
+    }
+
     final now = DateTime.now();
-    var project = snapshot.copyWith(
-      status: ProjectStatus.paused,
-      updatedAt: now,
-    );
-    final task = await _loadActiveTask(workspace, project);
-    if (task == null) {
-      project = project.copyWith(
-        activeTaskId: null,
-        blocker: ProjectBlocker(
-          type: ProjectBlockerType.error,
-          message:
-              'Recovered an interrupted project, but its active task was missing.',
-          createdAt: now,
-        ),
-        status: ProjectStatus.blocked,
+    if (snapshot.activeTaskId == null) {
+      final recovered = snapshot.copyWith(
+        status: snapshot.openQuestions.isEmpty
+            ? ProjectStatus.active
+            : ProjectStatus.waitingForUser,
+        phase: ProjectPhase.planning,
         updatedAt: now,
       );
-      await _storage.saveSnapshot(workspace.rootPath, project);
+      await _storage.saveSnapshot(workspace.rootPath, recovered);
+      return ProjectRunResult(project: recovered);
+    }
+
+    if (activeTask == null) {
+      final blocked = _blockProject(
+        snapshot.copyWith(activeTaskId: null, updatedAt: now),
+        ProjectBlockerType.error,
+        'Recovered an interrupted project, but its active task was missing.',
+        now,
+      );
+      await _storage.saveSnapshot(workspace.rootPath, blocked);
       onTaskUpdated?.call(null);
-      return ProjectRunResult(project: project);
+      return ProjectRunResult(project: blocked);
     }
 
     final recoveredTask = await _taskService.recoverTask(
       workspace: workspace,
-      snapshot: task,
+      snapshot: activeTask,
     );
     onTaskUpdated?.call(recoveredTask);
-    project = _syncTaskRef(project, recoveredTask, now);
-    project = _projectStatusFromTask(project, recoveredTask, now);
-    await _storage.saveSnapshot(workspace.rootPath, project);
-    return ProjectRunResult(project: project, activeTask: recoveredTask);
+    final taskStatusBlocker = _taskBlocker(recoveredTask);
+    var recovered = _syncCurrentTaskFromTask(snapshot, recoveredTask, now);
+    recovered = taskStatusBlocker == null
+        ? recovered.copyWith(status: ProjectStatus.active, updatedAt: now)
+        : _blockProject(
+            recovered,
+            taskStatusBlocker.$1,
+            taskStatusBlocker.$2,
+            now,
+            taskId: recoveredTask.id,
+          );
+    await _storage.saveSnapshot(workspace.rootPath, recovered);
+    return ProjectRunResult(project: recovered, activeTask: recoveredTask);
   }
 
   Future<ProjectRunResult> runNextProjectTask({
@@ -245,248 +307,168 @@ class ProjectService {
     TaskCancellationToken? cancellationToken,
   }) async {
     cancellationToken?.throwIfCancelled();
-    var recovered = await recoverProject(
+    final recovered = await recoverProject(
       workspace: workspace,
       snapshot: snapshot,
       onTaskUpdated: onTaskUpdated,
     );
     var project = recovered.project;
     var activeTask = recovered.activeTask;
-    if (project.isTerminal ||
-        project.pendingQuestion != null ||
-        project.blocker?.type == ProjectBlockerType.question) {
-      return recovered;
+    if (project.isTerminal) {
+      return ProjectRunResult(project: project, activeTask: activeTask);
     }
-
     if (project.blocker?.type == ProjectBlockerType.budget) {
       project = project.copyWith(
-        status: ProjectStatus.paused,
+        status: ProjectStatus.active,
         blocker: null,
         updatedAt: DateTime.now(),
       );
       await _storage.saveSnapshot(workspace.rootPath, project);
     }
 
-    final allowedNewTasks = maxNewTasks.clamp(1, 25).toInt();
-    var newTasksCreated = 0;
+    final allowedIterations = maxNewTasks.clamp(1, 25).toInt();
+    var runIterations = 0;
 
-    while (true) {
+    while (!project.isTerminal) {
       cancellationToken?.throwIfCancelled();
-      if (project.isTerminal ||
-          project.pendingQuestion != null ||
-          project.blocker != null && project.status == ProjectStatus.blocked) {
+      if (project.openQuestions.isNotEmpty ||
+          project.blocker?.type == ProjectBlockerType.question) {
+        project = _waitingForUser(project, DateTime.now());
+        await _storage.saveSnapshot(workspace.rootPath, project);
         return ProjectRunResult(project: project, activeTask: activeTask);
       }
-
-      final activeTaskId = project.activeTaskId;
-      if (activeTaskId != null) {
-        activeTask = await _loadActiveTask(workspace, project);
-        if (activeTask == null) {
-          project = _blockProject(
-            project,
-            ProjectBlockerType.error,
-            'The active task could not be found: $activeTaskId',
-            DateTime.now(),
-            taskId: activeTaskId,
-          );
-          await _storage.saveSnapshot(workspace.rootPath, project);
-          onTaskUpdated?.call(null);
-          return ProjectRunResult(project: project);
-        }
-
-        while (activeTask!.nextRunnableStep != null && !activeTask.isTerminal) {
-          cancellationToken?.throwIfCancelled();
-          activeTask = await _taskService.runNextStep(
-            client: client,
-            workspace: workspace,
-            snapshot: activeTask,
-            baseSystemPrompt: _buildTaskSystemPrompt(
-              baseSystemPrompt,
-              project,
-              activeTask,
-            ),
-            requirePhaseApproval: requirePhaseApproval,
-            compactionSettings: compactionSettings,
-            contextLimitTokens: contextLimitTokens,
-            onCompactionStatus: onCompactionStatus,
-            onModelOutput: onModelOutput,
-            cancellationToken: cancellationToken,
-          );
-          onTaskUpdated?.call(activeTask);
-          project = _syncTaskRef(project, activeTask, DateTime.now());
-          await _storage.saveSnapshot(workspace.rootPath, project);
-
-          if (cancellationToken?.isCancelled == true) {
-            project = project.copyWith(
-              status: ProjectStatus.paused,
-              blocker: null,
-              updatedAt: DateTime.now(),
-            );
-            await _storage.saveSnapshot(workspace.rootPath, project);
-            return ProjectRunResult(project: project, activeTask: activeTask);
-          }
-
-          final taskBlocker = _taskBlocker(activeTask);
-          if (taskBlocker != null) {
-            project = _blockProject(
-              project,
-              taskBlocker.$1,
-              taskBlocker.$2,
-              DateTime.now(),
-              taskId: activeTask.id,
-            );
-            await _storage.saveSnapshot(workspace.rootPath, project);
-            return ProjectRunResult(project: project, activeTask: activeTask);
-          }
-        }
-
-        if (activeTask.isTerminal) {
-          project = _syncTaskRef(project, activeTask, DateTime.now());
-          if (activeTask.status == TaskStatus.completed) {
-            project = project.copyWith(
-              activeTaskId: null,
-              status: ProjectStatus.paused,
-              blocker: null,
-              memorySummary: _appendMemory(
-                project.memorySummary,
-                _taskMemorySummary(activeTask),
-              ),
-              updatedAt: DateTime.now(),
-            );
-            await _storage.saveSnapshot(workspace.rootPath, project);
-            onTaskUpdated?.call(null);
-            activeTask = null;
-            continue;
-          }
-
-          project = _blockProject(
-            project,
-            activeTask.status == TaskStatus.failed
-                ? ProjectBlockerType.taskFailed
-                : ProjectBlockerType.taskBlocked,
-            'Task `${activeTask.title}` ended with status `${activeTask.status.wire}`.',
-            DateTime.now(),
-            taskId: activeTask.id,
-          );
-          await _storage.saveSnapshot(workspace.rootPath, project);
-          return ProjectRunResult(project: project, activeTask: activeTask);
-        }
+      if (project.status == ProjectStatus.blocked &&
+          project.blocker?.type != ProjectBlockerType.budget) {
+        return ProjectRunResult(project: project, activeTask: activeTask);
       }
-
-      if (newTasksCreated >= allowedNewTasks) {
-        final now = DateTime.now();
+      if (project.iterationCount >= project.maxIterations) {
         project = _blockProject(
           project,
           ProjectBlockerType.budget,
-          'Project run paused after creating $allowedNewTasks task${allowedNewTasks == 1 ? '' : 's'}. Continue the project to create more work.',
-          now,
+          'Project reached the maximum iteration limit of ${project.maxIterations}.',
+          DateTime.now(),
+        );
+        await _storage.saveSnapshot(workspace.rootPath, project);
+        return ProjectRunResult(project: project, activeTask: activeTask);
+      }
+      if (runIterations >= allowedIterations) {
+        project = project.copyWith(
+          status: ProjectStatus.paused,
+          updatedAt: DateTime.now(),
         );
         await _storage.saveSnapshot(workspace.rootPath, project);
         return ProjectRunResult(project: project, activeTask: activeTask);
       }
 
-      final decision = await _superviseProject(
+      project = await _ensureBacklog(
         client: client,
         workspace: workspace,
         project: project,
         baseSystemPrompt: baseSystemPrompt,
         onModelOutput: onModelOutput,
+      );
+      if (project.openQuestions.isNotEmpty ||
+          project.status == ProjectStatus.waitingForUser) {
+        project = _waitingForUser(project, DateTime.now());
+        await _storage.saveSnapshot(workspace.rootPath, project);
+        return ProjectRunResult(project: project, activeTask: activeTask);
+      }
+
+      final candidate = project.currentTask == null
+          ? await _proposeNextTask(
+              client: client,
+              workspace: workspace,
+              project: project,
+              baseSystemPrompt: baseSystemPrompt,
+              onModelOutput: onModelOutput,
+            )
+          : project.currentTask!;
+
+      if (candidate == null) {
+        project = await _applyCompletionEvaluation(
+          client: client,
+          project: project,
+          baseSystemPrompt: baseSystemPrompt,
+          onModelOutput: onModelOutput,
+        );
+        await _storage.saveSnapshot(workspace.rootPath, project);
+        return ProjectRunResult(project: project, activeTask: activeTask);
+      }
+
+      final validation = _validateProjectTask(candidate, project);
+      if (!validation.valid) {
+        project = await _handleInvalidProjectTask(
+          client: client,
+          workspace: workspace,
+          project: project,
+          task: candidate,
+          violations: validation.violations,
+          baseSystemPrompt: baseSystemPrompt,
+          onModelOutput: onModelOutput,
+        );
+        if (project.status == ProjectStatus.blocked) {
+          await _storage.saveSnapshot(workspace.rootPath, project);
+          return ProjectRunResult(project: project, activeTask: activeTask);
+        }
+        await _storage.saveSnapshot(workspace.rootPath, project);
+        continue;
+      }
+
+      final execution = await _executeProjectTask(
+        client: client,
+        workspace: workspace,
+        project: project,
+        projectTask: candidate,
+        baseSystemPrompt: baseSystemPrompt,
+        requirePhaseApproval: requirePhaseApproval,
+        compactionSettings: compactionSettings,
+        contextLimitTokens: contextLimitTokens,
+        onCompactionStatus: onCompactionStatus,
+        onModelOutput: onModelOutput,
+        onTaskUpdated: onTaskUpdated,
         cancellationToken: cancellationToken,
       );
-      cancellationToken?.throwIfCancelled();
+      project = execution.project;
+      activeTask = execution.activeTask;
+      if (execution.result == null) {
+        return ProjectRunResult(project: project, activeTask: activeTask);
+      }
 
       final now = DateTime.now();
-      final record = decision.toRecord(createdAt: now);
       project = project.copyWith(
-        status: ProjectStatus.running,
-        blocker: null,
-        decisions: [...project.decisions, record],
-        memorySummary: _appendMemory(
-          project.memorySummary,
-          decision.memoryUpdate.isEmpty
-              ? decision.projectSummary
-              : decision.memoryUpdate,
-        ),
+        status: ProjectStatus.reviewingTask,
+        phase: ProjectPhase.verification,
         updatedAt: now,
       );
+      await _storage.saveSnapshot(workspace.rootPath, project);
 
-      switch (decision.decision) {
-        case ProjectDecisionType.complete:
-          project = project.copyWith(
-            status: ProjectStatus.completed,
-            activeTaskId: null,
-            completionSummary: decision.completionSummary.isEmpty
-                ? decision.projectSummary
-                : decision.completionSummary,
-            completedAt: now,
-            updatedAt: now,
-          );
-          await _storage.saveSnapshot(workspace.rootPath, project);
-          onTaskUpdated?.call(null);
-          return ProjectRunResult(project: project);
-        case ProjectDecisionType.blocked:
-          project = _blockFromDecision(project, decision, now);
-          await _storage.saveSnapshot(workspace.rootPath, project);
-          return ProjectRunResult(project: project);
-        case ProjectDecisionType.createTask:
-          final nextTask = decision.nextTask;
-          if (nextTask == null || nextTask.prompt.trim().isEmpty) {
-            project = _blockProject(
-              project,
-              ProjectBlockerType.error,
-              'Project supervisor requested a new task without a task prompt.',
-              now,
-            );
-            await _storage.saveSnapshot(workspace.rootPath, project);
-            return ProjectRunResult(project: project);
-          }
-          if (_repeatsPreviousTaskPrompt(project, nextTask.prompt)) {
-            project = _blockProject(
-              project,
-              ProjectBlockerType.error,
-              'Project supervisor repeated the same next task twice.',
-              now,
-            );
-            await _storage.saveSnapshot(workspace.rootPath, project);
-            return ProjectRunResult(project: project);
-          }
-
-          activeTask = await _taskService.createTask(
-            client: client,
-            workspace: workspace,
-            userPrompt: _taskPrompt(project, nextTask),
-            selectedMode: ExecutionMode.task,
-            baseSystemPrompt: _buildTaskSystemPrompt(
-              baseSystemPrompt,
-              project,
-              null,
-            ),
-            chatSessionId: project.chatSessionId,
-            projectId: project.id,
-            onModelOutput: onModelOutput,
-            cancellationToken: cancellationToken,
-          );
-          onTaskUpdated?.call(activeTask);
-          final taskRef = ProjectTaskRef.fromTask(
-            activeTask,
-            summary: 'Created by project supervisor.',
-          );
-          project = project.copyWith(
-            activeTaskId: activeTask.id,
-            tasks: [...project.tasks, taskRef],
-            decisions: [
-              ...project.decisions.take(project.decisions.length - 1),
-              record.copyWithTask(
-                taskId: activeTask.id,
-                taskTitle: activeTask.title,
-              ),
-            ],
-            updatedAt: DateTime.now(),
-          );
-          await _storage.saveSnapshot(workspace.rootPath, project);
-          newTasksCreated++;
+      final evaluation = _evaluateTaskResult(
+        project.currentTask ?? candidate,
+        execution.result!,
+        project,
+      );
+      project = _updateProjectState(project, evaluation, now);
+      project = await _applyCompletionEvaluation(
+        client: client,
+        project: project,
+        baseSystemPrompt: baseSystemPrompt,
+        onModelOutput: onModelOutput,
+      );
+      project = project.copyWith(
+        iterationCount: project.iterationCount + 1,
+        updatedAt: DateTime.now(),
+      );
+      await _storage.saveSnapshot(workspace.rootPath, project);
+      runIterations++;
+      if (project.status == ProjectStatus.completed ||
+          project.status == ProjectStatus.failed ||
+          project.status == ProjectStatus.waitingForUser ||
+          project.status == ProjectStatus.blocked) {
+        return ProjectRunResult(project: project, activeTask: activeTask);
       }
     }
+
+    return ProjectRunResult(project: project, activeTask: activeTask);
   }
 
   Future<ProjectDocument> answerOpenQuestion({
@@ -497,15 +479,70 @@ class ProjectService {
     final question = snapshot.pendingQuestion;
     final trimmed = answer.trim();
     if (question == null || trimmed.isEmpty) return snapshot;
+    final remainingQuestions = snapshot.openQuestions
+        .where((item) => item.id != question.id)
+        .toList();
+    final updated = snapshot.copyWith(
+      status: ProjectStatus.active,
+      openQuestions: remainingQuestions,
+      blocker: null,
+      knownFacts: [
+        ...snapshot.knownFacts,
+        'User answered: ${question.question}\nAnswer: $trimmed',
+      ],
+      updatedAt: DateTime.now(),
+    );
+    await _storage.saveSnapshot(workspace.rootPath, updated);
+    return updated;
+  }
+
+  Future<ProjectDocument> pauseProject({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) async {
     final updated = snapshot.copyWith(
       status: ProjectStatus.paused,
-      pendingQuestion: null,
-      blocker: null,
-      memorySummary: _appendMemory(
-        snapshot.memorySummary,
-        'User answered: ${question.question}\nAnswer: $trimmed',
-      ),
       updatedAt: DateTime.now(),
+    );
+    await _storage.saveSnapshot(workspace.rootPath, updated);
+    return updated;
+  }
+
+  Future<ProjectDocument> approveNextProjectTask({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) async {
+    final task = snapshot.currentTask;
+    if (task == null) return snapshot;
+    final updated = snapshot.copyWith(
+      currentTask: task.copyWith(
+        status: ProjectTaskStatus.approved,
+        updatedAt: DateTime.now(),
+      ),
+      status: ProjectStatus.active,
+      blocker: null,
+      updatedAt: DateTime.now(),
+    );
+    await _storage.saveSnapshot(workspace.rootPath, updated);
+    return updated;
+  }
+
+  Future<ProjectDocument> cancelProject({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) async {
+    final now = DateTime.now();
+    final updated = snapshot.copyWith(
+      status: ProjectStatus.cancelled,
+      activeTaskId: null,
+      currentTask: snapshot.currentTask?.copyWith(
+        status: ProjectTaskStatus.cancelled,
+        updatedAt: now,
+      ),
+      openQuestions: const [],
+      blocker: null,
+      completedAt: now,
+      updatedAt: now,
     );
     await _storage.saveSnapshot(workspace.rootPath, updated);
     return updated;
@@ -514,18 +551,8 @@ class ProjectService {
   Future<ProjectDocument> stopProject({
     required WorkspaceAttachment workspace,
     required ProjectDocument snapshot,
-  }) async {
-    final now = DateTime.now();
-    final updated = snapshot.copyWith(
-      status: ProjectStatus.cancelled,
-      activeTaskId: null,
-      pendingQuestion: null,
-      blocker: null,
-      completedAt: now,
-      updatedAt: now,
-    );
-    await _storage.saveSnapshot(workspace.rootPath, updated);
-    return updated;
+  }) {
+    return cancelProject(workspace: workspace, snapshot: snapshot);
   }
 
   Future<TaskDocument?> _loadActiveTask(
@@ -542,64 +569,10 @@ class ProjectService {
     );
   }
 
-  Future<_ProjectDecision> _superviseProject({
-    required ChatClient client,
-    required WorkspaceAttachment workspace,
-    required ProjectDocument project,
-    required String baseSystemPrompt,
-    TaskModelOutputSink? onModelOutput,
-    TaskCancellationToken? cancellationToken,
-  }) async {
-    final metadata = await _collectWorkspaceMetadata(workspace, project);
-    try {
-      final json = await _completeJson(
-        client: client,
-        label: 'Project Supervisor',
-        system: '$baseSystemPrompt\n\n$_supervisorSystemInstruction',
-        onModelOutput: onModelOutput,
-        cancellationToken: cancellationToken,
-        user:
-            '''
-Evaluate this project and choose the next action.
-
-Return only JSON:
-{
-  "decision": "create_task|complete|blocked",
-  "projectSummary": "...",
-  "memoryUpdate": "...",
-  "nextTask": {
-    "title": "...",
-    "prompt": "...",
-    "successCriteria": ["..."]
-  },
-  "completionSummary": "...",
-  "userQuestion": "..."
-}
-
-Workspace metadata:
-${_encoder.convert(metadata)}
-
-Project:
-${_encoder.convert(project.toJson())}
-''',
-      );
-      return _ProjectDecision.fromJson(json);
-    } on TaskCancelledException {
-      rethrow;
-    } catch (e) {
-      return _ProjectDecision(
-        decision: ProjectDecisionType.blocked,
-        projectSummary: 'Project supervision failed.',
-        memoryUpdate: '',
-        error: e.toString(),
-      );
-    }
-  }
-
   Future<Map<String, dynamic>> _collectWorkspaceMetadata(
-    WorkspaceAttachment workspace,
-    ProjectDocument project,
-  ) async {
+    WorkspaceAttachment workspace, {
+    String? chatSessionId,
+  }) async {
     final root = Directory(workspace.rootPath);
     final rootFiles = <String>[];
     if (await root.exists()) {
@@ -609,117 +582,696 @@ ${_encoder.convert(project.toJson())}
       }
     }
     rootFiles.sort();
-    final projectTasks = await _taskService.listTasks(
+    final taskIds = (await _taskService.listTasks(
       workspace,
-      chatSessionId: project.chatSessionId,
-      projectId: project.id,
-    );
+      chatSessionId: chatSessionId,
+    )).map((task) => task.id).toList();
     return {
       'workspaceName': workspace.displayName,
       'rootFiles': rootFiles,
       'gitAvailable': rootFiles.contains('.git'),
       'commandExecutionApproved': workspace.commandExecutionApproved,
-      'projectTaskIds': projectTasks.map((task) => task.id).toList(),
+      'existingTaskIds': taskIds,
     };
   }
 
-  Future<Map<String, dynamic>> _completeJson({
+  Future<ProjectDocument> _ensureBacklog({
     required ChatClient client,
-    required String system,
-    required String user,
-    required String label,
+    required WorkspaceAttachment workspace,
+    required ProjectDocument project,
+    required String baseSystemPrompt,
     TaskModelOutputSink? onModelOutput,
+  }) async {
+    if (project.backlog.isNotEmpty || project.currentTask != null) {
+      return project;
+    }
+    final metadata = await _collectWorkspaceMetadata(
+      workspace,
+      chatSessionId: project.chatSessionId,
+    );
+    final refresh = await _modelCalls.refreshBacklog(
+      client: client,
+      baseSystemPrompt: baseSystemPrompt,
+      project: project,
+      workspaceMetadata: metadata,
+      onModelOutput: onModelOutput,
+    );
+    final backlog =
+        _normaliseBacklog(
+              refresh.backlog.isEmpty
+                  ? [_fallbackBacklogTask(project)]
+                  : refresh.backlog,
+            )
+            .where(
+              (task) => !_knownFingerprints(project).contains(task.fingerprint),
+            )
+            .toList();
+    final openQuestions = [...project.openQuestions, ...refresh.openQuestions];
+    final status = openQuestions.isEmpty
+        ? ProjectStatus.active
+        : ProjectStatus.waitingForUser;
+    final updated = project.copyWith(
+      backlog: backlog,
+      knownFacts: _appendFacts(project.knownFacts, refresh.knownFacts),
+      openQuestions: openQuestions,
+      status: status,
+      phase: ProjectPhase.planning,
+      blocker: openQuestions.isEmpty
+          ? null
+          : ProjectBlocker(
+              type: ProjectBlockerType.question,
+              message: openQuestions.first.question,
+              createdAt: DateTime.now(),
+            ),
+      decisions: [
+        ...project.decisions,
+        _decision(
+          ProjectDecisionType.refreshBacklog,
+          backlog.isEmpty
+              ? 'Backlog refresh produced no new tasks.'
+              : 'Backlog refreshed with ${backlog.length} task(s).',
+          '',
+        ),
+      ],
+      updatedAt: DateTime.now(),
+    );
+    await _storage.saveSnapshot(workspace.rootPath, updated);
+    return updated;
+  }
+
+  Future<ProjectTask?> _proposeNextTask({
+    required ChatClient client,
+    required WorkspaceAttachment workspace,
+    required ProjectDocument project,
+    required String baseSystemPrompt,
+    TaskModelOutputSink? onModelOutput,
+  }) async {
+    if (project.backlog.isEmpty) return null;
+    final metadata = await _collectWorkspaceMetadata(
+      workspace,
+      chatSessionId: project.chatSessionId,
+    );
+    final proposed = await _modelCalls.proposeNextTask(
+      client: client,
+      baseSystemPrompt: baseSystemPrompt,
+      project: project,
+      workspaceMetadata: metadata,
+      forbiddenFingerprints: _knownFingerprints(project),
+      onModelOutput: onModelOutput,
+    );
+    return proposed ?? project.backlog.first;
+  }
+
+  Future<ProjectDocument> _handleInvalidProjectTask({
+    required ChatClient client,
+    required WorkspaceAttachment workspace,
+    required ProjectDocument project,
+    required ProjectTask task,
+    required List<String> violations,
+    required String baseSystemPrompt,
+    TaskModelOutputSink? onModelOutput,
+  }) async {
+    final duplicateViolation = violations.any(
+      (violation) =>
+          violation.toLowerCase().contains('duplicate') ||
+          violation.toLowerCase().contains('repeat'),
+    );
+    if (duplicateViolation) {
+      final now = DateTime.now();
+      final rejected = task.copyWith(
+        status: ProjectTaskStatus.rejected,
+        rejectionReason: violations.join('\n'),
+        updatedAt: now,
+      );
+      return _blockProject(
+        project.copyWith(
+          failedTasks: [...project.failedTasks, rejected],
+          backlog: project.backlog.where((item) => item.id != task.id).toList(),
+          decisions: [
+            ...project.decisions,
+            _decision(
+              ProjectDecisionType.rejectTask,
+              'Rejected repeated project task: ${task.title}',
+              violations.join('\n'),
+              task: rejected,
+            ),
+          ],
+          updatedAt: now,
+        ),
+        ProjectBlockerType.duplicateTask,
+        'Project task repeated previous work: ${violations.join('; ')}',
+        now,
+      );
+    }
+
+    final split = await _modelCalls.splitTask(
+      client: client,
+      baseSystemPrompt: baseSystemPrompt,
+      project: project,
+      oversizedTask: task,
+      violations: violations,
+      onModelOutput: onModelOutput,
+    );
+    final known = _knownFingerprints(project)..add(task.fingerprint);
+    final splitTasks =
+        _normaliseBacklog(
+              split.isEmpty ? _deterministicSplit(project, task) : split,
+            )
+            .where((item) => !known.contains(item.fingerprint))
+            .where((item) => _validateProjectTask(item, project).valid)
+            .take(5)
+            .toList();
+
+    final now = DateTime.now();
+    final rejected = task.copyWith(
+      status: splitTasks.isEmpty
+          ? ProjectTaskStatus.rejected
+          : ProjectTaskStatus.split,
+      rejectionReason: violations.join('\n'),
+      updatedAt: now,
+    );
+    if (splitTasks.isEmpty) {
+      return _blockProject(
+        project.copyWith(
+          failedTasks: [...project.failedTasks, rejected],
+          backlog: project.backlog.where((item) => item.id != task.id).toList(),
+          decisions: [
+            ...project.decisions,
+            _decision(
+              ProjectDecisionType.rejectTask,
+              'Rejected oversized project task: ${task.title}',
+              violations.join('\n'),
+              task: rejected,
+            ),
+          ],
+          updatedAt: now,
+        ),
+        ProjectBlockerType.validation,
+        'Project task was too broad and could not be split safely: ${violations.join('; ')}',
+        now,
+      );
+    }
+
+    return project.copyWith(
+      backlog: [
+        ...splitTasks,
+        ...project.backlog.where((item) => item.id != task.id),
+      ],
+      failedTasks: [...project.failedTasks, rejected],
+      status: ProjectStatus.active,
+      phase: ProjectPhase.planning,
+      decisions: [
+        ...project.decisions,
+        _decision(
+          ProjectDecisionType.splitTask,
+          'Split oversized project task into ${splitTasks.length} smaller task(s).',
+          violations.join('\n'),
+          task: rejected,
+        ),
+      ],
+      updatedAt: now,
+    );
+  }
+
+  Future<_ProjectTaskExecution> _executeProjectTask({
+    required ChatClient client,
+    required WorkspaceAttachment workspace,
+    required ProjectDocument project,
+    required ProjectTask projectTask,
+    required String baseSystemPrompt,
+    required bool requirePhaseApproval,
+    CompactionSettings? compactionSettings,
+    int? contextLimitTokens,
+    ProjectCompactionStatusSink? onCompactionStatus,
+    TaskModelOutputSink? onModelOutput,
+    ProjectTaskSnapshotSink? onTaskUpdated,
     TaskCancellationToken? cancellationToken,
   }) async {
     cancellationToken?.throwIfCancelled();
-    _emitProjectModelOutput(
-      onModelOutput,
-      TaskModelOutputEvent(type: TaskModelOutputEventType.start, label: label),
+    final now = DateTime.now();
+    final runningProjectTask = projectTask.copyWith(
+      status: ProjectTaskStatus.running,
+      updatedAt: now,
     );
-    final completion = await client.completeChatStreamed(
-      messages: [
-        ChatMessage(role: 'system', content: system),
-        ChatMessage(role: 'user', content: user),
+    var workingProject = project.copyWith(
+      status: ProjectStatus.runningTask,
+      phase: ProjectPhase.execution,
+      currentTask: runningProjectTask,
+      backlog: project.backlog
+          .where((task) => task.id != projectTask.id)
+          .toList(),
+      blocker: null,
+      decisions: [
+        ...project.decisions,
+        _decision(
+          ProjectDecisionType.createTask,
+          'Selected next bounded project task: ${projectTask.title}',
+          '',
+          task: projectTask,
+        ),
       ],
-      onToken: (token) {
-        cancellationToken?.throwIfCancelled();
-        final content = token.content;
-        if (content != null && content.isNotEmpty) {
-          _emitProjectModelOutput(
-            onModelOutput,
-            TaskModelOutputEvent(
-              type: TaskModelOutputEventType.content,
-              label: label,
-              text: content,
-              token: token,
-            ),
-          );
-        }
-        final reasoning = token.reasoning;
-        if (reasoning != null && reasoning.isNotEmpty) {
-          _emitProjectModelOutput(
-            onModelOutput,
-            TaskModelOutputEvent(
-              type: TaskModelOutputEventType.reasoning,
-              label: label,
-              text: reasoning,
-              token: token,
-            ),
-          );
-        }
-      },
+      updatedAt: now,
     );
-    cancellationToken?.throwIfCancelled();
-    _emitProjectModelOutput(
-      onModelOutput,
-      TaskModelOutputEvent(type: TaskModelOutputEventType.done, label: label),
+    await _storage.saveSnapshot(workspace.rootPath, workingProject);
+
+    final existingTask = workingProject.activeTaskId == null
+        ? null
+        : await _loadActiveTask(workspace, workingProject);
+    var activeTask =
+        existingTask ??
+        await _taskService.createTask(
+          client: client,
+          workspace: workspace,
+          userPrompt: _taskPrompt(workingProject, projectTask),
+          selectedMode: ExecutionMode.task,
+          baseSystemPrompt: _buildTaskSystemPrompt(
+            baseSystemPrompt,
+            workingProject,
+            null,
+          ),
+          chatSessionId: workingProject.chatSessionId,
+          projectId: workingProject.id,
+          planningContext: _planningContext(workingProject, projectTask),
+          onModelOutput: onModelOutput,
+          cancellationToken: cancellationToken,
+        );
+    final taskDocumentId = activeTask.id;
+    workingProject = workingProject.copyWith(
+      activeTaskId: taskDocumentId,
+      currentTask: runningProjectTask.copyWith(
+        taskDocumentId: taskDocumentId,
+        updatedAt: DateTime.now(),
+      ),
+      updatedAt: DateTime.now(),
     );
-    final text = completion.content.trim().isNotEmpty
-        ? completion.content
-        : completion.reasoning;
-    return TaskJson.parseObject(text);
-  }
+    await _storage.saveSnapshot(workspace.rootPath, workingProject);
+    onTaskUpdated?.call(activeTask);
 
-  void _emitProjectModelOutput(
-    TaskModelOutputSink? sink,
-    TaskModelOutputEvent event,
-  ) {
-    sink?.call(event);
-  }
+    while (activeTask.nextRunnableStep != null && !activeTask.isTerminal) {
+      cancellationToken?.throwIfCancelled();
+      activeTask = await _taskService.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: activeTask,
+        baseSystemPrompt: _buildTaskSystemPrompt(
+          baseSystemPrompt,
+          workingProject,
+          activeTask,
+        ),
+        requirePhaseApproval: requirePhaseApproval,
+        compactionSettings: compactionSettings,
+        contextLimitTokens: contextLimitTokens,
+        onCompactionStatus: onCompactionStatus,
+        onModelOutput: onModelOutput,
+        cancellationToken: cancellationToken,
+      );
+      onTaskUpdated?.call(activeTask);
+      workingProject = _syncCurrentTaskFromTask(
+        workingProject,
+        activeTask,
+        DateTime.now(),
+      );
+      await _storage.saveSnapshot(workspace.rootPath, workingProject);
 
-  ProjectDocument _syncTaskRef(
-    ProjectDocument project,
-    TaskDocument task,
-    DateTime now,
-  ) {
-    final summary = _taskMemorySummary(task);
-    final updatedRef = ProjectTaskRef.fromTask(task, summary: summary);
-    final refs = [...project.tasks];
-    final index = refs.indexWhere((ref) => ref.taskId == task.id);
-    if (index >= 0) {
-      refs[index] = updatedRef;
-    } else {
-      refs.add(updatedRef);
+      if (cancellationToken?.isCancelled == true) {
+        final paused = workingProject.copyWith(
+          status: ProjectStatus.paused,
+          updatedAt: DateTime.now(),
+        );
+        await _storage.saveSnapshot(workspace.rootPath, paused);
+        return _ProjectTaskExecution(project: paused, activeTask: activeTask);
+      }
+
+      final blocker = _taskBlocker(activeTask);
+      if (blocker != null) {
+        final blocked = _blockProject(
+          workingProject,
+          blocker.$1,
+          blocker.$2,
+          DateTime.now(),
+          taskId: activeTask.id,
+        ).copyWith(status: ProjectStatus.waitingForUser);
+        await _storage.saveSnapshot(workspace.rootPath, blocked);
+        return _ProjectTaskExecution(project: blocked, activeTask: activeTask);
+      }
     }
-    return project.copyWith(tasks: refs, updatedAt: now);
+
+    if (!activeTask.isTerminal && activeTask.nextRunnableStep == null) {
+      activeTask = await _taskService.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: activeTask,
+        baseSystemPrompt: _buildTaskSystemPrompt(
+          baseSystemPrompt,
+          workingProject,
+          activeTask,
+        ),
+        requirePhaseApproval: requirePhaseApproval,
+        compactionSettings: compactionSettings,
+        contextLimitTokens: contextLimitTokens,
+        onCompactionStatus: onCompactionStatus,
+        onModelOutput: onModelOutput,
+        cancellationToken: cancellationToken,
+      );
+      onTaskUpdated?.call(activeTask);
+    }
+
+    final result = _taskResultFromTask(workingProject.currentTask!, activeTask);
+    return _ProjectTaskExecution(
+      project: _syncCurrentTaskFromTask(
+        workingProject,
+        activeTask,
+        DateTime.now(),
+      ),
+      activeTask: activeTask,
+      result: result,
+    );
   }
 
-  ProjectDocument _projectStatusFromTask(
+  ProjectEvaluation _evaluateTaskResult(
+    ProjectTask projectTask,
+    TaskResult result,
     ProjectDocument project,
-    TaskDocument task,
+  ) {
+    final accepted = result.status == TaskStatus.completed;
+    final completedCriteria = accepted
+        ? projectTask.relevantSuccessCriteria
+        : const <String>[];
+    return ProjectEvaluation(
+      projectTaskId: projectTask.id,
+      taskAccepted: accepted,
+      projectComplete: false,
+      summary: result.summary,
+      completedCriteria: completedCriteria,
+      remainingCriteria: _remainingCriteria(
+        project,
+        additionalCompletedCriteria: completedCriteria,
+      ),
+      newKnownFacts: [
+        if (result.summary.trim().isNotEmpty) result.summary.trim(),
+        if (result.memoryUpdate.trim().isNotEmpty) result.memoryUpdate.trim(),
+      ],
+      artifacts: result.artifacts,
+      backlogAdditions: const [],
+      openQuestions: result.userQuestion?.trim().isNotEmpty == true
+          ? [
+              PendingProjectQuestion(
+                id: 'question_${uuid.v7()}',
+                question: result.userQuestion!.trim(),
+                createdAt: DateTime.now(),
+              ),
+            ]
+          : const [],
+      failureReason: accepted ? null : result.error ?? result.summary,
+    );
+  }
+
+  ProjectDocument _updateProjectState(
+    ProjectDocument project,
+    ProjectEvaluation evaluation,
     DateTime now,
   ) {
-    final taskBlocker = _taskBlocker(task);
-    if (taskBlocker != null) {
-      return _blockProject(
-        project,
-        taskBlocker.$1,
-        taskBlocker.$2,
-        now,
-        taskId: task.id,
+    final task = project.currentTask;
+    if (task == null) return project;
+    if (!evaluation.taskAccepted) {
+      final failedTask = task.copyWith(
+        status: ProjectTaskStatus.failed,
+        rejectionReason: evaluation.failureReason,
+        updatedAt: now,
+      );
+      final failedTasks = [...project.failedTasks, failedTask];
+      return project.copyWith(
+        currentTask: null,
+        activeTaskId: null,
+        failedTasks: failedTasks,
+        openQuestions: evaluation.openQuestions,
+        status: failedTasks.length >= project.maxFailedTasks
+            ? ProjectStatus.failed
+            : ProjectStatus.active,
+        phase: ProjectPhase.execution,
+        blocker: failedTasks.length >= project.maxFailedTasks
+            ? ProjectBlocker(
+                type: ProjectBlockerType.maxFailures,
+                message:
+                    'Project reached the maximum failed task limit of ${project.maxFailedTasks}.',
+                createdAt: now,
+              )
+            : null,
+        knownFacts: _appendFacts(project.knownFacts, evaluation.newKnownFacts),
+        decisions: [
+          ...project.decisions,
+          _decision(
+            ProjectDecisionType.evaluateTask,
+            'Project task failed: ${task.title}',
+            evaluation.failureReason ?? '',
+            task: failedTask,
+          ),
+        ],
+        updatedAt: now,
       );
     }
-    return project.copyWith(status: ProjectStatus.paused, updatedAt: now);
+
+    final completedTask = task.copyWith(
+      status: ProjectTaskStatus.completed,
+      updatedAt: now,
+    );
+    return project.copyWith(
+      currentTask: null,
+      activeTaskId: null,
+      completedTasks: [...project.completedTasks, completedTask],
+      artifacts: _mergeArtifacts(project.artifacts, evaluation.artifacts),
+      knownFacts: _appendFacts(project.knownFacts, evaluation.newKnownFacts),
+      openQuestions: evaluation.openQuestions,
+      backlog: [...evaluation.backlogAdditions, ...project.backlog],
+      status: evaluation.openQuestions.isEmpty
+          ? ProjectStatus.active
+          : ProjectStatus.waitingForUser,
+      phase: ProjectPhase.execution,
+      blocker: evaluation.openQuestions.isEmpty
+          ? null
+          : ProjectBlocker(
+              type: ProjectBlockerType.question,
+              message: evaluation.openQuestions.first.question,
+              createdAt: now,
+            ),
+      decisions: [
+        ...project.decisions,
+        _decision(
+          ProjectDecisionType.evaluateTask,
+          'Accepted completed project task: ${task.title}',
+          evaluation.summary,
+          task: completedTask,
+        ),
+      ],
+      updatedAt: now,
+    );
+  }
+
+  Future<ProjectDocument> _applyCompletionEvaluation({
+    required ChatClient client,
+    required ProjectDocument project,
+    required String baseSystemPrompt,
+    TaskModelOutputSink? onModelOutput,
+  }) async {
+    if (project.isTerminal ||
+        project.openQuestions.isNotEmpty ||
+        project.failedTasks.length >= project.maxFailedTasks) {
+      return project;
+    }
+    final remainingByState = _remainingCriteria(project);
+    final assessment = await _modelCalls.evaluateCompletion(
+      client: client,
+      baseSystemPrompt: baseSystemPrompt,
+      project: project,
+      onModelOutput: onModelOutput,
+    );
+    final remaining = {
+      ...remainingByState,
+      ...assessment.remainingCriteria,
+    }.where((item) => item.trim().isNotEmpty).toList();
+    final now = DateTime.now();
+    if (assessment.openQuestions.isNotEmpty) {
+      return project.copyWith(
+        status: ProjectStatus.waitingForUser,
+        openQuestions: assessment.openQuestions,
+        blocker: ProjectBlocker(
+          type: ProjectBlockerType.question,
+          message: assessment.openQuestions.first.question,
+          createdAt: now,
+        ),
+        updatedAt: now,
+      );
+    }
+    if (assessment.complete && remaining.isEmpty) {
+      return project.copyWith(
+        status: ProjectStatus.completed,
+        phase: ProjectPhase.finalization,
+        completionSummary: assessment.finalSummary.trim().isEmpty
+            ? 'Project completed.'
+            : assessment.finalSummary.trim(),
+        completedAt: now,
+        blocker: null,
+        updatedAt: now,
+      );
+    }
+    return project.copyWith(
+      status: ProjectStatus.active,
+      phase: project.backlog.isEmpty
+          ? ProjectPhase.planning
+          : ProjectPhase.execution,
+      updatedAt: now,
+    );
+  }
+
+  _ProjectTaskValidation _validateProjectTask(
+    ProjectTask task,
+    ProjectDocument project,
+  ) {
+    final violations = <String>[];
+    if (task.objective.trim().isEmpty) {
+      violations.add('Task objective is empty.');
+    }
+    if (task.doneCriteria.isEmpty) {
+      violations.add('Task has no done criteria.');
+    }
+    if (task.outOfScope.isEmpty) {
+      violations.add('Task has no out-of-scope boundaries.');
+    }
+    if (_knownFingerprints(
+      project,
+      excludingTaskId: task.id,
+    ).contains(task.fingerprint)) {
+      violations.add(
+        'Task duplicates previous, current, failed, or queued work.',
+      );
+    }
+    if (project.decisions.any(
+      (decision) =>
+          decision.taskPrompt?.trim().isNotEmpty == true &&
+          _normalise(decision.taskPrompt!) == _normalise(task.objective),
+    )) {
+      violations.add('Task repeats a previous project task prompt.');
+    }
+    if (_normalise(task.objective) == _normalise(project.refinedGoal) ||
+        _normalise(task.objective) == _normalise(project.originalGoal)) {
+      violations.add('Task objective matches the whole project goal.');
+    }
+    if (_looksOversized(task.objective)) {
+      violations.add('Task objective is too broad for a project task.');
+    }
+    if (task.relevantSuccessCriteria.length > 3) {
+      violations.add('Task covers too many success criteria.');
+    }
+    if (project.successCriteria.length > 1 &&
+        task.relevantSuccessCriteria.length >= project.successCriteria.length) {
+      violations.add('Task covers the entire project success criteria set.');
+    }
+    if (task.doneCriteria.length > 5) {
+      violations.add('Task has too many done criteria.');
+    }
+    if (task.objective.length > 700) {
+      violations.add('Task objective is too long.');
+    }
+    return _ProjectTaskValidation(violations.isEmpty, violations);
+  }
+
+  bool _looksOversized(String value) {
+    final text = _normalise(value);
+    return text.contains('entire project') ||
+        text.contains('whole project') ||
+        text.contains('complete the project') ||
+        text.contains('finish the project') ||
+        text.contains('build the app') ||
+        text.contains('implement all') ||
+        text.contains('end to end') ||
+        text.contains('end-to-end');
+  }
+
+  List<ProjectTask> _deterministicSplit(
+    ProjectDocument project,
+    ProjectTask task,
+  ) {
+    final criteria = task.relevantSuccessCriteria.isEmpty
+        ? project.successCriteria
+        : task.relevantSuccessCriteria;
+    if (criteria.isEmpty) return const [];
+    final now = DateTime.now();
+    return criteria.take(5).map((criterion) {
+      final objective = 'Make focused progress on: $criterion';
+      return ProjectTask(
+        id: 'project_task_${uuid.v7()}',
+        title: _titleFromPrompt(criterion),
+        objective: objective,
+        relevantSuccessCriteria: [criterion],
+        doneCriteria: [
+          'Concrete progress for "$criterion" is completed and summarized.',
+        ],
+        outOfScope: [
+          'Do not complete unrelated success criteria.',
+          'Do not expand this into the whole project.',
+        ],
+        context: [task.objective],
+        expectedArtifacts: const [],
+        status: ProjectTaskStatus.queued,
+        taskDocumentId: null,
+        fingerprint: projectTaskFingerprint(objective, [criterion]),
+        rejectionReason: null,
+        createdAt: now,
+        updatedAt: now,
+      );
+    }).toList();
+  }
+
+  TaskPlanningContext _planningContext(
+    ProjectDocument project,
+    ProjectTask task,
+  ) {
+    return TaskPlanningContext(
+      projectGoal: project.refinedGoal,
+      projectTaskObjective: task.objective,
+      knownFacts: [...project.knownFacts, ...task.context],
+      doneCriteria: task.doneCriteria,
+      outOfScope: task.outOfScope,
+      expectedArtifacts: task.expectedArtifacts
+          .map(
+            (artifact) => TaskArtifact(
+              path: artifact.path,
+              description: artifact.description,
+            ),
+          )
+          .toList(),
+      maxSteps: 3,
+    );
+  }
+
+  TaskResult _taskResultFromTask(ProjectTask projectTask, TaskDocument task) {
+    final latestRun = task.runs.isEmpty ? null : task.runs.last;
+    final artifacts = <ProjectArtifact>[
+      for (final run in task.runs)
+        for (final artifact in run.artifacts)
+          ProjectArtifact(
+            id: 'artifact_${uuid.v7()}',
+            projectTaskId: projectTask.id,
+            taskDocumentId: task.id,
+            path: artifact.path,
+            description: artifact.description ?? '',
+            kind: 'file',
+            createdAt: artifact.createdAt ?? DateTime.now(),
+          ),
+    ];
+    return TaskResult(
+      taskDocumentId: task.id,
+      status: task.status,
+      summary: latestRun?.summary ?? task.memorySummary,
+      memoryUpdate: latestRun?.memoryUpdate ?? task.memorySummary,
+      artifacts: artifacts,
+      toolCallCount: task.runs.fold<int>(
+        0,
+        (sum, run) => sum + run.toolCalls.length,
+      ),
+      userQuestion: task.pendingQuestion?.question,
+      error: latestRun?.error,
+    );
   }
 
   (ProjectBlockerType, String)? _taskBlocker(TaskDocument task) {
@@ -735,43 +1287,45 @@ ${_encoder.convert(project.toJson())}
         'Task `${task.title}` is blocked.',
       );
     }
-    if (task.status == TaskStatus.failed) {
-      return (ProjectBlockerType.taskFailed, 'Task `${task.title}` failed.');
-    }
     return null;
   }
 
-  ProjectDocument _blockFromDecision(
+  ProjectDocument _syncCurrentTaskFromTask(
     ProjectDocument project,
-    _ProjectDecision decision,
+    TaskDocument task,
     DateTime now,
   ) {
-    final question = decision.userQuestion.trim();
-    if (question.isNotEmpty) {
-      return project.copyWith(
-        status: ProjectStatus.blocked,
-        pendingQuestion: PendingProjectQuestion(
-          id: 'question_${uuid.v7()}',
-          question: question,
-          createdAt: now,
-        ),
-        blocker: ProjectBlocker(
-          type: ProjectBlockerType.question,
-          message: question,
-          createdAt: now,
-        ),
+    final current = project.currentTask;
+    if (current == null) return project;
+    return project.copyWith(
+      currentTask: current.copyWith(
+        taskDocumentId: task.id,
+        status: switch (task.status) {
+          TaskStatus.completed => ProjectTaskStatus.completed,
+          TaskStatus.failed => ProjectTaskStatus.failed,
+          TaskStatus.cancelled => ProjectTaskStatus.cancelled,
+          _ => ProjectTaskStatus.running,
+        },
         updatedAt: now,
-      );
-    }
-    return _blockProject(
-      project,
-      ProjectBlockerType.error,
-      decision.error?.trim().isNotEmpty == true
-          ? decision.error!.trim()
-          : decision.projectSummary.trim().isEmpty
-          ? 'Project supervisor blocked without a question.'
-          : decision.projectSummary.trim(),
-      now,
+      ),
+      activeTaskId: task.id,
+      updatedAt: now,
+    );
+  }
+
+  ProjectDocument _waitingForUser(ProjectDocument project, DateTime now) {
+    return project.copyWith(
+      status: ProjectStatus.waitingForUser,
+      blocker:
+          project.blocker ??
+          (project.openQuestions.isEmpty
+              ? null
+              : ProjectBlocker(
+                  type: ProjectBlockerType.question,
+                  message: project.openQuestions.first.question,
+                  createdAt: now,
+                )),
+      updatedAt: now,
     );
   }
 
@@ -794,51 +1348,192 @@ ${_encoder.convert(project.toJson())}
     );
   }
 
-  bool _repeatsPreviousTaskPrompt(ProjectDocument project, String prompt) {
-    final normalized = _normalisePrompt(prompt);
-    for (final decision in project.decisions.reversed.skip(1).take(1)) {
-      final previous = decision.taskPrompt;
-      if (previous == null) continue;
-      if (_normalisePrompt(previous) == normalized) return true;
-    }
-    return false;
+  List<String> _remainingCriteria(
+    ProjectDocument project, {
+    List<String> additionalCompletedCriteria = const [],
+  }) {
+    final completed = {
+      for (final task in project.completedTasks)
+        for (final criterion in task.relevantSuccessCriteria)
+          _normalise(criterion): true,
+      for (final criterion in additionalCompletedCriteria)
+        _normalise(criterion): true,
+    };
+    return project.successCriteria
+        .where((criterion) => !completed.containsKey(_normalise(criterion)))
+        .toList();
   }
 
-  String _normalisePrompt(String prompt) =>
-      prompt.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+  List<ProjectArtifact> _mergeArtifacts(
+    List<ProjectArtifact> current,
+    List<ProjectArtifact> additions,
+  ) {
+    final byPath = <String, ProjectArtifact>{
+      for (final artifact in current) artifact.path: artifact,
+    };
+    for (final artifact in additions) {
+      byPath[artifact.path] = artifact;
+    }
+    return byPath.values.toList();
+  }
 
-  String _taskPrompt(ProjectDocument project, _NextProjectTask nextTask) {
+  List<String> _appendFacts(List<String> current, List<String> additions) {
+    final seen = current.map(_normalise).toSet();
+    final next = [
+      ...current,
+      for (final addition in additions)
+        if (addition.trim().isNotEmpty && seen.add(_normalise(addition)))
+          _cap(addition.trim(), 1200),
+    ];
+    final joined = next.join('\n\n');
+    if (joined.length <= 18000) return next;
+    return joined.substring(0, 18000).split('\n\n');
+  }
+
+  Set<String> _knownFingerprints(
+    ProjectDocument project, {
+    String? excludingTaskId,
+  }) {
+    return {
+      for (final task in project.backlog)
+        if (task.id != excludingTaskId) task.fingerprint,
+      if (project.currentTask != null &&
+          project.currentTask!.id != excludingTaskId)
+        project.currentTask!.fingerprint,
+      for (final task in project.completedTasks)
+        if (task.id != excludingTaskId) task.fingerprint,
+      for (final task in project.failedTasks)
+        if (task.id != excludingTaskId) task.fingerprint,
+      for (final decision in project.decisions)
+        if (decision.taskPrompt?.trim().isNotEmpty == true)
+          projectTaskFingerprint(decision.taskPrompt!, const []),
+    };
+  }
+
+  List<ProjectTask> _normaliseBacklog(List<ProjectTask> tasks) {
+    final seen = <String>{};
+    return [
+      for (final task in tasks)
+        if (task.objective.trim().isNotEmpty && seen.add(task.fingerprint))
+          task.copyWith(
+            status: task.status == ProjectTaskStatus.running
+                ? ProjectTaskStatus.queued
+                : task.status,
+            updatedAt: DateTime.now(),
+          ),
+    ];
+  }
+
+  ProjectInitialisation _fallbackInitialisation(String originalGoal) {
+    final task = _fallbackBacklogTaskForGoal(originalGoal);
+    return ProjectInitialisation(
+      title: _titleFromPrompt(originalGoal),
+      refinedGoal: originalGoal,
+      successCriteria: const ['Complete the stated project goal.'],
+      constraints: const ['Stay within the attached workspace.'],
+      knownFacts: const [],
+      openQuestions: const [],
+      backlog: [task],
+    );
+  }
+
+  ProjectTask _fallbackBacklogTask(ProjectDocument project) {
+    final remaining = _remainingCriteria(project);
+    final criterion = remaining.isEmpty
+        ? 'Identify the next smallest useful project task.'
+        : remaining.first;
+    final now = DateTime.now();
+    final objective = 'Make focused progress on: $criterion';
+    return ProjectTask(
+      id: 'project_task_${uuid.v7()}',
+      title: _titleFromPrompt(criterion),
+      objective: objective,
+      relevantSuccessCriteria: [criterion],
+      doneCriteria: [
+        'Concrete progress for "$criterion" is completed and summarized.',
+      ],
+      outOfScope: const [
+        'Do not complete unrelated success criteria.',
+        'Do not expand this into the whole project.',
+      ],
+      context: project.knownFacts,
+      expectedArtifacts: const [],
+      status: ProjectTaskStatus.queued,
+      taskDocumentId: null,
+      fingerprint: projectTaskFingerprint(objective, [criterion]),
+      rejectionReason: null,
+      createdAt: now,
+      updatedAt: now,
+    );
+  }
+
+  ProjectTask _fallbackBacklogTaskForGoal(String goal) {
+    final now = DateTime.now();
+    const criterion = 'Complete the stated project goal.';
+    const objective =
+        'Inspect the workspace and identify the smallest useful first task for this project.';
+    return ProjectTask(
+      id: 'project_task_${uuid.v7()}',
+      title: 'Discover first project slice',
+      objective: objective,
+      relevantSuccessCriteria: const [criterion],
+      doneCriteria: const [
+        'A concise recommendation for the first bounded project task is recorded.',
+      ],
+      outOfScope: const [
+        'Do not implement the full project.',
+        'Do not make broad source changes.',
+      ],
+      context: [goal],
+      expectedArtifacts: const [],
+      status: ProjectTaskStatus.queued,
+      taskDocumentId: null,
+      fingerprint: projectTaskFingerprint(objective, const [criterion]),
+      rejectionReason: null,
+      createdAt: now,
+      updatedAt: now,
+    );
+  }
+
+  ProjectDecisionRecord _decision(
+    ProjectDecisionType type,
+    String summary,
+    String memoryUpdate, {
+    ProjectTask? task,
+    String? error,
+  }) {
+    return ProjectDecisionRecord(
+      id: 'decision_${uuid.v7()}',
+      decision: type,
+      summary: summary,
+      memoryUpdate: memoryUpdate,
+      taskId: task?.taskDocumentId ?? task?.id,
+      taskTitle: task?.title,
+      taskPrompt: task?.objective,
+      error: error,
+      createdAt: DateTime.now(),
+    );
+  }
+
+  String _taskPrompt(ProjectDocument project, ProjectTask task) {
     final buffer = StringBuffer()
       ..writeln('Project goal:')
-      ..writeln(project.goal)
+      ..writeln(project.refinedGoal)
       ..writeln()
-      ..writeln('Project constraints:')
-      ..writeln(_bulletList(project.constraints))
+      ..writeln('Selected bounded Project task:')
+      ..writeln(task.objective)
       ..writeln()
-      ..writeln('Project success criteria:')
-      ..writeln(_bulletList(project.successCriteria))
+      ..writeln('Done criteria:')
+      ..writeln(_bulletList(task.doneCriteria))
       ..writeln()
-      ..writeln('Project memory:')
-      ..writeln(
-        project.memorySummary.trim().isEmpty
-            ? 'None yet.'
-            : project.memorySummary,
-      )
+      ..writeln('Out of scope:')
+      ..writeln(_bulletList(task.outOfScope))
       ..writeln()
-      ..writeln('Prior project tasks:')
-      ..writeln(_priorTaskList(project))
+      ..writeln('Relevant project success criteria:')
+      ..writeln(_bulletList(task.relevantSuccessCriteria))
       ..writeln()
-      ..writeln('Next task title:')
-      ..writeln(nextTask.title)
-      ..writeln()
-      ..writeln('Next task request:')
-      ..writeln(nextTask.prompt);
-    if (nextTask.successCriteria.isNotEmpty) {
-      buffer
-        ..writeln()
-        ..writeln('Next task success criteria:')
-        ..writeln(_bulletList(nextTask.successCriteria));
-    }
+      ..writeln('Known project facts:')
+      ..writeln(_bulletList([...project.knownFacts, ...task.context]));
     return buffer.toString().trim();
   }
 
@@ -849,26 +1544,16 @@ ${_encoder.convert(project.toJson())}
   ) {
     final activeTaskLine = task == null
         ? ''
-        : '\nActive project task: ${task.title} (${task.id})';
+        : '\nActive task document: ${task.title} (${task.id})';
     return '''
 $baseSystemPrompt
 
-You are working inside a supervised Project.
+You are executing one bounded task inside a persistent Project orchestrator.
 Project id: ${project.id}
-Project goal: ${project.goal}
-Use Tasks as bounded work units. Complete only the active task, and let the Project supervisor decide what comes next.$activeTaskLine
+Project goal: ${project.refinedGoal}
+Complete only the active bounded Project task. Do not expand into the full project. The application will select the next task after this one is evaluated.$activeTaskLine
 '''
         .trim();
-  }
-
-  String _priorTaskList(ProjectDocument project) {
-    if (project.tasks.isEmpty) return 'None yet.';
-    return project.tasks
-        .map(
-          (task) =>
-              '- ${task.taskId}: ${task.title} (${task.status.wire}) ${task.summary}',
-        )
-        .join('\n');
   }
 
   String _bulletList(List<String> items) {
@@ -876,22 +1561,14 @@ Use Tasks as bounded work units. Complete only the active task, and let the Proj
     return items.map((item) => '- $item').join('\n');
   }
 
-  String _taskMemorySummary(TaskDocument task) {
-    final latestRun = task.runs.isEmpty ? null : task.runs.last;
-    return [
-      if (latestRun != null) latestRun.summary,
-      if (latestRun?.memoryUpdate.trim().isNotEmpty == true)
-        latestRun!.memoryUpdate.trim(),
-      if (task.memorySummary.trim().isNotEmpty) task.memorySummary.trim(),
-    ].where((item) => item.trim().isNotEmpty).join('\n\n');
+  bool _wasInterrupted(ProjectStatus status) {
+    return status == ProjectStatus.initializing ||
+        status == ProjectStatus.runningTask ||
+        status == ProjectStatus.reviewingTask;
   }
 
-  String _appendMemory(String current, String update) {
-    final trimmed = update.trim();
-    if (trimmed.isEmpty) return current;
-    final parts = [if (current.trim().isNotEmpty) current.trim(), trimmed];
-    return _cap(parts.join('\n\n'), 18000);
-  }
+  String _normalise(String value) =>
+      value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
   String _cap(String value, int maxChars) {
     if (value.length <= maxChars) return value;
@@ -917,105 +1594,21 @@ Use Tasks as bounded work units. Complete only the active task, and let the Proj
   }
 }
 
-class _ProjectDecision {
-  final ProjectDecisionType decision;
-  final String projectSummary;
-  final String memoryUpdate;
-  final _NextProjectTask? nextTask;
-  final String completionSummary;
-  final String userQuestion;
-  final String? error;
+class _ProjectTaskValidation {
+  final bool valid;
+  final List<String> violations;
 
-  const _ProjectDecision({
-    required this.decision,
-    required this.projectSummary,
-    required this.memoryUpdate,
-    this.nextTask,
-    this.completionSummary = '',
-    this.userQuestion = '',
-    this.error,
+  const _ProjectTaskValidation(this.valid, this.violations);
+}
+
+class _ProjectTaskExecution {
+  final ProjectDocument project;
+  final TaskDocument? activeTask;
+  final TaskResult? result;
+
+  const _ProjectTaskExecution({
+    required this.project,
+    this.activeTask,
+    this.result,
   });
-
-  factory _ProjectDecision.fromJson(Map<String, dynamic> json) {
-    final rawNextTask = json['nextTask'] ?? json['next_task'];
-    return _ProjectDecision(
-      decision: parseProjectDecisionType(json['decision']),
-      projectSummary: jsonString(
-        json['projectSummary'] ?? json['project_summary'],
-      ),
-      memoryUpdate: jsonString(json['memoryUpdate'] ?? json['memory_update']),
-      nextTask: rawNextTask is Map
-          ? _NextProjectTask.fromJson(Map<String, dynamic>.from(rawNextTask))
-          : null,
-      completionSummary: jsonString(
-        json['completionSummary'] ?? json['completion_summary'],
-      ),
-      userQuestion: jsonString(json['userQuestion'] ?? json['user_question']),
-      error: jsonNullableString(json['error']),
-    );
-  }
-
-  ProjectDecisionRecord toRecord({required DateTime createdAt}) {
-    return ProjectDecisionRecord(
-      id: 'decision_${uuid.v7()}',
-      decision: decision,
-      summary: projectSummary,
-      memoryUpdate: memoryUpdate,
-      taskTitle: nextTask?.title,
-      taskPrompt: nextTask?.prompt,
-      error: error,
-      createdAt: createdAt,
-    );
-  }
 }
-
-extension on ProjectDecisionRecord {
-  ProjectDecisionRecord copyWithTask({String? taskId, String? taskTitle}) {
-    return ProjectDecisionRecord(
-      id: id,
-      decision: decision,
-      summary: summary,
-      memoryUpdate: memoryUpdate,
-      taskId: taskId ?? this.taskId,
-      taskTitle: taskTitle ?? this.taskTitle,
-      taskPrompt: taskPrompt,
-      error: error,
-      createdAt: createdAt,
-    );
-  }
-}
-
-class _NextProjectTask {
-  final String title;
-  final String prompt;
-  final List<String> successCriteria;
-
-  const _NextProjectTask({
-    required this.title,
-    required this.prompt,
-    required this.successCriteria,
-  });
-
-  factory _NextProjectTask.fromJson(Map<String, dynamic> json) {
-    final prompt = jsonString(json['prompt'] ?? json['request']);
-    return _NextProjectTask(
-      title: jsonString(json['title'], fallback: prompt),
-      prompt: prompt,
-      successCriteria: jsonStringList(
-        json['successCriteria'] ?? json['success_criteria'],
-      ),
-    );
-  }
-}
-
-const String _supervisorSystemInstruction = '''
-You supervise a long-horizon Project by choosing the next bounded Task.
-Do not call tools.
-Do not perform workspace work directly.
-Use existing project memory and completed task summaries.
-Create one concrete next task when more work is needed.
-Only mark complete when the project goal and success criteria are satisfied.
-If user input is required, return decision "blocked" with userQuestion.
-Avoid repeating the same task. If the next useful work is the same as the previous task, explain why blocked instead.
-Return only valid JSON.
-''';

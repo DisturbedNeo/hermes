@@ -30,6 +30,38 @@ typedef TaskCancelRegistration = void Function();
 typedef TaskCancelCallback = FutureOr<void> Function();
 typedef TaskCompactionStatusSink = void Function(String status);
 
+class TaskPlanningContext {
+  final String projectGoal;
+  final String projectTaskObjective;
+  final List<String> knownFacts;
+  final List<String> doneCriteria;
+  final List<String> outOfScope;
+  final List<TaskArtifact> expectedArtifacts;
+  final int maxSteps;
+
+  const TaskPlanningContext({
+    required this.projectGoal,
+    required this.projectTaskObjective,
+    this.knownFacts = const [],
+    this.doneCriteria = const [],
+    this.outOfScope = const [],
+    this.expectedArtifacts = const [],
+    this.maxSteps = 3,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'projectGoal': projectGoal,
+    'projectTaskObjective': projectTaskObjective,
+    'knownFacts': knownFacts,
+    'doneCriteria': doneCriteria,
+    'outOfScope': outOfScope,
+    'expectedArtifacts': expectedArtifacts
+        .map((artifact) => artifact.toJson())
+        .toList(),
+    'maxSteps': maxSteps,
+  };
+}
+
 class TaskCancellationToken {
   final List<TaskCancelCallback> _callbacks = [];
   bool _isCancelled = false;
@@ -349,6 +381,7 @@ $userPrompt
     required String baseSystemPrompt,
     String? chatSessionId,
     String? projectId,
+    TaskPlanningContext? planningContext,
     TaskModelOutputSink? onModelOutput,
     TaskCancellationToken? cancellationToken,
   }) async {
@@ -367,38 +400,12 @@ $userPrompt
         label: 'Task Planner',
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
-        user:
-            '''
-Create a linear multi-step task plan.
-
-Return only JSON:
-{
-  "title": "...",
-  "goal": "...",
-  "constraints": ["..."],
-  "successCriteria": ["..."],
-  "steps": [
-    {
-      "id": "short_stable_id",
-      "title": "...",
-      "objective": "...",
-      "instructions": ["..."],
-      "mayEditFiles": false,
-      "artifacts": [{"path": ".agent/tasks/$taskId/output.md", "description": "..."}]
-    }
-  ]
-}
-
-Use this exact task id when referencing task-owned artifacts: $taskId
-Create only as many steps as are necessary to accomplish the task.
-Artifacts are optional.
-
-Workspace metadata:
-${_encoder.convert(metadata.toJson())}
-
-Request:
-$userPrompt
-''',
+        user: _buildPlannerPrompt(
+          taskId: taskId,
+          userPrompt: userPrompt,
+          metadata: metadata,
+          planningContext: planningContext,
+        ),
       );
       task = _taskFromPlannerJson(
         json,
@@ -408,16 +415,45 @@ $userPrompt
         projectId: projectId,
         now: now,
       );
+      if (planningContext != null) {
+        final violations = _projectPlanningViolations(task, planningContext);
+        if (violations.isNotEmpty) {
+          task = await _repairProjectBoundedTaskPlan(
+            client: client,
+            task: task,
+            taskId: taskId,
+            originalPrompt: userPrompt,
+            baseSystemPrompt: baseSystemPrompt,
+            metadata: metadata,
+            planningContext: planningContext,
+            violations: violations,
+            chatSessionId: chatSessionId,
+            projectId: projectId,
+            now: now,
+            onModelOutput: onModelOutput,
+            cancellationToken: cancellationToken,
+          );
+        }
+      }
     } on TaskCancelledException {
       rethrow;
     } catch (_) {
-      task = _fallbackTask(
-        taskId: taskId,
-        userPrompt: userPrompt,
-        chatSessionId: chatSessionId,
-        projectId: projectId,
-        now: now,
-      );
+      task = planningContext == null
+          ? _fallbackTask(
+              taskId: taskId,
+              userPrompt: userPrompt,
+              chatSessionId: chatSessionId,
+              projectId: projectId,
+              now: now,
+            )
+          : _fallbackProjectBoundedTask(
+              taskId: taskId,
+              userPrompt: userPrompt,
+              chatSessionId: chatSessionId,
+              projectId: projectId,
+              planningContext: planningContext,
+              now: now,
+            );
     }
 
     await _storage.saveSnapshot(workspace.rootPath, task);
@@ -793,6 +829,206 @@ $userPrompt
       )).map((task) => task.id).toList(),
     );
   }
+
+  String _buildPlannerPrompt({
+    required String taskId,
+    required String userPrompt,
+    required _WorkspaceMetadata metadata,
+    required TaskPlanningContext? planningContext,
+  }) {
+    final context = planningContext;
+    if (context == null) {
+      return '''
+Create a linear multi-step task plan.
+
+Return only JSON:
+{
+  "title": "...",
+  "goal": "...",
+  "constraints": ["..."],
+  "successCriteria": ["..."],
+  "steps": [
+    {
+      "id": "short_stable_id",
+      "title": "...",
+      "objective": "...",
+      "instructions": ["..."],
+      "mayEditFiles": false,
+      "artifacts": [{"path": ".agent/tasks/$taskId/output.md", "description": "..."}]
+    }
+  ]
+}
+
+Use this exact task id when referencing task-owned artifacts: $taskId
+Create only as many steps as are necessary to accomplish the task.
+Artifacts are optional.
+
+Workspace metadata:
+${_encoder.convert(metadata.toJson())}
+
+Request:
+$userPrompt
+''';
+    }
+
+    return '''
+Create a linear plan for exactly one bounded Project task.
+
+The Project goal is context only. Do not plan or perform the whole project.
+The task plan must cover only the selected Project task objective.
+Use at most ${context.maxSteps.clamp(1, 6)} steps.
+Every step must stay inside the task's done criteria and out-of-scope boundaries.
+
+Return only JSON:
+{
+  "title": "...",
+  "goal": "the selected Project task objective, not the whole Project goal",
+  "constraints": ["..."],
+  "successCriteria": ["copy or refine the task doneCriteria"],
+  "steps": [
+    {
+      "id": "short_stable_id",
+      "title": "...",
+      "objective": "...",
+      "instructions": ["..."],
+      "mayEditFiles": false,
+      "artifacts": [{"path": ".agent/tasks/$taskId/output.md", "description": "..."}]
+    }
+  ]
+}
+
+Use this exact task id when referencing task-owned artifacts: $taskId
+Artifacts are optional unless expectedArtifacts lists them.
+
+Workspace metadata:
+${_encoder.convert(metadata.toJson())}
+
+Bounded Project task context:
+${_encoder.convert(context.toJson())}
+
+Request:
+$userPrompt
+''';
+  }
+
+  Future<TaskDocument> _repairProjectBoundedTaskPlan({
+    required ChatClient client,
+    required TaskDocument task,
+    required String taskId,
+    required String originalPrompt,
+    required String baseSystemPrompt,
+    required _WorkspaceMetadata metadata,
+    required TaskPlanningContext planningContext,
+    required List<String> violations,
+    required String? chatSessionId,
+    required String? projectId,
+    required DateTime now,
+    TaskModelOutputSink? onModelOutput,
+    TaskCancellationToken? cancellationToken,
+  }) async {
+    try {
+      final json = await _completeJson(
+        client: client,
+        system: '$baseSystemPrompt\n\n$_plannerSystemInstruction',
+        label: 'Task Plan Repair',
+        onModelOutput: onModelOutput,
+        cancellationToken: cancellationToken,
+        user:
+            '''
+Repair this task plan so it executes exactly one bounded Project task.
+
+Return only JSON in the normal task plan shape.
+
+Violations:
+${_encoder.convert(violations)}
+
+Bounded Project task context:
+${_encoder.convert(planningContext.toJson())}
+
+Workspace metadata:
+${_encoder.convert(metadata.toJson())}
+
+Invalid task plan:
+${_encoder.convert(task.toJson())}
+''',
+      );
+      final repaired = _taskFromPlannerJson(
+        json,
+        taskId: taskId,
+        originalPrompt: originalPrompt,
+        chatSessionId: chatSessionId,
+        projectId: projectId,
+        now: now,
+      );
+      if (_projectPlanningViolations(repaired, planningContext).isEmpty) {
+        return repaired;
+      }
+    } on TaskCancelledException {
+      rethrow;
+    } catch (_) {
+      // Fall through to deterministic bounded fallback.
+    }
+
+    return _fallbackProjectBoundedTask(
+      taskId: taskId,
+      userPrompt: originalPrompt,
+      chatSessionId: chatSessionId,
+      projectId: projectId,
+      planningContext: planningContext,
+      now: now,
+    );
+  }
+
+  List<String> _projectPlanningViolations(
+    TaskDocument task,
+    TaskPlanningContext context,
+  ) {
+    final violations = <String>[];
+    final maxSteps = context.maxSteps.clamp(1, 6).toInt();
+    if (task.steps.length > maxSteps) {
+      violations.add(
+        'Task plan has ${task.steps.length} steps; max is $maxSteps.',
+      );
+    }
+    if (_normalisePrompt(task.goal) == _normalisePrompt(context.projectGoal)) {
+      violations.add('Task goal matches the whole project goal.');
+    }
+    if (task.successCriteria.isEmpty) {
+      violations.add('Task plan has no success criteria.');
+    }
+    if (context.doneCriteria.isNotEmpty) {
+      final planned = _normalisePrompt(task.successCriteria.join(' '));
+      final missing = context.doneCriteria.where(
+        (criterion) => !planned.contains(_normalisePrompt(criterion)),
+      );
+      if (missing.length == context.doneCriteria.length) {
+        violations.add(
+          'Task success criteria do not reflect the task done criteria.',
+        );
+      }
+    }
+    for (final step in task.steps) {
+      if (_looksLikeWholeProject(step.objective, context.projectGoal)) {
+        violations.add(
+          'Step "${step.id}" appears to target the whole project.',
+        );
+      }
+    }
+    return violations;
+  }
+
+  bool _looksLikeWholeProject(String value, String projectGoal) {
+    final normalised = _normalisePrompt(value);
+    final project = _normalisePrompt(projectGoal);
+    if (normalised == project) return true;
+    return normalised.contains('entire project') ||
+        normalised.contains('whole project') ||
+        normalised.contains('complete the project') ||
+        normalised.contains('finish the project');
+  }
+
+  String _normalisePrompt(String value) =>
+      value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
   Future<_StepExecutionOutput> _executeStep({
     required ChatClient client,
@@ -2339,6 +2575,72 @@ When finished, call finish_task_step with this result object. If finish_task_ste
       goal: userPrompt,
       constraints: const ['Stay within the attached workspace.'],
       successCriteria: const ['Complete the requested task.'],
+      steps: [step],
+      status: TaskStatus.paused,
+      currentStepId: step.id,
+      memorySummary: '',
+      runs: const [],
+      chatSessionId: chatSessionId,
+      projectId: projectId,
+      createdAt: now,
+      updatedAt: now,
+    );
+  }
+
+  TaskDocument _fallbackProjectBoundedTask({
+    required String taskId,
+    required String userPrompt,
+    required String? chatSessionId,
+    required String? projectId,
+    required TaskPlanningContext planningContext,
+    required DateTime now,
+  }) {
+    final artifactPaths = planningContext.expectedArtifacts.isEmpty
+        ? [
+            TaskArtifact(
+              path: '.agent/tasks/$taskId/task-output.md',
+              description: 'Bounded task output',
+              stepId: 'execute_project_task',
+            ),
+          ]
+        : planningContext.expectedArtifacts
+              .map(
+                (artifact) => TaskArtifact(
+                  path: artifact.path.replaceAll('{{task_id}}', taskId),
+                  description: artifact.description,
+                  stepId: 'execute_project_task',
+                ),
+              )
+              .toList();
+    final successCriteria = planningContext.doneCriteria.isEmpty
+        ? ['Complete the selected bounded Project task.']
+        : planningContext.doneCriteria;
+    final step = TaskStep(
+      id: 'execute_project_task',
+      title: 'Execute bounded project task',
+      objective: planningContext.projectTaskObjective,
+      instructions: [
+        'Complete only the selected Project task objective.',
+        if (planningContext.knownFacts.isNotEmpty)
+          'Use the provided Project facts as context.',
+        if (planningContext.outOfScope.isNotEmpty)
+          'Do not perform any out-of-scope work.',
+        'Report what was completed and what remains.',
+      ],
+      mayEditFiles: true,
+      artifacts: artifactPaths,
+      status: TaskStepStatus.pending,
+    );
+    return TaskDocument(
+      id: taskId,
+      title: _titleFromPrompt(planningContext.projectTaskObjective),
+      originalPrompt: userPrompt,
+      goal: planningContext.projectTaskObjective,
+      constraints: [
+        'Stay within the attached workspace.',
+        ...planningContext.outOfScope.map((item) => 'Out of scope: $item'),
+      ],
+      successCriteria: successCriteria,
       steps: [step],
       status: TaskStatus.paused,
       currentStepId: step.id,

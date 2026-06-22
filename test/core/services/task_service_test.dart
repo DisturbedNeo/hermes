@@ -78,6 +78,71 @@ void main() {
       expect(plannerRequest, contains('"commandExecutionApproved": true'));
     });
 
+    test(
+      'passes bounded project planning context into planner prompt',
+      () async {
+        final client = _QueueChatClient([
+          jsonEncode(_projectBoundedPlanJson(title: 'Bounded task')),
+        ]);
+
+        await service.createTask(
+          client: client,
+          workspace: workspace,
+          userPrompt: 'Implement the settings toggle',
+          selectedMode: ExecutionMode.task,
+          baseSystemPrompt: 'system',
+          chatSessionId: 'chat_1',
+          projectId: 'project_1',
+          planningContext: const TaskPlanningContext(
+            projectGoal: 'Build the whole app',
+            projectTaskObjective: 'Implement the settings toggle',
+            doneCriteria: ['The settings toggle works.'],
+            outOfScope: ['Do not build the whole app.'],
+            maxSteps: 3,
+          ),
+        );
+
+        final plannerRequest = client.seenMessages.single.last.content;
+        expect(plannerRequest, contains('Bounded Project task context'));
+        expect(
+          plannerRequest,
+          contains('Do not plan or perform the whole project'),
+        );
+        expect(plannerRequest, contains('Implement the settings toggle'));
+        expect(plannerRequest, contains('Do not build the whole app.'));
+      },
+    );
+
+    test(
+      'falls back when project task planner expands to whole project',
+      () async {
+        final broadPlan = jsonEncode(_wholeProjectPlanJson());
+        final client = _QueueChatClient([broadPlan, broadPlan]);
+
+        final task = await service.createTask(
+          client: client,
+          workspace: workspace,
+          userPrompt: 'Implement the settings toggle',
+          selectedMode: ExecutionMode.task,
+          baseSystemPrompt: 'system',
+          chatSessionId: 'chat_1',
+          projectId: 'project_1',
+          planningContext: const TaskPlanningContext(
+            projectGoal: 'Build the whole app',
+            projectTaskObjective: 'Implement the settings toggle',
+            doneCriteria: ['The settings toggle works.'],
+            outOfScope: ['Do not build the whole app.'],
+            maxSteps: 3,
+          ),
+        );
+
+        expect(task.goal, 'Implement the settings toggle');
+        expect(task.steps, hasLength(1));
+        expect(task.steps.single.id, 'execute_project_task');
+        expect(task.successCriteria, contains('The settings toggle works.'));
+      },
+    );
+
     test('runs one step and records structured memory and history', () async {
       final task = _task(
         step: const TaskStep(
@@ -953,6 +1018,43 @@ Map<String, dynamic> _planJson({required String title}) {
         'instructions': ['Patch the UI.'],
         'mayEditFiles': true,
       },
+    ],
+  };
+}
+
+Map<String, dynamic> _projectBoundedPlanJson({required String title}) {
+  return {
+    'title': title,
+    'goal': 'Implement the settings toggle',
+    'constraints': ['Do not build the whole app.'],
+    'successCriteria': ['The settings toggle works.'],
+    'steps': [
+      {
+        'id': 'implement_toggle',
+        'title': 'Implement toggle',
+        'objective': 'Implement the settings toggle.',
+        'instructions': ['Make only the bounded change.'],
+        'mayEditFiles': true,
+      },
+    ],
+  };
+}
+
+Map<String, dynamic> _wholeProjectPlanJson() {
+  return {
+    'title': 'Whole app',
+    'goal': 'Build the whole app',
+    'constraints': ['Stay inside workspace.'],
+    'successCriteria': ['The whole app is complete.'],
+    'steps': [
+      for (var i = 1; i <= 4; i++)
+        {
+          'id': 'step_$i',
+          'title': 'Whole project step $i',
+          'objective': 'Complete the project end-to-end.',
+          'instructions': ['Do everything.'],
+          'mayEditFiles': true,
+        },
     ],
   };
 }

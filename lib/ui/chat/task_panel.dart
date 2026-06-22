@@ -222,12 +222,14 @@ class _ProjectBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final completed = project.tasks
-        .where((task) => task.status == TaskStatus.completed)
-        .length;
     final activeTask = chat.activeTask?.projectId == project.id
         ? chat.activeTask
         : null;
+    final totalProjectTasks =
+        project.backlog.length +
+        project.completedTasks.length +
+        project.failedTasks.length +
+        (project.currentTask == null ? 0 : 1);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -242,9 +244,23 @@ class _ProjectBody extends StatelessWidget {
               child: _StatusChip(label: project.status.wire),
             ),
             AccessibleWidget(
-              label: '$completed of ${project.tasks.length} tasks completed',
+              label: 'Project phase: ${project.phase.wire}',
+              child: _StatusChip(label: project.phase.wire),
+            ),
+            AccessibleWidget(
+              label:
+                  '${project.completedTasks.length} of $totalProjectTasks tasks completed',
               child: _StatusChip(
-                label: '$completed/${project.tasks.length} tasks',
+                label:
+                    '${project.completedTasks.length}/$totalProjectTasks tasks',
+              ),
+            ),
+            AccessibleWidget(
+              label:
+                  'Project iteration ${project.iterationCount} of ${project.maxIterations}',
+              child: _StatusChip(
+                label:
+                    '${project.iterationCount}/${project.maxIterations} iterations',
               ),
             ),
             AccessibleWidget(
@@ -270,16 +286,33 @@ class _ProjectBody extends StatelessWidget {
         const SizedBox(height: 12),
         _Section(
           title: 'Goal',
-          child: Text(project.goal, style: theme.textTheme.bodyMedium),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(project.refinedGoal, style: theme.textTheme.bodyMedium),
+              if (project.originalGoal != project.refinedGoal) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Original: ${project.originalGoal}',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ],
+          ),
         ),
-        if (project.memorySummary.trim().isNotEmpty) ...[
+        const SizedBox(height: 10),
+        _Section(
+          title: 'Success Criteria',
+          child: _StringList(
+            items: project.successCriteria,
+            empty: 'No success criteria recorded.',
+          ),
+        ),
+        if (project.constraints.isNotEmpty) ...[
           const SizedBox(height: 10),
           _Section(
-            title: 'Memory',
-            child: Text(
-              project.memorySummary,
-              style: theme.textTheme.bodySmall,
-            ),
+            title: 'Constraints',
+            child: _StringList(items: project.constraints),
           ),
         ],
         if (project.completionSummary.trim().isNotEmpty) ...[
@@ -292,18 +325,61 @@ class _ProjectBody extends StatelessWidget {
             ),
           ),
         ],
+        if (project.currentTask != null) ...[
+          const SizedBox(height: 10),
+          _Section(
+            title: 'Current Project Task',
+            child: _ProjectTaskDetails(task: project.currentTask!),
+          ),
+        ],
         if (activeTask != null) ...[
           const SizedBox(height: 10),
           _Section(
-            title: 'Current Task',
+            title: 'Task Executor',
             child: _CurrentProjectTask(chat: chat, task: activeTask),
           ),
         ],
         const SizedBox(height: 10),
         _Section(
-          title: 'Tasks',
-          child: _ProjectTaskList(project: project),
+          title: 'Backlog',
+          child: _ProjectTaskBoardList(
+            tasks: project.backlog,
+            empty: 'No queued project tasks.',
+          ),
         ),
+        const SizedBox(height: 10),
+        _Section(
+          title: 'Completed Tasks',
+          child: _ProjectTaskBoardList(
+            tasks: project.completedTasks.reversed.toList(),
+            empty: 'No completed project tasks yet.',
+          ),
+        ),
+        const SizedBox(height: 10),
+        _Section(
+          title: 'Failed or Rejected Tasks',
+          child: _ProjectTaskBoardList(
+            tasks: project.failedTasks.reversed.toList(),
+            empty: 'No failed project tasks.',
+          ),
+        ),
+        const SizedBox(height: 10),
+        _Section(
+          title: 'Open Questions',
+          child: _ProjectQuestionList(project: project),
+        ),
+        const SizedBox(height: 10),
+        _Section(
+          title: 'Artifacts',
+          child: _ProjectArtifactBoardList(project: project),
+        ),
+        if (project.knownFacts.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          _Section(
+            title: 'Known Facts',
+            child: _StringList(items: project.knownFacts.take(12).toList()),
+          ),
+        ],
         const SizedBox(height: 10),
         _Section(
           title: 'Recent Decisions',
@@ -363,10 +439,35 @@ class _ProjectActions extends StatelessWidget {
           enabled: canRun,
           child: FilledButton.tonalIcon(
             icon: const Icon(Icons.fast_forward),
-            label: const Text('Run Project'),
+            label: const Text('Continue Project'),
             onPressed: canRun ? () => unawaited(chat.runProject()) : null,
           ),
         ),
+        AccessibleWidget(
+          label: 'Pause project',
+          isButton: true,
+          enabled: !chat.taskBusy && !project.isTerminal,
+          child: OutlinedButton.icon(
+            icon: const Icon(Icons.pause_circle_outline),
+            label: const Text('Pause'),
+            onPressed: !chat.taskBusy && !project.isTerminal
+                ? () => unawaited(chat.pauseProject())
+                : null,
+          ),
+        ),
+        if (project.currentTask?.status == ProjectTaskStatus.proposed)
+          AccessibleWidget(
+            label: 'Approve next project task',
+            isButton: true,
+            enabled: !chat.taskBusy,
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.check_circle_outline),
+              label: const Text('Approve Next Task'),
+              onPressed: chat.taskBusy
+                  ? null
+                  : () => unawaited(chat.approveNextProjectTask()),
+            ),
+          ),
         AccessibleWidget(
           label: 'Edit project',
           isButton: true,
@@ -1177,19 +1278,75 @@ class _RunList extends StatelessWidget {
   }
 }
 
-class _ProjectTaskList extends StatelessWidget {
-  final ProjectDocument project;
+class _ProjectTaskDetails extends StatelessWidget {
+  final ProjectTask task;
 
-  const _ProjectTaskList({required this.project});
+  const _ProjectTaskDetails({required this.task});
 
   @override
   Widget build(BuildContext context) {
-    final tasks = project.tasks.reversed.toList();
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(
+              task.title,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            _StatusChip(label: task.status.wire),
+            if (task.taskDocumentId != null)
+              _StatusChip(label: task.taskDocumentId!),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(task.objective, style: theme.textTheme.bodySmall),
+        const SizedBox(height: 8),
+        _StringList(
+          title: 'Done',
+          items: task.doneCriteria,
+          empty: 'No done criteria recorded.',
+        ),
+        const SizedBox(height: 6),
+        _StringList(
+          title: 'Out of scope',
+          items: task.outOfScope,
+          empty: 'No out-of-scope items recorded.',
+        ),
+        if (task.relevantSuccessCriteria.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          _StringList(title: 'Covers', items: task.relevantSuccessCriteria),
+        ],
+        if (task.rejectionReason?.trim().isNotEmpty == true) ...[
+          const SizedBox(height: 6),
+          Text(
+            task.rejectionReason!,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ProjectTaskBoardList extends StatelessWidget {
+  final List<ProjectTask> tasks;
+  final String empty;
+
+  const _ProjectTaskBoardList({required this.tasks, required this.empty});
+
+  @override
+  Widget build(BuildContext context) {
     if (tasks.isEmpty) {
-      return Text(
-        'No project tasks yet.',
-        style: Theme.of(context).textTheme.bodySmall,
-      );
+      return Text(empty, style: Theme.of(context).textTheme.bodySmall);
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1200,11 +1357,116 @@ class _ProjectTaskList extends StatelessWidget {
             child: ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.account_tree_outlined),
+              leading: Icon(_projectTaskStatusIcon(task.status)),
               title: Text(task.title),
-              subtitle: Text('${task.status.wire} - ${task.taskId}'),
+              subtitle: Text(
+                [
+                  task.status.wire,
+                  task.objective,
+                  if (task.doneCriteria.isNotEmpty)
+                    'Done: ${task.doneCriteria.join('; ')}',
+                  if (task.outOfScope.isNotEmpty)
+                    'Out: ${task.outOfScope.join('; ')}',
+                ].join('\n'),
+              ),
+              isThreeLine: true,
             ),
           ),
+      ],
+    );
+  }
+}
+
+class _ProjectQuestionList extends StatelessWidget {
+  final ProjectDocument project;
+
+  const _ProjectQuestionList({required this.project});
+
+  @override
+  Widget build(BuildContext context) {
+    if (project.openQuestions.isEmpty) {
+      return Text(
+        'No open questions.',
+        style: Theme.of(context).textTheme.bodySmall,
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final question in project.openQuestions)
+          ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.help_outline),
+            title: Text(question.question),
+            subtitle: Text(question.id),
+          ),
+      ],
+    );
+  }
+}
+
+class _ProjectArtifactBoardList extends StatelessWidget {
+  final ProjectDocument project;
+
+  const _ProjectArtifactBoardList({required this.project});
+
+  @override
+  Widget build(BuildContext context) {
+    if (project.artifacts.isEmpty) {
+      return Text(
+        'No project artifacts yet.',
+        style: Theme.of(context).textTheme.bodySmall,
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final artifact in project.artifacts)
+          ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.insert_drive_file_outlined),
+            title: Text(artifact.path),
+            subtitle: Text(
+              [
+                artifact.kind,
+                if (artifact.description.trim().isNotEmpty)
+                  artifact.description,
+                if (artifact.taskDocumentId != null) artifact.taskDocumentId!,
+              ].join(' - '),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _StringList extends StatelessWidget {
+  final String? title;
+  final List<String> items;
+  final String empty;
+
+  const _StringList({required this.items, this.title, this.empty = 'None.'});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final text = items.isEmpty
+        ? empty
+        : items.map((item) => '- $item').join('\n');
+    if (title == null) return Text(text, style: theme.textTheme.bodySmall);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          title!,
+          style: theme.textTheme.labelMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(text, style: theme.textTheme.bodySmall),
       ],
     );
   }
@@ -1397,9 +1659,25 @@ IconData _runIcon(TaskRunStatus status) => switch (status) {
   TaskRunStatus.needsReplan || TaskRunStatus.replanned => Icons.route_outlined,
 };
 
+IconData _projectTaskStatusIcon(ProjectTaskStatus status) => switch (status) {
+  ProjectTaskStatus.queued => Icons.radio_button_unchecked,
+  ProjectTaskStatus.proposed => Icons.pending_actions_outlined,
+  ProjectTaskStatus.approved => Icons.verified_user_outlined,
+  ProjectTaskStatus.running => Icons.sync,
+  ProjectTaskStatus.completed => Icons.check_circle_outline,
+  ProjectTaskStatus.failed => Icons.error_outline,
+  ProjectTaskStatus.rejected => Icons.cancel_outlined,
+  ProjectTaskStatus.split => Icons.call_split_outlined,
+  ProjectTaskStatus.cancelled => Icons.stop_circle_outlined,
+};
+
 IconData _projectDecisionIcon(ProjectDecisionType decision) =>
     switch (decision) {
       ProjectDecisionType.createTask => Icons.account_tree_outlined,
       ProjectDecisionType.complete => Icons.check_circle_outline,
       ProjectDecisionType.blocked => Icons.block,
+      ProjectDecisionType.rejectTask => Icons.cancel_outlined,
+      ProjectDecisionType.splitTask => Icons.call_split_outlined,
+      ProjectDecisionType.evaluateTask => Icons.fact_check_outlined,
+      ProjectDecisionType.refreshBacklog => Icons.playlist_add_check_outlined,
     };

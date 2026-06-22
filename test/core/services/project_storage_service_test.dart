@@ -125,14 +125,22 @@ void main() {
       );
       final decoded = jsonDecode(await file.readAsString());
 
-      expect(decoded['schemaVersion'], 1);
-      expect(decoded['tasks'], isA<List>());
+      expect(decoded['schemaVersion'], 2);
+      expect(decoded['backlog'], isA<List>());
+      expect(decoded['completedTasks'], isA<List>());
       expect(decoded['decisions'], isA<List>());
     });
 
     test('rejects delete paths outside project root', () async {
       expect(
         storage.deleteProject(root.path, '../outside'),
+        throwsArgumentError,
+      );
+    });
+
+    test('rejects log names outside the project log folder', () async {
+      expect(
+        storage.saveLog(root.path, 'project_test', '../project.json', '{}'),
         throwsArgumentError,
       );
     });

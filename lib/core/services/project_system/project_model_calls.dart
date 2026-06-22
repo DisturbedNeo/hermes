@@ -1,0 +1,536 @@
+import 'dart:convert';
+
+import 'package:hermes/core/helpers/json_parsing.dart';
+import 'package:hermes/core/helpers/uuid.dart';
+import 'package:hermes/core/models/chat_message.dart';
+import 'package:hermes/core/models/project.dart';
+import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/core/services/task_system/task_json.dart';
+import 'package:hermes/core/services/task_system/task_model_output.dart';
+
+class ProjectInitialisation {
+  final String title;
+  final String refinedGoal;
+  final List<String> successCriteria;
+  final List<String> constraints;
+  final List<String> knownFacts;
+  final List<PendingProjectQuestion> openQuestions;
+  final List<ProjectTask> backlog;
+
+  const ProjectInitialisation({
+    required this.title,
+    required this.refinedGoal,
+    required this.successCriteria,
+    required this.constraints,
+    required this.knownFacts,
+    required this.openQuestions,
+    required this.backlog,
+  });
+}
+
+class ProjectCompletionAssessment {
+  final bool complete;
+  final String finalSummary;
+  final List<String> remainingCriteria;
+  final List<PendingProjectQuestion> openQuestions;
+
+  const ProjectCompletionAssessment({
+    required this.complete,
+    required this.finalSummary,
+    required this.remainingCriteria,
+    required this.openQuestions,
+  });
+}
+
+class ProjectBacklogRefresh {
+  final List<ProjectTask> backlog;
+  final List<String> knownFacts;
+  final List<PendingProjectQuestion> openQuestions;
+
+  const ProjectBacklogRefresh({
+    required this.backlog,
+    required this.knownFacts,
+    required this.openQuestions,
+  });
+}
+
+class ProjectModelCalls {
+  final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
+
+  Future<ProjectInitialisation> initializeProject({
+    required ChatClient client,
+    required String baseSystemPrompt,
+    required String originalGoal,
+    required Map<String, dynamic> workspaceMetadata,
+    TaskModelOutputSink? onModelOutput,
+  }) async {
+    try {
+      final json = await _completeJson(
+        client: client,
+        label: 'Project Initializer',
+        system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
+        onModelOutput: onModelOutput,
+        expectedShape:
+            '{"title":"...","refinedGoal":"...","successCriteria":["..."],"constraints":["..."],"knownFacts":["..."],"openQuestions":[{"question":"..."}],"backlog":[{"title":"...","objective":"...","relevantSuccessCriteria":["..."],"doneCriteria":["..."],"outOfScope":["..."],"context":["..."],"expectedArtifacts":[]}]}',
+        user:
+            '''
+Initialize a persistent project state. Do not execute the project.
+
+Return only JSON:
+{
+  "title": "...",
+  "refinedGoal": "...",
+  "successCriteria": ["..."],
+  "constraints": ["..."],
+  "knownFacts": ["..."],
+  "openQuestions": [{"question": "..."}],
+  "backlog": [
+    {
+      "title": "...",
+      "objective": "one small bounded task",
+      "relevantSuccessCriteria": ["one or two criteria"],
+      "doneCriteria": ["..."],
+      "outOfScope": ["..."],
+      "context": ["..."],
+      "expectedArtifacts": [{"path": "...", "description": "...", "kind": "file"}]
+    }
+  ]
+}
+
+Workspace metadata:
+${_encoder.convert(workspaceMetadata)}
+
+Original project goal:
+$originalGoal
+''',
+      );
+      final refinedGoal = jsonString(
+        json['refinedGoal'] ?? json['refined_goal'],
+        fallback: originalGoal,
+      );
+      final criteria = jsonStringList(
+        json['successCriteria'] ?? json['success_criteria'],
+      );
+      return ProjectInitialisation(
+        title: jsonString(
+          json['title'],
+          fallback: _titleFromGoal(originalGoal),
+        ),
+        refinedGoal: refinedGoal,
+        successCriteria: criteria.isEmpty
+            ? ['Complete the stated project goal.']
+            : criteria,
+        constraints: jsonStringList(json['constraints']).isEmpty
+            ? ['Stay within the attached workspace.']
+            : jsonStringList(json['constraints']),
+        knownFacts: jsonStringList(json['knownFacts'] ?? json['known_facts']),
+        openQuestions: _questionsFromJson(
+          json['openQuestions'] ?? json['open_questions'],
+        ),
+        backlog: _tasksFromJson(json['backlog']),
+      );
+    } catch (_) {
+      return _fallbackInitialisation(originalGoal);
+    }
+  }
+
+  Future<ProjectBacklogRefresh> refreshBacklog({
+    required ChatClient client,
+    required String baseSystemPrompt,
+    required ProjectState project,
+    required Map<String, dynamic> workspaceMetadata,
+    TaskModelOutputSink? onModelOutput,
+  }) async {
+    try {
+      final json = await _completeJson(
+        client: client,
+        label: 'Project Backlog Refresh',
+        system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
+        onModelOutput: onModelOutput,
+        expectedShape:
+            '{"backlog":[{"title":"...","objective":"...","relevantSuccessCriteria":["..."],"doneCriteria":["..."],"outOfScope":["..."],"context":["..."],"expectedArtifacts":[]}],"knownFacts":["..."],"openQuestions":[{"question":"..."}]}',
+        user:
+            '''
+Refresh the project backlog. Return only small, bounded, independently verifiable tasks.
+
+Return only JSON:
+{
+  "backlog": [
+    {
+      "title": "...",
+      "objective": "one small bounded task",
+      "relevantSuccessCriteria": ["one or two criteria"],
+      "doneCriteria": ["..."],
+      "outOfScope": ["..."],
+      "context": ["..."],
+      "expectedArtifacts": [{"path": "...", "description": "...", "kind": "file"}]
+    }
+  ],
+  "knownFacts": ["..."],
+  "openQuestions": [{"question": "..."}]
+}
+
+Workspace metadata:
+${_encoder.convert(workspaceMetadata)}
+
+Project state:
+${_encoder.convert(project.toJson())}
+''',
+      );
+      return ProjectBacklogRefresh(
+        backlog: _tasksFromJson(json['backlog']),
+        knownFacts: jsonStringList(json['knownFacts'] ?? json['known_facts']),
+        openQuestions: _questionsFromJson(
+          json['openQuestions'] ?? json['open_questions'],
+        ),
+      );
+    } catch (_) {
+      return const ProjectBacklogRefresh(
+        backlog: [],
+        knownFacts: [],
+        openQuestions: [],
+      );
+    }
+  }
+
+  Future<ProjectTask?> proposeNextTask({
+    required ChatClient client,
+    required String baseSystemPrompt,
+    required ProjectState project,
+    required Map<String, dynamic> workspaceMetadata,
+    required Set<String> forbiddenFingerprints,
+    TaskModelOutputSink? onModelOutput,
+  }) async {
+    if (project.backlog.isEmpty) return null;
+    try {
+      final json = await _completeJson(
+        client: client,
+        label: 'Project Task Selector',
+        system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
+        onModelOutput: onModelOutput,
+        expectedShape:
+            '{"task":{"title":"...","objective":"...","relevantSuccessCriteria":["..."],"doneCriteria":["..."],"outOfScope":["..."],"context":["..."],"expectedArtifacts":[]}}',
+        user:
+            '''
+Select exactly one next task from the backlog, or rewrite exactly one backlog item into a smaller bounded task.
+
+Return only JSON:
+{
+  "task": {
+    "title": "...",
+    "objective": "one small bounded task",
+    "relevantSuccessCriteria": ["one or two criteria"],
+    "doneCriteria": ["..."],
+    "outOfScope": ["..."],
+    "context": ["..."],
+    "expectedArtifacts": [{"path": "...", "description": "...", "kind": "file"}]
+  }
+}
+
+Forbidden task fingerprints:
+${_encoder.convert(forbiddenFingerprints.toList()..sort())}
+
+Workspace metadata:
+${_encoder.convert(workspaceMetadata)}
+
+Project state:
+${_encoder.convert(project.toJson())}
+''',
+      );
+      final raw = json['task'];
+      if (raw is Map) {
+        return _taskFromMap(Map<String, dynamic>.from(raw), 0);
+      }
+    } catch (_) {
+      return project.backlog.first;
+    }
+    return project.backlog.first;
+  }
+
+  Future<List<ProjectTask>> splitTask({
+    required ChatClient client,
+    required String baseSystemPrompt,
+    required ProjectState project,
+    required ProjectTask oversizedTask,
+    required List<String> violations,
+    TaskModelOutputSink? onModelOutput,
+  }) async {
+    try {
+      final json = await _completeJson(
+        client: client,
+        label: 'Project Task Splitter',
+        system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
+        onModelOutput: onModelOutput,
+        expectedShape:
+            '{"tasks":[{"title":"...","objective":"...","relevantSuccessCriteria":["..."],"doneCriteria":["..."],"outOfScope":["..."],"context":["..."],"expectedArtifacts":[]}]}',
+        user:
+            '''
+Split this oversized or invalid project task into 2 to 5 smaller bounded tasks.
+
+Return only JSON:
+{
+  "tasks": [
+    {
+      "title": "...",
+      "objective": "one small bounded task",
+      "relevantSuccessCriteria": ["one or two criteria"],
+      "doneCriteria": ["..."],
+      "outOfScope": ["..."],
+      "context": ["..."],
+      "expectedArtifacts": [{"path": "...", "description": "...", "kind": "file"}]
+    }
+  ]
+}
+
+Validation violations:
+${_encoder.convert(violations)}
+
+Invalid task:
+${_encoder.convert(oversizedTask.toJson())}
+
+Project state:
+${_encoder.convert(project.toJson())}
+''',
+      );
+      return _tasksFromJson(json['tasks']).take(5).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<ProjectCompletionAssessment> evaluateCompletion({
+    required ChatClient client,
+    required String baseSystemPrompt,
+    required ProjectState project,
+    TaskModelOutputSink? onModelOutput,
+  }) async {
+    try {
+      final json = await _completeJson(
+        client: client,
+        label: 'Project Completion Evaluator',
+        system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
+        onModelOutput: onModelOutput,
+        expectedShape:
+            '{"complete":false,"finalSummary":"...","remainingCriteria":["..."],"openQuestions":[{"question":"..."}]}',
+        user:
+            '''
+Evaluate whether this project is complete. Do not mark complete unless every success criterion is satisfied by completed project tasks and artifacts.
+
+Return only JSON:
+{
+  "complete": false,
+  "finalSummary": "...",
+  "remainingCriteria": ["..."],
+  "openQuestions": [{"question": "..."}]
+}
+
+Project state:
+${_encoder.convert(project.toJson())}
+''',
+      );
+      return ProjectCompletionAssessment(
+        complete: jsonBool(json['complete']),
+        finalSummary: jsonString(json['finalSummary'] ?? json['final_summary']),
+        remainingCriteria: jsonStringList(
+          json['remainingCriteria'] ?? json['remaining_criteria'],
+        ),
+        openQuestions: _questionsFromJson(
+          json['openQuestions'] ?? json['open_questions'],
+        ),
+      );
+    } catch (_) {
+      return ProjectCompletionAssessment(
+        complete: false,
+        finalSummary: '',
+        remainingCriteria: project.successCriteria,
+        openQuestions: const [],
+      );
+    }
+  }
+
+  Future<Map<String, dynamic>> _completeJson({
+    required ChatClient client,
+    required String system,
+    required String user,
+    required String label,
+    required String expectedShape,
+    TaskModelOutputSink? onModelOutput,
+  }) async {
+    final first = await _completeRaw(
+      client: client,
+      system: system,
+      user: user,
+      label: label,
+      onModelOutput: onModelOutput,
+    );
+    final parsed = TaskJson.tryParseObject(first);
+    if (parsed != null) return parsed;
+
+    final repaired = await _completeRaw(
+      client: client,
+      system: system,
+      user:
+          '''
+Repair this malformed model output into one valid JSON object matching this shape:
+$expectedShape
+
+Malformed output:
+$first
+
+Return only the repaired JSON object.
+''',
+      label: '$label Repair',
+      onModelOutput: onModelOutput,
+    );
+    return TaskJson.parseObject(repaired);
+  }
+
+  Future<String> _completeRaw({
+    required ChatClient client,
+    required String system,
+    required String user,
+    required String label,
+    TaskModelOutputSink? onModelOutput,
+  }) async {
+    _emit(
+      onModelOutput,
+      TaskModelOutputEvent(type: TaskModelOutputEventType.start, label: label),
+    );
+    final completion = await client.completeChatStreamed(
+      messages: [
+        ChatMessage(role: 'system', content: system),
+        ChatMessage(role: 'user', content: user),
+      ],
+      onToken: (token) {
+        final content = token.content;
+        if (content != null && content.isNotEmpty) {
+          _emit(
+            onModelOutput,
+            TaskModelOutputEvent(
+              type: TaskModelOutputEventType.content,
+              label: label,
+              text: content,
+              token: token,
+            ),
+          );
+        }
+        final reasoning = token.reasoning;
+        if (reasoning != null && reasoning.isNotEmpty) {
+          _emit(
+            onModelOutput,
+            TaskModelOutputEvent(
+              type: TaskModelOutputEventType.reasoning,
+              label: label,
+              text: reasoning,
+              token: token,
+            ),
+          );
+        }
+      },
+    );
+    _emit(
+      onModelOutput,
+      TaskModelOutputEvent(type: TaskModelOutputEventType.done, label: label),
+    );
+    return completion.content.trim().isNotEmpty
+        ? completion.content
+        : completion.reasoning;
+  }
+
+  void _emit(TaskModelOutputSink? sink, TaskModelOutputEvent event) {
+    sink?.call(event);
+  }
+
+  ProjectInitialisation _fallbackInitialisation(String originalGoal) {
+    final now = DateTime.now();
+    final task = ProjectTask(
+      id: 'project_task_${uuid.v7()}',
+      title: 'Discover first project slice',
+      objective:
+          'Inspect the workspace and identify the smallest useful first task for this project.',
+      relevantSuccessCriteria: const ['Complete the stated project goal.'],
+      doneCriteria: const [
+        'A concise recommendation for the first bounded project task is recorded.',
+      ],
+      outOfScope: const [
+        'Do not implement the full project.',
+        'Do not make broad source changes.',
+      ],
+      context: const [],
+      expectedArtifacts: const [],
+      status: ProjectTaskStatus.queued,
+      taskDocumentId: null,
+      fingerprint: projectTaskFingerprint(
+        'Inspect the workspace and identify the smallest useful first task for this project.',
+        const ['Complete the stated project goal.'],
+      ),
+      rejectionReason: null,
+      createdAt: now,
+      updatedAt: now,
+    );
+    return ProjectInitialisation(
+      title: _titleFromGoal(originalGoal),
+      refinedGoal: originalGoal,
+      successCriteria: const ['Complete the stated project goal.'],
+      constraints: const ['Stay within the attached workspace.'],
+      knownFacts: const [],
+      openQuestions: const [],
+      backlog: [task],
+    );
+  }
+
+  List<ProjectTask> _tasksFromJson(Object? value) {
+    if (value is! List) return const [];
+    final tasks = <ProjectTask>[];
+    for (var i = 0; i < value.length; i++) {
+      final raw = value[i];
+      if (raw is! Map) continue;
+      tasks.add(_taskFromMap(Map<String, dynamic>.from(raw), i));
+    }
+    return tasks;
+  }
+
+  ProjectTask _taskFromMap(Map<String, dynamic> map, int index) {
+    map['id'] = jsonString(
+      map['id'],
+      fallback: 'project_task_${index + 1}_${uuid.v7().substring(0, 8)}',
+    );
+    map['status'] ??= ProjectTaskStatus.queued.wire;
+    final task = ProjectTask.fromJson(map);
+    return task.copyWith(
+      fingerprint: projectTaskFingerprint(
+        task.objective,
+        task.relevantSuccessCriteria,
+      ),
+    );
+  }
+
+  List<PendingProjectQuestion> _questionsFromJson(Object? value) {
+    if (value is! List) return const [];
+    return value.whereType<Map>().map((raw) {
+      final map = Map<String, dynamic>.from(raw);
+      map['id'] = jsonString(map['id'], fallback: 'question_${uuid.v7()}');
+      map['createdAt'] ??= DateTime.now().toIso8601String();
+      return PendingProjectQuestion.fromJson(map);
+    }).toList();
+  }
+
+  String _titleFromGoal(String goal) {
+    final singleLine = goal.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (singleLine.isEmpty) return 'Untitled project';
+    return singleLine.length <= 60
+        ? singleLine
+        : '${singleLine.substring(0, 57)}...';
+  }
+}
+
+const String _projectJsonSystemInstruction = '''
+You are a project orchestration planner.
+Return only valid JSON.
+Do not call tools.
+Do not execute workspace work directly.
+Project mode controls a loop outside the model.
+Every proposed task must be small, bounded, independently verifiable, and narrower than the whole project.
+Every proposed task must include doneCriteria and outOfScope.
+Never propose one task that completes the entire project unless the project has exactly one remaining narrow criterion.
+''';
