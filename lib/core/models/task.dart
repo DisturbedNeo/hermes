@@ -1,7 +1,7 @@
 import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/helpers/sentinel.dart' show kSentinel, resolve;
 
-enum ExecutionMode { chat, refine, task, continueTask }
+enum ExecutionMode { chat, refine, task, project, continueTask }
 
 enum TaskStatus {
   draft,
@@ -45,6 +45,7 @@ extension ExecutionModeWire on ExecutionMode {
     ExecutionMode.chat => 'Chat',
     ExecutionMode.refine => 'Refine',
     ExecutionMode.task => 'Task',
+    ExecutionMode.project => 'Project',
     ExecutionMode.continueTask => 'Continue Task',
   };
 }
@@ -161,6 +162,7 @@ class TaskDocument {
   final PendingTaskApproval? pendingApproval;
   final PendingTaskQuestion? pendingQuestion;
   final String? chatSessionId;
+  final String? projectId;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? completedAt;
@@ -183,6 +185,7 @@ class TaskDocument {
     this.pendingApproval,
     this.pendingQuestion,
     this.chatSessionId,
+    this.projectId,
     this.completedAt,
   });
 
@@ -202,6 +205,7 @@ class TaskDocument {
     Object? pendingApproval = kSentinel,
     Object? pendingQuestion = kSentinel,
     Object? chatSessionId = kSentinel,
+    Object? projectId = kSentinel,
     DateTime? createdAt,
     DateTime? updatedAt,
     Object? completedAt = kSentinel,
@@ -222,6 +226,7 @@ class TaskDocument {
       pendingApproval: resolve(pendingApproval, this.pendingApproval),
       pendingQuestion: resolve(pendingQuestion, this.pendingQuestion),
       chatSessionId: resolve(chatSessionId, this.chatSessionId),
+      projectId: resolve(projectId, this.projectId),
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       completedAt: resolve(completedAt, this.completedAt),
@@ -291,6 +296,7 @@ class TaskDocument {
       chatSessionId: jsonNullableString(
         json['chatSessionId'] ?? json['chat_session_id'],
       ),
+      projectId: jsonNullableString(json['projectId'] ?? json['project_id']),
       createdAt: jsonDate(
         json['createdAt'] ?? json['created_at'],
         fallback: now,
@@ -321,6 +327,7 @@ class TaskDocument {
     if (pendingApproval != null) 'pendingApproval': pendingApproval!.toJson(),
     if (pendingQuestion != null) 'pendingQuestion': pendingQuestion!.toJson(),
     if (chatSessionId != null) 'chatSessionId': chatSessionId,
+    if (projectId != null) 'projectId': projectId,
     'createdAt': createdAt.toIso8601String(),
     'updatedAt': updatedAt.toIso8601String(),
     if (completedAt != null) 'completedAt': completedAt!.toIso8601String(),

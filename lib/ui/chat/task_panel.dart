@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:hermes/core/helpers/a11y.dart';
+import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/ui/common/state_display.dart';
@@ -21,10 +22,12 @@ class TaskPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final project = chat.activeProject;
     final task = chat.activeTask;
     if (!expanded) {
       return _CollapsedTaskPanel(
         chat: chat,
+        project: project,
         task: task,
         onToggleExpanded: onToggleExpanded,
       );
@@ -40,17 +43,29 @@ class TaskPanel extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _Header(chat: chat, task: task, onToggleExpanded: onToggleExpanded),
+            _Header(
+              chat: chat,
+              project: project,
+              task: task,
+              onToggleExpanded: onToggleExpanded,
+            ),
             const Divider(height: 1),
-            if (task == null)
-              Expanded(child: _TaskList(chat: chat))
-            else
+            if (project != null)
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(12),
+                  child: _ProjectBody(chat: chat, project: project),
+                ),
+              )
+            else if (task != null)
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(12),
                   child: _TaskBody(chat: chat, task: task),
                 ),
-              ),
+              )
+            else
+              Expanded(child: _WorkList(chat: chat)),
           ],
         ),
       ),
@@ -60,11 +75,13 @@ class TaskPanel extends StatelessWidget {
 
 class _CollapsedTaskPanel extends StatelessWidget {
   final ChatService chat;
+  final ProjectDocument? project;
   final TaskDocument? task;
   final VoidCallback onToggleExpanded;
 
   const _CollapsedTaskPanel({
     required this.chat,
+    required this.project,
     required this.task,
     required this.onToggleExpanded,
   });
@@ -81,13 +98,15 @@ class _CollapsedTaskPanel extends StatelessWidget {
           child: Row(
             children: [
               Icon(
-                Icons.account_tree_outlined,
+                project == null
+                    ? Icons.account_tree_outlined
+                    : Icons.rocket_launch_outlined,
                 color: theme.colorScheme.primary,
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  task?.title ?? 'Workspace Tasks',
+                  project?.title ?? task?.title ?? 'Workspace Work',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.labelLarge,
@@ -98,6 +117,11 @@ class _CollapsedTaskPanel extends StatelessWidget {
                   width: 16,
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else if (project != null)
+                AccessibleWidget(
+                  label: 'Project status: ${project!.status.wire}',
+                  child: _StatusChip(label: project!.status.wire),
                 )
               else if (task != null)
                 AccessibleWidget(
@@ -119,11 +143,13 @@ class _CollapsedTaskPanel extends StatelessWidget {
 
 class _Header extends StatelessWidget {
   final ChatService chat;
+  final ProjectDocument? project;
   final TaskDocument? task;
   final VoidCallback onToggleExpanded;
 
   const _Header({
     required this.chat,
+    required this.project,
     required this.task,
     required this.onToggleExpanded,
   });
@@ -135,11 +161,16 @@ class _Header extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
       child: Row(
         children: [
-          Icon(Icons.account_tree_outlined, color: theme.colorScheme.primary),
+          Icon(
+            project == null
+                ? Icons.account_tree_outlined
+                : Icons.rocket_launch_outlined,
+            color: theme.colorScheme.primary,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              task?.title ?? 'Workspace Tasks',
+              project?.title ?? task?.title ?? 'Workspace Work',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.titleSmall?.copyWith(
@@ -178,6 +209,386 @@ class _Header extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ProjectBody extends StatelessWidget {
+  final ChatService chat;
+  final ProjectDocument project;
+
+  const _ProjectBody({required this.chat, required this.project});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final completed = project.tasks
+        .where((task) => task.status == TaskStatus.completed)
+        .length;
+    final activeTask = chat.activeTask?.projectId == project.id
+        ? chat.activeTask
+        : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            AccessibleWidget(
+              label: 'Project status: ${project.status.wire}',
+              child: _StatusChip(label: project.status.wire),
+            ),
+            AccessibleWidget(
+              label: '$completed of ${project.tasks.length} tasks completed',
+              child: _StatusChip(
+                label: '$completed/${project.tasks.length} tasks',
+              ),
+            ),
+            AccessibleWidget(
+              label: 'Project ID: .agent/projects/${project.id}',
+              child: _StatusChip(label: '.agent/projects/${project.id}'),
+            ),
+          ],
+        ),
+        if (chat.taskStatusMessage != null) ...[
+          const SizedBox(height: 8),
+          Text(chat.taskStatusMessage!, style: theme.textTheme.bodySmall),
+        ],
+        const SizedBox(height: 10),
+        _ProjectActions(chat: chat, project: project),
+        if (project.pendingQuestion != null) ...[
+          const SizedBox(height: 10),
+          _ProjectQuestionCard(chat: chat, project: project),
+        ],
+        if (project.blocker != null) ...[
+          const SizedBox(height: 10),
+          _ProjectBlockerCard(project: project),
+        ],
+        const SizedBox(height: 12),
+        _Section(
+          title: 'Goal',
+          child: Text(project.goal, style: theme.textTheme.bodyMedium),
+        ),
+        if (project.memorySummary.trim().isNotEmpty) ...[
+          const SizedBox(height: 10),
+          _Section(
+            title: 'Memory',
+            child: Text(
+              project.memorySummary,
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        ],
+        if (project.completionSummary.trim().isNotEmpty) ...[
+          const SizedBox(height: 10),
+          _Section(
+            title: 'Completion',
+            child: Text(
+              project.completionSummary,
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        ],
+        if (activeTask != null) ...[
+          const SizedBox(height: 10),
+          _Section(
+            title: 'Current Task',
+            child: _CurrentProjectTask(chat: chat, task: activeTask),
+          ),
+        ],
+        const SizedBox(height: 10),
+        _Section(
+          title: 'Tasks',
+          child: _ProjectTaskList(project: project),
+        ),
+        const SizedBox(height: 10),
+        _Section(
+          title: 'Recent Decisions',
+          child: _ProjectDecisionList(project: project),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+}
+
+class _ProjectActions extends StatelessWidget {
+  final ChatService chat;
+  final ProjectDocument project;
+
+  const _ProjectActions({required this.chat, required this.project});
+
+  @override
+  Widget build(BuildContext context) {
+    final canRun = !chat.taskBusy && !project.isTerminal;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        if (chat.taskBusy)
+          AccessibleWidget(
+            label: chat.taskCancellationRequested
+                ? 'Cancelling project...'
+                : 'Cancel project run',
+            isButton: true,
+            enabled: !chat.taskCancellationRequested,
+            child: FilledButton.tonalIcon(
+              icon: const Icon(Icons.stop),
+              label: Text(
+                chat.taskCancellationRequested ? 'Cancelling...' : 'Cancel Run',
+              ),
+              onPressed: chat.taskCancellationRequested
+                  ? null
+                  : () => unawaited(chat.cancelTaskRun()),
+            ),
+          ),
+        AccessibleWidget(
+          label: 'Run next project task',
+          isButton: true,
+          enabled: canRun,
+          child: FilledButton.icon(
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Run Next Task'),
+            onPressed: canRun
+                ? () => unawaited(chat.runNextProjectTask())
+                : null,
+          ),
+        ),
+        AccessibleWidget(
+          label: 'Run project',
+          isButton: true,
+          enabled: canRun,
+          child: FilledButton.tonalIcon(
+            icon: const Icon(Icons.fast_forward),
+            label: const Text('Run Project'),
+            onPressed: canRun ? () => unawaited(chat.runProject()) : null,
+          ),
+        ),
+        AccessibleWidget(
+          label: 'Edit project',
+          isButton: true,
+          enabled: !chat.taskBusy,
+          child: OutlinedButton.icon(
+            icon: const Icon(Icons.edit_note),
+            label: const Text('Edit Project'),
+            onPressed: chat.taskBusy
+                ? null
+                : () => unawaited(_editProject(context, chat)),
+          ),
+        ),
+        AccessibleWidget(
+          label: 'Stop project',
+          isButton: true,
+          enabled: !chat.taskBusy && !project.isTerminal,
+          child: TextButton.icon(
+            icon: const Icon(Icons.stop_circle_outlined),
+            label: const Text('Stop'),
+            onPressed: !chat.taskBusy && !project.isTerminal
+                ? () => unawaited(chat.stopProject())
+                : null,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _editProject(BuildContext context, ChatService chat) async {
+    final initial = chat.activeProjectJson;
+    if (initial == null) return;
+    final controller = TextEditingController(text: initial);
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        var saving = false;
+        String? error;
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Edit Project'),
+              content: SizedBox(
+                width: 820,
+                child: TextField(
+                  controller: controller,
+                  minLines: 16,
+                  maxLines: 22,
+                  style: const TextStyle(fontFamily: 'monospace'),
+                  decoration: InputDecoration(
+                    border: const OutlineInputBorder(),
+                    errorText: error,
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: saving
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton.icon(
+                  icon: saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.save_outlined),
+                  label: const Text('Save'),
+                  onPressed: saving
+                      ? null
+                      : () async {
+                          setState(() {
+                            saving = true;
+                            error = null;
+                          });
+                          try {
+                            jsonDecode(controller.text);
+                            await chat.updateProjectPlan(controller.text);
+                            if (dialogContext.mounted) {
+                              Navigator.of(dialogContext).pop(true);
+                            }
+                          } catch (e) {
+                            setState(() {
+                              saving = false;
+                              error = e.toString();
+                            });
+                          }
+                        },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    controller.dispose();
+    if (saved == true && context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Project saved')));
+    }
+  }
+}
+
+class _ProjectQuestionCard extends StatefulWidget {
+  final ChatService chat;
+  final ProjectDocument project;
+
+  const _ProjectQuestionCard({required this.chat, required this.project});
+
+  @override
+  State<_ProjectQuestionCard> createState() => _ProjectQuestionCardState();
+}
+
+class _ProjectQuestionCardState extends State<_ProjectQuestionCard> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final question = widget.project.pendingQuestion!;
+    return _Panel(
+      icon: Icons.help_outline,
+      title: 'Project Input Required',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(question.question),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _controller,
+            minLines: 2,
+            maxLines: 5,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              labelText: 'Answer',
+            ),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.icon(
+              icon: const Icon(Icons.send_outlined),
+              label: const Text('Submit Answer'),
+              onPressed: widget.chat.taskBusy
+                  ? null
+                  : () => unawaited(
+                      widget.chat.answerProjectQuestion(_controller.text),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProjectBlockerCard extends StatelessWidget {
+  final ProjectDocument project;
+
+  const _ProjectBlockerCard({required this.project});
+
+  @override
+  Widget build(BuildContext context) {
+    final blocker = project.blocker!;
+    return _Panel(
+      icon: Icons.report_problem_outlined,
+      title: 'Project Blocked',
+      child: Text(
+        '${blocker.type.wire}: ${blocker.message}',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+    );
+  }
+}
+
+class _CurrentProjectTask extends StatelessWidget {
+  final ChatService chat;
+  final TaskDocument task;
+
+  const _CurrentProjectTask({required this.chat, required this.task});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(
+              task.title,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            _StatusChip(label: task.status.wire),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _Actions(chat: chat, task: task, next: task.nextRunnableStep),
+        if (task.pendingApproval != null) ...[
+          const SizedBox(height: 10),
+          _ApprovalCard(chat: chat, task: task),
+        ],
+        if (task.pendingQuestion != null) ...[
+          const SizedBox(height: 10),
+          _QuestionCard(chat: chat, task: task),
+        ],
+        const SizedBox(height: 10),
+        _StepList(task: task),
+      ],
     );
   }
 }
@@ -766,34 +1177,116 @@ class _RunList extends StatelessWidget {
   }
 }
 
-class _TaskList extends StatelessWidget {
-  final ChatService chat;
+class _ProjectTaskList extends StatelessWidget {
+  final ProjectDocument project;
 
-  const _TaskList({required this.chat});
+  const _ProjectTaskList({required this.project});
 
   @override
   Widget build(BuildContext context) {
+    final tasks = project.tasks.reversed.toList();
+    if (tasks.isEmpty) {
+      return Text(
+        'No project tasks yet.',
+        style: Theme.of(context).textTheme.bodySmall,
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final task in tasks)
+          AccessibleWidget(
+            label: 'Project task: ${task.title}, status ${task.status.wire}',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.account_tree_outlined),
+              title: Text(task.title),
+              subtitle: Text('${task.status.wire} - ${task.taskId}'),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ProjectDecisionList extends StatelessWidget {
+  final ProjectDocument project;
+
+  const _ProjectDecisionList({required this.project});
+
+  @override
+  Widget build(BuildContext context) {
+    final decisions = project.decisions.reversed.take(8).toList();
+    if (decisions.isEmpty) {
+      return Text(
+        'No decisions yet.',
+        style: Theme.of(context).textTheme.bodySmall,
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final decision in decisions)
+          AccessibleWidget(
+            label:
+                'Project decision: ${decision.decision.wire}${decision.taskTitle == null ? '' : ', ${decision.taskTitle}'}',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(_projectDecisionIcon(decision.decision)),
+              title: Text(decision.decision.wire),
+              subtitle: Text(
+                [
+                  if (decision.taskTitle != null) decision.taskTitle!,
+                  if (decision.summary.trim().isNotEmpty) decision.summary,
+                ].join(' - '),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _WorkList extends StatelessWidget {
+  final ChatService chat;
+
+  const _WorkList({required this.chat});
+
+  @override
+  Widget build(BuildContext context) {
+    final projects = chat.availableProjects;
+    final tasks = chat.availableTasks;
+    final hasContent = projects.isNotEmpty || tasks.isNotEmpty;
     return StateDisplay(
-      state: chat.availableTasks.isEmpty
-          ? DisplayState.empty
-          : DisplayState.content,
-      content: ListView.builder(
+      state: hasContent ? DisplayState.content : DisplayState.empty,
+      content: ListView(
         padding: const EdgeInsets.all(12),
-        itemCount: chat.availableTasks.length,
-        itemBuilder: (context, index) {
-          final task = chat.availableTasks[index];
-          return ListTile(
-            leading: const Icon(Icons.account_tree_outlined),
-            title: Text(task.title),
-            subtitle: Text('${task.status.wire} - ${task.id}'),
-            onTap: chat.taskBusy
-                ? null
-                : () => unawaited(chat.loadTask(task.id)),
-          );
-        },
+        children: [
+          for (final project in projects)
+            ListTile(
+              leading: const Icon(Icons.rocket_launch_outlined),
+              title: Text(project.title),
+              subtitle: Text('${project.status.wire} - ${project.id}'),
+              onTap: chat.taskBusy
+                  ? null
+                  : () => unawaited(chat.loadProject(project.id)),
+            ),
+          if (projects.isNotEmpty && tasks.isNotEmpty) const Divider(),
+          for (final task in tasks)
+            ListTile(
+              leading: const Icon(Icons.account_tree_outlined),
+              title: Text(task.title),
+              subtitle: Text('${task.status.wire} - ${task.id}'),
+              onTap: chat.taskBusy
+                  ? null
+                  : () => unawaited(chat.loadTask(task.id)),
+            ),
+        ],
       ),
-      emptyMessage: 'No tasks in this workspace.',
-      emptyHint: 'Run a task from the chat to see it here',
+      emptyMessage: 'No projects or tasks in this workspace.',
+      emptyHint: 'Run a project or task from the chat to see it here',
     );
   }
 }
@@ -903,3 +1396,10 @@ IconData _runIcon(TaskRunStatus status) => switch (status) {
   TaskRunStatus.skipped => Icons.skip_next,
   TaskRunStatus.needsReplan || TaskRunStatus.replanned => Icons.route_outlined,
 };
+
+IconData _projectDecisionIcon(ProjectDecisionType decision) =>
+    switch (decision) {
+      ProjectDecisionType.createTask => Icons.account_tree_outlined,
+      ProjectDecisionType.complete => Icons.check_circle_outline,
+      ProjectDecisionType.blocked => Icons.block,
+    };

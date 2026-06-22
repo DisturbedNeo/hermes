@@ -7,6 +7,7 @@ import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/helpers/chat/context_estimator.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/chat_token.dart';
+import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/system_prompt.dart';
@@ -14,6 +15,7 @@ import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
+import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/task_system/task_storage_service.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
@@ -43,9 +45,13 @@ void main() {
         databasePath: path.join(tempDir.path, 'hermes.db'),
       );
       serverManager = LlamaServerManager();
+      final toolService = ToolService();
+      final taskService = TaskService(toolService: toolService);
       chat = ChatService(
         serverManager: serverManager,
-        toolService: ToolService(),
+        toolService: toolService,
+        taskService: taskService,
+        projectService: ProjectService(taskService: taskService),
         chatLibrary: chatLibrary,
         workspaceService: WorkspaceService(),
         preferencesService: preferences,
@@ -188,6 +194,70 @@ void main() {
 
       expect(chat.activeTask?.status, TaskStatus.completed);
       expect(chat.activeTask?.runs.single.summary, 'Step complete.');
+    });
+
+    test(
+      'supports /project command by creating tasks until complete',
+      () async {
+        serverManager.chatClient = _QueueChatClient([
+          jsonEncode({
+            'decision': 'create_task',
+            'projectSummary': 'Start with one task.',
+            'memoryUpdate': 'Need implementation.',
+            'nextTask': {
+              'title': 'Build screen',
+              'prompt': 'Build the reporting screen',
+              'successCriteria': ['Screen is built.'],
+            },
+          }),
+          jsonEncode(_planJson(title: 'Project task')),
+          jsonEncode({
+            'status': 'completed',
+            'summary': 'Project task complete.',
+            'memoryUpdate': 'Screen built.',
+          }),
+          jsonEncode({
+            'decision': 'complete',
+            'projectSummary': 'Project complete.',
+            'memoryUpdate': 'Done.',
+            'completionSummary': 'Reporting screen is complete.',
+          }),
+        ]);
+        await chat.attachWorkspace(tempDir.path);
+
+        await chat.send('/project Build the reporting screen');
+
+        expect(chat.activeProject?.status, ProjectStatus.completed);
+        expect(chat.activeProject?.tasks.single.status, TaskStatus.completed);
+        expect(chat.activeTask, isNull);
+        expect(chat.activeProject?.completionSummary, contains('complete'));
+      },
+    );
+
+    test('supports /continue-project for the active project', () async {
+      serverManager.chatClient = _QueueChatClient([
+        jsonEncode({
+          'decision': 'complete',
+          'projectSummary': 'Project complete.',
+          'memoryUpdate': 'Done.',
+          'completionSummary': 'All done.',
+        }),
+      ]);
+      await chat.attachWorkspace(tempDir.path);
+      chat.activeProject = _projectDocument();
+      await ProjectService(
+        taskService: TaskService(toolService: ToolService()),
+      ).storage.saveSnapshot(tempDir.path, chat.activeProject!);
+
+      await chat.send('/continue-project');
+
+      expect(chat.activeProject?.status, ProjectStatus.completed);
+      expect(
+        chat.messageStore.messages.firstWhere(
+          (m) => m.text == '/continue-project',
+        ),
+        isNotNull,
+      );
     });
 
     test('step finished message omits future planned artifacts', () async {
@@ -421,6 +491,48 @@ void main() {
       expect(chat.activeTask?.chatSessionId, saved.id);
     });
 
+    test('scopes transient projects and deletes them on new chat', () async {
+      serverManager.chatClient = _QueueChatClient([jsonEncode({})]);
+      await chat.attachWorkspace(tempDir.path);
+      chat.setExecutionMode(ExecutionMode.project);
+
+      await chat.send('Build the reporting screen');
+
+      final project = chat.activeProject!;
+      final projectDir = Directory(
+        path.join(tempDir.path, '.agent', 'projects', project.id),
+      );
+      expect(chat.currentChatId, isNull);
+      expect(project.chatSessionId, isNotNull);
+      expect(projectDir.existsSync(), isTrue);
+
+      await chat.newChat();
+
+      expect(projectDir.existsSync(), isFalse);
+    });
+
+    test('moves transient project scope when the chat is saved', () async {
+      serverManager.chatClient = _QueueChatClient([jsonEncode({})]);
+      await chat.attachWorkspace(tempDir.path);
+      chat.setExecutionMode(ExecutionMode.project);
+
+      await chat.send('Build the reporting screen');
+
+      final saved = await chat.saveCurrentChat(title: 'Reporting project');
+
+      expect(chat.activeProject?.chatSessionId, saved.id);
+      expect(chat.availableProjects.single.chatSessionId, saved.id);
+
+      await chat.newChat();
+      await chat.attachWorkspace(tempDir.path);
+      expect(chat.activeProject, isNull);
+
+      await chat.openChat(saved.id);
+
+      expect(chat.activeProject?.title, 'Build the reporting screen');
+      expect(chat.activeProject?.chatSessionId, saved.id);
+    });
+
     test('supports /continue command for the active task', () async {
       serverManager.chatClient = _QueueChatClient([
         jsonEncode({
@@ -464,11 +576,13 @@ void main() {
         databasePath: databasePath,
       );
       final toolService = ToolService();
+      final taskService = TaskService(toolService: toolService);
       tabs = ChatTabsService(
         chatLibrary: chatLibrary,
         systemPromptLibrary: promptLibrary,
         toolService: toolService,
-        taskService: TaskService(toolService: toolService),
+        taskService: taskService,
+        projectService: ProjectService(taskService: taskService),
         workspaceService: WorkspaceService(),
         preferencesService: preferences,
       );
@@ -520,6 +634,32 @@ void main() {
       expect(tabs.activeChat?.currentChatId, isNull);
     });
 
+    test(
+      'deletes saved chat project folders from the chat list path',
+      () async {
+        tabs.serverManager.chatClient = _QueueChatClient([jsonEncode({})]);
+        await tabs.activeChat?.attachWorkspace(tempDir.path);
+        tabs.activeChat?.setExecutionMode(ExecutionMode.project);
+
+        await tabs.activeChat?.send('Build the reporting screen');
+        final saved = await tabs.activeChat!.saveCurrentChat(
+          title: 'Deleted tab project',
+        );
+        final projectId = tabs.activeChat!.activeProject!.id;
+        final projectDir = Directory(
+          path.join(tempDir.path, '.agent', 'projects', projectId),
+        );
+
+        expect(projectDir.existsSync(), isTrue);
+
+        await tabs.deleteSavedChat(saved.id);
+
+        expect(await chatLibrary.getChat(saved.id), isNull);
+        expect(projectDir.existsSync(), isFalse);
+        expect(tabs.activeChat?.currentChatId, isNull);
+      },
+    );
+
     test('deletes orphaned chat-scoped tasks when disposed', () async {
       await tabs.activeChat?.attachWorkspace(tempDir.path);
       final orphaned = _taskDocument(
@@ -536,6 +676,26 @@ void main() {
       await tabs.dispose();
 
       expect(taskDir.existsSync(), isFalse);
+    });
+
+    test('deletes orphaned chat-scoped projects when disposed', () async {
+      await tabs.activeChat?.attachWorkspace(tempDir.path);
+      final orphaned = _projectDocument(
+        id: 'project_orphaned',
+        chatSessionId: 'deleted_chat',
+      );
+      await ProjectService(
+        taskService: TaskService(toolService: ToolService()),
+      ).storage.saveSnapshot(tempDir.path, orphaned);
+      final projectDir = Directory(
+        path.join(tempDir.path, '.agent', 'projects', 'project_orphaned'),
+      );
+
+      expect(projectDir.existsSync(), isTrue);
+
+      await tabs.dispose();
+
+      expect(projectDir.existsSync(), isFalse);
     });
   });
 }
@@ -582,6 +742,30 @@ TaskDocument _taskDocument({String id = 'task_test', String? chatSessionId}) {
     currentStepId: 'step_1',
     memorySummary: '',
     runs: const [],
+    chatSessionId: chatSessionId,
+    createdAt: now,
+    updatedAt: now,
+  );
+}
+
+ProjectDocument _projectDocument({
+  String id = 'project_test',
+  String? chatSessionId,
+}) {
+  final now = DateTime(2026, 1, 1);
+  return ProjectDocument(
+    id: id,
+    title: 'Test project',
+    originalPrompt: 'Run the project',
+    goal: 'Run the project',
+    constraints: const [],
+    successCriteria: const ['Finish'],
+    status: ProjectStatus.paused,
+    activeTaskId: null,
+    memorySummary: '',
+    completionSummary: '',
+    tasks: const [],
+    decisions: const [],
     chatSessionId: chatSessionId,
     createdAt: now,
     updatedAt: now,

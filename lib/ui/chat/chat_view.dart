@@ -277,7 +277,9 @@ class _ChatViewState extends State<ChatView> {
   }
 
   bool _showTaskPanel(ChatService chat) {
-    return chat.activeTask != null ||
+    return chat.activeProject != null ||
+        chat.availableProjects.isNotEmpty ||
+        chat.activeTask != null ||
         chat.availableTasks.isNotEmpty ||
         chat.taskBusy;
   }

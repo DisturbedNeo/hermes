@@ -308,5 +308,15 @@ class _SettingsContent extends StatelessWidget {
             )
           : null,
     ),
+    SliderControl.integer(
+      label: 'Max project tasks per run',
+      value: taskSystemSettings.maxProjectTasksPerRun,
+      min: 1,
+      max: 25,
+      step: 1,
+      onChanged: (value) => onTaskSystemChanged(
+        taskSystemSettings.copyWith(maxProjectTasksPerRun: value),
+      ),
+    ),
   ];
 }

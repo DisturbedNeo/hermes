@@ -63,4 +63,8 @@ abstract final class PreferencesKeys {
   /// Whether to show task messages in the chat stream.
   static const String taskSystemShowMessagesInChat =
       'task_system_show_messages_in_chat';
+
+  /// Maximum number of project-created tasks to start in one run.
+  static const String taskSystemMaxProjectTasksPerRun =
+      'task_system_max_project_tasks_per_run';
 }

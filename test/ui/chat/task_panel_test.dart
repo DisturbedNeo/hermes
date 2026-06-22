@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
@@ -74,6 +75,30 @@ void main() {
       expect(find.text('.agent/tasks/task_test/output.md'), findsOneWidget);
     },
   );
+
+  testWidgets('expanded panel renders project state', (tester) async {
+    chat.activeProject = _projectWithTask();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 640,
+            child: TaskPanel(
+              chat: chat,
+              expanded: true,
+              onToggleExpanded: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Project task'), findsOneWidget);
+    expect(find.text('Recent Decisions'), findsOneWidget);
+  });
 }
 
 TaskDocument _taskWithArtifact() {
@@ -114,6 +139,46 @@ TaskDocument _taskWithArtifact() {
         toolCalls: [],
         artifacts: [],
         startedAt: now,
+      ),
+    ],
+    createdAt: now,
+    updatedAt: now,
+  );
+}
+
+ProjectDocument _projectWithTask() {
+  final now = DateTime(2024, 1, 1);
+  return ProjectDocument(
+    id: 'project_test',
+    title: 'Test project',
+    originalPrompt: 'Build project.',
+    goal: 'Build project.',
+    constraints: const [],
+    successCriteria: const [],
+    status: ProjectStatus.paused,
+    activeTaskId: null,
+    memorySummary: 'Project memory.',
+    completionSummary: '',
+    tasks: [
+      ProjectTaskRef(
+        taskId: 'task_test',
+        title: 'Project task',
+        status: TaskStatus.completed,
+        summary: 'Finished.',
+        createdAt: now,
+        updatedAt: now,
+      ),
+    ],
+    decisions: [
+      ProjectDecisionRecord(
+        id: 'decision_test',
+        decision: ProjectDecisionType.createTask,
+        summary: 'Created task.',
+        memoryUpdate: '',
+        taskId: 'task_test',
+        taskTitle: 'Project task',
+        taskPrompt: 'Do work.',
+        createdAt: now,
       ),
     ],
     createdAt: now,

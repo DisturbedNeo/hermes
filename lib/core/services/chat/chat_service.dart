@@ -10,6 +10,7 @@ import 'package:hermes/core/helpers/chat/context_estimator.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_token.dart';
+import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
@@ -22,6 +23,7 @@ import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
 import 'package:hermes/core/helpers/chat/tool_caller.dart';
+import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/task_system/task_summary.dart';
@@ -44,7 +46,8 @@ class ChatService extends ChangeNotifier implements Disposable {
   final ChatStream chatStream = ChatStream<ChatToken>();
 
   final ToolService _toolService;
-  final TaskService _taskService;
+  late final TaskService _taskService;
+  late final ProjectService _projectService;
   final ChatLibraryService _chatLibrary;
   final WorkspaceService _workspaceService;
   final PreferencesService _preferencesService;
@@ -73,6 +76,8 @@ class ChatService extends ChangeNotifier implements Disposable {
   WorkspaceAttachment? workspace;
   SystemPromptSnapshot? currentSystemPromptSnapshot;
   ExecutionMode executionMode = ExecutionMode.chat;
+  ProjectSnapshot? activeProject;
+  List<ProjectSummary> availableProjects = const [];
   TaskSnapshot? activeTask;
   List<TaskSummary> availableTasks = const [];
   TaskSystemSettings taskSystemSettings = const TaskSystemSettings();
@@ -96,16 +101,21 @@ class ChatService extends ChangeNotifier implements Disposable {
     required this.serverManager,
     required ToolService toolService,
     TaskService? taskService,
+    ProjectService? projectService,
     required ChatLibraryService chatLibrary,
     required WorkspaceService workspaceService,
     required PreferencesService preferencesService,
     SystemPromptSnapshot? initialSystemPromptSnapshot,
   }) : tabId = tabId ?? uuid.v7(),
        _toolService = toolService,
-       _taskService = taskService ?? TaskService(toolService: toolService),
        _chatLibrary = chatLibrary,
        _workspaceService = workspaceService,
        _preferencesService = preferencesService {
+    final resolvedTaskService =
+        taskService ?? TaskService(toolService: toolService);
+    _taskService = resolvedTaskService;
+    _projectService =
+        projectService ?? ProjectService(taskService: resolvedTaskService);
     currentSystemPromptSnapshot = initialSystemPromptSnapshot;
     messageStore.setMessages([systemPrompt]);
     messageStore.addListener(_handleMessagesChanged);
@@ -137,6 +147,10 @@ class ChatService extends ChangeNotifier implements Disposable {
 
   String? get activeTaskJson =>
       activeTask == null ? null : _taskService.encodeTask(activeTask!);
+
+  String? get activeProjectJson => activeProject == null
+      ? null
+      : _projectService.encodeProject(activeProject!);
 
   List<String> get defaultToolIds => workspaceToolsEnabled
       ? _toolService.defaultToolIds(includeWorkspaceTools: true)
@@ -173,8 +187,11 @@ class ChatService extends ChangeNotifier implements Disposable {
     }
 
     await _deleteTransientTasksForCurrentScope();
+    await _deleteTransientProjectsForCurrentScope();
     _clearSavedState();
     currentSystemPromptSnapshot = systemPromptSnapshot;
+    activeProject = null;
+    availableProjects = const [];
     activeTask = null;
     availableTasks = const [];
     taskError = null;
@@ -207,18 +224,34 @@ class ChatService extends ChangeNotifier implements Disposable {
       _clearTaskModelOutput(notify: false);
       workspace = await _restoreWorkspace(snapshot.chat.workspace);
       if (workspace != null && workspace?.missing != true) {
-        activeTask = await _recoverTaskSnapshot(
+        activeProject = (await _recoverProjectSnapshot(
           workspace!,
-          await _taskService.loadLatestTask(
+          await _projectService.loadLatestProject(
             workspace!,
             chatSessionId: snapshot.chat.id,
           ),
+        ))?.project;
+        availableProjects = await _projectService.listProjects(
+          workspace!,
+          chatSessionId: snapshot.chat.id,
         );
+        activeTask = await _taskForActiveProject(workspace!, activeProject);
+        if (activeTask == null && activeProject == null) {
+          activeTask = await _recoverTaskSnapshot(
+            workspace!,
+            await _taskService.loadLatestTask(
+              workspace!,
+              chatSessionId: snapshot.chat.id,
+            ),
+          );
+        }
         availableTasks = await _taskService.listTasks(
           workspace!,
           chatSessionId: snapshot.chat.id,
         );
       } else {
+        activeProject = null;
+        availableProjects = const [];
         availableTasks = const [];
         activeTask = null;
       }
@@ -248,6 +281,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     await _chatLibrary.deleteChat(chatId);
     try {
       await _deleteTasksForChatSessionInWorkspaces(chatId, workspaces);
+      await _deleteProjectsForChatSessionInWorkspaces(chatId, workspaces);
     } finally {
       await resetIfCurrentSavedChatDeleted(chatId);
     }
@@ -367,14 +401,32 @@ class ChatService extends ChangeNotifier implements Disposable {
         previousWorkspace,
         chatSessionId: previousScopeId,
       );
+      await _projectService.deleteProjectsForChatSession(
+        previousWorkspace,
+        chatSessionId: previousScopeId,
+      );
     }
     workspace = nextWorkspace;
     _syncSystemPrompt();
     final scopeId = _taskScopeId;
-    activeTask = await _recoverTaskSnapshot(
+    activeProject = (await _recoverProjectSnapshot(
       workspace!,
-      await _taskService.loadLatestTask(workspace!, chatSessionId: scopeId),
+      await _projectService.loadLatestProject(
+        workspace!,
+        chatSessionId: scopeId,
+      ),
+    ))?.project;
+    availableProjects = await _projectService.listProjects(
+      workspace!,
+      chatSessionId: scopeId,
     );
+    activeTask = await _taskForActiveProject(workspace!, activeProject);
+    if (activeTask == null && activeProject == null) {
+      activeTask = await _recoverTaskSnapshot(
+        workspace!,
+        await _taskService.loadLatestTask(workspace!, chatSessionId: scopeId),
+      );
+    }
     availableTasks = await _taskService.listTasks(
       workspace!,
       chatSessionId: scopeId,
@@ -385,7 +437,10 @@ class ChatService extends ChangeNotifier implements Disposable {
   Future<void> detachWorkspace() async {
     if (chatStream.isStreaming) return;
     await _deleteTransientTasksForCurrentScope();
+    await _deleteTransientProjectsForCurrentScope();
     workspace = null;
+    activeProject = null;
+    availableProjects = const [];
     activeTask = null;
     availableTasks = const [];
     _syncSystemPrompt();
@@ -423,6 +478,15 @@ class ChatService extends ChangeNotifier implements Disposable {
       await _startTaskFromPrompt(
         t,
         runFirstPhase: !settings.requireApprovalBeforeExecution,
+      );
+      return;
+    }
+
+    if (executionMode == ExecutionMode.project) {
+      final settings = await _refreshTaskSystemSettings();
+      await _startProjectFromPrompt(
+        t,
+        runAfterCreation: !settings.requireApprovalBeforeExecution,
       );
       return;
     }
@@ -488,7 +552,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     if (!taskBusy) return;
     final token = _taskCancellationToken;
     taskCancellationRequested = true;
-    taskStatusMessage = 'Cancelling task...';
+    taskStatusMessage = 'Cancelling run...';
     notifyListeners();
     if (token == null) return;
     await token.cancel();
@@ -498,23 +562,40 @@ class ChatService extends ChangeNotifier implements Disposable {
     final current = workspace;
     if (current == null || current.missing) {
       availableTasks = const [];
+      availableProjects = const [];
       activeTask = null;
+      activeProject = null;
       notifyListeners();
       return;
     }
 
     final scopeId = _taskScopeId;
+    activeProject = (await _recoverProjectSnapshot(
+      current,
+      activeProject ??
+          await _projectService.loadLatestProject(
+            current,
+            chatSessionId: scopeId,
+          ),
+    ))?.project;
+    availableProjects = await _projectService.listProjects(
+      current,
+      chatSessionId: scopeId,
+    );
     final activeScopeId = activeTask?.chatSessionId;
     final scopedActiveTask =
         activeTask != null &&
             (activeScopeId == null || activeScopeId == scopeId)
         ? activeTask
         : null;
-    activeTask = await _recoverTaskSnapshot(
-      current,
-      scopedActiveTask ??
-          await _taskService.loadLatestTask(current, chatSessionId: scopeId),
-    );
+    activeTask = await _taskForActiveProject(current, activeProject);
+    if (activeTask == null && activeProject == null) {
+      activeTask = await _recoverTaskSnapshot(
+        current,
+        scopedActiveTask ??
+            await _taskService.loadLatestTask(current, chatSessionId: scopeId),
+      );
+    }
     availableTasks = await _taskService.listTasks(
       current,
       chatSessionId: scopeId,
@@ -528,6 +609,35 @@ class ChatService extends ChangeNotifier implements Disposable {
   ) {
     if (snapshot == null) return Future.value();
     return _taskService.recoverTask(workspace: current, snapshot: snapshot);
+  }
+
+  Future<ProjectRunResult?> _recoverProjectSnapshot(
+    WorkspaceAttachment current,
+    ProjectSnapshot? snapshot,
+  ) {
+    if (snapshot == null) return Future.value();
+    return _projectService.recoverProject(
+      workspace: current,
+      snapshot: snapshot,
+      onTaskUpdated: (task) => activeTask = task,
+    );
+  }
+
+  Future<TaskSnapshot?> _taskForActiveProject(
+    WorkspaceAttachment current,
+    ProjectSnapshot? project,
+  ) async {
+    final taskId = project?.activeTaskId;
+    if (project == null || taskId == null) return null;
+    return _recoverTaskSnapshot(
+      current,
+      await _taskService.loadTask(
+        current,
+        taskId,
+        chatSessionId: project.chatSessionId,
+        projectId: project.id,
+      ),
+    );
   }
 
   Future<void> resumeLatestTask() async {
@@ -554,6 +664,48 @@ class ChatService extends ChangeNotifier implements Disposable {
       await _taskService.loadTask(current, taskId, chatSessionId: scopeId),
     );
     await reloadTasks();
+  }
+
+  Future<void> resumeLatestProject() async {
+    final current = workspace;
+    final scopeId = _taskScopeId;
+    if (current == null || current.missing || taskBusy) {
+      return;
+    }
+    final result = await _recoverProjectSnapshot(
+      current,
+      await _projectService.loadLatestProject(current, chatSessionId: scopeId),
+    );
+    activeProject = result?.project;
+    activeTask = result?.activeTask;
+    await reloadTasks();
+  }
+
+  Future<void> loadProject(String projectId) async {
+    final current = workspace;
+    final scopeId = _taskScopeId;
+    if (current == null || current.missing || taskBusy) {
+      return;
+    }
+    final result = await _recoverProjectSnapshot(
+      current,
+      await _projectService.loadProject(
+        current,
+        projectId,
+        chatSessionId: scopeId,
+      ),
+    );
+    activeProject = result?.project;
+    activeTask = result?.activeTask;
+    await reloadTasks();
+  }
+
+  Future<void> runNextProjectTask() async {
+    await _runProjectInternal(maxNewTasks: 1);
+  }
+
+  Future<void> runProject() async {
+    await _runProjectInternal();
   }
 
   Future<void> runNextTaskPhase() async {
@@ -639,6 +791,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       workspace: currentWorkspace,
       snapshot: snapshot,
     );
+    await _clearProjectTaskBlocker();
     await reloadTasks();
   }
 
@@ -656,6 +809,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       workspace: currentWorkspace,
       snapshot: snapshot,
     );
+    await _clearProjectTaskBlocker();
     await reloadTasks();
   }
 
@@ -695,6 +849,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       snapshot: snapshot,
       answer: answer,
     );
+    await _clearProjectTaskBlocker();
     await reloadTasks();
   }
 
@@ -712,6 +867,47 @@ class ChatService extends ChangeNotifier implements Disposable {
       workspace: currentWorkspace,
       snapshot: snapshot,
     );
+    await _clearProjectTaskBlocker();
+    await reloadTasks();
+  }
+
+  Future<void> answerProjectQuestion(String answer) async {
+    final currentWorkspace = workspace;
+    final snapshot = activeProject;
+    if (currentWorkspace == null ||
+        currentWorkspace.missing ||
+        snapshot == null ||
+        taskBusy) {
+      return;
+    }
+
+    activeProject = await _projectService.answerOpenQuestion(
+      workspace: currentWorkspace,
+      snapshot: snapshot,
+      answer: answer,
+    );
+    await reloadTasks();
+  }
+
+  Future<void> stopProject() async {
+    final currentWorkspace = workspace;
+    final snapshot = activeProject;
+    if (currentWorkspace == null ||
+        currentWorkspace.missing ||
+        snapshot == null) {
+      return;
+    }
+
+    if (taskBusy) {
+      await cancelTaskRun();
+      return;
+    }
+
+    activeProject = await _projectService.stopProject(
+      workspace: currentWorkspace,
+      snapshot: snapshot,
+    );
+    activeTask = null;
     await reloadTasks();
   }
 
@@ -742,6 +938,19 @@ class ChatService extends ChangeNotifier implements Disposable {
         break;
       case 'continue':
         await _continueTaskFromCommand(command.raw);
+        break;
+      case 'project':
+        if (command.argument.trim().isEmpty) {
+          _insertUserAndAssistant(
+            command.raw,
+            'Usage: `/project <goal>` creates and runs a supervised project.',
+          );
+          return;
+        }
+        await _startProjectFromPrompt(command.argument, runAfterCreation: true);
+        break;
+      case 'continue-project':
+        await _continueProjectFromCommand(command.raw);
         break;
     }
   }
@@ -876,6 +1085,216 @@ class ChatService extends ChangeNotifier implements Disposable {
     await _runTaskInternal();
   }
 
+  Future<void> _continueProjectFromCommand(String rawCommand) async {
+    if (!await _taskSystemEnabled()) {
+      _insertUserAndAssistant(
+        rawCommand,
+        'Structured tasks are disabled in Settings.',
+      );
+      return;
+    }
+
+    _adoptActiveModelIfRestoreDismissed();
+    messageStore.upsert(
+      Bubble(
+        id: uuid.v7(),
+        role: MessageRole.user,
+        text: rawCommand,
+        reasoning: '',
+        createdAt: DateTime.now(),
+      ),
+    );
+
+    final currentWorkspace = workspace;
+    if (currentWorkspace == null || currentWorkspace.missing) {
+      messageStore.upsert(
+        Bubble(
+          id: uuid.v7(),
+          role: MessageRole.assistant,
+          text:
+              '`/continue-project` needs an attached workspace with a saved project under `.agent/projects`.',
+          reasoning: '',
+          createdAt: DateTime.now(),
+        ),
+      );
+      return;
+    }
+
+    final scopeId = _taskScopeId;
+    activeProject ??= (await _recoverProjectSnapshot(
+      currentWorkspace,
+      await _projectService.loadLatestProject(
+        currentWorkspace,
+        chatSessionId: scopeId,
+      ),
+    ))?.project;
+    await reloadTasks();
+    if (activeProject == null) {
+      messageStore.upsert(
+        Bubble(
+          id: uuid.v7(),
+          role: MessageRole.assistant,
+          text: 'No saved project was found for this chat.',
+          reasoning: '',
+          createdAt: DateTime.now(),
+        ),
+      );
+      return;
+    }
+
+    await _runProjectInternal();
+  }
+
+  Future<void> _startProjectFromPrompt(
+    String prompt, {
+    required bool runAfterCreation,
+  }) async {
+    final currentWorkspace = workspace;
+    final client = serverManager.chatClient;
+    if (client == null) return;
+    final settings = await _refreshTaskSystemSettings();
+    if (!settings.enabled) {
+      _insertUserAndAssistant(
+        prompt,
+        'Structured tasks are disabled in Settings.',
+      );
+      return;
+    }
+
+    _adoptActiveModelIfRestoreDismissed();
+    messageStore.upsert(
+      Bubble(
+        id: uuid.v7(),
+        role: MessageRole.user,
+        text: prompt,
+        reasoning: '',
+        createdAt: DateTime.now(),
+      ),
+    );
+
+    if (currentWorkspace == null || currentWorkspace.missing) {
+      messageStore.upsert(
+        Bubble(
+          id: uuid.v7(),
+          role: MessageRole.assistant,
+          text:
+              'Project mode needs an attached workspace so it can persist `.agent/projects` and `.agent/tasks` artifacts. Attach a workspace and try again.',
+          reasoning: '',
+          createdAt: DateTime.now(),
+        ),
+      );
+      return;
+    }
+
+    taskBusy = true;
+    final token = _beginTaskCancellationScope();
+    taskError = null;
+    taskStatusMessage = runAfterCreation
+        ? 'Creating project and preparing first task...'
+        : 'Creating project...';
+    _beginTaskModelOutput('Project Creation Model Output');
+    notifyListeners();
+
+    try {
+      final scopeId = await _ensureTaskScopeId();
+      final project = await _projectService.createProject(
+        workspace: currentWorkspace,
+        userPrompt: prompt,
+        chatSessionId: scopeId,
+      );
+      activeProject = project;
+      activeTask = null;
+      await reloadTasks();
+      _insertTaskAssistantMessage(_projectCreatedMessage(project));
+
+      if (runAfterCreation) {
+        activeProject = project;
+        await _runProjectInternal(keepBusy: true);
+      }
+    } on TaskCancelledException {
+      _insertTaskAssistantMessage('Project creation cancelled.');
+    } catch (e) {
+      taskError = e;
+      _insertTaskErrorBubble('Failed to create project: $e');
+    } finally {
+      taskBusy = false;
+      _endTaskCancellationScope(token);
+      taskStatusMessage = null;
+      _finishTaskModelOutput();
+      notifyListeners();
+    }
+  }
+
+  Future<void> _runProjectInternal({
+    bool keepBusy = false,
+    int? maxNewTasks,
+  }) async {
+    final currentWorkspace = workspace;
+    final client = serverManager.chatClient;
+    final snapshot = activeProject;
+    if (currentWorkspace == null ||
+        currentWorkspace.missing ||
+        client == null ||
+        snapshot == null ||
+        taskBusy && !keepBusy) {
+      return;
+    }
+
+    final token = _beginTaskCancellationScope(reuseExisting: keepBusy);
+
+    if (!keepBusy) {
+      taskBusy = true;
+      taskError = null;
+      _beginTaskModelOutput('Project Run Model Output');
+      notifyListeners();
+    }
+    final settings = await _refreshTaskSystemSettings();
+    taskStatusMessage = 'Running project...';
+    notifyListeners();
+
+    try {
+      final compactionSettings = await _preferencesService
+          .getCompactionSettings();
+      final result = await _projectService.runProject(
+        client: client,
+        workspace: currentWorkspace,
+        snapshot: snapshot,
+        baseSystemPrompt: _buildProjectSystemPrompt(snapshot),
+        maxNewTasks: maxNewTasks ?? settings.maxProjectTasksPerRun,
+        requirePhaseApproval: settings.requireApprovalBeforeFileEdits,
+        compactionSettings: compactionSettings,
+        contextLimitTokens: _diagnosticsContextLimit,
+        onCompactionStatus: (status) {
+          taskStatusMessage = status;
+          notifyListeners();
+        },
+        onModelOutput: _handleTaskModelOutput,
+        onTaskUpdated: (task) {
+          activeTask = task;
+          notifyListeners();
+        },
+        cancellationToken: token,
+      );
+      activeProject = result.project;
+      activeTask = result.activeTask;
+      await reloadTasks();
+      _insertTaskAssistantMessage(_projectStatusMessage(result.project));
+    } on TaskCancelledException {
+      _insertTaskAssistantMessage('Project run cancelled.');
+    } catch (e) {
+      taskError = e;
+      _insertTaskErrorBubble('Failed to run project: $e');
+    } finally {
+      if (!keepBusy) {
+        taskBusy = false;
+        _endTaskCancellationScope(token);
+        taskStatusMessage = null;
+        _finishTaskModelOutput();
+        notifyListeners();
+      }
+    }
+  }
+
   Future<String> readTaskArtifact(String artifactPath) async {
     final currentWorkspace = workspace;
     if (currentWorkspace == null || currentWorkspace.missing) {
@@ -918,6 +1337,40 @@ class ChatService extends ChangeNotifier implements Disposable {
       await reloadTasks();
       _insertTaskAssistantMessage(
         'Task plan updated for **${activeTask!.title}**.',
+      );
+    } catch (e) {
+      taskError = e;
+      rethrow;
+    } finally {
+      taskBusy = false;
+      taskStatusMessage = null;
+      notifyListeners();
+    }
+  }
+
+  Future<void> updateProjectPlan(String rawJson) async {
+    final currentWorkspace = workspace;
+    final snapshot = activeProject;
+    if (currentWorkspace == null ||
+        currentWorkspace.missing ||
+        snapshot == null ||
+        taskBusy) {
+      return;
+    }
+
+    taskBusy = true;
+    taskError = null;
+    taskStatusMessage = 'Updating project...';
+    notifyListeners();
+    try {
+      activeProject = await _projectService.updateProject(
+        workspace: currentWorkspace,
+        snapshot: snapshot,
+        rawJson: rawJson,
+      );
+      await reloadTasks();
+      _insertTaskAssistantMessage(
+        'Project updated for **${activeProject!.title}**.',
       );
     } catch (e) {
       taskError = e;
@@ -1397,6 +1850,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     _autosaveTimer?.cancel();
     await flushCurrentChat();
     await _deleteTransientTasksForCurrentScope();
+    await _deleteTransientProjectsForCurrentScope();
     _disposed = true;
     messageStore.clearCurrentId();
     messageStore.clearToolBuffers();
@@ -1452,6 +1906,18 @@ class ChatService extends ChangeNotifier implements Disposable {
     availableTasks = const [];
   }
 
+  Future<void> _deleteTransientProjectsForCurrentScope() async {
+    if (currentChatId != null) return;
+    final currentWorkspace = workspace;
+    if (currentWorkspace == null || currentWorkspace.missing) return;
+    await _projectService.deleteProjectsForChatSession(
+      currentWorkspace,
+      chatSessionId: _chatSessionScopeId,
+    );
+    activeProject = null;
+    availableProjects = const [];
+  }
+
   List<WorkspaceAttachment> _workspacesForSavedChatDeletion(
     String chatId,
     WorkspaceAttachment? savedWorkspace,
@@ -1477,6 +1943,43 @@ class ChatService extends ChangeNotifier implements Disposable {
         chatSessionId: chatSessionId,
       );
     }
+  }
+
+  Future<void> _deleteProjectsForChatSessionInWorkspaces(
+    String chatSessionId,
+    Iterable<WorkspaceAttachment> workspaces,
+  ) async {
+    for (final workspace in workspaces) {
+      await _projectService.deleteProjectsForChatSession(
+        workspace,
+        chatSessionId: chatSessionId,
+      );
+    }
+  }
+
+  Future<void> _clearProjectTaskBlocker() async {
+    final project = activeProject;
+    final currentWorkspace = workspace;
+    if (project == null ||
+        currentWorkspace == null ||
+        currentWorkspace.missing) {
+      return;
+    }
+    final type = project.blocker?.type;
+    if (type != ProjectBlockerType.taskApproval &&
+        type != ProjectBlockerType.taskBlocked &&
+        type != ProjectBlockerType.taskFailed) {
+      return;
+    }
+    activeProject = project.copyWith(
+      status: ProjectStatus.paused,
+      blocker: null,
+      updatedAt: DateTime.now(),
+    );
+    await _projectService.storage.saveSnapshot(
+      currentWorkspace.rootPath,
+      activeProject!,
+    );
   }
 
   TaskCancellationToken _beginTaskCancellationScope({
@@ -1787,6 +2290,10 @@ class ChatService extends ChangeNotifier implements Disposable {
           previousScopeId: previousScopeId,
           savedChatId: saved.id,
         );
+        await _migrateProjectScope(
+          previousScopeId: previousScopeId,
+          savedChatId: saved.id,
+        );
       }
       _dirty = false;
       notifyListeners();
@@ -1833,6 +2340,41 @@ class ChatService extends ChangeNotifier implements Disposable {
     );
   }
 
+  Future<void> _migrateProjectScope({
+    required String previousScopeId,
+    required String savedChatId,
+  }) async {
+    if (previousScopeId == savedChatId) return;
+    final currentWorkspace = workspace;
+    if (currentWorkspace == null || currentWorkspace.missing) return;
+
+    final activeProjectId = activeProject?.id;
+    final projects = await _projectService.listProjects(
+      currentWorkspace,
+      chatSessionId: previousScopeId,
+    );
+    for (final project in projects) {
+      final snapshot = await _projectService.loadProject(
+        currentWorkspace,
+        project.id,
+        chatSessionId: previousScopeId,
+      );
+      if (snapshot == null) continue;
+      final updated = await _projectService.updateProjectChatSessionId(
+        workspace: currentWorkspace,
+        snapshot: snapshot,
+        chatSessionId: savedChatId,
+      );
+      if (updated.id == activeProjectId) {
+        activeProject = updated;
+      }
+    }
+    availableProjects = await _projectService.listProjects(
+      currentWorkspace,
+      chatSessionId: savedChatId,
+    );
+  }
+
   Future<void> _prepareModelRestorePrompt(
     ModelConfigurationSnapshot? snapshot,
   ) async {
@@ -1853,6 +2395,8 @@ class ChatService extends ChangeNotifier implements Disposable {
     _chatSessionScopeId = uuid.v7();
     currentSavedChat = null;
     workspace = null;
+    activeProject = null;
+    availableProjects = const [];
     activeTask = null;
     availableTasks = const [];
     taskError = null;
@@ -1935,6 +2479,10 @@ Workspace rules:
     return _buildSystemPrompt(currentUserRequest: snapshot.originalPrompt);
   }
 
+  String _buildProjectSystemPrompt(ProjectSnapshot snapshot) {
+    return _buildSystemPrompt(currentUserRequest: snapshot.originalPrompt);
+  }
+
   List<Bubble> _withCurrentSystemPrompt(
     List<Bubble> messages, {
     String? currentUserRequest,
@@ -1985,7 +2533,7 @@ Workspace rules:
 
   _SlashCommand? _parseSlashCommand(String text) {
     final match = RegExp(
-      r'^/(task|plan|refine|continue)\b(.*)$',
+      r'^/(continue-project|project|task|plan|refine|continue)\b(.*)$',
     ).firstMatch(text.trim());
     if (match == null) return null;
     return _SlashCommand(
@@ -2095,6 +2643,43 @@ Workspace rules:
     buffer
       ..writeln()
       ..writeln('Task state is stored under `.agent/tasks/${snapshot.id}/`.');
+    return buffer.toString().trim();
+  }
+
+  String _projectCreatedMessage(ProjectSnapshot snapshot) {
+    final buffer = StringBuffer()
+      ..writeln('Project created: **${snapshot.title}**')
+      ..writeln()
+      ..writeln('Status: `${snapshot.status.wire}`')
+      ..writeln()
+      ..writeln('Goal:')
+      ..writeln(snapshot.goal)
+      ..writeln()
+      ..writeln(
+        'Project state is stored under `.agent/projects/${snapshot.id}/`.',
+      );
+    return buffer.toString().trim();
+  }
+
+  String _projectStatusMessage(ProjectSnapshot snapshot) {
+    final buffer = StringBuffer()
+      ..writeln('Project status: **${snapshot.title}**')
+      ..writeln()
+      ..writeln('Status: `${snapshot.status.wire}`');
+    if (snapshot.completionSummary.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln(snapshot.completionSummary.trim());
+    } else if (snapshot.blocker != null) {
+      buffer
+        ..writeln()
+        ..writeln('Blocked: ${snapshot.blocker!.message}');
+    } else if (snapshot.tasks.isNotEmpty) {
+      final latest = snapshot.tasks.last;
+      buffer
+        ..writeln()
+        ..writeln('Latest task: `${latest.taskId}` - ${latest.status.wire}');
+    }
     return buffer.toString().trim();
   }
 

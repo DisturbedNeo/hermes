@@ -276,6 +276,9 @@ class _ComposerState extends State<Composer> {
     if (chat.taskBusy) return 'Task is running...';
     if (chat.chatStream.isStreaming) return 'Streaming response...';
     if (chat.executionMode == ExecutionMode.chat) return 'Type a message...';
+    if (chat.executionMode == ExecutionMode.project) {
+      return 'Describe the project goal...';
+    }
     return 'Describe the task...';
   }
 
@@ -470,6 +473,8 @@ class _ComposerState extends State<Composer> {
             ComposerMode.send => _actionButton(
               icon: chat.executionMode == ExecutionMode.chat
                   ? Icons.send
+                  : chat.executionMode == ExecutionMode.project
+                  ? Icons.rocket_launch_outlined
                   : Icons.account_tree_outlined,
               label: chat.executionMode == ExecutionMode.chat
                   ? 'Send'
@@ -713,6 +718,12 @@ class _ExecutionModeSelector extends StatelessWidget {
             icon: Icon(Icons.account_tree_outlined),
             label: Text('Task'),
             tooltip: 'Task',
+          ),
+          ButtonSegment(
+            value: ExecutionMode.project,
+            icon: Icon(Icons.rocket_launch_outlined),
+            label: Text('Project'),
+            tooltip: 'Project',
           ),
         ],
         selected: {chat.executionMode},

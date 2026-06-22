@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/disposable.dart';
+import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_factory.dart';
@@ -69,6 +70,7 @@ class ServiceProvider {
       registerSingleton(WorkspaceService());
       registerSingleton(ToolService());
       registerSingleton(TaskService(toolService: get<ToolService>()));
+      registerSingleton(ProjectService(taskService: get<TaskService>()));
       registerSingleton(
         ChatLibraryService(preferencesService: get<PreferencesService>()),
       );
@@ -83,6 +85,7 @@ class ServiceProvider {
           systemPromptLibrary: get<SystemPromptLibraryService>(),
           toolService: get<ToolService>(),
           taskService: get<TaskService>(),
+          projectService: get<ProjectService>(),
           workspaceService: get<WorkspaceService>(),
           preferencesService: get<PreferencesService>(),
         ),

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
@@ -273,6 +274,7 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
   Widget _buildBody(bool canMutate) {
     final hasData =
         _entries.isNotEmpty ||
+        (widget.chat?.availableProjects.isNotEmpty ?? false) ||
         (widget.chat?.availableTasks.isNotEmpty ?? false) ||
         _recent.isNotEmpty;
 
@@ -300,6 +302,27 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 subtitle: Text(entry['path'] as String),
+              ),
+          ],
+          if ((widget.chat?.availableProjects.isNotEmpty ?? false)) ...[
+            const _SectionHeader(label: 'Projects In This Chat'),
+            for (final project in widget.chat!.availableProjects.take(12))
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.rocket_launch_outlined),
+                title: Text(
+                  project.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  '${project.status.wire} - ${project.id}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: canMutate
+                    ? () => unawaited(widget.chat?.loadProject(project.id))
+                    : null,
               ),
           ],
           if ((widget.chat?.availableTasks.isNotEmpty ?? false)) ...[

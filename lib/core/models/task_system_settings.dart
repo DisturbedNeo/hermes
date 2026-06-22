@@ -11,12 +11,14 @@ class TaskSystemSettings {
   /// step execution.
   final bool requireApprovalBeforeFileEdits;
   final bool showTaskMessagesInChat;
+  final int maxProjectTasksPerRun;
 
   const TaskSystemSettings({
     this.enabled = true,
     this.requireApprovalBeforeExecution = true,
     this.requireApprovalBeforeFileEdits = true,
     this.showTaskMessagesInChat = true,
+    this.maxProjectTasksPerRun = 5,
   });
 
   TaskSystemSettings copyWith({
@@ -24,6 +26,7 @@ class TaskSystemSettings {
     bool? requireApprovalBeforeExecution,
     bool? requireApprovalBeforeFileEdits,
     bool? showTaskMessagesInChat,
+    int? maxProjectTasksPerRun,
   }) {
     return TaskSystemSettings(
       enabled: enabled ?? this.enabled,
@@ -33,10 +36,14 @@ class TaskSystemSettings {
           requireApprovalBeforeFileEdits ?? this.requireApprovalBeforeFileEdits,
       showTaskMessagesInChat:
           showTaskMessagesInChat ?? this.showTaskMessagesInChat,
+      maxProjectTasksPerRun:
+          maxProjectTasksPerRun ?? this.maxProjectTasksPerRun,
     );
   }
 
-  TaskSystemSettings normalised() => this;
+  TaskSystemSettings normalised() => copyWith(
+    maxProjectTasksPerRun: maxProjectTasksPerRun.clamp(1, 25).toInt(),
+  );
 
   @override
   bool operator ==(Object other) {
@@ -47,7 +54,8 @@ class TaskSystemSettings {
                 other.requireApprovalBeforeExecution &&
             requireApprovalBeforeFileEdits ==
                 other.requireApprovalBeforeFileEdits &&
-            showTaskMessagesInChat == other.showTaskMessagesInChat;
+            showTaskMessagesInChat == other.showTaskMessagesInChat &&
+            maxProjectTasksPerRun == other.maxProjectTasksPerRun;
   }
 
   @override
@@ -56,5 +64,6 @@ class TaskSystemSettings {
     requireApprovalBeforeExecution,
     requireApprovalBeforeFileEdits,
     showTaskMessagesInChat,
+    maxProjectTasksPerRun,
   );
 }

@@ -80,4 +80,21 @@ void main() {
 
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('exposes project execution mode', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomCenter,
+            child: Composer(chat: chat, enabled: true),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Project'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

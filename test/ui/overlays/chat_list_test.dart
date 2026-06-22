@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/saved_chat.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
+import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/service_provider.dart';
@@ -26,6 +27,7 @@ void main() {
 
     preferences = PreferencesService();
     final toolService = ToolService();
+    final taskService = TaskService(toolService: toolService);
     chatLibrary = _FakeChatLibraryService(preferencesService: preferences);
     promptLibrary = SystemPromptLibraryService(
       preferencesService: preferences,
@@ -35,7 +37,8 @@ void main() {
       chatLibrary: chatLibrary,
       systemPromptLibrary: promptLibrary,
       toolService: toolService,
-      taskService: TaskService(toolService: toolService),
+      taskService: taskService,
+      projectService: ProjectService(taskService: taskService),
       workspaceService: WorkspaceService(),
       preferencesService: preferences,
     );

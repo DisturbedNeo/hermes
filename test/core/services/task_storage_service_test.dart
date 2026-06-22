@@ -89,6 +89,30 @@ void main() {
       expect(await storage.loadTask(root.path, 'task_b'), isNotNull);
     });
 
+    test('filters by project id', () async {
+      await storage.saveSnapshot(
+        root.path,
+        _task(id: 'task_a', projectId: 'project_a'),
+      );
+      await storage.saveSnapshot(
+        root.path,
+        _task(id: 'task_b', projectId: 'project_b'),
+      );
+
+      expect(
+        (await storage.listTasks(
+          root.path,
+          projectId: 'project_a',
+        )).map((task) => task.id),
+        ['task_a'],
+      );
+
+      expect(
+        await storage.loadTask(root.path, 'task_b', projectId: 'project_a'),
+        isNull,
+      );
+    });
+
     test('round-trips the raw task json shape', () async {
       final task = _task(id: 'task_json');
       await storage.saveSnapshot(root.path, task);
@@ -101,6 +125,7 @@ void main() {
       expect(decoded['schemaVersion'], 2);
       expect(decoded['steps'], isA<List>());
       expect(decoded['runs'], isA<List>());
+      expect(decoded['projectId'], isNull);
     });
   });
 }
@@ -109,6 +134,7 @@ TaskDocument _task({
   required String id,
   DateTime? updatedAt,
   String? chatSessionId,
+  String? projectId,
 }) {
   final now = DateTime(2026, 1, 1);
   return TaskDocument(
@@ -134,6 +160,7 @@ TaskDocument _task({
     memorySummary: '',
     runs: const [],
     chatSessionId: chatSessionId,
+    projectId: projectId,
     createdAt: now,
     updatedAt: updatedAt ?? now,
   );

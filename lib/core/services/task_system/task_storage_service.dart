@@ -14,6 +14,7 @@ class TaskStorageService {
   Future<List<TaskSummary>> listTasks(
     String workspaceRoot, {
     String? chatSessionId,
+    String? projectId,
   }) async {
     final root = Directory(path.join(workspaceRoot, tasksRoot));
     if (!await root.exists()) return const [];
@@ -30,11 +31,13 @@ class TaskStorageService {
         if (chatSessionId != null && task.chatSessionId != chatSessionId) {
           continue;
         }
+        if (projectId != null && task.projectId != projectId) continue;
         summaries.add(
           TaskSummary(
             id: task.id,
             title: task.title,
             chatSessionId: task.chatSessionId,
+            projectId: task.projectId,
             status: task.status,
             updatedAt: task.updatedAt,
             currentPhaseId: task.currentStepId,
@@ -52,8 +55,13 @@ class TaskStorageService {
   Future<TaskDocument?> loadLatestTask(
     String workspaceRoot, {
     String? chatSessionId,
+    String? projectId,
   }) async {
-    final tasks = await listTasks(workspaceRoot, chatSessionId: chatSessionId);
+    final tasks = await listTasks(
+      workspaceRoot,
+      chatSessionId: chatSessionId,
+      projectId: projectId,
+    );
     if (tasks.isEmpty) return null;
     return loadTask(
       workspaceRoot,
@@ -66,6 +74,7 @@ class TaskStorageService {
     String workspaceRoot,
     String taskId, {
     String? chatSessionId,
+    String? projectId,
   }) async {
     final file = File(
       path.join(_taskDirectory(workspaceRoot, taskId).path, documentFileName),
@@ -77,6 +86,7 @@ class TaskStorageService {
     if (chatSessionId != null && task.chatSessionId != chatSessionId) {
       return null;
     }
+    if (projectId != null && task.projectId != projectId) return null;
     return task;
   }
 

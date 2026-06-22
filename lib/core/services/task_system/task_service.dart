@@ -181,17 +181,24 @@ class TaskService {
   Future<List<TaskSummary>> listTasks(
     WorkspaceAttachment workspace, {
     String? chatSessionId,
+    String? projectId,
   }) {
-    return _storage.listTasks(workspace.rootPath, chatSessionId: chatSessionId);
+    return _storage.listTasks(
+      workspace.rootPath,
+      chatSessionId: chatSessionId,
+      projectId: projectId,
+    );
   }
 
   Future<TaskDocument?> loadLatestTask(
     WorkspaceAttachment workspace, {
     String? chatSessionId,
+    String? projectId,
   }) {
     return _storage.loadLatestTask(
       workspace.rootPath,
       chatSessionId: chatSessionId,
+      projectId: projectId,
     );
   }
 
@@ -199,11 +206,13 @@ class TaskService {
     WorkspaceAttachment workspace,
     String taskId, {
     String? chatSessionId,
+    String? projectId,
   }) {
     return _storage.loadTask(
       workspace.rootPath,
       taskId,
       chatSessionId: chatSessionId,
+      projectId: projectId,
     );
   }
 
@@ -339,6 +348,7 @@ $userPrompt
     required ExecutionMode selectedMode,
     required String baseSystemPrompt,
     String? chatSessionId,
+    String? projectId,
     TaskModelOutputSink? onModelOutput,
     TaskCancellationToken? cancellationToken,
   }) async {
@@ -395,6 +405,7 @@ $userPrompt
         taskId: taskId,
         originalPrompt: userPrompt,
         chatSessionId: chatSessionId,
+        projectId: projectId,
         now: now,
       );
     } on TaskCancelledException {
@@ -404,6 +415,7 @@ $userPrompt
         taskId: taskId,
         userPrompt: userPrompt,
         chatSessionId: chatSessionId,
+        projectId: projectId,
         now: now,
       );
     }
@@ -420,7 +432,11 @@ $userPrompt
     final parsed = TaskDocument.fromJson(TaskJson.parseObject(rawJson));
     final now = DateTime.now();
     final normalised = _normaliseEditedTask(
-      parsed.copyWith(id: snapshot.id, chatSessionId: snapshot.chatSessionId),
+      parsed.copyWith(
+        id: snapshot.id,
+        chatSessionId: snapshot.chatSessionId,
+        projectId: snapshot.projectId,
+      ),
       snapshot,
       now,
     );
@@ -2111,6 +2127,7 @@ When finished, call finish_task_step with this result object. If finish_task_ste
     required String taskId,
     required String originalPrompt,
     required String? chatSessionId,
+    required String? projectId,
     required DateTime now,
   }) {
     final steps = _stepsFromJson(json['steps'], taskId);
@@ -2138,6 +2155,7 @@ When finished, call finish_task_step with this result object. If finish_task_ste
       memorySummary: '',
       runs: const [],
       chatSessionId: chatSessionId,
+      projectId: projectId,
       createdAt: now,
       updatedAt: now,
     );
@@ -2280,6 +2298,7 @@ When finished, call finish_task_step with this result object. If finish_task_ste
     required String taskId,
     required String userPrompt,
     required String? chatSessionId,
+    required String? projectId,
     required DateTime now,
   }) {
     final step = _fallbackExecutionStep(taskId, userPrompt);
@@ -2296,6 +2315,7 @@ When finished, call finish_task_step with this result object. If finish_task_ste
       memorySummary: '',
       runs: const [],
       chatSessionId: chatSessionId,
+      projectId: projectId,
       createdAt: now,
       updatedAt: now,
     );
