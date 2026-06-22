@@ -23,6 +23,13 @@ extension TerminalCommandClassWire on TerminalCommandClass {
 class TerminalCommandClassifier {
   const TerminalCommandClassifier._();
 
+  static String? blockedReason({
+    required String executable,
+    required List<String> arguments,
+  }) {
+    return _blockedReasonForTokens([executable, ...arguments]);
+  }
+
   static TerminalCommandClass classify(String command) {
     final trimmed = command.trim();
     if (trimmed.isEmpty) return TerminalCommandClass.unknown;
@@ -71,6 +78,75 @@ class TerminalCommandClassifier {
       return TerminalCommandClass.readOnly;
     }
     return TerminalCommandClass.unknown;
+  }
+
+  static String? _blockedReasonForTokens(List<String> rawTokens) {
+    final tokens = _stripWrappers(rawTokens);
+    if (tokens.isEmpty) return null;
+
+    final executable = _normaliseExecutable(tokens.first);
+    final args = tokens.skip(1).toList();
+
+    final directReason = _blockedDirectInvocation(executable, args);
+    if (directReason != null) return directReason;
+
+    final shellCommand = _shellCommandArgument(executable, args);
+    if (shellCommand == null) return null;
+    return _blockedReasonForCommandLine(shellCommand);
+  }
+
+  static String? _blockedReasonForCommandLine(String command) {
+    for (final segment in _splitCommandSegments(command)) {
+      final reason = _blockedReasonForTokens(_tokenize(segment));
+      if (reason != null) return reason;
+    }
+    return null;
+  }
+
+  static String? _blockedDirectInvocation(
+    String executable,
+    List<String> args,
+  ) {
+    if (_fileDeletionCommands.contains(executable)) {
+      return 'File deletion commands are blocked by terminal policy. Use workspace delete tools for scoped file removal.';
+    }
+    if (_diskCommands.contains(executable) || executable.startsWith('mkfs.')) {
+      return 'Disk formatting, partitioning, and raw disk commands are blocked by terminal policy.';
+    }
+    if (_privilegeEscalationCommands.contains(executable)) {
+      return 'Privilege escalation commands are blocked by terminal policy.';
+    }
+    if (_processControlCommands.contains(executable)) {
+      return 'Process control commands are blocked by terminal policy.';
+    }
+    if (_systemControlCommands.contains(executable)) {
+      return 'System control commands are blocked by terminal policy.';
+    }
+    if (_accountManagementCommands.contains(executable)) {
+      return 'Account management commands are blocked by terminal policy.';
+    }
+    if (_networkAdministrationCommands.contains(executable)) {
+      return 'Network administration commands are blocked by terminal policy.';
+    }
+    if (executable == 'git') {
+      return _blockedGitReason(args);
+    }
+    if (executable == 'find' && args.contains('-delete')) {
+      return 'find -delete is blocked by terminal policy because it can delete many files.';
+    }
+    return null;
+  }
+
+  static String? _blockedGitReason(List<String> args) {
+    if (args.isEmpty) return null;
+    final subcommand = args.first;
+    if (subcommand == 'clean') {
+      return 'git clean is blocked by terminal policy because it can delete untracked work.';
+    }
+    if (subcommand == 'reset' && args.contains('--hard')) {
+      return 'git reset --hard is blocked by terminal policy because it can discard work.';
+    }
+    return null;
   }
 
   static TerminalCommandClass _classifyGit(List<String> args) {
@@ -340,6 +416,102 @@ class TerminalCommandClassifier {
         RegExp(r'(^|\s)tee(\s|$)').hasMatch(command);
   }
 
+  static String? _shellCommandArgument(String executable, List<String> args) {
+    if (const {
+      'sh',
+      'bash',
+      'zsh',
+      'dash',
+      'ksh',
+      'fish',
+    }.contains(executable)) {
+      for (var i = 0; i < args.length; i++) {
+        final arg = args[i];
+        final isCommandFlag =
+            arg == '-c' ||
+            (arg.startsWith('-') &&
+                !arg.startsWith('--') &&
+                arg.substring(1).contains('c'));
+        if (isCommandFlag && i + 1 < args.length) return args[i + 1];
+      }
+      return null;
+    }
+
+    if (executable == 'cmd') {
+      for (var i = 0; i < args.length; i++) {
+        final arg = args[i].toLowerCase();
+        if ((arg == '/c' || arg == '/k') && i + 1 < args.length) {
+          return args.skip(i + 1).join(' ');
+        }
+      }
+      return null;
+    }
+
+    if (executable == 'powershell' || executable == 'pwsh') {
+      for (var i = 0; i < args.length; i++) {
+        final arg = args[i].toLowerCase();
+        if ((arg == '-command' || arg == '-c') && i + 1 < args.length) {
+          return args.skip(i + 1).join(' ');
+        }
+      }
+    }
+    return null;
+  }
+
+  static List<String> _splitCommandSegments(String command) {
+    final segments = <String>[];
+    final buffer = StringBuffer();
+    String? quote;
+    var escaped = false;
+
+    void flush() {
+      final segment = buffer.toString().trim();
+      if (segment.isNotEmpty) segments.add(segment);
+      buffer.clear();
+    }
+
+    for (final codePoint in command.runes) {
+      final char = String.fromCharCode(codePoint);
+      if (escaped) {
+        buffer.write(char);
+        escaped = false;
+        continue;
+      }
+      if (char == r'\') {
+        buffer.write(char);
+        escaped = true;
+        continue;
+      }
+      if (quote != null) {
+        if (char == quote) {
+          quote = null;
+        }
+        buffer.write(char);
+        continue;
+      }
+      if (char == '"' || char == "'") {
+        quote = char;
+        buffer.write(char);
+        continue;
+      }
+      if (char == ';' || char == '|' || char == '&') {
+        flush();
+        continue;
+      }
+      buffer.write(char);
+    }
+    flush();
+    return segments;
+  }
+
+  static String _normaliseExecutable(String executable) {
+    final parts = executable.toLowerCase().split(RegExp(r'[\\/]'));
+    final basename = parts.isEmpty ? executable.toLowerCase() : parts.last;
+    return basename.endsWith('.exe')
+        ? basename.substring(0, basename.length - 4)
+        : basename;
+  }
+
   static List<String> _tokenize(String command) {
     final tokens = <String>[];
     final buffer = StringBuffer();
@@ -381,4 +553,74 @@ class TerminalCommandClassifier {
     if (buffer.isNotEmpty) tokens.add(buffer.toString());
     return tokens;
   }
+
+  static const Set<String> _fileDeletionCommands = {
+    'rm',
+    'rmdir',
+    'unlink',
+    'shred',
+    'srm',
+    'wipe',
+    'del',
+    'erase',
+    'rd',
+    'remove-item',
+  };
+
+  static const Set<String> _diskCommands = {
+    'dd',
+    'mkfs',
+    'mke2fs',
+    'fsck',
+    'fdisk',
+    'cfdisk',
+    'sfdisk',
+    'gdisk',
+    'parted',
+    'mount',
+    'umount',
+    'cryptsetup',
+    'lvremove',
+    'vgremove',
+    'pvremove',
+  };
+
+  static const Set<String> _privilegeEscalationCommands = {
+    'sudo',
+    'su',
+    'doas',
+    'pkexec',
+  };
+
+  static const Set<String> _processControlCommands = {
+    'kill',
+    'killall',
+    'pkill',
+  };
+
+  static const Set<String> _systemControlCommands = {
+    'shutdown',
+    'reboot',
+    'halt',
+    'poweroff',
+    'systemctl',
+    'service',
+    'launchctl',
+  };
+
+  static const Set<String> _accountManagementCommands = {
+    'userdel',
+    'usermod',
+    'groupdel',
+    'groupmod',
+    'passwd',
+  };
+
+  static const Set<String> _networkAdministrationCommands = {
+    'iptables',
+    'ip6tables',
+    'nft',
+    'ufw',
+    'firewall-cmd',
+  };
 }

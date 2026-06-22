@@ -217,6 +217,53 @@ void main() {
         ),
       );
     });
+
+    test('runCommand blocks dangerous executables before spawning', () async {
+      final file = File('${root.path}/generated.txt')
+        ..writeAsStringSync('important');
+
+      await expectLater(
+        sandbox.runCommand(
+          root.path,
+          executable: 'rm',
+          arguments: ['generated.txt'],
+        ),
+        throwsA(
+          isA<WorkspaceSandboxException>().having(
+            (error) => error.message,
+            'message',
+            contains('File deletion commands'),
+          ),
+        ),
+      );
+
+      expect(await file.exists(), isTrue);
+    });
+
+    test(
+      'runCommand blocks dangerous commands inside shell wrappers',
+      () async {
+        final file = File('${root.path}/generated.txt')
+          ..writeAsStringSync('important');
+
+        await expectLater(
+          sandbox.runCommand(
+            root.path,
+            executable: 'bash',
+            arguments: ['-lc', 'echo ok && rm generated.txt'],
+          ),
+          throwsA(
+            isA<WorkspaceSandboxException>().having(
+              (error) => error.message,
+              'message',
+              contains('File deletion commands'),
+            ),
+          ),
+        );
+
+        expect(await file.exists(), isTrue);
+      },
+    );
   });
 
   group('ToolService workspace tools', () {
@@ -260,6 +307,30 @@ void main() {
       );
 
       expect(result, contains('Terminal commands are disabled'));
+    });
+
+    test('reports blocked terminal commands as tool errors', () async {
+      final root = await Directory.systemTemp.createTemp('hermes_workspace_');
+      addTearDown(() async {
+        if (await root.exists()) await root.delete(recursive: true);
+      });
+      await File('${root.path}/generated.txt').writeAsString('important');
+
+      final service = ToolService();
+      final result = await service.execute(
+        toolId: 'run_command',
+        argumentsJson: '{"command":"rm","args":["generated.txt"]}',
+        context: WorkspaceToolContext(
+          workspace: WorkspaceAttachment.fromPath(
+            root.path,
+            commandExecutionApproved: true,
+          ),
+        ),
+      );
+
+      expect(result, contains('"error"'));
+      expect(result, contains('File deletion commands'));
+      expect(await File('${root.path}/generated.txt').exists(), isTrue);
     });
   });
 }

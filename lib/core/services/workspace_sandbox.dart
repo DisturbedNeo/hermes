@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:path/path.dart' as path;
 
+import 'package:hermes/core/services/terminal_command_classifier.dart';
+
 class WorkspaceSandbox {
   static const int maxReadBytes = 1024 * 1024;
   static const int maxSearchResults = 100;
@@ -308,6 +310,13 @@ class WorkspaceSandbox {
       throw WorkspaceSandboxException(
         'Use an executable name, not an absolute or relative executable path.',
       );
+    }
+    final blockedReason = TerminalCommandClassifier.blockedReason(
+      executable: executable,
+      arguments: arguments,
+    );
+    if (blockedReason != null) {
+      throw WorkspaceSandboxException(blockedReason);
     }
 
     final cwd = await resolve(rootPath, workingDirectory, directory: true);

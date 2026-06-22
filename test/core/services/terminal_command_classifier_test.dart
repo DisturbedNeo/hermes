@@ -53,5 +53,77 @@ void main() {
         TerminalCommandClass.gitCommand,
       );
     });
+
+    test('blocks dangerous terminal commands by default', () {
+      expect(
+        TerminalCommandClassifier.blockedReason(
+          executable: 'rm',
+          arguments: ['generated.txt'],
+        ),
+        contains('File deletion commands'),
+      );
+      expect(
+        TerminalCommandClassifier.blockedReason(
+          executable: 'git',
+          arguments: ['clean', '-fd'],
+        ),
+        contains('git clean'),
+      );
+      expect(
+        TerminalCommandClassifier.blockedReason(
+          executable: 'find',
+          arguments: ['.', '-delete'],
+        ),
+        contains('find -delete'),
+      );
+      expect(
+        TerminalCommandClassifier.blockedReason(
+          executable: 'sudo',
+          arguments: ['apt', 'install', 'package'],
+        ),
+        contains('Privilege escalation'),
+      );
+    });
+
+    test('blocks dangerous commands hidden behind shell wrappers', () {
+      expect(
+        TerminalCommandClassifier.blockedReason(
+          executable: 'bash',
+          arguments: ['-lc', 'echo ok && rm generated.txt'],
+        ),
+        contains('File deletion commands'),
+      );
+      expect(
+        TerminalCommandClassifier.blockedReason(
+          executable: 'cmd',
+          arguments: ['/c', 'del generated.txt'],
+        ),
+        contains('File deletion commands'),
+      );
+      expect(
+        TerminalCommandClassifier.blockedReason(
+          executable: 'pwsh',
+          arguments: ['-Command', 'Remove-Item generated.txt'],
+        ),
+        contains('File deletion commands'),
+      );
+    });
+
+    test('does not block ordinary read-only commands', () {
+      expect(
+        TerminalCommandClassifier.blockedReason(
+          executable: 'rg',
+          arguments: ['needle', 'lib'],
+        ),
+        isNull,
+      );
+      expect(
+        TerminalCommandClassifier.blockedReason(
+          executable: 'git',
+          arguments: ['status', '--short'],
+        ),
+        isNull,
+      );
+    });
   });
 }
