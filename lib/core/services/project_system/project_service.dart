@@ -32,7 +32,9 @@ class ProjectService {
     ProjectModelCalls? modelCalls,
   }) : _taskService = taskService,
        _storage = storage ?? ProjectStorageService(),
-       _modelCalls = modelCalls ?? ProjectModelCalls();
+       _modelCalls =
+           modelCalls ??
+           ProjectModelCalls(toolService: taskService.toolService);
 
   final TaskService _taskService;
   final ProjectStorageService _storage;
@@ -132,6 +134,7 @@ class ProjectService {
         : await _modelCalls.initializeProject(
             client: client,
             baseSystemPrompt: baseSystemPrompt,
+            workspace: workspace,
             originalGoal: userPrompt,
             workspaceMetadata: metadata,
             onModelOutput: onModelOutput,
@@ -612,6 +615,7 @@ class ProjectService {
     final refresh = await _modelCalls.refreshBacklog(
       client: client,
       baseSystemPrompt: baseSystemPrompt,
+      workspace: workspace,
       project: project,
       workspaceMetadata: metadata,
       onModelOutput: onModelOutput,

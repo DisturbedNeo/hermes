@@ -148,6 +148,55 @@ void main() {
       },
     );
 
+    test(
+      'initialization can inspect files before finalising project',
+      () async {
+        await File(
+          '${root.path}/design.md',
+        ).writeAsString('# Design\nBuild a reporting dashboard.\n');
+        final project = await service.createProject(
+          client: _QueueCompletionClient([
+            ChatCompletionResponse(
+              content: '',
+              toolCalls: [
+                ChatCompletionToolCall(
+                  name: 'read_file',
+                  arguments: jsonEncode({'path': 'design.md'}),
+                ),
+              ],
+            ),
+            ChatCompletionResponse(
+              content: '',
+              toolCalls: [
+                ChatCompletionToolCall(
+                  name: 'finaliseProjectCreation',
+                  arguments: jsonEncode({
+                    'title': 'Reporting dashboard',
+                    'refinedGoal': 'Build a reporting dashboard',
+                    'successCriteria': ['Dashboard matches the design'],
+                    'constraints': ['Stay in workspace'],
+                    'knownFacts': ['Design requests a reporting dashboard.'],
+                    'openQuestions': [],
+                    'backlog': [_projectTaskJson()],
+                  }),
+                ),
+              ],
+            ),
+          ]),
+          workspace: workspace,
+          userPrompt: 'Build from the design doc',
+          chatSessionId: 'chat_1',
+          baseSystemPrompt: 'system',
+        );
+
+        expect(project.title, 'Reporting dashboard');
+        expect(
+          project.knownFacts,
+          contains('Design requests a reporting dashboard.'),
+        );
+      },
+    );
+
     test('stops when backlog refresh raises an open question', () async {
       final created = await service.createProject(
         workspace: workspace,
@@ -181,6 +230,68 @@ void main() {
       expect(result.activeTask, isNull);
       expect(result.project.completedTasks, isEmpty);
     });
+
+    test(
+      'backlog refresh can inspect files before finalising project',
+      () async {
+        await File(
+          '${root.path}/design.md',
+        ).writeAsString('# Design\nUse the analytics endpoint.\n');
+        final created = await service.createProject(
+          workspace: workspace,
+          userPrompt: 'Build the app',
+          chatSessionId: 'chat_1',
+        );
+        final project = created.copyWith(
+          backlog: const [],
+          successCriteria: const ['Finish'],
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'read_file',
+                arguments: jsonEncode({'path': 'design.md'}),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'finaliseProjectCreation',
+                arguments: jsonEncode({
+                  'backlog': [_projectTaskJson()],
+                  'knownFacts': ['Design mentions the analytics endpoint.'],
+                  'openQuestions': [
+                    {'question': 'Which analytics endpoint should be used?'},
+                  ],
+                }),
+              ),
+            ],
+          ),
+        ]);
+
+        final result = await service.runProject(
+          client: client,
+          workspace: workspace,
+          snapshot: project,
+          baseSystemPrompt: 'system',
+          maxNewTasks: 5,
+        );
+
+        expect(result.project.status, ProjectStatus.waitingForUser);
+        expect(
+          result.project.knownFacts,
+          contains('Design mentions the analytics endpoint.'),
+        );
+        expect(client.seenToolNames.first, contains('read_file'));
+        expect(client.seenToolNames.first, contains('finaliseProjectCreation'));
+        expect(client.seenToolNames.first, isNot(contains('write_file')));
+        expect(client.seenToolNames.first, isNot(contains('run_command')));
+      },
+    );
 
     test('blocks repeated next task proposals', () async {
       final project = await service.createProject(
@@ -312,6 +423,41 @@ class _QueueChatClient extends ChatClient {
     final index = _index >= _responses.length ? _responses.length - 1 : _index;
     _index++;
     return ChatCompletionResponse(content: _responses[index]);
+  }
+
+  @override
+  void dispose() {}
+}
+
+class _QueueCompletionClient extends ChatClient {
+  _QueueCompletionClient(this._responses)
+    : super(baseUrl: 'http://localhost', model: 'test');
+
+  final List<ChatCompletionResponse> _responses;
+  final List<Set<String>> seenToolNames = [];
+  final List<List<ChatMessage>> seenMessages = [];
+  var _index = 0;
+
+  @override
+  Future<ChatCompletionResponse> completeChat({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+  }) async {
+    seenMessages.add(List<ChatMessage>.of(messages));
+    seenToolNames.add(_toolNames(extraParams));
+    final index = _index >= _responses.length ? _responses.length - 1 : _index;
+    _index++;
+    return _responses[index];
+  }
+
+  Set<String> _toolNames(Map<String, dynamic>? extraParams) {
+    final tools = extraParams?['tools'];
+    if (tools is! List) return const {};
+    return {
+      for (final tool in tools.whereType<Map>())
+        if (tool['function'] is Map)
+          ((tool['function'] as Map)['name'] ?? '').toString(),
+    }..remove('');
   }
 
   @override

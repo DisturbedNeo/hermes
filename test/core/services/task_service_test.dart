@@ -59,6 +59,82 @@ void main() {
       );
     });
 
+    test('planner can inspect files before finalising task creation', () async {
+      await File(
+        path.join(root.path, 'design.md'),
+      ).writeAsString('# Design\nBuild the analytics screen.\n');
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'read_file',
+              arguments: jsonEncode({'path': 'design.md'}),
+            ),
+          ],
+        ),
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'finaliseTaskCreation',
+              arguments: jsonEncode(_planJson(title: 'Design-informed task')),
+            ),
+          ],
+        ),
+      ]);
+
+      final task = await service.createTask(
+        client: client,
+        workspace: workspace,
+        userPrompt: 'Plan from the design document',
+        selectedMode: ExecutionMode.task,
+        baseSystemPrompt: 'system',
+        chatSessionId: 'chat_1',
+      );
+
+      expect(task.title, 'Design-informed task');
+      expect(client.requestCount, 2);
+      expect(client.seenToolNames.first, contains('read_file'));
+      expect(client.seenToolNames.first, contains('search_files'));
+      expect(client.seenToolNames.first, contains('finaliseTaskCreation'));
+      expect(client.seenToolNames.first, isNot(contains('write_file')));
+      expect(client.seenToolNames.first, isNot(contains('patch_file')));
+      expect(client.seenToolNames.first, isNot(contains('run_command')));
+      expect(
+        client.seenMessages.last.any((message) {
+          return message.role == 'tool' &&
+              message.content.contains('Build the analytics screen');
+        }),
+        isTrue,
+      );
+    });
+
+    test('planner retries once when finalizer is missing', () async {
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: jsonEncode(_planJson(title: 'Plain JSON task')),
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode(_planJson(title: 'Repaired JSON task')),
+        ),
+      ]);
+
+      final task = await service.createTask(
+        client: client,
+        workspace: workspace,
+        userPrompt: 'Build the reporting screen',
+        selectedMode: ExecutionMode.task,
+        baseSystemPrompt: 'system',
+        chatSessionId: 'chat_1',
+      );
+
+      expect(task.title, 'Repaired JSON task');
+      expect(client.requestCount, 2);
+      expect(client.seenToolNames.first, contains('finaliseTaskCreation'));
+      expect(client.seenToolNames.last, isEmpty);
+    });
+
     test('passes terminal approval into task planner metadata', () async {
       workspace = workspace.copyWith(commandExecutionApproved: true);
       final client = _QueueChatClient([
@@ -74,7 +150,7 @@ void main() {
         chatSessionId: 'chat_1',
       );
 
-      final plannerRequest = client.seenMessages.single.last.content;
+      final plannerRequest = client.seenMessages.first.last.content;
       expect(plannerRequest, contains('"commandExecutionApproved": true'));
     });
 
@@ -102,7 +178,7 @@ void main() {
           ),
         );
 
-        final plannerRequest = client.seenMessages.single.last.content;
+        final plannerRequest = client.seenMessages.first.last.content;
         expect(plannerRequest, contains('Bounded Project task context'));
         expect(
           plannerRequest,

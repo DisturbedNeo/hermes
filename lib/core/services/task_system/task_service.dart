@@ -18,6 +18,7 @@ import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
+import 'package:hermes/core/services/task_system/finalizer_tool_call_runner.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/task_system/task_storage_service.dart';
@@ -194,21 +195,83 @@ const ToolDefinition _finishTaskStepToolDefinition = ToolDefinition(
   },
 );
 
+const String _finaliseTaskCreationToolId = 'finaliseTaskCreation';
+
+const ToolDefinition _finaliseTaskCreationToolDefinition = ToolDefinition(
+  id: _finaliseTaskCreationToolId,
+  name: 'Finalise task creation',
+  description:
+      'Finalize task creation with the complete structured task plan. Call this exactly once after any needed read-only workspace discovery.',
+  schema: {
+    'type': 'object',
+    'properties': {
+      'title': {'type': 'string'},
+      'goal': {'type': 'string'},
+      'constraints': {
+        'type': 'array',
+        'items': {'type': 'string'},
+      },
+      'successCriteria': {
+        'type': 'array',
+        'items': {'type': 'string'},
+      },
+      'steps': {
+        'type': 'array',
+        'items': {
+          'type': 'object',
+          'properties': {
+            'id': {'type': 'string'},
+            'title': {'type': 'string'},
+            'objective': {'type': 'string'},
+            'instructions': {
+              'type': 'array',
+              'items': {'type': 'string'},
+            },
+            'mayEditFiles': {'type': 'boolean'},
+            'artifacts': {
+              'type': 'array',
+              'items': {
+                'type': 'object',
+                'properties': {
+                  'path': {'type': 'string'},
+                  'description': {'type': 'string'},
+                },
+                'required': ['path'],
+              },
+            },
+          },
+          'required': [
+            'id',
+            'title',
+            'objective',
+            'instructions',
+            'mayEditFiles',
+          ],
+        },
+      },
+    },
+    'required': ['title', 'goal', 'successCriteria', 'steps'],
+  },
+);
+
 class TaskService {
   TaskService({
     required ToolService toolService,
     TaskStorageService? storage,
     WorkspaceSandbox? sandbox,
   }) : _toolService = toolService,
+       _creationRunner = FinalizerToolCallRunner(toolService: toolService),
        _storage = storage ?? TaskStorageService(),
        _sandbox = sandbox ?? WorkspaceSandbox();
 
   final ToolService _toolService;
+  final FinalizerToolCallRunner _creationRunner;
   final TaskStorageService _storage;
   final WorkspaceSandbox _sandbox;
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
 
   TaskStorageService get storage => _storage;
+  ToolService get toolService => _toolService;
 
   Future<List<TaskSummary>> listTasks(
     WorkspaceAttachment workspace, {
@@ -394,10 +457,11 @@ $userPrompt
 
     TaskDocument task;
     try {
-      final json = await _completeJson(
+      final json = await _completeTaskCreation(
         client: client,
         system: '$baseSystemPrompt\n\n$_plannerSystemInstruction',
         label: 'Task Planner',
+        workspace: workspace,
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
         user: _buildPlannerPrompt(
@@ -424,6 +488,7 @@ $userPrompt
             taskId: taskId,
             originalPrompt: userPrompt,
             baseSystemPrompt: baseSystemPrompt,
+            workspace: workspace,
             metadata: metadata,
             planningContext: planningContext,
             violations: violations,
@@ -911,12 +976,64 @@ $userPrompt
 ''';
   }
 
+  Future<Map<String, dynamic>> _completeTaskCreation({
+    required ChatClient client,
+    required WorkspaceAttachment workspace,
+    required String system,
+    required String user,
+    required String label,
+    bool allowReadOnlyTools = true,
+    TaskModelOutputSink? onModelOutput,
+    TaskCancellationToken? cancellationToken,
+  }) {
+    return _creationRunner.completeWithFinalizer(
+      client: client,
+      workspace: workspace,
+      label: label,
+      system:
+          '''
+$system
+
+You may use read-only tools to inspect the workspace before creating the task plan.
+Do not edit files, run terminal commands, rename paths, delete paths, or create task artifacts during task creation.
+When the task plan is ready, call the $_finaliseTaskCreationToolId tool with the complete structured task plan.
+'''
+              .trim(),
+      user: user,
+      finalizerTool: _finaliseTaskCreationToolDefinition,
+      reminderPrompt:
+          '''
+You did not call $_finaliseTaskCreationToolId. Return only the JSON object that would be passed as that tool's arguments:
+{
+  "title": "...",
+  "goal": "...",
+  "constraints": ["..."],
+  "successCriteria": ["..."],
+  "steps": [
+    {
+      "id": "short_stable_id",
+      "title": "...",
+      "objective": "...",
+      "instructions": ["..."],
+      "mayEditFiles": false,
+      "artifacts": []
+    }
+  ]
+}
+''',
+      allowReadOnlyTools: allowReadOnlyTools,
+      onModelOutput: onModelOutput,
+      throwIfCancelled: cancellationToken?.throwIfCancelled,
+    );
+  }
+
   Future<TaskDocument> _repairProjectBoundedTaskPlan({
     required ChatClient client,
     required TaskDocument task,
     required String taskId,
     required String originalPrompt,
     required String baseSystemPrompt,
+    required WorkspaceAttachment workspace,
     required _WorkspaceMetadata metadata,
     required TaskPlanningContext planningContext,
     required List<String> violations,
@@ -927,10 +1044,12 @@ $userPrompt
     TaskCancellationToken? cancellationToken,
   }) async {
     try {
-      final json = await _completeJson(
+      final json = await _completeTaskCreation(
         client: client,
         system: '$baseSystemPrompt\n\n$_plannerSystemInstruction',
         label: 'Task Plan Repair',
+        workspace: workspace,
+        allowReadOnlyTools: false,
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
         user:

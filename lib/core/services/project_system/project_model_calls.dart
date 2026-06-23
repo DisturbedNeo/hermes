@@ -4,9 +4,13 @@ import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/project.dart';
+import 'package:hermes/core/models/tool_definition.dart';
+import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/core/services/task_system/finalizer_tool_call_runner.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
+import 'package:hermes/core/services/tool_service.dart';
 
 class ProjectInitialisation {
   final String title;
@@ -55,23 +59,38 @@ class ProjectBacklogRefresh {
 }
 
 class ProjectModelCalls {
+  ProjectModelCalls({required ToolService toolService})
+    : _creationRunner = FinalizerToolCallRunner(toolService: toolService);
+
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
+  final FinalizerToolCallRunner _creationRunner;
 
   Future<ProjectInitialisation> initializeProject({
     required ChatClient client,
     required String baseSystemPrompt,
+    required WorkspaceAttachment workspace,
     required String originalGoal,
     required Map<String, dynamic> workspaceMetadata,
     TaskModelOutputSink? onModelOutput,
   }) async {
     try {
-      final json = await _completeJson(
+      final json = await _completeFinalizedJson(
         client: client,
+        workspace: workspace,
         label: 'Project Initializer',
         system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
         onModelOutput: onModelOutput,
         expectedShape:
             '{"title":"...","refinedGoal":"...","successCriteria":["..."],"constraints":["..."],"knownFacts":["..."],"openQuestions":[{"question":"..."}],"backlog":[{"title":"...","objective":"...","relevantSuccessCriteria":["..."],"doneCriteria":["..."],"outOfScope":["..."],"context":["..."],"expectedArtifacts":[]}]}',
+        finalizerTool: _finaliseProjectCreationToolDefinition(
+          requiredProperties: const [
+            'title',
+            'refinedGoal',
+            'successCriteria',
+            'constraints',
+            'backlog',
+          ],
+        ),
         user:
             '''
 Initialize a persistent project state. Do not execute the project.
@@ -137,18 +156,23 @@ $originalGoal
   Future<ProjectBacklogRefresh> refreshBacklog({
     required ChatClient client,
     required String baseSystemPrompt,
+    required WorkspaceAttachment workspace,
     required ProjectState project,
     required Map<String, dynamic> workspaceMetadata,
     TaskModelOutputSink? onModelOutput,
   }) async {
     try {
-      final json = await _completeJson(
+      final json = await _completeFinalizedJson(
         client: client,
+        workspace: workspace,
         label: 'Project Backlog Refresh',
         system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
         onModelOutput: onModelOutput,
         expectedShape:
             '{"backlog":[{"title":"...","objective":"...","relevantSuccessCriteria":["..."],"doneCriteria":["..."],"outOfScope":["..."],"context":["..."],"expectedArtifacts":[]}],"knownFacts":["..."],"openQuestions":[{"question":"..."}]}',
+        finalizerTool: _finaliseProjectCreationToolDefinition(
+          requiredProperties: const ['backlog'],
+        ),
         user:
             '''
 Refresh the project backlog. Return only small, bounded, independently verifiable tasks.
@@ -385,6 +409,40 @@ Return only the repaired JSON object.
     return TaskJson.parseObject(repaired);
   }
 
+  Future<Map<String, dynamic>> _completeFinalizedJson({
+    required ChatClient client,
+    required WorkspaceAttachment workspace,
+    required String system,
+    required String user,
+    required String label,
+    required String expectedShape,
+    required ToolDefinition finalizerTool,
+    TaskModelOutputSink? onModelOutput,
+  }) {
+    return _creationRunner.completeWithFinalizer(
+      client: client,
+      workspace: workspace,
+      label: label,
+      system:
+          '''
+$system
+
+You may use read-only tools to inspect the workspace before creating or refreshing the project state.
+Do not edit files, run terminal commands, rename paths, delete paths, or create artifacts during project creation.
+When the project creation data is ready, call the $_finaliseProjectCreationToolId tool with the complete structured payload.
+'''
+              .trim(),
+      user: user,
+      finalizerTool: finalizerTool,
+      reminderPrompt:
+          '''
+You did not call $_finaliseProjectCreationToolId. Return only the JSON object that would be passed as that tool's arguments, matching this shape:
+$expectedShape
+''',
+      onModelOutput: onModelOutput,
+    );
+  }
+
   Future<String> _completeRaw({
     required ChatClient client,
     required String system,
@@ -524,11 +582,92 @@ Return only the repaired JSON object.
   }
 }
 
+const String _finaliseProjectCreationToolId = 'finaliseProjectCreation';
+
+ToolDefinition _finaliseProjectCreationToolDefinition({
+  required List<String> requiredProperties,
+}) {
+  return ToolDefinition(
+    id: _finaliseProjectCreationToolId,
+    name: 'Finalise project creation',
+    description:
+        'Finalize project creation or backlog refresh with the complete structured project payload. Call this exactly once after any needed read-only workspace discovery.',
+    schema: {
+      'type': 'object',
+      'properties': {
+        'title': {'type': 'string'},
+        'refinedGoal': {'type': 'string'},
+        'successCriteria': {
+          'type': 'array',
+          'items': {'type': 'string'},
+        },
+        'constraints': {
+          'type': 'array',
+          'items': {'type': 'string'},
+        },
+        'knownFacts': {
+          'type': 'array',
+          'items': {'type': 'string'},
+        },
+        'openQuestions': {
+          'type': 'array',
+          'items': {
+            'type': 'object',
+            'properties': {
+              'question': {'type': 'string'},
+            },
+            'required': ['question'],
+          },
+        },
+        'backlog': {
+          'type': 'array',
+          'items': {
+            'type': 'object',
+            'properties': {
+              'title': {'type': 'string'},
+              'objective': {'type': 'string'},
+              'relevantSuccessCriteria': {
+                'type': 'array',
+                'items': {'type': 'string'},
+              },
+              'doneCriteria': {
+                'type': 'array',
+                'items': {'type': 'string'},
+              },
+              'outOfScope': {
+                'type': 'array',
+                'items': {'type': 'string'},
+              },
+              'context': {
+                'type': 'array',
+                'items': {'type': 'string'},
+              },
+              'expectedArtifacts': {
+                'type': 'array',
+                'items': {
+                  'type': 'object',
+                  'properties': {
+                    'path': {'type': 'string'},
+                    'description': {'type': 'string'},
+                    'kind': {'type': 'string'},
+                  },
+                },
+              },
+            },
+            'required': ['title', 'objective', 'doneCriteria', 'outOfScope'],
+          },
+        },
+      },
+      'required': requiredProperties,
+    },
+  );
+}
+
 const String _projectJsonSystemInstruction = '''
 You are a project orchestration planner.
 Return only valid JSON.
-Do not call tools.
-Do not execute workspace work directly.
+Use only read-only tools when they are exposed.
+Do not execute workspace changes directly.
 Project mode controls a loop outside the model.
 Every proposed task must be small, bounded, independently verifiable, and narrower than the whole project.
 Every proposed task must include doneCriteria and outOfScope.

@@ -180,13 +180,15 @@ void main() {
     });
 
     test('supports /task command by creating and running steps', () async {
-      serverManager.chatClient = _QueueChatClient([
-        jsonEncode(_planJson(title: 'Runnable task')),
-        jsonEncode({
-          'status': 'completed',
-          'summary': 'Step complete.',
-          'memoryUpdate': 'Work finished.',
-        }),
+      serverManager.chatClient = _QueueCompletionClient([
+        _finaliseTaskResponse(_planJson(title: 'Runnable task')),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Step complete.',
+            'memoryUpdate': 'Work finished.',
+          }),
+        ),
       ]);
       await chat.attachWorkspace(tempDir.path);
 
@@ -199,8 +201,8 @@ void main() {
     test(
       'supports /project command by creating tasks until complete',
       () async {
-        serverManager.chatClient = _QueueChatClient([
-          jsonEncode({
+        serverManager.chatClient = _QueueCompletionClient([
+          _finaliseProjectResponse({
             'title': 'Build screen',
             'refinedGoal': 'Build the reporting screen',
             'successCriteria': ['Screen is built.'],
@@ -209,19 +211,25 @@ void main() {
             'openQuestions': [],
             'backlog': [_projectTaskJson()],
           }),
-          jsonEncode({'task': _projectTaskJson()}),
-          jsonEncode(_projectPlanJson(title: 'Project task')),
-          jsonEncode({
-            'status': 'completed',
-            'summary': 'Project task complete.',
-            'memoryUpdate': 'Screen built.',
-          }),
-          jsonEncode({
-            'complete': true,
-            'finalSummary': 'Reporting screen is complete.',
-            'remainingCriteria': [],
-            'openQuestions': [],
-          }),
+          ChatCompletionResponse(
+            content: jsonEncode({'task': _projectTaskJson()}),
+          ),
+          _finaliseTaskResponse(_projectPlanJson(title: 'Project task')),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Project task complete.',
+              'memoryUpdate': 'Screen built.',
+            }),
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'complete': true,
+              'finalSummary': 'Reporting screen is complete.',
+              'remainingCriteria': [],
+              'openQuestions': [],
+            }),
+          ),
         ]);
         await chat.attachWorkspace(tempDir.path);
 
@@ -235,29 +243,35 @@ void main() {
     );
 
     test('supports /continue-project for the active project', () async {
-      serverManager.chatClient = _QueueChatClient([
-        jsonEncode({
+      serverManager.chatClient = _QueueCompletionClient([
+        _finaliseProjectResponse({
           'backlog': [
             _projectTaskJson(relevantSuccessCriteria: const ['Finish']),
           ],
           'knownFacts': [],
           'openQuestions': [],
         }),
-        jsonEncode({
-          'task': _projectTaskJson(relevantSuccessCriteria: const ['Finish']),
-        }),
-        jsonEncode(_projectPlanJson(title: 'Project task')),
-        jsonEncode({
-          'status': 'completed',
-          'summary': 'Project task complete.',
-          'memoryUpdate': 'Screen built.',
-        }),
-        jsonEncode({
-          'complete': true,
-          'finalSummary': 'All done.',
-          'remainingCriteria': [],
-          'openQuestions': [],
-        }),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'task': _projectTaskJson(relevantSuccessCriteria: const ['Finish']),
+          }),
+        ),
+        _finaliseTaskResponse(_projectPlanJson(title: 'Project task')),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Project task complete.',
+            'memoryUpdate': 'Screen built.',
+          }),
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'complete': true,
+            'finalSummary': 'All done.',
+            'remainingCriteria': [],
+            'openQuestions': [],
+          }),
+        ),
       ]);
       await chat.attachWorkspace(tempDir.path);
       chat.activeProject = _projectDocument();
@@ -331,7 +345,8 @@ void main() {
       'renders task model reasoning and tool calls as chat bubbles',
       () async {
         serverManager.chatClient = _QueueCompletionClient([
-          ChatCompletionResponse(
+          _finaliseTaskResponse(
+            _planJson(title: 'Visible task'),
             reasoning: 'Planning rationale.',
             content: jsonEncode(_planJson(title: 'Visible task')),
           ),
@@ -369,7 +384,8 @@ void main() {
         expect(plannerBubble.reasoning, contains('Planning rationale.'));
 
         final toolBubble = chat.messageStore.messages.firstWhere(
-          (message) => message.tools.isNotEmpty,
+          (message) =>
+              message.tools.values.any((tool) => tool.name == 'calculator'),
         );
         expect(toolBubble.reasoning, contains('Need a calculation.'));
         expect(toolBubble.tools[0]?.name, 'calculator');
@@ -820,6 +836,40 @@ ProjectDocument _projectDocument({
   );
 }
 
+ChatCompletionResponse _finaliseTaskResponse(
+  Map<String, dynamic> arguments, {
+  String content = '',
+  String reasoning = '',
+}) {
+  return ChatCompletionResponse(
+    content: content,
+    reasoning: reasoning,
+    toolCalls: [
+      ChatCompletionToolCall(
+        name: 'finaliseTaskCreation',
+        arguments: jsonEncode(arguments),
+      ),
+    ],
+  );
+}
+
+ChatCompletionResponse _finaliseProjectResponse(
+  Map<String, dynamic> arguments, {
+  String content = '',
+  String reasoning = '',
+}) {
+  return ChatCompletionResponse(
+    content: content,
+    reasoning: reasoning,
+    toolCalls: [
+      ChatCompletionToolCall(
+        name: 'finaliseProjectCreation',
+        arguments: jsonEncode(arguments),
+      ),
+    ],
+  );
+}
+
 class _QueueChatClient extends ChatClient {
   _QueueChatClient(this._responses)
     : super(baseUrl: 'http://localhost', model: 'test');
@@ -891,7 +941,20 @@ class _StuckTaskClient extends ChatClient {
 
     if (_streamCalls == 1) {
       controller.onListen = () {
-        controller.add(ChatToken(content: jsonEncode(_plan)));
+        controller.add(
+          ChatToken(
+            tool: ToolCallDelta(
+              index: 0,
+              id: 'call_finalise_task',
+              name: 'finaliseTaskCreation',
+            ),
+          ),
+        );
+        controller.add(
+          ChatToken(
+            tool: ToolCallDelta(index: 0, argumentsChunk: jsonEncode(_plan)),
+          ),
+        );
         unawaited(controller.close());
       };
       return controller.stream;
