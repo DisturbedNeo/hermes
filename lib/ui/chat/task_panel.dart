@@ -1270,7 +1270,25 @@ class _RunList extends StatelessWidget {
               contentPadding: EdgeInsets.zero,
               leading: Icon(_runIcon(run.status)),
               title: Text('${run.stepId} - ${run.status.wire}'),
-              subtitle: Text(run.summary),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(run.summary),
+                  if (run.gateResults.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        for (final result in run.gateResults.take(6))
+                          _StatusChip(
+                            label: '${result.gateId}: ${result.status.wire}',
+                          ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
       ],

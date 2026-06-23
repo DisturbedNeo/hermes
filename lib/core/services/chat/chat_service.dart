@@ -2769,6 +2769,17 @@ Workspace rules:
         buffer.writeln('- `${artifact.path}`');
       }
     }
+    final gateResults = latestRun?.gateResults ?? const [];
+    if (gateResults.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Gates:');
+      for (final result in gateResults.take(8)) {
+        buffer.writeln(
+          '- `${result.gateId}` ${result.status.wire}: ${result.summary}',
+        );
+      }
+    }
     return buffer.toString().trim();
   }
 }

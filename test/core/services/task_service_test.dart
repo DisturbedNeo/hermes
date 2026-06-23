@@ -110,6 +110,53 @@ void main() {
       );
     });
 
+    test('task creation accepts planner-selected gates', () async {
+      final plan = _planJson(title: 'Gated task')
+        ..['gates'] = [
+          {'id': 'no_tool_errors', 'required': true, 'scope': 'task'},
+        ]
+        ..['steps'] = [
+          {
+            'id': 'write_report',
+            'title': 'Write report',
+            'objective': 'Write the report artifact.',
+            'instructions': ['Write report.'],
+            'mayEditFiles': false,
+            'artifacts': [
+              {'path': '.agent/tasks/{{task_id}}/report.md'},
+            ],
+            'gates': [
+              {
+                'id': 'artifact_exists',
+                'required': true,
+                'scope': 'step',
+                'params': {
+                  'paths': ['.agent/tasks/{{task_id}}/report.md'],
+                },
+              },
+            ],
+          },
+        ];
+      final client = _QueueChatClient([jsonEncode(plan)]);
+
+      final task = await service.createTask(
+        client: client,
+        workspace: workspace,
+        userPrompt: 'Write a report',
+        selectedMode: ExecutionMode.task,
+        baseSystemPrompt: 'system',
+        chatSessionId: 'chat_1',
+      );
+
+      expect(task.gates.single.id, 'no_tool_errors');
+      expect(task.steps.single.gates, isNotEmpty);
+      expect(task.steps.single.gates.first.id, 'artifact_exists');
+      expect(
+        task.steps.single.gates.first.params.toString(),
+        contains(task.id),
+      );
+    });
+
     test('planner retries once when finalizer is missing', () async {
       final client = _QueueCompletionClient([
         ChatCompletionResponse(
@@ -218,6 +265,26 @@ void main() {
         expect(task.successCriteria, contains('The settings toggle works.'));
       },
     );
+
+    test('fallback task adds conservative default gates', () async {
+      final client = _QueueChatClient(['not json']);
+
+      final task = await service.createTask(
+        client: client,
+        workspace: workspace,
+        userPrompt: 'Implement a code fix',
+        selectedMode: ExecutionMode.task,
+        baseSystemPrompt: 'system',
+        chatSessionId: 'chat_1',
+      );
+
+      expect(task.gates.map((gate) => gate.id), contains('no_tool_errors'));
+      expect(task.gates.map((gate) => gate.id), contains('no_failed_commands'));
+      expect(
+        task.steps.single.gates.map((gate) => gate.id),
+        contains('artifact_exists'),
+      );
+    });
 
     test('runs one step and records structured memory and history', () async {
       final task = _task(
@@ -504,6 +571,119 @@ void main() {
         contains('task-owned artifact'),
       );
       expect(updated.status, TaskStatus.completed);
+    });
+
+    test(
+      'required gate prevents completion after unresolved tool error',
+      () async {
+        final task = _task(
+          step: const TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Do the work',
+            instructions: ['Work carefully'],
+            mayEditFiles: false,
+            artifacts: [],
+            gates: [TaskGate(id: 'no_tool_errors')],
+            status: TaskStepStatus.pending,
+          ),
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'write_file',
+                arguments: jsonEncode({
+                  'path': 'should-not-exist.txt',
+                  'content': 'bad',
+                }),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Stayed read-only.',
+              'memoryUpdate': 'No files were changed.',
+            }),
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(updated.status, TaskStatus.failed);
+        expect(updated.runs.single.status, TaskRunStatus.failed);
+        expect(updated.runs.single.gateResults.single.gateId, 'no_tool_errors');
+        expect(
+          updated.runs.single.gateResults.single.status,
+          TaskGateStatus.failed,
+        );
+      },
+    );
+
+    test('command_passes gate accepts matching successful command', () async {
+      workspace = workspace.copyWith(commandExecutionApproved: true);
+      final task = _task(
+        step: const TaskStep(
+          id: 'step_1',
+          title: 'Step 1',
+          objective: 'Verify toolchain',
+          instructions: ['Run dart --version.'],
+          mayEditFiles: true,
+          artifacts: [],
+          gates: [
+            TaskGate(
+              id: 'command_passes',
+              params: {
+                'command': 'dart',
+                'args': ['--version'],
+                'working_directory': '.',
+              },
+            ),
+          ],
+          status: TaskStepStatus.pending,
+        ),
+      );
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'run_command',
+              arguments: jsonEncode({
+                'command': 'dart',
+                'args': ['--version'],
+              }),
+            ),
+          ],
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Verified dart.',
+            'memoryUpdate': 'dart is available.',
+          }),
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(updated.status, TaskStatus.completed);
+      expect(
+        updated.runs.single.gateResults.single.status,
+        TaskGateStatus.passed,
+      );
     });
 
     test('mutating steps expose approved terminal state to executor', () async {

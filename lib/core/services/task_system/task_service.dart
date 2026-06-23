@@ -8,6 +8,7 @@ import 'package:hermes/core/helpers/chat/context_estimator.dart';
 import 'package:hermes/core/helpers/chat/payload_builder.dart';
 import 'package:hermes/core/helpers/chat/tool_caller.dart';
 import 'package:hermes/core/helpers/json_parsing.dart';
+import 'package:hermes/core/helpers/sentinel.dart' show kSentinel, resolve;
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_message.dart';
@@ -19,6 +20,7 @@ import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
 import 'package:hermes/core/services/task_system/finalizer_tool_call_runner.dart';
+import 'package:hermes/core/services/task_system/task_gate_evaluator.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/task_system/task_storage_service.dart';
@@ -215,6 +217,20 @@ const ToolDefinition _finaliseTaskCreationToolDefinition = ToolDefinition(
         'type': 'array',
         'items': {'type': 'string'},
       },
+      'gates': {
+        'type': 'array',
+        'items': {
+          'type': 'object',
+          'properties': {
+            'id': {'type': 'string'},
+            'required': {'type': 'boolean'},
+            'scope': {'type': 'string'},
+            'params': {'type': 'object'},
+            'description': {'type': 'string'},
+          },
+          'required': ['id'],
+        },
+      },
       'steps': {
         'type': 'array',
         'items': {
@@ -237,6 +253,20 @@ const ToolDefinition _finaliseTaskCreationToolDefinition = ToolDefinition(
                   'description': {'type': 'string'},
                 },
                 'required': ['path'],
+              },
+            },
+            'gates': {
+              'type': 'array',
+              'items': {
+                'type': 'object',
+                'properties': {
+                  'id': {'type': 'string'},
+                  'required': {'type': 'boolean'},
+                  'scope': {'type': 'string'},
+                  'params': {'type': 'object'},
+                  'description': {'type': 'string'},
+                },
+                'required': ['id'],
               },
             },
           },
@@ -262,12 +292,16 @@ class TaskService {
   }) : _toolService = toolService,
        _creationRunner = FinalizerToolCallRunner(toolService: toolService),
        _storage = storage ?? TaskStorageService(),
-       _sandbox = sandbox ?? WorkspaceSandbox();
+       _sandbox = sandbox ?? WorkspaceSandbox(),
+       _gateEvaluator = TaskGateEvaluator(
+         sandbox: sandbox ?? WorkspaceSandbox(),
+       );
 
   final ToolService _toolService;
   final FinalizerToolCallRunner _creationRunner;
   final TaskStorageService _storage;
   final WorkspaceSandbox _sandbox;
+  final TaskGateEvaluator _gateEvaluator;
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
 
   TaskStorageService get storage => _storage;
@@ -619,7 +653,7 @@ $userPrompt
     await _storage.saveSnapshot(workspace.rootPath, working);
 
     try {
-      final execution = await _executeStep(
+      var execution = await _executeStep(
         client: client,
         workspace: workspace,
         task: working,
@@ -634,6 +668,16 @@ $userPrompt
       );
 
       final finishedAt = DateTime.now();
+      if (execution.status == _StepExecutionStatus.completed) {
+        execution = await _applyCompletionGates(
+          client: client,
+          workspace: workspace,
+          task: working,
+          step: step,
+          execution: execution,
+          baseSystemPrompt: baseSystemPrompt,
+        );
+      }
       final completedRun = run.copyWith(
         status: execution.runStatus,
         completedAt: finishedAt,
@@ -641,6 +685,7 @@ $userPrompt
         memoryUpdate: execution.memoryUpdate,
         toolCalls: execution.toolCalls,
         artifacts: execution.artifacts,
+        gateResults: execution.gateResults,
         replanReason: execution.replanRequest,
         error: execution.error,
       );
@@ -912,6 +957,7 @@ Return only JSON:
   "goal": "...",
   "constraints": ["..."],
   "successCriteria": ["..."],
+  "gates": [{"id": "no_tool_errors", "required": true, "scope": "task", "params": {}, "description": "..."}],
   "steps": [
     {
       "id": "short_stable_id",
@@ -919,10 +965,14 @@ Return only JSON:
       "objective": "...",
       "instructions": ["..."],
       "mayEditFiles": false,
-      "artifacts": [{"path": ".agent/tasks/$taskId/output.md", "description": "..."}]
+      "artifacts": [{"path": ".agent/tasks/$taskId/output.md", "description": "..."}],
+      "gates": [{"id": "artifact_exists", "required": true, "scope": "step", "params": {"paths": [".agent/tasks/$taskId/output.md"]}, "description": "..."}]
     }
   ]
 }
+
+Gate catalog:
+${_taskGateCatalogPrompt()}
 
 Use this exact task id when referencing task-owned artifacts: $taskId
 Create only as many steps as are necessary to accomplish the task.
@@ -950,6 +1000,7 @@ Return only JSON:
   "goal": "the selected Project task objective, not the whole Project goal",
   "constraints": ["..."],
   "successCriteria": ["copy or refine the task doneCriteria"],
+  "gates": [{"id": "no_tool_errors", "required": true, "scope": "task", "params": {}, "description": "..."}],
   "steps": [
     {
       "id": "short_stable_id",
@@ -957,10 +1008,14 @@ Return only JSON:
       "objective": "...",
       "instructions": ["..."],
       "mayEditFiles": false,
-      "artifacts": [{"path": ".agent/tasks/$taskId/output.md", "description": "..."}]
+      "artifacts": [{"path": ".agent/tasks/$taskId/output.md", "description": "..."}],
+      "gates": [{"id": "artifact_exists", "required": true, "scope": "step", "params": {"paths": [".agent/tasks/$taskId/output.md"]}, "description": "..."}]
     }
   ]
 }
+
+Gate catalog:
+${_taskGateCatalogPrompt()}
 
 Use this exact task id when referencing task-owned artifacts: $taskId
 Artifacts are optional unless expectedArtifacts lists them.
@@ -1407,6 +1462,77 @@ ${_encoder.convert(task.toJson())}
         );
   }
 
+  Future<_StepExecutionOutput> _applyCompletionGates({
+    required ChatClient client,
+    required WorkspaceAttachment workspace,
+    required TaskDocument task,
+    required TaskStep step,
+    required _StepExecutionOutput execution,
+    required String baseSystemPrompt,
+  }) async {
+    final gates = _completionGates(task, step);
+    if (gates.isEmpty) return execution;
+
+    final evaluation = await _gateEvaluator.evaluate(
+      workspace: workspace,
+      task: task,
+      step: step,
+      gates: gates,
+      toolCalls: execution.toolCalls,
+      artifacts: execution.artifacts.isEmpty
+          ? step.artifacts
+          : execution.artifacts,
+      client: client,
+      baseSystemPrompt: baseSystemPrompt,
+    );
+    if (!evaluation.hasRequiredFailure && !evaluation.hasRequiredPending) {
+      return execution.copyWith(gateResults: evaluation.results);
+    }
+
+    final summary = [
+      execution.summary,
+      'Completion gates did not pass:',
+      evaluation.blockingSummary,
+    ].where((item) => item.trim().isNotEmpty).join('\n\n');
+    if (evaluation.hasRequiredFailure) {
+      return execution.copyWith(
+        status: _StepExecutionStatus.failed,
+        runStatus: TaskRunStatus.failed,
+        summary: summary,
+        error: evaluation.blockingSummary,
+        gateResults: evaluation.results,
+      );
+    }
+    if (evaluation.hasHumanApprovalPending) {
+      return execution.copyWith(
+        status: _StepExecutionStatus.blocked,
+        runStatus: TaskRunStatus.blocked,
+        summary: summary,
+        userQuestion: 'Approve completion after reviewing gate results.',
+        gateResults: evaluation.results,
+      );
+    }
+    return execution.copyWith(
+      status: _StepExecutionStatus.needsReplan,
+      runStatus: TaskRunStatus.needsReplan,
+      summary: summary,
+      replanRequest:
+          'Add or run the missing verification needed to satisfy completion gates.',
+      gateResults: evaluation.results,
+    );
+  }
+
+  List<TaskGate> _completionGates(TaskDocument task, TaskStep step) {
+    final hasRemainingSteps = task.steps.any((candidate) {
+      if (candidate.id == step.id) return false;
+      return candidate.status == TaskStepStatus.pending ||
+          candidate.status == TaskStepStatus.approved ||
+          candidate.status == TaskStepStatus.blocked ||
+          candidate.status == TaskStepStatus.failed;
+    });
+    return [...step.gates, if (!hasRemainingSteps) ...task.gates];
+  }
+
   Set<String> _allowedToolIdsForStep(TaskStep step) {
     if (!step.mayEditFiles) return _readOnlyTaskToolIds;
     return {..._readOnlyTaskToolIds, ..._mutatingTaskToolIds};
@@ -1771,11 +1897,15 @@ Return only JSON:
       "objective": "...",
       "instructions": ["..."],
       "mayEditFiles": false,
-      "artifacts": [{"path": "...", "description": "..."}]
+      "artifacts": [{"path": "...", "description": "..."}],
+      "gates": [{"id": "artifact_exists", "required": true, "scope": "step", "params": {"paths": ["..."]}, "description": "..."}]
     }
   ],
   "memorySummary": "optional updated memory summary"
 }
+
+Gate catalog:
+${_taskGateCatalogPrompt()}
 
 Reason for replan:
 $reason
@@ -1918,6 +2048,19 @@ ${_encoder.convert(snapshot.toJson())}
     ).copyWith(
       status: TaskStatus.blocked,
       currentStepId: step.id,
+      pendingApproval:
+          output.gateResults.any(
+            (result) =>
+                result.gateId == 'human_approval' &&
+                result.status == TaskGateStatus.pending &&
+                result.details['required'] == true,
+          )
+          ? PendingTaskApproval(
+              stepId: step.id,
+              reason: 'Completion requires human approval.',
+              createdAt: now,
+            )
+          : null,
       pendingQuestion: output.userQuestion?.trim().isNotEmpty == true
           ? PendingTaskQuestion(
               id: 'question_${uuid.v7()}',
@@ -2053,6 +2196,29 @@ When finished, call finish_task_step with this result object. If finish_task_ste
   "replanRequest": "only when needs_replan",
   "error": "only when failed"
 }
+''';
+  }
+
+  String _taskGateCatalogPrompt() {
+    return '''
+Choose only these gate ids. Gates are checked by the task runner, not by the executor.
+- artifact_exists: params {"paths": ["relative/path"]}
+- artifact_nonempty: params {"paths": ["relative/path"]}
+- command_passes: params {"command": "dart", "args": ["test"], "working_directory": "."}
+- no_tool_errors: params {}
+- no_failed_commands: params {}
+- content_contains: params {"path": "relative/path", "mustContain": ["..."]}
+- content_not_contains: params {"path": "relative/path", "mustNotContain": ["TODO", "FIXME", "[...]"]}
+- json_valid: params {"path": "relative/path"}
+- yaml_valid: params {"path": "relative/path"}
+- xml_valid: params {"path": "relative/path"}
+- markdown_links_valid: params {"path": "relative/path"}
+- schema_matches: params {"path": "relative/path", "requiredKeys": ["..."], "types": {"key": "string|number|boolean|array|object"}}
+- workspace_clean_enough: usually advisory unless the user requires clean git state
+- human_approval: use for risky irreversible or subjective acceptance checkpoints
+- model_review: subjective review; advisory by default for creative/research work
+For coding tasks, prefer no_tool_errors, no_failed_commands, and command_passes when a likely test/analyze/build command is inferable.
+For declared artifact outputs, use artifact_exists and artifact_nonempty.
 ''';
   }
 
@@ -2519,6 +2685,10 @@ When finished, call finish_task_step with this result object. If finish_task_ste
     final safeSteps = steps.isEmpty
         ? [_fallbackExecutionStep(taskId, originalPrompt)]
         : steps;
+    final gates = [
+      ..._gatesFromJson(json['gates'], fallbackScope: 'task', taskId: taskId),
+      ..._defaultTaskGates(safeSteps, originalPrompt),
+    ];
     return TaskDocument(
       id: taskId,
       title: jsonString(
@@ -2534,6 +2704,7 @@ When finished, call finish_task_step with this result object. If finish_task_ste
       successCriteria: jsonStringList(
         json['successCriteria'] ?? json['success_criteria'],
       ),
+      gates: _dedupeGates(gates),
       steps: safeSteps,
       status: TaskStatus.paused,
       currentStepId: _nextStepId(safeSteps),
@@ -2566,6 +2737,7 @@ When finished, call finish_task_step with this result object. If finish_task_ste
           ? original.originalPrompt
           : candidate.originalPrompt,
       goal: candidate.goal.trim().isEmpty ? original.goal : candidate.goal,
+      gates: _dedupeGates(candidate.gates),
       steps: steps,
       status: currentStepId == null ? TaskStatus.completed : TaskStatus.paused,
       currentStepId: currentStepId,
@@ -2588,6 +2760,21 @@ When finished, call finish_task_step with this result object. If finish_task_ste
         fallbackId,
       );
       final uniqueId = usedIds.add(id) ? id : '${id}_${i + 1}';
+      final artifacts = _artifactsFromJson(map['artifacts'], uniqueId)
+          .map(
+            (artifact) => artifact.path.contains('{{task_id}}')
+                ? TaskArtifact(
+                    path: artifact.path.replaceAll('{{task_id}}', taskId),
+                    description: artifact.description,
+                    stepId: artifact.stepId ?? uniqueId,
+                    createdAt: artifact.createdAt,
+                  )
+                : artifact,
+          )
+          .toList();
+      final gates = [
+        ..._gatesFromJson(map['gates'], fallbackScope: 'step', taskId: taskId),
+      ];
       steps.add(
         _normaliseStep(
           TaskStep(
@@ -2598,18 +2785,8 @@ When finished, call finish_task_step with this result object. If finish_task_ste
             mayEditFiles: jsonBool(
               map['mayEditFiles'] ?? map['may_edit_files'],
             ),
-            artifacts: _artifactsFromJson(map['artifacts'], uniqueId)
-                .map(
-                  (artifact) => artifact.path.contains('{{task_id}}')
-                      ? TaskArtifact(
-                          path: artifact.path.replaceAll('{{task_id}}', taskId),
-                          description: artifact.description,
-                          stepId: artifact.stepId ?? uniqueId,
-                          createdAt: artifact.createdAt,
-                        )
-                      : artifact,
-                )
-                .toList(),
+            artifacts: artifacts,
+            gates: _dedupeGates(gates),
             status: TaskStepStatus.pending,
           ),
         ),
@@ -2637,12 +2814,130 @@ When finished, call finish_task_step with this result object. If finish_task_ste
         .toList();
   }
 
+  List<TaskGate> _gatesFromJson(
+    Object? value, {
+    required String fallbackScope,
+    String? taskId,
+  }) {
+    if (value is! List) return const [];
+    final gates = <TaskGate>[];
+    for (final raw in value.whereType<Map>()) {
+      final gate = TaskGate.fromJson(Map<String, dynamic>.from(raw));
+      final id = gate.id.trim();
+      gates.add(
+        TaskGate(
+          id: id,
+          required: gate.required,
+          scope: gate.scope.trim().isEmpty ? fallbackScope : gate.scope,
+          params: jsonMap(_replaceTaskIdPlaceholder(gate.params, taskId)),
+          description: gate.description,
+        ),
+      );
+    }
+    return gates;
+  }
+
+  Object? _replaceTaskIdPlaceholder(Object? value, String? taskId) {
+    if (taskId == null) return value;
+    if (value is String) return value.replaceAll('{{task_id}}', taskId);
+    if (value is List) {
+      return value
+          .map((item) => _replaceTaskIdPlaceholder(item, taskId))
+          .toList();
+    }
+    if (value is Map) {
+      return {
+        for (final entry in value.entries)
+          entry.key.toString(): _replaceTaskIdPlaceholder(entry.value, taskId),
+      };
+    }
+    return value;
+  }
+
+  List<TaskGate> _defaultTaskGates(List<TaskStep> steps, String prompt) {
+    final mutating = steps.any((step) => step.mayEditFiles);
+    final looksCoding = _looksLikeCodingTask(prompt);
+    if (!mutating && !looksCoding) return const [];
+    return const [
+      TaskGate(
+        id: 'no_tool_errors',
+        required: true,
+        scope: 'task',
+        description: 'No unresolved workspace tool errors.',
+      ),
+      TaskGate(
+        id: 'no_failed_commands',
+        required: true,
+        scope: 'task',
+        description: 'No failed terminal commands after workspace mutation.',
+      ),
+    ];
+  }
+
+  List<TaskGate> _defaultArtifactGates(List<TaskArtifact> artifacts) {
+    final paths = artifacts
+        .map((artifact) => artifact.path)
+        .where((item) => item.trim().isNotEmpty)
+        .toList();
+    if (paths.isEmpty) return const [];
+    return [
+      TaskGate(
+        id: 'artifact_exists',
+        required: true,
+        scope: 'step',
+        params: {'paths': paths},
+        description: 'Declared artifacts must exist.',
+      ),
+      TaskGate(
+        id: 'artifact_nonempty',
+        required: true,
+        scope: 'step',
+        params: {'paths': paths},
+        description: 'Declared artifacts must be non-empty.',
+      ),
+    ];
+  }
+
+  List<TaskGate> _dedupeGates(List<TaskGate> gates) {
+    final seen = <String>{};
+    final deduped = <TaskGate>[];
+    for (final gate in gates) {
+      final key = _encoder.convert({
+        'id': gate.id,
+        'scope': gate.scope,
+        'params': gate.params,
+      });
+      if (seen.add(key)) deduped.add(gate);
+    }
+    return deduped;
+  }
+
+  bool _looksLikeCodingTask(String value) {
+    final normalised = value.toLowerCase();
+    return const [
+      'code',
+      'test',
+      'build',
+      'bug',
+      'fix',
+      'implement',
+      'refactor',
+      'compile',
+      'flutter',
+      'dart',
+      'dotnet',
+      'npm',
+      'api',
+    ].any(normalised.contains);
+  }
+
   TaskStep _normaliseStep(TaskStep step) {
     return step.copyWith(
       id: _safeId(step.id, 'step'),
       title: step.title.trim().isEmpty ? step.id : step.title,
       objective: step.objective.trim().isEmpty ? step.title : step.objective,
       instructions: step.instructions,
+      gates: _dedupeGates(step.gates),
       status: switch (step.status) {
         TaskStepStatus.running => TaskStepStatus.pending,
         _ => step.status,
@@ -2694,6 +2989,7 @@ When finished, call finish_task_step with this result object. If finish_task_ste
       goal: userPrompt,
       constraints: const ['Stay within the attached workspace.'],
       successCriteria: const ['Complete the requested task.'],
+      gates: _defaultTaskGates([step], userPrompt),
       steps: [step],
       status: TaskStatus.paused,
       currentStepId: step.id,
@@ -2760,6 +3056,7 @@ When finished, call finish_task_step with this result object. If finish_task_ste
         ...planningContext.outOfScope.map((item) => 'Out of scope: $item'),
       ],
       successCriteria: successCriteria,
+      gates: _defaultTaskGates([step], planningContext.projectTaskObjective),
       steps: [step],
       status: TaskStatus.paused,
       currentStepId: step.id,
@@ -2773,6 +3070,13 @@ When finished, call finish_task_step with this result object. If finish_task_ste
   }
 
   TaskStep _fallbackExecutionStep(String taskId, String objective) {
+    final artifacts = [
+      TaskArtifact(
+        path: '.agent/tasks/$taskId/task-output.md',
+        description: 'Final task output',
+        stepId: 'execute_task',
+      ),
+    ];
     return TaskStep(
       id: 'execute_task',
       title: 'Execute task',
@@ -2783,13 +3087,8 @@ When finished, call finish_task_step with this result object. If finish_task_ste
         'Summarize what changed and what remains.',
       ],
       mayEditFiles: true,
-      artifacts: [
-        TaskArtifact(
-          path: '.agent/tasks/$taskId/task-output.md',
-          description: 'Final task output',
-          stepId: 'execute_task',
-        ),
-      ],
+      artifacts: artifacts,
+      gates: _defaultArtifactGates(artifacts),
       status: TaskStepStatus.pending,
     );
   }
@@ -2890,6 +3189,7 @@ class _StepExecutionOutput {
   final String memoryUpdate;
   final List<TaskArtifact> artifacts;
   final List<TaskToolCallRecord> toolCalls;
+  final List<TaskGateResult> gateResults;
   final String? userQuestion;
   final String? replanRequest;
   final String? error;
@@ -2901,22 +3201,35 @@ class _StepExecutionOutput {
     required this.memoryUpdate,
     required this.artifacts,
     required this.toolCalls,
+    this.gateResults = const [],
     this.userQuestion,
     this.replanRequest,
     this.error,
   });
 
-  _StepExecutionOutput copyWith({List<TaskToolCallRecord>? toolCalls}) {
+  _StepExecutionOutput copyWith({
+    _StepExecutionStatus? status,
+    TaskRunStatus? runStatus,
+    String? summary,
+    String? memoryUpdate,
+    List<TaskArtifact>? artifacts,
+    List<TaskToolCallRecord>? toolCalls,
+    List<TaskGateResult>? gateResults,
+    Object? userQuestion = kSentinel,
+    Object? replanRequest = kSentinel,
+    Object? error = kSentinel,
+  }) {
     return _StepExecutionOutput(
-      status: status,
-      runStatus: runStatus,
-      summary: summary,
-      memoryUpdate: memoryUpdate,
-      artifacts: artifacts,
+      status: status ?? this.status,
+      runStatus: runStatus ?? this.runStatus,
+      summary: summary ?? this.summary,
+      memoryUpdate: memoryUpdate ?? this.memoryUpdate,
+      artifacts: artifacts ?? this.artifacts,
       toolCalls: toolCalls ?? this.toolCalls,
-      userQuestion: userQuestion,
-      replanRequest: replanRequest,
-      error: error,
+      gateResults: gateResults ?? this.gateResults,
+      userQuestion: resolve(userQuestion, this.userQuestion),
+      replanRequest: resolve(replanRequest, this.replanRequest),
+      error: resolve(error, this.error),
     );
   }
 }
@@ -2947,6 +3260,8 @@ const String _plannerSystemInstruction = '''
 You create simple linear plans for long-horizon workspace tasks.
 The plan should be small, clear, and robust.
 Each step must be independently executable from the shared goal, plan, memory summary, and previous run summaries.
+Choose completion gates from the provided gate catalog when observable evidence should be required before a step or task can complete.
+Use model_review only for subjective creative/research judgment; use deterministic gates whenever possible.
 Read-only steps may create new task-owned artifact files under `.agent/tasks/<taskId>/`.
 Declare an artifact only on the step that will actually create it.
 Do not split broad "explore" and "analyze" work into separate steps when the exploration exists only to support the analysis.
@@ -2978,6 +3293,8 @@ const String _replannerSystemInstruction = '''
 You replan unfinished work for a linear long-horizon task.
 Preserve completed and skipped steps.
 Rewrite only unfinished work into a short, concrete sequence.
+Choose completion gates from the provided gate catalog when observable evidence should be required before a step or task can complete.
+Use model_review only for subjective creative/research judgment; use deterministic gates whenever possible.
 Read-only steps may create new task-owned artifact files under `.agent/tasks/<taskId>/`.
 Declare an artifact only on the step that will actually create it.
 Do not split broad "explore" and "analyze" work into separate steps when the exploration exists only to support the analysis.

@@ -35,6 +35,8 @@ enum TaskRunStatus {
   replanned,
 }
 
+enum TaskGateStatus { passed, failed, pending, advisory }
+
 extension ExecutionModeWire on ExecutionMode {
   String get wire => switch (this) {
     ExecutionMode.continueTask => 'continue_task',
@@ -65,6 +67,10 @@ extension TaskRunStatusWire on TaskRunStatus {
   };
 }
 
+extension TaskGateStatusWire on TaskGateStatus {
+  String get wire => name;
+}
+
 ExecutionMode parseExecutionMode(Object? value) => _parseEnum(
   ExecutionMode.values,
   value,
@@ -84,6 +90,9 @@ TaskRunStatus parseTaskRunStatus(Object? value) => _parseEnum(
   TaskRunStatus.completed,
   aliases: {'needs_replan': TaskRunStatus.needsReplan},
 );
+
+TaskGateStatus parseTaskGateStatus(Object? value) =>
+    _parseEnum(TaskGateStatus.values, value, TaskGateStatus.pending);
 
 T _parseEnum<T extends Enum>(
   List<T> values,
@@ -154,6 +163,7 @@ class TaskDocument {
   final String goal;
   final List<String> constraints;
   final List<String> successCriteria;
+  final List<TaskGate> gates;
   final List<TaskStep> steps;
   final TaskStatus status;
   final String? currentStepId;
@@ -175,6 +185,7 @@ class TaskDocument {
     required this.goal,
     required this.constraints,
     required this.successCriteria,
+    this.gates = const [],
     required this.steps,
     required this.status,
     required this.currentStepId,
@@ -197,6 +208,7 @@ class TaskDocument {
     String? goal,
     List<String>? constraints,
     List<String>? successCriteria,
+    List<TaskGate>? gates,
     List<TaskStep>? steps,
     TaskStatus? status,
     Object? currentStepId = kSentinel,
@@ -218,6 +230,7 @@ class TaskDocument {
       goal: goal ?? this.goal,
       constraints: constraints ?? this.constraints,
       successCriteria: successCriteria ?? this.successCriteria,
+      gates: gates ?? this.gates,
       steps: steps ?? this.steps,
       status: status ?? this.status,
       currentStepId: resolve(currentStepId, this.currentStepId),
@@ -272,6 +285,7 @@ class TaskDocument {
       successCriteria: jsonStringList(
         json['successCriteria'] ?? json['success_criteria'],
       ),
+      gates: jsonMapList(json['gates']).map(TaskGate.fromJson).toList(),
       steps: jsonMapList(json['steps']).map(TaskStep.fromJson).toList(),
       status: parseTaskStatus(json['status']),
       currentStepId: jsonNullableString(
@@ -319,6 +333,7 @@ class TaskDocument {
     'goal': goal,
     'constraints': constraints,
     'successCriteria': successCriteria,
+    if (gates.isNotEmpty) 'gates': gates.map((gate) => gate.toJson()).toList(),
     'steps': steps.map((step) => step.toJson()).toList(),
     'status': status.wire,
     if (currentStepId != null) 'currentStepId': currentStepId,
@@ -343,6 +358,7 @@ class TaskStep {
   final List<String> instructions;
   final bool mayEditFiles;
   final List<TaskArtifact> artifacts;
+  final List<TaskGate> gates;
   final TaskStepStatus status;
 
   const TaskStep({
@@ -352,6 +368,7 @@ class TaskStep {
     required this.instructions,
     required this.mayEditFiles,
     required this.artifacts,
+    this.gates = const [],
     required this.status,
   });
 
@@ -362,6 +379,7 @@ class TaskStep {
     List<String>? instructions,
     bool? mayEditFiles,
     List<TaskArtifact>? artifacts,
+    List<TaskGate>? gates,
     TaskStepStatus? status,
   }) {
     return TaskStep(
@@ -371,6 +389,7 @@ class TaskStep {
       instructions: instructions ?? this.instructions,
       mayEditFiles: mayEditFiles ?? this.mayEditFiles,
       artifacts: artifacts ?? this.artifacts,
+      gates: gates ?? this.gates,
       status: status ?? this.status,
     );
   }
@@ -385,6 +404,7 @@ class TaskStep {
       artifacts: jsonMapList(
         json['artifacts'],
       ).map(TaskArtifact.fromJson).toList(),
+      gates: jsonMapList(json['gates']).map(TaskGate.fromJson).toList(),
       status: parseTaskStepStatus(json['status']),
     );
   }
@@ -396,7 +416,79 @@ class TaskStep {
     'instructions': instructions,
     'mayEditFiles': mayEditFiles,
     'artifacts': artifacts.map((artifact) => artifact.toJson()).toList(),
+    if (gates.isNotEmpty) 'gates': gates.map((gate) => gate.toJson()).toList(),
     'status': status.wire,
+  };
+}
+
+class TaskGate {
+  final String id;
+  final bool required;
+  final String scope;
+  final Map<String, dynamic> params;
+  final String? description;
+
+  const TaskGate({
+    required this.id,
+    this.required = true,
+    this.scope = 'step',
+    this.params = const {},
+    this.description,
+  });
+
+  factory TaskGate.fromJson(Map<String, dynamic> json) {
+    return TaskGate(
+      id: jsonString(json['id']),
+      required: jsonBool(json['required'], fallback: true),
+      scope: jsonString(json['scope'], fallback: 'step'),
+      params: jsonMap(json['params']),
+      description: jsonNullableString(json['description']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'required': required,
+    'scope': scope,
+    if (params.isNotEmpty) 'params': params,
+    if (description != null) 'description': description,
+  };
+}
+
+class TaskGateResult {
+  final String gateId;
+  final TaskGateStatus status;
+  final String summary;
+  final Map<String, dynamic> details;
+  final DateTime evaluatedAt;
+
+  const TaskGateResult({
+    required this.gateId,
+    required this.status,
+    required this.summary,
+    this.details = const {},
+    required this.evaluatedAt,
+  });
+
+  factory TaskGateResult.fromJson(Map<String, dynamic> json) {
+    return TaskGateResult(
+      gateId: jsonString(json['gateId'] ?? json['gate_id']),
+      status: parseTaskGateStatus(json['status']),
+      summary: jsonString(json['summary']),
+      details: jsonMap(json['details']),
+      evaluatedAt: jsonDate(
+        json['evaluatedAt'] ?? json['evaluated_at'],
+        fallback: DateTime.now(),
+      ),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'gateId': gateId,
+    'status': status.wire,
+    'summary': summary,
+    if (details.isNotEmpty) 'details': details,
+    'evaluatedAt': evaluatedAt.toIso8601String(),
   };
 }
 
@@ -438,6 +530,7 @@ class TaskRun {
   final String memoryUpdate;
   final List<TaskToolCallRecord> toolCalls;
   final List<TaskArtifact> artifacts;
+  final List<TaskGateResult> gateResults;
   final DateTime startedAt;
   final DateTime? completedAt;
   final String? replanReason;
@@ -451,6 +544,7 @@ class TaskRun {
     required this.memoryUpdate,
     required this.toolCalls,
     required this.artifacts,
+    this.gateResults = const [],
     required this.startedAt,
     this.completedAt,
     this.replanReason,
@@ -465,6 +559,7 @@ class TaskRun {
     String? memoryUpdate,
     List<TaskToolCallRecord>? toolCalls,
     List<TaskArtifact>? artifacts,
+    List<TaskGateResult>? gateResults,
     DateTime? startedAt,
     Object? completedAt = kSentinel,
     Object? replanReason = kSentinel,
@@ -478,6 +573,7 @@ class TaskRun {
       memoryUpdate: memoryUpdate ?? this.memoryUpdate,
       toolCalls: toolCalls ?? this.toolCalls,
       artifacts: artifacts ?? this.artifacts,
+      gateResults: gateResults ?? this.gateResults,
       startedAt: startedAt ?? this.startedAt,
       completedAt: resolve(completedAt, this.completedAt),
       replanReason: resolve(replanReason, this.replanReason),
@@ -499,6 +595,9 @@ class TaskRun {
       artifacts: jsonMapList(
         json['artifacts'],
       ).map(TaskArtifact.fromJson).toList(),
+      gateResults: jsonMapList(
+        json['gateResults'] ?? json['gate_results'],
+      ).map(TaskGateResult.fromJson).toList(),
       startedAt: jsonDate(
         json['startedAt'] ?? json['started_at'],
         fallback: now,
@@ -521,6 +620,8 @@ class TaskRun {
     'memoryUpdate': memoryUpdate,
     'toolCalls': toolCalls.map((call) => call.toJson()).toList(),
     'artifacts': artifacts.map((artifact) => artifact.toJson()).toList(),
+    if (gateResults.isNotEmpty)
+      'gateResults': gateResults.map((result) => result.toJson()).toList(),
     'startedAt': startedAt.toIso8601String(),
     if (completedAt != null) 'completedAt': completedAt!.toIso8601String(),
     if (replanReason != null) 'replanReason': replanReason,
