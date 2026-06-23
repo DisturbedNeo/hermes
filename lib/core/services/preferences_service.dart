@@ -175,6 +175,9 @@ class PreferencesService extends ChangeNotifier {
           prefs.getBool(PreferencesKeys.taskSystemShowMessagesInChat) ?? true,
       maxProjectTasksPerRun:
           prefs.getInt(PreferencesKeys.taskSystemMaxProjectTasksPerRun) ?? 5,
+      questionAutonomy: QuestionAutonomy.parse(
+        prefs.getString(PreferencesKeys.taskSystemQuestionAutonomy),
+      ),
     ).normalised();
   }
 
@@ -201,6 +204,10 @@ class PreferencesService extends ChangeNotifier {
         await prefs.setInt(
           PreferencesKeys.taskSystemMaxProjectTasksPerRun,
           normalised.maxProjectTasksPerRun,
+        ) &&
+        await prefs.setString(
+          PreferencesKeys.taskSystemQuestionAutonomy,
+          normalised.questionAutonomy.wire,
         );
 
     if (saved) notifyListeners();

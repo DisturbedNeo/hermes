@@ -67,4 +67,8 @@ abstract final class PreferencesKeys {
   /// Maximum number of project-created tasks to start in one run.
   static const String taskSystemMaxProjectTasksPerRun =
       'task_system_max_project_tasks_per_run';
+
+  /// How aggressively structured tasks should ask the user before continuing.
+  static const String taskSystemQuestionAutonomy =
+      'task_system_question_autonomy';
 }

@@ -7,6 +7,7 @@ import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/core/services/question_policy_service.dart';
 import 'package:hermes/core/services/task_system/finalizer_tool_call_runner.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
@@ -94,6 +95,8 @@ class ProjectModelCalls {
             '''
 Initialize a persistent project state. Do not execute the project.
 Do not create a full task plan up front. Backlog is optional; include only tasks that are immediately obvious and small.
+Do not add openQuestions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; record a useful assumption in knownFacts instead.
+Add openQuestions only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
 
 Return only JSON:
 {
@@ -166,6 +169,8 @@ $originalGoal
         user:
             '''
 Refresh the project backlog. Return only small, bounded, independently verifiable tasks.
+Do not add openQuestions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; choose a reasonable next task/order and record the assumption in knownFacts.
+Add openQuestions only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
 
 Return only JSON:
 {
@@ -334,6 +339,8 @@ ${_encoder.convert(project.toJson())}
         user:
             '''
 Evaluate whether this project is complete. Do not mark complete unless every success criterion is satisfied by completed project tasks and artifacts.
+Do not add openQuestions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences.
+Add openQuestions only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
 
 Return only JSON:
 {
@@ -575,6 +582,10 @@ $expectedShape
       final map = Map<String, dynamic>.from(raw);
       map['id'] = jsonString(map['id'], fallback: 'question_${uuid.v7()}');
       map['createdAt'] ??= DateTime.now().toIso8601String();
+      final agentQuestion = AgentQuestion.parse(map);
+      if (agentQuestion != null) {
+        map['question'] = agentQuestion.displayText;
+      }
       return PendingProjectQuestion.fromJson(map);
     }).toList();
   }
@@ -621,6 +632,13 @@ ToolDefinition _finaliseProjectCreationToolDefinition({
             'type': 'object',
             'properties': {
               'question': {'type': 'string'},
+              'reason': {'type': 'string'},
+              'defaultIfUnanswered': {'type': 'string'},
+              'riskOfAssuming': {'type': 'string'},
+              'kind': {
+                'type': 'string',
+                'enum': ['blocking', 'preference', 'advisory'],
+              },
             },
             'required': ['question'],
           },

@@ -16,6 +16,7 @@ void main() {
       expect(settings.requireApprovalBeforeFileEdits, isTrue);
       expect(settings.showTaskMessagesInChat, isTrue);
       expect(settings.maxProjectTasksPerRun, 5);
+      expect(settings.questionAutonomy, QuestionAutonomy.balanced);
     });
 
     test('persists normalised task settings', () async {
@@ -27,6 +28,7 @@ void main() {
           requireApprovalBeforeFileEdits: false,
           showTaskMessagesInChat: false,
           maxProjectTasksPerRun: 99,
+          questionAutonomy: QuestionAutonomy.autonomous,
         ),
       );
 
@@ -36,6 +38,7 @@ void main() {
       expect(settings.requireApprovalBeforeFileEdits, isFalse);
       expect(settings.showTaskMessagesInChat, isFalse);
       expect(settings.maxProjectTasksPerRun, 25);
+      expect(settings.questionAutonomy, QuestionAutonomy.autonomous);
     });
   });
 }

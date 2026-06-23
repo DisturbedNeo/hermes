@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
+import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/project_system/project_service.dart';
@@ -147,6 +148,74 @@ void main() {
         expect(answered.knownFacts.join('\n'), contains('Desktop first.'));
       },
     );
+
+    test(
+      'downgrades low-risk initialization questions into known facts',
+      () async {
+        final project = await service.createProject(
+          client: _QueueChatClient([
+            jsonEncode({
+              'title': 'Build app',
+              'refinedGoal': 'Build the app',
+              'successCriteria': ['App works'],
+              'constraints': ['Stay in workspace'],
+              'knownFacts': [],
+              'openQuestions': [
+                {
+                  'question': 'Which UI component should I prioritise?',
+                  'reason': 'This only affects implementation order.',
+                  'defaultIfUnanswered':
+                      'prioritize the first reasonable component, then continue with the rest.',
+                  'riskOfAssuming': 'Low; the choice is reversible.',
+                  'kind': 'preference',
+                },
+              ],
+              'backlog': [],
+            }),
+          ]),
+          workspace: workspace,
+          userPrompt: 'Build the app',
+          chatSessionId: 'chat_1',
+          baseSystemPrompt: 'system',
+          questionAutonomy: QuestionAutonomy.balanced,
+        );
+
+        expect(project.status, ProjectStatus.active);
+        expect(project.openQuestions, isEmpty);
+        expect(project.blocker, isNull);
+        expect(project.knownFacts.join('\n'), contains('Assumed: prioritize'));
+        expect(
+          project.knownFacts.join('\n'),
+          contains('Which UI component should I prioritise?'),
+        );
+      },
+    );
+
+    test('keeps credential initialization questions blocking', () async {
+      final project = await service.createProject(
+        client: _QueueChatClient([
+          jsonEncode({
+            'title': 'Build app',
+            'refinedGoal': 'Build the app',
+            'successCriteria': ['App works'],
+            'constraints': ['Stay in workspace'],
+            'knownFacts': [],
+            'openQuestions': [
+              {'question': 'What API key should I use?'},
+            ],
+            'backlog': [],
+          }),
+        ]),
+        workspace: workspace,
+        userPrompt: 'Build the app',
+        chatSessionId: 'chat_1',
+        baseSystemPrompt: 'system',
+        questionAutonomy: QuestionAutonomy.autonomous,
+      );
+
+      expect(project.status, ProjectStatus.waitingForUser);
+      expect(project.pendingQuestion?.question, contains('API key'));
+    });
 
     test(
       'initialization can inspect files before finalising project',

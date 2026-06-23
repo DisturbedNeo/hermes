@@ -15,10 +15,12 @@ import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/core/models/task.dart';
+import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
+import 'package:hermes/core/services/question_policy_service.dart';
 import 'package:hermes/core/services/task_system/finalizer_tool_call_runner.dart';
 import 'package:hermes/core/services/task_system/task_gate_evaluator.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
@@ -181,8 +183,25 @@ const ToolDefinition _finishTaskStepToolDefinition = ToolDefinition(
         },
       },
       'userQuestion': {
-        'type': 'string',
-        'description': 'Question to ask the user when status is blocked.',
+        'description':
+            'Question to ask the user when status is blocked. Prefer an object with question, reason, defaultIfUnanswered, riskOfAssuming, and kind.',
+        'oneOf': [
+          {'type': 'string'},
+          {
+            'type': 'object',
+            'properties': {
+              'question': {'type': 'string'},
+              'reason': {'type': 'string'},
+              'defaultIfUnanswered': {'type': 'string'},
+              'riskOfAssuming': {'type': 'string'},
+              'kind': {
+                'type': 'string',
+                'enum': ['blocking', 'preference', 'advisory'],
+              },
+            },
+            'required': ['question'],
+          },
+        ],
       },
       'replanRequest': {
         'type': 'string',
@@ -302,6 +321,7 @@ class TaskService {
   final TaskStorageService _storage;
   final WorkspaceSandbox _sandbox;
   final TaskGateEvaluator _gateEvaluator;
+  final QuestionPolicyService _questionPolicy = const QuestionPolicyService();
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
 
   TaskStorageService get storage => _storage;
@@ -590,6 +610,7 @@ $userPrompt
     TaskCompactionStatusSink? onCompactionStatus,
     TaskModelOutputSink? onModelOutput,
     TaskCancellationToken? cancellationToken,
+    QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
   }) async {
     cancellationToken?.throwIfCancelled();
     var working = await recoverTask(workspace: workspace, snapshot: snapshot);
@@ -677,6 +698,8 @@ $userPrompt
           execution: execution,
           baseSystemPrompt: baseSystemPrompt,
         );
+      } else if (execution.status == _StepExecutionStatus.blocked) {
+        execution = _applyQuestionPolicy(execution, autonomy: questionAutonomy);
       }
       final completedRun = run.copyWith(
         status: execution.runStatus,
@@ -1522,6 +1545,33 @@ ${_encoder.convert(task.toJson())}
     );
   }
 
+  _StepExecutionOutput _applyQuestionPolicy(
+    _StepExecutionOutput execution, {
+    required QuestionAutonomy autonomy,
+  }) {
+    final questionText = execution.userQuestion?.trim();
+    if (questionText == null || questionText.isEmpty) return execution;
+    final decision = _questionPolicy.decide(
+      question: execution.agentQuestion ?? AgentQuestion.fromText(questionText),
+      autonomy: autonomy,
+    );
+    if (decision.shouldBlock) return execution;
+    final summary = [
+      execution.summary,
+      'Question policy continued with an assumption:',
+      decision.assumption,
+    ].where((item) => item.trim().isNotEmpty).join('\n\n');
+    return execution.copyWith(
+      status: _StepExecutionStatus.completed,
+      runStatus: TaskRunStatus.completed,
+      summary: summary,
+      memoryUpdate: _appendMemory(execution.memoryUpdate, decision.assumption),
+      userQuestion: null,
+      agentQuestion: null,
+      error: null,
+    );
+  }
+
   List<TaskGate> _completionGates(TaskDocument task, TaskStep step) {
     final hasRemainingSteps = task.steps.any((candidate) {
       if (candidate.id == step.id) return false;
@@ -1825,7 +1875,7 @@ Do not call any more tools. Based only on the work already completed and the too
   "summary": "...",
   "memoryUpdate": "...",
   "artifacts": [{"path": "...", "description": "..."}],
-  "userQuestion": "only when blocked",
+  "userQuestion": {"question":"only when blocked","reason":"why this blocks","defaultIfUnanswered":"reasonable default if any","riskOfAssuming":"risk if the default is wrong","kind":"blocking|preference|advisory"},
   "replanRequest": "only when needs_replan",
   "error": "only when failed"
 }
@@ -1990,6 +2040,8 @@ ${_encoder.convert(snapshot.toJson())}
           ? 'Step completed.'
           : 'Step stopped.',
     );
+    final rawUserQuestion = json['userQuestion'] ?? json['user_question'];
+    final agentQuestion = AgentQuestion.parse(rawUserQuestion);
     return _StepExecutionOutput(
       status: status,
       runStatus: switch (status) {
@@ -2001,9 +2053,8 @@ ${_encoder.convert(snapshot.toJson())}
       summary: summary,
       memoryUpdate: jsonString(json['memoryUpdate'] ?? json['memory_update']),
       artifacts: artifacts,
-      userQuestion: jsonNullableString(
-        json['userQuestion'] ?? json['user_question'],
-      ),
+      userQuestion: agentQuestion?.displayText,
+      agentQuestion: agentQuestion,
       replanRequest: jsonNullableString(
         json['replanRequest'] ?? json['replan_request'],
       ),
@@ -2192,7 +2243,7 @@ When finished, call finish_task_step with this result object. If finish_task_ste
   "summary": "...",
   "memoryUpdate": "...",
   "artifacts": [{"path": "...", "description": "..."}],
-  "userQuestion": "only when blocked",
+  "userQuestion": {"question":"only when blocked","reason":"why this blocks","defaultIfUnanswered":"reasonable default if any","riskOfAssuming":"risk if the default is wrong","kind":"blocking|preference|advisory"},
   "replanRequest": "only when needs_replan",
   "error": "only when failed"
 }
@@ -3191,6 +3242,7 @@ class _StepExecutionOutput {
   final List<TaskToolCallRecord> toolCalls;
   final List<TaskGateResult> gateResults;
   final String? userQuestion;
+  final AgentQuestion? agentQuestion;
   final String? replanRequest;
   final String? error;
 
@@ -3203,6 +3255,7 @@ class _StepExecutionOutput {
     required this.toolCalls,
     this.gateResults = const [],
     this.userQuestion,
+    this.agentQuestion,
     this.replanRequest,
     this.error,
   });
@@ -3216,6 +3269,7 @@ class _StepExecutionOutput {
     List<TaskToolCallRecord>? toolCalls,
     List<TaskGateResult>? gateResults,
     Object? userQuestion = kSentinel,
+    Object? agentQuestion = kSentinel,
     Object? replanRequest = kSentinel,
     Object? error = kSentinel,
   }) {
@@ -3228,6 +3282,7 @@ class _StepExecutionOutput {
       toolCalls: toolCalls ?? this.toolCalls,
       gateResults: gateResults ?? this.gateResults,
       userQuestion: resolve(userQuestion, this.userQuestion),
+      agentQuestion: resolve(agentQuestion, this.agentQuestion),
       replanRequest: resolve(replanRequest, this.replanRequest),
       error: resolve(error, this.error),
     );
@@ -3260,6 +3315,8 @@ const String _plannerSystemInstruction = '''
 You create simple linear plans for long-horizon workspace tasks.
 The plan should be small, clear, and robust.
 Each step must be independently executable from the shared goal, plan, memory summary, and previous run summaries.
+Do not ask blocking questions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; choose a reasonable default and continue.
+Ask the user only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
 Choose completion gates from the provided gate catalog when observable evidence should be required before a step or task can complete.
 Use model_review only for subjective creative/research judgment; use deterministic gates whenever possible.
 Read-only steps may create new task-owned artifact files under `.agent/tasks/<taskId>/`.
@@ -3278,13 +3335,15 @@ Use the full plan and memory to keep long-horizon context.
 Complete only the current step.
 Do not perform future steps early.
 Use tools only when needed. When you have enough information, stop using tools and return the requested JSON.
+Do not block on prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; choose a reasonable default, note the assumption, and continue.
+Only return status "blocked" with userQuestion for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
 You may read artifacts from completed prior steps and any artifact already created during the current step.
 Write and report only artifacts declared on the current step.
 If the current step needs a different artifact path, return status "needs_replan" instead of writing it.
 If the current step is read-only, you may create only the current step's declared task-owned artifact files under `.agent/tasks/<taskId>/`, but you must not overwrite existing files, edit source files, rename paths, delete paths, or try to use terminal commands as a workaround.
 If a later step is responsible for writing a report or changing files, leave that work for the later step.
 If the current plan is wrong or missing necessary follow-up work, return status "needs_replan" with a concrete replanRequest.
-If user input is required, return status "blocked" with userQuestion.
+If user input is truly required, return status "blocked" with userQuestion.
 When done, call finish_task_step with the requested result object.
 If finish_task_step is unavailable, return only the requested JSON object.
 ''';
@@ -3293,6 +3352,8 @@ const String _replannerSystemInstruction = '''
 You replan unfinished work for a linear long-horizon task.
 Preserve completed and skipped steps.
 Rewrite only unfinished work into a short, concrete sequence.
+Do not ask blocking questions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; choose a reasonable default and continue.
+Ask the user only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
 Choose completion gates from the provided gate catalog when observable evidence should be required before a step or task can complete.
 Use model_review only for subjective creative/research judgment; use deterministic gates whenever possible.
 Read-only steps may create new task-owned artifact files under `.agent/tasks/<taskId>/`.

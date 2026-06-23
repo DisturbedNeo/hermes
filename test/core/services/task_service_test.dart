@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/core/models/task.dart';
+import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
@@ -466,6 +467,59 @@ void main() {
       expect(answered.pendingQuestion, isNull);
       expect(answered.steps.single.status, TaskStepStatus.pending);
       expect(answered.memorySummary, contains('Desktop first.'));
+    });
+
+    test(
+      'downgrades low-risk priority questions under balanced autonomy',
+      () async {
+        final task = _task();
+        final updated = await service.runNextStep(
+          client: _QueueChatClient([
+            jsonEncode({
+              'status': 'blocked',
+              'summary': 'Need a UI priority.',
+              'userQuestion': {
+                'question': 'Which UI component should I prioritise?',
+                'reason': 'This only affects implementation order.',
+                'defaultIfUnanswered':
+                    'prioritize the first reasonable component, then continue with the rest.',
+                'riskOfAssuming': 'Low; the choice is reversible.',
+                'kind': 'preference',
+              },
+            }),
+          ]),
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+          questionAutonomy: QuestionAutonomy.balanced,
+        );
+
+        expect(updated.status, TaskStatus.completed);
+        expect(updated.pendingQuestion, isNull);
+        expect(updated.runs.single.status, TaskRunStatus.completed);
+        expect(updated.runs.single.summary, contains('Question policy'));
+        expect(updated.memorySummary, contains('Assumed: prioritize'));
+      },
+    );
+
+    test('still blocks credential questions under autonomous mode', () async {
+      final task = _task();
+      final blocked = await service.runNextStep(
+        client: _QueueChatClient([
+          jsonEncode({
+            'status': 'blocked',
+            'summary': 'Need credentials.',
+            'userQuestion': 'What API key should I use?',
+          }),
+        ]),
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+        questionAutonomy: QuestionAutonomy.autonomous,
+      );
+
+      expect(blocked.status, TaskStatus.blocked);
+      expect(blocked.pendingQuestion?.question, contains('API key'));
     });
 
     test('automatically replans unfinished work when requested', () async {

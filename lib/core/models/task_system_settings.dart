@@ -1,3 +1,26 @@
+enum QuestionAutonomy {
+  conservative,
+  balanced,
+  autonomous;
+
+  String get wire => name;
+
+  String get label => switch (this) {
+    QuestionAutonomy.conservative => 'Conservative',
+    QuestionAutonomy.balanced => 'Balanced',
+    QuestionAutonomy.autonomous => 'Autonomous',
+  };
+
+  static QuestionAutonomy parse(Object? value) {
+    final raw = value?.toString().trim().toLowerCase();
+    return switch (raw) {
+      'conservative' => QuestionAutonomy.conservative,
+      'autonomous' => QuestionAutonomy.autonomous,
+      _ => QuestionAutonomy.balanced,
+    };
+  }
+}
+
 class TaskSystemSettings {
   final bool enabled;
 
@@ -12,6 +35,7 @@ class TaskSystemSettings {
   final bool requireApprovalBeforeFileEdits;
   final bool showTaskMessagesInChat;
   final int maxProjectTasksPerRun;
+  final QuestionAutonomy questionAutonomy;
 
   const TaskSystemSettings({
     this.enabled = true,
@@ -19,6 +43,7 @@ class TaskSystemSettings {
     this.requireApprovalBeforeFileEdits = true,
     this.showTaskMessagesInChat = true,
     this.maxProjectTasksPerRun = 5,
+    this.questionAutonomy = QuestionAutonomy.balanced,
   });
 
   TaskSystemSettings copyWith({
@@ -27,6 +52,7 @@ class TaskSystemSettings {
     bool? requireApprovalBeforeFileEdits,
     bool? showTaskMessagesInChat,
     int? maxProjectTasksPerRun,
+    QuestionAutonomy? questionAutonomy,
   }) {
     return TaskSystemSettings(
       enabled: enabled ?? this.enabled,
@@ -38,6 +64,7 @@ class TaskSystemSettings {
           showTaskMessagesInChat ?? this.showTaskMessagesInChat,
       maxProjectTasksPerRun:
           maxProjectTasksPerRun ?? this.maxProjectTasksPerRun,
+      questionAutonomy: questionAutonomy ?? this.questionAutonomy,
     );
   }
 
@@ -55,7 +82,8 @@ class TaskSystemSettings {
             requireApprovalBeforeFileEdits ==
                 other.requireApprovalBeforeFileEdits &&
             showTaskMessagesInChat == other.showTaskMessagesInChat &&
-            maxProjectTasksPerRun == other.maxProjectTasksPerRun;
+            maxProjectTasksPerRun == other.maxProjectTasksPerRun &&
+            questionAutonomy == other.questionAutonomy;
   }
 
   @override
@@ -65,5 +93,6 @@ class TaskSystemSettings {
     requireApprovalBeforeFileEdits,
     showTaskMessagesInChat,
     maxProjectTasksPerRun,
+    questionAutonomy,
   );
 }

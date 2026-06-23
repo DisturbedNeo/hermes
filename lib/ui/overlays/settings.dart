@@ -308,6 +308,30 @@ class _SettingsContent extends StatelessWidget {
             )
           : null,
     ),
+    const SizedBox(height: 8),
+    AccessibleWidget(
+      label: 'Question autonomy',
+      child: DropdownButtonFormField<QuestionAutonomy>(
+        initialValue: taskSystemSettings.questionAutonomy,
+        decoration: const InputDecoration(
+          labelText: 'Question autonomy',
+          prefixIcon: Icon(Icons.help_outline),
+          border: OutlineInputBorder(),
+        ),
+        items: QuestionAutonomy.values.map((autonomy) {
+          return DropdownMenuItem(value: autonomy, child: Text(autonomy.label));
+        }).toList(),
+        onChanged: taskSystemSettings.enabled
+            ? (autonomy) {
+                if (autonomy == null) return;
+                onTaskSystemChanged(
+                  taskSystemSettings.copyWith(questionAutonomy: autonomy),
+                );
+              }
+            : null,
+      ),
+    ),
+    const SizedBox(height: 12),
     SliderControl.integer(
       label: 'Max project tasks per run',
       value: taskSystemSettings.maxProjectTasksPerRun,

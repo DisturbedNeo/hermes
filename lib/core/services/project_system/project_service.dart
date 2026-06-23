@@ -6,10 +6,12 @@ import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
+import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/project_system/project_model_calls.dart';
 import 'package:hermes/core/services/project_system/project_storage_service.dart';
+import 'package:hermes/core/services/question_policy_service.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
@@ -39,6 +41,7 @@ class ProjectService {
   final TaskService _taskService;
   final ProjectStorageService _storage;
   final ProjectModelCalls _modelCalls;
+  final QuestionPolicyService _questionPolicy = const QuestionPolicyService();
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
 
   ProjectStorageService get storage => _storage;
@@ -122,6 +125,7 @@ class ProjectService {
     String baseSystemPrompt = '',
     TaskModelOutputSink? onModelOutput,
     TaskCancellationToken? cancellationToken,
+    QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
   }) async {
     cancellationToken?.throwIfCancelled();
     final now = DateTime.now();
@@ -140,6 +144,10 @@ class ProjectService {
             onModelOutput: onModelOutput,
           );
     cancellationToken?.throwIfCancelled();
+    final filteredQuestions = _filterProjectQuestions(
+      init.openQuestions,
+      autonomy: questionAutonomy,
+    );
     final project = ProjectDocument(
       id: _newProjectId(userPrompt),
       title: init.title.trim().isEmpty
@@ -160,9 +168,9 @@ class ProjectService {
       completedTasks: const [],
       failedTasks: const [],
       artifacts: const [],
-      knownFacts: init.knownFacts,
-      openQuestions: init.openQuestions,
-      status: init.openQuestions.isEmpty
+      knownFacts: _appendFacts(init.knownFacts, filteredQuestions.assumptions),
+      openQuestions: filteredQuestions.blocking,
+      status: filteredQuestions.blocking.isEmpty
           ? ProjectStatus.active
           : ProjectStatus.waitingForUser,
       phase: ProjectPhase.discovery,
@@ -172,11 +180,11 @@ class ProjectService {
       activeTaskId: null,
       chatSessionId: chatSessionId,
       completionSummary: '',
-      blocker: init.openQuestions.isEmpty
+      blocker: filteredQuestions.blocking.isEmpty
           ? null
           : ProjectBlocker(
               type: ProjectBlockerType.question,
-              message: init.openQuestions.first.question,
+              message: filteredQuestions.blocking.first.question,
               createdAt: now,
             ),
       decisions: const [],
@@ -278,6 +286,7 @@ class ProjectService {
     TaskModelOutputSink? onModelOutput,
     ProjectTaskSnapshotSink? onTaskUpdated,
     TaskCancellationToken? cancellationToken,
+    QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
   }) {
     return runProject(
       client: client,
@@ -292,6 +301,7 @@ class ProjectService {
       onModelOutput: onModelOutput,
       onTaskUpdated: onTaskUpdated,
       cancellationToken: cancellationToken,
+      questionAutonomy: questionAutonomy,
     );
   }
 
@@ -308,6 +318,7 @@ class ProjectService {
     TaskModelOutputSink? onModelOutput,
     ProjectTaskSnapshotSink? onTaskUpdated,
     TaskCancellationToken? cancellationToken,
+    QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
   }) async {
     cancellationToken?.throwIfCancelled();
     final recovered = await recoverProject(
@@ -334,6 +345,30 @@ class ProjectService {
 
     while (!project.isTerminal) {
       cancellationToken?.throwIfCancelled();
+      if (project.openQuestions.isNotEmpty) {
+        final filtered = _filterProjectQuestions(
+          project.openQuestions,
+          autonomy: questionAutonomy,
+        );
+        if (filtered.assumptions.isNotEmpty) {
+          project = project.copyWith(
+            openQuestions: filtered.blocking,
+            knownFacts: _appendFacts(project.knownFacts, filtered.assumptions),
+            blocker: filtered.blocking.isEmpty
+                ? null
+                : ProjectBlocker(
+                    type: ProjectBlockerType.question,
+                    message: filtered.blocking.first.question,
+                    createdAt: DateTime.now(),
+                  ),
+            status: filtered.blocking.isEmpty
+                ? ProjectStatus.active
+                : ProjectStatus.waitingForUser,
+            updatedAt: DateTime.now(),
+          );
+          await _storage.saveSnapshot(workspace.rootPath, project);
+        }
+      }
       if (project.openQuestions.isNotEmpty ||
           project.blocker?.type == ProjectBlockerType.question) {
         project = _waitingForUser(project, DateTime.now());
@@ -379,6 +414,7 @@ class ProjectService {
           project: project,
           baseSystemPrompt: baseSystemPrompt,
           onModelOutput: onModelOutput,
+          questionAutonomy: questionAutonomy,
         );
         if (!project.isTerminal &&
             project.status != ProjectStatus.waitingForUser &&
@@ -426,6 +462,7 @@ class ProjectService {
         onModelOutput: onModelOutput,
         onTaskUpdated: onTaskUpdated,
         cancellationToken: cancellationToken,
+        questionAutonomy: questionAutonomy,
       );
       project = execution.project;
       activeTask = execution.activeTask;
@@ -446,12 +483,18 @@ class ProjectService {
         execution.result!,
         project,
       );
-      project = _updateProjectState(project, evaluation, now);
+      project = _updateProjectState(
+        project,
+        evaluation,
+        now,
+        questionAutonomy: questionAutonomy,
+      );
       project = await _applyCompletionEvaluation(
         client: client,
         project: project,
         baseSystemPrompt: baseSystemPrompt,
         onModelOutput: onModelOutput,
+        questionAutonomy: questionAutonomy,
       );
       project = project.copyWith(
         iterationCount: project.iterationCount + 1,
@@ -769,6 +812,7 @@ class ProjectService {
     TaskModelOutputSink? onModelOutput,
     ProjectTaskSnapshotSink? onTaskUpdated,
     TaskCancellationToken? cancellationToken,
+    QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
   }) async {
     cancellationToken?.throwIfCancelled();
     final now = DateTime.now();
@@ -847,6 +891,7 @@ class ProjectService {
         onCompactionStatus: onCompactionStatus,
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
+        questionAutonomy: questionAutonomy,
       );
       onTaskUpdated?.call(activeTask);
       workingProject = _syncCurrentTaskFromTask(
@@ -895,6 +940,7 @@ class ProjectService {
         onCompactionStatus: onCompactionStatus,
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
+        questionAutonomy: questionAutonomy,
       );
       onTaskUpdated?.call(activeTask);
     }
@@ -952,10 +998,15 @@ class ProjectService {
   ProjectDocument _updateProjectState(
     ProjectDocument project,
     ProjectEvaluation evaluation,
-    DateTime now,
-  ) {
+    DateTime now, {
+    required QuestionAutonomy questionAutonomy,
+  }) {
     final task = project.currentTask;
     if (task == null) return project;
+    final filteredQuestions = _filterProjectQuestions(
+      evaluation.openQuestions,
+      autonomy: questionAutonomy,
+    );
     if (!evaluation.taskAccepted) {
       final failedTask = task.copyWith(
         status: ProjectTaskStatus.failed,
@@ -967,7 +1018,7 @@ class ProjectService {
         currentTask: null,
         activeTaskId: null,
         failedTasks: failedTasks,
-        openQuestions: evaluation.openQuestions,
+        openQuestions: filteredQuestions.blocking,
         status: failedTasks.length >= project.maxFailedTasks
             ? ProjectStatus.failed
             : ProjectStatus.active,
@@ -980,7 +1031,10 @@ class ProjectService {
                 createdAt: now,
               )
             : null,
-        knownFacts: _appendFacts(project.knownFacts, evaluation.newKnownFacts),
+        knownFacts: _appendFacts(project.knownFacts, [
+          ...evaluation.newKnownFacts,
+          ...filteredQuestions.assumptions,
+        ]),
         decisions: [
           ...project.decisions,
           _decision(
@@ -1003,18 +1057,21 @@ class ProjectService {
       activeTaskId: null,
       completedTasks: [...project.completedTasks, completedTask],
       artifacts: _mergeArtifacts(project.artifacts, evaluation.artifacts),
-      knownFacts: _appendFacts(project.knownFacts, evaluation.newKnownFacts),
-      openQuestions: evaluation.openQuestions,
+      knownFacts: _appendFacts(project.knownFacts, [
+        ...evaluation.newKnownFacts,
+        ...filteredQuestions.assumptions,
+      ]),
+      openQuestions: filteredQuestions.blocking,
       backlog: [...evaluation.backlogAdditions, ...project.backlog],
-      status: evaluation.openQuestions.isEmpty
+      status: filteredQuestions.blocking.isEmpty
           ? ProjectStatus.active
           : ProjectStatus.waitingForUser,
       phase: ProjectPhase.execution,
-      blocker: evaluation.openQuestions.isEmpty
+      blocker: filteredQuestions.blocking.isEmpty
           ? null
           : ProjectBlocker(
               type: ProjectBlockerType.question,
-              message: evaluation.openQuestions.first.question,
+              message: filteredQuestions.blocking.first.question,
               createdAt: now,
             ),
       decisions: [
@@ -1035,6 +1092,7 @@ class ProjectService {
     required ProjectDocument project,
     required String baseSystemPrompt,
     TaskModelOutputSink? onModelOutput,
+    QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
   }) async {
     if (project.isTerminal ||
         project.openQuestions.isNotEmpty ||
@@ -1054,12 +1112,28 @@ class ProjectService {
     }.where((item) => item.trim().isNotEmpty).toList();
     final now = DateTime.now();
     if (assessment.openQuestions.isNotEmpty) {
+      final filtered = _filterProjectQuestions(
+        assessment.openQuestions,
+        autonomy: questionAutonomy,
+      );
+      if (filtered.blocking.isEmpty) {
+        return project.copyWith(
+          status: ProjectStatus.active,
+          knownFacts: _appendFacts(project.knownFacts, filtered.assumptions),
+          phase: project.backlog.isEmpty
+              ? ProjectPhase.planning
+              : ProjectPhase.execution,
+          blocker: null,
+          updatedAt: now,
+        );
+      }
       return project.copyWith(
         status: ProjectStatus.waitingForUser,
-        openQuestions: assessment.openQuestions,
+        openQuestions: filtered.blocking,
+        knownFacts: _appendFacts(project.knownFacts, filtered.assumptions),
         blocker: ProjectBlocker(
           type: ProjectBlockerType.question,
-          message: assessment.openQuestions.first.question,
+          message: filtered.blocking.first.question,
           createdAt: now,
         ),
         updatedAt: now,
@@ -1292,6 +1366,29 @@ class ProjectService {
     );
   }
 
+  _FilteredProjectQuestions _filterProjectQuestions(
+    List<PendingProjectQuestion> questions, {
+    required QuestionAutonomy autonomy,
+  }) {
+    final blocking = <PendingProjectQuestion>[];
+    final assumptions = <String>[];
+    for (final question in questions) {
+      final decision = _questionPolicy.decide(
+        question: AgentQuestion.fromText(question.question),
+        autonomy: autonomy,
+      );
+      if (decision.shouldBlock) {
+        blocking.add(question);
+      } else {
+        assumptions.add(decision.assumption);
+      }
+    }
+    return _FilteredProjectQuestions(
+      blocking: blocking,
+      assumptions: assumptions,
+    );
+  }
+
   ProjectDocument _blockProject(
     ProjectDocument project,
     ProjectBlockerType type,
@@ -1456,6 +1553,8 @@ You are executing one bounded task inside a persistent Project orchestrator.
 Project id: ${project.id}
 Project goal: ${project.refinedGoal}
 Complete only the active bounded Project task. Do not expand into the full project. The application will select the next task after this one is evaluated.$activeTaskLine
+Do not block on prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; choose a reasonable default, note the assumption, and continue.
+Ask the user only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
 '''
         .trim();
   }
@@ -1514,5 +1613,15 @@ class _ProjectTaskExecution {
     required this.project,
     this.activeTask,
     this.result,
+  });
+}
+
+class _FilteredProjectQuestions {
+  final List<PendingProjectQuestion> blocking;
+  final List<String> assumptions;
+
+  const _FilteredProjectQuestions({
+    required this.blocking,
+    required this.assumptions,
   });
 }

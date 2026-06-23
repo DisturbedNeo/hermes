@@ -1263,6 +1263,7 @@ class ChatService extends ChangeNotifier implements Disposable {
         baseSystemPrompt: _buildSystemPrompt(currentUserRequest: prompt),
         onModelOutput: _handleTaskModelOutput,
         cancellationToken: token,
+        questionAutonomy: settings.questionAutonomy,
       );
       activeProject = project;
       activeTask = null;
@@ -1324,6 +1325,7 @@ class ChatService extends ChangeNotifier implements Disposable {
         baseSystemPrompt: _buildProjectSystemPrompt(snapshot),
         maxNewTasks: maxNewTasks ?? settings.maxProjectTasksPerRun,
         requirePhaseApproval: settings.requireApprovalBeforeFileEdits,
+        questionAutonomy: settings.questionAutonomy,
         compactionSettings: compactionSettings,
         contextLimitTokens: _diagnosticsContextLimit,
         onCompactionStatus: (status) {
@@ -1613,6 +1615,7 @@ class ChatService extends ChangeNotifier implements Disposable {
         snapshot: snapshot,
         baseSystemPrompt: _buildTaskSystemPrompt(snapshot),
         requirePhaseApproval: taskSystemSettings.requireApprovalBeforeFileEdits,
+        questionAutonomy: taskSystemSettings.questionAutonomy,
         compactionSettings: compactionSettings,
         contextLimitTokens: _diagnosticsContextLimit,
         onCompactionStatus: (status) {
