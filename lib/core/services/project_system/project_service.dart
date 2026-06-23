@@ -363,20 +363,6 @@ class ProjectService {
         return ProjectRunResult(project: project, activeTask: activeTask);
       }
 
-      project = await _ensureBacklog(
-        client: client,
-        workspace: workspace,
-        project: project,
-        baseSystemPrompt: baseSystemPrompt,
-        onModelOutput: onModelOutput,
-      );
-      if (project.openQuestions.isNotEmpty ||
-          project.status == ProjectStatus.waitingForUser) {
-        project = _waitingForUser(project, DateTime.now());
-        await _storage.saveSnapshot(workspace.rootPath, project);
-        return ProjectRunResult(project: project, activeTask: activeTask);
-      }
-
       final candidate = project.currentTask == null
           ? await _proposeNextTask(
               client: client,
@@ -394,6 +380,16 @@ class ProjectService {
           baseSystemPrompt: baseSystemPrompt,
           onModelOutput: onModelOutput,
         );
+        if (!project.isTerminal &&
+            project.status != ProjectStatus.waitingForUser &&
+            project.openQuestions.isEmpty) {
+          project = _blockProject(
+            project,
+            ProjectBlockerType.validation,
+            'Project is not complete, but no next bounded task could be proposed.',
+            DateTime.now(),
+          );
+        }
         await _storage.saveSnapshot(workspace.rootPath, project);
         return ProjectRunResult(project: project, activeTask: activeTask);
       }
@@ -492,6 +488,35 @@ class ProjectService {
       knownFacts: [
         ...snapshot.knownFacts,
         'User answered: ${question.question}\nAnswer: $trimmed',
+      ],
+      updatedAt: DateTime.now(),
+    );
+    await _storage.saveSnapshot(workspace.rootPath, updated);
+    return updated;
+  }
+
+  Future<ProjectDocument> addUserContext({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String text,
+  }) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return snapshot;
+    if (snapshot.pendingQuestion != null) {
+      return answerOpenQuestion(
+        workspace: workspace,
+        snapshot: snapshot,
+        answer: trimmed,
+      );
+    }
+    final updated = snapshot.copyWith(
+      status: snapshot.isTerminal ? snapshot.status : ProjectStatus.active,
+      blocker: snapshot.blocker?.type == ProjectBlockerType.question
+          ? null
+          : snapshot.blocker,
+      knownFacts: [
+        ...snapshot.knownFacts,
+        'User added project context: $trimmed',
       ],
       updatedAt: DateTime.now(),
     );
@@ -598,71 +623,6 @@ class ProjectService {
     };
   }
 
-  Future<ProjectDocument> _ensureBacklog({
-    required ChatClient client,
-    required WorkspaceAttachment workspace,
-    required ProjectDocument project,
-    required String baseSystemPrompt,
-    TaskModelOutputSink? onModelOutput,
-  }) async {
-    if (project.backlog.isNotEmpty || project.currentTask != null) {
-      return project;
-    }
-    final metadata = await _collectWorkspaceMetadata(
-      workspace,
-      chatSessionId: project.chatSessionId,
-    );
-    final refresh = await _modelCalls.refreshBacklog(
-      client: client,
-      baseSystemPrompt: baseSystemPrompt,
-      workspace: workspace,
-      project: project,
-      workspaceMetadata: metadata,
-      onModelOutput: onModelOutput,
-    );
-    final backlog =
-        _normaliseBacklog(
-              refresh.backlog.isEmpty
-                  ? [_fallbackBacklogTask(project)]
-                  : refresh.backlog,
-            )
-            .where(
-              (task) => !_knownFingerprints(project).contains(task.fingerprint),
-            )
-            .toList();
-    final openQuestions = [...project.openQuestions, ...refresh.openQuestions];
-    final status = openQuestions.isEmpty
-        ? ProjectStatus.active
-        : ProjectStatus.waitingForUser;
-    final updated = project.copyWith(
-      backlog: backlog,
-      knownFacts: _appendFacts(project.knownFacts, refresh.knownFacts),
-      openQuestions: openQuestions,
-      status: status,
-      phase: ProjectPhase.planning,
-      blocker: openQuestions.isEmpty
-          ? null
-          : ProjectBlocker(
-              type: ProjectBlockerType.question,
-              message: openQuestions.first.question,
-              createdAt: DateTime.now(),
-            ),
-      decisions: [
-        ...project.decisions,
-        _decision(
-          ProjectDecisionType.refreshBacklog,
-          backlog.isEmpty
-              ? 'Backlog refresh produced no new tasks.'
-              : 'Backlog refreshed with ${backlog.length} task(s).',
-          '',
-        ),
-      ],
-      updatedAt: DateTime.now(),
-    );
-    await _storage.saveSnapshot(workspace.rootPath, updated);
-    return updated;
-  }
-
   Future<ProjectTask?> _proposeNextTask({
     required ChatClient client,
     required WorkspaceAttachment workspace,
@@ -670,7 +630,6 @@ class ProjectService {
     required String baseSystemPrompt,
     TaskModelOutputSink? onModelOutput,
   }) async {
-    if (project.backlog.isEmpty) return null;
     final metadata = await _collectWorkspaceMetadata(
       workspace,
       chatSessionId: project.chatSessionId,
@@ -1429,7 +1388,6 @@ class ProjectService {
   }
 
   ProjectInitialisation _fallbackInitialisation(String originalGoal) {
-    final task = _fallbackBacklogTaskForGoal(originalGoal);
     return ProjectInitialisation(
       title: _titleFromPrompt(originalGoal),
       refinedGoal: originalGoal,
@@ -1437,65 +1395,7 @@ class ProjectService {
       constraints: const ['Stay within the attached workspace.'],
       knownFacts: const [],
       openQuestions: const [],
-      backlog: [task],
-    );
-  }
-
-  ProjectTask _fallbackBacklogTask(ProjectDocument project) {
-    final remaining = _remainingCriteria(project);
-    final criterion = remaining.isEmpty
-        ? 'Identify the next smallest useful project task.'
-        : remaining.first;
-    final now = DateTime.now();
-    final objective = 'Make focused progress on: $criterion';
-    return ProjectTask(
-      id: 'project_task_${uuid.v7()}',
-      title: _titleFromPrompt(criterion),
-      objective: objective,
-      relevantSuccessCriteria: [criterion],
-      doneCriteria: [
-        'Concrete progress for "$criterion" is completed and summarized.',
-      ],
-      outOfScope: const [
-        'Do not complete unrelated success criteria.',
-        'Do not expand this into the whole project.',
-      ],
-      context: project.knownFacts,
-      expectedArtifacts: const [],
-      status: ProjectTaskStatus.queued,
-      taskDocumentId: null,
-      fingerprint: projectTaskFingerprint(objective, [criterion]),
-      rejectionReason: null,
-      createdAt: now,
-      updatedAt: now,
-    );
-  }
-
-  ProjectTask _fallbackBacklogTaskForGoal(String goal) {
-    final now = DateTime.now();
-    const criterion = 'Complete the stated project goal.';
-    const objective =
-        'Inspect the workspace and identify the smallest useful first task for this project.';
-    return ProjectTask(
-      id: 'project_task_${uuid.v7()}',
-      title: 'Discover first project slice',
-      objective: objective,
-      relevantSuccessCriteria: const [criterion],
-      doneCriteria: const [
-        'A concise recommendation for the first bounded project task is recorded.',
-      ],
-      outOfScope: const [
-        'Do not implement the full project.',
-        'Do not make broad source changes.',
-      ],
-      context: [goal],
-      expectedArtifacts: const [],
-      status: ProjectTaskStatus.queued,
-      taskDocumentId: null,
-      fingerprint: projectTaskFingerprint(objective, const [criterion]),
-      rejectionReason: null,
-      createdAt: now,
-      updatedAt: now,
+      backlog: const [],
     );
   }
 

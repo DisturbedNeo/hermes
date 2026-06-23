@@ -177,7 +177,6 @@ void main() {
                     'constraints': ['Stay in workspace'],
                     'knownFacts': ['Design requests a reporting dashboard.'],
                     'openQuestions': [],
-                    'backlog': [_projectTaskJson()],
                   }),
                 ),
               ],
@@ -194,49 +193,31 @@ void main() {
           project.knownFacts,
           contains('Design requests a reporting dashboard.'),
         );
+        expect(project.backlog, isEmpty);
       },
     );
 
-    test('stops when backlog refresh raises an open question', () async {
+    test('records composer input as durable project context', () async {
       final created = await service.createProject(
         workspace: workspace,
         userPrompt: 'Build the app',
         chatSessionId: 'chat_1',
       );
-      final project = created.copyWith(
-        backlog: const [],
-        successCriteria: const ['Finish'],
-      );
 
-      final result = await service.runProject(
-        client: _QueueChatClient([
-          jsonEncode({
-            'backlog': [],
-            'knownFacts': ['The API choice is unknown.'],
-            'openQuestions': [
-              {'question': 'Which API should the app use?'},
-            ],
-          }),
-        ]),
+      final updated = await service.addUserContext(
         workspace: workspace,
-        snapshot: project,
-        baseSystemPrompt: 'system',
-        maxNewTasks: 5,
+        snapshot: created,
+        text: 'Use SvelteKit for the web framework.',
       );
 
-      expect(result.project.status, ProjectStatus.waitingForUser);
-      expect(result.project.pendingQuestion?.question, contains('API'));
-      expect(result.project.knownFacts, contains('The API choice is unknown.'));
-      expect(result.activeTask, isNull);
-      expect(result.project.completedTasks, isEmpty);
+      expect(updated.id, created.id);
+      expect(updated.knownFacts.join('\n'), contains('SvelteKit'));
+      expect(updated.status, ProjectStatus.active);
     });
 
     test(
-      'backlog refresh can inspect files before finalising project',
+      'empty backlog asks for exactly one next task instead of refreshing backlog',
       () async {
-        await File(
-          '${root.path}/design.md',
-        ).writeAsString('# Design\nUse the analytics endpoint.\n');
         final created = await service.createProject(
           workspace: workspace,
           userPrompt: 'Build the app',
@@ -248,28 +229,27 @@ void main() {
         );
         final client = _QueueCompletionClient([
           ChatCompletionResponse(
-            content: '',
-            toolCalls: [
-              ChatCompletionToolCall(
-                name: 'read_file',
-                arguments: jsonEncode({'path': 'design.md'}),
+            content: jsonEncode({
+              'task': _projectTaskJson(
+                relevantSuccessCriteria: const ['Finish'],
               ),
-            ],
+            }),
+          ),
+          _finaliseTaskResponse(_taskPlanJson()),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Task complete.',
+              'memoryUpdate': 'Finished the selected slice.',
+            }),
           ),
           ChatCompletionResponse(
-            content: '',
-            toolCalls: [
-              ChatCompletionToolCall(
-                name: 'finaliseProjectCreation',
-                arguments: jsonEncode({
-                  'backlog': [_projectTaskJson()],
-                  'knownFacts': ['Design mentions the analytics endpoint.'],
-                  'openQuestions': [
-                    {'question': 'Which analytics endpoint should be used?'},
-                  ],
-                }),
-              ),
-            ],
+            content: jsonEncode({
+              'complete': true,
+              'finalSummary': 'Done.',
+              'remainingCriteria': [],
+              'openQuestions': [],
+            }),
           ),
         ]);
 
@@ -281,15 +261,10 @@ void main() {
           maxNewTasks: 5,
         );
 
-        expect(result.project.status, ProjectStatus.waitingForUser);
-        expect(
-          result.project.knownFacts,
-          contains('Design mentions the analytics endpoint.'),
-        );
-        expect(client.seenToolNames.first, contains('read_file'));
-        expect(client.seenToolNames.first, contains('finaliseProjectCreation'));
-        expect(client.seenToolNames.first, isNot(contains('write_file')));
-        expect(client.seenToolNames.first, isNot(contains('run_command')));
+        expect(result.project.status, ProjectStatus.completed);
+        expect(result.project.completedTasks, hasLength(1));
+        expect(result.project.backlog, isEmpty);
+        expect(client.seenToolNames.first, isEmpty);
       },
     );
 
@@ -406,6 +381,18 @@ Map<String, dynamic> _taskPlanJson() {
       },
     ],
   };
+}
+
+ChatCompletionResponse _finaliseTaskResponse(Map<String, dynamic> arguments) {
+  return ChatCompletionResponse(
+    content: '',
+    toolCalls: [
+      ChatCompletionToolCall(
+        name: 'finaliseTaskCreation',
+        arguments: jsonEncode(arguments),
+      ),
+    ],
+  );
 }
 
 class _QueueChatClient extends ChatClient {

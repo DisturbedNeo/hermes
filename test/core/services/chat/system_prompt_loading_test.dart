@@ -565,6 +565,32 @@ void main() {
       expect(chat.activeProject?.chatSessionId, saved.id);
     });
 
+    test(
+      'project mode input updates the active project instead of replacing it',
+      () async {
+        serverManager.chatClient = _QueueChatClient([jsonEncode({})]);
+        await chat.attachWorkspace(tempDir.path);
+        chat.setExecutionMode(ExecutionMode.project);
+
+        await chat.send('Build the reporting screen');
+        final projectId = chat.activeProject!.id;
+
+        await chat.send('Use SvelteKit for the web framework.');
+
+        expect(chat.activeProject?.id, projectId);
+        expect(
+          chat.activeProject?.knownFacts.join('\n'),
+          contains('SvelteKit'),
+        );
+        expect(
+          (await ProjectService(
+            taskService: TaskService(toolService: ToolService()),
+          ).storage.listProjects(tempDir.path)),
+          hasLength(1),
+        );
+      },
+    );
+
     test('supports /continue command for the active task', () async {
       serverManager.chatClient = _QueueChatClient([
         jsonEncode({

@@ -1220,6 +1220,31 @@ class ChatService extends ChangeNotifier implements Disposable {
       return;
     }
 
+    final scopeId = await _ensureTaskScopeId();
+    final existingProject =
+        activeProject ??
+        (await _recoverProjectSnapshot(
+          currentWorkspace,
+          await _projectService.loadLatestProject(
+            currentWorkspace,
+            chatSessionId: scopeId,
+          ),
+        ))?.project;
+    if (existingProject != null && !existingProject.isTerminal) {
+      activeProject = await _projectService.addUserContext(
+        workspace: currentWorkspace,
+        snapshot: existingProject,
+        text: prompt,
+      );
+      activeTask = null;
+      await reloadTasks();
+      _insertTaskAssistantMessage(_projectStatusMessage(activeProject!));
+      if (runAfterCreation) {
+        await _runProjectInternal();
+      }
+      return;
+    }
+
     taskBusy = true;
     final token = _beginTaskCancellationScope();
     taskError = null;
@@ -1230,7 +1255,6 @@ class ChatService extends ChangeNotifier implements Disposable {
     notifyListeners();
 
     try {
-      final scopeId = await _ensureTaskScopeId();
       final project = await _projectService.createProject(
         workspace: currentWorkspace,
         userPrompt: prompt,

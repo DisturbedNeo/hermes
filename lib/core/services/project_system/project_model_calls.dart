@@ -81,19 +81,19 @@ class ProjectModelCalls {
         system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
         onModelOutput: onModelOutput,
         expectedShape:
-            '{"title":"...","refinedGoal":"...","successCriteria":["..."],"constraints":["..."],"knownFacts":["..."],"openQuestions":[{"question":"..."}],"backlog":[{"title":"...","objective":"...","relevantSuccessCriteria":["..."],"doneCriteria":["..."],"outOfScope":["..."],"context":["..."],"expectedArtifacts":[]}]}',
+            '{"title":"...","refinedGoal":"...","successCriteria":["..."],"constraints":["..."],"knownFacts":["..."],"openQuestions":[{"question":"..."}],"backlog":[]}',
         finalizerTool: _finaliseProjectCreationToolDefinition(
           requiredProperties: const [
             'title',
             'refinedGoal',
             'successCriteria',
             'constraints',
-            'backlog',
           ],
         ),
         user:
             '''
 Initialize a persistent project state. Do not execute the project.
+Do not create a full task plan up front. Backlog is optional; include only tasks that are immediately obvious and small.
 
 Return only JSON:
 {
@@ -103,17 +103,7 @@ Return only JSON:
   "constraints": ["..."],
   "knownFacts": ["..."],
   "openQuestions": [{"question": "..."}],
-  "backlog": [
-    {
-      "title": "...",
-      "objective": "one small bounded task",
-      "relevantSuccessCriteria": ["one or two criteria"],
-      "doneCriteria": ["..."],
-      "outOfScope": ["..."],
-      "context": ["..."],
-      "expectedArtifacts": [{"path": "...", "description": "...", "kind": "file"}]
-    }
-  ]
+  "backlog": []
 }
 
 Workspace metadata:
@@ -225,7 +215,6 @@ ${_encoder.convert(project.toJson())}
     required Set<String> forbiddenFingerprints,
     TaskModelOutputSink? onModelOutput,
   }) async {
-    if (project.backlog.isEmpty) return null;
     try {
       final json = await _completeJson(
         client: client,
@@ -236,7 +225,9 @@ ${_encoder.convert(project.toJson())}
             '{"task":{"title":"...","objective":"...","relevantSuccessCriteria":["..."],"doneCriteria":["..."],"outOfScope":["..."],"context":["..."],"expectedArtifacts":[]}}',
         user:
             '''
-Select exactly one next task from the backlog, or rewrite exactly one backlog item into a smaller bounded task.
+Propose exactly one next bounded task for the existing persistent project.
+Use the backlog if it contains a useful next task, but do not require a backlog and do not create a new project.
+Respect knownFacts and previous user answers; do not repeat questions that are already answered there.
 
 Return only JSON:
 {
@@ -266,9 +257,13 @@ ${_encoder.convert(project.toJson())}
         return _taskFromMap(Map<String, dynamic>.from(raw), 0);
       }
     } catch (_) {
-      return project.backlog.first;
+      return project.backlog.isEmpty
+          ? _fallbackNextTask(project)
+          : project.backlog.first;
     }
-    return project.backlog.first;
+    return project.backlog.isEmpty
+        ? _fallbackNextTask(project)
+        : project.backlog.first;
   }
 
   Future<List<ProjectTask>> splitTask({
@@ -500,32 +495,6 @@ $expectedShape
   }
 
   ProjectInitialisation _fallbackInitialisation(String originalGoal) {
-    final now = DateTime.now();
-    final task = ProjectTask(
-      id: 'project_task_${uuid.v7()}',
-      title: 'Discover first project slice',
-      objective:
-          'Inspect the workspace and identify the smallest useful first task for this project.',
-      relevantSuccessCriteria: const ['Complete the stated project goal.'],
-      doneCriteria: const [
-        'A concise recommendation for the first bounded project task is recorded.',
-      ],
-      outOfScope: const [
-        'Do not implement the full project.',
-        'Do not make broad source changes.',
-      ],
-      context: const [],
-      expectedArtifacts: const [],
-      status: ProjectTaskStatus.queued,
-      taskDocumentId: null,
-      fingerprint: projectTaskFingerprint(
-        'Inspect the workspace and identify the smallest useful first task for this project.',
-        const ['Complete the stated project goal.'],
-      ),
-      rejectionReason: null,
-      createdAt: now,
-      updatedAt: now,
-    );
     return ProjectInitialisation(
       title: _titleFromGoal(originalGoal),
       refinedGoal: originalGoal,
@@ -533,7 +502,7 @@ $expectedShape
       constraints: const ['Stay within the attached workspace.'],
       knownFacts: const [],
       openQuestions: const [],
-      backlog: [task],
+      backlog: const [],
     );
   }
 
@@ -560,6 +529,43 @@ $expectedShape
         task.objective,
         task.relevantSuccessCriteria,
       ),
+    );
+  }
+
+  ProjectTask? _fallbackNextTask(ProjectState project) {
+    final remainingCriteria = project.successCriteria.where((criterion) {
+      final normalised = criterion.trim().toLowerCase();
+      return !project.completedTasks.any(
+        (task) => task.relevantSuccessCriteria.any(
+          (completed) => completed.trim().toLowerCase() == normalised,
+        ),
+      );
+    }).toList();
+    final criterion = remainingCriteria.isEmpty
+        ? 'Identify the next smallest useful project task.'
+        : remainingCriteria.first;
+    final now = DateTime.now();
+    final objective = 'Make focused progress on: $criterion';
+    return ProjectTask(
+      id: 'project_task_${uuid.v7()}',
+      title: _titleFromGoal(criterion),
+      objective: objective,
+      relevantSuccessCriteria: [criterion],
+      doneCriteria: [
+        'Concrete progress for "$criterion" is completed and summarized.',
+      ],
+      outOfScope: const [
+        'Do not complete unrelated success criteria.',
+        'Do not expand this into the whole project.',
+      ],
+      context: project.knownFacts,
+      expectedArtifacts: const [],
+      status: ProjectTaskStatus.queued,
+      taskDocumentId: null,
+      fingerprint: projectTaskFingerprint(objective, [criterion]),
+      rejectionReason: null,
+      createdAt: now,
+      updatedAt: now,
     );
   }
 
