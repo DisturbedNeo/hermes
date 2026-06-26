@@ -7,6 +7,7 @@ import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
+import 'package:hermes/core/services/terminal_command_classifier.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:path/path.dart' as path;
 import 'package:yaml/yaml.dart';
@@ -275,11 +276,12 @@ class TaskGateEvaluator {
   ) {
     final command = jsonString(gate.params['command']);
     final args = jsonStringList(gate.params['args']);
+    final commandText = _commandTextFromParts(command, args);
     final workingDirectory = jsonString(
       gate.params['working_directory'] ?? gate.params['workingDirectory'],
       fallback: '.',
     );
-    if (command.isEmpty) {
+    if (commandText.isEmpty) {
       return _result(
         gate,
         TaskGateStatus.pending,
@@ -293,8 +295,13 @@ class TaskGateEvaluator {
       final call = toolCalls[i];
       if (call.toolName != 'run_command') continue;
       final callArgs = jsonMap(call.arguments);
-      if (jsonString(callArgs['command']) != command) continue;
-      if (!_stringListsEqual(jsonStringList(callArgs['args']), args)) continue;
+      if (_commandTextFromParts(
+            jsonString(callArgs['command']),
+            jsonStringList(callArgs['args']),
+          ) !=
+          commandText) {
+        continue;
+      }
       final cwd = jsonString(
         callArgs['working_directory'] ?? callArgs['workingDirectory'],
         fallback: '.',
@@ -306,25 +313,25 @@ class TaskGateEvaluator {
         return _result(
           gate,
           _passStatus(gate),
-          'Verification command passed: $command ${args.join(' ')}.',
+          'Verification command passed: $commandText.',
           now,
-          {'command': command, 'args': args, 'workingDirectory': cwd},
+          {'command': commandText, 'workingDirectory': cwd},
         );
       }
       return _result(
         gate,
         TaskGateStatus.failed,
-        'Verification command failed with exit code $exitCode: $command ${args.join(' ')}.',
+        'Verification command failed with exit code $exitCode: $commandText.',
         now,
-        {'command': command, 'args': args, 'exitCode': exitCode},
+        {'command': commandText, 'exitCode': exitCode},
       );
     }
     return _result(
       gate,
       TaskGateStatus.pending,
-      'Required verification command has not run after the last workspace mutation: $command ${args.join(' ')}.',
+      'Required verification command has not run after the last workspace mutation: $commandText.',
       now,
-      {'command': command, 'args': args, 'workingDirectory': workingDirectory},
+      {'command': commandText, 'workingDirectory': workingDirectory},
     );
   }
 
@@ -747,35 +754,9 @@ $prompt
       return true;
     }
     if (call.toolName != 'run_command') return false;
-    final args = jsonMap(call.arguments);
-    final command = jsonString(args['command']);
-    final commandArgs = jsonStringList(args['args']);
-    if (const {
-      'rm',
-      'mv',
-      'cp',
-      'mkdir',
-      'touch',
-      'dart',
-      'flutter',
-      'dotnet',
-      'cargo',
-      'npm',
-      'pnpm',
-      'yarn',
-    }.contains(command)) {
-      return commandArgs.any((arg) {
-        final value = arg.toLowerCase();
-        return value.contains('format') ||
-            value.contains('fix') ||
-            value.contains('install') ||
-            value.contains('add') ||
-            value.contains('remove') ||
-            value.contains('generate') ||
-            value.contains('codegen');
-      });
-    }
-    return false;
+    return TerminalCommandClassifier.isClearlyMutating(
+      TerminalCommandClassifier.classify(_commandText(call)),
+    );
   }
 
   Map<String, dynamic> _resultSummaryMap(TaskToolCallRecord call) {
@@ -788,15 +769,11 @@ $prompt
     final args = jsonMap(call.arguments);
     final command = jsonString(args['command']);
     final commandArgs = jsonStringList(args['args']);
-    return [command, ...commandArgs].where((item) => item.isNotEmpty).join(' ');
+    return _commandTextFromParts(command, commandArgs);
   }
 
-  bool _stringListsEqual(List<String> a, List<String> b) {
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
+  String _commandTextFromParts(String command, List<String> args) {
+    return [command, ...args].where((item) => item.isNotEmpty).join(' ').trim();
   }
 
   bool _looksLikeWellFormedXml(String content) {

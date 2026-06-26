@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hermes/core/enums/diagnostics_visibility.dart';
 import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
@@ -16,6 +17,8 @@ class Settings extends StatefulWidget {
 class _SettingsState extends State<Settings> {
   late final TextEditingController _llamaCppDirCtrl;
   late final TextEditingController _modelsDirCtrl;
+  late final TextEditingController _maxProjectTasksPerRunCtrl;
+  late final TextEditingController _maxProjectIterationsCtrl;
   DiagnosticsVisibility _diagnosticsVisibility = DiagnosticsVisibility.off;
   CompactionSettings _compactionSettings = const CompactionSettings();
   TaskSystemSettings _taskSystemSettings = const TaskSystemSettings();
@@ -40,6 +43,7 @@ class _SettingsState extends State<Settings> {
     _diagnosticsVisibility = diagnosticsVisibility;
     _compactionSettings = compactionSettings;
     _taskSystemSettings = taskSystemSettings;
+    _syncTaskLimitControllers(taskSystemSettings);
     setState(() {});
   }
 
@@ -51,8 +55,20 @@ class _SettingsState extends State<Settings> {
 
   Future<void> _setTaskSystemSettings(TaskSystemSettings settings) async {
     final normalised = settings.normalised();
+    _syncTaskLimitControllers(normalised);
     setState(() => _taskSystemSettings = normalised);
     await preferencesService.setTaskSystemSettings(normalised);
+  }
+
+  void _syncTaskLimitControllers(TaskSystemSettings settings) {
+    final perRun = settings.maxProjectTasksPerRun.toString();
+    if (_maxProjectTasksPerRunCtrl.text != perRun) {
+      _maxProjectTasksPerRunCtrl.text = perRun;
+    }
+    final iterations = settings.maxProjectIterations.toString();
+    if (_maxProjectIterationsCtrl.text != iterations) {
+      _maxProjectIterationsCtrl.text = iterations;
+    }
   }
 
   @override
@@ -60,6 +76,12 @@ class _SettingsState extends State<Settings> {
     super.initState();
     _llamaCppDirCtrl = TextEditingController(text: '');
     _modelsDirCtrl = TextEditingController(text: '');
+    _maxProjectTasksPerRunCtrl = TextEditingController(
+      text: _taskSystemSettings.maxProjectTasksPerRun.toString(),
+    );
+    _maxProjectIterationsCtrl = TextEditingController(
+      text: _taskSystemSettings.maxProjectIterations.toString(),
+    );
 
     loadSettings();
   }
@@ -68,6 +90,8 @@ class _SettingsState extends State<Settings> {
   void dispose() {
     _llamaCppDirCtrl.dispose();
     _modelsDirCtrl.dispose();
+    _maxProjectTasksPerRunCtrl.dispose();
+    _maxProjectIterationsCtrl.dispose();
     super.dispose();
   }
 
@@ -79,6 +103,8 @@ class _SettingsState extends State<Settings> {
         child: _SettingsContent(
           llamaCppDirCtrl: _llamaCppDirCtrl,
           modelsDirCtrl: _modelsDirCtrl,
+          maxProjectTasksPerRunCtrl: _maxProjectTasksPerRunCtrl,
+          maxProjectIterationsCtrl: _maxProjectIterationsCtrl,
           diagnosticsVisibility: _diagnosticsVisibility,
           compactionSettings: _compactionSettings,
           taskSystemSettings: _taskSystemSettings,
@@ -112,6 +138,8 @@ class _SettingsState extends State<Settings> {
 class _SettingsContent extends StatelessWidget {
   final TextEditingController llamaCppDirCtrl;
   final TextEditingController modelsDirCtrl;
+  final TextEditingController maxProjectTasksPerRunCtrl;
+  final TextEditingController maxProjectIterationsCtrl;
   final DiagnosticsVisibility diagnosticsVisibility;
   final CompactionSettings compactionSettings;
   final TaskSystemSettings taskSystemSettings;
@@ -123,6 +151,8 @@ class _SettingsContent extends StatelessWidget {
   const _SettingsContent({
     required this.llamaCppDirCtrl,
     required this.modelsDirCtrl,
+    required this.maxProjectTasksPerRunCtrl,
+    required this.maxProjectIterationsCtrl,
     required this.diagnosticsVisibility,
     required this.compactionSettings,
     required this.taskSystemSettings,
@@ -332,15 +362,50 @@ class _SettingsContent extends StatelessWidget {
       ),
     ),
     const SizedBox(height: 12),
-    SliderControl.integer(
-      label: 'Max project tasks per run',
-      value: taskSystemSettings.maxProjectTasksPerRun,
-      min: 1,
-      max: 25,
-      step: 1,
+    _taskLimitField(
+      controller: maxProjectTasksPerRunCtrl,
+      label: 'Project tasks per run',
+      icon: Icons.repeat,
+      enabled: taskSystemSettings.enabled,
       onChanged: (value) => onTaskSystemChanged(
         taskSystemSettings.copyWith(maxProjectTasksPerRun: value),
       ),
     ),
+    const SizedBox(height: 12),
+    _taskLimitField(
+      controller: maxProjectIterationsCtrl,
+      label: 'Project task total',
+      icon: Icons.all_inclusive,
+      enabled: taskSystemSettings.enabled,
+      onChanged: (value) => onTaskSystemChanged(
+        taskSystemSettings.copyWith(maxProjectIterations: value),
+      ),
+    ),
   ];
+
+  Widget _taskLimitField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    required bool enabled,
+    required void Function(int) onChanged,
+  }) {
+    return TextField(
+      controller: controller,
+      enabled: enabled,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon),
+        suffixText: '0 = no limit',
+        border: const OutlineInputBorder(),
+      ),
+      keyboardType: TextInputType.number,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      onChanged: (raw) {
+        final value = int.tryParse(raw);
+        if (value == null) return;
+        onChanged(value);
+      },
+    );
+  }
 }

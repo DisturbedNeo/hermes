@@ -35,6 +35,7 @@ class TaskSystemSettings {
   final bool requireApprovalBeforeFileEdits;
   final bool showTaskMessagesInChat;
   final int maxProjectTasksPerRun;
+  final int maxProjectIterations;
   final QuestionAutonomy questionAutonomy;
 
   const TaskSystemSettings({
@@ -43,6 +44,7 @@ class TaskSystemSettings {
     this.requireApprovalBeforeFileEdits = true,
     this.showTaskMessagesInChat = true,
     this.maxProjectTasksPerRun = 5,
+    this.maxProjectIterations = 25,
     this.questionAutonomy = QuestionAutonomy.balanced,
   });
 
@@ -52,6 +54,7 @@ class TaskSystemSettings {
     bool? requireApprovalBeforeFileEdits,
     bool? showTaskMessagesInChat,
     int? maxProjectTasksPerRun,
+    int? maxProjectIterations,
     QuestionAutonomy? questionAutonomy,
   }) {
     return TaskSystemSettings(
@@ -64,12 +67,16 @@ class TaskSystemSettings {
           showTaskMessagesInChat ?? this.showTaskMessagesInChat,
       maxProjectTasksPerRun:
           maxProjectTasksPerRun ?? this.maxProjectTasksPerRun,
+      maxProjectIterations: maxProjectIterations ?? this.maxProjectIterations,
       questionAutonomy: questionAutonomy ?? this.questionAutonomy,
     );
   }
 
   TaskSystemSettings normalised() => copyWith(
-    maxProjectTasksPerRun: maxProjectTasksPerRun.clamp(1, 25).toInt(),
+    maxProjectTasksPerRun: maxProjectTasksPerRun < 0
+        ? 0
+        : maxProjectTasksPerRun,
+    maxProjectIterations: maxProjectIterations < 0 ? 0 : maxProjectIterations,
   );
 
   @override
@@ -83,6 +90,7 @@ class TaskSystemSettings {
                 other.requireApprovalBeforeFileEdits &&
             showTaskMessagesInChat == other.showTaskMessagesInChat &&
             maxProjectTasksPerRun == other.maxProjectTasksPerRun &&
+            maxProjectIterations == other.maxProjectIterations &&
             questionAutonomy == other.questionAutonomy;
   }
 
@@ -93,6 +101,7 @@ class TaskSystemSettings {
     requireApprovalBeforeFileEdits,
     showTaskMessagesInChat,
     maxProjectTasksPerRun,
+    maxProjectIterations,
     questionAutonomy,
   );
 }

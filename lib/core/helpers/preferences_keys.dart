@@ -68,6 +68,10 @@ abstract final class PreferencesKeys {
   static const String taskSystemMaxProjectTasksPerRun =
       'task_system_max_project_tasks_per_run';
 
+  /// Maximum number of project tasks to execute before the project blocks.
+  static const String taskSystemMaxProjectIterations =
+      'task_system_max_project_iterations';
+
   /// How aggressively structured tasks should ask the user before continuing.
   static const String taskSystemQuestionAutonomy =
       'task_system_question_autonomy';

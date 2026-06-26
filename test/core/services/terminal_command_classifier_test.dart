@@ -109,6 +109,27 @@ void main() {
       );
     });
 
+    test('blocks shell command substitution', () {
+      expect(
+        TerminalCommandClassifier.blockedReasonForCommand(
+          'echo \$(rm generated.txt)',
+        ),
+        contains('command substitution'),
+      );
+      expect(
+        TerminalCommandClassifier.blockedReasonForCommand(
+          'echo `rm generated.txt`',
+        ),
+        contains('command substitution'),
+      );
+      expect(
+        TerminalCommandClassifier.blockedReasonForCommand(
+          'cat <(rm generated.txt)',
+        ),
+        contains('command substitution'),
+      );
+    });
+
     test('does not block ordinary read-only commands', () {
       expect(
         TerminalCommandClassifier.blockedReason(

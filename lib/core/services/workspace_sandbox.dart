@@ -299,40 +299,57 @@ class WorkspaceSandbox {
 
   Future<Map<String, dynamic>> runCommand(
     String rootPath, {
-    required String executable,
-    required List<String> arguments,
+    String? command,
+    String? executable,
+    List<String> arguments = const [],
     String workingDirectory = '.',
   }) async {
-    if (executable.trim().isEmpty) {
-      throw WorkspaceSandboxException('Command executable is required.');
-    }
-    if (path.isAbsolute(executable) || executable.contains(path.separator)) {
-      throw WorkspaceSandboxException(
-        'Use an executable name, not an absolute or relative executable path.',
-      );
-    }
-    final blockedReason = TerminalCommandClassifier.blockedReason(
+    final commandLine = _commandLine(
+      command: command,
       executable: executable,
       arguments: arguments,
+    );
+    if (commandLine.trim().isEmpty) {
+      throw WorkspaceSandboxException('Command is required.');
+    }
+    final blockedReason = TerminalCommandClassifier.blockedReasonForCommand(
+      commandLine,
     );
     if (blockedReason != null) {
       throw WorkspaceSandboxException(blockedReason);
     }
 
     final cwd = await resolve(rootPath, workingDirectory, directory: true);
-    final result = await Process.run(
-      executable,
-      arguments,
-      workingDirectory: cwd.absolutePath,
-    ).timeout(commandTimeout);
+    final result = await Process.run('bash', [
+      '-lc',
+      commandLine,
+    ], workingDirectory: cwd.absolutePath).timeout(commandTimeout);
 
     return {
-      'command': [executable, ...arguments].join(' '),
+      'command': commandLine,
       'working_directory': cwd.relativePath,
       'exit_code': result.exitCode,
       'stdout': _capOutput(result.stdout.toString()),
       'stderr': _capOutput(result.stderr.toString()),
     };
+  }
+
+  String _commandLine({
+    required String? command,
+    required String? executable,
+    required List<String> arguments,
+  }) {
+    final trimmed = command?.trim();
+    if (trimmed != null && trimmed.isNotEmpty) return trimmed;
+    final legacyExecutable = executable?.trim();
+    if (legacyExecutable == null || legacyExecutable.isEmpty) return '';
+    return [legacyExecutable, ...arguments.map(_shellQuote)].join(' ');
+  }
+
+  String _shellQuote(String value) {
+    if (value.isEmpty) return "''";
+    if (RegExp(r'^[A-Za-z0-9_@%+=:,./-]+$').hasMatch(value)) return value;
+    return "'${value.replaceAll("'", r"'\''")}'";
   }
 
   Future<String> _resolveCreatable(String requested) async {

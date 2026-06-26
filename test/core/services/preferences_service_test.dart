@@ -16,10 +16,11 @@ void main() {
       expect(settings.requireApprovalBeforeFileEdits, isTrue);
       expect(settings.showTaskMessagesInChat, isTrue);
       expect(settings.maxProjectTasksPerRun, 5);
+      expect(settings.maxProjectIterations, 25);
       expect(settings.questionAutonomy, QuestionAutonomy.balanced);
     });
 
-    test('persists normalised task settings', () async {
+    test('persists configurable task limits', () async {
       final service = PreferencesService();
 
       final saved = await service.setTaskSystemSettings(
@@ -28,6 +29,7 @@ void main() {
           requireApprovalBeforeFileEdits: false,
           showTaskMessagesInChat: false,
           maxProjectTasksPerRun: 99,
+          maxProjectIterations: 0,
           questionAutonomy: QuestionAutonomy.autonomous,
         ),
       );
@@ -37,7 +39,8 @@ void main() {
       expect(settings.enabled, isFalse);
       expect(settings.requireApprovalBeforeFileEdits, isFalse);
       expect(settings.showTaskMessagesInChat, isFalse);
-      expect(settings.maxProjectTasksPerRun, 25);
+      expect(settings.maxProjectTasksPerRun, 99);
+      expect(settings.maxProjectIterations, 0);
       expect(settings.questionAutonomy, QuestionAutonomy.autonomous);
     });
   });

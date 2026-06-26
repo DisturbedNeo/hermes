@@ -240,6 +240,17 @@ void main() {
       expect(await file.exists(), isTrue);
     });
 
+    test('runCommand runs a single shell command line', () async {
+      final result = await sandbox.runCommand(
+        root.path,
+        command: 'printf hello > generated.txt && cat generated.txt',
+      );
+
+      expect(result['exit_code'], 0);
+      expect(result['stdout'], 'hello');
+      expect(await File('${root.path}/generated.txt').readAsString(), 'hello');
+    });
+
     test(
       'runCommand blocks dangerous commands inside shell wrappers',
       () async {
@@ -264,6 +275,24 @@ void main() {
         expect(await file.exists(), isTrue);
       },
     );
+
+    test('runCommand blocks dangerous command substitution', () async {
+      final file = File('${root.path}/generated.txt')
+        ..writeAsStringSync('important');
+
+      await expectLater(
+        sandbox.runCommand(root.path, command: 'echo \$(rm generated.txt)'),
+        throwsA(
+          isA<WorkspaceSandboxException>().having(
+            (error) => error.message,
+            'message',
+            contains('command substitution'),
+          ),
+        ),
+      );
+
+      expect(await file.exists(), isTrue);
+    });
   });
 
   group('ToolService workspace tools', () {
@@ -280,6 +309,9 @@ void main() {
 
       expect(tools.map((tool) => tool.id), contains('read_file'));
       expect(tools.map((tool) => tool.id), contains('run_command'));
+      final runCommand = tools.singleWhere((tool) => tool.id == 'run_command');
+      final properties = runCommand.schema['properties'] as Map;
+      expect(properties.keys, isNot(contains('args')));
     });
 
     test('rejects workspace tool execution without context', () async {
@@ -319,7 +351,7 @@ void main() {
       final service = ToolService();
       final result = await service.execute(
         toolId: 'run_command',
-        argumentsJson: '{"command":"rm","args":["generated.txt"]}',
+        argumentsJson: '{"command":"rm generated.txt"}',
         context: WorkspaceToolContext(
           workspace: WorkspaceAttachment.fromPath(
             root.path,

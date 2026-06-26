@@ -2255,7 +2255,7 @@ When finished, call finish_task_step with this result object. If finish_task_ste
 Choose only these gate ids. Gates are checked by the task runner, not by the executor.
 - artifact_exists: params {"paths": ["relative/path"]}
 - artifact_nonempty: params {"paths": ["relative/path"]}
-- command_passes: params {"command": "dart", "args": ["test"], "working_directory": "."}
+- command_passes: params {"command": "dart test", "working_directory": "."}
 - no_tool_errors: params {}
 - no_failed_commands: params {}
 - content_contains: params {"path": "relative/path", "mustContain": ["..."]}

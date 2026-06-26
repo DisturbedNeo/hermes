@@ -30,6 +30,13 @@ class TerminalCommandClassifier {
     return _blockedReasonForTokens([executable, ...arguments]);
   }
 
+  static String? blockedReasonForCommand(String command) {
+    if (_hasShellCommandSubstitution(command)) {
+      return 'Shell command substitution is blocked by terminal policy because it can hide nested commands.';
+    }
+    return _blockedReasonForCommandLine(command);
+  }
+
   static TerminalCommandClass classify(String command) {
     final trimmed = command.trim();
     if (trimmed.isEmpty) return TerminalCommandClass.unknown;
@@ -414,6 +421,44 @@ class TerminalCommandClassifier {
   static bool _hasWorkspaceWriteSyntax(String command) {
     return RegExp(r'(^|\s)(\d?>|>>)\s*(?!/dev/null\b)').hasMatch(command) ||
         RegExp(r'(^|\s)tee(\s|$)').hasMatch(command);
+  }
+
+  static bool _hasShellCommandSubstitution(String command) {
+    String? quote;
+    var escaped = false;
+    for (var i = 0; i < command.length; i++) {
+      final char = command[i];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char == r'\') {
+        escaped = true;
+        continue;
+      }
+      if (quote == "'") {
+        if (char == "'") quote = null;
+        continue;
+      }
+      if (char == '"') {
+        quote = quote == '"' ? null : '"';
+        continue;
+      }
+      if (char == "'") {
+        quote = "'";
+        continue;
+      }
+      if (char == '`') return true;
+      if (i + 1 < command.length && char == r'$' && command[i + 1] == '(') {
+        return true;
+      }
+      if ((char == '<' || char == '>') &&
+          i + 1 < command.length &&
+          command[i + 1] == '(') {
+        return true;
+      }
+    }
+    return false;
   }
 
   static String? _shellCommandArgument(String executable, List<String> args) {

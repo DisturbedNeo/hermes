@@ -109,11 +109,7 @@ void main() {
       () async {
         final gate = const TaskGate(
           id: 'command_passes',
-          params: {
-            'command': 'dart',
-            'args': ['test'],
-            'working_directory': '.',
-          },
+          params: {'command': 'dart test', 'working_directory': '.'},
         );
 
         final pending = await evaluator.evaluate(
@@ -156,11 +152,7 @@ void main() {
             _toolCall('patch_file', result: {'path': 'lib/a.dart'}),
             _toolCall(
               'run_command',
-              arguments: {
-                'command': 'dart',
-                'args': ['test'],
-                'working_directory': '.',
-              },
+              arguments: {'command': 'dart test', 'working_directory': '.'},
               result: {'exit_code': 0, 'command': 'dart test'},
             ),
           ],

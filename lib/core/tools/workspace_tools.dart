@@ -397,12 +397,8 @@ class RunCommandTool extends WorkspaceTool {
     'properties': {
       'command': {
         'type': 'string',
-        'description': 'Executable name, for example "git" or "dart".',
-      },
-      'args': {
-        'type': 'array',
-        'items': {'type': 'string'},
-        'description': 'Command arguments.',
+        'description':
+            'Single shell command line to run, for example "git status --short" or "dart test".',
       },
       'working_directory': {
         'type': 'string',
@@ -429,10 +425,12 @@ class RunCommandTool extends WorkspaceTool {
     final args = rawArgs is List
         ? rawArgs.map((item) => item.toString()).toList()
         : <String>[];
+    final command = stringArg(input, 'command');
 
     return sandbox.runCommand(
       context.workspace.rootPath,
-      executable: stringArg(input, 'command'),
+      command: args.isEmpty ? command : null,
+      executable: args.isEmpty ? null : command,
       arguments: args,
       workingDirectory: stringArg(input, 'working_directory', fallback: '.'),
     );

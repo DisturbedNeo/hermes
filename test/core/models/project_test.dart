@@ -21,6 +21,7 @@ void main() {
           activeTaskId: 'task_1',
           memorySummary: 'Memory',
           completionSummary: '',
+          maxIterations: 0,
           tasks: [
             ProjectTaskRef(
               taskId: 'task_1',
@@ -73,6 +74,7 @@ void main() {
           ProjectDecisionType.createTask,
         );
         expect(loaded.chatSessionId, 'chat_1');
+        expect(loaded.maxIterations, 0);
       },
     );
 

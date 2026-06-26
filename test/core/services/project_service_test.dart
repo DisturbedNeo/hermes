@@ -111,6 +111,99 @@ void main() {
     });
 
     test(
+      'zero per-run project task limit continues until completion',
+      () async {
+        final project = await service.createProject(
+          workspace: workspace,
+          userPrompt: 'Build the app',
+          chatSessionId: 'chat_1',
+        );
+        final client = _QueueChatClient([
+          jsonEncode({
+            'task': _projectTaskJson(objective: 'Implement the first slice'),
+          }),
+          jsonEncode(_taskPlanJson()),
+          jsonEncode({
+            'status': 'completed',
+            'summary': 'First task complete.',
+            'memoryUpdate': 'One slice is done.',
+          }),
+          jsonEncode({
+            'complete': false,
+            'finalSummary': '',
+            'remainingCriteria': ['Implement the second slice.'],
+            'openQuestions': [],
+          }),
+          jsonEncode({
+            'task': _projectTaskJson(
+              objective: 'Implement the second slice',
+              relevantSuccessCriteria: const ['Implement the second slice.'],
+            ),
+          }),
+          jsonEncode(_taskPlanJson()),
+          jsonEncode({
+            'status': 'completed',
+            'summary': 'Second task complete.',
+            'memoryUpdate': 'The remaining slice is done.',
+          }),
+          jsonEncode({
+            'complete': true,
+            'finalSummary': 'Project is complete.',
+            'remainingCriteria': [],
+            'openQuestions': [],
+          }),
+        ]);
+
+        final result = await service.runProject(
+          client: client,
+          workspace: workspace,
+          snapshot: project,
+          baseSystemPrompt: 'system',
+          maxNewTasks: 0,
+        );
+
+        expect(result.project.status, ProjectStatus.completed);
+        expect(result.project.completedTasks, hasLength(2));
+        expect(result.project.iterationCount, 2);
+      },
+    );
+
+    test('zero total project iterations disables the total task cap', () async {
+      final project = (await service.createProject(
+        workspace: workspace,
+        userPrompt: 'Build the app',
+        chatSessionId: 'chat_1',
+      )).copyWith(maxIterations: 0, iterationCount: 100);
+      final client = _QueueChatClient([
+        jsonEncode({'task': _projectTaskJson()}),
+        jsonEncode(_taskPlanJson()),
+        jsonEncode({
+          'status': 'completed',
+          'summary': 'Task complete.',
+          'memoryUpdate': 'Work is done.',
+        }),
+        jsonEncode({
+          'complete': true,
+          'finalSummary': 'Project is complete.',
+          'remainingCriteria': [],
+          'openQuestions': [],
+        }),
+      ]);
+
+      final result = await service.runProject(
+        client: client,
+        workspace: workspace,
+        snapshot: project,
+        baseSystemPrompt: 'system',
+        maxNewTasks: 1,
+      );
+
+      expect(result.project.status, ProjectStatus.completed);
+      expect(result.project.iterationCount, 101);
+      expect(result.project.blocker, isNull);
+    });
+
+    test(
       'records project-level user questions and resumes after answer',
       () async {
         final project = await service.createProject(

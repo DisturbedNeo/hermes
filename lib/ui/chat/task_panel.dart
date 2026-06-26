@@ -230,6 +230,12 @@ class _ProjectBody extends StatelessWidget {
         project.completedTasks.length +
         project.failedTasks.length +
         (project.currentTask == null ? 0 : 1);
+    final iterationLabel = project.maxIterations == 0
+        ? '${project.iterationCount} iterations'
+        : '${project.iterationCount}/${project.maxIterations} iterations';
+    final iterationAccessibleLabel = project.maxIterations == 0
+        ? 'Project has completed ${project.iterationCount} iterations with no total limit'
+        : 'Project iteration ${project.iterationCount} of ${project.maxIterations}';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -256,12 +262,8 @@ class _ProjectBody extends StatelessWidget {
               ),
             ),
             AccessibleWidget(
-              label:
-                  'Project iteration ${project.iterationCount} of ${project.maxIterations}',
-              child: _StatusChip(
-                label:
-                    '${project.iterationCount}/${project.maxIterations} iterations',
-              ),
+              label: iterationAccessibleLabel,
+              child: _StatusChip(label: iterationLabel),
             ),
             AccessibleWidget(
               label: 'Project ID: .agent/projects/${project.id}',

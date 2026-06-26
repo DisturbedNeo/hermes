@@ -140,6 +140,11 @@ ProjectDecisionType parseProjectDecisionType(Object? value) => _parseEnum(
   },
 );
 
+int parseOptionalLimit(Object? value, {required int fallback}) {
+  final parsed = jsonInt(value, fallback: fallback);
+  return parsed < 0 ? 0 : parsed;
+}
+
 T _parseEnum<T extends Enum>(
   List<T> values,
   Object? value,
@@ -480,10 +485,10 @@ class ProjectState {
       iterationCount: jsonInt(
         json['iterationCount'] ?? json['iteration_count'],
       ),
-      maxIterations: jsonInt(
+      maxIterations: parseOptionalLimit(
         json['maxIterations'] ?? json['max_iterations'],
         fallback: defaultMaxIterations,
-      ).clamp(1, 1000).toInt(),
+      ),
       maxFailedTasks: jsonInt(
         json['maxFailedTasks'] ?? json['max_failed_tasks'],
         fallback: defaultMaxFailedTasks,

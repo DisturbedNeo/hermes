@@ -694,11 +694,7 @@ void main() {
           gates: [
             TaskGate(
               id: 'command_passes',
-              params: {
-                'command': 'dart',
-                'args': ['--version'],
-                'working_directory': '.',
-              },
+              params: {'command': 'dart --version', 'working_directory': '.'},
             ),
           ],
           status: TaskStepStatus.pending,
@@ -710,10 +706,7 @@ void main() {
           toolCalls: [
             ChatCompletionToolCall(
               name: 'run_command',
-              arguments: jsonEncode({
-                'command': 'dart',
-                'args': ['--version'],
-              }),
+              arguments: jsonEncode({'command': 'dart --version'}),
             ),
           ],
         ),

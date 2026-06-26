@@ -123,6 +123,7 @@ class ProjectService {
     String? chatSessionId,
     ChatClient? client,
     String baseSystemPrompt = '',
+    int? maxIterations,
     TaskModelOutputSink? onModelOutput,
     TaskCancellationToken? cancellationToken,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
@@ -175,7 +176,10 @@ class ProjectService {
           : ProjectStatus.waitingForUser,
       phase: ProjectPhase.discovery,
       iterationCount: 0,
-      maxIterations: ProjectDocument.defaultMaxIterations,
+      maxIterations: _normaliseOptionalLimit(
+        maxIterations,
+        fallback: ProjectDocument.defaultMaxIterations,
+      ),
       maxFailedTasks: ProjectDocument.defaultMaxFailedTasks,
       activeTaskId: null,
       chatSessionId: chatSessionId,
@@ -311,6 +315,7 @@ class ProjectService {
     required ProjectDocument snapshot,
     required String baseSystemPrompt,
     required int maxNewTasks,
+    int? maxIterations,
     bool requirePhaseApproval = false,
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
@@ -328,6 +333,13 @@ class ProjectService {
     );
     var project = recovered.project;
     var activeTask = recovered.activeTask;
+    if (maxIterations != null && project.maxIterations != maxIterations) {
+      project = project.copyWith(
+        maxIterations: _normaliseOptionalLimit(maxIterations),
+        updatedAt: DateTime.now(),
+      );
+      await _storage.saveSnapshot(workspace.rootPath, project);
+    }
     if (project.isTerminal) {
       return ProjectRunResult(project: project, activeTask: activeTask);
     }
@@ -340,7 +352,7 @@ class ProjectService {
       await _storage.saveSnapshot(workspace.rootPath, project);
     }
 
-    final allowedIterations = maxNewTasks.clamp(1, 25).toInt();
+    final allowedIterations = maxNewTasks <= 0 ? null : maxNewTasks;
     var runIterations = 0;
 
     while (!project.isTerminal) {
@@ -379,7 +391,8 @@ class ProjectService {
           project.blocker?.type != ProjectBlockerType.budget) {
         return ProjectRunResult(project: project, activeTask: activeTask);
       }
-      if (project.iterationCount >= project.maxIterations) {
+      if (project.maxIterations > 0 &&
+          project.iterationCount >= project.maxIterations) {
         project = _blockProject(
           project,
           ProjectBlockerType.budget,
@@ -389,7 +402,7 @@ class ProjectService {
         await _storage.saveSnapshot(workspace.rootPath, project);
         return ProjectRunResult(project: project, activeTask: activeTask);
       }
-      if (runIterations >= allowedIterations) {
+      if (allowedIterations != null && runIterations >= allowedIterations) {
         project = project.copyWith(
           status: ProjectStatus.paused,
           updatedAt: DateTime.now(),
@@ -1594,6 +1607,11 @@ Ask the user only for destructive or irreversible actions, credentials/secrets/a
     return singleLine.length <= 60
         ? singleLine
         : '${singleLine.substring(0, 57)}...';
+  }
+
+  int _normaliseOptionalLimit(int? value, {int fallback = 0}) {
+    final resolved = value ?? fallback;
+    return resolved < 0 ? 0 : resolved;
   }
 }
 
