@@ -114,13 +114,8 @@ class _ChatViewState extends State<ChatView> {
         child: Focus(
           autofocus: true,
           child: AnimatedBuilder(
-            animation: Listenable.merge([
-              chat,
-              chat.messageStore,
-              chat.chatStream,
-            ]),
+            animation: Listenable.merge([chat, chat.chatStream]),
             builder: (_, _) {
-              final displayItems = _displayItems(chat.messageStore.messages);
               final showTaskPanel = _showTaskPanel(chat);
 
               return LayoutBuilder(
@@ -148,7 +143,6 @@ class _ChatViewState extends State<ChatView> {
 
                   final mainColumn = _buildMainColumn(
                     chat: chat,
-                    displayItems: displayItems,
                     showTaskPanel: showTaskPanel,
                     includeInlineTaskPanel:
                         !(isNarrow && _taskPanelExpanded && showTaskPanel),
@@ -194,7 +188,6 @@ class _ChatViewState extends State<ChatView> {
 
   Widget _buildMainColumn({
     required ChatService chat,
-    required List<_DisplayItem> displayItems,
     required bool showTaskPanel,
     required bool includeInlineTaskPanel,
     required bool useScrollableFooter,
@@ -221,7 +214,6 @@ class _ChatViewState extends State<ChatView> {
         Expanded(
           child: _MessageList(
             scroll: _scroll,
-            displayItems: displayItems,
             chat: chat,
             onScrollToBottom: _handleScrollToBottom,
           ),
@@ -283,38 +275,15 @@ class _ChatViewState extends State<ChatView> {
         chat.availableTasks.isNotEmpty ||
         chat.taskBusy;
   }
-
-  List<_DisplayItem> _displayItems(List<Bubble> messages) {
-    final bySummary = <String, List<Bubble>>{};
-    for (final message in messages) {
-      final summaryId = message.summaryId;
-      if (message.omittedFromModelPayload && summaryId != null) {
-        bySummary.putIfAbsent(summaryId, () => []).add(message);
-      }
-    }
-
-    return [
-      for (final message in messages)
-        if (message.isSummaryMemory)
-          _SummaryDisplayItem(
-            message,
-            coveredMessages: bySummary[message.id] ?? const [],
-          )
-        else if (!message.omittedFromModelPayload)
-          _MessageDisplayItem(message),
-    ];
-  }
 }
 
 class _MessageList extends StatefulWidget {
   final SmartScrollController scroll;
-  final List<_DisplayItem> displayItems;
   final ChatService chat;
   final VoidCallback onScrollToBottom;
 
   const _MessageList({
     required this.scroll,
-    required this.displayItems,
     required this.chat,
     required this.onScrollToBottom,
   });
@@ -325,10 +294,15 @@ class _MessageList extends StatefulWidget {
 
 class _MessageListState extends State<_MessageList> {
   bool _showScrollButton = false;
+  late List<_DisplayItem> _displayItems;
+  late int _displayRevision;
 
   @override
   void initState() {
     super.initState();
+    _displayRevision = widget.chat.messageStore.displayRevision;
+    _displayItems = _buildDisplayItems(widget.chat.messageStore.messages);
+    widget.chat.messageStore.addListener(_handleMessageStoreChanged);
     widget.scroll.addListener(_updateScrollButton);
     _scheduleScrollButtonUpdate();
   }
@@ -336,19 +310,42 @@ class _MessageListState extends State<_MessageList> {
   @override
   void didUpdateWidget(_MessageList oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.chat != oldWidget.chat) {
+      oldWidget.chat.messageStore.removeListener(_handleMessageStoreChanged);
+      _displayRevision = widget.chat.messageStore.displayRevision;
+      _displayItems = _buildDisplayItems(widget.chat.messageStore.messages);
+      widget.chat.messageStore.addListener(_handleMessageStoreChanged);
+      _scheduleScrollButtonUpdate();
+    }
+
     if (widget.scroll != oldWidget.scroll) {
       oldWidget.scroll.removeListener(_updateScrollButton);
       widget.scroll.addListener(_updateScrollButton);
-      _scheduleScrollButtonUpdate();
-    } else if (widget.displayItems.length != oldWidget.displayItems.length) {
       _scheduleScrollButtonUpdate();
     }
   }
 
   @override
   void dispose() {
+    widget.chat.messageStore.removeListener(_handleMessageStoreChanged);
     widget.scroll.removeListener(_updateScrollButton);
     super.dispose();
+  }
+
+  void _handleMessageStoreChanged() {
+    final nextRevision = widget.chat.messageStore.displayRevision;
+    if (nextRevision == _displayRevision) return;
+
+    final oldLength = _displayItems.length;
+    final nextItems = _buildDisplayItems(widget.chat.messageStore.messages);
+    setState(() {
+      _displayRevision = nextRevision;
+      _displayItems = nextItems;
+    });
+
+    if (nextItems.length != oldLength) {
+      _scheduleScrollButtonUpdate();
+    }
   }
 
   void _scheduleScrollButtonUpdate() {
@@ -383,45 +380,14 @@ class _MessageListState extends State<_MessageList> {
             controller: widget.scroll,
             reverse: true,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-            itemCount: widget.displayItems.length,
+            itemCount: _displayItems.length,
             itemBuilder: (_, i) {
-              final item =
-                  widget.displayItems[widget.displayItems.length - 1 - i];
-              final b = item.message;
-              final isUser = item is _SummaryDisplayItem
-                  ? false
-                  : b.role == MessageRole.user;
+              final item = _displayItems[_displayItems.length - 1 - i];
 
-              return Padding(
-                key: ValueKey('message_${b.id}'),
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: MessageRow(
-                  isUser: isUser,
-                  bubble: item is _SummaryDisplayItem
-                      ? _SummaryMemoryGroup(
-                          key: ValueKey('summary_${b.id}'),
-                          summary: b,
-                          coveredMessages: item.coveredMessages,
-                        )
-                      : MessageBubble(
-                          key: ValueKey('bubble_${b.id}'),
-                          b: b,
-                          onSave: (newReasoning, newText) {
-                            widget.chat.messageStore.upsert(
-                              b.copyWith(
-                                reasoning: newReasoning,
-                                text: newText,
-                              ),
-                            );
-                          },
-                          editable: !widget.chat.chatStream.isStreaming,
-                        ),
-                  actions: MessageActions(
-                    key: ValueKey('actions_${b.id}'),
-                    message: b,
-                    chat: widget.chat,
-                  ),
-                ),
+              return _LiveMessageItem(
+                key: ValueKey('message_${item.messageId}'),
+                item: item,
+                chat: widget.chat,
               );
             },
           ),
@@ -471,22 +437,131 @@ class _MessageListState extends State<_MessageList> {
       ],
     );
   }
+
+  List<_DisplayItem> _buildDisplayItems(List<Bubble> messages) {
+    final bySummary = <String, List<String>>{};
+    for (final message in messages) {
+      final summaryId = message.summaryId;
+      if (message.omittedFromModelPayload && summaryId != null) {
+        bySummary.putIfAbsent(summaryId, () => []).add(message.id);
+      }
+    }
+
+    return [
+      for (final message in messages)
+        if (message.isSummaryMemory)
+          _SummaryDisplayItem(
+            message.id,
+            coveredMessageIds: bySummary[message.id] ?? const [],
+          )
+        else if (!message.omittedFromModelPayload)
+          _MessageDisplayItem(message.id),
+    ];
+  }
 }
 
 class _DisplayItem {
-  final Bubble message;
+  final String messageId;
 
-  const _DisplayItem(this.message);
+  const _DisplayItem(this.messageId);
 }
 
 class _MessageDisplayItem extends _DisplayItem {
-  const _MessageDisplayItem(super.message);
+  const _MessageDisplayItem(super.messageId);
 }
 
 class _SummaryDisplayItem extends _DisplayItem {
-  final List<Bubble> coveredMessages;
+  final List<String> coveredMessageIds;
 
-  const _SummaryDisplayItem(super.message, {required this.coveredMessages});
+  const _SummaryDisplayItem(super.messageId, {required this.coveredMessageIds});
+}
+
+class _LiveMessageItem extends StatefulWidget {
+  final _DisplayItem item;
+  final ChatService chat;
+
+  const _LiveMessageItem({super.key, required this.item, required this.chat});
+
+  @override
+  State<_LiveMessageItem> createState() => _LiveMessageItemState();
+}
+
+class _LiveMessageItemState extends State<_LiveMessageItem> {
+  Bubble? _message;
+
+  @override
+  void initState() {
+    super.initState();
+    _message = widget.chat.messageStore.messageById(widget.item.messageId);
+    widget.chat.messageStore.addListener(_handleMessageStoreChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _LiveMessageItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.chat != oldWidget.chat) {
+      oldWidget.chat.messageStore.removeListener(_handleMessageStoreChanged);
+      widget.chat.messageStore.addListener(_handleMessageStoreChanged);
+    }
+
+    if (widget.chat != oldWidget.chat ||
+        widget.item.messageId != oldWidget.item.messageId) {
+      _message = widget.chat.messageStore.messageById(widget.item.messageId);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.chat.messageStore.removeListener(_handleMessageStoreChanged);
+    super.dispose();
+  }
+
+  void _handleMessageStoreChanged() {
+    final next = widget.chat.messageStore.messageById(widget.item.messageId);
+    if (identical(next, _message)) return;
+    setState(() => _message = next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final message = _message;
+    if (message == null) return const SizedBox.shrink();
+
+    final item = widget.item;
+    final isSummary = item is _SummaryDisplayItem;
+    final isUser = !isSummary && message.role == MessageRole.user;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: MessageRow(
+        isUser: isUser,
+        bubble: isSummary
+            ? _SummaryMemoryGroup(
+                key: ValueKey('summary_${message.id}'),
+                summary: message,
+                coveredMessages: item.coveredMessageIds
+                    .map(widget.chat.messageStore.messageById)
+                    .whereType<Bubble>()
+                    .toList(growable: false),
+              )
+            : MessageBubble(
+                key: ValueKey('bubble_${message.id}'),
+                b: message,
+                onSave: (newReasoning, newText) {
+                  widget.chat.messageStore.upsert(
+                    message.copyWith(reasoning: newReasoning, text: newText),
+                  );
+                },
+                editable: !widget.chat.chatStream.isStreaming,
+              ),
+        actions: MessageActions(
+          key: ValueKey('actions_${message.id}'),
+          message: message,
+          chat: widget.chat,
+        ),
+      ),
+    );
+  }
 }
 
 class _SummaryMemoryGroup extends StatefulWidget {

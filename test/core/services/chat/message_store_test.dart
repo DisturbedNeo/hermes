@@ -114,4 +114,55 @@ void main() {
       expect(store.messages.single.summaryId, isNull);
     });
   });
+
+  group('MessageStore display revision', () {
+    test('does not change for message content updates', () {
+      final store = MessageStore();
+      store.setMessages([
+        const Bubble(
+          id: 'assistant',
+          role: MessageRole.assistant,
+          text: 'Hel',
+          reasoning: '',
+        ),
+      ]);
+      final revision = store.displayRevision;
+
+      store.upsert(
+        const Bubble(
+          id: 'assistant',
+          role: MessageRole.assistant,
+          text: 'Hello',
+          reasoning: '',
+        ),
+      );
+
+      expect(store.displayRevision, revision);
+      expect(store.messageById('assistant')?.text, 'Hello');
+    });
+
+    test('changes for display structure updates', () {
+      final store = MessageStore();
+      store.setMessages([
+        const Bubble(
+          id: 'user',
+          role: MessageRole.user,
+          text: 'Hello',
+          reasoning: '',
+        ),
+      ]);
+      final revision = store.displayRevision;
+
+      store.upsert(
+        const Bubble(
+          id: 'assistant',
+          role: MessageRole.assistant,
+          text: 'Hi',
+          reasoning: '',
+        ),
+      );
+
+      expect(store.displayRevision, greaterThan(revision));
+    });
+  });
 }

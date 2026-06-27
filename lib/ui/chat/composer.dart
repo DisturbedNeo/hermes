@@ -39,6 +39,7 @@ class _ComposerState extends State<Composer> {
   FocusOnKeyEventCallback? _previousOnKeyEvent;
 
   StreamState _previousStreamState = StreamState.idle;
+  late int _messageDisplayRevision;
 
   MessageRole _selectedRole = MessageRole.user;
 
@@ -51,7 +52,9 @@ class _ComposerState extends State<Composer> {
     _controller = TextEditingController();
     _configureFocusNode();
     _previousStreamState = widget.chat.chatStream.state;
+    _messageDisplayRevision = widget.chat.messageStore.displayRevision;
     widget.chat.chatStream.addListener(_onStreamChanged);
+    widget.chat.messageStore.addListener(_onMessageStoreChanged);
   }
 
   @override
@@ -63,8 +66,11 @@ class _ComposerState extends State<Composer> {
     }
     if (oldWidget.chat != widget.chat) {
       oldWidget.chat.chatStream.removeListener(_onStreamChanged);
+      oldWidget.chat.messageStore.removeListener(_onMessageStoreChanged);
       _previousStreamState = widget.chat.chatStream.state;
+      _messageDisplayRevision = widget.chat.messageStore.displayRevision;
       widget.chat.chatStream.addListener(_onStreamChanged);
+      widget.chat.messageStore.addListener(_onMessageStoreChanged);
       _controller.clear();
       _selectedToolIds.clear();
       _usingDefaultTools = true;
@@ -100,9 +106,16 @@ class _ComposerState extends State<Composer> {
   @override
   void dispose() {
     widget.chat.chatStream.removeListener(_onStreamChanged);
+    widget.chat.messageStore.removeListener(_onMessageStoreChanged);
     _releaseFocusNode();
     _controller.dispose();
     super.dispose();
+  }
+
+  void _onMessageStoreChanged() {
+    final nextRevision = widget.chat.messageStore.displayRevision;
+    if (nextRevision == _messageDisplayRevision) return;
+    setState(() => _messageDisplayRevision = nextRevision);
   }
 
   void _onStreamChanged() {

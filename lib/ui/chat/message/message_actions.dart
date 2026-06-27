@@ -113,7 +113,7 @@ class MessageActions extends StatelessWidget {
     final chat = _chat;
 
     return AnimatedBuilder(
-      animation: Listenable.merge([chat.messageStore, chat.chatStream]),
+      animation: chat.chatStream,
       builder: (_, _) {
         final actions = _getActionsForRole(context, chat, _message.role);
 

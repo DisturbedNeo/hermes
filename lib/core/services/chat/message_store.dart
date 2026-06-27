@@ -18,6 +18,7 @@ class MessageStore extends ChangeNotifier {
   final Map<String, int> _indexMap = {};
   String? _currentId;
   bool _updatingCompactionMetadata = false;
+  int _displayRevision = 0;
 
   UnmodifiableListView<Bubble> get messages =>
       _messageCache ??= UnmodifiableListView(_messages);
@@ -26,10 +27,17 @@ class MessageStore extends ChangeNotifier {
     _messageCache = UnmodifiableListView(val);
   }
 
+  int get displayRevision => _displayRevision;
+
   int? get currentIndex => _currentId == null ? null : _indexMap[_currentId!];
   Bubble? get currentMessage {
     final i = currentIndex;
     return i == null ? null : _messages[i];
+  }
+
+  Bubble? messageById(String id) {
+    final index = _indexMap[id];
+    return index == null ? null : _messages[index];
   }
 
   Bubble get first => _messages.first;
@@ -46,6 +54,7 @@ class MessageStore extends ChangeNotifier {
     if (_currentId != null && !_indexMap.containsKey(_currentId)) {
       _currentId = null;
     }
+    _markDisplayChanged();
     notifyListeners();
   }
 
@@ -53,6 +62,7 @@ class MessageStore extends ChangeNotifier {
     index = index.clamp(0, _messages.length);
     _messages.insert(index, b);
     _rebuildIndex();
+    _markDisplayChanged();
     notifyListeners();
   }
 
@@ -61,20 +71,25 @@ class MessageStore extends ChangeNotifier {
     if (index == null) {
       _messages.add(b);
       _indexMap[b.id] = _messages.length - 1;
+      _markDisplayChanged();
       notifyListeners();
       return UpsertResult.inserted;
     } else {
+      final existing = _messages[index];
+      var displayChanged = _displayShapeChanged(existing, b);
       final summaryToInvalidate = _summaryToInvalidateForReplacement(
-        _messages[index],
+        existing,
         b,
       );
       if (summaryToInvalidate != null) {
         _invalidateSummary(summaryToInvalidate);
         b = b.copyWith(omittedFromModelPayload: false, summaryId: null);
+        displayChanged = true;
       }
       final replacementIndex = _indexMap[b.id];
       if (replacementIndex == null) return UpsertResult.inserted;
       _messages[replacementIndex] = b;
+      if (displayChanged) _markDisplayChanged();
       notifyListeners();
       return UpsertResult.updated;
     }
@@ -83,12 +98,14 @@ class MessageStore extends ChangeNotifier {
   bool replaceById(String id, Bubble newMessage) {
     final index = _indexMap[id];
     if (index == null) return false;
+    final existing = _messages[index];
+    var displayChanged = _displayShapeChanged(existing, newMessage);
     assert(
       id == newMessage.id,
       'Replacing with a different id will break indexing',
     );
     final summaryToInvalidate = _summaryToInvalidateForReplacement(
-      _messages[index],
+      existing,
       newMessage,
     );
     if (summaryToInvalidate != null) {
@@ -97,10 +114,12 @@ class MessageStore extends ChangeNotifier {
         omittedFromModelPayload: false,
         summaryId: null,
       );
+      displayChanged = true;
     }
     final replacementIndex = _indexMap[id];
     if (replacementIndex == null) return false;
     _messages[replacementIndex] = newMessage;
+    if (displayChanged) _markDisplayChanged();
     notifyListeners();
     return true;
   }
@@ -119,6 +138,7 @@ class MessageStore extends ChangeNotifier {
         _invalidateSummary(removed.summaryId!);
       }
     }
+    _markDisplayChanged();
     notifyListeners();
     return true;
   }
@@ -148,6 +168,7 @@ class MessageStore extends ChangeNotifier {
       }
     }
 
+    _markDisplayChanged();
     notifyListeners();
 
     return true;
@@ -160,6 +181,7 @@ class MessageStore extends ChangeNotifier {
     final target = newIndex.clamp(0, _messages.length);
     _messages.insert(target, item);
     _rebuildIndex();
+    _markDisplayChanged();
     notifyListeners();
     return true;
   }
@@ -228,6 +250,7 @@ class MessageStore extends ChangeNotifier {
         );
       }
     });
+    _markDisplayChanged();
     notifyListeners();
   }
 
@@ -365,5 +388,16 @@ class MessageStore extends ChangeNotifier {
           _messages.length,
         ).map((i) => MapEntry(_messages[i].id, i)),
       );
+  }
+
+  bool _displayShapeChanged(Bubble a, Bubble b) {
+    return a.role != b.role ||
+        a.omittedFromModelPayload != b.omittedFromModelPayload ||
+        a.summaryId != b.summaryId ||
+        a.isSummaryMemory != b.isSummaryMemory;
+  }
+
+  void _markDisplayChanged() {
+    _displayRevision++;
   }
 }

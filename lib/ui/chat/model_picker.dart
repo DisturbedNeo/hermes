@@ -145,11 +145,12 @@ class _ModelPickerState extends State<ModelPicker> {
                   label: _selected != null
                       ? 'Model: $_selected'
                       : 'Select a model',
-
+                  
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
                       isExpanded: true,
                       value: _selected,
+                      hint: const Text('Select a model...'),
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
                         vertical: 4,
