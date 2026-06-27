@@ -350,7 +350,8 @@ class ProjectService {
     if (project.isTerminal) {
       return ProjectRunResult(project: project, activeTask: activeTask);
     }
-    if (project.blocker?.type == ProjectBlockerType.budget) {
+    if (project.blocker?.type == ProjectBlockerType.budget ||
+        project.blocker?.type == ProjectBlockerType.duplicateTask) {
       project = project.copyWith(
         status: ProjectStatus.active,
         blocker: null,
@@ -361,6 +362,7 @@ class ProjectService {
 
     final allowedIterations = maxNewTasks <= 0 ? null : maxNewTasks;
     var runIterations = 0;
+    var consecutiveInvalidCandidates = 0;
 
     while (!project.isTerminal) {
       cancellationToken?.throwIfCancelled();
@@ -465,9 +467,21 @@ class ProjectService {
           await _storage.saveSnapshot(workspace.rootPath, project);
           return ProjectRunResult(project: project, activeTask: activeTask);
         }
+        consecutiveInvalidCandidates++;
+        if (consecutiveInvalidCandidates >= 3) {
+          project = _blockProject(
+            project,
+            ProjectBlockerType.validation,
+            'Project task selection produced $consecutiveInvalidCandidates invalid candidates in a row.',
+            DateTime.now(),
+          );
+          await _storage.saveSnapshot(workspace.rootPath, project);
+          return ProjectRunResult(project: project, activeTask: activeTask);
+        }
         await _storage.saveSnapshot(workspace.rootPath, project);
         continue;
       }
+      consecutiveInvalidCandidates = 0;
 
       final execution = await _executeProjectTask(
         client: client,
@@ -727,29 +741,67 @@ class ProjectService {
     );
     if (duplicateViolation) {
       final now = DateTime.now();
-      final rejected = task.copyWith(
-        status: ProjectTaskStatus.rejected,
-        rejectionReason: violations.join('\n'),
-        updatedAt: now,
-      );
-      return _blockProject(
-        project.copyWith(
+      final duplicate = _duplicateMatchForTask(project, task);
+      if (duplicate is _QueuedDuplicateProjectTask) {
+        return project.copyWith(
+          currentTask: duplicate.task,
+          status: ProjectStatus.active,
+          phase: ProjectPhase.execution,
+          blocker: null,
+          updatedAt: now,
+        );
+      }
+      if (duplicate is _FailedDuplicateProjectTask) {
+        final retryTask = _retryTaskForFailedDuplicate(
+          failedTask: duplicate.task,
+          duplicateTask: task,
+          violations: violations,
+          now: now,
+        );
+        final rejected = task.copyWith(
+          status: ProjectTaskStatus.rejected,
+          rejectionReason: violations.join('\n'),
+          updatedAt: now,
+        );
+        return project.copyWith(
+          currentTask: retryTask,
           failedTasks: [...project.failedTasks, rejected],
-          backlog: project.backlog.where((item) => item.id != task.id).toList(),
+          status: ProjectStatus.active,
+          phase: ProjectPhase.execution,
+          blocker: null,
           decisions: [
             ...project.decisions,
             _decision(
               ProjectDecisionType.rejectTask,
-              'Rejected repeated project task: ${task.title}',
+              'Rejected repeated failed project task: ${task.title}',
               violations.join('\n'),
               task: rejected,
             ),
           ],
           updatedAt: now,
-        ),
-        ProjectBlockerType.duplicateTask,
-        'Project task repeated previous work: ${violations.join('; ')}',
-        now,
+        );
+      }
+      final rejected = task.copyWith(
+        status: ProjectTaskStatus.rejected,
+        rejectionReason: violations.join('\n'),
+        updatedAt: now,
+      );
+      return project.copyWith(
+        failedTasks: [...project.failedTasks, rejected],
+        backlog: project.backlog.where((item) => item.id != task.id).toList(),
+        status: ProjectStatus.active,
+        phase: ProjectPhase.planning,
+        blocker: null,
+        decisions: [
+          ...project.decisions,
+          _decision(
+            ProjectDecisionType.rejectTask,
+            'Rejected repeated project task: ${task.title}',
+            violations.join('\n'),
+            task: rejected,
+          ),
+        ],
+        updatedAt: now,
       );
     }
 
@@ -1292,6 +1344,77 @@ class ProjectService {
     return _ProjectTaskValidation(violations.isEmpty, violations);
   }
 
+  _DuplicateProjectTaskMatch? _duplicateMatchForTask(
+    ProjectDocument project,
+    ProjectTask task,
+  ) {
+    if (task.recoveryIncidentId != null) return null;
+    final fingerprint = task.fingerprint;
+    for (final queued in project.backlog) {
+      if (queued.id != task.id && queued.fingerprint == fingerprint) {
+        return _QueuedDuplicateProjectTask(queued);
+      }
+    }
+    final current = project.currentTask;
+    if (current != null &&
+        current.id != task.id &&
+        current.fingerprint == fingerprint) {
+      return _QueuedDuplicateProjectTask(current);
+    }
+    for (final failed in project.failedTasks) {
+      if (failed.id != task.id &&
+          failed.status == ProjectTaskStatus.failed &&
+          failed.recoveryIncidentId == null &&
+          failed.fingerprint == fingerprint) {
+        return _FailedDuplicateProjectTask(failed);
+      }
+    }
+    return null;
+  }
+
+  ProjectTask _retryTaskForFailedDuplicate({
+    required ProjectTask failedTask,
+    required ProjectTask duplicateTask,
+    required List<String> violations,
+    required DateTime now,
+  }) {
+    final criteria = duplicateTask.relevantSuccessCriteria.isEmpty
+        ? failedTask.relevantSuccessCriteria
+        : duplicateTask.relevantSuccessCriteria;
+    final objective =
+        'Retry failed project task after addressing the previous failure: ${failedTask.objective}';
+    return ProjectTask(
+      id: 'project_retry_${uuid.v7()}',
+      title: 'Retry ${failedTask.title}',
+      objective: objective,
+      relevantSuccessCriteria: criteria,
+      doneCriteria: duplicateTask.doneCriteria.isEmpty
+          ? failedTask.doneCriteria
+          : duplicateTask.doneCriteria,
+      outOfScope: duplicateTask.outOfScope.isEmpty
+          ? failedTask.outOfScope
+          : duplicateTask.outOfScope,
+      context: [
+        ...failedTask.context,
+        ...duplicateTask.context,
+        if (failedTask.rejectionReason?.trim().isNotEmpty == true)
+          'Previous failure: ${failedTask.rejectionReason!.trim()}',
+        'Duplicate proposal was converted into a retry instead of halting the project.',
+        ...violations,
+      ],
+      expectedArtifacts: duplicateTask.expectedArtifacts.isEmpty
+          ? failedTask.expectedArtifacts
+          : duplicateTask.expectedArtifacts,
+      status: ProjectTaskStatus.queued,
+      taskDocumentId: null,
+      recoveryIncidentId: null,
+      fingerprint: projectTaskFingerprint(objective, criteria),
+      rejectionReason: null,
+      createdAt: now,
+      updatedAt: now,
+    );
+  }
+
   bool _looksOversized(String value) {
     final text = _normalise(value);
     return text.contains('entire project') ||
@@ -1701,7 +1824,11 @@ class ProjectService {
     List<ProjectRecoveryIncident> recoveryIncidents,
   ) {
     final nonRecoveryFailures = failedTasks
-        .where((task) => task.recoveryIncidentId == null)
+        .where(
+          (task) =>
+              task.status == ProjectTaskStatus.failed &&
+              task.recoveryIncidentId == null,
+        )
         .length;
     final exhaustedIncidents = recoveryIncidents
         .where(
@@ -2053,6 +2180,20 @@ class _ProjectTaskValidation {
   final List<String> violations;
 
   const _ProjectTaskValidation(this.valid, this.violations);
+}
+
+sealed class _DuplicateProjectTaskMatch {
+  final ProjectTask task;
+
+  const _DuplicateProjectTaskMatch(this.task);
+}
+
+class _QueuedDuplicateProjectTask extends _DuplicateProjectTaskMatch {
+  const _QueuedDuplicateProjectTask(super.task);
+}
+
+class _FailedDuplicateProjectTask extends _DuplicateProjectTaskMatch {
+  const _FailedDuplicateProjectTask(super.task);
 }
 
 class _ProjectTaskExecution {

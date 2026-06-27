@@ -430,40 +430,199 @@ void main() {
       },
     );
 
-    test('blocks repeated next task proposals', () async {
+    test('runs queued task when selector proposes the same task', () async {
       final project = await service.createProject(
         workspace: workspace,
         userPrompt: 'Build the app',
         chatSessionId: 'chat_1',
       );
-      final previous = project.copyWith(
-        decisions: [
-          ProjectDecisionRecord(
-            id: 'decision_previous',
-            decision: ProjectDecisionType.createTask,
-            summary: 'Create task',
-            memoryUpdate: '',
-            taskPrompt: 'Implement the first slice',
-            createdAt: DateTime(2026, 1, 1),
-          ),
-        ],
+      final queuedTask = _projectTask(
+        id: 'queued_task',
+        objective: 'Implement the first slice',
       );
+      final previous = project.copyWith(backlog: [queuedTask]);
 
       final result = await service.runProject(
         client: _QueueChatClient([
           jsonEncode({
             'task': _projectTaskJson(objective: 'Implement the first slice'),
           }),
+          jsonEncode(_taskPlanJson()),
+          jsonEncode({
+            'status': 'completed',
+            'summary': 'Queued task complete.',
+            'memoryUpdate': 'Implemented the queued task.',
+          }),
+          jsonEncode({
+            'complete': false,
+            'finalSummary': '',
+            'remainingCriteria': ['Complete the stated project goal.'],
+            'openQuestions': [],
+          }),
         ]),
         workspace: workspace,
         snapshot: previous,
         baseSystemPrompt: 'system',
-        maxNewTasks: 5,
+        maxNewTasks: 1,
       );
 
-      expect(result.project.status, ProjectStatus.blocked);
-      expect(result.project.blocker?.type, ProjectBlockerType.duplicateTask);
-      expect(result.project.blocker?.message, contains('repeated'));
+      expect(result.project.status, ProjectStatus.paused);
+      expect(result.project.blocker, isNull);
+      expect(result.project.failedTasks, isEmpty);
+      expect(result.project.completedTasks.single.id, queuedTask.id);
+    });
+
+    test(
+      'clears legacy duplicate-task blocker and resumes queued work',
+      () async {
+        final project = await service.createProject(
+          workspace: workspace,
+          userPrompt: 'Build the app',
+          chatSessionId: 'chat_1',
+        );
+        final queuedTask = _projectTask(
+          id: 'queued_task',
+          objective: 'Implement the first slice',
+        );
+        final previous = project.copyWith(
+          backlog: [queuedTask],
+          status: ProjectStatus.blocked,
+          blocker: ProjectBlocker(
+            type: ProjectBlockerType.duplicateTask,
+            message: 'Project task repeated previous work.',
+            createdAt: DateTime(2026, 1, 1),
+          ),
+        );
+
+        final result = await service.runProject(
+          client: _QueueChatClient([
+            jsonEncode({}),
+            jsonEncode(_taskPlanJson()),
+            jsonEncode({
+              'status': 'completed',
+              'summary': 'Queued task complete.',
+              'memoryUpdate': 'Resumed after legacy blocker.',
+            }),
+            jsonEncode({
+              'complete': false,
+              'finalSummary': '',
+              'remainingCriteria': ['Complete the stated project goal.'],
+              'openQuestions': [],
+            }),
+          ]),
+          workspace: workspace,
+          snapshot: previous,
+          baseSystemPrompt: 'system',
+          maxNewTasks: 1,
+        );
+
+        expect(result.project.status, ProjectStatus.paused);
+        expect(result.project.blocker, isNull);
+        expect(result.project.completedTasks.single.id, queuedTask.id);
+      },
+    );
+
+    test('rejects completed duplicate proposals and continues', () async {
+      final project = await service.createProject(
+        workspace: workspace,
+        userPrompt: 'Build the app',
+        chatSessionId: 'chat_1',
+      );
+      final completedTask = _projectTask(
+        id: 'completed_task',
+        objective: 'Implement the first slice',
+        status: ProjectTaskStatus.completed,
+      );
+      final previous = project.copyWith(completedTasks: [completedTask]);
+
+      final result = await service.runProject(
+        client: _QueueChatClient([
+          jsonEncode({
+            'task': _projectTaskJson(objective: 'Implement the first slice'),
+          }),
+          jsonEncode({
+            'task': _projectTaskJson(objective: 'Implement the second slice'),
+          }),
+          jsonEncode(_taskPlanJson()),
+          jsonEncode({
+            'status': 'completed',
+            'summary': 'Second task complete.',
+            'memoryUpdate': 'Implemented another slice.',
+          }),
+          jsonEncode({
+            'complete': false,
+            'finalSummary': '',
+            'remainingCriteria': ['Complete the stated project goal.'],
+            'openQuestions': [],
+          }),
+        ]),
+        workspace: workspace,
+        snapshot: previous,
+        baseSystemPrompt: 'system',
+        maxNewTasks: 1,
+      );
+
+      expect(result.project.status, ProjectStatus.paused);
+      expect(result.project.blocker, isNull);
+      expect(
+        result.project.failedTasks.single.status,
+        ProjectTaskStatus.rejected,
+      );
+      expect(result.project.completedTasks, hasLength(2));
+      expect(
+        result.project.completedTasks.last.objective,
+        'Implement the second slice',
+      );
+    });
+
+    test('converts failed duplicate proposals into retry tasks', () async {
+      final project = await service.createProject(
+        workspace: workspace,
+        userPrompt: 'Build the app',
+        chatSessionId: 'chat_1',
+      );
+      final failedTask = _projectTask(
+        id: 'failed_task',
+        objective: 'Implement the first slice',
+        status: ProjectTaskStatus.failed,
+      ).copyWith(rejectionReason: 'Previous attempt failed tests.');
+      final previous = project.copyWith(failedTasks: [failedTask]);
+
+      final result = await service.runProject(
+        client: _QueueChatClient([
+          jsonEncode({
+            'task': _projectTaskJson(objective: 'Implement the first slice'),
+          }),
+          jsonEncode(_taskPlanJson()),
+          jsonEncode({
+            'status': 'completed',
+            'summary': 'Retry complete.',
+            'memoryUpdate': 'Retried and completed the work.',
+          }),
+          jsonEncode({
+            'complete': false,
+            'finalSummary': '',
+            'remainingCriteria': ['Complete the stated project goal.'],
+            'openQuestions': [],
+          }),
+        ]),
+        workspace: workspace,
+        snapshot: previous,
+        baseSystemPrompt: 'system',
+        maxNewTasks: 1,
+      );
+
+      expect(result.project.status, ProjectStatus.paused);
+      expect(result.project.blocker, isNull);
+      expect(result.project.failedTasks, hasLength(2));
+      expect(
+        result.project.failedTasks.last.status,
+        ProjectTaskStatus.rejected,
+      );
+      expect(
+        result.project.completedTasks.single.objective,
+        startsWith('Retry'),
+      );
     });
 
     test('does not execute one giant task for a broad project goal', () async {
@@ -482,11 +641,24 @@ void main() {
             ),
           }),
           jsonEncode({'tasks': []}),
+          jsonEncode({}),
+          jsonEncode(_taskPlanJson()),
+          jsonEncode({
+            'status': 'completed',
+            'summary': 'Split task complete.',
+            'memoryUpdate': 'Completed focused progress instead.',
+          }),
+          jsonEncode({
+            'complete': false,
+            'finalSummary': '',
+            'remainingCriteria': ['Complete the stated project goal.'],
+            'openQuestions': [],
+          }),
         ]),
         workspace: workspace,
         snapshot: project,
         baseSystemPrompt: 'system',
-        maxNewTasks: 5,
+        maxNewTasks: 1,
       );
 
       expect(
