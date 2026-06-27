@@ -34,6 +34,7 @@ enum ProjectBlockerType {
   taskApproval,
   taskBlocked,
   taskFailed,
+  recoveryFailed,
   budget,
   validation,
   duplicateTask,
@@ -44,6 +45,7 @@ enum ProjectBlockerType {
 
 enum ProjectDecisionType {
   createTask,
+  createRecoveryTask,
   complete,
   blocked,
   rejectTask,
@@ -74,6 +76,7 @@ extension ProjectBlockerTypeWire on ProjectBlockerType {
     ProjectBlockerType.taskApproval => 'task_approval',
     ProjectBlockerType.taskBlocked => 'task_blocked',
     ProjectBlockerType.taskFailed => 'task_failed',
+    ProjectBlockerType.recoveryFailed => 'recovery_failed',
     ProjectBlockerType.duplicateTask => 'duplicate_task',
     ProjectBlockerType.oversizedTask => 'oversized_task',
     ProjectBlockerType.maxFailures => 'max_failures',
@@ -84,6 +87,7 @@ extension ProjectBlockerTypeWire on ProjectBlockerType {
 extension ProjectDecisionTypeWire on ProjectDecisionType {
   String get wire => switch (this) {
     ProjectDecisionType.createTask => 'create_task',
+    ProjectDecisionType.createRecoveryTask => 'create_recovery_task',
     ProjectDecisionType.rejectTask => 'reject_task',
     ProjectDecisionType.splitTask => 'split_task',
     ProjectDecisionType.evaluateTask => 'evaluate_task',
@@ -121,6 +125,7 @@ ProjectBlockerType parseProjectBlockerType(Object? value) => _parseEnum(
     'task_approval': ProjectBlockerType.taskApproval,
     'task_blocked': ProjectBlockerType.taskBlocked,
     'task_failed': ProjectBlockerType.taskFailed,
+    'recovery_failed': ProjectBlockerType.recoveryFailed,
     'duplicate_task': ProjectBlockerType.duplicateTask,
     'oversized_task': ProjectBlockerType.oversizedTask,
     'max_failures': ProjectBlockerType.maxFailures,
@@ -133,11 +138,26 @@ ProjectDecisionType parseProjectDecisionType(Object? value) => _parseEnum(
   ProjectDecisionType.blocked,
   aliases: {
     'create_task': ProjectDecisionType.createTask,
+    'create_recovery_task': ProjectDecisionType.createRecoveryTask,
     'reject_task': ProjectDecisionType.rejectTask,
     'split_task': ProjectDecisionType.splitTask,
     'evaluate_task': ProjectDecisionType.evaluateTask,
     'refresh_backlog': ProjectDecisionType.refreshBacklog,
   },
+);
+
+enum ProjectRecoveryIncidentStatus { active, resolved, exhausted }
+
+extension ProjectRecoveryIncidentStatusWire on ProjectRecoveryIncidentStatus {
+  String get wire => name;
+}
+
+ProjectRecoveryIncidentStatus parseProjectRecoveryIncidentStatus(
+  Object? value,
+) => _parseEnum(
+  ProjectRecoveryIncidentStatus.values,
+  value,
+  ProjectRecoveryIncidentStatus.active,
 );
 
 int parseOptionalLimit(Object? value, {required int fallback}) {
@@ -182,6 +202,7 @@ class ProjectState {
   final List<ProjectTask> completedTasks;
   final List<ProjectTask> failedTasks;
   final List<ProjectArtifact> artifacts;
+  final List<ProjectRecoveryIncident> recoveryIncidents;
   final List<String> knownFacts;
   final List<PendingProjectQuestion> openQuestions;
   final ProjectStatus status;
@@ -213,6 +234,7 @@ class ProjectState {
     List<ProjectTask>? completedTasks,
     List<ProjectTask>? failedTasks,
     List<ProjectArtifact>? artifacts,
+    List<ProjectRecoveryIncident>? recoveryIncidents,
     List<String>? knownFacts,
     List<PendingProjectQuestion>? openQuestions,
     String? memorySummary,
@@ -239,6 +261,7 @@ class ProjectState {
        completedTasks = completedTasks ?? _legacyCompletedTasks(tasks),
        failedTasks = failedTasks ?? _legacyFailedTasks(tasks),
        artifacts = artifacts ?? const [],
+       recoveryIncidents = recoveryIncidents ?? const [],
        knownFacts =
            knownFacts ??
            [
@@ -376,6 +399,7 @@ class ProjectState {
     List<ProjectTask>? completedTasks,
     List<ProjectTask>? failedTasks,
     List<ProjectArtifact>? artifacts,
+    List<ProjectRecoveryIncident>? recoveryIncidents,
     List<String>? knownFacts,
     List<PendingProjectQuestion>? openQuestions,
     Object? pendingQuestion = kSentinel,
@@ -416,6 +440,7 @@ class ProjectState {
       completedTasks: completedTasks ?? this.completedTasks,
       failedTasks: failedTasks ?? this.failedTasks,
       artifacts: artifacts ?? this.artifacts,
+      recoveryIncidents: recoveryIncidents ?? this.recoveryIncidents,
       knownFacts: knownFacts ?? this.knownFacts,
       openQuestions: nextOpenQuestions,
       status: status ?? this.status,
@@ -478,6 +503,9 @@ class ProjectState {
       artifacts: jsonMapList(
         json['artifacts'],
       ).map(ProjectArtifact.fromJson).toList(),
+      recoveryIncidents: jsonMapList(
+        json['recoveryIncidents'] ?? json['recovery_incidents'],
+      ).map(ProjectRecoveryIncident.fromJson).toList(),
       knownFacts: jsonStringList(json['knownFacts'] ?? json['known_facts']),
       openQuestions: _openQuestionsFromJson(json),
       status: parseProjectStatus(json['status']),
@@ -597,6 +625,7 @@ class ProjectState {
       completedTasks: completedTasks,
       failedTasks: failedTasks,
       artifacts: const [],
+      recoveryIncidents: const [],
       knownFacts: [if (memorySummary.trim().isNotEmpty) memorySummary.trim()],
       openQuestions: openQuestions,
       status: status,
@@ -662,6 +691,9 @@ class ProjectState {
     'completedTasks': completedTasks.map((task) => task.toJson()).toList(),
     'failedTasks': failedTasks.map((task) => task.toJson()).toList(),
     'artifacts': artifacts.map((artifact) => artifact.toJson()).toList(),
+    'recoveryIncidents': recoveryIncidents
+        .map((incident) => incident.toJson())
+        .toList(),
     'knownFacts': knownFacts,
     'openQuestions': openQuestions
         .map((question) => question.toJson())
@@ -685,6 +717,132 @@ class ProjectState {
 typedef ProjectDocument = ProjectState;
 typedef ProjectSnapshot = ProjectState;
 
+class ProjectRecoveryIncident {
+  static const int defaultMaxAttempts = 3;
+
+  final String id;
+  final ProjectRecoveryIncidentStatus status;
+  final List<String> sourceTaskIds;
+  final List<String> sourceTaskTitles;
+  final String failedGateId;
+  final String? command;
+  final String? workingDirectory;
+  final String failureSummary;
+  final int attemptCount;
+  final int maxAttempts;
+  final List<String> recoveryTaskIds;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? resolvedAt;
+
+  const ProjectRecoveryIncident({
+    required this.id,
+    required this.status,
+    required this.sourceTaskIds,
+    required this.sourceTaskTitles,
+    required this.failedGateId,
+    this.command,
+    this.workingDirectory,
+    required this.failureSummary,
+    required this.attemptCount,
+    this.maxAttempts = defaultMaxAttempts,
+    required this.recoveryTaskIds,
+    required this.createdAt,
+    required this.updatedAt,
+    this.resolvedAt,
+  });
+
+  ProjectRecoveryIncident copyWith({
+    String? id,
+    ProjectRecoveryIncidentStatus? status,
+    List<String>? sourceTaskIds,
+    List<String>? sourceTaskTitles,
+    Object? command = kSentinel,
+    Object? workingDirectory = kSentinel,
+    String? failedGateId,
+    String? failureSummary,
+    int? attemptCount,
+    int? maxAttempts,
+    List<String>? recoveryTaskIds,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Object? resolvedAt = kSentinel,
+  }) {
+    return ProjectRecoveryIncident(
+      id: id ?? this.id,
+      status: status ?? this.status,
+      sourceTaskIds: sourceTaskIds ?? this.sourceTaskIds,
+      sourceTaskTitles: sourceTaskTitles ?? this.sourceTaskTitles,
+      failedGateId: failedGateId ?? this.failedGateId,
+      command: resolve(command, this.command),
+      workingDirectory: resolve(workingDirectory, this.workingDirectory),
+      failureSummary: failureSummary ?? this.failureSummary,
+      attemptCount: attemptCount ?? this.attemptCount,
+      maxAttempts: maxAttempts ?? this.maxAttempts,
+      recoveryTaskIds: recoveryTaskIds ?? this.recoveryTaskIds,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      resolvedAt: resolve(resolvedAt, this.resolvedAt),
+    );
+  }
+
+  factory ProjectRecoveryIncident.fromJson(Map<String, dynamic> json) {
+    final now = DateTime.now();
+    return ProjectRecoveryIncident(
+      id: jsonString(json['id'], fallback: 'recovery_incident'),
+      status: parseProjectRecoveryIncidentStatus(json['status']),
+      sourceTaskIds: jsonStringList(
+        json['sourceTaskIds'] ?? json['source_task_ids'],
+      ),
+      sourceTaskTitles: jsonStringList(
+        json['sourceTaskTitles'] ?? json['source_task_titles'],
+      ),
+      failedGateId: jsonString(json['failedGateId'] ?? json['failed_gate_id']),
+      command: jsonNullableString(json['command']),
+      workingDirectory: jsonNullableString(
+        json['workingDirectory'] ?? json['working_directory'],
+      ),
+      failureSummary: jsonString(
+        json['failureSummary'] ?? json['failure_summary'],
+      ),
+      attemptCount: jsonInt(json['attemptCount'] ?? json['attempt_count']),
+      maxAttempts: jsonInt(
+        json['maxAttempts'] ?? json['max_attempts'],
+        fallback: defaultMaxAttempts,
+      ).clamp(1, 100).toInt(),
+      recoveryTaskIds: jsonStringList(
+        json['recoveryTaskIds'] ?? json['recovery_task_ids'],
+      ),
+      createdAt: jsonDate(
+        json['createdAt'] ?? json['created_at'],
+        fallback: now,
+      ),
+      updatedAt: jsonDate(
+        json['updatedAt'] ?? json['updated_at'],
+        fallback: now,
+      ),
+      resolvedAt: jsonNullableDate(json['resolvedAt'] ?? json['resolved_at']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'status': status.wire,
+    'sourceTaskIds': sourceTaskIds,
+    'sourceTaskTitles': sourceTaskTitles,
+    'failedGateId': failedGateId,
+    if (command != null) 'command': command,
+    if (workingDirectory != null) 'workingDirectory': workingDirectory,
+    'failureSummary': failureSummary,
+    'attemptCount': attemptCount,
+    'maxAttempts': maxAttempts,
+    'recoveryTaskIds': recoveryTaskIds,
+    'createdAt': createdAt.toIso8601String(),
+    'updatedAt': updatedAt.toIso8601String(),
+    if (resolvedAt != null) 'resolvedAt': resolvedAt!.toIso8601String(),
+  };
+}
+
 class ProjectTask {
   final String id;
   final String title;
@@ -696,6 +854,7 @@ class ProjectTask {
   final List<ProjectArtifact> expectedArtifacts;
   final ProjectTaskStatus status;
   final String? taskDocumentId;
+  final String? recoveryIncidentId;
   final String fingerprint;
   final String? rejectionReason;
   final DateTime createdAt;
@@ -712,6 +871,7 @@ class ProjectTask {
     required this.expectedArtifacts,
     required this.status,
     required this.taskDocumentId,
+    this.recoveryIncidentId,
     required this.fingerprint,
     required this.rejectionReason,
     required this.createdAt,
@@ -729,6 +889,7 @@ class ProjectTask {
     List<ProjectArtifact>? expectedArtifacts,
     ProjectTaskStatus? status,
     Object? taskDocumentId = kSentinel,
+    Object? recoveryIncidentId = kSentinel,
     String? fingerprint,
     Object? rejectionReason = kSentinel,
     DateTime? createdAt,
@@ -748,6 +909,7 @@ class ProjectTask {
       expectedArtifacts: expectedArtifacts ?? this.expectedArtifacts,
       status: status ?? this.status,
       taskDocumentId: resolve(taskDocumentId, this.taskDocumentId),
+      recoveryIncidentId: resolve(recoveryIncidentId, this.recoveryIncidentId),
       fingerprint:
           fingerprint ??
           this.fingerprint.ifEmpty(
@@ -785,6 +947,9 @@ class ProjectTask {
       taskDocumentId: jsonNullableString(
         json['taskDocumentId'] ?? json['task_document_id'],
       ),
+      recoveryIncidentId: jsonNullableString(
+        json['recoveryIncidentId'] ?? json['recovery_incident_id'],
+      ),
       fingerprint: jsonString(
         json['fingerprint'],
         fallback: projectTaskFingerprint(objective, criteria),
@@ -821,6 +986,7 @@ class ProjectTask {
         _ => ProjectTaskStatus.queued,
       },
       taskDocumentId: ref.taskId,
+      recoveryIncidentId: null,
       fingerprint: projectTaskFingerprint(objective, criteria),
       rejectionReason: null,
       createdAt: ref.createdAt,
@@ -841,6 +1007,7 @@ class ProjectTask {
         .toList(),
     'status': status.wire,
     if (taskDocumentId != null) 'taskDocumentId': taskDocumentId,
+    if (recoveryIncidentId != null) 'recoveryIncidentId': recoveryIncidentId,
     'fingerprint': fingerprint,
     if (rejectionReason != null) 'rejectionReason': rejectionReason,
     'createdAt': createdAt.toIso8601String(),
@@ -924,6 +1091,7 @@ class TaskResult {
   final String summary;
   final String memoryUpdate;
   final List<ProjectArtifact> artifacts;
+  final List<TaskGateResult> gateResults;
   final int toolCallCount;
   final String? userQuestion;
   final String? error;
@@ -934,6 +1102,7 @@ class TaskResult {
     required this.summary,
     required this.memoryUpdate,
     required this.artifacts,
+    this.gateResults = const [],
     required this.toolCallCount,
     this.userQuestion,
     this.error,
@@ -949,6 +1118,7 @@ class ProjectEvaluation {
   final List<String> remainingCriteria;
   final List<String> newKnownFacts;
   final List<ProjectArtifact> artifacts;
+  final List<TaskGateResult> gateResults;
   final List<ProjectTask> backlogAdditions;
   final List<PendingProjectQuestion> openQuestions;
   final String? failureReason;
@@ -962,6 +1132,7 @@ class ProjectEvaluation {
     required this.remainingCriteria,
     required this.newKnownFacts,
     required this.artifacts,
+    this.gateResults = const [],
     required this.backlogAdditions,
     required this.openQuestions,
     this.failureReason,

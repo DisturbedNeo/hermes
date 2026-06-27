@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/core/models/project.dart';
@@ -19,6 +20,12 @@ import 'package:path/path.dart' as path;
 
 typedef ProjectTaskSnapshotSink = void Function(TaskDocument? task);
 typedef ProjectCompactionStatusSink = void Function(String status);
+
+const Set<String> _recoveryWorthyGateIds = {
+  'command_passes',
+  'no_failed_commands',
+  'workspace_clean_enough',
+};
 
 class ProjectRunResult {
   final ProjectDocument project;
@@ -686,6 +693,9 @@ class ProjectService {
     required String baseSystemPrompt,
     TaskModelOutputSink? onModelOutput,
   }) async {
+    final recoveryTask = _activeRecoveryTask(project);
+    if (recoveryTask != null) return recoveryTask;
+
     final metadata = await _collectWorkspaceMetadata(
       workspace,
       chatSessionId: project.chatSessionId,
@@ -994,6 +1004,7 @@ class ProjectService {
         if (result.memoryUpdate.trim().isNotEmpty) result.memoryUpdate.trim(),
       ],
       artifacts: result.artifacts,
+      gateResults: result.gateResults,
       backlogAdditions: const [],
       openQuestions: result.userQuestion?.trim().isNotEmpty == true
           ? [
@@ -1021,22 +1032,53 @@ class ProjectService {
       autonomy: questionAutonomy,
     );
     if (!evaluation.taskAccepted) {
-      final failedTask = task.copyWith(
+      var failedTask = task.copyWith(
         status: ProjectTaskStatus.failed,
         rejectionReason: evaluation.failureReason,
         updatedAt: now,
       );
+      final recoveryUpdate = _recoveryUpdateForFailedTask(
+        project: project,
+        failedTask: failedTask,
+        evaluation: evaluation,
+        now: now,
+      );
+      failedTask = recoveryUpdate.failedTask;
       final failedTasks = [...project.failedTasks, failedTask];
+      final recoveryIncidents = recoveryUpdate.recoveryIncidents;
+      final failedBudgetCount = _projectFailureBudgetCount(
+        failedTasks,
+        recoveryIncidents,
+      );
+      final reachedFailureLimit = failedBudgetCount >= project.maxFailedTasks;
+      final exhaustedIncident = recoveryUpdate.exhaustedIncident;
       return project.copyWith(
         currentTask: null,
         activeTaskId: null,
         failedTasks: failedTasks,
+        backlog: [
+          if (recoveryUpdate.recoveryTask != null) recoveryUpdate.recoveryTask!,
+          ...project.backlog.where(
+            (item) => item.id != recoveryUpdate.recoveryTask?.id,
+          ),
+        ],
+        recoveryIncidents: recoveryIncidents,
         openQuestions: filteredQuestions.blocking,
-        status: failedTasks.length >= project.maxFailedTasks
+        status: exhaustedIncident != null
+            ? ProjectStatus.blocked
+            : reachedFailureLimit
             ? ProjectStatus.failed
             : ProjectStatus.active,
         phase: ProjectPhase.execution,
-        blocker: failedTasks.length >= project.maxFailedTasks
+        blocker: exhaustedIncident != null
+            ? ProjectBlocker(
+                type: ProjectBlockerType.recoveryFailed,
+                message:
+                    'Recovery incident `${exhaustedIncident.id}` reached the maximum repair attempt limit of ${exhaustedIncident.maxAttempts}.',
+                taskId: failedTask.taskDocumentId ?? failedTask.id,
+                createdAt: now,
+              )
+            : reachedFailureLimit
             ? ProjectBlocker(
                 type: ProjectBlockerType.maxFailures,
                 message:
@@ -1056,6 +1098,13 @@ class ProjectService {
             evaluation.failureReason ?? '',
             task: failedTask,
           ),
+          if (recoveryUpdate.recoveryTask != null)
+            _decision(
+              ProjectDecisionType.createRecoveryTask,
+              'Created recovery task for failed gate: ${recoveryUpdate.incident!.failedGateId}',
+              recoveryUpdate.incident!.failureSummary,
+              task: recoveryUpdate.recoveryTask,
+            ),
         ],
         updatedAt: now,
       );
@@ -1065,11 +1114,17 @@ class ProjectService {
       status: ProjectTaskStatus.completed,
       updatedAt: now,
     );
+    final recoveryIncidents = _resolveRecoveryIncidentForTask(
+      project.recoveryIncidents,
+      completedTask,
+      now,
+    );
     return project.copyWith(
       currentTask: null,
       activeTaskId: null,
       completedTasks: [...project.completedTasks, completedTask],
       artifacts: _mergeArtifacts(project.artifacts, evaluation.artifacts),
+      recoveryIncidents: recoveryIncidents,
       knownFacts: _appendFacts(project.knownFacts, [
         ...evaluation.newKnownFacts,
         ...filteredQuestions.assumptions,
@@ -1108,8 +1163,18 @@ class ProjectService {
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
   }) async {
     if (project.isTerminal ||
+        project.status == ProjectStatus.blocked ||
         project.openQuestions.isNotEmpty ||
-        project.failedTasks.length >= project.maxFailedTasks) {
+        project.recoveryIncidents.any(
+          (incident) =>
+              incident.status == ProjectRecoveryIncidentStatus.active ||
+              incident.status == ProjectRecoveryIncidentStatus.exhausted,
+        ) ||
+        _projectFailureBudgetCount(
+              project.failedTasks,
+              project.recoveryIncidents,
+            ) >=
+            project.maxFailedTasks) {
       return project;
     }
     final remainingByState = _remainingCriteria(project);
@@ -1187,19 +1252,21 @@ class ProjectService {
     if (task.outOfScope.isEmpty) {
       violations.add('Task has no out-of-scope boundaries.');
     }
-    if (_knownFingerprints(
-      project,
-      excludingTaskId: task.id,
-    ).contains(task.fingerprint)) {
+    if (task.recoveryIncidentId == null &&
+        _knownFingerprints(
+          project,
+          excludingTaskId: task.id,
+        ).contains(task.fingerprint)) {
       violations.add(
         'Task duplicates previous, current, failed, or queued work.',
       );
     }
-    if (project.decisions.any(
-      (decision) =>
-          decision.taskPrompt?.trim().isNotEmpty == true &&
-          _normalise(decision.taskPrompt!) == _normalise(task.objective),
-    )) {
+    if (task.recoveryIncidentId == null &&
+        project.decisions.any(
+          (decision) =>
+              decision.taskPrompt?.trim().isNotEmpty == true &&
+              _normalise(decision.taskPrompt!) == _normalise(task.objective),
+        )) {
       violations.add('Task repeats a previous project task prompt.');
     }
     if (_normalise(task.objective) == _normalise(project.refinedGoal) ||
@@ -1290,8 +1357,364 @@ class ProjectService {
             ),
           )
           .toList(),
+      requiredGates: _requiredGatesForTask(project, task),
       maxSteps: 3,
     );
+  }
+
+  ProjectTask? _activeRecoveryTask(ProjectDocument project) {
+    final activeIncidents =
+        project.recoveryIncidents
+            .where(
+              (incident) =>
+                  incident.status == ProjectRecoveryIncidentStatus.active,
+            )
+            .toList()
+          ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    for (final incident in activeIncidents) {
+      for (final taskId in incident.recoveryTaskIds.reversed) {
+        final task = project.backlog
+            .where((item) => item.id == taskId)
+            .firstOrNull;
+        if (task != null) return task;
+      }
+      final fallback = project.backlog
+          .where((task) => task.recoveryIncidentId == incident.id)
+          .firstOrNull;
+      if (fallback != null) return fallback;
+    }
+    return null;
+  }
+
+  _RecoveryUpdate _recoveryUpdateForFailedTask({
+    required ProjectDocument project,
+    required ProjectTask failedTask,
+    required ProjectEvaluation evaluation,
+    required DateTime now,
+  }) {
+    final recoveryFailure = _recoveryFailureFor(
+      failedTask: failedTask,
+      evaluation: evaluation,
+    );
+    if (recoveryFailure == null) {
+      return _RecoveryUpdate(
+        failedTask: failedTask,
+        recoveryIncidents: project.recoveryIncidents,
+      );
+    }
+
+    final existing = _matchingRecoveryIncident(
+      project.recoveryIncidents,
+      recoveryFailure,
+      failedTask.recoveryIncidentId,
+    );
+    final isRecoveryAttempt = failedTask.recoveryIncidentId != null;
+    final incidentId = existing?.id ?? 'recovery_${uuid.v7()}';
+    final nextAttemptCount =
+        (existing?.attemptCount ?? 0) + (isRecoveryAttempt ? 1 : 0);
+    final status =
+        nextAttemptCount >=
+            (existing?.maxAttempts ??
+                ProjectRecoveryIncident.defaultMaxAttempts)
+        ? ProjectRecoveryIncidentStatus.exhausted
+        : ProjectRecoveryIncidentStatus.active;
+    final linkedFailedTask = failedTask.copyWith(
+      recoveryIncidentId: incidentId,
+    );
+    final recoveryTask = status == ProjectRecoveryIncidentStatus.active
+        ? _recoveryTaskForIncident(
+            incidentId: incidentId,
+            sourceTask: failedTask,
+            failure: recoveryFailure,
+            attemptNumber: nextAttemptCount + 1,
+            now: now,
+          )
+        : null;
+    final incident =
+        (existing ??
+                ProjectRecoveryIncident(
+                  id: incidentId,
+                  status: ProjectRecoveryIncidentStatus.active,
+                  sourceTaskIds: const [],
+                  sourceTaskTitles: const [],
+                  failedGateId: recoveryFailure.gateResult.gateId,
+                  command: recoveryFailure.command,
+                  workingDirectory: recoveryFailure.workingDirectory,
+                  failureSummary: recoveryFailure.summary,
+                  attemptCount: 0,
+                  maxAttempts: ProjectRecoveryIncident.defaultMaxAttempts,
+                  recoveryTaskIds: const [],
+                  createdAt: now,
+                  updatedAt: now,
+                ))
+            .copyWith(
+              status: status,
+              sourceTaskIds: _appendUnique(
+                existing?.sourceTaskIds ?? const [],
+                failedTask.taskDocumentId ?? failedTask.id,
+              ),
+              sourceTaskTitles: _appendUnique(
+                existing?.sourceTaskTitles ?? const [],
+                failedTask.title,
+              ),
+              failedGateId: recoveryFailure.gateResult.gateId,
+              command: recoveryFailure.command,
+              workingDirectory: recoveryFailure.workingDirectory,
+              failureSummary: recoveryFailure.summary,
+              attemptCount: nextAttemptCount,
+              recoveryTaskIds: recoveryTask == null
+                  ? existing?.recoveryTaskIds ?? const []
+                  : _appendUnique(
+                      existing?.recoveryTaskIds ?? const [],
+                      recoveryTask.id,
+                    ),
+              updatedAt: now,
+              resolvedAt: status == ProjectRecoveryIncidentStatus.exhausted
+                  ? now
+                  : null,
+            );
+    return _RecoveryUpdate(
+      failedTask: linkedFailedTask,
+      recoveryIncidents: _upsertRecoveryIncident(
+        project.recoveryIncidents,
+        incident,
+      ),
+      incident: incident,
+      recoveryTask: recoveryTask,
+      exhaustedIncident: status == ProjectRecoveryIncidentStatus.exhausted
+          ? incident
+          : null,
+    );
+  }
+
+  _RecoveryFailure? _recoveryFailureFor({
+    required ProjectTask failedTask,
+    required ProjectEvaluation evaluation,
+  }) {
+    final failedGate = evaluation.gateResults
+        .where(
+          (result) =>
+              result.status == TaskGateStatus.failed &&
+              result.details['required'] == true,
+        )
+        .where(
+          (result) =>
+              _recoveryWorthyGateIds.contains(result.gateId) ||
+              failedTask.recoveryIncidentId != null,
+        )
+        .firstOrNull;
+    if (failedGate == null) return null;
+    final command = _gateFailureCommand(failedGate);
+    final workingDirectory = jsonNullableString(
+      failedGate.details['workingDirectory'] ??
+          failedGate.details['working_directory'],
+    );
+    final summary = [
+      failedGate.summary,
+      if (evaluation.failureReason?.trim().isNotEmpty == true)
+        evaluation.failureReason!.trim(),
+    ].where((item) => item.trim().isNotEmpty).join('\n\n');
+    return _RecoveryFailure(
+      gateResult: failedGate,
+      command: command,
+      workingDirectory: workingDirectory,
+      summary: _cap(summary.isEmpty ? 'Required gate failed.' : summary, 2000),
+    );
+  }
+
+  String? _gateFailureCommand(TaskGateResult result) {
+    final direct = jsonNullableString(result.details['command']);
+    if (direct != null) return direct;
+    final failedCommands = result.details['failedCommands'];
+    if (failedCommands is List && failedCommands.isNotEmpty) {
+      final first = failedCommands.first;
+      if (first is Map) return jsonNullableString(first['command']);
+    }
+    return null;
+  }
+
+  ProjectRecoveryIncident? _matchingRecoveryIncident(
+    List<ProjectRecoveryIncident> incidents,
+    _RecoveryFailure failure,
+    String? preferredIncidentId,
+  ) {
+    if (preferredIncidentId != null) {
+      final preferred = incidents
+          .where((incident) => incident.id == preferredIncidentId)
+          .firstOrNull;
+      if (preferred != null) return preferred;
+    }
+    final key = _recoveryIncidentKey(
+      gateId: failure.gateResult.gateId,
+      command: failure.command,
+      workingDirectory: failure.workingDirectory,
+      summary: failure.summary,
+    );
+    return incidents.where((incident) {
+      return incident.status == ProjectRecoveryIncidentStatus.active &&
+          _recoveryIncidentKey(
+                gateId: incident.failedGateId,
+                command: incident.command,
+                workingDirectory: incident.workingDirectory,
+                summary: incident.failureSummary,
+              ) ==
+              key;
+    }).firstOrNull;
+  }
+
+  String _recoveryIncidentKey({
+    required String gateId,
+    required String? command,
+    required String? workingDirectory,
+    required String summary,
+  }) {
+    final commandPart = command?.trim().isNotEmpty == true
+        ? command!.trim()
+        : _cap(_normalise(summary), 160);
+    return [
+      _normalise(gateId),
+      _normalise(commandPart),
+      _normalise(workingDirectory ?? '.'),
+    ].join('|');
+  }
+
+  ProjectTask _recoveryTaskForIncident({
+    required String incidentId,
+    required ProjectTask sourceTask,
+    required _RecoveryFailure failure,
+    required int attemptNumber,
+    required DateTime now,
+  }) {
+    final command = failure.command?.trim();
+    final gateTarget = command?.isNotEmpty == true
+        ? '${failure.gateResult.gateId}: $command'
+        : failure.gateResult.gateId;
+    final objective = 'Restore required project health gate: $gateTarget';
+    return ProjectTask(
+      id: 'project_recovery_${uuid.v7()}',
+      title: 'Recover project health',
+      objective: objective,
+      relevantSuccessCriteria: sourceTask.relevantSuccessCriteria,
+      doneCriteria: [
+        'Diagnose why the required gate is failing.',
+        'Make the smallest safe repair needed to restore the gate.',
+        if (command?.isNotEmpty == true)
+          'Run `$command` successfully before completing this task.'
+        else
+          'Rerun the failed required gate successfully before completing this task.',
+      ],
+      outOfScope: const [
+        'Do not start unrelated feature work.',
+        'Do not expand the original project scope.',
+      ],
+      context: [
+        'Recovery incident: $incidentId',
+        'Original task: ${sourceTask.title}',
+        'Original objective: ${sourceTask.objective}',
+        'Failed gate: ${failure.gateResult.gateId}',
+        if (command?.isNotEmpty == true) 'Failed command: $command',
+        if (failure.workingDirectory?.trim().isNotEmpty == true)
+          'Working directory: ${failure.workingDirectory}',
+        'Failure summary:\n${failure.summary}',
+        'Recovery attempt: $attemptNumber',
+      ],
+      expectedArtifacts: const [],
+      status: ProjectTaskStatus.queued,
+      taskDocumentId: null,
+      recoveryIncidentId: incidentId,
+      fingerprint: projectTaskFingerprint(objective, [
+        incidentId,
+        'attempt_$attemptNumber',
+      ]),
+      rejectionReason: null,
+      createdAt: now,
+      updatedAt: now,
+    );
+  }
+
+  List<ProjectRecoveryIncident> _upsertRecoveryIncident(
+    List<ProjectRecoveryIncident> incidents,
+    ProjectRecoveryIncident incident,
+  ) {
+    var replaced = false;
+    final next = <ProjectRecoveryIncident>[];
+    for (final current in incidents) {
+      if (current.id == incident.id) {
+        next.add(incident);
+        replaced = true;
+      } else {
+        next.add(current);
+      }
+    }
+    if (!replaced) next.add(incident);
+    return next;
+  }
+
+  List<ProjectRecoveryIncident> _resolveRecoveryIncidentForTask(
+    List<ProjectRecoveryIncident> incidents,
+    ProjectTask completedTask,
+    DateTime now,
+  ) {
+    final incidentId = completedTask.recoveryIncidentId;
+    if (incidentId == null) return incidents;
+    return [
+      for (final incident in incidents)
+        incident.id == incidentId &&
+                incident.status == ProjectRecoveryIncidentStatus.active
+            ? incident.copyWith(
+                status: ProjectRecoveryIncidentStatus.resolved,
+                updatedAt: now,
+                resolvedAt: now,
+              )
+            : incident,
+    ];
+  }
+
+  List<TaskGate> _requiredGatesForTask(
+    ProjectDocument project,
+    ProjectTask task,
+  ) {
+    final incidentId = task.recoveryIncidentId;
+    if (incidentId == null) return const [];
+    final incident = project.recoveryIncidents
+        .where((item) => item.id == incidentId)
+        .firstOrNull;
+    if (incident == null) return const [];
+    return [
+      TaskGate(
+        id: incident.failedGateId,
+        required: true,
+        scope: 'task',
+        params: {
+          if (incident.command?.trim().isNotEmpty == true)
+            'command': incident.command,
+          if (incident.workingDirectory?.trim().isNotEmpty == true)
+            'working_directory': incident.workingDirectory,
+        },
+        description: 'Recovery incident ${incident.id} must be resolved.',
+      ),
+    ];
+  }
+
+  int _projectFailureBudgetCount(
+    List<ProjectTask> failedTasks,
+    List<ProjectRecoveryIncident> recoveryIncidents,
+  ) {
+    final nonRecoveryFailures = failedTasks
+        .where((task) => task.recoveryIncidentId == null)
+        .length;
+    final exhaustedIncidents = recoveryIncidents
+        .where(
+          (incident) =>
+              incident.status == ProjectRecoveryIncidentStatus.exhausted,
+        )
+        .length;
+    return nonRecoveryFailures + exhaustedIncidents;
+  }
+
+  List<String> _appendUnique(List<String> current, String value) {
+    if (value.trim().isEmpty || current.contains(value)) return current;
+    return [...current, value];
   }
 
   TaskResult _taskResultFromTask(ProjectTask projectTask, TaskDocument task) {
@@ -1315,6 +1738,7 @@ class ProjectService {
       summary: latestRun?.summary ?? task.memorySummary,
       memoryUpdate: latestRun?.memoryUpdate ?? task.memorySummary,
       artifacts: artifacts,
+      gateResults: latestRun?.gateResults ?? const [],
       toolCallCount: task.runs.fold<int>(
         0,
         (sum, run) => sum + run.toolCalls.length,
@@ -1476,7 +1900,8 @@ class ProjectService {
       for (final task in project.completedTasks)
         if (task.id != excludingTaskId) task.fingerprint,
       for (final task in project.failedTasks)
-        if (task.id != excludingTaskId) task.fingerprint,
+        if (task.id != excludingTaskId && task.recoveryIncidentId == null)
+          task.fingerprint,
       for (final decision in project.decisions)
         if (decision.taskPrompt?.trim().isNotEmpty == true)
           projectTaskFingerprint(decision.taskPrompt!, const []),
@@ -1559,13 +1984,21 @@ class ProjectService {
     final activeTaskLine = task == null
         ? ''
         : '\nActive task document: ${task.title} (${task.id})';
+    final activeRecovery = project.recoveryIncidents
+        .where(
+          (incident) => incident.status == ProjectRecoveryIncidentStatus.active,
+        )
+        .firstOrNull;
+    final recoveryLine = activeRecovery == null
+        ? ''
+        : '\nActive recovery incident: ${activeRecovery.id}. Required gate restoration is the only valid project work until this incident is resolved.';
     return '''
 $baseSystemPrompt
 
 You are executing one bounded task inside a persistent Project orchestrator.
 Project id: ${project.id}
 Project goal: ${project.refinedGoal}
-Complete only the active bounded Project task. Do not expand into the full project. The application will select the next task after this one is evaluated.$activeTaskLine
+Complete only the active bounded Project task. Do not expand into the full project. The application will select the next task after this one is evaluated.$activeTaskLine$recoveryLine
 Do not block on prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; choose a reasonable default, note the assumption, and continue.
 Ask the user only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
 '''
@@ -1631,6 +2064,36 @@ class _ProjectTaskExecution {
     required this.project,
     this.activeTask,
     this.result,
+  });
+}
+
+class _RecoveryFailure {
+  final TaskGateResult gateResult;
+  final String? command;
+  final String? workingDirectory;
+  final String summary;
+
+  const _RecoveryFailure({
+    required this.gateResult,
+    required this.command,
+    required this.workingDirectory,
+    required this.summary,
+  });
+}
+
+class _RecoveryUpdate {
+  final ProjectTask failedTask;
+  final List<ProjectRecoveryIncident> recoveryIncidents;
+  final ProjectRecoveryIncident? incident;
+  final ProjectRecoveryIncident? exhaustedIncident;
+  final ProjectTask? recoveryTask;
+
+  const _RecoveryUpdate({
+    required this.failedTask,
+    required this.recoveryIncidents,
+    this.incident,
+    this.exhaustedIncident,
+    this.recoveryTask,
   });
 }
 

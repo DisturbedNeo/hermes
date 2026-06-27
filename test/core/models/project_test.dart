@@ -111,6 +111,76 @@ void main() {
       expect(loaded.activeTaskId, 'task_1');
       expect(loaded.blocker?.type, ProjectBlockerType.taskFailed);
       expect(loaded.decisions.single.decision, ProjectDecisionType.createTask);
+      expect(loaded.recoveryIncidents, isEmpty);
+    });
+
+    test('round-trips recovery incident metadata', () {
+      final now = DateTime(2026, 1, 1);
+      final loaded = ProjectDocument.fromJson({
+        'schemaVersion': ProjectDocument.currentSchemaVersion,
+        'id': 'project_test',
+        'title': 'Project',
+        'originalGoal': 'Build',
+        'refinedGoal': 'Build',
+        'successCriteria': const ['Done'],
+        'constraints': const ['Stay in workspace'],
+        'backlog': const [],
+        'completedTasks': const [],
+        'failedTasks': const [],
+        'artifacts': const [],
+        'knownFacts': const [],
+        'openQuestions': const [],
+        'status': 'blocked',
+        'phase': 'execution',
+        'iterationCount': 0,
+        'maxIterations': 25,
+        'maxFailedTasks': 3,
+        'completionSummary': '',
+        'blocker': {
+          'type': 'recovery_failed',
+          'message': 'Recovery failed',
+          'createdAt': now.toIso8601String(),
+        },
+        'decisions': [
+          {
+            'id': 'decision_1',
+            'decision': 'create_recovery_task',
+            'summary': 'Created recovery task',
+            'memoryUpdate': '',
+            'createdAt': now.toIso8601String(),
+          },
+        ],
+        'recoveryIncidents': [
+          {
+            'id': 'recovery_1',
+            'status': 'active',
+            'sourceTaskIds': const ['task_1'],
+            'sourceTaskTitles': const ['Task 1'],
+            'failedGateId': 'command_passes',
+            'command': 'flutter test',
+            'workingDirectory': '.',
+            'failureSummary': 'Tests failed.',
+            'attemptCount': 1,
+            'maxAttempts': 3,
+            'recoveryTaskIds': const ['recovery_task_1'],
+            'createdAt': now.toIso8601String(),
+            'updatedAt': now.toIso8601String(),
+          },
+        ],
+        'createdAt': now.toIso8601String(),
+        'updatedAt': now.toIso8601String(),
+      });
+
+      expect(loaded.blocker?.type, ProjectBlockerType.recoveryFailed);
+      expect(
+        loaded.decisions.single.decision,
+        ProjectDecisionType.createRecoveryTask,
+      );
+      expect(loaded.recoveryIncidents.single.command, 'flutter test');
+      expect(
+        loaded.recoveryIncidents.single.status,
+        ProjectRecoveryIncidentStatus.active,
+      );
     });
   });
 }

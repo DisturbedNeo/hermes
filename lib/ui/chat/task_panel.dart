@@ -1694,6 +1694,7 @@ IconData _projectTaskStatusIcon(ProjectTaskStatus status) => switch (status) {
 IconData _projectDecisionIcon(ProjectDecisionType decision) =>
     switch (decision) {
       ProjectDecisionType.createTask => Icons.account_tree_outlined,
+      ProjectDecisionType.createRecoveryTask => Icons.build_circle_outlined,
       ProjectDecisionType.complete => Icons.check_circle_outline,
       ProjectDecisionType.blocked => Icons.block,
       ProjectDecisionType.rejectTask => Icons.cancel_outlined,

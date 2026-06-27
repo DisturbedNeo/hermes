@@ -733,6 +733,182 @@ void main() {
       );
     });
 
+    test(
+      'read-only command_passes gate exposes only the required command',
+      () async {
+        workspace = workspace.copyWith(commandExecutionApproved: true);
+        final task = _task(
+          step: const TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Verify toolchain',
+            instructions: ['Run dart --version.'],
+            mayEditFiles: false,
+            artifacts: [],
+            gates: [
+              TaskGate(
+                id: 'command_passes',
+                params: {'command': 'dart --version', 'working_directory': '.'},
+              ),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({'command': 'dart --version'}),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Verified dart.',
+              'memoryUpdate': 'dart is available.',
+            }),
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        final executorPrompt = client.seenMessages.first.last.content;
+        expect(client.seenToolNames.first, contains('run_command'));
+        expect(executorPrompt, contains('Whitelisted terminal commands'));
+        expect(updated.status, TaskStatus.completed);
+        expect(updated.runs.single.toolCalls.single.error, isNull);
+        expect(
+          updated.runs.single.gateResults.single.status,
+          TaskGateStatus.passed,
+        );
+      },
+    );
+
+    test(
+      'read-only command_passes gate rejects non-whitelisted command variants',
+      () async {
+        workspace = workspace.copyWith(commandExecutionApproved: true);
+        final task = _task(
+          step: const TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Verify toolchain',
+            instructions: ['Run dart --version.'],
+            mayEditFiles: false,
+            artifacts: [],
+            gates: [
+              TaskGate(
+                id: 'command_passes',
+                params: {'command': 'dart --version', 'working_directory': '.'},
+              ),
+              TaskGate(id: 'no_tool_errors'),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({
+                  'command': 'dart --version > version.txt',
+                }),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Tried a redirected command.',
+              'memoryUpdate': '',
+            }),
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(updated.status, TaskStatus.failed);
+        expect(updated.runs.single.status, TaskRunStatus.failed);
+        expect(
+          updated.runs.single.toolCalls.single.error,
+          contains('not whitelisted'),
+        );
+        expect(File(path.join(root.path, 'version.txt')).existsSync(), isFalse);
+      },
+    );
+
+    test(
+      'read-only task-level command gate exposes required command',
+      () async {
+        workspace = workspace.copyWith(commandExecutionApproved: true);
+        final task = _task(
+          gates: const [
+            TaskGate(
+              id: 'command_passes',
+              scope: 'task',
+              params: {'command': 'dart --version', 'working_directory': '.'},
+            ),
+          ],
+          step: const TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Verify toolchain',
+            instructions: ['Run dart --version.'],
+            mayEditFiles: false,
+            artifacts: [],
+            status: TaskStepStatus.pending,
+          ),
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({'command': 'dart --version'}),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Verified dart.',
+              'memoryUpdate': 'dart is available.',
+            }),
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(client.seenToolNames.first, contains('run_command'));
+        expect(updated.status, TaskStatus.completed);
+        expect(
+          updated.runs.single.gateResults.single.status,
+          TaskGateStatus.passed,
+        );
+      },
+    );
+
     test('mutating steps expose approved terminal state to executor', () async {
       workspace = workspace.copyWith(commandExecutionApproved: true);
       final task = _task(
@@ -1268,6 +1444,7 @@ TaskDocument _task({
   TaskStep? step,
   List<TaskStep>? steps,
   String? currentStepId,
+  List<TaskGate> gates = const [],
 }) {
   final now = DateTime(2026, 1, 1);
   final resolvedSteps = steps ?? [step ?? _step()];
@@ -1278,6 +1455,7 @@ TaskDocument _task({
     goal: 'Run the task',
     constraints: const ['Stay inside workspace.'],
     successCriteria: const ['Finish the task.'],
+    gates: gates,
     steps: resolvedSteps,
     status: TaskStatus.paused,
     currentStepId: currentStepId ?? resolvedSteps.first.id,

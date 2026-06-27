@@ -507,6 +507,253 @@ void main() {
         isFalse,
       );
     });
+
+    test(
+      'creates recovery incident and recovery task for failed command gate',
+      () async {
+        workspace = workspace.copyWith(commandExecutionApproved: true);
+        final project = await service.createProject(
+          workspace: workspace,
+          userPrompt: 'Build the app',
+          chatSessionId: 'chat_1',
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: jsonEncode({'task': _projectTaskJson()}),
+          ),
+          _finaliseTaskResponse(_taskPlanWithCommandGate()),
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({'command': 'test -f recovered.txt'}),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary':
+                  'Implementation done; health check can be fixed later.',
+              'memoryUpdate': 'Health check is still red.',
+            }),
+          ),
+        ]);
+
+        final result = await service.runProject(
+          client: client,
+          workspace: workspace,
+          snapshot: project,
+          baseSystemPrompt: 'system',
+          maxNewTasks: 1,
+        );
+
+        expect(result.project.status, ProjectStatus.paused);
+        expect(result.project.recoveryIncidents, hasLength(1));
+        final incident = result.project.recoveryIncidents.single;
+        expect(incident.status, ProjectRecoveryIncidentStatus.active);
+        expect(incident.failedGateId, 'command_passes');
+        expect(incident.command, 'test -f recovered.txt');
+        expect(incident.attemptCount, 0);
+        expect(
+          result.project.failedTasks.single.recoveryIncidentId,
+          incident.id,
+        );
+        expect(result.project.backlog.first.recoveryIncidentId, incident.id);
+        expect(result.project.backlog.first.objective, contains('Restore'));
+      },
+    );
+
+    test(
+      'selects recovery task before normal backlog and resolves incident',
+      () async {
+        workspace = workspace.copyWith(commandExecutionApproved: true);
+        final now = DateTime(2026, 1, 1);
+        final incident = ProjectRecoveryIncident(
+          id: 'recovery_1',
+          status: ProjectRecoveryIncidentStatus.active,
+          sourceTaskIds: const ['task_source'],
+          sourceTaskTitles: const ['Source task'],
+          failedGateId: 'command_passes',
+          command: 'test -f recovered.txt',
+          workingDirectory: '.',
+          failureSummary: 'Verification command failed.',
+          attemptCount: 0,
+          recoveryTaskIds: const ['recovery_task'],
+          createdAt: now,
+          updatedAt: now,
+        );
+        final recoveryTask = _projectTask(
+          id: 'recovery_task',
+          objective:
+              'Restore required project health gate: test -f recovered.txt',
+          recoveryIncidentId: incident.id,
+        );
+        final normalTask = _projectTask(
+          id: 'normal_task',
+          objective: 'Implement a normal feature slice',
+        );
+        final project =
+            (await service.createProject(
+              workspace: workspace,
+              userPrompt: 'Build the app',
+              chatSessionId: 'chat_1',
+            )).copyWith(
+              backlog: [normalTask, recoveryTask],
+              recoveryIncidents: [incident],
+            );
+        final client = _QueueCompletionClient([
+          _finaliseTaskResponse(
+            _taskPlanWithCommandGate(
+              goal:
+                  'Restore required project health gate: test -f recovered.txt',
+              successCriteria: const ['The task is completed and summarized.'],
+            ),
+          ),
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'write_file',
+                arguments: jsonEncode({
+                  'path': 'recovered.txt',
+                  'content': 'ok',
+                }),
+              ),
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({'command': 'test -f recovered.txt'}),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Recovered project health.',
+              'memoryUpdate': 'The required gate is green.',
+            }),
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'complete': false,
+              'finalSummary': '',
+              'remainingCriteria': ['Complete the stated project goal.'],
+              'openQuestions': [],
+            }),
+          ),
+        ]);
+
+        final result = await service.runProject(
+          client: client,
+          workspace: workspace,
+          snapshot: project,
+          baseSystemPrompt: 'system',
+          maxNewTasks: 1,
+        );
+
+        expect(result.project.completedTasks.single.id, 'recovery_task');
+        expect(result.project.backlog.single.id, 'normal_task');
+        expect(
+          result.project.recoveryIncidents.single.status,
+          ProjectRecoveryIncidentStatus.resolved,
+        );
+      },
+    );
+
+    test(
+      'exhausts one recovery incident without counting each task failure',
+      () async {
+        workspace = workspace.copyWith(commandExecutionApproved: true);
+        final now = DateTime(2026, 1, 1);
+        final incident = ProjectRecoveryIncident(
+          id: 'recovery_1',
+          status: ProjectRecoveryIncidentStatus.active,
+          sourceTaskIds: const ['task_source'],
+          sourceTaskTitles: const ['Source task'],
+          failedGateId: 'command_passes',
+          command: 'test -f recovered.txt',
+          workingDirectory: '.',
+          failureSummary: 'Verification command failed.',
+          attemptCount: 2,
+          recoveryTaskIds: const ['recovery_task'],
+          createdAt: now,
+          updatedAt: now,
+        );
+        final project =
+            (await service.createProject(
+              workspace: workspace,
+              userPrompt: 'Build the app',
+              chatSessionId: 'chat_1',
+            )).copyWith(
+              maxFailedTasks: 3,
+              failedTasks: [
+                _projectTask(
+                  id: 'failed_source',
+                  objective: 'Original source task',
+                  recoveryIncidentId: incident.id,
+                  status: ProjectTaskStatus.failed,
+                ),
+                _projectTask(
+                  id: 'failed_recovery_1',
+                  objective: 'First recovery attempt',
+                  recoveryIncidentId: incident.id,
+                  status: ProjectTaskStatus.failed,
+                ),
+              ],
+              backlog: [
+                _projectTask(
+                  id: 'recovery_task',
+                  objective:
+                      'Restore required project health gate: test -f recovered.txt',
+                  recoveryIncidentId: incident.id,
+                ),
+              ],
+              recoveryIncidents: [incident],
+            );
+        final client = _QueueCompletionClient([
+          _finaliseTaskResponse(
+            _taskPlanWithCommandGate(
+              goal:
+                  'Restore required project health gate: test -f recovered.txt',
+              successCriteria: const ['The task is completed and summarized.'],
+            ),
+          ),
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({'command': 'test -f recovered.txt'}),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Still failing.',
+              'memoryUpdate': 'The required gate is still red.',
+            }),
+          ),
+        ]);
+
+        final result = await service.runProject(
+          client: client,
+          workspace: workspace,
+          snapshot: project,
+          baseSystemPrompt: 'system',
+          maxNewTasks: 1,
+        );
+
+        expect(result.project.status, ProjectStatus.blocked);
+        expect(result.project.blocker?.type, ProjectBlockerType.recoveryFailed);
+        expect(
+          result.project.recoveryIncidents.single.status,
+          ProjectRecoveryIncidentStatus.exhausted,
+        );
+        expect(result.project.recoveryIncidents.single.attemptCount, 3);
+      },
+    );
   });
 }
 
@@ -543,6 +790,68 @@ Map<String, dynamic> _taskPlanJson() {
       },
     ],
   };
+}
+
+Map<String, dynamic> _taskPlanWithCommandGate({
+  String goal = 'Implement the first reporting screen slice',
+  List<String> successCriteria = const [
+    'The slice is implemented and summarized.',
+  ],
+}) {
+  return {
+    'title': 'Implement slice',
+    'goal': goal,
+    'constraints': ['Stay inside workspace.'],
+    'successCriteria': successCriteria,
+    'steps': [
+      {
+        'id': 'build',
+        'title': 'Build slice',
+        'objective': goal,
+        'instructions': ['Do the bounded work.'],
+        'mayEditFiles': true,
+        'gates': [
+          {
+            'id': 'command_passes',
+            'required': true,
+            'scope': 'step',
+            'params': {
+              'command': 'test -f recovered.txt',
+              'working_directory': '.',
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+ProjectTask _projectTask({
+  required String id,
+  required String objective,
+  ProjectTaskStatus status = ProjectTaskStatus.queued,
+  String? recoveryIncidentId,
+}) {
+  final now = DateTime(2026, 1, 1);
+  return ProjectTask(
+    id: id,
+    title: objective,
+    objective: objective,
+    relevantSuccessCriteria: const ['Complete the stated project goal.'],
+    doneCriteria: const ['The task is completed and summarized.'],
+    outOfScope: const ['Do not implement unrelated project work.'],
+    context: const [],
+    expectedArtifacts: const [],
+    status: status,
+    taskDocumentId: null,
+    recoveryIncidentId: recoveryIncidentId,
+    fingerprint: projectTaskFingerprint(objective, const [
+      'Complete the stated project goal.',
+    ]),
+    rejectionReason: null,
+    createdAt: now,
+    updatedAt: now,
+  );
 }
 
 ChatCompletionResponse _finaliseTaskResponse(Map<String, dynamic> arguments) {

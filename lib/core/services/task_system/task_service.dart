@@ -42,6 +42,7 @@ class TaskPlanningContext {
   final List<String> doneCriteria;
   final List<String> outOfScope;
   final List<TaskArtifact> expectedArtifacts;
+  final List<TaskGate> requiredGates;
   final int maxSteps;
 
   const TaskPlanningContext({
@@ -51,6 +52,7 @@ class TaskPlanningContext {
     this.doneCriteria = const [],
     this.outOfScope = const [],
     this.expectedArtifacts = const [],
+    this.requiredGates = const [],
     this.maxSteps = 3,
   });
 
@@ -63,6 +65,7 @@ class TaskPlanningContext {
     'expectedArtifacts': expectedArtifacts
         .map((artifact) => artifact.toJson())
         .toList(),
+    'requiredGates': requiredGates.map((gate) => gate.toJson()).toList(),
     'maxSteps': maxSteps,
   };
 }
@@ -118,6 +121,16 @@ class _PendingTaskToolResult {
 
   final int messageIndex;
   final int toolIndex;
+}
+
+class _AllowedTaskCommand {
+  final String command;
+  final String workingDirectory;
+
+  const _AllowedTaskCommand({
+    required this.command,
+    required this.workingDirectory,
+  });
 }
 
 const int _maxConsecutiveRepeatedToolCalls = 3;
@@ -531,6 +544,7 @@ $userPrompt
         originalPrompt: userPrompt,
         chatSessionId: chatSessionId,
         projectId: projectId,
+        requiredGates: planningContext?.requiredGates ?? const [],
         now: now,
       );
       if (planningContext != null) {
@@ -1155,6 +1169,7 @@ ${_encoder.convert(task.toJson())}
         originalPrompt: originalPrompt,
         chatSessionId: chatSessionId,
         projectId: projectId,
+        requiredGates: planningContext.requiredGates,
         now: now,
       );
       if (_projectPlanningViolations(repaired, planningContext).isEmpty) {
@@ -1240,7 +1255,8 @@ ${_encoder.convert(task.toJson())}
     TaskModelOutputSink? onModelOutput,
     TaskCancellationToken? cancellationToken,
   }) async {
-    final allowedToolIds = _allowedToolIdsForStep(step);
+    final allowedCommands = _allowedCommandsForStep(task, step);
+    final allowedToolIds = _allowedToolIdsForStep(step, allowedCommands);
     final toolDefs = [
       ..._toolService.getToolDefinitions(
         ids: allowedToolIds.toList(),
@@ -1400,6 +1416,7 @@ ${_encoder.convert(task.toJson())}
           task: task,
           step: step,
           allowedToolIds: allowedToolIds,
+          allowedCommands: allowedCommands,
           context: context,
           blockedReason: loopGuardReason,
         );
@@ -1583,9 +1600,52 @@ ${_encoder.convert(task.toJson())}
     return [...step.gates, if (!hasRemainingSteps) ...task.gates];
   }
 
-  Set<String> _allowedToolIdsForStep(TaskStep step) {
-    if (!step.mayEditFiles) return _readOnlyTaskToolIds;
+  Set<String> _allowedToolIdsForStep(
+    TaskStep step,
+    List<_AllowedTaskCommand> allowedCommands,
+  ) {
+    if (!step.mayEditFiles) {
+      return {
+        ..._readOnlyTaskToolIds,
+        if (allowedCommands.isNotEmpty) 'run_command',
+      };
+    }
     return {..._readOnlyTaskToolIds, ..._mutatingTaskToolIds};
+  }
+
+  List<_AllowedTaskCommand> _allowedCommandsForStep(
+    TaskDocument task,
+    TaskStep step,
+  ) {
+    final seen = <String>{};
+    final commands = <_AllowedTaskCommand>[];
+    for (final gate in _completionGates(task, step)) {
+      if (gate.id != 'command_passes' || !gate.required) continue;
+      final command = _commandTextFromParts(
+        jsonString(gate.params['command']),
+        jsonStringList(gate.params['args']),
+      );
+      if (command.isEmpty) continue;
+      final workingDirectory = path.normalize(
+        jsonString(
+          gate.params['working_directory'] ?? gate.params['workingDirectory'],
+          fallback: '.',
+        ),
+      );
+      final key = '$workingDirectory\x00$command';
+      if (!seen.add(key)) continue;
+      commands.add(
+        _AllowedTaskCommand(
+          command: command,
+          workingDirectory: workingDirectory,
+        ),
+      );
+    }
+    return commands;
+  }
+
+  String _commandTextFromParts(String command, List<String> args) {
+    return [command, ...args].where((item) => item.isNotEmpty).join(' ').trim();
   }
 
   _FinishToolCallResult _finishStepFromToolCall({
@@ -1654,6 +1714,7 @@ ${_encoder.convert(task.toJson())}
     required TaskDocument task,
     required TaskStep step,
     required Set<String> allowedToolIds,
+    required List<_AllowedTaskCommand> allowedCommands,
     required WorkspaceToolContext context,
     required String? blockedReason,
   }) async {
@@ -1674,6 +1735,14 @@ ${_encoder.convert(task.toJson())}
             ? 'The tool was not exposed to the task runner.'
             : 'This read-only step can read files and create new task-owned artifact files, but cannot edit source files, overwrite files, run terminal commands, rename paths, or delete paths.',
       });
+    }
+
+    if (!step.mayEditFiles && call.name == 'run_command') {
+      final whitelistError = _readOnlyCommandWhitelistError(
+        call,
+        allowedCommands,
+      );
+      if (whitelistError != null) return whitelistError;
     }
 
     if (!step.mayEditFiles && call.name == 'write_file') {
@@ -1699,6 +1768,44 @@ ${_encoder.convert(task.toJson())}
       argumentsJson: call.arguments,
       context: context,
     );
+  }
+
+  String? _readOnlyCommandWhitelistError(
+    ChatCompletionToolCall call,
+    List<_AllowedTaskCommand> allowedCommands,
+  ) {
+    final decoded = TaskJson.decodeJsonOrString(call.arguments);
+    if (decoded is! Map) {
+      return jsonEncode({
+        'error': 'run_command arguments must be a JSON object.',
+      });
+    }
+    final args = jsonMap(decoded);
+    final command = _commandTextFromParts(
+      jsonString(args['command']),
+      jsonStringList(args['args']),
+    );
+    final workingDirectory = path.normalize(
+      jsonString(
+        args['working_directory'] ?? args['workingDirectory'],
+        fallback: '.',
+      ),
+    );
+    final allowed = allowedCommands.any(
+      (item) =>
+          item.command == command &&
+          path.normalize(item.workingDirectory) == workingDirectory,
+    );
+    if (allowed) return null;
+    return jsonEncode({
+      'error': 'Terminal command is not whitelisted for this read-only step.',
+      'command': command,
+      'working_directory': workingDirectory,
+      'allowedCommands': [
+        for (final item in allowedCommands)
+          {'command': item.command, 'working_directory': item.workingDirectory},
+      ],
+    });
   }
 
   Future<String> _executeReadOnlyArtifactWrite({
@@ -2281,16 +2388,26 @@ For declared artifact outputs, use artifact_exists and artifact_nonempty.
     final terminalStatus = workspace.commandExecutionApproved
         ? 'Terminal commands are enabled for this chat.'
         : 'Terminal commands are disabled for this chat until the user enables them from the workspace chip.';
+    final allowedCommands = _allowedCommandsForStep(task, step);
     final availableTools = (_allowedToolIdsForStep(
       step,
+      allowedCommands,
     ).toList()..sort()).join(', ');
     final stepPolicy = step.mayEditFiles
         ? 'This step may edit files after any required user approval. Mutating workspace tools and terminal commands may be available.'
-        : 'This is a read-only step. It may read workspace files and create only this step\'s declared task-owned artifact files under `.agent/tasks/${task.id}/`, but it must not overwrite existing files, edit source files, rename paths, delete paths, or run terminal commands.';
+        : allowedCommands.isEmpty
+        ? 'This is a read-only step. It may read workspace files and create only this step\'s declared task-owned artifact files under `.agent/tasks/${task.id}/`, but it must not overwrite existing files, edit source files, rename paths, delete paths, or run terminal commands.'
+        : 'This is a read-only step. It may read workspace files, create only this step\'s declared task-owned artifact files under `.agent/tasks/${task.id}/`, and run only the whitelisted verification terminal commands listed below. It must not overwrite existing files, edit source files, rename paths, delete paths, or run any other terminal command.';
+    final whitelist = allowedCommands.isEmpty
+        ? ''
+        : '\n- Whitelisted terminal commands for this step: ${_encoder.convert([
+            for (final item in allowedCommands) {'command': item.command, 'working_directory': item.workingDirectory},
+          ])}.';
     return '''
 - $terminalStatus
 - $stepPolicy
 - Tools exposed to this step: $availableTools.
+$whitelist
 '''
         .trim();
   }
@@ -2730,6 +2847,7 @@ For declared artifact outputs, use artifact_exists and artifact_nonempty.
     required String originalPrompt,
     required String? chatSessionId,
     required String? projectId,
+    List<TaskGate> requiredGates = const [],
     required DateTime now,
   }) {
     final steps = _stepsFromJson(json['steps'], taskId);
@@ -2738,6 +2856,7 @@ For declared artifact outputs, use artifact_exists and artifact_nonempty.
         : steps;
     final gates = [
       ..._gatesFromJson(json['gates'], fallbackScope: 'task', taskId: taskId),
+      ...requiredGates,
       ..._defaultTaskGates(safeSteps, originalPrompt),
     ];
     return TaskDocument(
@@ -3062,13 +3181,15 @@ For declared artifact outputs, use artifact_exists and artifact_nonempty.
     required DateTime now,
   }) {
     final artifactPaths = planningContext.expectedArtifacts.isEmpty
-        ? [
-            TaskArtifact(
-              path: '.agent/tasks/$taskId/task-output.md',
-              description: 'Bounded task output',
-              stepId: 'execute_project_task',
-            ),
-          ]
+        ? planningContext.requiredGates.isNotEmpty
+              ? const <TaskArtifact>[]
+              : [
+                  TaskArtifact(
+                    path: '.agent/tasks/$taskId/task-output.md',
+                    description: 'Bounded task output',
+                    stepId: 'execute_project_task',
+                  ),
+                ]
         : planningContext.expectedArtifacts
               .map(
                 (artifact) => TaskArtifact(
@@ -3107,7 +3228,10 @@ For declared artifact outputs, use artifact_exists and artifact_nonempty.
         ...planningContext.outOfScope.map((item) => 'Out of scope: $item'),
       ],
       successCriteria: successCriteria,
-      gates: _defaultTaskGates([step], planningContext.projectTaskObjective),
+      gates: _dedupeGates([
+        ...planningContext.requiredGates,
+        ..._defaultTaskGates([step], planningContext.projectTaskObjective),
+      ]),
       steps: [step],
       status: TaskStatus.paused,
       currentStepId: step.id,
@@ -3322,7 +3446,8 @@ Use model_review only for subjective creative/research judgment; use determinist
 Read-only steps may create new task-owned artifact files under `.agent/tasks/<taskId>/`.
 Declare an artifact only on the step that will actually create it.
 Do not split broad "explore" and "analyze" work into separate steps when the exploration exists only to support the analysis.
-Mark mayEditFiles true only when a step may edit existing files, write outside the task folder, rename paths, delete paths, or run terminal commands.
+Mark mayEditFiles true only when a step may edit existing files, write outside the task folder, rename paths, delete paths, or run terminal commands beyond exact commands declared in required command_passes gates.
+A read-only step may include required command_passes gates for non-mutating verification commands; the runner will expose only those exact commands.
 If the request involves opaque or binary documents such as .odt, .docx, .pdf, .xlsx, or archives, mark inspection/extraction steps mayEditFiles true when terminal commands may be needed and commandExecutionApproved is true in workspace metadata.
 Keep research/design/planning/reporting-to-task-folder steps read-only when they only read files and create new task-owned artifacts.
 Do not include review, retry, validation, terminal policy, or approval policy fields.
@@ -3340,7 +3465,7 @@ Only return status "blocked" with userQuestion for destructive or irreversible a
 You may read artifacts from completed prior steps and any artifact already created during the current step.
 Write and report only artifacts declared on the current step.
 If the current step needs a different artifact path, return status "needs_replan" instead of writing it.
-If the current step is read-only, you may create only the current step's declared task-owned artifact files under `.agent/tasks/<taskId>/`, but you must not overwrite existing files, edit source files, rename paths, delete paths, or try to use terminal commands as a workaround.
+If the current step is read-only, you may create only the current step's declared task-owned artifact files under `.agent/tasks/<taskId>/`, and you may run only whitelisted verification terminal commands exposed for the step. You must not overwrite existing files, edit source files, rename paths, delete paths, or try to use other terminal commands as a workaround.
 If a later step is responsible for writing a report or changing files, leave that work for the later step.
 If the current plan is wrong or missing necessary follow-up work, return status "needs_replan" with a concrete replanRequest.
 If user input is truly required, return status "blocked" with userQuestion.
@@ -3359,7 +3484,8 @@ Use model_review only for subjective creative/research judgment; use determinist
 Read-only steps may create new task-owned artifact files under `.agent/tasks/<taskId>/`.
 Declare an artifact only on the step that will actually create it.
 Do not split broad "explore" and "analyze" work into separate steps when the exploration exists only to support the analysis.
-Mark mayEditFiles true only when a step may edit existing files, write outside the task folder, rename paths, delete paths, or run terminal commands.
+Mark mayEditFiles true only when a step may edit existing files, write outside the task folder, rename paths, delete paths, or run terminal commands beyond exact commands declared in required command_passes gates.
+A read-only step may include required command_passes gates for non-mutating verification commands; the runner will expose only those exact commands.
 If unfinished work involves opaque or binary documents such as .odt, .docx, .pdf, .xlsx, or archives, mark inspection/extraction steps mayEditFiles true when terminal commands may be needed and commandExecutionApproved is true in workspace metadata.
 Do not include review, retry, validation, terminal policy, or approval policy fields.
 Return only valid JSON.
