@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:hermes/core/helpers/chat/throttled_scheduler.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 
 enum ModelServerState { stopped, starting, ready, failed, cancelled }
@@ -17,6 +18,9 @@ class ModelSessionLogEntry {
 
 class ModelSessionDiagnostics extends ChangeNotifier {
   static const int _maxLogEntries = 300;
+  static const Duration _streamOutputNotifyInterval = Duration(
+    milliseconds: 500,
+  );
 
   ModelServerState state = ModelServerState.stopped;
   ModelConfigurationSnapshot? modelSnapshot;
@@ -41,6 +45,14 @@ class ModelSessionDiagnostics extends ChangeNotifier {
   int? lastCompactionMessagesCovered;
 
   final List<ModelSessionLogEntry> _logs = [];
+  late final ThrottledScheduler _streamOutputNotifier;
+
+  ModelSessionDiagnostics() {
+    _streamOutputNotifier = ThrottledScheduler(
+      interval: _streamOutputNotifyInterval,
+      onTick: notifyListeners,
+    );
+  }
 
   List<ModelSessionLogEntry> get logs => List.unmodifiable(_logs);
 
@@ -131,6 +143,7 @@ class ModelSessionDiagnostics extends ChangeNotifier {
     int? estimatedContextTokens,
     int? contextLimitTokens,
   }) {
+    _streamOutputNotifier.cancel();
     isStreaming = true;
     streamStartedAt = DateTime.now();
     streamEndedAt = null;
@@ -143,7 +156,7 @@ class ModelSessionDiagnostics extends ChangeNotifier {
   void recordStreamOutput(String text) {
     if (!isStreaming || text.isEmpty) return;
     streamOutputCharacters += text.length;
-    notifyListeners();
+    _streamOutputNotifier.schedule();
   }
 
   void updateContextEstimate(
@@ -157,6 +170,7 @@ class ModelSessionDiagnostics extends ChangeNotifier {
 
   void recordStreamEnded() {
     if (!isStreaming) return;
+    _streamOutputNotifier.cancel();
     isStreaming = false;
     streamEndedAt = DateTime.now();
     notifyListeners();
@@ -233,7 +247,14 @@ class ModelSessionDiagnostics extends ChangeNotifier {
     notifyListeners();
   }
 
+  @override
+  void dispose() {
+    _streamOutputNotifier.cancel();
+    super.dispose();
+  }
+
   void _resetStreamMetrics() {
+    _streamOutputNotifier.cancel();
     isStreaming = false;
     streamStartedAt = null;
     streamEndedAt = null;

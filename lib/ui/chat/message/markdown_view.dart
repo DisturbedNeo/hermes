@@ -24,8 +24,48 @@ class MarkdownView extends StatefulWidget {
 }
 
 class _MarkdownViewState extends State<MarkdownView> {
+  static const Duration _renderThrottle = Duration(milliseconds: 50);
+
   bool _linkTapped = false;
   bool _down = false;
+  Timer? _renderTimer;
+  late String _renderedData;
+
+  @override
+  void initState() {
+    super.initState();
+    _renderedData = widget.data;
+  }
+
+  @override
+  void didUpdateWidget(covariant MarkdownView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (widget.data == _renderedData) {
+      _renderTimer?.cancel();
+      _renderTimer = null;
+      return;
+    }
+
+    if (widget.data.length < _renderedData.length) {
+      _renderTimer?.cancel();
+      _renderTimer = null;
+      _renderedData = widget.data;
+      return;
+    }
+
+    _renderTimer ??= Timer(_renderThrottle, () {
+      _renderTimer = null;
+      if (!mounted || widget.data == _renderedData) return;
+      setState(() => _renderedData = widget.data);
+    });
+  }
+
+  @override
+  void dispose() {
+    _renderTimer?.cancel();
+    super.dispose();
+  }
 
   void _markLinkTapped() {
     _linkTapped = true;
@@ -49,7 +89,7 @@ class _MarkdownViewState extends State<MarkdownView> {
       ],
     );
 
-    final content = MarkdownBlock(data: widget.data, config: config);
+    final content = MarkdownBlock(data: _renderedData, config: config);
 
     return Listener(
       behavior: HitTestBehavior.translucent,

@@ -18,4 +18,10 @@ class ThrottledScheduler {
     _timer?.cancel();
     _timer = null;
   }
+
+  void flush() {
+    if (_timer == null) return;
+    cancel();
+    onTick();
+  }
 }

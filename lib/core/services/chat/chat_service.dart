@@ -7,6 +7,7 @@ import 'package:hermes/core/enums/stream_state.dart';
 import 'package:hermes/core/services/chat/chat_stream.dart';
 import 'package:hermes/core/helpers/chat/compaction_manager.dart';
 import 'package:hermes/core/helpers/chat/context_estimator.dart';
+import 'package:hermes/core/helpers/chat/throttled_scheduler.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_token.dart';
@@ -39,6 +40,10 @@ import '../disposable.dart';
 class ChatService extends ChangeNotifier implements Disposable {
   static const String defaultSystemPromptName = 'Default';
   static const String defaultSystemPromptText = 'You are a helpful assistant.';
+  static const Duration _contextEstimateThrottle = Duration(milliseconds: 500);
+  static const Duration _taskModelOutputNotifyThrottle = Duration(
+    milliseconds: 100,
+  );
 
   final String tabId;
   final LlamaServerManager serverManager;
@@ -95,6 +100,8 @@ class ChatService extends ChangeNotifier implements Disposable {
   String? _taskModelOutputMessageId;
   int? _taskModelOutputContextEstimate;
   TaskCancellationToken? _taskCancellationToken;
+  late final ThrottledScheduler _contextEstimateScheduler;
+  late final ThrottledScheduler _taskModelOutputNotifier;
 
   ChatService({
     String? tabId,
@@ -118,6 +125,16 @@ class ChatService extends ChangeNotifier implements Disposable {
         projectService ?? ProjectService(taskService: resolvedTaskService);
     currentSystemPromptSnapshot = initialSystemPromptSnapshot;
     messageStore.setMessages([systemPrompt]);
+    _contextEstimateScheduler = ThrottledScheduler(
+      interval: _contextEstimateThrottle,
+      onTick: _updateContextEstimate,
+    );
+    _taskModelOutputNotifier = ThrottledScheduler(
+      interval: _taskModelOutputNotifyThrottle,
+      onTick: () {
+        if (!_disposed) notifyListeners();
+      },
+    );
     messageStore.addListener(_handleMessagesChanged);
     _preferencesService.addListener(_handlePreferencesChanged);
     unawaited(_loadTaskSystemSettings());
@@ -305,7 +322,7 @@ class ChatService extends ChangeNotifier implements Disposable {
 
   void setCurrentModelSnapshot(ModelConfigurationSnapshot snapshot) {
     currentModelSnapshot = snapshot;
-    _updateContextEstimate();
+    _requestContextEstimateUpdate(immediate: true);
     if (currentChatId != null) {
       _dirty = true;
       _scheduleAutosave();
@@ -1756,6 +1773,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       serverManager.diagnostics.recordCompactionFailed(e);
       messageStore.clearCurrentId();
       await chatStream.stop(next: StreamState.error);
+      _requestContextEstimateUpdate(immediate: true);
     }
   }
 
@@ -1880,6 +1898,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       messageStore.appendCurrentError(error);
       messageStore.clearCurrentId();
       await chatStream.stop(next: StreamState.error);
+      _requestContextEstimateUpdate(immediate: true);
       return;
     }
 
@@ -1891,6 +1910,7 @@ class ChatService extends ChangeNotifier implements Disposable {
 
     await chatStream.stop();
     serverManager.diagnostics.recordStreamEnded();
+    _requestContextEstimateUpdate(immediate: true);
 
     final toolCalls = ToolCaller.extractToolCalls(messageStore.currentMessage);
     if (toolCalls.isNotEmpty) {
@@ -1900,6 +1920,7 @@ class ChatService extends ChangeNotifier implements Disposable {
         messageStore.appendCurrentError(e);
         messageStore.clearCurrentId();
         await chatStream.stop(next: StreamState.error);
+        _requestContextEstimateUpdate(immediate: true);
       }
 
       return;
@@ -1914,6 +1935,8 @@ class ChatService extends ChangeNotifier implements Disposable {
 
     messageStore.removeListener(_handleMessagesChanged);
     _preferencesService.removeListener(_handlePreferencesChanged);
+    _contextEstimateScheduler.cancel();
+    _taskModelOutputNotifier.cancel();
     _autosaveTimer?.cancel();
     await flushCurrentChat();
     await _deleteTransientTasksForCurrentScope();
@@ -1929,7 +1952,7 @@ class ChatService extends ChangeNotifier implements Disposable {
   }
 
   void _handleMessagesChanged() {
-    _updateContextEstimate();
+    _requestContextEstimateUpdate();
     if (_disposed || _loadingSnapshot || currentChatId == null) return;
     _dirty = true;
     _scheduleAutosave();
@@ -2083,6 +2106,7 @@ class ChatService extends ChangeNotifier implements Disposable {
 
   void _clearTaskModelOutput({bool notify = true}) {
     _finishTaskModelOutputBubble(clearCurrent: true);
+    _taskModelOutputNotifier.cancel();
     taskModelOutputTitle = null;
     taskModelOutputText = '';
     taskModelOutputReasoning = '';
@@ -2100,8 +2124,10 @@ class ChatService extends ChangeNotifier implements Disposable {
       _beginTaskModelOutput('Task Model Output');
     }
 
+    var notifyImmediately = false;
     switch (event.type) {
       case TaskModelOutputEventType.start:
+        notifyImmediately = true;
         _taskModelOutputContextEstimate = event.estimatedContextTokens;
         serverManager.diagnostics.recordStreamStarted(
           estimatedContextTokens: event.estimatedContextTokens,
@@ -2131,17 +2157,30 @@ class ChatService extends ChangeNotifier implements Disposable {
         _appendTaskModelText('\nTool result:\n${event.text}\n');
         _appendTaskToolResult(event);
       case TaskModelOutputEventType.done:
+        notifyImmediately = true;
         serverManager.diagnostics.recordStreamEnded();
         _taskModelOutputTextSection = null;
         _normaliseTaskModelOutputBubble();
       case TaskModelOutputEventType.error:
+        notifyImmediately = true;
         _ensureTaskModelTextSection(event.label, 'error');
         _appendTaskModelText('\nError: ${event.text}\n');
         serverManager.diagnostics.recordStreamError(event.text);
         messageStore.appendCurrentError(event.text);
     }
 
-    if (!_disposed) notifyListeners();
+    _notifyTaskModelOutputChanged(immediate: notifyImmediately);
+  }
+
+  void _notifyTaskModelOutputChanged({bool immediate = false}) {
+    if (_disposed) return;
+    if (immediate) {
+      _taskModelOutputNotifier.cancel();
+      notifyListeners();
+      return;
+    }
+
+    _taskModelOutputNotifier.schedule();
   }
 
   void _startTaskModelOutputBubble() {
@@ -2260,7 +2299,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     _finishTaskModelOutputBubble(clearCurrent: true);
     taskModelOutputActive = false;
     _taskModelOutputContextEstimate = null;
-    _updateContextEstimate();
+    _requestContextEstimateUpdate(immediate: true);
   }
 
   void _insertTaskAssistantMessage(String text) {
@@ -2287,6 +2326,18 @@ class ChatService extends ChangeNotifier implements Disposable {
         createdAt: DateTime.now(),
       ),
     );
+  }
+
+  void _requestContextEstimateUpdate({bool immediate = false}) {
+    if (_disposed) return;
+    final activeOutput = chatStream.isStreaming || taskModelOutputActive;
+    if (immediate || !activeOutput) {
+      _contextEstimateScheduler.cancel();
+      _updateContextEstimate();
+      return;
+    }
+
+    _contextEstimateScheduler.schedule();
   }
 
   void _updateContextEstimate() {
@@ -2654,7 +2705,7 @@ Workspace rules:
     }
 
     currentModelSnapshot = activeSnapshot;
-    _updateContextEstimate();
+    _requestContextEstimateUpdate(immediate: true);
     if (currentChatId != null) {
       _dirty = true;
       _scheduleAutosave();
