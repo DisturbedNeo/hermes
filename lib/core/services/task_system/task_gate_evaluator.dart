@@ -340,21 +340,107 @@ class TaskGateEvaluator {
     List<TaskToolCallRecord> toolCalls,
     DateTime now,
   ) {
-    final errors = toolCalls
-        .where((call) => call.toolName != 'finish_task_step')
-        .where((call) => call.error?.trim().isNotEmpty == true)
-        .map((call) => '${call.toolName}: ${call.error}')
-        .toList();
-    if (errors.isNotEmpty) {
+    final unresolved = <Map<String, String>>[];
+    final recoverable = <Map<String, String>>[];
+
+    for (final call in toolCalls) {
+      if (call.toolName == 'finish_task_step') continue;
+      final error = call.error?.trim();
+      if (error == null || error.isEmpty) continue;
+
+      final category = _recoverableToolErrorCategory(call, error);
+      final entry = <String, String>{'toolName': call.toolName, 'error': error};
+      if (category != null) entry['category'] = category;
+      if (category == null) {
+        unresolved.add(entry);
+      } else {
+        recoverable.add(entry);
+      }
+    }
+
+    if (unresolved.isNotEmpty) {
       return _result(
         gate,
         TaskGateStatus.failed,
-        'Tool errors must be resolved before completion.',
+        'Unresolved tool errors must be fixed before completion.',
         now,
-        {'errors': errors},
+        {
+          'errors': unresolved,
+          if (recoverable.isNotEmpty) 'recoverableErrors': recoverable,
+        },
       );
     }
-    return _result(gate, _passStatus(gate), 'No unresolved tool errors.', now);
+
+    return _result(
+      gate,
+      _passStatus(gate),
+      recoverable.isEmpty
+          ? 'No unresolved tool errors.'
+          : 'No unresolved tool errors. ${recoverable.length} recoverable tool guard issue(s) were recorded.',
+      now,
+      recoverable.isEmpty ? const {} : {'recoverableErrors': recoverable},
+    );
+  }
+
+  String? _recoverableToolErrorCategory(TaskToolCallRecord call, String error) {
+    final normalised = error.toLowerCase();
+    final result = _resultSummaryMap(call);
+    final reason = jsonNullableString(result['reason'])?.toLowerCase() ?? '';
+
+    if (_containsAny(normalised, const [
+      'blocked by terminal policy',
+      'shell command substitution is blocked',
+      'find -delete is blocked',
+      'git clean is blocked',
+      'git reset --hard is blocked',
+      'terminal command is not whitelisted',
+      'terminal commands are disabled',
+      'tool is not available for this task step',
+      'read-only steps may only',
+      'read-only steps cannot',
+      'task steps may only create artifacts',
+      'use workspace-relative paths only',
+      'path escapes the workspace',
+      'refusing to delete the workspace root',
+    ])) {
+      return 'guard_denial';
+    }
+
+    if (_containsAny(normalised, const [
+      'path not found',
+      'path is not a directory',
+      'path is a directory',
+      'file is too large to read',
+      'patch text was not found',
+      'search returned too many results',
+      'search results are too large',
+      'no existing parent directory found',
+    ])) {
+      return 'workspace_validation';
+    }
+
+    if (_containsAny(normalised, const [
+      'arguments must be a json object',
+      'formatexception',
+      'is not a subtype of type',
+      'requires a path',
+      'requires string content',
+      'command is required',
+      'search query is required',
+    ])) {
+      return 'invalid_tool_arguments';
+    }
+
+    if (normalised == 'tool call skipped by task runner.' &&
+        reason.contains('repeated the same tool call')) {
+      return 'loop_guard';
+    }
+
+    return null;
+  }
+
+  bool _containsAny(String value, List<String> needles) {
+    return needles.any(value.contains);
   }
 
   TaskGateResult _noFailedCommands(

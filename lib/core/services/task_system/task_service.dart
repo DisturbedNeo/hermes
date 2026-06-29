@@ -2363,7 +2363,7 @@ Choose only these gate ids. Gates are checked by the task runner, not by the exe
 - artifact_exists: params {"paths": ["relative/path"]}
 - artifact_nonempty: params {"paths": ["relative/path"]}
 - command_passes: params {"command": "dart test", "working_directory": "."}
-- no_tool_errors: params {}
+- no_tool_errors: params {} (fails unresolved fatal tool errors; recoverable guard denials are recorded as advisory details)
 - no_failed_commands: params {}
 - content_contains: params {"path": "relative/path", "mustContain": ["..."]}
 - content_not_contains: params {"path": "relative/path", "mustNotContain": ["TODO", "FIXME", "[...]"]}
@@ -3033,7 +3033,7 @@ $whitelist
         id: 'no_tool_errors',
         required: true,
         scope: 'task',
-        description: 'No unresolved workspace tool errors.',
+        description: 'No unresolved fatal workspace tool errors.',
       ),
       TaskGate(
         id: 'no_failed_commands',

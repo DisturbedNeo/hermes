@@ -647,10 +647,10 @@ void main() {
             content: '',
             toolCalls: [
               ChatCompletionToolCall(
-                name: 'write_file',
+                name: 'read_file',
                 arguments: jsonEncode({
-                  'path': 'should-not-exist.txt',
-                  'content': 'bad',
+                  'path': 'README.md',
+                  'request': 'Summarize this file.',
                 }),
               ),
             ],
@@ -833,6 +833,19 @@ void main() {
               'memoryUpdate': '',
             }),
           ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'steps': [
+                {
+                  'id': 'verify_command',
+                  'title': 'Verify command',
+                  'objective': 'Run the exact required command.',
+                  'instructions': ['Run dart --version exactly.'],
+                  'mayEditFiles': false,
+                },
+              ],
+            }),
+          ),
         ]);
 
         final updated = await service.runNextStep(
@@ -842,11 +855,27 @@ void main() {
           baseSystemPrompt: 'system',
         );
 
-        expect(updated.status, TaskStatus.failed);
-        expect(updated.runs.single.status, TaskRunStatus.failed);
+        expect(updated.status, TaskStatus.paused);
+        expect(updated.currentStepId, 'verify_command');
+        expect(updated.runs.map((run) => run.status), [
+          TaskRunStatus.needsReplan,
+          TaskRunStatus.replanned,
+        ]);
         expect(
-          updated.runs.single.toolCalls.single.error,
+          updated.runs.first.toolCalls.single.error,
           contains('not whitelisted'),
+        );
+        expect(
+          updated.runs.first.gateResults
+              .singleWhere((result) => result.gateId == 'command_passes')
+              .status,
+          TaskGateStatus.pending,
+        );
+        expect(
+          updated.runs.first.gateResults
+              .singleWhere((result) => result.gateId == 'no_tool_errors')
+              .status,
+          TaskGateStatus.passed,
         );
         expect(File(path.join(root.path, 'version.txt')).existsSync(), isFalse);
       },

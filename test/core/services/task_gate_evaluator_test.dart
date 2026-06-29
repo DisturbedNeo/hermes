@@ -162,37 +162,56 @@ void main() {
       },
     );
 
-    test(
-      'no_tool_errors and no_failed_commands fail on bad evidence',
-      () async {
-        final evaluation = await evaluator.evaluate(
-          workspace: workspace,
-          task: task,
-          step: step,
-          gates: const [
-            TaskGate(id: 'no_tool_errors'),
-            TaskGate(id: 'no_failed_commands'),
-          ],
-          toolCalls: [
-            _toolCall('read_file', error: 'Path not found.'),
-            _toolCall(
-              'run_command',
-              arguments: {
-                'command': 'flutter',
-                'args': ['test'],
-              },
-              result: {'exit_code': 1, 'command': 'flutter test'},
-            ),
-          ],
-          artifacts: const [],
-        );
+    test('no_tool_errors treats guard denials as recoverable evidence', () async {
+      final evaluation = await evaluator.evaluate(
+        workspace: workspace,
+        task: task,
+        step: step,
+        gates: const [
+          TaskGate(id: 'no_tool_errors'),
+          TaskGate(id: 'no_failed_commands'),
+        ],
+        toolCalls: [
+          _toolCall('read_file', error: 'Path not found.'),
+          _toolCall('write_file', error: 'Use workspace-relative paths only.'),
+          _toolCall(
+            'run_command',
+            error:
+                'File deletion commands are blocked by terminal policy. Use workspace delete tools for scoped file removal.',
+          ),
+          _toolCall(
+            'run_command',
+            arguments: {
+              'command': 'flutter',
+              'args': ['test'],
+            },
+            result: {'exit_code': 1, 'command': 'flutter test'},
+          ),
+        ],
+        artifacts: const [],
+      );
 
-        expect(
-          evaluation.results.map((result) => result.status),
-          everyElement(TaskGateStatus.failed),
-        );
-      },
-    );
+      expect(evaluation.results.first.status, TaskGateStatus.passed);
+      expect(
+        evaluation.results.first.details['recoverableErrors'],
+        hasLength(3),
+      );
+      expect(evaluation.results.last.status, TaskGateStatus.failed);
+    });
+
+    test('no_tool_errors fails on unclassified tool failures', () async {
+      final evaluation = await evaluator.evaluate(
+        workspace: workspace,
+        task: task,
+        step: step,
+        gates: const [TaskGate(id: 'no_tool_errors')],
+        toolCalls: [_toolCall('read_file', error: 'Tool crashed.')],
+        artifacts: const [],
+      );
+
+      expect(evaluation.results.single.status, TaskGateStatus.failed);
+      expect(evaluation.results.single.details['errors'], hasLength(1));
+    });
 
     test('content and parser gates validate files', () async {
       await File(
