@@ -159,6 +159,31 @@ void main() {
           artifacts: const [],
         );
         expect(passed.results.single.status, TaskGateStatus.passed);
+
+        final passedWithTruncatedSummary = await evaluator.evaluate(
+          workspace: workspace,
+          task: task,
+          step: step,
+          gates: [gate],
+          toolCalls: [
+            _toolCall('patch_file', result: {'path': 'lib/a.dart'}),
+            _toolCall(
+              'run_command',
+              arguments: {'command': 'dart test', 'working_directory': '.'},
+              result: {
+                'exit_code': 0,
+                'command': 'dart test',
+                'stdout': List.filled(5000, 'x').join(),
+              },
+              resultSummary: '{"command":"dart test","stdout":"truncated...',
+            ),
+          ],
+          artifacts: const [],
+        );
+        expect(
+          passedWithTruncatedSummary.results.single.status,
+          TaskGateStatus.passed,
+        );
       },
     );
 
@@ -294,6 +319,7 @@ TaskToolCallRecord _toolCall(
   String toolName, {
   Map<String, dynamic> arguments = const {},
   Map<String, dynamic> result = const {},
+  String? resultSummary,
   String? error,
 }) {
   return TaskToolCallRecord(
@@ -302,7 +328,8 @@ TaskToolCallRecord _toolCall(
     runId: 'run_1',
     toolName: toolName,
     arguments: arguments,
-    resultSummary: jsonEncode(result),
+    result: result,
+    resultSummary: resultSummary ?? jsonEncode(result),
     error: error,
     timestamp: DateTime(2026, 1, 1),
   );

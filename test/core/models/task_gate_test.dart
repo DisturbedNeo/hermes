@@ -72,7 +72,18 @@ void main() {
           status: TaskRunStatus.completed,
           summary: 'Done',
           memoryUpdate: '',
-          toolCalls: const [],
+          toolCalls: [
+            TaskToolCallRecord(
+              id: 'call_1',
+              stepId: 'step_1',
+              runId: 'run_1',
+              toolName: 'run_command',
+              arguments: const {'command': 'dart test'},
+              result: const {'command': 'dart test', 'exit_code': 0},
+              resultSummary: '{"command":"dart test","stdout":"truncated...',
+              timestamp: now,
+            ),
+          ],
           artifacts: const [],
           gateResults: [
             TaskGateResult(
@@ -97,5 +108,9 @@ void main() {
       decoded.runs.single.gateResults.single.status,
       TaskGateStatus.passed,
     );
+    expect(decoded.runs.single.toolCalls.single.result, {
+      'command': 'dart test',
+      'exit_code': 0,
+    });
   });
 }

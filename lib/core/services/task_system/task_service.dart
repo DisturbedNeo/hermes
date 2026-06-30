@@ -1321,6 +1321,7 @@ ${_encoder.convert(task.toJson())}
           existingToolCalls: toolCalls,
         );
         final resultJson = finish.resultJson;
+        final result = _structuredToolResult(finishCall.name, resultJson);
         toolCalls.add(
           TaskToolCallRecord(
             id: callId,
@@ -1328,6 +1329,7 @@ ${_encoder.convert(task.toJson())}
             runId: run.runId,
             toolName: finishCall.name,
             arguments: args,
+            result: result,
             resultSummary: _cap(resultJson, 1200),
             error: finish.error,
             timestamp: DateTime.now(),
@@ -1422,6 +1424,7 @@ ${_encoder.convert(task.toJson())}
         );
         cancellationToken?.throwIfCancelled();
         final error = _toolError(resultJson);
+        final result = _structuredToolResult(call.name, resultJson);
         toolCalls.add(
           TaskToolCallRecord(
             id: callId,
@@ -1429,6 +1432,7 @@ ${_encoder.convert(task.toJson())}
             runId: run.runId,
             toolName: call.name,
             arguments: args,
+            result: result,
             resultSummary: _cap(resultJson, 1200),
             error: error,
             timestamp: DateTime.now(),
@@ -3316,6 +3320,34 @@ $whitelist
       return null;
     }
     return null;
+  }
+
+  Map<String, dynamic>? _structuredToolResult(
+    String toolName,
+    String resultJson,
+  ) {
+    final decoded = TaskJson.tryParseObject(resultJson);
+    if (decoded == null) return null;
+
+    final result = <String, dynamic>{};
+    void copyKey(String key) {
+      if (decoded.containsKey(key)) result[key] = decoded[key];
+    }
+
+    if (toolName == 'run_command') {
+      copyKey('command');
+      copyKey('working_directory');
+      copyKey('exit_code');
+      copyKey('error');
+      copyKey('reason');
+    } else {
+      copyKey('error');
+      copyKey('reason');
+      copyKey('skipped');
+      copyKey('path');
+    }
+
+    return result.isEmpty ? null : result;
   }
 
   String _appendMemory(String current, String update) {

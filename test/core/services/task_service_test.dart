@@ -731,6 +731,11 @@ void main() {
         updated.runs.single.gateResults.single.status,
         TaskGateStatus.passed,
       );
+      expect(updated.runs.single.toolCalls.single.result, {
+        'command': 'dart --version',
+        'working_directory': '.',
+        'exit_code': 0,
+      });
     });
 
     test(

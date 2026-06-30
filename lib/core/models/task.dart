@@ -635,6 +635,7 @@ class TaskToolCallRecord {
   final String runId;
   final String toolName;
   final Object? arguments;
+  final Object? result;
   final String? resultSummary;
   final String? error;
   final DateTime timestamp;
@@ -646,6 +647,7 @@ class TaskToolCallRecord {
     required this.toolName,
     required this.timestamp,
     this.arguments,
+    this.result,
     this.resultSummary,
     this.error,
   });
@@ -657,6 +659,7 @@ class TaskToolCallRecord {
       runId: jsonString(json['runId'] ?? json['run_id']),
       toolName: jsonString(json['toolName'] ?? json['tool_name']),
       arguments: json['arguments'],
+      result: json['result'],
       resultSummary: jsonNullableString(
         json['resultSummary'] ?? json['result_summary'],
       ),
@@ -671,6 +674,7 @@ class TaskToolCallRecord {
     'runId': runId,
     'toolName': toolName,
     if (arguments != null) 'arguments': arguments,
+    if (result != null) 'result': result,
     if (resultSummary != null) 'resultSummary': resultSummary,
     if (error != null) 'error': error,
     'timestamp': timestamp.toIso8601String(),

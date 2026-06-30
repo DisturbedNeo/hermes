@@ -846,6 +846,9 @@ $prompt
   }
 
   Map<String, dynamic> _resultSummaryMap(TaskToolCallRecord call) {
+    final structured = call.result;
+    if (structured is Map<String, dynamic>) return structured;
+    if (structured is Map) return Map<String, dynamic>.from(structured);
     final summary = call.resultSummary;
     if (summary == null) return const {};
     return TaskJson.tryParseObject(summary) ?? const {};
