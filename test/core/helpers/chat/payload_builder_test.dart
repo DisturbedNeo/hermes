@@ -204,5 +204,91 @@ void main() {
         );
       },
     );
+
+    test(
+      'coalesces consecutive trailing assistant messages for llama-server',
+      () {
+        final payload = PayloadBuilder.buildPayload(
+          messages: [
+            const Bubble(
+              id: 'user',
+              role: MessageRole.user,
+              text: 'Start the project',
+              reasoning: '',
+            ),
+            const Bubble(
+              id: 'created',
+              role: MessageRole.assistant,
+              text: 'Project created.',
+              reasoning: '',
+            ),
+            const Bubble(
+              id: 'step',
+              role: MessageRole.assistant,
+              text: 'Task step finished.',
+              reasoning: '',
+            ),
+            const Bubble(
+              id: 'paused',
+              role: MessageRole.assistant,
+              text: 'Project paused.',
+              reasoning: '',
+            ),
+          ],
+          upToIndexInclusive: 3,
+        );
+
+        expect(payload.map((message) => message.role), ['user', 'assistant']);
+        expect(
+          payload.last.content,
+          'Project created.\n\nTask step finished.\n\nProject paused.',
+        );
+      },
+    );
+
+    test(
+      'keeps assistant tool call messages separate when coalescing tail',
+      () {
+        final payload = PayloadBuilder.buildPayloadWithTools(
+          messages: [
+            const Bubble(
+              id: 'assistant-tool',
+              role: MessageRole.assistant,
+              text: 'Reading files.',
+              reasoning: '',
+              tools: {
+                0: BubbleToolCall(
+                  id: 'call_1',
+                  name: 'read_file',
+                  arguments: '{"path":"README.md"}',
+                  result: '{"content":"hello"}',
+                ),
+              },
+            ),
+            const Bubble(
+              id: 'status',
+              role: MessageRole.assistant,
+              text: 'Task step finished.',
+              reasoning: '',
+            ),
+            const Bubble(
+              id: 'paused',
+              role: MessageRole.assistant,
+              text: 'Project paused.',
+              reasoning: '',
+            ),
+          ],
+          upToIndexInclusive: 2,
+        );
+
+        expect(payload.map((message) => message.role), [
+          'assistant',
+          'tool',
+          'assistant',
+        ]);
+        expect(payload.first.toolCalls, isNotEmpty);
+        expect(payload.last.content, 'Task step finished.\n\nProject paused.');
+      },
+    );
   });
 }

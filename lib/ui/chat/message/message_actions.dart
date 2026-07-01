@@ -73,7 +73,7 @@ class MessageActions extends StatelessWidget {
         isEnabled: !chat.chatStream.isStreaming,
         onTap: (message) {
           chat.messageStore.removeById(message.id);
-          chat.generateOrContinue();
+          chat.generateOrContinue(preferActiveWork: false);
         },
       );
 

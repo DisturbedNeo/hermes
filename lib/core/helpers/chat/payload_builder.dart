@@ -28,7 +28,7 @@ class PayloadBuilder {
       payload.removeLast();
     }
 
-    return payload;
+    return _coalesceTrailingAssistantMessages(payload);
   }
 
   static List<ChatMessage> buildPayloadWithTools({
@@ -41,12 +41,14 @@ class PayloadBuilder {
       return [];
     }
 
-    return _buildMessages(
+    final payload = _buildMessages(
       messages: messages,
       upToIndexInclusive: upToIndexInclusive,
       omitCoveredMessages: omitCoveredMessages,
       omittedMessageIds: omittedMessageIds,
     );
+
+    return _coalesceTrailingAssistantMessages(payload);
   }
 
   static List<ChatMessage> _buildMessages({
@@ -129,6 +131,45 @@ class PayloadBuilder {
     }
 
     return bubble.role.wire;
+  }
+
+  static List<ChatMessage> _coalesceTrailingAssistantMessages(
+    List<ChatMessage> messages,
+  ) {
+    if (messages.length < 2) return messages;
+
+    var start = messages.length - 1;
+    if (!_isPlainAssistant(messages[start])) return messages;
+
+    while (start > 0 && _isPlainAssistant(messages[start - 1])) {
+      start--;
+    }
+    if (start == messages.length - 1) return messages;
+
+    final trailing = messages.sublist(start);
+    final mergedContent = trailing
+        .map((message) => message.content.trim())
+        .where((content) => content.isNotEmpty)
+        .join('\n\n');
+    final mergedReasoning = trailing
+        .map((message) => message.reasoningContent.trim())
+        .where((content) => content.isNotEmpty)
+        .join('\n\n');
+
+    return [
+      ...messages.take(start),
+      ChatMessage(
+        role: MessageRole.assistant.wire,
+        content: mergedContent,
+        reasoningContent: mergedReasoning,
+      ),
+    ];
+  }
+
+  static bool _isPlainAssistant(ChatMessage message) {
+    return message.role == MessageRole.assistant.wire &&
+        message.toolCalls.isEmpty &&
+        message.toolCallId.isEmpty;
   }
 
   static dynamic _toolArgumentsForPayload(String? arguments) {

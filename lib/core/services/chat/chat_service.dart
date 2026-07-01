@@ -528,8 +528,17 @@ class ChatService extends ChangeNotifier implements Disposable {
     );
   }
 
-  Future<void> generateOrContinue({List<String>? tools = const []}) async {
-    if (chatStream.isStreaming || taskBusy || messageStore.isEmpty) return;
+  Future<void> generateOrContinue({
+    List<String>? tools = const [],
+    bool preferActiveWork = true,
+  }) async {
+    if (chatStream.isStreaming || taskBusy) return;
+
+    if (preferActiveWork && await _continueActiveWorkIfAvailable()) {
+      return;
+    }
+
+    if (messageStore.isEmpty) return;
 
     _adoptActiveModelIfRestoreDismissed();
 
@@ -551,6 +560,23 @@ class ChatService extends ChangeNotifier implements Disposable {
       anchorId: null,
       targetAssistantId: continuationTargetId,
     );
+  }
+
+  Future<bool> _continueActiveWorkIfAvailable() async {
+    final project = activeProject;
+    if (project != null) {
+      if (project.isTerminal) return false;
+      await runProject();
+      return true;
+    }
+
+    final task = activeTask;
+    if (task == null || task.isTerminal || task.nextRunnableStep == null) {
+      return false;
+    }
+
+    await runTask();
+    return true;
   }
 
   Future<void> cancelGeneration() async {
