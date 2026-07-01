@@ -10,8 +10,12 @@ class SmartScrollController extends ScrollController {
   bool _autoScrollEnabled = true;
   bool _userScrolledAway = false;
   final double bottomThreshold;
+  final double longScrollViewportMultiplier;
 
-  SmartScrollController({this.bottomThreshold = 50});
+  SmartScrollController({
+    this.bottomThreshold = 50,
+    this.longScrollViewportMultiplier = 3,
+  });
 
   @override
   void attach(ScrollPosition position) {
@@ -64,12 +68,18 @@ class SmartScrollController extends ScrollController {
   Future<void> scrollToBottom({Duration? duration}) async {
     final position = positions.firstOrNull;
     if (position == null) return;
+    final target = _bottomExtent(position);
+    final distance = (position.pixels - target).abs();
+    final longScrollThreshold =
+        position.viewportDimension * longScrollViewportMultiplier;
+
+    if (distance > longScrollThreshold) {
+      position.jumpTo(target);
+      return;
+    }
+
     final dur = duration ?? const Duration(milliseconds: 200);
-    await position.animateTo(
-      _bottomExtent(position),
-      duration: dur,
-      curve: Curves.easeOutCubic,
-    );
+    await position.animateTo(target, duration: dur, curve: Curves.easeOutCubic);
   }
 
   double _bottomExtent(ScrollPosition position) {

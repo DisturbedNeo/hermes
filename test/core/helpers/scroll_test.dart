@@ -69,4 +69,37 @@ void main() {
     expect(controller.position.pixels, controller.position.minScrollExtent);
     expect(controller.isNearBottom, isTrue);
   });
+
+  testWidgets('jumps immediately for long scroll-to-bottom distances', (
+    tester,
+  ) async {
+    final controller = SmartScrollController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          height: 200,
+          child: ListView.builder(
+            controller: controller,
+            reverse: true,
+            itemExtent: 40,
+            itemCount: 200,
+            itemBuilder: (_, i) => Text('Item $i'),
+          ),
+        ),
+      ),
+    );
+
+    controller.jumpTo(controller.position.maxScrollExtent);
+    expect(controller.isNearBottom, isFalse);
+
+    final scroll = controller.scrollToBottom(
+      duration: const Duration(milliseconds: 200),
+    );
+
+    expect(controller.position.pixels, controller.position.minScrollExtent);
+    await scroll;
+    expect(controller.isNearBottom, isTrue);
+  });
 }
