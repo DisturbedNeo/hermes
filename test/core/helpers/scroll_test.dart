@@ -102,4 +102,104 @@ void main() {
     await scroll;
     expect(controller.isNearBottom, isTrue);
   });
+
+  testWidgets('keeps reversed lists anchored when bottom content grows', (
+    tester,
+  ) async {
+    final controller = SmartScrollController();
+    addTearDown(controller.dispose);
+    var latestItemHeight = 40.0;
+    StateSetter? setListState;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            setListState = setState;
+            return SizedBox(
+              height: 200,
+              child: NotificationListener<ScrollMetricsNotification>(
+                onNotification: (_) {
+                  controller.updateContentMetrics();
+                  return false;
+                },
+                child: ListView.builder(
+                  controller: controller,
+                  reverse: true,
+                  itemCount: 20,
+                  itemBuilder: (_, i) {
+                    return SizedBox(
+                      height: i == 0 ? latestItemHeight : 40,
+                      child: Text('Item $i'),
+                    );
+                  },
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    controller.updateContentMetrics();
+    controller.jumpTo(120);
+    controller.updateAutoScrollState();
+    expect(controller.isNearBottom, isFalse);
+
+    setListState!(() => latestItemHeight += 80);
+    await tester.pump();
+    controller.updateContentMetrics();
+
+    expect(controller.position.pixels, 200);
+  });
+
+  testWidgets('does not preserve reversed list offsets while near bottom', (
+    tester,
+  ) async {
+    final controller = SmartScrollController();
+    addTearDown(controller.dispose);
+    var latestItemHeight = 40.0;
+    StateSetter? setListState;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            setListState = setState;
+            return SizedBox(
+              height: 200,
+              child: NotificationListener<ScrollMetricsNotification>(
+                onNotification: (_) {
+                  controller.updateContentMetrics();
+                  return false;
+                },
+                child: ListView.builder(
+                  controller: controller,
+                  reverse: true,
+                  itemCount: 20,
+                  itemBuilder: (_, i) {
+                    return SizedBox(
+                      height: i == 0 ? latestItemHeight : 40,
+                      child: Text('Item $i'),
+                    );
+                  },
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    controller.updateContentMetrics();
+    controller.jumpTo(controller.position.minScrollExtent);
+    controller.updateAutoScrollState();
+    expect(controller.isNearBottom, isTrue);
+
+    setListState!(() => latestItemHeight += 80);
+    await tester.pump();
+    controller.updateContentMetrics();
+
+    expect(controller.position.pixels, controller.position.minScrollExtent);
+  });
 }

@@ -9,6 +9,9 @@ import 'package:flutter/material.dart';
 class SmartScrollController extends ScrollController {
   bool _autoScrollEnabled = true;
   bool _userScrolledAway = false;
+  double? _lastMinScrollExtent;
+  double? _lastMaxScrollExtent;
+  AxisDirection? _lastAxisDirection;
   final double bottomThreshold;
   final double longScrollViewportMultiplier;
 
@@ -47,6 +50,50 @@ class SmartScrollController extends ScrollController {
   void updateAutoScrollState() {
     final nearBottom = isNearBottom;
     _setAutoScrollState(enabled: nearBottom, userScrolledAway: !nearBottom);
+  }
+
+  /// Preserve the visible viewport when content grows below it.
+  ///
+  /// Reversed chat lists place the newest content at the visual bottom. When
+  /// that newest bubble grows while the user is reading older content, the
+  /// scroll extent increases and the current content would otherwise drift.
+  /// This keeps the same content anchored unless the view is near the bottom.
+  void updateContentMetrics() {
+    final position = positions.firstOrNull;
+    if (position == null || !position.hasContentDimensions) return;
+
+    final previousMin = _lastMinScrollExtent;
+    final previousMax = _lastMaxScrollExtent;
+    final previousAxisDirection = _lastAxisDirection;
+    final currentMin = position.minScrollExtent;
+    final currentMax = position.maxScrollExtent;
+    final currentAxisDirection = position.axisDirection;
+
+    _lastMinScrollExtent = currentMin;
+    _lastMaxScrollExtent = currentMax;
+    _lastAxisDirection = currentAxisDirection;
+
+    if (previousMin == null ||
+        previousMax == null ||
+        previousAxisDirection == null ||
+        previousAxisDirection != currentAxisDirection ||
+        isNearBottom) {
+      return;
+    }
+
+    final delta = switch (currentAxisDirection) {
+      AxisDirection.up || AxisDirection.left => currentMax - previousMax,
+      AxisDirection.down || AxisDirection.right => currentMin - previousMin,
+    };
+
+    if (delta.abs() < 0.5) return;
+
+    final target = (position.pixels + delta)
+        .clamp(currentMin, currentMax)
+        .toDouble();
+    if ((target - position.pixels).abs() < 0.5) return;
+
+    position.jumpTo(target);
   }
 
   /// Whether automatic scrolling is currently enabled.

@@ -349,7 +349,11 @@ class _MessageListState extends State<_MessageList> {
   }
 
   void _scheduleScrollButtonUpdate() {
-    WidgetsBinding.instance.addPostFrameCallback((_) => _updateScrollButton());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.scroll.updateContentMetrics();
+      _updateScrollButton();
+    });
   }
 
   void _updateScrollButton() {
@@ -370,26 +374,37 @@ class _MessageListState extends State<_MessageList> {
     return false;
   }
 
+  bool _handleScrollMetricsNotification(
+    ScrollMetricsNotification notification,
+  ) {
+    widget.scroll.updateContentMetrics();
+    _updateScrollButton();
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        NotificationListener<ScrollNotification>(
-          onNotification: _handleScrollNotification,
-          child: ListView.builder(
-            controller: widget.scroll,
-            reverse: true,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-            itemCount: _displayItems.length,
-            itemBuilder: (_, i) {
-              final item = _displayItems[_displayItems.length - 1 - i];
+        NotificationListener<ScrollMetricsNotification>(
+          onNotification: _handleScrollMetricsNotification,
+          child: NotificationListener<ScrollNotification>(
+            onNotification: _handleScrollNotification,
+            child: ListView.builder(
+              controller: widget.scroll,
+              reverse: true,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+              itemCount: _displayItems.length,
+              itemBuilder: (_, i) {
+                final item = _displayItems[_displayItems.length - 1 - i];
 
-              return _LiveMessageItem(
-                key: ValueKey('message_${item.messageId}'),
-                item: item,
-                chat: widget.chat,
-              );
-            },
+                return _LiveMessageItem(
+                  key: ValueKey('message_${item.messageId}'),
+                  item: item,
+                  chat: widget.chat,
+                );
+              },
+            ),
           ),
         ),
         // Floating scroll-to-bottom button that appears when user scrolls away
