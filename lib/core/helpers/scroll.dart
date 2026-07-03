@@ -11,6 +11,7 @@ class SmartScrollController extends ScrollController {
   bool _userScrolledAway = false;
   double? _lastMinScrollExtent;
   double? _lastMaxScrollExtent;
+  double? _lastViewportDimension;
   AxisDirection? _lastAxisDirection;
   final double bottomThreshold;
   final double longScrollViewportMultiplier;
@@ -64,19 +65,25 @@ class SmartScrollController extends ScrollController {
 
     final previousMin = _lastMinScrollExtent;
     final previousMax = _lastMaxScrollExtent;
+    final previousViewport = _lastViewportDimension;
     final previousAxisDirection = _lastAxisDirection;
     final currentMin = position.minScrollExtent;
     final currentMax = position.maxScrollExtent;
+    final currentViewport = position.viewportDimension;
     final currentAxisDirection = position.axisDirection;
 
     _lastMinScrollExtent = currentMin;
     _lastMaxScrollExtent = currentMax;
+    _lastViewportDimension = currentViewport;
     _lastAxisDirection = currentAxisDirection;
 
     if (previousMin == null ||
         previousMax == null ||
+        previousViewport == null ||
         previousAxisDirection == null ||
         previousAxisDirection != currentAxisDirection ||
+        (currentViewport - previousViewport).abs() >= 0.5 ||
+        position.isScrollingNotifier.value ||
         isNearBottom) {
       return;
     }
@@ -86,7 +93,7 @@ class SmartScrollController extends ScrollController {
       AxisDirection.down || AxisDirection.right => currentMin - previousMin,
     };
 
-    if (delta.abs() < 0.5) return;
+    if (delta <= 0.5) return;
 
     final target = (position.pixels + delta)
         .clamp(currentMin, currentMax)

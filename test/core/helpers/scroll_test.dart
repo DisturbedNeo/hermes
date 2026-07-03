@@ -202,4 +202,50 @@ void main() {
 
     expect(controller.position.pixels, controller.position.minScrollExtent);
   });
+
+  testWidgets('does not preserve reversed list offsets on viewport resize', (
+    tester,
+  ) async {
+    final controller = SmartScrollController();
+    addTearDown(controller.dispose);
+    var viewportHeight = 200.0;
+    StateSetter? setListState;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            setListState = setState;
+            return SizedBox(
+              height: viewportHeight,
+              child: NotificationListener<ScrollMetricsNotification>(
+                onNotification: (_) {
+                  controller.updateContentMetrics();
+                  return false;
+                },
+                child: ListView.builder(
+                  controller: controller,
+                  reverse: true,
+                  itemExtent: 40,
+                  itemCount: 20,
+                  itemBuilder: (_, i) => Text('Item $i'),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    controller.updateContentMetrics();
+    controller.jumpTo(120);
+    controller.updateAutoScrollState();
+    expect(controller.isNearBottom, isFalse);
+
+    setListState!(() => viewportHeight = 160);
+    await tester.pump();
+    controller.updateContentMetrics();
+
+    expect(controller.position.pixels, 120);
+  });
 }
