@@ -352,6 +352,14 @@ void main() {
 
       expect(client.requestCount, 1);
       expect(client.seenToolNames.single, contains('finish_task_step'));
+      expect(
+        client.seenMessages.single.where((message) => message.role == 'system'),
+        hasLength(1),
+      );
+      expect(
+        client.seenMessages.single.first.content,
+        contains('You execute one step of a larger linear task.'),
+      );
       expect(updated.status, TaskStatus.completed);
       expect(updated.runs.single.status, TaskRunStatus.completed);
       expect(updated.runs.single.summary, 'Inspected the workspace.');

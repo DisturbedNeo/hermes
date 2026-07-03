@@ -1265,8 +1265,10 @@ ${_encoder.convert(task.toJson())}
       _finishTaskStepToolDefinition,
     ];
     final messages = <ChatMessage>[
-      ChatMessage(role: 'system', content: baseSystemPrompt),
-      const ChatMessage(role: 'system', content: _executorSystemInstruction),
+      ChatMessage(
+        role: 'system',
+        content: '$baseSystemPrompt\n\n$_executorSystemInstruction',
+      ),
       ChatMessage(
         role: 'user',
         content: _buildStepPrompt(task, step, workspace),
