@@ -430,7 +430,7 @@ void main() {
       },
     );
 
-    test('runs queued task when selector proposes the same task', () async {
+    test('runs queued task without invoking the selector', () async {
       final project = await service.createProject(
         workspace: workspace,
         userPrompt: 'Build the app',
@@ -442,24 +442,22 @@ void main() {
       );
       final previous = project.copyWith(backlog: [queuedTask]);
 
+      final client = _QueueChatClient([
+        jsonEncode(_taskPlanJson()),
+        jsonEncode({
+          'status': 'completed',
+          'summary': 'Queued task complete.',
+          'memoryUpdate': 'Implemented the queued task.',
+        }),
+        jsonEncode({
+          'complete': false,
+          'finalSummary': '',
+          'remainingCriteria': ['Complete the stated project goal.'],
+          'openQuestions': [],
+        }),
+      ]);
       final result = await service.runProject(
-        client: _QueueChatClient([
-          jsonEncode({
-            'task': _projectTaskJson(objective: 'Implement the first slice'),
-          }),
-          jsonEncode(_taskPlanJson()),
-          jsonEncode({
-            'status': 'completed',
-            'summary': 'Queued task complete.',
-            'memoryUpdate': 'Implemented the queued task.',
-          }),
-          jsonEncode({
-            'complete': false,
-            'finalSummary': '',
-            'remainingCriteria': ['Complete the stated project goal.'],
-            'openQuestions': [],
-          }),
-        ]),
+        client: client,
         workspace: workspace,
         snapshot: previous,
         baseSystemPrompt: 'system',
@@ -470,6 +468,7 @@ void main() {
       expect(result.project.blocker, isNull);
       expect(result.project.failedTasks, isEmpty);
       expect(result.project.completedTasks.single.id, queuedTask.id);
+      expect(client.taskSelectorRequestCount, 0);
     });
 
     test(
@@ -496,7 +495,6 @@ void main() {
 
         final result = await service.runProject(
           client: _QueueChatClient([
-            jsonEncode({}),
             jsonEncode(_taskPlanJson()),
             jsonEncode({
               'status': 'completed',
@@ -519,6 +517,59 @@ void main() {
         expect(result.project.status, ProjectStatus.paused);
         expect(result.project.blocker, isNull);
         expect(result.project.completedTasks.single.id, queuedTask.id);
+      },
+    );
+
+    test(
+      'resumes a validation-blocked project with executable recovered work',
+      () async {
+        final project = await service.createProject(
+          workspace: workspace,
+          userPrompt: 'Build the app',
+          chatSessionId: 'chat_1',
+        );
+        final queuedTask = _projectTask(
+          id: 'queued_task',
+          objective: 'Implement the recovered slice',
+        );
+        final previous = project.copyWith(
+          backlog: [queuedTask],
+          currentTask: queuedTask,
+          status: ProjectStatus.blocked,
+          blocker: ProjectBlocker(
+            type: ProjectBlockerType.validation,
+            message:
+                'Project task selection produced 3 invalid candidates in a row.',
+            createdAt: DateTime(2026, 1, 1),
+          ),
+        );
+        final client = _QueueChatClient([
+          jsonEncode(_taskPlanJson()),
+          jsonEncode({
+            'status': 'completed',
+            'summary': 'Recovered task complete.',
+            'memoryUpdate': 'Resumed recovered project work.',
+          }),
+          jsonEncode({
+            'complete': false,
+            'finalSummary': '',
+            'remainingCriteria': ['Complete the stated project goal.'],
+            'openQuestions': [],
+          }),
+        ]);
+
+        final result = await service.runProject(
+          client: client,
+          workspace: workspace,
+          snapshot: previous,
+          baseSystemPrompt: 'system',
+          maxNewTasks: 1,
+        );
+
+        expect(result.project.status, ProjectStatus.paused);
+        expect(result.project.blocker, isNull);
+        expect(result.project.completedTasks.single.id, queuedTask.id);
+        expect(client.taskSelectorRequestCount, 0);
       },
     );
 
@@ -632,29 +683,29 @@ void main() {
         chatSessionId: 'chat_1',
       );
 
+      final client = _QueueChatClient([
+        jsonEncode({
+          'task': _projectTaskJson(
+            objective: 'Complete the entire project end-to-end',
+            relevantSuccessCriteria: ['Complete the stated project goal.'],
+          ),
+        }),
+        jsonEncode({'tasks': []}),
+        jsonEncode(_taskPlanJson()),
+        jsonEncode({
+          'status': 'completed',
+          'summary': 'Split task complete.',
+          'memoryUpdate': 'Completed focused progress instead.',
+        }),
+        jsonEncode({
+          'complete': false,
+          'finalSummary': '',
+          'remainingCriteria': ['Complete the stated project goal.'],
+          'openQuestions': [],
+        }),
+      ]);
       final result = await service.runProject(
-        client: _QueueChatClient([
-          jsonEncode({
-            'task': _projectTaskJson(
-              objective: 'Complete the entire project end-to-end',
-              relevantSuccessCriteria: ['Complete the stated project goal.'],
-            ),
-          }),
-          jsonEncode({'tasks': []}),
-          jsonEncode({}),
-          jsonEncode(_taskPlanJson()),
-          jsonEncode({
-            'status': 'completed',
-            'summary': 'Split task complete.',
-            'memoryUpdate': 'Completed focused progress instead.',
-          }),
-          jsonEncode({
-            'complete': false,
-            'finalSummary': '',
-            'remainingCriteria': ['Complete the stated project goal.'],
-            'openQuestions': [],
-          }),
-        ]),
+        client: client,
         workspace: workspace,
         snapshot: project,
         baseSystemPrompt: 'system',
@@ -678,6 +729,10 @@ void main() {
             false,
         isFalse,
       );
+      expect(result.project.completedTasks, hasLength(1));
+      expect(result.project.status, ProjectStatus.paused);
+      expect(result.project.blocker, isNull);
+      expect(client.taskSelectorRequestCount, 1);
     });
 
     test(
@@ -1044,12 +1099,23 @@ class _QueueChatClient extends ChatClient {
 
   final List<String> _responses;
   var _index = 0;
+  final List<List<ChatMessage>> _requests = [];
+
+  int get taskSelectorRequestCount => _requests
+      .where(
+        (messages) => messages.any(
+          (message) =>
+              message.content.contains('Propose exactly one next bounded task'),
+        ),
+      )
+      .length;
 
   @override
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
   }) async {
+    _requests.add(List<ChatMessage>.of(messages));
     final index = _index >= _responses.length ? _responses.length - 1 : _index;
     _index++;
     return ChatCompletionResponse(content: _responses[index]);

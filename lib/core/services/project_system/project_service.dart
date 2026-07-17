@@ -350,8 +350,12 @@ class ProjectService {
     if (project.isTerminal) {
       return ProjectRunResult(project: project, activeTask: activeTask);
     }
+    final canResumeValidationBlocker =
+        project.blocker?.type == ProjectBlockerType.validation &&
+        _hasExecutableProjectTask(project);
     if (project.blocker?.type == ProjectBlockerType.budget ||
-        project.blocker?.type == ProjectBlockerType.duplicateTask) {
+        project.blocker?.type == ProjectBlockerType.duplicateTask ||
+        canResumeValidationBlocker) {
       project = project.copyWith(
         status: ProjectStatus.active,
         blocker: null,
@@ -454,6 +458,7 @@ class ProjectService {
 
       final validation = _validateProjectTask(candidate, project);
       if (!validation.valid) {
+        final projectBeforeRecovery = project;
         project = await _handleInvalidProjectTask(
           client: client,
           workspace: workspace,
@@ -467,7 +472,15 @@ class ProjectService {
           await _storage.saveSnapshot(workspace.rootPath, project);
           return ProjectRunResult(project: project, activeTask: activeTask);
         }
-        consecutiveInvalidCandidates++;
+        final recoveryMadeProgress = _invalidTaskRecoveryMadeProgress(
+          before: projectBeforeRecovery,
+          after: project,
+        );
+        if (recoveryMadeProgress) {
+          consecutiveInvalidCandidates = 0;
+        } else {
+          consecutiveInvalidCandidates++;
+        }
         if (consecutiveInvalidCandidates >= 3) {
           project = _blockProject(
             project,
@@ -710,6 +723,12 @@ class ProjectService {
     final recoveryTask = _activeRecoveryTask(project);
     if (recoveryTask != null) return recoveryTask;
 
+    for (final queuedTask in project.backlog) {
+      if (_validateProjectTask(queuedTask, project).valid) {
+        return queuedTask;
+      }
+    }
+
     final metadata = await _collectWorkspaceMetadata(
       workspace,
       chatSessionId: project.chatSessionId,
@@ -723,6 +742,32 @@ class ProjectService {
       onModelOutput: onModelOutput,
     );
     return proposed ?? project.backlog.first;
+  }
+
+  bool _invalidTaskRecoveryMadeProgress({
+    required ProjectDocument before,
+    required ProjectDocument after,
+  }) {
+    final currentTask = after.currentTask;
+    if (currentTask != null && _validateProjectTask(currentTask, after).valid) {
+      return true;
+    }
+
+    final previousBacklogIds = before.backlog.map((task) => task.id).toSet();
+    return after.backlog.any(
+      (task) =>
+          !previousBacklogIds.contains(task.id) &&
+          _validateProjectTask(task, after).valid,
+    );
+  }
+
+  bool _hasExecutableProjectTask(ProjectDocument project) {
+    final currentTask = project.currentTask;
+    return (currentTask != null &&
+            _validateProjectTask(currentTask, project).valid) ||
+        project.backlog.any(
+          (task) => _validateProjectTask(task, project).valid,
+        );
   }
 
   Future<ProjectDocument> _handleInvalidProjectTask({

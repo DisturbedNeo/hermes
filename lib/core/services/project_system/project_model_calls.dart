@@ -231,7 +231,8 @@ ${_encoder.convert(project.toJson())}
         user:
             '''
 Propose exactly one next bounded task for the existing persistent project.
-Use the backlog if it contains a useful next task, but do not require a backlog and do not create a new project.
+Valid queued backlog tasks are selected before this call. Do not repeat any backlog task or forbidden fingerprint; propose a new bounded task instead.
+Do not create a new project.
 Respect knownFacts and previous user answers; do not repeat questions that are already answered there.
 
 Return only JSON:

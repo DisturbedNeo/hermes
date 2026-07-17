@@ -211,9 +211,6 @@ void main() {
             'openQuestions': [],
             'backlog': [_projectTaskJson()],
           }),
-          ChatCompletionResponse(
-            content: jsonEncode({'task': _projectTaskJson()}),
-          ),
           _finaliseTaskResponse(_projectPlanJson(title: 'Project task')),
           ChatCompletionResponse(
             content: jsonEncode({
