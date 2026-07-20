@@ -15,9 +15,9 @@ import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
-import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
+import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/services/workspace_service.dart';
 import 'package:hermes/ui/chat/chat_view.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -36,15 +36,15 @@ void main() {
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
-    await serviceProvider.dispose();
 
     tempDir = await Directory.systemTemp.createTemp('hermes_chat_view_test_');
     preferences = PreferencesService();
     await preferences.setDiagnosticsVisibility(DiagnosticsVisibility.compact);
 
-    toolService = ToolService();
-    taskService = TaskService(toolService: toolService);
-    workspaceService = WorkspaceService();
+    final sandbox = WorkspaceSandbox();
+    toolService = ToolService(workspaceSandbox: sandbox);
+    taskService = TaskService(toolService: toolService, sandbox: sandbox);
+    workspaceService = WorkspaceService(sandbox: sandbox);
     chatLibrary = ChatLibraryService(
       preferencesService: preferences,
       databasePath: ':memory:',
@@ -62,16 +62,14 @@ void main() {
       workspaceService: workspaceService,
       preferencesService: preferences,
     );
-
-    serviceProvider.registerSingleton<PreferencesService>(preferences);
-    serviceProvider.registerSingleton<ToolService>(toolService);
-    serviceProvider.registerSingleton<ChatTabsService>(tabs);
   });
 
   tearDown(() async {
-    await serviceProvider.dispose();
+    await tabs.dispose();
     await promptLibrary.dispose();
     await chatLibrary.dispose();
+    workspaceService.dispose();
+    preferences.dispose();
     if (await tempDir.exists()) {
       await tempDir.delete(recursive: true);
     }
@@ -87,7 +85,7 @@ void main() {
     );
     chat.insertMessage('A short user message.', MessageRole.user);
 
-    await tester.pumpWidget(_chatViewApp(tabs));
+    await tester.pumpWidget(_chatViewApp(tabs, preferences, toolService));
     await tester.pump();
     await tester.pump();
 
@@ -101,7 +99,7 @@ void main() {
     final chat = tabs.activeChat!;
     chat.insertMessage('A short user message.', MessageRole.user);
 
-    await tester.pumpWidget(_chatViewApp(tabs));
+    await tester.pumpWidget(_chatViewApp(tabs, preferences, toolService));
     await tester.pump();
     await tester.pump();
 
@@ -114,19 +112,25 @@ void main() {
     final chat = tabs.activeChat!;
     chat.insertMessage('A short user message.', MessageRole.user);
 
-    await tester.pumpWidget(_chatViewBoxApp(tabs, width: 190, height: 1));
+    await tester.pumpWidget(
+      _chatViewBoxApp(tabs, preferences, toolService, width: 190, height: 1),
+    );
     await tester.pump();
     await tester.pump();
 
     expect(tester.takeException(), isNull);
 
-    await tester.pumpWidget(_chatViewBoxApp(tabs, width: 1, height: 1));
+    await tester.pumpWidget(
+      _chatViewBoxApp(tabs, preferences, toolService, width: 1, height: 1),
+    );
     await tester.pump();
     await tester.pump();
 
     expect(tester.takeException(), isNull);
 
-    await tester.pumpWidget(_chatViewBoxApp(tabs, width: 0, height: 0));
+    await tester.pumpWidget(
+      _chatViewBoxApp(tabs, preferences, toolService, width: 0, height: 0),
+    );
     await tester.pump();
     await tester.pump();
 
@@ -149,7 +153,7 @@ void main() {
         ),
     ]);
 
-    await tester.pumpWidget(_chatViewApp(tabs));
+    await tester.pumpWidget(_chatViewApp(tabs, preferences, toolService));
     await tester.pumpAndSettle();
 
     expect(_isVisible(tester, find.byKey(const ValueKey('message_m39'))), true);
@@ -188,7 +192,7 @@ void main() {
         ),
     ]);
 
-    await tester.pumpWidget(_chatViewApp(tabs));
+    await tester.pumpWidget(_chatViewApp(tabs, preferences, toolService));
     await tester.pumpAndSettle();
 
     final listView = tester.widget<ListView>(find.byType(ListView));
@@ -219,7 +223,7 @@ void main() {
         ),
     ]);
 
-    await tester.pumpWidget(_chatViewApp(tabs));
+    await tester.pumpWidget(_chatViewApp(tabs, preferences, toolService));
     await tester.pumpAndSettle();
     await tester.drag(find.byType(ListView), const Offset(0, 220));
     await tester.pumpAndSettle();
@@ -251,7 +255,7 @@ void main() {
         ),
     ]);
 
-    await tester.pumpWidget(_activeChatViewApp(tabs));
+    await tester.pumpWidget(_activeChatViewApp(tabs, preferences, toolService));
     await tester.pumpAndSettle();
     await tester.drag(find.byType(ListView), const Offset(0, 240));
     await tester.pumpAndSettle();
@@ -300,7 +304,7 @@ void main() {
         ),
     ]);
 
-    await tester.pumpWidget(_chatViewApp(tabs));
+    await tester.pumpWidget(_chatViewApp(tabs, preferences, toolService));
     await tester.pumpAndSettle();
     await tester.drag(find.byType(ListView), const Offset(0, 240));
     await tester.pumpAndSettle();
@@ -345,7 +349,7 @@ void main() {
       ),
     ]);
 
-    await tester.pumpWidget(_chatViewApp(tabs));
+    await tester.pumpWidget(_chatViewApp(tabs, preferences, toolService));
     await tester.pumpAndSettle();
 
     expect(find.text('09/05/26 04:07'), findsOneWidget);
@@ -360,7 +364,7 @@ void main() {
       stderrSub: const Stream<List<int>>.empty().listen((_) {}),
     );
 
-    await tester.pumpWidget(_chatViewApp(tabs));
+    await tester.pumpWidget(_chatViewApp(tabs, preferences, toolService));
     await tester.pumpAndSettle();
 
     final field = find.byType(TextField);
@@ -376,15 +380,28 @@ void main() {
   });
 }
 
-Widget _chatViewApp(ChatTabsService tabs) {
+Widget _chatViewApp(
+  ChatTabsService tabs,
+  PreferencesService preferences,
+  ToolService toolService,
+) {
   return MaterialApp(
     home: Scaffold(
-      body: ChatView(chat: tabs.activeChat!, onOpenWorkspace: () {}),
+      body: ChatView(
+        chat: tabs.activeChat!,
+        preferencesService: preferences,
+        toolService: toolService,
+        onOpenWorkspace: () {},
+      ),
     ),
   );
 }
 
-Widget _activeChatViewApp(ChatTabsService tabs) {
+Widget _activeChatViewApp(
+  ChatTabsService tabs,
+  PreferencesService preferences,
+  ToolService toolService,
+) {
   return MaterialApp(
     home: Scaffold(
       body: AnimatedBuilder(
@@ -395,6 +412,8 @@ Widget _activeChatViewApp(ChatTabsService tabs) {
           return ChatView(
             key: ValueKey('chat_${chat.tabId}'),
             chat: chat,
+            preferencesService: preferences,
+            toolService: toolService,
             onOpenWorkspace: () {},
           );
         },
@@ -404,7 +423,9 @@ Widget _activeChatViewApp(ChatTabsService tabs) {
 }
 
 Widget _chatViewBoxApp(
-  ChatTabsService tabs, {
+  ChatTabsService tabs,
+  PreferencesService preferences,
+  ToolService toolService, {
   required double width,
   required double height,
 }) {
@@ -413,7 +434,12 @@ Widget _chatViewBoxApp(
       body: SizedBox(
         width: width,
         height: height,
-        child: ChatView(chat: tabs.activeChat!, onOpenWorkspace: () {}),
+        child: ChatView(
+          chat: tabs.activeChat!,
+          preferencesService: preferences,
+          toolService: toolService,
+          onOpenWorkspace: () {},
+        ),
       ),
     ),
   );

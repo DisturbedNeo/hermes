@@ -9,6 +9,8 @@ import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/keyboard_shortcuts.dart';
+import 'package:hermes/core/services/preferences_service.dart';
+import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/ui/chat/message/bubble_surface.dart';
 import 'package:hermes/ui/chat/message/message_actions.dart';
 import 'package:hermes/ui/chat/composer.dart';
@@ -22,11 +24,15 @@ import 'package:hermes/ui/chat/workspace_bar.dart';
 
 class ChatView extends StatefulWidget {
   final ChatService chat;
+  final PreferencesService preferencesService;
+  final ToolService toolService;
   final VoidCallback onOpenWorkspace;
 
   const ChatView({
     super.key,
     required this.chat,
+    required this.preferencesService,
+    required this.toolService,
     required this.onOpenWorkspace,
   });
 
@@ -247,12 +253,16 @@ class _ChatViewState extends State<ChatView> {
     final footer = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const DiagnosticsBar(),
+        DiagnosticsBar(
+          diagnostics: chat.serverManager.diagnostics,
+          preferencesService: widget.preferencesService,
+        ),
         ValueListenableBuilder<LlamaServerHandle?>(
           valueListenable: chat.serverManager.handle,
           builder: (_, handle, _) {
             return Composer(
               chat: chat,
+              toolService: widget.toolService,
               enabled: handle != null,
               focusNode: _composerFocusNode,
             );

@@ -9,8 +9,8 @@ import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/services/subagent_service.dart';
 
 class ToolService {
-  ToolService({WorkspaceSandbox? workspaceSandbox})
-    : _workspaceSandbox = workspaceSandbox ?? WorkspaceSandbox();
+  ToolService({required WorkspaceSandbox workspaceSandbox})
+    : _workspaceSandbox = workspaceSandbox;
 
   final WorkspaceSandbox _workspaceSandbox;
   SubagentService? _subagentService;

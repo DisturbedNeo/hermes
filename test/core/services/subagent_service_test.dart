@@ -7,6 +7,7 @@ import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/subagent_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
+import 'package:hermes/core/services/workspace_sandbox.dart';
 
 void main() {
   test('read_file request mode returns only assistant content', () async {
@@ -24,7 +25,7 @@ void main() {
         reasoning: 'internal extraction reasoning',
       ),
     );
-    final service = ToolService()
+    final service = ToolService(workspaceSandbox: WorkspaceSandbox())
       ..setSubagentService(SubagentService(chatClientFactory: () => client));
 
     final result = await service.execute(
@@ -59,7 +60,7 @@ void main() {
 
       await File('${root.path}/notes.txt').writeAsString('visible facts');
 
-      final service = ToolService()
+      final service = ToolService(workspaceSandbox: WorkspaceSandbox())
         ..setSubagentService(
           SubagentService(
             chatClientFactory: () => _FakeChatClient(

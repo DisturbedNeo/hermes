@@ -1,13 +1,12 @@
 import 'dart:io';
 
 import 'package:hermes/core/services/preferences_service.dart';
-import 'package:hermes/core/services/service_provider.dart';
 import 'package:path/path.dart' as p;
 
-Future<Map<String, File>> getModels() async {
-  final modelsDirectoryPath = await serviceProvider
-      .get<PreferencesService>()
-      .getModelsDirectory();
+Future<Map<String, File>> getModels(
+  PreferencesService preferencesService,
+) async {
+  final modelsDirectoryPath = await preferencesService.getModelsDirectory();
 
   if (modelsDirectoryPath == null) {
     return {};

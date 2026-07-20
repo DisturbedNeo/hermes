@@ -10,6 +10,7 @@ import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
+import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
@@ -25,7 +26,11 @@ void main() {
         displayName: 'Workspace',
         lastOpenedAt: DateTime(2026, 1, 1),
       );
-      service = TaskService(toolService: ToolService());
+      final sandbox = WorkspaceSandbox();
+      service = TaskService(
+        toolService: ToolService(workspaceSandbox: sandbox),
+        sandbox: sandbox,
+      );
     });
 
     tearDown(() async {

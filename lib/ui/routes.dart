@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:hermes/ui/chat/chat.dart';
 
 class AppRoutes {
   AppRoutes._();
@@ -24,10 +23,13 @@ class AppNavigator {
   }
 }
 
-Route<dynamic> generateRoute(RouteSettings settings) {
+Route<dynamic> generateRoute(
+  RouteSettings settings, {
+  required WidgetBuilder homeBuilder,
+}) {
   switch (settings.name) {
     case AppRoutes.home:
-      return _buildChatRoute(settings);
+      return _buildHomeRoute(settings, homeBuilder);
     default:
       return _buildUnknownRoute(settings);
   }
@@ -65,7 +67,10 @@ class _UnknownRoutePage extends StatelessWidget {
   }
 }
 
-Route<dynamic> _buildChatRoute(RouteSettings settings) => PageRouteBuilder(
+Route<dynamic> _buildHomeRoute(
+  RouteSettings settings,
+  WidgetBuilder homeBuilder,
+) => PageRouteBuilder(
   settings: settings,
-  pageBuilder: (context, animation, secondaryAnimation) => const Chat(),
+  pageBuilder: (context, animation, secondaryAnimation) => homeBuilder(context),
 );

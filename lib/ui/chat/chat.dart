@@ -4,10 +4,14 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:hermes/core/helpers/responsive.dart';
+import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/keyboard_shortcuts.dart';
-import 'package:hermes/core/services/service_provider.dart';
+import 'package:hermes/core/services/preferences_service.dart';
+import 'package:hermes/core/services/system_prompt_library_service.dart';
+import 'package:hermes/core/services/tool_service.dart';
+import 'package:hermes/core/services/workspace_service.dart';
 import 'package:hermes/ui/overlays/chat_list.dart';
 import 'package:hermes/ui/chat/chat_view.dart';
 import 'package:hermes/ui/chat/model_picker.dart';
@@ -18,7 +22,22 @@ import 'package:hermes/ui/overlays/workspace_panel.dart';
 enum _ChatAppBarAction { model, prompts, workspace, settings }
 
 class Chat extends StatefulWidget {
-  const Chat({super.key});
+  const Chat({
+    super.key,
+    required this.tabs,
+    required this.chatLibrary,
+    required this.systemPromptLibrary,
+    required this.workspaceService,
+    required this.preferencesService,
+    required this.toolService,
+  });
+
+  final ChatTabsService tabs;
+  final ChatLibraryService chatLibrary;
+  final SystemPromptLibraryService systemPromptLibrary;
+  final WorkspaceService workspaceService;
+  final PreferencesService preferencesService;
+  final ToolService toolService;
 
   @override
   State<StatefulWidget> createState() => _ChatState();
@@ -29,8 +48,9 @@ class _ChatState extends State<Chat> {
   static const double _tinyViewportHeight = 56;
   static const double _tinyViewportWidth = 120;
 
-  final _tabs = serviceProvider.get<ChatTabsService>();
   final _shortcuts = KeyboardShortcutsService();
+
+  ChatTabsService get _tabs => widget.tabs;
 
   var isChatListOpen = false;
   var isSettingsOpen = false;
@@ -143,7 +163,7 @@ class _ChatState extends State<Chat> {
 
   List<Widget> _fullAppBarActions() {
     return [
-      const ModelPicker(),
+      ModelPicker(tabs: _tabs, preferencesService: widget.preferencesService),
       IconButton(
         tooltip: 'System prompts',
         icon: const Icon(Icons.display_settings_outlined),
@@ -167,7 +187,8 @@ class _ChatState extends State<Chat> {
 
   List<Widget> _compactAppBarActions({required bool showModelPicker}) {
     return [
-      if (showModelPicker) const ModelPicker(),
+      if (showModelPicker)
+        ModelPicker(tabs: _tabs, preferencesService: widget.preferencesService),
       PopupMenuButton<_ChatAppBarAction>(
         tooltip: 'More',
         icon: const Icon(Icons.more_vert),
@@ -244,7 +265,10 @@ class _ChatState extends State<Chat> {
         title: const Text('Model'),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 360),
-          child: const ModelPicker(),
+          child: ModelPicker(
+            tabs: _tabs,
+            preferencesService: widget.preferencesService,
+          ),
         ),
         actions: [
           TextButton(
@@ -288,6 +312,8 @@ class _ChatState extends State<Chat> {
                             : ChatView(
                                 key: ValueKey('chat_${activeChat.tabId}'),
                                 chat: activeChat,
+                                preferencesService: widget.preferencesService,
+                                toolService: widget.toolService,
                                 onOpenWorkspace: _selectWorkspaceForActiveChat,
                               ),
                       ),
@@ -321,6 +347,8 @@ class _ChatState extends State<Chat> {
                             ? double.infinity
                             : 360,
                         child: ChatList(
+                          tabs: _tabs,
+                          library: widget.chatLibrary,
                           onOpenChat: _openSavedChatInCurrentTab,
                           onOpenChatInNewTab: _openSavedChatInNewTab,
                           onNewChat: () {
@@ -335,6 +363,8 @@ class _ChatState extends State<Chat> {
                         open: isPromptLibraryOpen,
                         width: 440,
                         child: SystemPromptLibraryPanel(
+                          tabs: _tabs,
+                          library: widget.systemPromptLibrary,
                           onPromptLoaded: () {
                             if (mounted) {
                               setState(() => isPromptLibraryOpen = false);
@@ -349,6 +379,7 @@ class _ChatState extends State<Chat> {
                         width: 420,
                         child: WorkspacePanel(
                           chat: activeChat,
+                          workspaceService: widget.workspaceService,
                           onSelectWorkspace: _selectWorkspaceForActiveChat,
                         ),
                       ),
@@ -359,7 +390,9 @@ class _ChatState extends State<Chat> {
                         width: Responsive.isNarrow(context)
                             ? double.infinity
                             : 640,
-                        child: const Settings(),
+                        child: Settings(
+                          preferencesService: widget.preferencesService,
+                        ),
                       ),
                     ],
                   ),

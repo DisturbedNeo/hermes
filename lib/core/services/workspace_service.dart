@@ -14,11 +14,8 @@ class WorkspaceService extends ChangeNotifier {
   final WorkspaceSandbox sandbox;
   final Future<SharedPreferences> _prefs;
 
-  WorkspaceService({
-    WorkspaceSandbox? sandbox,
-    Future<SharedPreferences>? prefs,
-  }) : sandbox = sandbox ?? WorkspaceSandbox(),
-       _prefs = prefs ?? SharedPreferences.getInstance();
+  WorkspaceService({required this.sandbox, Future<SharedPreferences>? prefs})
+    : _prefs = prefs ?? SharedPreferences.getInstance();
 
   Future<WorkspaceAttachment> attach(String folderPath) async {
     final canonical = await sandbox.canonicalRoot(folderPath);

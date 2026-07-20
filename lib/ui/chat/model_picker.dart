@@ -5,12 +5,18 @@ import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/core/helpers/models_directory.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
-import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/ui/chat/message/dot_pulse.dart';
 import 'package:hermes/ui/model_configuration/model_configuration.dart';
 
 class ModelPicker extends StatefulWidget {
-  const ModelPicker({super.key});
+  const ModelPicker({
+    super.key,
+    required this.tabs,
+    required this.preferencesService,
+  });
+
+  final ChatTabsService tabs;
+  final PreferencesService preferencesService;
 
   @override
   State<ModelPicker> createState() => _ModelPickerState();
@@ -23,8 +29,8 @@ class _ModelPickerState extends State<ModelPicker> {
   bool _loading = true;
   String? _error;
 
-  final _tabs = serviceProvider.get<ChatTabsService>();
-  final _preferencesService = serviceProvider.get<PreferencesService>();
+  ChatTabsService get _tabs => widget.tabs;
+  PreferencesService get _preferencesService => widget.preferencesService;
 
   @override
   void initState() {
@@ -58,7 +64,7 @@ class _ModelPickerState extends State<ModelPicker> {
       _error = null;
     });
     try {
-      final models = await getModels();
+      final models = await getModels(_preferencesService);
       if (!mounted) return;
       setState(() {
         _models = models;
@@ -145,7 +151,7 @@ class _ModelPickerState extends State<ModelPicker> {
                   label: _selected != null
                       ? 'Model: $_selected'
                       : 'Select a model',
-                  
+
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
                       isExpanded: true,

@@ -5,18 +5,19 @@ import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
-import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/core/services/workspace_service.dart';
 import 'package:hermes/ui/common/state_display.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class WorkspacePanel extends StatefulWidget {
   final ChatService? chat;
+  final WorkspaceService workspaceService;
   final FutureOr<void> Function() onSelectWorkspace;
 
   const WorkspacePanel({
     super.key,
     required this.chat,
+    required this.workspaceService,
     required this.onSelectWorkspace,
   });
 
@@ -29,8 +30,7 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
   static const double _compactBodyHeight = 160;
   static const double _compactActionWidth = 240;
 
-  final WorkspaceService _workspaceService = serviceProvider
-      .get<WorkspaceService>();
+  WorkspaceService get _workspaceService => widget.workspaceService;
 
   List<WorkspaceAttachment> _recent = const [];
   List<Map<String, dynamic>> _entries = const [];

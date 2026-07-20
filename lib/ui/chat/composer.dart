@@ -8,7 +8,6 @@ import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/core/helpers/responsive.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
-import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/ui/chat/tool_selector.dart';
 
@@ -16,12 +15,14 @@ enum ComposerMode { send, generate, cont, cancel }
 
 class Composer extends StatefulWidget {
   final ChatService chat;
+  final ToolService toolService;
   final bool enabled;
   final FocusNode? focusNode;
 
   const Composer({
     super.key,
     required this.chat,
+    required this.toolService,
     required this.enabled,
     this.focusNode,
   });
@@ -31,7 +32,7 @@ class Composer extends StatefulWidget {
 }
 
 class _ComposerState extends State<Composer> {
-  final _toolService = serviceProvider.get<ToolService>();
+  ToolService get _toolService => widget.toolService;
 
   late final TextEditingController _controller;
   late FocusNode _focusNode;

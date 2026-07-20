@@ -5,9 +5,9 @@ import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
-import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
+import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/services/workspace_service.dart';
 import 'package:hermes/ui/chat/chat.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,15 +19,17 @@ void main() {
   late ChatLibraryService chatLibrary;
   late SystemPromptLibraryService promptLibrary;
   late ChatTabsService tabs;
+  late ToolService toolService;
+  late WorkspaceService workspaceService;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
-    await serviceProvider.dispose();
 
     preferences = PreferencesService();
-    final toolService = ToolService();
-    final workspaceService = WorkspaceService();
-    final taskService = TaskService(toolService: toolService);
+    final sandbox = WorkspaceSandbox();
+    toolService = ToolService(workspaceSandbox: sandbox);
+    workspaceService = WorkspaceService(sandbox: sandbox);
+    final taskService = TaskService(toolService: toolService, sandbox: sandbox);
     chatLibrary = ChatLibraryService(
       preferencesService: preferences,
       databasePath: ':memory:',
@@ -45,27 +47,33 @@ void main() {
       workspaceService: workspaceService,
       preferencesService: preferences,
     );
-
-    serviceProvider.registerSingleton<PreferencesService>(preferences);
-    serviceProvider.registerSingleton<ToolService>(toolService);
-    serviceProvider.registerSingleton<WorkspaceService>(workspaceService);
-    serviceProvider.registerSingleton<ChatLibraryService>(chatLibrary);
-    serviceProvider.registerSingleton<SystemPromptLibraryService>(
-      promptLibrary,
-    );
-    serviceProvider.registerSingleton<ChatTabsService>(tabs);
   });
 
   tearDown(() async {
-    await serviceProvider.dispose();
+    await tabs.dispose();
+    await promptLibrary.dispose();
+    await chatLibrary.dispose();
+    workspaceService.dispose();
+    preferences.dispose();
   });
+
+  Widget app() => MaterialApp(
+    home: Chat(
+      tabs: tabs,
+      chatLibrary: chatLibrary,
+      systemPromptLibrary: promptLibrary,
+      workspaceService: workspaceService,
+      preferencesService: preferences,
+      toolService: toolService,
+    ),
+  );
 
   testWidgets('lays out when the scaffold body is smaller than the tab strip', (
     tester,
   ) async {
     await _setViewport(tester, const Size(190, 74));
 
-    await tester.pumpWidget(const MaterialApp(home: Chat()));
+    await tester.pumpWidget(app());
     await tester.pump();
     await tester.pump();
 
@@ -77,14 +85,14 @@ void main() {
   ) async {
     await _setViewport(tester, const Size(1, 1));
 
-    await tester.pumpWidget(const MaterialApp(home: Chat()));
+    await tester.pumpWidget(app());
     await tester.pump();
     await tester.pump();
 
     expect(tester.takeException(), isNull);
 
     await _setViewport(tester, const Size(0, 0));
-    await tester.pumpWidget(const MaterialApp(home: Chat()));
+    await tester.pumpWidget(app());
     await tester.pump();
     await tester.pump();
 

@@ -51,8 +51,8 @@ class ChatService extends ChangeNotifier implements Disposable {
   final ChatStream chatStream = ChatStream<ChatToken>();
 
   final ToolService _toolService;
-  late final TaskService _taskService;
-  late final ProjectService _projectService;
+  final TaskService _taskService;
+  final ProjectService _projectService;
   final ChatLibraryService _chatLibrary;
   final WorkspaceService _workspaceService;
   final PreferencesService _preferencesService;
@@ -111,8 +111,8 @@ class ChatService extends ChangeNotifier implements Disposable {
     String? tabId,
     required this.serverManager,
     required ToolService toolService,
-    TaskService? taskService,
-    ProjectService? projectService,
+    required TaskService taskService,
+    required ProjectService projectService,
     required ChatLibraryService chatLibrary,
     required WorkspaceService workspaceService,
     required PreferencesService preferencesService,
@@ -121,12 +121,9 @@ class ChatService extends ChangeNotifier implements Disposable {
        _toolService = toolService,
        _chatLibrary = chatLibrary,
        _workspaceService = workspaceService,
-       _preferencesService = preferencesService {
-    final resolvedTaskService =
-        taskService ?? TaskService(toolService: toolService);
-    _taskService = resolvedTaskService;
-    _projectService =
-        projectService ?? ProjectService(taskService: resolvedTaskService);
+       _preferencesService = preferencesService,
+       _taskService = taskService,
+       _projectService = projectService {
     currentSystemPromptSnapshot = initialSystemPromptSnapshot;
     messageStore.setMessages([systemPrompt]);
     _contextEstimateScheduler = ThrottledScheduler(

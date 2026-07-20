@@ -22,6 +22,7 @@ import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
+import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/services/workspace_service.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -45,15 +46,19 @@ void main() {
         databasePath: path.join(tempDir.path, 'hermes.db'),
       );
       serverManager = LlamaServerManager();
-      final toolService = ToolService();
-      final taskService = TaskService(toolService: toolService);
+      final sandbox = WorkspaceSandbox();
+      final toolService = ToolService(workspaceSandbox: sandbox);
+      final taskService = TaskService(
+        toolService: toolService,
+        sandbox: sandbox,
+      );
       chat = ChatService(
         serverManager: serverManager,
         toolService: toolService,
         taskService: taskService,
         projectService: ProjectService(taskService: taskService),
         chatLibrary: chatLibrary,
-        workspaceService: WorkspaceService(),
+        workspaceService: WorkspaceService(sandbox: sandbox),
         preferencesService: preferences,
         initialSystemPromptSnapshot: const SystemPromptSnapshot(
           id: 'prompt-1',
@@ -273,7 +278,7 @@ void main() {
       await chat.attachWorkspace(tempDir.path);
       chat.activeProject = _projectDocument();
       await ProjectService(
-        taskService: TaskService(toolService: ToolService()),
+        taskService: _createTaskService(),
       ).storage.saveSnapshot(tempDir.path, chat.activeProject!);
 
       await chat.send('/continue-project');
@@ -581,7 +586,7 @@ void main() {
         );
         expect(
           (await ProjectService(
-            taskService: TaskService(toolService: ToolService()),
+            taskService: _createTaskService(),
           ).storage.listProjects(tempDir.path)),
           hasLength(1),
         );
@@ -630,15 +635,19 @@ void main() {
         preferencesService: preferences,
         databasePath: databasePath,
       );
-      final toolService = ToolService();
-      final taskService = TaskService(toolService: toolService);
+      final sandbox = WorkspaceSandbox();
+      final toolService = ToolService(workspaceSandbox: sandbox);
+      final taskService = TaskService(
+        toolService: toolService,
+        sandbox: sandbox,
+      );
       tabs = ChatTabsService(
         chatLibrary: chatLibrary,
         systemPromptLibrary: promptLibrary,
         toolService: toolService,
         taskService: taskService,
         projectService: ProjectService(taskService: taskService),
-        workspaceService: WorkspaceService(),
+        workspaceService: WorkspaceService(sandbox: sandbox),
         preferencesService: preferences,
       );
     });
@@ -740,7 +749,7 @@ void main() {
         chatSessionId: 'deleted_chat',
       );
       await ProjectService(
-        taskService: TaskService(toolService: ToolService()),
+        taskService: _createTaskService(),
       ).storage.saveSnapshot(tempDir.path, orphaned);
       final projectDir = Directory(
         path.join(tempDir.path, '.agent', 'projects', 'project_orphaned'),
@@ -753,6 +762,14 @@ void main() {
       expect(projectDir.existsSync(), isFalse);
     });
   });
+}
+
+TaskService _createTaskService() {
+  final sandbox = WorkspaceSandbox();
+  return TaskService(
+    toolService: ToolService(workspaceSandbox: sandbox),
+    sandbox: sandbox,
+  );
 }
 
 Map<String, dynamic> _planJson({required String title}) {

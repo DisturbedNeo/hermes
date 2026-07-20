@@ -9,6 +9,7 @@ import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/prompt_assembler.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
+import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/services/workspace_service.dart';
 import 'package:hermes/ui/overlays/system_prompt_library_panel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,15 +30,16 @@ void main() {
       databasePath: ':memory:',
     );
     promptLibrary = _FakeSystemPromptLibraryService();
-    final toolService = ToolService();
-    final taskService = TaskService(toolService: toolService);
+    final sandbox = WorkspaceSandbox();
+    final toolService = ToolService(workspaceSandbox: sandbox);
+    final taskService = TaskService(toolService: toolService, sandbox: sandbox);
     tabs = ChatTabsService(
       chatLibrary: chatLibrary,
       systemPromptLibrary: promptLibrary,
       toolService: toolService,
       taskService: taskService,
       projectService: ProjectService(taskService: taskService),
-      workspaceService: WorkspaceService(),
+      workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,
     );
   });
@@ -46,6 +48,7 @@ void main() {
     await tabs.dispose();
     await chatLibrary.dispose();
     await promptLibrary.dispose();
+    preferences.dispose();
   });
 
   testWidgets('creates a preset from the panel', (tester) async {

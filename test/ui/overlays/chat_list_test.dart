@@ -6,9 +6,9 @@ import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
-import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
+import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/services/workspace_service.dart';
 import 'package:hermes/ui/overlays/chat_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -23,11 +23,11 @@ void main() {
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
-    await serviceProvider.dispose();
 
     preferences = PreferencesService();
-    final toolService = ToolService();
-    final taskService = TaskService(toolService: toolService);
+    final sandbox = WorkspaceSandbox();
+    final toolService = ToolService(workspaceSandbox: sandbox);
+    final taskService = TaskService(toolService: toolService, sandbox: sandbox);
     chatLibrary = _FakeChatLibraryService(preferencesService: preferences);
     promptLibrary = SystemPromptLibraryService(
       preferencesService: preferences,
@@ -39,46 +39,58 @@ void main() {
       toolService: toolService,
       taskService: taskService,
       projectService: ProjectService(taskService: taskService),
-      workspaceService: WorkspaceService(),
+      workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,
     );
-
-    serviceProvider.registerSingleton<ChatLibraryService>(chatLibrary);
-    serviceProvider.registerSingleton<ChatTabsService>(tabs);
   });
 
   tearDown(() async {
-    await serviceProvider.dispose();
+    await tabs.dispose();
+    await chatLibrary.dispose();
     await promptLibrary.dispose();
+    preferences.dispose();
   });
 
   testWidgets('lays out in the reported short chat list panel', (tester) async {
-    await tester.pumpWidget(_panelApp(width: 412, height: 99));
+    await tester.pumpWidget(
+      _panelApp(width: 412, height: 99, tabs: tabs, library: chatLibrary),
+    );
     await _pumpAsyncWork(tester);
 
     expect(tester.takeException(), isNull);
   });
 
   testWidgets('does not overflow at pathological panel sizes', (tester) async {
-    await tester.pumpWidget(_panelApp(width: 1, height: 1));
+    await tester.pumpWidget(
+      _panelApp(width: 1, height: 1, tabs: tabs, library: chatLibrary),
+    );
     await _pumpAsyncWork(tester);
 
     expect(tester.takeException(), isNull);
 
-    await tester.pumpWidget(_panelApp(width: 0, height: 0));
+    await tester.pumpWidget(
+      _panelApp(width: 0, height: 0, tabs: tabs, library: chatLibrary),
+    );
     await _pumpAsyncWork(tester);
 
     expect(tester.takeException(), isNull);
   });
 }
 
-Widget _panelApp({required double width, required double height}) {
+Widget _panelApp({
+  required double width,
+  required double height,
+  required ChatTabsService tabs,
+  required ChatLibraryService library,
+}) {
   return MaterialApp(
     home: Scaffold(
       body: SizedBox(
         width: width,
         height: height,
         child: ChatList(
+          tabs: tabs,
+          library: library,
           onOpenChat: (_) {},
           onOpenChatInNewTab: (_) {},
           onNewChat: () {},

@@ -6,15 +6,18 @@ import 'package:hermes/ui/common/state_display.dart';
 import 'package:hermes/core/models/saved_chat.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
-import 'package:hermes/core/services/service_provider.dart';
 
 class ChatList extends StatefulWidget {
   final FutureOr<void> Function(String chatId) onOpenChat;
   final FutureOr<void> Function(String chatId) onOpenChatInNewTab;
   final FutureOr<void> Function() onNewChat;
+  final ChatTabsService tabs;
+  final ChatLibraryService library;
 
   const ChatList({
     super.key,
+    required this.tabs,
+    required this.library,
     required this.onOpenChat,
     required this.onOpenChatInNewTab,
     required this.onNewChat,
@@ -32,9 +35,10 @@ class _ChatListState extends State<ChatList> {
   static const double _tinyPanelWidth = 80;
   static const double _compactHeaderWidth = 220;
 
-  final _tabs = serviceProvider.get<ChatTabsService>();
-  final _library = serviceProvider.get<ChatLibraryService>();
   final _searchController = TextEditingController();
+
+  ChatTabsService get _tabs => widget.tabs;
+  ChatLibraryService get _library => widget.library;
 
   List<SavedChat> _chats = const [];
   bool _loading = true;

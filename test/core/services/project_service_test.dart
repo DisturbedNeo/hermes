@@ -11,6 +11,7 @@ import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
+import 'package:hermes/core/services/workspace_sandbox.dart';
 
 void main() {
   group('ProjectService orchestrator runner', () {
@@ -25,7 +26,11 @@ void main() {
         displayName: 'Workspace',
         lastOpenedAt: DateTime(2026, 1, 1),
       );
-      final taskService = TaskService(toolService: ToolService());
+      final sandbox = WorkspaceSandbox();
+      final taskService = TaskService(
+        toolService: ToolService(workspaceSandbox: sandbox),
+        sandbox: sandbox,
+      );
       service = ProjectService(taskService: taskService);
     });
 

@@ -5,11 +5,13 @@ import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/services/preferences_service.dart';
-import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/ui/model_configuration/slider_control.dart';
 
 class Settings extends StatefulWidget {
-  const Settings({super.key});
+  const Settings({super.key, required this.preferencesService});
+
+  final PreferencesService preferencesService;
+
   @override
   State<Settings> createState() => _SettingsState();
 }
@@ -23,8 +25,7 @@ class _SettingsState extends State<Settings> {
   CompactionSettings _compactionSettings = const CompactionSettings();
   TaskSystemSettings _taskSystemSettings = const TaskSystemSettings();
 
-  final PreferencesService preferencesService = serviceProvider
-      .get<PreferencesService>();
+  PreferencesService get preferencesService => widget.preferencesService;
 
   void loadSettings() async {
     final llamaCppDir = await preferencesService.getLlamaCppDirectory();

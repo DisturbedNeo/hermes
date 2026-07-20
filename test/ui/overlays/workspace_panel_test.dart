@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/workspace.dart';
-import 'package:hermes/core/services/service_provider.dart';
+import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/services/workspace_service.dart';
 import 'package:hermes/ui/overlays/workspace_panel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,16 +11,12 @@ void main() {
 
   late _FakeWorkspaceService workspaceService;
 
-  setUp(() async {
+  setUp(() {
     SharedPreferences.setMockInitialValues({});
-    await serviceProvider.dispose();
     workspaceService = _FakeWorkspaceService();
-    serviceProvider.registerSingleton<WorkspaceService>(workspaceService);
   });
 
-  tearDown(() async {
-    await serviceProvider.dispose();
-  });
+  tearDown(() => workspaceService.dispose());
 
   testWidgets('lays out in the reported short workspace panel', (tester) async {
     workspaceService.recent = [
@@ -31,32 +27,46 @@ void main() {
       ),
     ];
 
-    await tester.pumpWidget(_panelApp(width: 268, height: 109));
+    await tester.pumpWidget(
+      _panelApp(width: 268, height: 109, workspaceService: workspaceService),
+    );
     await _pumpAsyncWork(tester);
 
     expect(tester.takeException(), isNull);
   });
 
   testWidgets('does not overflow at pathological panel sizes', (tester) async {
-    await tester.pumpWidget(_panelApp(width: 1, height: 1));
+    await tester.pumpWidget(
+      _panelApp(width: 1, height: 1, workspaceService: workspaceService),
+    );
     await _pumpAsyncWork(tester);
 
     expect(tester.takeException(), isNull);
 
-    await tester.pumpWidget(_panelApp(width: 0, height: 0));
+    await tester.pumpWidget(
+      _panelApp(width: 0, height: 0, workspaceService: workspaceService),
+    );
     await _pumpAsyncWork(tester);
 
     expect(tester.takeException(), isNull);
   });
 }
 
-Widget _panelApp({required double width, required double height}) {
+Widget _panelApp({
+  required double width,
+  required double height,
+  required WorkspaceService workspaceService,
+}) {
   return MaterialApp(
     home: Scaffold(
       body: SizedBox(
         width: width,
         height: height,
-        child: WorkspacePanel(chat: null, onSelectWorkspace: () {}),
+        child: WorkspacePanel(
+          chat: null,
+          workspaceService: workspaceService,
+          onSelectWorkspace: () {},
+        ),
       ),
     ),
   );
@@ -68,6 +78,8 @@ Future<void> _pumpAsyncWork(WidgetTester tester) async {
 }
 
 class _FakeWorkspaceService extends WorkspaceService {
+  _FakeWorkspaceService() : super(sandbox: WorkspaceSandbox());
+
   List<WorkspaceAttachment> recent = const [];
 
   @override

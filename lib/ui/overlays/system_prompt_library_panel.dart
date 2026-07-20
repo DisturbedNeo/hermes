@@ -5,20 +5,19 @@ import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/prompt_assembler.dart';
-import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/ui/common/state_display.dart';
 
 class SystemPromptLibraryPanel extends StatefulWidget {
   final VoidCallback? onPromptLoaded;
-  final ChatTabsService? tabs;
-  final SystemPromptLibraryService? library;
+  final ChatTabsService tabs;
+  final SystemPromptLibraryService library;
 
   const SystemPromptLibraryPanel({
     super.key,
     this.onPromptLoaded,
-    this.tabs,
-    this.library,
+    required this.tabs,
+    required this.library,
   });
 
   @override
@@ -47,9 +46,8 @@ class _SystemPromptLibraryPanelState extends State<SystemPromptLibraryPanel> {
   @override
   void initState() {
     super.initState();
-    _tabs = widget.tabs ?? serviceProvider.get<ChatTabsService>();
-    _library =
-        widget.library ?? serviceProvider.get<SystemPromptLibraryService>();
+    _tabs = widget.tabs;
+    _library = widget.library;
     _presetSearchController.addListener(_handlePresetSearchChanged);
     _moduleSearchController.addListener(_handleModuleSearchChanged);
     _library.addListener(_refresh);

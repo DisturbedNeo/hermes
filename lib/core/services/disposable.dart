@@ -1,7 +1,7 @@
 /// Abstract base class for services that require cleanup on shutdown.
 ///
-/// The [ServiceProvider] calls [dispose] on all registered singleton services
-/// in reverse registration order during application shutdown. Implementations
+/// The application dependency scope calls [dispose] on owned services in
+/// reverse construction order during application shutdown. Implementations
 /// should release resources such as listeners, timers, database connections,
 /// and network clients.
 ///

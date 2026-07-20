@@ -319,15 +319,13 @@ const ToolDefinition _finaliseTaskCreationToolDefinition = ToolDefinition(
 class TaskService {
   TaskService({
     required ToolService toolService,
+    required WorkspaceSandbox sandbox,
     TaskStorageService? storage,
-    WorkspaceSandbox? sandbox,
   }) : _toolService = toolService,
        _creationRunner = FinalizerToolCallRunner(toolService: toolService),
        _storage = storage ?? TaskStorageService(),
-       _sandbox = sandbox ?? WorkspaceSandbox(),
-       _gateEvaluator = TaskGateEvaluator(
-         sandbox: sandbox ?? WorkspaceSandbox(),
-       );
+       _sandbox = sandbox,
+       _gateEvaluator = TaskGateEvaluator(sandbox: sandbox);
 
   final ToolService _toolService;
   final FinalizerToolCallRunner _creationRunner;

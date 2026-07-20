@@ -6,8 +6,10 @@ import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/preferences_service.dart';
-import 'package:hermes/core/services/service_provider.dart';
+import 'package:hermes/core/services/project_system/project_service.dart';
+import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
+import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/services/workspace_service.dart';
 import 'package:hermes/ui/chat/task_panel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -23,10 +25,10 @@ void main() {
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
-    await serviceProvider.dispose();
 
-    toolService = ToolService();
-    serviceProvider.registerSingleton<ToolService>(toolService);
+    final sandbox = WorkspaceSandbox();
+    toolService = ToolService(workspaceSandbox: sandbox);
+    final taskService = TaskService(toolService: toolService, sandbox: sandbox);
 
     preferences = PreferencesService();
     chatLibrary = ChatLibraryService(
@@ -37,8 +39,10 @@ void main() {
     chat = ChatService(
       serverManager: serverManager,
       toolService: toolService,
+      taskService: taskService,
+      projectService: ProjectService(taskService: taskService),
       chatLibrary: chatLibrary,
-      workspaceService: WorkspaceService(),
+      workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,
     );
   });
@@ -47,7 +51,6 @@ void main() {
     await chat.dispose();
     await serverManager.dispose();
     await chatLibrary.dispose();
-    await serviceProvider.dispose();
   });
 
   testWidgets(

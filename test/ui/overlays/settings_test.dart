@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/services/preferences_service.dart';
-import 'package:hermes/core/services/service_provider.dart';
 import 'package:hermes/ui/overlays/settings.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -11,20 +10,18 @@ void main() {
 
   late PreferencesService preferences;
 
-  setUp(() async {
+  setUp(() {
     SharedPreferences.setMockInitialValues({});
-    await serviceProvider.dispose();
     preferences = PreferencesService();
-    serviceProvider.registerSingleton<PreferencesService>(preferences);
   });
 
-  tearDown(() async {
-    await serviceProvider.dispose();
-  });
+  tearDown(() => preferences.dispose());
 
   testWidgets('renders question autonomy dropdown values', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(home: Scaffold(body: Settings())),
+      MaterialApp(
+        home: Scaffold(body: Settings(preferencesService: preferences)),
+      ),
     );
     await tester.pump();
     await tester.pump();

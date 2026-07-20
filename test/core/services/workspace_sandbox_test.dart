@@ -191,7 +191,7 @@ void main() {
           '${List.filled(WorkspaceSandbox.maxSearchOutputBytes, 'x').join()} needle';
       await File('${root.path}/huge.txt').writeAsString(longLine);
 
-      final result = await ToolService().execute(
+      final result = await ToolService(workspaceSandbox: sandbox).execute(
         toolId: 'search_files',
         argumentsJson: '{"query":"needle"}',
         context: WorkspaceToolContext(
@@ -297,15 +297,17 @@ void main() {
 
   group('ToolService workspace tools', () {
     test('does not expose workspace tools by default', () {
-      final tools = ToolService().getToolDefinitions();
+      final tools = ToolService(
+        workspaceSandbox: WorkspaceSandbox(),
+      ).getToolDefinitions();
 
       expect(tools.map((tool) => tool.id), isNot(contains('read_file')));
     });
 
     test('exposes workspace tools when requested', () {
-      final tools = ToolService().getToolDefinitions(
-        includeWorkspaceTools: true,
-      );
+      final tools = ToolService(
+        workspaceSandbox: WorkspaceSandbox(),
+      ).getToolDefinitions(includeWorkspaceTools: true);
 
       expect(tools.map((tool) => tool.id), contains('read_file'));
       expect(tools.map((tool) => tool.id), contains('run_command'));
@@ -315,10 +317,9 @@ void main() {
     });
 
     test('rejects workspace tool execution without context', () async {
-      final result = await ToolService().execute(
-        toolId: 'read_file',
-        argumentsJson: '{"path":"README.md"}',
-      );
+      final result = await ToolService(
+        workspaceSandbox: WorkspaceSandbox(),
+      ).execute(toolId: 'read_file', argumentsJson: '{"path":"README.md"}');
 
       expect(result, contains('active workspace'));
     });
@@ -329,7 +330,7 @@ void main() {
         if (await root.exists()) await root.delete(recursive: true);
       });
 
-      final service = ToolService();
+      final service = ToolService(workspaceSandbox: WorkspaceSandbox());
       final result = await service.execute(
         toolId: 'run_command',
         argumentsJson: '{"command":"pwd"}',
@@ -348,7 +349,7 @@ void main() {
       });
       await File('${root.path}/generated.txt').writeAsString('important');
 
-      final service = ToolService();
+      final service = ToolService(workspaceSandbox: WorkspaceSandbox());
       final result = await service.execute(
         toolId: 'run_command',
         argumentsJson: '{"command":"rm generated.txt"}',
