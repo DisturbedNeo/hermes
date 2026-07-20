@@ -1,5 +1,8 @@
-import 'package:hermes/core/helpers/json_parsing.dart';
+import 'package:dart_mappable/dart_mappable.dart';
 import 'package:hermes/core/helpers/sentinel.dart';
+import 'package:hermes/core/serialization/json_hooks.dart';
+
+part 'system_prompt.mapper.dart';
 
 class BuiltInPromptIds {
   const BuiltInPromptIds._();
@@ -11,16 +14,23 @@ class BuiltInPromptIds {
   static const String defaultPreset = 'built_in.preset.default';
 }
 
-class PromptModule {
+@MappableClass()
+class PromptModule with PromptModuleMappable {
   final String id;
   final String name;
   final String category;
   final String content;
+  @MappableField(hook: JsonIntHook(fallback: 100))
   final int priority;
+  @MappableField(hook: JsonBoolHook())
   final bool isBuiltIn;
+  @MappableField(hook: JsonStringListHook())
   final List<String> requiredModuleIds;
+  @MappableField(hook: JsonStringListHook())
   final List<String> conflictingModuleIds;
+  @MappableField(hook: EpochDateHook(fallbackNow: true))
   final DateTime createdAt;
+  @MappableField(hook: EpochDateHook(fallbackNow: true))
   final DateTime updatedAt;
 
   const PromptModule({
@@ -61,48 +71,26 @@ class PromptModule {
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'category': category,
-      'content': content,
-      'priority': priority,
-      'isBuiltIn': isBuiltIn,
-      'requiredModuleIds': requiredModuleIds,
-      'conflictingModuleIds': conflictingModuleIds,
-      'createdAt': createdAt.millisecondsSinceEpoch,
-      'updatedAt': updatedAt.millisecondsSinceEpoch,
-    };
-  }
-
-  factory PromptModule.fromJson(Map<String, dynamic> json) {
-    return PromptModule(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      category: json['category'] as String,
-      content: json['content'] as String,
-      priority: json['priority'] as int? ?? 100,
-      isBuiltIn: json['isBuiltIn'] as bool? ?? false,
-      requiredModuleIds: jsonStringList(json['requiredModuleIds']),
-      conflictingModuleIds: jsonStringList(json['conflictingModuleIds']),
-      createdAt: jsonDate(json['createdAt'], fallback: DateTime.now()),
-      updatedAt: jsonDate(json['updatedAt'], fallback: DateTime.now()),
-    );
-  }
 }
 
-class PromptPreset {
+@MappableClass()
+class PromptPreset with PromptPresetMappable {
   final String id;
   final String name;
+  @MappableField(hook: JsonStringListHook())
   final List<String> baseModuleIds;
+  @MappableField(hook: JsonStringListHook())
   final List<String> optionalModuleIds;
+  @MappableField(hook: JsonStringHook())
   final String customInstructions;
   final String? legacyFullPrompt;
+  @MappableField(hook: JsonBoolHook())
   final bool isBuiltIn;
+  @MappableField(hook: EpochDateHook(fallbackNow: true))
   final DateTime createdAt;
+  @MappableField(hook: EpochDateHook(fallbackNow: true))
   final DateTime updatedAt;
+  @MappableField(hook: EpochDateHook())
   final DateTime? lastUsedAt;
 
   const PromptPreset({
@@ -148,36 +136,6 @@ class PromptPreset {
       lastUsedAt: identical(lastUsedAt, kSentinel)
           ? this.lastUsedAt
           : lastUsedAt as DateTime?,
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'baseModuleIds': baseModuleIds,
-      'optionalModuleIds': optionalModuleIds,
-      'customInstructions': customInstructions,
-      'legacyFullPrompt': legacyFullPrompt,
-      'isBuiltIn': isBuiltIn,
-      'createdAt': createdAt.millisecondsSinceEpoch,
-      'updatedAt': updatedAt.millisecondsSinceEpoch,
-      'lastUsedAt': lastUsedAt?.millisecondsSinceEpoch,
-    };
-  }
-
-  factory PromptPreset.fromJson(Map<String, dynamic> json) {
-    return PromptPreset(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      baseModuleIds: jsonStringList(json['baseModuleIds']),
-      optionalModuleIds: jsonStringList(json['optionalModuleIds']),
-      customInstructions: json['customInstructions'] as String? ?? '',
-      legacyFullPrompt: json['legacyFullPrompt'] as String?,
-      isBuiltIn: json['isBuiltIn'] as bool? ?? false,
-      createdAt: jsonDate(json['createdAt'], fallback: DateTime.now()),
-      updatedAt: jsonDate(json['updatedAt'], fallback: DateTime.now()),
-      lastUsedAt: jsonNullableDate(json['lastUsedAt']),
     );
   }
 }
@@ -250,13 +208,19 @@ class PromptAssemblyResult {
   }
 }
 
-class SystemPromptSnapshot {
+@MappableClass()
+class SystemPromptSnapshot with SystemPromptSnapshotMappable {
   final String? id;
+  @MappableField(hook: JsonStringHook(fallback: 'System prompt'))
   final String name;
+  @MappableField(hook: JsonStringHook())
   final String text;
   final PromptPreset? preset;
+  @MappableField(hook: JsonObjectListHook())
   final List<PromptModule> modules;
+  @MappableField(hook: JsonStringListHook())
   final List<String> selectedModuleIds;
+  @MappableField(hook: JsonStringListHook())
   final List<String> diagnostics;
 
   const SystemPromptSnapshot({
@@ -292,37 +256,6 @@ class SystemPromptSnapshot {
       ),
       modules: const [],
       selectedModuleIds: const [],
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'text': text,
-      'preset': preset?.toJson(),
-      'modules': modules.map((module) => module.toJson()).toList(),
-      'selectedModuleIds': selectedModuleIds,
-      'diagnostics': diagnostics,
-    };
-  }
-
-  factory SystemPromptSnapshot.fromJson(Map<String, dynamic> json) {
-    return SystemPromptSnapshot(
-      id: json['id'] as String?,
-      name: json['name'] as String? ?? 'System prompt',
-      text: json['text'] as String? ?? '',
-      preset: json['preset'] is Map
-          ? PromptPreset.fromJson(
-              Map<String, dynamic>.from(json['preset'] as Map),
-            )
-          : null,
-      modules: (json['modules'] as List? ?? const [])
-          .whereType<Map>()
-          .map((item) => PromptModule.fromJson(Map<String, dynamic>.from(item)))
-          .toList(),
-      selectedModuleIds: jsonStringList(json['selectedModuleIds']),
-      diagnostics: jsonStringList(json['diagnostics']),
     );
   }
 }

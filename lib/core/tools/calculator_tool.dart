@@ -1,6 +1,13 @@
+import 'package:dart_mappable/dart_mappable.dart';
 import 'package:hermes/core/tools/json_tool.dart';
 
-class CalculatorOperation {
+part 'calculator_tool.mapper.dart';
+
+@MappableClass(
+  generateMethods: GenerateMethods.decode,
+  hook: CalculatorOperationJsonHook(),
+)
+class CalculatorOperation with CalculatorOperationMappable {
   final num paramA;
   final num paramB;
   final String operator;
@@ -10,6 +17,27 @@ class CalculatorOperation {
     required this.paramB,
     required this.operator,
   });
+}
+
+class CalculatorOperationJsonHook extends MappingHook {
+  const CalculatorOperationJsonHook();
+
+  @override
+  Object? beforeDecode(Object? value) {
+    if (value is! Map) {
+      throw const FormatException('Invalid calculator input');
+    }
+    final json = Map<String, dynamic>.from(value);
+    var paramA = json['paramA'];
+    var paramB = json['paramB'];
+    final operator = json['operator'];
+    if (paramA is String) paramA = num.tryParse(paramA);
+    if (paramB is String) paramB = num.tryParse(paramB);
+    if (paramA is! num || paramB is! num || operator is! String) {
+      throw const FormatException('Invalid calculator input');
+    }
+    return {'paramA': paramA, 'paramB': paramB, 'operator': operator};
+  }
 }
 
 class CalculatorTool extends JsonTool<CalculatorOperation> {
@@ -42,26 +70,6 @@ class CalculatorTool extends JsonTool<CalculatorOperation> {
     },
     'required': ['paramA', 'paramB', 'operator'],
   };
-
-  @override
-  CalculatorOperation fromJson(Map<String, dynamic> json) {
-    var paramA = json['paramA'];
-    var paramB = json['paramB'];
-    final operator = json['operator'];
-
-    if (paramA is String) paramA = num.tryParse(paramA);
-    if (paramB is String) paramB = num.tryParse(paramB);
-
-    if (paramA is! num || paramB is! num || operator is! String) {
-      throw const FormatException('Invalid calculator input');
-    }
-
-    return CalculatorOperation(
-      paramA: paramA,
-      paramB: paramB,
-      operator: operator,
-    );
-  }
 
   @override
   Future<Map<String, dynamic>> run(CalculatorOperation input) {

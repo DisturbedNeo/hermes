@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:hermes/core/models/project.dart';
+import 'package:hermes/core/serialization/model_json.dart';
 import 'package:path/path.dart' as path;
 
 class ProjectStorageService {
@@ -24,7 +25,7 @@ class ProjectStorageService {
       if (!await file.exists()) continue;
 
       try {
-        final project = ProjectDocument.fromJson(await _readMap(file));
+        final project = ModelJson.decode<ProjectDocument>(await _readMap(file));
         if (chatSessionId != null && project.chatSessionId != chatSessionId) {
           continue;
         }
@@ -78,7 +79,7 @@ class ProjectStorageService {
 
     final raw = await _readMap(file);
     final rawVersion = _rawSchemaVersion(raw);
-    final project = ProjectDocument.fromJson(raw);
+    final project = ModelJson.decode<ProjectDocument>(raw);
     if (chatSessionId != null && project.chatSessionId != chatSessionId) {
       return null;
     }
@@ -96,7 +97,7 @@ class ProjectStorageService {
     await dir.create(recursive: true);
     await _writeMap(
       File(path.join(dir.path, documentFileName)),
-      project.toJson(),
+      ModelJson.encode(project),
     );
   }
 

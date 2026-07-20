@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dart_mappable/dart_mappable.dart';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/helpers/chat/compaction_manager.dart';
 import 'package:hermes/core/helpers/chat/context_estimator.dart';
@@ -29,13 +30,17 @@ import 'package:hermes/core/services/task_system/task_storage_service.dart';
 import 'package:hermes/core/services/task_system/task_summary.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
+import 'package:hermes/core/serialization/model_json.dart';
 import 'package:path/path.dart' as path;
+
+part 'task_service.mapper.dart';
 
 typedef TaskCancelRegistration = void Function();
 typedef TaskCancelCallback = FutureOr<void> Function();
 typedef TaskCompactionStatusSink = void Function(String status);
 
-class TaskPlanningContext {
+@MappableClass(generateMethods: GenerateMethods.encode)
+class TaskPlanningContext with TaskPlanningContextMappable {
   final String projectGoal;
   final String projectTaskObjective;
   final List<String> knownFacts;
@@ -55,19 +60,6 @@ class TaskPlanningContext {
     this.requiredGates = const [],
     this.maxSteps = 3,
   });
-
-  Map<String, dynamic> toJson() => {
-    'projectGoal': projectGoal,
-    'projectTaskObjective': projectTaskObjective,
-    'knownFacts': knownFacts,
-    'doneCriteria': doneCriteria,
-    'outOfScope': outOfScope,
-    'expectedArtifacts': expectedArtifacts
-        .map((artifact) => artifact.toJson())
-        .toList(),
-    'requiredGates': requiredGates.map((gate) => gate.toJson()).toList(),
-    'maxSteps': maxSteps,
-  };
 }
 
 class TaskCancellationToken {
@@ -438,7 +430,7 @@ class TaskService {
   }
 
   String encodeTask(TaskDocument task) =>
-      '${_encoder.convert(task.toJson())}\n';
+      '${_encoder.convert(ModelJson.encode(task))}\n';
 
   Future<String> readArtifact({
     required WorkspaceAttachment workspace,
@@ -461,7 +453,7 @@ class TaskService {
     TaskCancellationToken? cancellationToken,
   }) async {
     final metadata = workspace == null || workspace.missing
-        ? const _WorkspaceMetadata()
+        ? const WorkspaceMetadata()
         : await _collectWorkspaceMetadata(workspace);
 
     try {
@@ -487,13 +479,16 @@ Return only JSON:
 
 Selected mode: ${selectedMode.wire}
 Workspace metadata:
-${_encoder.convert(metadata.toJson())}
+${_encoder.convert(ModelJson.encode(metadata))}
 
 Request:
 $userPrompt
 ''',
       );
-      return _normaliseBrief(RefinedTaskBrief.fromJson(json), userPrompt);
+      return _normaliseBrief(
+        ModelJson.decode<RefinedTaskBrief>(json),
+        userPrompt,
+      );
     } on TaskCancelledException {
       rethrow;
     } catch (_) {
@@ -596,7 +591,9 @@ $userPrompt
     required TaskDocument snapshot,
     required String rawJson,
   }) async {
-    final parsed = TaskDocument.fromJson(TaskJson.parseObject(rawJson));
+    final parsed = ModelJson.decode<TaskDocument>(
+      TaskJson.parseObject(rawJson),
+    );
     final now = DateTime.now();
     final normalised = _normaliseEditedTask(
       parsed.copyWith(
@@ -950,7 +947,7 @@ $userPrompt
     return updated;
   }
 
-  Future<_WorkspaceMetadata> _collectWorkspaceMetadata(
+  Future<WorkspaceMetadata> _collectWorkspaceMetadata(
     WorkspaceAttachment workspace, {
     String? chatSessionId,
   }) async {
@@ -963,7 +960,7 @@ $userPrompt
       }
     }
     rootFiles.sort();
-    return _WorkspaceMetadata(
+    return WorkspaceMetadata(
       workspaceName: workspace.displayName,
       rootFiles: rootFiles,
       gitAvailable: rootFiles.contains('.git'),
@@ -978,7 +975,7 @@ $userPrompt
   String _buildPlannerPrompt({
     required String taskId,
     required String userPrompt,
-    required _WorkspaceMetadata metadata,
+    required WorkspaceMetadata metadata,
     required TaskPlanningContext? planningContext,
   }) {
     final context = planningContext;
@@ -1014,7 +1011,7 @@ Create only as many steps as are necessary to accomplish the task.
 Artifacts are optional.
 
 Workspace metadata:
-${_encoder.convert(metadata.toJson())}
+${_encoder.convert(ModelJson.encode(metadata))}
 
 Request:
 $userPrompt
@@ -1056,10 +1053,10 @@ Use this exact task id when referencing task-owned artifacts: $taskId
 Artifacts are optional unless expectedArtifacts lists them.
 
 Workspace metadata:
-${_encoder.convert(metadata.toJson())}
+${_encoder.convert(ModelJson.encode(metadata))}
 
 Bounded Project task context:
-${_encoder.convert(context.toJson())}
+${_encoder.convert(ModelJson.encode(context))}
 
 Request:
 $userPrompt
@@ -1124,7 +1121,7 @@ You did not call $_finaliseTaskCreationToolId. Return only the JSON object that 
     required String originalPrompt,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
-    required _WorkspaceMetadata metadata,
+    required WorkspaceMetadata metadata,
     required TaskPlanningContext planningContext,
     required List<String> violations,
     required String? chatSessionId,
@@ -1152,13 +1149,13 @@ Violations:
 ${_encoder.convert(violations)}
 
 Bounded Project task context:
-${_encoder.convert(planningContext.toJson())}
+${_encoder.convert(ModelJson.encode(planningContext))}
 
 Workspace metadata:
-${_encoder.convert(metadata.toJson())}
+${_encoder.convert(ModelJson.encode(metadata))}
 
 Invalid task plan:
-${_encoder.convert(task.toJson())}
+${_encoder.convert(ModelJson.encode(task))}
 ''',
       );
       final repaired = _taskFromPlannerJson(
@@ -2072,10 +2069,10 @@ Reason for replan:
 $reason
 
 Completed or skipped steps to preserve:
-${_encoder.convert(completed.map((step) => step.toJson()).toList())}
+${_encoder.convert(completed.map(ModelJson.encode).toList())}
 
 Current task:
-${_encoder.convert(snapshot.toJson())}
+${_encoder.convert(ModelJson.encode(snapshot))}
 ''',
       );
       replacement = _stepsFromJson(json['steps'], snapshot.id);
@@ -2334,10 +2331,10 @@ Current memory:
 ${task.memorySummary.trim().isEmpty ? 'None yet.' : task.memorySummary}
 
 Full plan:
-${_encoder.convert(task.steps.map((item) => item.toJson()).toList())}
+${_encoder.convert(task.steps.map(ModelJson.encode).toList())}
 
 Current step:
-${_encoder.convert(step.toJson())}
+${_encoder.convert(ModelJson.encode(step))}
 
 Available artifact inputs:
 $availableArtifacts
@@ -2974,9 +2971,7 @@ $whitelist
     return value
         .whereType<Map>()
         .map((raw) {
-          final artifact = TaskArtifact.fromJson(
-            Map<String, dynamic>.from(raw),
-          );
+          final artifact = ModelJson.decode<TaskArtifact>(raw);
           return TaskArtifact(
             path: artifact.path,
             description: artifact.description,
@@ -2996,7 +2991,7 @@ $whitelist
     if (value is! List) return const [];
     final gates = <TaskGate>[];
     for (final raw in value.whereType<Map>()) {
-      final gate = TaskGate.fromJson(Map<String, dynamic>.from(raw));
+      final gate = ModelJson.decode<TaskGate>(raw);
       final id = gate.id.trim();
       gates.add(
         TaskGate(
@@ -3363,28 +3358,21 @@ $whitelist
   }
 }
 
-class _WorkspaceMetadata {
+@MappableClass(generateMethods: GenerateMethods.encode, ignoreNull: true)
+class WorkspaceMetadata with WorkspaceMetadataMappable {
   final String? workspaceName;
   final List<String> rootFiles;
   final bool gitAvailable;
   final bool commandExecutionApproved;
   final List<String> existingTaskIds;
 
-  const _WorkspaceMetadata({
+  const WorkspaceMetadata({
     this.workspaceName,
     this.rootFiles = const [],
     this.gitAvailable = false,
     this.commandExecutionApproved = false,
     this.existingTaskIds = const [],
   });
-
-  Map<String, dynamic> toJson() => {
-    if (workspaceName != null) 'workspaceName': workspaceName,
-    'rootFiles': rootFiles,
-    'gitAvailable': gitAvailable,
-    'commandExecutionApproved': commandExecutionApproved,
-    'existingTaskIds': existingTaskIds,
-  };
 }
 
 enum _StepExecutionStatus { completed, blocked, needsReplan, failed }

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
+import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 
 void main() {
@@ -48,8 +49,8 @@ void main() {
 
   test('sets disabled boolean startup flags explicitly', () {
     final args = buildLlamaServerArguments(
-      snapshot: ModelConfigurationSnapshot.fromJson({
-        ...snapshot.toJson(),
+      snapshot: ModelJson.decode<ModelConfigurationSnapshot>({
+        ...ModelJson.encode(snapshot),
         'thinking': true,
         'flashAttention': false,
         'cachePrompt': false,

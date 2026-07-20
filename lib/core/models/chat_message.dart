@@ -1,8 +1,23 @@
-class ChatMessage {
+import 'package:dart_mappable/dart_mappable.dart';
+import 'package:hermes/core/serialization/json_hooks.dart';
+
+part 'chat_message.mapper.dart';
+
+@MappableClass(
+  generateMethods: GenerateMethods.encode,
+  hook: JsonModelHook(
+    omitEmpty: {'tool_calls'},
+    omitEmptyStrings: {'reasoning_content', 'tool_call_id'},
+  ),
+)
+class ChatMessage with ChatMessageMappable {
   final String role;
   final String content;
+  @MappableField(key: 'reasoning_content')
   final String reasoningContent;
+  @MappableField(key: 'tool_call_id')
   final String toolCallId;
+  @MappableField(key: 'tool_calls')
   final List<Map<String, dynamic>> toolCalls;
 
   const ChatMessage({
@@ -12,14 +27,4 @@ class ChatMessage {
     this.toolCallId = '',
     this.toolCalls = const [],
   });
-
-  Map<String, dynamic> toJson() {
-    return {
-      'role': role,
-      'content': content,
-      if (reasoningContent.isNotEmpty) 'reasoning_content': reasoningContent,
-      if (toolCallId.isNotEmpty) 'tool_call_id': toolCallId,
-      if (toolCalls.isNotEmpty) 'tool_calls': toolCalls,
-    };
-  }
 }

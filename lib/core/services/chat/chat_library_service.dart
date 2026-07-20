@@ -10,6 +10,7 @@ import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/saved_chat.dart';
 import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/core/models/workspace.dart';
+import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -143,7 +144,7 @@ class ChatLibraryService extends ChangeNotifier implements Disposable {
           : existing.single['title'] as String;
       final modelJson = modelSnapshot == null
           ? null
-          : jsonEncode(modelSnapshot.toJson());
+          : ModelJson.encodeString(modelSnapshot);
       final workspaceLastOpenedAt =
           workspace?.lastOpenedAt.millisecondsSinceEpoch;
 
@@ -161,7 +162,7 @@ class ChatLibraryService extends ChangeNotifier implements Disposable {
             workspace?.commandExecutionApproved == true ? 1 : 0,
         'system_prompt_snapshot_json': systemPromptSnapshot == null
             ? null
-            : jsonEncode(systemPromptSnapshot.toJson()),
+            : ModelJson.encodeString(systemPromptSnapshot),
         'system_prompt_id': systemPromptSnapshot?.id,
         'system_prompt_name': systemPromptSnapshot?.name,
         'system_prompt_text': systemPromptSnapshot?.text,
@@ -450,9 +451,7 @@ class ChatLibraryService extends ChangeNotifier implements Disposable {
       lastOpenedAt: _nullableDate(row['last_opened_at'] as int?),
       modelSnapshot: modelJson == null || modelJson.isEmpty
           ? null
-          : ModelConfigurationSnapshot.fromJson(
-              jsonDecode(modelJson) as Map<String, dynamic>,
-            ),
+          : ModelJson.decodeString<ModelConfigurationSnapshot>(modelJson),
       workspace: workspaceRoot == null || workspaceRoot.isEmpty
           ? null
           : WorkspaceAttachment(
@@ -474,9 +473,7 @@ class ChatLibraryService extends ChangeNotifier implements Disposable {
     final snapshotJson = row['system_prompt_snapshot_json'] as String?;
     if (snapshotJson != null && snapshotJson.isNotEmpty) {
       try {
-        return SystemPromptSnapshot.fromJson(
-          jsonDecode(snapshotJson) as Map<String, dynamic>,
-        );
+        return ModelJson.decodeString<SystemPromptSnapshot>(snapshotJson);
       } catch (_) {
         // Fall through to legacy columns.
       }

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:hermes/core/models/task.dart';
+import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/services/task_system/task_summary.dart';
 import 'package:path/path.dart' as path;
 
@@ -26,7 +27,7 @@ class TaskStorageService {
       if (!await file.exists()) continue;
 
       try {
-        final task = TaskDocument.fromJson(await _readMap(file));
+        final task = ModelJson.decode<TaskDocument>(await _readMap(file));
         if (task.schemaVersion != TaskDocument.currentSchemaVersion) continue;
         if (chatSessionId != null && task.chatSessionId != chatSessionId) {
           continue;
@@ -81,7 +82,7 @@ class TaskStorageService {
     );
     if (!await file.exists()) return null;
 
-    final task = TaskDocument.fromJson(await _readMap(file));
+    final task = ModelJson.decode<TaskDocument>(await _readMap(file));
     if (task.schemaVersion != TaskDocument.currentSchemaVersion) return null;
     if (chatSessionId != null && task.chatSessionId != chatSessionId) {
       return null;
@@ -93,7 +94,10 @@ class TaskStorageService {
   Future<void> saveSnapshot(String workspaceRoot, TaskDocument task) async {
     final dir = _taskDirectory(workspaceRoot, task.id);
     await dir.create(recursive: true);
-    await _writeMap(File(path.join(dir.path, documentFileName)), task.toJson());
+    await _writeMap(
+      File(path.join(dir.path, documentFileName)),
+      ModelJson.encode(task),
+    );
   }
 
   Future<bool> deleteTask(String workspaceRoot, String taskId) async {

@@ -11,6 +11,7 @@ import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/system_prompt.dart';
+import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
@@ -409,7 +410,7 @@ void main() {
         final client = _StuckTaskClient(_planJson(title: 'Diagnostic task'));
         serverManager.chatClient = client;
         chat.setCurrentModelSnapshot(
-          ModelConfigurationSnapshot.fromJson({
+          ModelJson.decode<ModelConfigurationSnapshot>({
             'modelName': 'test',
             'nCtx': 4096,
           }),

@@ -9,6 +9,7 @@ import 'package:hermes/core/helpers/chat/tool_caller.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_message.dart';
+import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
@@ -441,7 +442,7 @@ class CompactionManager {
     final trimmed = raw.trim();
     final decoded = _tryDecodeSummary(trimmed);
     if (decoded != null) {
-      final summary = ContextSummary.fromJson(decoded);
+      final summary = ModelJson.decode<ContextSummary>(decoded);
       if (summary.hasUsableContent) return summary;
     }
 

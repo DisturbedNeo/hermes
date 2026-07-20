@@ -1,13 +1,22 @@
+import 'package:dart_mappable/dart_mappable.dart';
 import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/helpers/sentinel.dart' show kSentinel, resolve;
 import 'package:hermes/core/models/task.dart';
+import 'package:hermes/core/serialization/json_hooks.dart';
 
+part 'project.mapper.dart';
+part 'project_json_migration.dart';
+
+@MappableEnum(defaultValue: ProjectStatus.active)
 enum ProjectStatus {
   initializing,
   active,
   paused,
+  @MappableValue('running_task')
   runningTask,
+  @MappableValue('reviewing_task')
   reviewingTask,
+  @MappableValue('waiting_for_user')
   waitingForUser,
   blocked,
   completed,
@@ -15,8 +24,10 @@ enum ProjectStatus {
   cancelled,
 }
 
+@MappableEnum(defaultValue: ProjectPhase.discovery)
 enum ProjectPhase { discovery, planning, execution, verification, finalization }
 
+@MappableEnum(defaultValue: ProjectTaskStatus.queued)
 enum ProjectTaskStatus {
   queued,
   proposed,
@@ -29,28 +40,43 @@ enum ProjectTaskStatus {
   cancelled,
 }
 
+@MappableEnum(defaultValue: ProjectBlockerType.error)
 enum ProjectBlockerType {
   question,
+  @MappableValue('task_approval')
   taskApproval,
+  @MappableValue('task_blocked')
   taskBlocked,
+  @MappableValue('task_failed')
   taskFailed,
+  @MappableValue('recovery_failed')
   recoveryFailed,
   budget,
   validation,
+  @MappableValue('duplicate_task')
   duplicateTask,
+  @MappableValue('oversized_task')
   oversizedTask,
+  @MappableValue('max_failures')
   maxFailures,
   error,
 }
 
+@MappableEnum(defaultValue: ProjectDecisionType.blocked)
 enum ProjectDecisionType {
+  @MappableValue('create_task')
   createTask,
+  @MappableValue('create_recovery_task')
   createRecoveryTask,
   complete,
   blocked,
+  @MappableValue('reject_task')
   rejectTask,
+  @MappableValue('split_task')
   splitTask,
+  @MappableValue('evaluate_task')
   evaluateTask,
+  @MappableValue('refresh_backlog')
   refreshBacklog,
 }
 
@@ -111,58 +137,11 @@ ProjectStatus parseProjectStatus(Object? value) => _parseEnum(
   },
 );
 
-ProjectPhase parseProjectPhase(Object? value) =>
-    _parseEnum(ProjectPhase.values, value, ProjectPhase.discovery);
-
-ProjectTaskStatus parseProjectTaskStatus(Object? value) =>
-    _parseEnum(ProjectTaskStatus.values, value, ProjectTaskStatus.queued);
-
-ProjectBlockerType parseProjectBlockerType(Object? value) => _parseEnum(
-  ProjectBlockerType.values,
-  value,
-  ProjectBlockerType.error,
-  aliases: {
-    'task_approval': ProjectBlockerType.taskApproval,
-    'task_blocked': ProjectBlockerType.taskBlocked,
-    'task_failed': ProjectBlockerType.taskFailed,
-    'recovery_failed': ProjectBlockerType.recoveryFailed,
-    'duplicate_task': ProjectBlockerType.duplicateTask,
-    'oversized_task': ProjectBlockerType.oversizedTask,
-    'max_failures': ProjectBlockerType.maxFailures,
-  },
-);
-
-ProjectDecisionType parseProjectDecisionType(Object? value) => _parseEnum(
-  ProjectDecisionType.values,
-  value,
-  ProjectDecisionType.blocked,
-  aliases: {
-    'create_task': ProjectDecisionType.createTask,
-    'create_recovery_task': ProjectDecisionType.createRecoveryTask,
-    'reject_task': ProjectDecisionType.rejectTask,
-    'split_task': ProjectDecisionType.splitTask,
-    'evaluate_task': ProjectDecisionType.evaluateTask,
-    'refresh_backlog': ProjectDecisionType.refreshBacklog,
-  },
-);
-
+@MappableEnum(defaultValue: ProjectRecoveryIncidentStatus.active)
 enum ProjectRecoveryIncidentStatus { active, resolved, exhausted }
 
 extension ProjectRecoveryIncidentStatusWire on ProjectRecoveryIncidentStatus {
   String get wire => name;
-}
-
-ProjectRecoveryIncidentStatus parseProjectRecoveryIncidentStatus(
-  Object? value,
-) => _parseEnum(
-  ProjectRecoveryIncidentStatus.values,
-  value,
-  ProjectRecoveryIncidentStatus.active,
-);
-
-int parseOptionalLimit(Object? value, {required int fallback}) {
-  final parsed = jsonInt(value, fallback: fallback);
-  return parsed < 0 ? 0 : parsed;
 }
 
 T _parseEnum<T extends Enum>(
@@ -185,38 +164,80 @@ T _parseEnum<T extends Enum>(
   return fallback;
 }
 
-class ProjectState {
+@MappableClass(ignoreNull: true, hook: ProjectStateJsonHook())
+class ProjectState with ProjectStateMappable {
   static const int currentSchemaVersion = 2;
   static const int defaultMaxIterations = 25;
   static const int defaultMaxFailedTasks = 3;
 
+  @MappableField(hook: JsonIntHook())
   final int schemaVersion;
+  @MappableField(hook: JsonStringHook())
   final String id;
+  @MappableField(hook: JsonStringHook(fallback: 'Untitled project'))
   final String title;
+  @MappableField(hook: JsonStringHook())
   final String originalGoal;
+  @MappableField(hook: JsonStringHook())
   final String refinedGoal;
+  @MappableField(hook: JsonStringListHook())
   final List<String> successCriteria;
+  @MappableField(hook: JsonStringListHook())
   final List<String> constraints;
+  @MappableField(hook: JsonObjectListHook())
   final List<ProjectTask> backlog;
   final ProjectTask? currentTask;
+  @MappableField(hook: JsonObjectListHook())
   final List<ProjectTask> completedTasks;
+  @MappableField(hook: JsonObjectListHook())
   final List<ProjectTask> failedTasks;
+  @MappableField(hook: JsonObjectListHook())
   final List<ProjectArtifact> artifacts;
+  @MappableField(hook: JsonObjectListHook())
   final List<ProjectRecoveryIncident> recoveryIncidents;
+  @MappableField(hook: JsonStringListHook())
   final List<String> knownFacts;
+  @MappableField(hook: JsonObjectListHook())
   final List<PendingProjectQuestion> openQuestions;
+  @MappableField(
+    hook: EnumAliasHook({
+      'running': 'running_task',
+      'runningtask': 'running_task',
+      'reviewingtask': 'reviewing_task',
+      'waitingforuser': 'waiting_for_user',
+    }),
+  )
   final ProjectStatus status;
+  @MappableField(hook: EnumAliasHook({}))
   final ProjectPhase phase;
+  @MappableField(hook: JsonIntHook())
   final int iterationCount;
+  @MappableField(
+    hook: JsonIntHook(fallback: ProjectState.defaultMaxIterations, min: 0),
+  )
   final int maxIterations;
+  @MappableField(
+    hook: JsonIntHook(
+      fallback: ProjectState.defaultMaxFailedTasks,
+      min: 1,
+      max: 100,
+    ),
+  )
   final int maxFailedTasks;
+  @MappableField(hook: JsonNullableStringHook())
   final String? activeTaskId;
+  @MappableField(hook: JsonNullableStringHook())
   final String? chatSessionId;
+  @MappableField(hook: JsonStringHook())
   final String completionSummary;
   final ProjectBlocker? blocker;
+  @MappableField(hook: JsonObjectListHook())
   final List<ProjectDecisionRecord> decisions;
+  @MappableField(hook: JsonDateHook())
   final DateTime createdAt;
+  @MappableField(hook: JsonDateHook())
   final DateTime updatedAt;
+  @MappableField(hook: JsonNullableDateHook())
   final DateTime? completedAt;
 
   ProjectState({
@@ -458,281 +479,48 @@ class ProjectState {
       completedAt: resolve(completedAt, this.completedAt),
     );
   }
-
-  factory ProjectState.fromJson(Map<String, dynamic> json) {
-    final rawVersion = jsonInt(json['schemaVersion'] ?? json['schema_version']);
-    if (rawVersion < currentSchemaVersion ||
-        (!json.containsKey('originalGoal') &&
-            !json.containsKey('original_goal') &&
-            json.containsKey('originalPrompt'))) {
-      return _fromLegacyJson(json);
-    }
-
-    final now = DateTime.now();
-    final rawCurrentTask = json['currentTask'] ?? json['current_task'];
-    return ProjectState(
-      schemaVersion: currentSchemaVersion,
-      id: jsonString(json['id']),
-      title: jsonString(json['title'], fallback: 'Untitled project'),
-      originalGoal: jsonString(
-        json['originalGoal'] ??
-            json['original_goal'] ??
-            json['originalPrompt'] ??
-            json['original_prompt'],
-      ),
-      refinedGoal: jsonString(
-        json['refinedGoal'] ??
-            json['refined_goal'] ??
-            json['goal'] ??
-            json['objective'],
-      ),
-      successCriteria: jsonStringList(
-        json['successCriteria'] ?? json['success_criteria'],
-      ),
-      constraints: jsonStringList(json['constraints']),
-      backlog: jsonMapList(json['backlog']).map(ProjectTask.fromJson).toList(),
-      currentTask: rawCurrentTask is Map
-          ? ProjectTask.fromJson(Map<String, dynamic>.from(rawCurrentTask))
-          : null,
-      completedTasks: jsonMapList(
-        json['completedTasks'] ?? json['completed_tasks'],
-      ).map(ProjectTask.fromJson).toList(),
-      failedTasks: jsonMapList(
-        json['failedTasks'] ?? json['failed_tasks'],
-      ).map(ProjectTask.fromJson).toList(),
-      artifacts: jsonMapList(
-        json['artifacts'],
-      ).map(ProjectArtifact.fromJson).toList(),
-      recoveryIncidents: jsonMapList(
-        json['recoveryIncidents'] ?? json['recovery_incidents'],
-      ).map(ProjectRecoveryIncident.fromJson).toList(),
-      knownFacts: jsonStringList(json['knownFacts'] ?? json['known_facts']),
-      openQuestions: _openQuestionsFromJson(json),
-      status: parseProjectStatus(json['status']),
-      phase: parseProjectPhase(json['phase']),
-      iterationCount: jsonInt(
-        json['iterationCount'] ?? json['iteration_count'],
-      ),
-      maxIterations: parseOptionalLimit(
-        json['maxIterations'] ?? json['max_iterations'],
-        fallback: defaultMaxIterations,
-      ),
-      maxFailedTasks: jsonInt(
-        json['maxFailedTasks'] ?? json['max_failed_tasks'],
-        fallback: defaultMaxFailedTasks,
-      ).clamp(1, 100).toInt(),
-      activeTaskId: jsonNullableString(
-        json['activeTaskId'] ?? json['active_task_id'],
-      ),
-      chatSessionId: jsonNullableString(
-        json['chatSessionId'] ?? json['chat_session_id'],
-      ),
-      completionSummary: jsonString(
-        json['completionSummary'] ?? json['completion_summary'],
-      ),
-      blocker: json['blocker'] == null
-          ? null
-          : ProjectBlocker.fromJson(jsonMap(json['blocker'])),
-      decisions: jsonMapList(
-        json['decisions'],
-      ).map(ProjectDecisionRecord.fromJson).toList(),
-      createdAt: jsonDate(
-        json['createdAt'] ?? json['created_at'],
-        fallback: now,
-      ),
-      updatedAt: jsonDate(
-        json['updatedAt'] ?? json['updated_at'],
-        fallback: now,
-      ),
-      completedAt: jsonNullableDate(
-        json['completedAt'] ?? json['completed_at'],
-      ),
-    );
-  }
-
-  static ProjectState _fromLegacyJson(Map<String, dynamic> json) {
-    final now = DateTime.now();
-    final originalGoal = jsonString(
-      json['originalPrompt'] ?? json['original_prompt'],
-    );
-    final refinedGoal = jsonString(
-      json['goal'] ?? json['objective'],
-      fallback: originalGoal,
-    );
-    final activeTaskId = jsonNullableString(
-      json['activeTaskId'] ?? json['active_task_id'],
-    );
-    final legacyTasks = jsonMapList(
-      json['tasks'],
-    ).map(ProjectTaskRef.fromJson).toList();
-    final backlog = <ProjectTask>[];
-    final completedTasks = <ProjectTask>[];
-    final failedTasks = <ProjectTask>[];
-    ProjectTask? currentTask;
-
-    for (final task in legacyTasks) {
-      final projectTask = ProjectTask.fromLegacyRef(task);
-      if (task.taskId == activeTaskId && !task.status.isTerminal) {
-        currentTask = projectTask.copyWith(status: ProjectTaskStatus.running);
-      } else if (task.status == TaskStatus.completed) {
-        completedTasks.add(
-          projectTask.copyWith(status: ProjectTaskStatus.completed),
-        );
-      } else if (task.status == TaskStatus.failed ||
-          task.status == TaskStatus.cancelled ||
-          task.status == TaskStatus.blocked) {
-        failedTasks.add(projectTask.copyWith(status: ProjectTaskStatus.failed));
-      } else {
-        backlog.add(projectTask.copyWith(status: ProjectTaskStatus.queued));
-      }
-    }
-
-    final pendingQuestion =
-        json['pendingQuestion'] == null && json['pending_question'] == null
-        ? null
-        : PendingProjectQuestion.fromJson(
-            jsonMap(json['pendingQuestion'] ?? json['pending_question']),
-          );
-    final openQuestions = [?pendingQuestion];
-    final rawStatus = (json['status'] ?? '').toString().trim().toLowerCase();
-    final status = switch (rawStatus.replaceAll('-', '_')) {
-      'paused' => ProjectStatus.active,
-      'running' => ProjectStatus.runningTask,
-      'blocked' =>
-        openQuestions.isNotEmpty
-            ? ProjectStatus.waitingForUser
-            : ProjectStatus.blocked,
-      'completed' => ProjectStatus.completed,
-      'failed' => ProjectStatus.failed,
-      'cancelled' => ProjectStatus.cancelled,
-      _ => parseProjectStatus(json['status']),
-    };
-    final memorySummary = jsonString(
-      json['memorySummary'] ?? json['memory_summary'],
-    );
-    return ProjectState(
-      schemaVersion: currentSchemaVersion,
-      id: jsonString(json['id']),
-      title: jsonString(json['title'], fallback: 'Untitled project'),
-      originalGoal: originalGoal,
-      refinedGoal: refinedGoal,
-      successCriteria: jsonStringList(
-        json['successCriteria'] ?? json['success_criteria'],
-      ),
-      constraints: jsonStringList(json['constraints']),
-      backlog: backlog,
-      currentTask: currentTask,
-      completedTasks: completedTasks,
-      failedTasks: failedTasks,
-      artifacts: const [],
-      recoveryIncidents: const [],
-      knownFacts: [if (memorySummary.trim().isNotEmpty) memorySummary.trim()],
-      openQuestions: openQuestions,
-      status: status,
-      phase: status == ProjectStatus.completed
-          ? ProjectPhase.finalization
-          : currentTask != null
-          ? ProjectPhase.execution
-          : ProjectPhase.planning,
-      iterationCount: completedTasks.length + failedTasks.length,
-      maxIterations: defaultMaxIterations,
-      maxFailedTasks: defaultMaxFailedTasks,
-      activeTaskId: activeTaskId,
-      chatSessionId: jsonNullableString(
-        json['chatSessionId'] ?? json['chat_session_id'],
-      ),
-      completionSummary: jsonString(
-        json['completionSummary'] ?? json['completion_summary'],
-      ),
-      blocker: json['blocker'] == null
-          ? null
-          : ProjectBlocker.fromJson(jsonMap(json['blocker'])),
-      decisions: jsonMapList(
-        json['decisions'],
-      ).map(ProjectDecisionRecord.fromJson).toList(),
-      createdAt: jsonDate(
-        json['createdAt'] ?? json['created_at'],
-        fallback: now,
-      ),
-      updatedAt: jsonDate(
-        json['updatedAt'] ?? json['updated_at'],
-        fallback: now,
-      ),
-      completedAt: jsonNullableDate(
-        json['completedAt'] ?? json['completed_at'],
-      ),
-    );
-  }
-
-  static List<PendingProjectQuestion> _openQuestionsFromJson(
-    Map<String, dynamic> json,
-  ) {
-    final questions = jsonMapList(
-      json['openQuestions'] ?? json['open_questions'],
-    ).map(PendingProjectQuestion.fromJson).toList();
-    if (questions.isNotEmpty) return questions;
-    final raw = json['pendingQuestion'] ?? json['pending_question'];
-    if (raw is Map) {
-      return [PendingProjectQuestion.fromJson(Map<String, dynamic>.from(raw))];
-    }
-    return const [];
-  }
-
-  Map<String, dynamic> toJson() => {
-    'schemaVersion': currentSchemaVersion,
-    'id': id,
-    'title': title,
-    'originalGoal': originalGoal,
-    'refinedGoal': refinedGoal,
-    'successCriteria': successCriteria,
-    'constraints': constraints,
-    'backlog': backlog.map((task) => task.toJson()).toList(),
-    if (currentTask != null) 'currentTask': currentTask!.toJson(),
-    'completedTasks': completedTasks.map((task) => task.toJson()).toList(),
-    'failedTasks': failedTasks.map((task) => task.toJson()).toList(),
-    'artifacts': artifacts.map((artifact) => artifact.toJson()).toList(),
-    'recoveryIncidents': recoveryIncidents
-        .map((incident) => incident.toJson())
-        .toList(),
-    'knownFacts': knownFacts,
-    'openQuestions': openQuestions
-        .map((question) => question.toJson())
-        .toList(),
-    'status': status.wire,
-    'phase': phase.wire,
-    'iterationCount': iterationCount,
-    'maxIterations': maxIterations,
-    'maxFailedTasks': maxFailedTasks,
-    if (activeTaskId != null) 'activeTaskId': activeTaskId,
-    if (chatSessionId != null) 'chatSessionId': chatSessionId,
-    'completionSummary': completionSummary,
-    if (blocker != null) 'blocker': blocker!.toJson(),
-    'decisions': decisions.map((decision) => decision.toJson()).toList(),
-    'createdAt': createdAt.toIso8601String(),
-    'updatedAt': updatedAt.toIso8601String(),
-    if (completedAt != null) 'completedAt': completedAt!.toIso8601String(),
-  };
 }
 
 typedef ProjectDocument = ProjectState;
 typedef ProjectSnapshot = ProjectState;
 
-class ProjectRecoveryIncident {
+@MappableClass(ignoreNull: true)
+class ProjectRecoveryIncident with ProjectRecoveryIncidentMappable {
   static const int defaultMaxAttempts = 3;
 
+  @MappableField(hook: JsonStringHook(fallback: 'recovery_incident'))
   final String id;
+  @MappableField(hook: EnumAliasHook({}))
   final ProjectRecoveryIncidentStatus status;
+  @MappableField(hook: JsonStringListHook())
   final List<String> sourceTaskIds;
+  @MappableField(hook: JsonStringListHook())
   final List<String> sourceTaskTitles;
+  @MappableField(hook: JsonStringHook())
   final String failedGateId;
+  @MappableField(hook: JsonNullableStringHook())
   final String? command;
+  @MappableField(hook: JsonNullableStringHook())
   final String? workingDirectory;
+  @MappableField(hook: JsonStringHook())
   final String failureSummary;
+  @MappableField(hook: JsonIntHook())
   final int attemptCount;
+  @MappableField(
+    hook: JsonIntHook(
+      fallback: ProjectRecoveryIncident.defaultMaxAttempts,
+      min: 1,
+      max: 100,
+    ),
+  )
   final int maxAttempts;
+  @MappableField(hook: JsonStringListHook())
   final List<String> recoveryTaskIds;
+  @MappableField(hook: JsonDateHook())
   final DateTime createdAt;
+  @MappableField(hook: JsonDateHook())
   final DateTime updatedAt;
+  @MappableField(hook: JsonNullableDateHook())
   final DateTime? resolvedAt;
 
   const ProjectRecoveryIncident({
@@ -785,79 +573,39 @@ class ProjectRecoveryIncident {
       resolvedAt: resolve(resolvedAt, this.resolvedAt),
     );
   }
-
-  factory ProjectRecoveryIncident.fromJson(Map<String, dynamic> json) {
-    final now = DateTime.now();
-    return ProjectRecoveryIncident(
-      id: jsonString(json['id'], fallback: 'recovery_incident'),
-      status: parseProjectRecoveryIncidentStatus(json['status']),
-      sourceTaskIds: jsonStringList(
-        json['sourceTaskIds'] ?? json['source_task_ids'],
-      ),
-      sourceTaskTitles: jsonStringList(
-        json['sourceTaskTitles'] ?? json['source_task_titles'],
-      ),
-      failedGateId: jsonString(json['failedGateId'] ?? json['failed_gate_id']),
-      command: jsonNullableString(json['command']),
-      workingDirectory: jsonNullableString(
-        json['workingDirectory'] ?? json['working_directory'],
-      ),
-      failureSummary: jsonString(
-        json['failureSummary'] ?? json['failure_summary'],
-      ),
-      attemptCount: jsonInt(json['attemptCount'] ?? json['attempt_count']),
-      maxAttempts: jsonInt(
-        json['maxAttempts'] ?? json['max_attempts'],
-        fallback: defaultMaxAttempts,
-      ).clamp(1, 100).toInt(),
-      recoveryTaskIds: jsonStringList(
-        json['recoveryTaskIds'] ?? json['recovery_task_ids'],
-      ),
-      createdAt: jsonDate(
-        json['createdAt'] ?? json['created_at'],
-        fallback: now,
-      ),
-      updatedAt: jsonDate(
-        json['updatedAt'] ?? json['updated_at'],
-        fallback: now,
-      ),
-      resolvedAt: jsonNullableDate(json['resolvedAt'] ?? json['resolved_at']),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'status': status.wire,
-    'sourceTaskIds': sourceTaskIds,
-    'sourceTaskTitles': sourceTaskTitles,
-    'failedGateId': failedGateId,
-    if (command != null) 'command': command,
-    if (workingDirectory != null) 'workingDirectory': workingDirectory,
-    'failureSummary': failureSummary,
-    'attemptCount': attemptCount,
-    'maxAttempts': maxAttempts,
-    'recoveryTaskIds': recoveryTaskIds,
-    'createdAt': createdAt.toIso8601String(),
-    'updatedAt': updatedAt.toIso8601String(),
-    if (resolvedAt != null) 'resolvedAt': resolvedAt!.toIso8601String(),
-  };
 }
 
-class ProjectTask {
+@MappableClass(ignoreNull: true, hook: ProjectTaskJsonHook())
+class ProjectTask with ProjectTaskMappable {
+  @MappableField(hook: JsonStringHook(fallback: 'project_task'))
   final String id;
+  @MappableField(hook: JsonStringHook(fallback: 'Untitled task'))
   final String title;
+  @MappableField(hook: JsonStringHook())
   final String objective;
+  @MappableField(hook: JsonStringListHook())
   final List<String> relevantSuccessCriteria;
+  @MappableField(hook: JsonStringListHook())
   final List<String> doneCriteria;
+  @MappableField(hook: JsonStringListHook())
   final List<String> outOfScope;
+  @MappableField(hook: JsonStringListHook())
   final List<String> context;
+  @MappableField(hook: JsonObjectListHook())
   final List<ProjectArtifact> expectedArtifacts;
+  @MappableField(hook: EnumAliasHook({}))
   final ProjectTaskStatus status;
+  @MappableField(hook: JsonNullableStringHook())
   final String? taskDocumentId;
+  @MappableField(hook: JsonNullableStringHook())
   final String? recoveryIncidentId;
+  @MappableField(hook: JsonStringHook())
   final String fingerprint;
+  @MappableField(hook: JsonNullableStringHook())
   final String? rejectionReason;
+  @MappableField(hook: JsonDateHook())
   final DateTime createdAt;
+  @MappableField(hook: JsonDateHook())
   final DateTime updatedAt;
 
   const ProjectTask({
@@ -921,53 +669,6 @@ class ProjectTask {
     );
   }
 
-  factory ProjectTask.fromJson(Map<String, dynamic> json) {
-    final now = DateTime.now();
-    final objective = jsonString(json['objective'] ?? json['prompt']);
-    final criteria = jsonStringList(
-      json['relevantSuccessCriteria'] ??
-          json['relevant_success_criteria'] ??
-          json['successCriteria'] ??
-          json['success_criteria'],
-    );
-    return ProjectTask(
-      id: jsonString(json['id'], fallback: 'project_task'),
-      title: jsonString(json['title'], fallback: 'Untitled task'),
-      objective: objective,
-      relevantSuccessCriteria: criteria,
-      doneCriteria: jsonStringList(
-        json['doneCriteria'] ?? json['done_criteria'],
-      ),
-      outOfScope: jsonStringList(json['outOfScope'] ?? json['out_of_scope']),
-      context: jsonStringList(json['context']),
-      expectedArtifacts: jsonMapList(
-        json['expectedArtifacts'] ?? json['expected_artifacts'],
-      ).map(ProjectArtifact.fromJson).toList(),
-      status: parseProjectTaskStatus(json['status']),
-      taskDocumentId: jsonNullableString(
-        json['taskDocumentId'] ?? json['task_document_id'],
-      ),
-      recoveryIncidentId: jsonNullableString(
-        json['recoveryIncidentId'] ?? json['recovery_incident_id'],
-      ),
-      fingerprint: jsonString(
-        json['fingerprint'],
-        fallback: projectTaskFingerprint(objective, criteria),
-      ),
-      rejectionReason: jsonNullableString(
-        json['rejectionReason'] ?? json['rejection_reason'],
-      ),
-      createdAt: jsonDate(
-        json['createdAt'] ?? json['created_at'],
-        fallback: now,
-      ),
-      updatedAt: jsonDate(
-        json['updatedAt'] ?? json['updated_at'],
-        fallback: now,
-      ),
-    );
-  }
-
   factory ProjectTask.fromLegacyRef(ProjectTaskRef ref) {
     final objective = ref.summary.trim().isEmpty ? ref.title : ref.summary;
     final criteria = ref.summary.trim().isEmpty ? <String>[] : [ref.summary];
@@ -993,35 +694,23 @@ class ProjectTask {
       updatedAt: ref.updatedAt,
     );
   }
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'title': title,
-    'objective': objective,
-    'relevantSuccessCriteria': relevantSuccessCriteria,
-    'doneCriteria': doneCriteria,
-    'outOfScope': outOfScope,
-    'context': context,
-    'expectedArtifacts': expectedArtifacts
-        .map((artifact) => artifact.toJson())
-        .toList(),
-    'status': status.wire,
-    if (taskDocumentId != null) 'taskDocumentId': taskDocumentId,
-    if (recoveryIncidentId != null) 'recoveryIncidentId': recoveryIncidentId,
-    'fingerprint': fingerprint,
-    if (rejectionReason != null) 'rejectionReason': rejectionReason,
-    'createdAt': createdAt.toIso8601String(),
-    'updatedAt': updatedAt.toIso8601String(),
-  };
 }
 
-class ProjectArtifact {
+@MappableClass(ignoreNull: true, hook: ProjectArtifactJsonHook())
+class ProjectArtifact with ProjectArtifactMappable {
+  @MappableField(hook: JsonStringHook())
   final String id;
+  @MappableField(hook: JsonNullableStringHook())
   final String? projectTaskId;
+  @MappableField(hook: JsonNullableStringHook())
   final String? taskDocumentId;
+  @MappableField(hook: JsonStringHook())
   final String path;
+  @MappableField(hook: JsonStringHook())
   final String description;
+  @MappableField(hook: JsonStringHook(fallback: 'file'))
   final String kind;
+  @MappableField(hook: JsonDateHook())
   final DateTime createdAt;
 
   const ProjectArtifact({
@@ -1053,40 +742,11 @@ class ProjectArtifact {
       createdAt: createdAt ?? this.createdAt,
     );
   }
-
-  factory ProjectArtifact.fromJson(Map<String, dynamic> json) {
-    final path = jsonString(json['path']);
-    return ProjectArtifact(
-      id: jsonString(json['id'], fallback: path),
-      projectTaskId: jsonNullableString(
-        json['projectTaskId'] ?? json['project_task_id'],
-      ),
-      taskDocumentId: jsonNullableString(
-        json['taskDocumentId'] ?? json['task_document_id'],
-      ),
-      path: path,
-      description: jsonString(json['description']),
-      kind: jsonString(json['kind'], fallback: 'file'),
-      createdAt: jsonDate(
-        json['createdAt'] ?? json['created_at'],
-        fallback: DateTime.now(),
-      ),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    if (projectTaskId != null) 'projectTaskId': projectTaskId,
-    if (taskDocumentId != null) 'taskDocumentId': taskDocumentId,
-    'path': path,
-    'description': description,
-    'kind': kind,
-    'createdAt': createdAt.toIso8601String(),
-  };
 }
 
 class TaskResult {
   final String taskDocumentId;
+  @MappableField(hook: EnumAliasHook({}))
   final TaskStatus status;
   final String summary;
   final String memoryUpdate;
@@ -1139,13 +799,20 @@ class ProjectEvaluation {
   });
 }
 
-class ProjectTaskRef {
+@MappableClass(ignoreNull: true)
+class ProjectTaskRef with ProjectTaskRefMappable {
+  @MappableField(hook: JsonStringHook())
   final String taskId;
+  @MappableField(hook: JsonStringHook(fallback: 'Untitled task'))
   final String title;
   final TaskStatus status;
+  @MappableField(hook: JsonStringHook())
   final String summary;
+  @MappableField(hook: JsonDateHook())
   final DateTime createdAt;
+  @MappableField(hook: JsonDateHook())
   final DateTime updatedAt;
+  @MappableField(hook: JsonNullableDateHook())
   final DateTime? completedAt;
 
   const ProjectTaskRef({
@@ -1191,48 +858,36 @@ class ProjectTaskRef {
       completedAt: task.completedAt,
     );
   }
-
-  factory ProjectTaskRef.fromJson(Map<String, dynamic> json) {
-    final now = DateTime.now();
-    return ProjectTaskRef(
-      taskId: jsonString(json['taskId'] ?? json['task_id']),
-      title: jsonString(json['title'], fallback: 'Untitled task'),
-      status: parseTaskStatus(json['status']),
-      summary: jsonString(json['summary']),
-      createdAt: jsonDate(
-        json['createdAt'] ?? json['created_at'],
-        fallback: now,
-      ),
-      updatedAt: jsonDate(
-        json['updatedAt'] ?? json['updated_at'],
-        fallback: now,
-      ),
-      completedAt: jsonNullableDate(
-        json['completedAt'] ?? json['completed_at'],
-      ),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'taskId': taskId,
-    'title': title,
-    'status': status.wire,
-    'summary': summary,
-    'createdAt': createdAt.toIso8601String(),
-    'updatedAt': updatedAt.toIso8601String(),
-    if (completedAt != null) 'completedAt': completedAt!.toIso8601String(),
-  };
 }
 
-class ProjectDecisionRecord {
+@MappableClass(ignoreNull: true)
+class ProjectDecisionRecord with ProjectDecisionRecordMappable {
+  @MappableField(hook: JsonStringHook())
   final String id;
+  @MappableField(
+    hook: EnumAliasHook({
+      'createtask': 'create_task',
+      'createrecoverytask': 'create_recovery_task',
+      'rejecttask': 'reject_task',
+      'splittask': 'split_task',
+      'evaluatetask': 'evaluate_task',
+      'refreshbacklog': 'refresh_backlog',
+    }),
+  )
   final ProjectDecisionType decision;
+  @MappableField(hook: JsonStringHook())
   final String summary;
+  @MappableField(hook: JsonStringHook())
   final String memoryUpdate;
+  @MappableField(hook: JsonNullableStringHook())
   final String? taskId;
+  @MappableField(hook: JsonNullableStringHook())
   final String? taskTitle;
+  @MappableField(hook: JsonNullableStringHook())
   final String? taskPrompt;
+  @MappableField(hook: JsonNullableStringHook())
   final String? error;
+  @MappableField(hook: JsonDateHook())
   final DateTime createdAt;
 
   const ProjectDecisionRecord({
@@ -1274,41 +929,27 @@ class ProjectDecisionRecord {
   ProjectDecisionRecord copyWithTask({String? taskId, String? taskTitle}) {
     return copyWith(taskId: taskId, taskTitle: taskTitle);
   }
-
-  factory ProjectDecisionRecord.fromJson(Map<String, dynamic> json) {
-    return ProjectDecisionRecord(
-      id: jsonString(json['id']),
-      decision: parseProjectDecisionType(json['decision']),
-      summary: jsonString(json['summary']),
-      memoryUpdate: jsonString(json['memoryUpdate'] ?? json['memory_update']),
-      taskId: jsonNullableString(json['taskId'] ?? json['task_id']),
-      taskTitle: jsonNullableString(json['taskTitle'] ?? json['task_title']),
-      taskPrompt: jsonNullableString(json['taskPrompt'] ?? json['task_prompt']),
-      error: jsonNullableString(json['error']),
-      createdAt: jsonDate(
-        json['createdAt'] ?? json['created_at'],
-        fallback: DateTime.now(),
-      ),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'decision': decision.wire,
-    'summary': summary,
-    'memoryUpdate': memoryUpdate,
-    if (taskId != null) 'taskId': taskId,
-    if (taskTitle != null) 'taskTitle': taskTitle,
-    if (taskPrompt != null) 'taskPrompt': taskPrompt,
-    if (error != null) 'error': error,
-    'createdAt': createdAt.toIso8601String(),
-  };
 }
 
-class ProjectBlocker {
+@MappableClass(ignoreNull: true)
+class ProjectBlocker with ProjectBlockerMappable {
+  @MappableField(
+    hook: EnumAliasHook({
+      'taskapproval': 'task_approval',
+      'taskblocked': 'task_blocked',
+      'taskfailed': 'task_failed',
+      'recoveryfailed': 'recovery_failed',
+      'duplicatetask': 'duplicate_task',
+      'oversizedtask': 'oversized_task',
+      'maxfailures': 'max_failures',
+    }),
+  )
   final ProjectBlockerType type;
+  @MappableField(hook: JsonStringHook())
   final String message;
+  @MappableField(hook: JsonNullableStringHook())
   final String? taskId;
+  @MappableField(hook: JsonDateHook())
   final DateTime createdAt;
 
   const ProjectBlocker({
@@ -1317,30 +958,15 @@ class ProjectBlocker {
     required this.createdAt,
     this.taskId,
   });
-
-  factory ProjectBlocker.fromJson(Map<String, dynamic> json) {
-    return ProjectBlocker(
-      type: parseProjectBlockerType(json['type']),
-      message: jsonString(json['message']),
-      taskId: jsonNullableString(json['taskId'] ?? json['task_id']),
-      createdAt: jsonDate(
-        json['createdAt'] ?? json['created_at'],
-        fallback: DateTime.now(),
-      ),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'type': type.wire,
-    'message': message,
-    if (taskId != null) 'taskId': taskId,
-    'createdAt': createdAt.toIso8601String(),
-  };
 }
 
-class PendingProjectQuestion {
+@MappableClass(ignoreNull: true)
+class PendingProjectQuestion with PendingProjectQuestionMappable {
+  @MappableField(hook: JsonStringHook())
   final String id;
+  @MappableField(hook: JsonStringHook())
   final String question;
+  @MappableField(hook: JsonDateHook())
   final DateTime createdAt;
 
   const PendingProjectQuestion({
@@ -1348,23 +974,6 @@ class PendingProjectQuestion {
     required this.question,
     required this.createdAt,
   });
-
-  factory PendingProjectQuestion.fromJson(Map<String, dynamic> json) {
-    return PendingProjectQuestion(
-      id: jsonString(json['id']),
-      question: jsonString(json['question']),
-      createdAt: jsonDate(
-        json['createdAt'] ?? json['created_at'],
-        fallback: DateTime.now(),
-      ),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'question': question,
-    'createdAt': createdAt.toIso8601String(),
-  };
 }
 
 class ProjectSummary {

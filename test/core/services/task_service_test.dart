@@ -7,6 +7,7 @@ import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/models/workspace.dart';
+import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
@@ -1436,7 +1437,7 @@ void main() {
       );
 
       final finalRequest = jsonEncode(
-        client.seenMessages.last.map((message) => message.toJson()).toList(),
+        client.seenMessages.last.map(ModelJson.encode).toList(),
       );
 
       expect(updated.status, TaskStatus.completed);

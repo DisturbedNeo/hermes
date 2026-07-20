@@ -1,9 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/task.dart';
+import 'package:hermes/core/serialization/model_json.dart';
 
 void main() {
   test('task JSON remains backward compatible without gates', () {
-    final task = TaskDocument.fromJson({
+    final task = ModelJson.decode<TaskDocument>({
       'id': 'task_1',
       'title': 'Old task',
       'originalPrompt': 'Do work',
@@ -100,7 +101,7 @@ void main() {
       updatedAt: now,
     );
 
-    final decoded = TaskDocument.fromJson(task.toJson());
+    final decoded = ModelJson.decode<TaskDocument>(ModelJson.encode(task));
 
     expect(decoded.gates.single.id, 'no_tool_errors');
     expect(decoded.steps.single.gates.single.id, 'artifact_exists');

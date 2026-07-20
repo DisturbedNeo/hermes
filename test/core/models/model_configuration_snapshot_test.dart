@@ -1,9 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
+import 'package:hermes/core/serialization/model_json.dart';
 
 void main() {
   test('uses model configuration defaults when snapshots omit them', () {
-    final snapshot = ModelConfigurationSnapshot.fromJson(const {});
+    final snapshot = ModelJson.decode<ModelConfigurationSnapshot>(const {});
 
     expect(snapshot.nThreads, ModelConfigurationSnapshot.defaultNThreads);
     expect(snapshot.flashAttention, isTrue);
@@ -47,12 +48,13 @@ void main() {
       kvCacheTypeV: 'q8_0',
     );
 
-    expect(snapshot.toJson(), containsPair('flashAttention', true));
-    expect(snapshot.toJson(), containsPair('cachePrompt', true));
-    expect(snapshot.toJson(), containsPair('cacheReuse', 512));
-    expect(snapshot.toJson(), containsPair('kvCacheQuantizationEnabled', true));
-    expect(snapshot.toJson(), containsPair('kvCacheTypeK', 'q4_0'));
-    expect(snapshot.toJson(), containsPair('kvCacheTypeV', 'q8_0'));
+    final encoded = ModelJson.encode(snapshot);
+    expect(encoded, containsPair('flashAttention', true));
+    expect(encoded, containsPair('cachePrompt', true));
+    expect(encoded, containsPair('cacheReuse', 512));
+    expect(encoded, containsPair('kvCacheQuantizationEnabled', true));
+    expect(encoded, containsPair('kvCacheTypeK', 'q4_0'));
+    expect(encoded, containsPair('kvCacheTypeV', 'q8_0'));
   });
 
   test('matches treats corresponding NaN double values as equal', () {
@@ -85,10 +87,10 @@ void main() {
   });
 
   test('clamps cache reuse when snapshots are restored', () {
-    final belowMin = ModelConfigurationSnapshot.fromJson(const {
+    final belowMin = ModelJson.decode<ModelConfigurationSnapshot>(const {
       'cacheReuse': 64,
     });
-    final aboveMax = ModelConfigurationSnapshot.fromJson(const {
+    final aboveMax = ModelJson.decode<ModelConfigurationSnapshot>(const {
       'cacheReuse': 2048,
     });
 

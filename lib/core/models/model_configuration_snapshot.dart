@@ -1,8 +1,13 @@
 import 'dart:io';
 
+import 'package:dart_mappable/dart_mappable.dart';
 import 'package:hermes/core/helpers/json_parsing.dart';
+import 'package:hermes/core/serialization/json_hooks.dart';
 
-class ModelConfigurationSnapshot {
+part 'model_configuration_snapshot.mapper.dart';
+
+@MappableClass()
+class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
   static const String defaultKvCacheType = 'q8_0';
   static const int defaultCacheReuse = 256;
   static const int minCacheReuse = 128;
@@ -21,28 +26,51 @@ class ModelConfigurationSnapshot {
 
   static int get defaultNThreads => Platform.numberOfProcessors;
 
+  @MappableField(hook: JsonStringHook())
   final String modelName;
+  @MappableField(hook: JsonStringHook())
   final String modelPath;
+  @MappableField(hook: JsonStringHook())
   final String llamaCppDirectory;
+  @MappableField(hook: JsonIntHook(fallback: 4096))
   final int nCtx;
+  @MappableField(hook: PlatformThreadsHook())
   final int nThreads;
+  @MappableField(hook: JsonIntHook())
   final int nGpuLayers;
+  @MappableField(hook: JsonDoubleHook(fallback: 0.7))
   final double temperature;
+  @MappableField(hook: JsonDoubleHook(fallback: 0.9))
   final double topP;
+  @MappableField(hook: JsonIntHook(fallback: 40))
   final int topK;
+  @MappableField(hook: JsonIntHook(fallback: 2048))
   final int nBatch;
+  @MappableField(hook: JsonIntHook(fallback: 512))
   final int nUBatch;
+  @MappableField(hook: JsonIntHook())
   final int mirostat;
+  @MappableField(hook: JsonDoubleHook(fallback: 1.1))
   final double repeatPenalty;
+  @MappableField(hook: JsonIntHook(fallback: 256))
   final int repeatLastN;
+  @MappableField(hook: JsonDoubleHook(fallback: 1.2))
   final double presencePenalty;
+  @MappableField(hook: JsonDoubleHook(fallback: 0.5))
   final double frequencyPenalty;
+  @MappableField(hook: JsonBoolHook(fallback: true))
   final bool thinking;
+  @MappableField(hook: JsonBoolHook(fallback: true))
   final bool flashAttention;
+  @MappableField(hook: JsonBoolHook(fallback: true))
   final bool cachePrompt;
+  @MappableField(hook: CacheReuseHook())
   final int cacheReuse;
+  @MappableField(hook: JsonBoolHook(fallback: true))
   final bool kvCacheQuantizationEnabled;
+  @MappableField(hook: KvCacheTypeHook())
   final String kvCacheTypeK;
+  @MappableField(hook: KvCacheTypeHook())
   final String kvCacheTypeV;
 
   const ModelConfigurationSnapshot({
@@ -70,65 +98,6 @@ class ModelConfigurationSnapshot {
     required this.kvCacheTypeK,
     required this.kvCacheTypeV,
   });
-
-  factory ModelConfigurationSnapshot.fromJson(Map<String, dynamic> json) {
-    return ModelConfigurationSnapshot(
-      modelName: json['modelName'] as String? ?? '',
-      modelPath: json['modelPath'] as String? ?? '',
-      llamaCppDirectory: json['llamaCppDirectory'] as String? ?? '',
-      nCtx: jsonInt(json['nCtx'], fallback: 4096),
-      nThreads: jsonInt(json['nThreads'], fallback: defaultNThreads),
-      nGpuLayers: jsonInt(json['nGpuLayers'], fallback: 0),
-      temperature: jsonDouble(json['temperature'], fallback: 0.7),
-      topP: jsonDouble(json['topP'], fallback: 0.9),
-      topK: jsonInt(json['topK'], fallback: 40),
-      nBatch: jsonInt(json['nBatch'], fallback: 2048),
-      nUBatch: jsonInt(json['nUBatch'], fallback: 512),
-      mirostat: jsonInt(json['mirostat'], fallback: 0),
-      repeatPenalty: jsonDouble(json['repeatPenalty'], fallback: 1.1),
-      repeatLastN: jsonInt(json['repeatLastN'], fallback: 256),
-      presencePenalty: jsonDouble(json['presencePenalty'], fallback: 1.2),
-      frequencyPenalty: jsonDouble(json['frequencyPenalty'], fallback: 0.5),
-      thinking: json['thinking'] as bool? ?? true,
-      flashAttention: json['flashAttention'] as bool? ?? true,
-      cachePrompt: json['cachePrompt'] as bool? ?? true,
-      cacheReuse: clampCacheReuse(
-        jsonInt(json['cacheReuse'], fallback: defaultCacheReuse),
-      ),
-      kvCacheQuantizationEnabled:
-          json['kvCacheQuantizationEnabled'] as bool? ?? true,
-      kvCacheTypeK: _kvCacheType(json['kvCacheTypeK']),
-      kvCacheTypeV: _kvCacheType(json['kvCacheTypeV']),
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'modelName': modelName,
-      'modelPath': modelPath,
-      'llamaCppDirectory': llamaCppDirectory,
-      'nCtx': nCtx,
-      'nThreads': nThreads,
-      'nGpuLayers': nGpuLayers,
-      'temperature': temperature,
-      'topP': topP,
-      'topK': topK,
-      'nBatch': nBatch,
-      'nUBatch': nUBatch,
-      'mirostat': mirostat,
-      'repeatPenalty': repeatPenalty,
-      'repeatLastN': repeatLastN,
-      'presencePenalty': presencePenalty,
-      'frequencyPenalty': frequencyPenalty,
-      'thinking': thinking,
-      'flashAttention': flashAttention,
-      'cachePrompt': cachePrompt,
-      'cacheReuse': cacheReuse,
-      'kvCacheQuantizationEnabled': kvCacheQuantizationEnabled,
-      'kvCacheTypeK': kvCacheTypeK,
-      'kvCacheTypeV': kvCacheTypeV,
-    };
-  }
 
   bool matches(ModelConfigurationSnapshot? other) {
     if (other == null) return false;
@@ -204,4 +173,30 @@ class ModelConfigurationSnapshot {
     if (value is String && allowedKvCacheTypes.contains(value)) return value;
     return defaultKvCacheType;
   }
+}
+
+class PlatformThreadsHook extends MappingHook {
+  const PlatformThreadsHook();
+
+  @override
+  Object? beforeDecode(Object? value) =>
+      jsonInt(value, fallback: ModelConfigurationSnapshot.defaultNThreads);
+}
+
+class CacheReuseHook extends MappingHook {
+  const CacheReuseHook();
+
+  @override
+  Object? beforeDecode(Object? value) =>
+      ModelConfigurationSnapshot.clampCacheReuse(
+        jsonInt(value, fallback: ModelConfigurationSnapshot.defaultCacheReuse),
+      );
+}
+
+class KvCacheTypeHook extends MappingHook {
+  const KvCacheTypeHook();
+
+  @override
+  Object? beforeDecode(Object? value) =>
+      ModelConfigurationSnapshot._kvCacheType(value);
 }

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:hermes/core/models/chat_message.dart';
+import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/models/chat_token.dart';
 import 'package:http/http.dart' as http;
 
@@ -133,7 +134,7 @@ class ChatClient {
   }) async {
     final body = {
       'model': _model,
-      'messages': messages.map((m) => m.toJson()).toList(),
+      'messages': messages.map(ModelJson.encode).toList(),
       'stream': false,
       ...?extraParams,
     };
@@ -171,7 +172,7 @@ class ChatClient {
 
     final body = {
       'model': _model,
-      'messages': messages.map((m) => m.toJson()).toList(),
+      'messages': messages.map(ModelJson.encode).toList(),
       'stream': true,
       ...?extraParams,
     };
@@ -290,7 +291,7 @@ class ChatClient {
   }) async* {
     final body = {
       'model': _model,
-      'messages': messages.map((m) => m.toJson()).toList(),
+      'messages': messages.map(ModelJson.encode).toList(),
       'stream': true,
       ...?extraParams,
     };

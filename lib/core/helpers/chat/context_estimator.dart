@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:hermes/core/models/chat_message.dart';
+import 'package:hermes/core/serialization/model_json.dart';
 
 class ContextEstimator {
   const ContextEstimator._();
@@ -12,7 +13,7 @@ class ContextEstimator {
     if (messages.isEmpty && extraParams.isEmpty) return 0;
 
     final payload = <String, dynamic>{
-      'messages': messages.map((m) => m.toJson()).toList(),
+      'messages': messages.map(ModelJson.encode).toList(),
       if (extraParams.isNotEmpty) ...extraParams,
     };
 

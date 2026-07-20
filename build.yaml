@@ -1,0 +1,7 @@
+global_options:
+  dart_mappable_builder:
+    options:
+      generateMethods:
+        - decode
+        - encode
+      useNodoc: true

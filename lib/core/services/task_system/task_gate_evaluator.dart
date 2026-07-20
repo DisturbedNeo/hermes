@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/task.dart';
+import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
@@ -764,7 +765,7 @@ Task goal:
 ${task.goal}
 
 Step:
-${jsonEncode(step.toJson())}
+${jsonEncode(ModelJson.encode(step))}
 
 Review instruction:
 $prompt

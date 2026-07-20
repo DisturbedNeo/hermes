@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
+import 'package:hermes/core/serialization/model_json.dart';
 
 void main() {
   group('ProjectDocument JSON', () {
@@ -60,8 +61,8 @@ void main() {
           updatedAt: now,
         );
 
-        final loaded = ProjectDocument.fromJson(
-          jsonDecode(jsonEncode(project.toJson())) as Map<String, dynamic>,
+        final loaded = ModelJson.decode<ProjectDocument>(
+          jsonDecode(jsonEncode(ModelJson.encode(project))),
         );
 
         expect(loaded.schemaVersion, ProjectDocument.currentSchemaVersion);
@@ -79,7 +80,7 @@ void main() {
     );
 
     test('parses snake case blocker and decision aliases', () {
-      final loaded = ProjectDocument.fromJson({
+      final loaded = ModelJson.decode<ProjectDocument>({
         'schema_version': 1,
         'id': 'project_test',
         'title': 'Project',
@@ -116,7 +117,7 @@ void main() {
 
     test('round-trips recovery incident metadata', () {
       final now = DateTime(2026, 1, 1);
-      final loaded = ProjectDocument.fromJson({
+      final loaded = ModelJson.decode<ProjectDocument>({
         'schemaVersion': ProjectDocument.currentSchemaVersion,
         'id': 'project_test',
         'title': 'Project',

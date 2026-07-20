@@ -4,6 +4,7 @@ import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/project.dart';
+import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
@@ -193,7 +194,7 @@ Workspace metadata:
 ${_encoder.convert(workspaceMetadata)}
 
 Project state:
-${_encoder.convert(project.toJson())}
+${_encoder.convert(ModelJson.encode(project))}
 ''',
       );
       return ProjectBacklogRefresh(
@@ -255,7 +256,7 @@ Workspace metadata:
 ${_encoder.convert(workspaceMetadata)}
 
 Project state:
-${_encoder.convert(project.toJson())}
+${_encoder.convert(ModelJson.encode(project))}
 ''',
       );
       final raw = json['task'];
@@ -311,10 +312,10 @@ Validation violations:
 ${_encoder.convert(violations)}
 
 Invalid task:
-${_encoder.convert(oversizedTask.toJson())}
+${_encoder.convert(ModelJson.encode(oversizedTask))}
 
 Project state:
-${_encoder.convert(project.toJson())}
+${_encoder.convert(ModelJson.encode(project))}
 ''',
       );
       return _tasksFromJson(json['tasks']).take(5).toList();
@@ -352,7 +353,7 @@ Return only JSON:
 }
 
 Project state:
-${_encoder.convert(project.toJson())}
+${_encoder.convert(ModelJson.encode(project))}
 ''',
       );
       return ProjectCompletionAssessment(
@@ -531,7 +532,7 @@ $expectedShape
       fallback: 'project_task_${index + 1}_${uuid.v7().substring(0, 8)}',
     );
     map['status'] ??= ProjectTaskStatus.queued.wire;
-    final task = ProjectTask.fromJson(map);
+    final task = ModelJson.decode<ProjectTask>(map);
     return task.copyWith(
       fingerprint: projectTaskFingerprint(
         task.objective,
@@ -587,7 +588,7 @@ $expectedShape
       if (agentQuestion != null) {
         map['question'] = agentQuestion.displayText;
       }
-      return PendingProjectQuestion.fromJson(map);
+      return ModelJson.decode<PendingProjectQuestion>(map);
     }).toList();
   }
 

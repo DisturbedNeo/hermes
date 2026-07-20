@@ -6,6 +6,7 @@ import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/core/models/project.dart';
+import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/models/workspace.dart';
@@ -122,7 +123,7 @@ class ProjectService {
   }
 
   String encodeProject(ProjectDocument project) =>
-      '${_encoder.convert(project.toJson())}\n';
+      '${_encoder.convert(ModelJson.encode(project))}\n';
 
   Future<ProjectDocument> createProject({
     required WorkspaceAttachment workspace,
@@ -211,7 +212,9 @@ class ProjectService {
     required ProjectDocument snapshot,
     required String rawJson,
   }) async {
-    final parsed = ProjectDocument.fromJson(TaskJson.parseObject(rawJson));
+    final parsed = ModelJson.decode<ProjectDocument>(
+      TaskJson.parseObject(rawJson),
+    );
     final updated = parsed.copyWith(
       schemaVersion: ProjectDocument.currentSchemaVersion,
       id: snapshot.id,

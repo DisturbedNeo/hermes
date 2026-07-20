@@ -1,13 +1,33 @@
+import 'package:dart_mappable/dart_mappable.dart';
 import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/models/task_system_settings.dart';
+import 'package:hermes/core/serialization/json_hooks.dart';
+import 'package:hermes/core/serialization/model_json.dart';
 
+part 'question_policy_service.mapper.dart';
+
+@MappableEnum(defaultValue: QuestionKind.blocking)
 enum QuestionKind { blocking, preference, advisory }
 
-class AgentQuestion {
+@MappableClass(
+  generateMethods: GenerateMethods.decode,
+  hook: JsonModelHook(
+    aliases: {
+      'reason': ['whyBlocking'],
+      'kind': ['type'],
+    },
+  ),
+)
+class AgentQuestion with AgentQuestionMappable {
+  @MappableField(hook: JsonStringHook())
   final String question;
+  @MappableField(hook: JsonStringHook())
   final String reason;
+  @MappableField(hook: JsonStringHook())
   final String defaultIfUnanswered;
+  @MappableField(hook: JsonStringHook())
   final String riskOfAssuming;
+  @MappableField(hook: EnumAliasHook({}))
   final QuestionKind kind;
 
   const AgentQuestion({
@@ -18,20 +38,6 @@ class AgentQuestion {
     this.kind = QuestionKind.blocking,
   });
 
-  factory AgentQuestion.fromJson(Map<String, dynamic> json) {
-    return AgentQuestion(
-      question: jsonString(json['question']),
-      reason: jsonString(json['reason'] ?? json['whyBlocking']),
-      defaultIfUnanswered: jsonString(
-        json['defaultIfUnanswered'] ?? json['default_if_unanswered'],
-      ),
-      riskOfAssuming: jsonString(
-        json['riskOfAssuming'] ?? json['risk_of_assuming'],
-      ),
-      kind: _parseKind(json['kind'] ?? json['type']),
-    );
-  }
-
   factory AgentQuestion.fromText(String question) {
     return AgentQuestion(question: question);
   }
@@ -39,7 +45,7 @@ class AgentQuestion {
   static AgentQuestion? parse(Object? value) {
     if (value == null) return null;
     if (value is Map) {
-      return AgentQuestion.fromJson(Map<String, dynamic>.from(value));
+      return ModelJson.decode<AgentQuestion>(value);
     }
     final question = jsonString(value).trim();
     if (question.isEmpty) return null;
@@ -67,15 +73,6 @@ class AgentQuestion {
         ? 'The question appears reversible or preference-based.'
         : reason.trim();
     return 'Assumed: $defaultText\nOriginal question: $question\nReason: $reasonText';
-  }
-
-  static QuestionKind _parseKind(Object? value) {
-    final raw = value?.toString().trim().toLowerCase();
-    return switch (raw) {
-      'preference' => QuestionKind.preference,
-      'advisory' => QuestionKind.advisory,
-      _ => QuestionKind.blocking,
-    };
   }
 }
 

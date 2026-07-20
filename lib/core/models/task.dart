@@ -1,8 +1,12 @@
-import 'package:hermes/core/helpers/json_parsing.dart';
+import 'package:dart_mappable/dart_mappable.dart';
 import 'package:hermes/core/helpers/sentinel.dart' show kSentinel, resolve;
+import 'package:hermes/core/serialization/json_hooks.dart';
+
+part 'task.mapper.dart';
 
 enum ExecutionMode { chat, refine, task, project, continueTask }
 
+@MappableEnum(defaultValue: TaskStatus.paused)
 enum TaskStatus {
   draft,
   planned,
@@ -14,6 +18,7 @@ enum TaskStatus {
   cancelled,
 }
 
+@MappableEnum(defaultValue: TaskStepStatus.pending)
 enum TaskStepStatus {
   pending,
   approved,
@@ -24,6 +29,7 @@ enum TaskStepStatus {
   skipped,
 }
 
+@MappableEnum(defaultValue: TaskRunStatus.completed)
 enum TaskRunStatus {
   running,
   completed,
@@ -31,10 +37,12 @@ enum TaskRunStatus {
   failed,
   cancelled,
   skipped,
+  @MappableValue('needs_replan')
   needsReplan,
   replanned,
 }
 
+@MappableEnum(defaultValue: TaskGateStatus.pending)
 enum TaskGateStatus { passed, failed, pending, advisory }
 
 extension ExecutionModeWire on ExecutionMode {
@@ -71,28 +79,8 @@ extension TaskGateStatusWire on TaskGateStatus {
   String get wire => name;
 }
 
-ExecutionMode parseExecutionMode(Object? value) => _parseEnum(
-  ExecutionMode.values,
-  value,
-  ExecutionMode.chat,
-  aliases: {'continue_task': ExecutionMode.continueTask},
-);
-
 TaskStatus parseTaskStatus(Object? value) =>
     _parseEnum(TaskStatus.values, value, TaskStatus.paused);
-
-TaskStepStatus parseTaskStepStatus(Object? value) =>
-    _parseEnum(TaskStepStatus.values, value, TaskStepStatus.pending);
-
-TaskRunStatus parseTaskRunStatus(Object? value) => _parseEnum(
-  TaskRunStatus.values,
-  value,
-  TaskRunStatus.completed,
-  aliases: {'needs_replan': TaskRunStatus.needsReplan},
-);
-
-TaskGateStatus parseTaskGateStatus(Object? value) =>
-    _parseEnum(TaskGateStatus.values, value, TaskGateStatus.pending);
 
 T _parseEnum<T extends Enum>(
   List<T> values,
@@ -111,12 +99,27 @@ T _parseEnum<T extends Enum>(
   return fallback;
 }
 
-class RefinedTaskBrief {
+@MappableClass(
+  hook: JsonModelHook(
+    aliases: {
+      'goal': ['objective'],
+      'successCriteria': ['success_criteria'],
+      'questions': ['clarifyingQuestions'],
+    },
+  ),
+)
+class RefinedTaskBrief with RefinedTaskBriefMappable {
+  @MappableField(hook: JsonStringHook(fallback: 'Untitled task'))
   final String title;
+  @MappableField(hook: JsonStringHook())
   final String goal;
+  @MappableField(hook: JsonStringListHook())
   final List<String> constraints;
+  @MappableField(hook: JsonStringListHook())
   final List<String> successCriteria;
+  @MappableField(hook: JsonStringListHook())
   final List<String> assumptions;
+  @MappableField(hook: JsonStringListHook())
   final List<String> questions;
 
   const RefinedTaskBrief({
@@ -127,54 +130,57 @@ class RefinedTaskBrief {
     this.assumptions = const [],
     this.questions = const [],
   });
-
-  factory RefinedTaskBrief.fromJson(Map<String, dynamic> json) {
-    return RefinedTaskBrief(
-      title: jsonString(json['title'], fallback: 'Untitled task'),
-      goal: jsonString(json['goal'] ?? json['objective']),
-      constraints: jsonStringList(json['constraints']),
-      successCriteria: jsonStringList(
-        json['successCriteria'] ?? json['success_criteria'],
-      ),
-      assumptions: jsonStringList(json['assumptions']),
-      questions: jsonStringList(
-        json['questions'] ?? json['clarifyingQuestions'],
-      ),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'title': title,
-    'goal': goal,
-    'constraints': constraints,
-    'successCriteria': successCriteria,
-    'assumptions': assumptions,
-    'questions': questions,
-  };
 }
 
-class TaskDocument {
+@MappableClass(
+  ignoreNull: true,
+  hook: JsonModelHook(
+    aliases: {
+      'goal': ['objective'],
+    },
+    omitEmpty: {'gates'},
+  ),
+)
+class TaskDocument with TaskDocumentMappable {
   static const int currentSchemaVersion = 2;
 
+  @MappableField(hook: JsonIntHook())
   final int schemaVersion;
+  @MappableField(hook: JsonStringHook())
   final String id;
+  @MappableField(hook: JsonStringHook(fallback: 'Untitled task'))
   final String title;
+  @MappableField(hook: JsonStringHook())
   final String originalPrompt;
+  @MappableField(hook: JsonStringHook())
   final String goal;
+  @MappableField(hook: JsonStringListHook())
   final List<String> constraints;
+  @MappableField(hook: JsonStringListHook())
   final List<String> successCriteria;
+  @MappableField(hook: JsonObjectListHook())
   final List<TaskGate> gates;
+  @MappableField(hook: JsonObjectListHook())
   final List<TaskStep> steps;
+  @MappableField(hook: EnumAliasHook({}))
   final TaskStatus status;
+  @MappableField(hook: JsonNullableStringHook())
   final String? currentStepId;
+  @MappableField(hook: JsonStringHook())
   final String memorySummary;
+  @MappableField(hook: JsonObjectListHook())
   final List<TaskRun> runs;
   final PendingTaskApproval? pendingApproval;
   final PendingTaskQuestion? pendingQuestion;
+  @MappableField(hook: JsonNullableStringHook())
   final String? chatSessionId;
+  @MappableField(hook: JsonNullableStringHook())
   final String? projectId;
+  @MappableField(hook: JsonDateHook())
   final DateTime createdAt;
+  @MappableField(hook: JsonDateHook())
   final DateTime updatedAt;
+  @MappableField(hook: JsonNullableDateHook())
   final DateTime? completedAt;
 
   const TaskDocument({
@@ -270,95 +276,27 @@ class TaskDocument {
     }
     return null;
   }
-
-  factory TaskDocument.fromJson(Map<String, dynamic> json) {
-    final now = DateTime.now();
-    return TaskDocument(
-      schemaVersion: jsonInt(json['schemaVersion'] ?? json['schema_version']),
-      id: jsonString(json['id']),
-      title: jsonString(json['title'], fallback: 'Untitled task'),
-      originalPrompt: jsonString(
-        json['originalPrompt'] ?? json['original_prompt'],
-      ),
-      goal: jsonString(json['goal'] ?? json['objective']),
-      constraints: jsonStringList(json['constraints']),
-      successCriteria: jsonStringList(
-        json['successCriteria'] ?? json['success_criteria'],
-      ),
-      gates: jsonMapList(json['gates']).map(TaskGate.fromJson).toList(),
-      steps: jsonMapList(json['steps']).map(TaskStep.fromJson).toList(),
-      status: parseTaskStatus(json['status']),
-      currentStepId: jsonNullableString(
-        json['currentStepId'] ?? json['current_step_id'],
-      ),
-      memorySummary: jsonString(
-        json['memorySummary'] ?? json['memory_summary'],
-      ),
-      runs: jsonMapList(json['runs']).map(TaskRun.fromJson).toList(),
-      pendingApproval:
-          json['pendingApproval'] == null && json['pending_approval'] == null
-          ? null
-          : PendingTaskApproval.fromJson(
-              jsonMap(json['pendingApproval'] ?? json['pending_approval']),
-            ),
-      pendingQuestion:
-          json['pendingQuestion'] == null && json['pending_question'] == null
-          ? null
-          : PendingTaskQuestion.fromJson(
-              jsonMap(json['pendingQuestion'] ?? json['pending_question']),
-            ),
-      chatSessionId: jsonNullableString(
-        json['chatSessionId'] ?? json['chat_session_id'],
-      ),
-      projectId: jsonNullableString(json['projectId'] ?? json['project_id']),
-      createdAt: jsonDate(
-        json['createdAt'] ?? json['created_at'],
-        fallback: now,
-      ),
-      updatedAt: jsonDate(
-        json['updatedAt'] ?? json['updated_at'],
-        fallback: now,
-      ),
-      completedAt: jsonNullableDate(
-        json['completedAt'] ?? json['completed_at'],
-      ),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'schemaVersion': schemaVersion,
-    'id': id,
-    'title': title,
-    'originalPrompt': originalPrompt,
-    'goal': goal,
-    'constraints': constraints,
-    'successCriteria': successCriteria,
-    if (gates.isNotEmpty) 'gates': gates.map((gate) => gate.toJson()).toList(),
-    'steps': steps.map((step) => step.toJson()).toList(),
-    'status': status.wire,
-    if (currentStepId != null) 'currentStepId': currentStepId,
-    'memorySummary': memorySummary,
-    'runs': runs.map((run) => run.toJson()).toList(),
-    if (pendingApproval != null) 'pendingApproval': pendingApproval!.toJson(),
-    if (pendingQuestion != null) 'pendingQuestion': pendingQuestion!.toJson(),
-    if (chatSessionId != null) 'chatSessionId': chatSessionId,
-    if (projectId != null) 'projectId': projectId,
-    'createdAt': createdAt.toIso8601String(),
-    'updatedAt': updatedAt.toIso8601String(),
-    if (completedAt != null) 'completedAt': completedAt!.toIso8601String(),
-  };
 }
 
 typedef TaskSnapshot = TaskDocument;
 
-class TaskStep {
+@MappableClass(ignoreNull: true, hook: JsonModelHook(omitEmpty: {'gates'}))
+class TaskStep with TaskStepMappable {
+  @MappableField(hook: JsonStringHook())
   final String id;
+  @MappableField(hook: JsonStringHook(fallback: 'Untitled step'))
   final String title;
+  @MappableField(hook: JsonStringHook())
   final String objective;
+  @MappableField(hook: JsonStringListHook())
   final List<String> instructions;
+  @MappableField(hook: JsonBoolHook())
   final bool mayEditFiles;
+  @MappableField(hook: JsonObjectListHook())
   final List<TaskArtifact> artifacts;
+  @MappableField(hook: JsonObjectListHook())
   final List<TaskGate> gates;
+  @MappableField(hook: EnumAliasHook({}))
   final TaskStepStatus status;
 
   const TaskStep({
@@ -393,39 +331,19 @@ class TaskStep {
       status: status ?? this.status,
     );
   }
-
-  factory TaskStep.fromJson(Map<String, dynamic> json) {
-    return TaskStep(
-      id: jsonString(json['id']),
-      title: jsonString(json['title'], fallback: 'Untitled step'),
-      objective: jsonString(json['objective']),
-      instructions: jsonStringList(json['instructions']),
-      mayEditFiles: jsonBool(json['mayEditFiles'] ?? json['may_edit_files']),
-      artifacts: jsonMapList(
-        json['artifacts'],
-      ).map(TaskArtifact.fromJson).toList(),
-      gates: jsonMapList(json['gates']).map(TaskGate.fromJson).toList(),
-      status: parseTaskStepStatus(json['status']),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'title': title,
-    'objective': objective,
-    'instructions': instructions,
-    'mayEditFiles': mayEditFiles,
-    'artifacts': artifacts.map((artifact) => artifact.toJson()).toList(),
-    if (gates.isNotEmpty) 'gates': gates.map((gate) => gate.toJson()).toList(),
-    'status': status.wire,
-  };
 }
 
-class TaskGate {
+@MappableClass(ignoreNull: true, hook: JsonModelHook(omitEmpty: {'params'}))
+class TaskGate with TaskGateMappable {
+  @MappableField(hook: JsonStringHook())
   final String id;
+  @MappableField(hook: JsonBoolHook(fallback: true))
   final bool required;
+  @MappableField(hook: JsonStringHook(fallback: 'step'))
   final String scope;
+  @MappableField(hook: JsonMapValueHook())
   final Map<String, dynamic> params;
+  @MappableField(hook: JsonNullableStringHook())
   final String? description;
 
   const TaskGate({
@@ -435,31 +353,19 @@ class TaskGate {
     this.params = const {},
     this.description,
   });
-
-  factory TaskGate.fromJson(Map<String, dynamic> json) {
-    return TaskGate(
-      id: jsonString(json['id']),
-      required: jsonBool(json['required'], fallback: true),
-      scope: jsonString(json['scope'], fallback: 'step'),
-      params: jsonMap(json['params']),
-      description: jsonNullableString(json['description']),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'required': required,
-    'scope': scope,
-    if (params.isNotEmpty) 'params': params,
-    if (description != null) 'description': description,
-  };
 }
 
-class TaskGateResult {
+@MappableClass(ignoreNull: true, hook: JsonModelHook(omitEmpty: {'details'}))
+class TaskGateResult with TaskGateResultMappable {
+  @MappableField(hook: JsonStringHook())
   final String gateId;
+  @MappableField(hook: EnumAliasHook({}))
   final TaskGateStatus status;
+  @MappableField(hook: JsonStringHook())
   final String summary;
+  @MappableField(hook: JsonMapValueHook())
   final Map<String, dynamic> details;
+  @MappableField(hook: JsonDateHook())
   final DateTime evaluatedAt;
 
   const TaskGateResult({
@@ -469,33 +375,17 @@ class TaskGateResult {
     this.details = const {},
     required this.evaluatedAt,
   });
-
-  factory TaskGateResult.fromJson(Map<String, dynamic> json) {
-    return TaskGateResult(
-      gateId: jsonString(json['gateId'] ?? json['gate_id']),
-      status: parseTaskGateStatus(json['status']),
-      summary: jsonString(json['summary']),
-      details: jsonMap(json['details']),
-      evaluatedAt: jsonDate(
-        json['evaluatedAt'] ?? json['evaluated_at'],
-        fallback: DateTime.now(),
-      ),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'gateId': gateId,
-    'status': status.wire,
-    'summary': summary,
-    if (details.isNotEmpty) 'details': details,
-    'evaluatedAt': evaluatedAt.toIso8601String(),
-  };
 }
 
-class TaskArtifact {
+@MappableClass(ignoreNull: true)
+class TaskArtifact with TaskArtifactMappable {
+  @MappableField(hook: JsonStringHook())
   final String path;
+  @MappableField(hook: JsonNullableStringHook())
   final String? description;
+  @MappableField(hook: JsonNullableStringHook())
   final String? stepId;
+  @MappableField(hook: JsonNullableDateHook())
   final DateTime? createdAt;
 
   const TaskArtifact({
@@ -504,36 +394,36 @@ class TaskArtifact {
     this.stepId,
     this.createdAt,
   });
-
-  factory TaskArtifact.fromJson(Map<String, dynamic> json) {
-    return TaskArtifact(
-      path: jsonString(json['path']),
-      description: jsonNullableString(json['description']),
-      stepId: jsonNullableString(json['stepId'] ?? json['step_id']),
-      createdAt: jsonNullableDate(json['createdAt'] ?? json['created_at']),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'path': path,
-    if (description != null) 'description': description,
-    if (stepId != null) 'stepId': stepId,
-    if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
-  };
 }
 
-class TaskRun {
+@MappableClass(
+  ignoreNull: true,
+  hook: JsonModelHook(omitEmpty: {'gateResults'}),
+)
+class TaskRun with TaskRunMappable {
+  @MappableField(hook: JsonStringHook())
   final String runId;
+  @MappableField(hook: JsonStringHook())
   final String stepId;
+  @MappableField(hook: EnumAliasHook({'needsreplan': 'needs_replan'}))
   final TaskRunStatus status;
+  @MappableField(hook: JsonStringHook())
   final String summary;
+  @MappableField(hook: JsonStringHook())
   final String memoryUpdate;
+  @MappableField(hook: JsonObjectListHook())
   final List<TaskToolCallRecord> toolCalls;
+  @MappableField(hook: JsonObjectListHook())
   final List<TaskArtifact> artifacts;
+  @MappableField(hook: JsonObjectListHook())
   final List<TaskGateResult> gateResults;
+  @MappableField(hook: JsonDateHook())
   final DateTime startedAt;
+  @MappableField(hook: JsonNullableDateHook())
   final DateTime? completedAt;
+  @MappableField(hook: JsonNullableStringHook())
   final String? replanReason;
+  @MappableField(hook: JsonNullableStringHook())
   final String? error;
 
   const TaskRun({
@@ -580,64 +470,25 @@ class TaskRun {
       error: resolve(error, this.error),
     );
   }
-
-  factory TaskRun.fromJson(Map<String, dynamic> json) {
-    final now = DateTime.now();
-    return TaskRun(
-      runId: jsonString(json['runId'] ?? json['run_id']),
-      stepId: jsonString(json['stepId'] ?? json['step_id']),
-      status: parseTaskRunStatus(json['status']),
-      summary: jsonString(json['summary']),
-      memoryUpdate: jsonString(json['memoryUpdate'] ?? json['memory_update']),
-      toolCalls: jsonMapList(
-        json['toolCalls'] ?? json['tool_calls'],
-      ).map(TaskToolCallRecord.fromJson).toList(),
-      artifacts: jsonMapList(
-        json['artifacts'],
-      ).map(TaskArtifact.fromJson).toList(),
-      gateResults: jsonMapList(
-        json['gateResults'] ?? json['gate_results'],
-      ).map(TaskGateResult.fromJson).toList(),
-      startedAt: jsonDate(
-        json['startedAt'] ?? json['started_at'],
-        fallback: now,
-      ),
-      completedAt: jsonNullableDate(
-        json['completedAt'] ?? json['completed_at'],
-      ),
-      replanReason: jsonNullableString(
-        json['replanReason'] ?? json['replan_reason'],
-      ),
-      error: jsonNullableString(json['error']),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'runId': runId,
-    'stepId': stepId,
-    'status': status.wire,
-    'summary': summary,
-    'memoryUpdate': memoryUpdate,
-    'toolCalls': toolCalls.map((call) => call.toJson()).toList(),
-    'artifacts': artifacts.map((artifact) => artifact.toJson()).toList(),
-    if (gateResults.isNotEmpty)
-      'gateResults': gateResults.map((result) => result.toJson()).toList(),
-    'startedAt': startedAt.toIso8601String(),
-    if (completedAt != null) 'completedAt': completedAt!.toIso8601String(),
-    if (replanReason != null) 'replanReason': replanReason,
-    if (error != null) 'error': error,
-  };
 }
 
-class TaskToolCallRecord {
+@MappableClass(ignoreNull: true)
+class TaskToolCallRecord with TaskToolCallRecordMappable {
+  @MappableField(hook: JsonStringHook())
   final String id;
+  @MappableField(hook: JsonStringHook())
   final String stepId;
+  @MappableField(hook: JsonStringHook())
   final String runId;
+  @MappableField(hook: JsonStringHook())
   final String toolName;
   final Object? arguments;
   final Object? result;
+  @MappableField(hook: JsonNullableStringHook())
   final String? resultSummary;
+  @MappableField(hook: JsonNullableStringHook())
   final String? error;
+  @MappableField(hook: JsonDateHook())
   final DateTime timestamp;
 
   const TaskToolCallRecord({
@@ -651,39 +502,15 @@ class TaskToolCallRecord {
     this.resultSummary,
     this.error,
   });
-
-  factory TaskToolCallRecord.fromJson(Map<String, dynamic> json) {
-    return TaskToolCallRecord(
-      id: jsonString(json['id']),
-      stepId: jsonString(json['stepId'] ?? json['step_id']),
-      runId: jsonString(json['runId'] ?? json['run_id']),
-      toolName: jsonString(json['toolName'] ?? json['tool_name']),
-      arguments: json['arguments'],
-      result: json['result'],
-      resultSummary: jsonNullableString(
-        json['resultSummary'] ?? json['result_summary'],
-      ),
-      error: jsonNullableString(json['error']),
-      timestamp: jsonDate(json['timestamp'], fallback: DateTime.now()),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'stepId': stepId,
-    'runId': runId,
-    'toolName': toolName,
-    if (arguments != null) 'arguments': arguments,
-    if (result != null) 'result': result,
-    if (resultSummary != null) 'resultSummary': resultSummary,
-    if (error != null) 'error': error,
-    'timestamp': timestamp.toIso8601String(),
-  };
 }
 
-class PendingTaskApproval {
+@MappableClass(ignoreNull: true)
+class PendingTaskApproval with PendingTaskApprovalMappable {
+  @MappableField(hook: JsonStringHook())
   final String stepId;
+  @MappableField(hook: JsonStringHook())
   final String reason;
+  @MappableField(hook: JsonDateHook())
   final DateTime createdAt;
 
   const PendingTaskApproval({
@@ -691,29 +518,17 @@ class PendingTaskApproval {
     required this.reason,
     required this.createdAt,
   });
-
-  factory PendingTaskApproval.fromJson(Map<String, dynamic> json) {
-    return PendingTaskApproval(
-      stepId: jsonString(json['stepId'] ?? json['step_id']),
-      reason: jsonString(json['reason']),
-      createdAt: jsonDate(
-        json['createdAt'] ?? json['created_at'],
-        fallback: DateTime.now(),
-      ),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'stepId': stepId,
-    'reason': reason,
-    'createdAt': createdAt.toIso8601String(),
-  };
 }
 
-class PendingTaskQuestion {
+@MappableClass(ignoreNull: true)
+class PendingTaskQuestion with PendingTaskQuestionMappable {
+  @MappableField(hook: JsonStringHook())
   final String id;
+  @MappableField(hook: JsonStringHook())
   final String stepId;
+  @MappableField(hook: JsonStringHook())
   final String question;
+  @MappableField(hook: JsonDateHook())
   final DateTime createdAt;
 
   const PendingTaskQuestion({
@@ -722,23 +537,4 @@ class PendingTaskQuestion {
     required this.question,
     required this.createdAt,
   });
-
-  factory PendingTaskQuestion.fromJson(Map<String, dynamic> json) {
-    return PendingTaskQuestion(
-      id: jsonString(json['id']),
-      stepId: jsonString(json['stepId'] ?? json['step_id']),
-      question: jsonString(json['question']),
-      createdAt: jsonDate(
-        json['createdAt'] ?? json['created_at'],
-        fallback: DateTime.now(),
-      ),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'stepId': stepId,
-    'question': question,
-    'createdAt': createdAt.toIso8601String(),
-  };
 }

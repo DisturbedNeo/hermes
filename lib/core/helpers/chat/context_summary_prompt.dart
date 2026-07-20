@@ -1,5 +1,10 @@
 import 'dart:convert';
 
+import 'package:dart_mappable/dart_mappable.dart';
+import 'package:hermes/core/serialization/json_hooks.dart';
+
+part 'context_summary_prompt.mapper.dart';
+
 class ContextSummaryPrompt {
   const ContextSummaryPrompt._();
 
@@ -35,15 +40,25 @@ next steps, constraints, artifacts, and failures. Remove duplication.
 ''';
 }
 
-class ContextSummary {
+@MappableClass(generateMethods: GenerateMethods.decode)
+class ContextSummary with ContextSummaryMappable {
+  @MappableField(key: 'schema_version', hook: JsonIntHook(fallback: 1))
   final int schemaVersion;
+  @MappableField(hook: JsonStringHook())
   final String task;
+  @MappableField(key: 'latest_user_request', hook: JsonStringHook())
   final String latestUserRequest;
+  @MappableField(hook: JsonStringListHook())
   final List<String> decisions;
+  @MappableField(hook: JsonStringListHook())
   final List<String> artifacts;
+  @MappableField(hook: JsonStringListHook())
   final List<String> constraints;
+  @MappableField(key: 'current_state', hook: JsonStringHook())
   final String currentState;
+  @MappableField(key: 'open_questions', hook: JsonStringListHook())
   final List<String> openQuestions;
+  @MappableField(key: 'recent_failures', hook: JsonStringListHook())
   final List<String> recentFailures;
   final String? rawText;
 
@@ -59,20 +74,6 @@ class ContextSummary {
     this.recentFailures = const [],
     this.rawText,
   });
-
-  factory ContextSummary.fromJson(Map<String, dynamic> json) {
-    return ContextSummary(
-      schemaVersion: _int(json['schema_version']) ?? 1,
-      task: _string(json['task']),
-      latestUserRequest: _string(json['latest_user_request']),
-      decisions: _stringList(json['decisions']),
-      artifacts: _stringList(json['artifacts']),
-      constraints: _stringList(json['constraints']),
-      currentState: _string(json['current_state']),
-      openQuestions: _stringList(json['open_questions']),
-      recentFailures: _stringList(json['recent_failures']),
-    );
-  }
 
   factory ContextSummary.fromRawText(String text) {
     return ContextSummary(
@@ -167,24 +168,5 @@ ${rawText!.trim()}
       buffer.writeln('- $item');
     }
     buffer.writeln();
-  }
-
-  static String _string(Object? value) {
-    return value is String ? value.trim() : '';
-  }
-
-  static int? _int(Object? value) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    return null;
-  }
-
-  static List<String> _stringList(Object? value) {
-    if (value is! List) return const [];
-    return value
-        .whereType<String>()
-        .map((item) => item.trim())
-        .where((item) => item.isNotEmpty)
-        .toList();
   }
 }
