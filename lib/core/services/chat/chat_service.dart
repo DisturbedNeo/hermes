@@ -69,6 +69,7 @@ class ChatService extends ChangeNotifier implements Disposable {
   bool _disposed = false;
   bool _loadingSnapshot = false;
   bool _dirty = false;
+  int _historyRevision = 0;
   Timer? _autosaveTimer;
   Future<void> _saveChain = Future.value();
   String _chatSessionScopeId = uuid.v7();
@@ -102,6 +103,9 @@ class ChatService extends ChangeNotifier implements Disposable {
   TaskCancellationToken? _taskCancellationToken;
   late final ThrottledScheduler _contextEstimateScheduler;
   late final ThrottledScheduler _taskModelOutputNotifier;
+
+  /// Changes when this tab replaces its entire displayed conversation.
+  int get historyRevision => _historyRevision;
 
   ChatService({
     String? tabId,
@@ -215,6 +219,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     taskStatusMessage = null;
     _clearTaskModelOutput(notify: false);
     currentModelSnapshot = _activeServerSnapshot;
+    _historyRevision++;
     messageStore.setMessages([
       systemPrompt.copyWith(text: _buildSystemPrompt()),
     ]);
@@ -274,6 +279,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       }
       currentSystemPromptSnapshot = snapshot.chat.systemPromptSnapshot;
       _dirty = false;
+      _historyRevision++;
       messageStore.setMessages(_withCurrentSystemPrompt(snapshot.messages));
       await _chatLibrary.markOpened(snapshot.chat.id);
       await refreshModelRestorePrompt();

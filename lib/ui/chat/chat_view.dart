@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:hermes/core/enums/message_role.dart';
-import 'package:hermes/core/enums/stream_state.dart';
 import 'package:hermes/core/helpers/responsive.dart';
 import 'package:hermes/core/helpers/scroll.dart';
 import 'package:hermes/core/helpers/style.dart';
@@ -41,65 +40,77 @@ class _ChatViewState extends State<ChatView> {
   static const double _tinyHeightBreakpoint = 48;
   static const double _tinyWidthBreakpoint = 80;
 
-  final _scroll = SmartScrollController();
+  final _scroll = ChatScrollController();
   final _shortcuts = KeyboardShortcutsService();
   final _composerFocusNode = FocusNode();
   bool _taskPanelExpanded = false;
-  Timer? _scrollDebounceTimer;
+  late int _historyRevision;
+  PageStorageBucket? _pageStorageBucket;
+  bool _restoredScrollState = false;
 
   @override
   void initState() {
     super.initState();
+    _historyRevision = widget.chat.historyRevision;
     _shortcuts.register(HermesShortcut.toggleTaskPanel, _toggleTaskPanel);
     _shortcuts.register(HermesShortcut.focusComposer, _focusComposer);
     widget.chat.messageStore.addListener(_onMessagesChanged);
-    widget.chat.chatStream.addListener(_onStreamStateChanged);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _pageStorageBucket = PageStorage.maybeOf(context);
+    if (_restoredScrollState) return;
+    _restoredScrollState = true;
+
+    final saved = _pageStorageBucket?.readState(
+      context,
+      identifier: _scrollStorageIdentifier,
+    );
+    if (saved is ChatScrollSnapshot &&
+        saved.historyRevision == _historyRevision) {
+      _scroll.restoreSnapshot(saved);
+    }
+  }
+
+  @override
+  void deactivate() {
+    _storeScrollState();
+    super.deactivate();
   }
 
   @override
   void dispose() {
+    _storeScrollState();
     widget.chat.messageStore.removeListener(_onMessagesChanged);
-    widget.chat.chatStream.removeListener(_onStreamStateChanged);
     _shortcuts.dispose();
     _composerFocusNode.dispose();
     _scroll.dispose();
-    _scrollDebounceTimer?.cancel();
     super.dispose();
   }
 
   void _onMessagesChanged() {
-    // Debounce rapid message updates (e.g., streaming text chunks) to avoid
-    // excessive scroll animations during active generation.
-    _scrollDebounceTimer?.cancel();
-    if (_scroll.autoScrollEnabled && mounted) {
-      _scrollDebounceTimer = Timer(const Duration(milliseconds: 100), () {
-        if (mounted && _scroll.autoScrollEnabled) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted && _scroll.autoScrollEnabled) {
-              _scroll.scrollToBottom(
-                duration: const Duration(milliseconds: 150),
-              );
-            }
-          });
-        }
-      });
-    }
-  }
-
-  void _onStreamStateChanged() {
-    if (widget.chat.chatStream.state == StreamState.idle &&
-        _scroll.autoScrollEnabled) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _scroll.autoScrollEnabled) {
-          _scroll.scrollToBottom();
-        }
-      });
-    }
+    final nextRevision = widget.chat.historyRevision;
+    if (nextRevision == _historyRevision) return;
+    _historyRevision = nextRevision;
+    _scroll.resetToLatest();
   }
 
   void _handleScrollToBottom() {
-    _scroll.enableAutoScroll();
-    _scroll.scrollToBottom();
+    unawaited(
+      _scroll.returnToLatest(animate: !MediaQuery.disableAnimationsOf(context)),
+    );
+  }
+
+  Object get _scrollStorageIdentifier => 'chat-scroll:${widget.chat.tabId}';
+
+  void _storeScrollState() {
+    _pageStorageBucket?.writeState(
+      context,
+      _scroll.snapshot(historyRevision: _historyRevision),
+      identifier: _scrollStorageIdentifier,
+    );
   }
 
   @override
@@ -278,7 +289,7 @@ class _ChatViewState extends State<ChatView> {
 }
 
 class _MessageList extends StatefulWidget {
-  final SmartScrollController scroll;
+  final ChatScrollController scroll;
   final ChatService chat;
   final VoidCallback onScrollToBottom;
 
@@ -295,6 +306,7 @@ class _MessageList extends StatefulWidget {
 class _MessageListState extends State<_MessageList> {
   bool _showScrollButton = false;
   late List<_DisplayItem> _displayItems;
+  late Map<String, int> _displayItemIndices;
   late int _displayRevision;
 
   @override
@@ -302,6 +314,7 @@ class _MessageListState extends State<_MessageList> {
     super.initState();
     _displayRevision = widget.chat.messageStore.displayRevision;
     _displayItems = _buildDisplayItems(widget.chat.messageStore.messages);
+    _displayItemIndices = _buildDisplayItemIndices(_displayItems);
     widget.chat.messageStore.addListener(_handleMessageStoreChanged);
     widget.scroll.addListener(_updateScrollButton);
     _scheduleScrollButtonUpdate();
@@ -314,6 +327,7 @@ class _MessageListState extends State<_MessageList> {
       oldWidget.chat.messageStore.removeListener(_handleMessageStoreChanged);
       _displayRevision = widget.chat.messageStore.displayRevision;
       _displayItems = _buildDisplayItems(widget.chat.messageStore.messages);
+      _displayItemIndices = _buildDisplayItemIndices(_displayItems);
       widget.chat.messageStore.addListener(_handleMessageStoreChanged);
       _scheduleScrollButtonUpdate();
     }
@@ -341,6 +355,7 @@ class _MessageListState extends State<_MessageList> {
     setState(() {
       _displayRevision = nextRevision;
       _displayItems = nextItems;
+      _displayItemIndices = _buildDisplayItemIndices(nextItems);
     });
 
     if (nextItems.length != oldLength) {
@@ -351,33 +366,20 @@ class _MessageListState extends State<_MessageList> {
   void _scheduleScrollButtonUpdate() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      widget.scroll.updateContentMetrics();
       _updateScrollButton();
     });
   }
 
   void _updateScrollButton() {
     if (!mounted) return;
-    final shouldShow = widget.scroll.hasClients && !widget.scroll.isNearBottom;
+    final shouldShow = widget.scroll.needsReturnToLatest;
     if (shouldShow != _showScrollButton) {
       setState(() => _showScrollButton = shouldShow);
     }
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
-    if (notification is UserScrollNotification ||
-        (notification is ScrollUpdateNotification &&
-            notification.dragDetails != null)) {
-      widget.scroll.updateAutoScrollState();
-    }
-    _updateScrollButton();
-    return false;
-  }
-
-  bool _handleScrollMetricsNotification(
-    ScrollMetricsNotification notification,
-  ) {
-    widget.scroll.updateContentMetrics();
+    widget.scroll.handleScrollNotification(notification);
     _updateScrollButton();
     return false;
   }
@@ -386,25 +388,25 @@ class _MessageListState extends State<_MessageList> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        NotificationListener<ScrollMetricsNotification>(
-          onNotification: _handleScrollMetricsNotification,
-          child: NotificationListener<ScrollNotification>(
-            onNotification: _handleScrollNotification,
-            child: ListView.builder(
-              controller: widget.scroll,
-              reverse: true,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-              itemCount: _displayItems.length,
-              itemBuilder: (_, i) {
-                final item = _displayItems[_displayItems.length - 1 - i];
+        NotificationListener<ScrollNotification>(
+          onNotification: _handleScrollNotification,
+          child: ListView.builder(
+            controller: widget.scroll,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+            itemCount: _displayItems.length,
+            findChildIndexCallback: (key) {
+              if (key is! ValueKey<String>) return null;
+              return _displayItemIndices[key.value];
+            },
+            itemBuilder: (_, i) {
+              final item = _displayItems[i];
 
-                return _LiveMessageItem(
-                  key: ValueKey('message_${item.messageId}'),
-                  item: item,
-                  chat: widget.chat,
-                );
-              },
-            ),
+              return _LiveMessageItem(
+                key: ValueKey('message_${item.messageId}'),
+                item: item,
+                chat: widget.chat,
+              );
+            },
           ),
         ),
         // Floating scroll-to-bottom button that appears when user scrolls away
@@ -472,6 +474,12 @@ class _MessageListState extends State<_MessageList> {
         else if (!message.omittedFromModelPayload)
           _MessageDisplayItem(message.id),
     ];
+  }
+
+  Map<String, int> _buildDisplayItemIndices(List<_DisplayItem> items) {
+    return {
+      for (var i = 0; i < items.length; i++) 'message_${items[i].messageId}': i,
+    };
   }
 }
 

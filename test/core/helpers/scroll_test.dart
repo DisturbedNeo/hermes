@@ -1,235 +1,259 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/helpers/scroll.dart';
 
 void main() {
-  testWidgets('scrolls to max extent for normal vertical lists', (
+  testWidgets('starts at latest and follows continuous content growth', (
     tester,
   ) async {
-    final controller = SmartScrollController();
+    final controller = ChatScrollController();
     addTearDown(controller.dispose);
+    var latestHeight = 40.0;
+    StateSetter? setListState;
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: SizedBox(
-          height: 200,
-          child: ListView.builder(
-            controller: controller,
-            itemExtent: 40,
-            itemCount: 20,
-            itemBuilder: (_, i) => Text('Item $i'),
-          ),
+      _listApp(
+        controller: controller,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setState) {
+            setListState = setState;
+            return _notifyingList(
+              controller,
+              itemCount: 30,
+              itemBuilder: (_, i) => SizedBox(
+                height: i == 29 ? latestHeight : 40,
+                child: Text('Item $i'),
+              ),
+            );
+          },
         ),
       ),
     );
 
-    controller.jumpTo(controller.position.minScrollExtent);
-    expect(controller.isNearBottom, isFalse);
-
-    final scroll = controller.scrollToBottom(
-      duration: const Duration(milliseconds: 1),
-    );
-    await tester.pumpAndSettle();
-    await scroll;
-
+    expect(controller.mode, ChatScrollMode.following);
     expect(controller.position.pixels, controller.position.maxScrollExtent);
-    expect(controller.isNearBottom, isTrue);
+
+    for (var i = 0; i < 5; i++) {
+      setListState!(() => latestHeight += 24);
+      await tester.pump();
+      expect(controller.position.pixels, controller.position.maxScrollExtent);
+      expect(controller.mode, ChatScrollMode.following);
+    }
   });
 
-  testWidgets('scrolls to min extent for reversed vertical lists', (
+  testWidgets('user drag pauses and latest growth preserves reading offset', (
     tester,
   ) async {
-    final controller = SmartScrollController();
+    final controller = ChatScrollController();
     addTearDown(controller.dispose);
+    var latestHeight = 40.0;
+    StateSetter? setListState;
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: SizedBox(
-          height: 200,
-          child: ListView.builder(
-            controller: controller,
-            reverse: true,
-            itemExtent: 40,
-            itemCount: 20,
-            itemBuilder: (_, i) => Text('Item $i'),
-          ),
+      _listApp(
+        controller: controller,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setState) {
+            setListState = setState;
+            return _notifyingList(
+              controller,
+              itemCount: 30,
+              itemBuilder: (_, i) => SizedBox(
+                height: i == 29 ? latestHeight : 40,
+                child: Text('Item $i'),
+              ),
+            );
+          },
         ),
       ),
     );
 
-    controller.jumpTo(controller.position.maxScrollExtent);
-    expect(controller.isNearBottom, isFalse);
-
-    final scroll = controller.scrollToBottom(
-      duration: const Duration(milliseconds: 1),
-    );
+    await tester.drag(find.byType(ListView), const Offset(0, 180));
     await tester.pumpAndSettle();
-    await scroll;
 
-    expect(controller.position.pixels, controller.position.minScrollExtent);
-    expect(controller.isNearBottom, isTrue);
+    expect(controller.mode, ChatScrollMode.paused);
+    expect(controller.needsReturnToLatest, isTrue);
+    final readingOffset = controller.position.pixels;
+
+    setListState!(() => latestHeight += 160);
+    await tester.pump();
+
+    expect(controller.position.pixels, readingOffset);
+    expect(controller.mode, ChatScrollMode.paused);
   });
 
-  testWidgets('jumps immediately for long scroll-to-bottom distances', (
-    tester,
-  ) async {
-    final controller = SmartScrollController();
+  testWidgets('pointer scrolling pauses following immediately', (tester) async {
+    final controller = ChatScrollController();
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: SizedBox(
-          height: 200,
-          child: ListView.builder(
-            controller: controller,
-            reverse: true,
-            itemExtent: 40,
-            itemCount: 200,
-            itemBuilder: (_, i) => Text('Item $i'),
+      _listApp(
+        controller: controller,
+        builder: (_) => _notifyingList(
+          controller,
+          itemCount: 30,
+          itemBuilder: (_, i) => SizedBox(height: 40, child: Text('Item $i')),
+        ),
+      ),
+    );
+
+    final center = tester.getCenter(find.byType(ListView));
+    await tester.sendEventToBinding(
+      PointerScrollEvent(position: center, scrollDelta: const Offset(0, -180)),
+    );
+    await tester.pump();
+
+    expect(controller.mode, ChatScrollMode.paused);
+    expect(controller.needsReturnToLatest, isTrue);
+  });
+
+  testWidgets('keyboard scroll actions pause following', (tester) async {
+    final controller = ChatScrollController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      _listApp(
+        controller: controller,
+        builder: (_) => _notifyingList(
+          controller,
+          itemCount: 30,
+          itemBuilder: (_, i) => SizedBox(height: 40, child: Text('Item $i')),
+        ),
+      ),
+    );
+
+    final context = tester.element(find.byType(Viewport));
+    Actions.invoke(context, const ScrollIntent(direction: AxisDirection.up));
+    await tester.pumpAndSettle();
+
+    expect(controller.mode, ChatScrollMode.paused);
+    expect(
+      controller.position.pixels,
+      lessThan(controller.position.maxScrollExtent),
+    );
+  });
+
+  testWidgets(
+    'return reaches the current latest extent and resumes following',
+    (tester) async {
+      final controller = ChatScrollController();
+      addTearDown(controller.dispose);
+      var latestHeight = 40.0;
+      StateSetter? setListState;
+
+      await tester.pumpWidget(
+        _listApp(
+          controller: controller,
+          builder: (context) => StatefulBuilder(
+            builder: (context, setState) {
+              setListState = setState;
+              return _notifyingList(
+                controller,
+                itemCount: 30,
+                itemBuilder: (_, i) => SizedBox(
+                  height: i == 29 ? latestHeight : 40,
+                  child: Text('Item $i'),
+                ),
+              );
+            },
           ),
         ),
-      ),
-    );
+      );
 
-    controller.jumpTo(controller.position.maxScrollExtent);
-    expect(controller.isNearBottom, isFalse);
+      await tester.drag(find.byType(ListView), const Offset(0, 180));
+      await tester.pumpAndSettle();
 
-    final scroll = controller.scrollToBottom(
-      duration: const Duration(milliseconds: 200),
-    );
+      final returning = controller.returnToLatest(
+        duration: const Duration(milliseconds: 200),
+      );
+      await tester.pump(const Duration(milliseconds: 80));
+      setListState!(() => latestHeight += 100);
+      await tester.pump();
+      await tester.pumpAndSettle();
+      await returning;
 
-    expect(controller.position.pixels, controller.position.minScrollExtent);
-    await scroll;
-    expect(controller.isNearBottom, isTrue);
-  });
+      expect(controller.mode, ChatScrollMode.following);
+      expect(controller.position.pixels, controller.position.maxScrollExtent);
+    },
+  );
 
-  testWidgets('keeps reversed lists anchored when bottom content grows', (
-    tester,
-  ) async {
-    final controller = SmartScrollController();
+  testWidgets('user input interrupts an animated return', (tester) async {
+    final controller = ChatScrollController();
     addTearDown(controller.dispose);
-    var latestItemHeight = 40.0;
-    StateSetter? setListState;
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: StatefulBuilder(
-          builder: (context, setState) {
-            setListState = setState;
-            return SizedBox(
-              height: 200,
-              child: NotificationListener<ScrollMetricsNotification>(
-                onNotification: (_) {
-                  controller.updateContentMetrics();
-                  return false;
-                },
-                child: ListView.builder(
-                  controller: controller,
-                  reverse: true,
-                  itemCount: 20,
-                  itemBuilder: (_, i) {
-                    return SizedBox(
-                      height: i == 0 ? latestItemHeight : 40,
-                      child: Text('Item $i'),
-                    );
-                  },
-                ),
-              ),
-            );
-          },
+      _listApp(
+        controller: controller,
+        builder: (_) => _notifyingList(
+          controller,
+          itemCount: 30,
+          itemBuilder: (_, i) => SizedBox(height: 40, child: Text('Item $i')),
         ),
       ),
     );
 
-    controller.updateContentMetrics();
-    controller.jumpTo(120);
-    controller.updateAutoScrollState();
-    expect(controller.isNearBottom, isFalse);
+    await tester.drag(find.byType(ListView), const Offset(0, 300));
+    await tester.pumpAndSettle();
+    final returning = controller.returnToLatest(
+      duration: const Duration(seconds: 1),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
 
-    setListState!(() => latestItemHeight += 80);
-    await tester.pump();
-    controller.updateContentMetrics();
+    await tester.drag(find.byType(ListView), const Offset(0, 120));
+    await tester.pumpAndSettle();
+    await returning;
 
-    expect(controller.position.pixels, 200);
+    expect(controller.mode, ChatScrollMode.paused);
+    expect(controller.needsReturnToLatest, isTrue);
   });
 
-  testWidgets('does not preserve reversed list offsets while near bottom', (
+  testWidgets('long and reduced-motion returns jump immediately', (
     tester,
   ) async {
-    final controller = SmartScrollController();
+    final controller = ChatScrollController();
     addTearDown(controller.dispose);
-    var latestItemHeight = 40.0;
-    StateSetter? setListState;
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: StatefulBuilder(
-          builder: (context, setState) {
-            setListState = setState;
-            return SizedBox(
-              height: 200,
-              child: NotificationListener<ScrollMetricsNotification>(
-                onNotification: (_) {
-                  controller.updateContentMetrics();
-                  return false;
-                },
-                child: ListView.builder(
-                  controller: controller,
-                  reverse: true,
-                  itemCount: 20,
-                  itemBuilder: (_, i) {
-                    return SizedBox(
-                      height: i == 0 ? latestItemHeight : 40,
-                      child: Text('Item $i'),
-                    );
-                  },
-                ),
-              ),
-            );
-          },
+      _listApp(
+        controller: controller,
+        builder: (_) => _notifyingList(
+          controller,
+          itemCount: 200,
+          itemBuilder: (_, i) => SizedBox(height: 40, child: Text('Item $i')),
         ),
       ),
     );
 
-    controller.updateContentMetrics();
     controller.jumpTo(controller.position.minScrollExtent);
-    controller.updateAutoScrollState();
-    expect(controller.isNearBottom, isTrue);
+    await controller.returnToLatest();
+    expect(controller.position.pixels, controller.position.maxScrollExtent);
 
-    setListState!(() => latestItemHeight += 80);
-    await tester.pump();
-    controller.updateContentMetrics();
-
-    expect(controller.position.pixels, controller.position.minScrollExtent);
+    controller.jumpTo(controller.position.maxScrollExtent - 100);
+    await controller.returnToLatest(animate: false);
+    expect(controller.position.pixels, controller.position.maxScrollExtent);
+    expect(controller.mode, ChatScrollMode.following);
   });
 
-  testWidgets('does not preserve reversed list offsets on viewport resize', (
-    tester,
-  ) async {
-    final controller = SmartScrollController();
+  testWidgets('viewport resize pins only while following', (tester) async {
+    final controller = ChatScrollController();
     addTearDown(controller.dispose);
-    var viewportHeight = 200.0;
+    var viewportHeight = 240.0;
     StateSetter? setListState;
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: StatefulBuilder(
+      _listApp(
+        controller: controller,
+        builder: (context) => StatefulBuilder(
           builder: (context, setState) {
             setListState = setState;
             return SizedBox(
               height: viewportHeight,
-              child: NotificationListener<ScrollMetricsNotification>(
-                onNotification: (_) {
-                  controller.updateContentMetrics();
-                  return false;
-                },
-                child: ListView.builder(
-                  controller: controller,
-                  reverse: true,
-                  itemExtent: 40,
-                  itemCount: 20,
-                  itemBuilder: (_, i) => Text('Item $i'),
-                ),
+              child: _notifyingList(
+                controller,
+                itemCount: 30,
+                itemBuilder: (_, i) =>
+                    SizedBox(height: 40, child: Text('Item $i')),
               ),
             );
           },
@@ -237,15 +261,83 @@ void main() {
       ),
     );
 
-    controller.updateContentMetrics();
-    controller.jumpTo(120);
-    controller.updateAutoScrollState();
-    expect(controller.isNearBottom, isFalse);
+    setListState!(() => viewportHeight = 180);
+    await tester.pump();
+    expect(controller.position.pixels, controller.position.maxScrollExtent);
+
+    await tester.drag(find.byType(ListView), const Offset(0, 180));
+    await tester.pumpAndSettle();
+    final readingOffset = controller.position.pixels;
 
     setListState!(() => viewportHeight = 160);
     await tester.pump();
-    controller.updateContentMetrics();
-
-    expect(controller.position.pixels, 120);
+    expect(controller.position.pixels, readingOffset);
+    expect(controller.mode, ChatScrollMode.paused);
   });
+
+  testWidgets('restores a paused session before reattaching', (tester) async {
+    final first = ChatScrollController();
+    addTearDown(first.dispose);
+
+    await tester.pumpWidget(
+      _listApp(
+        controller: first,
+        builder: (_) => _notifyingList(
+          first,
+          itemCount: 30,
+          itemBuilder: (_, i) => SizedBox(height: 40, child: Text('Item $i')),
+        ),
+      ),
+    );
+    await tester.drag(find.byType(ListView), const Offset(0, 180));
+    await tester.pumpAndSettle();
+    final snapshot = first.snapshot(historyRevision: 4);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+
+    final restored = ChatScrollController()..restoreSnapshot(snapshot);
+    addTearDown(restored.dispose);
+    await tester.pumpWidget(
+      _listApp(
+        controller: restored,
+        builder: (_) => _notifyingList(
+          restored,
+          itemCount: 30,
+          itemBuilder: (_, i) => SizedBox(height: 40, child: Text('Item $i')),
+        ),
+      ),
+    );
+
+    expect(restored.mode, ChatScrollMode.paused);
+    expect(restored.position.pixels, snapshot.offset);
+  });
+}
+
+Widget _listApp({
+  required ChatScrollController controller,
+  required WidgetBuilder builder,
+}) {
+  return MaterialApp(
+    home: Scaffold(
+      body: SizedBox(height: 240, child: Builder(builder: builder)),
+    ),
+  );
+}
+
+Widget _notifyingList(
+  ChatScrollController controller, {
+  required int itemCount,
+  required IndexedWidgetBuilder itemBuilder,
+}) {
+  return NotificationListener<ScrollNotification>(
+    onNotification: (notification) {
+      controller.handleScrollNotification(notification);
+      return false;
+    },
+    child: ListView.builder(
+      controller: controller,
+      itemCount: itemCount,
+      itemBuilder: itemBuilder,
+    ),
+  );
 }

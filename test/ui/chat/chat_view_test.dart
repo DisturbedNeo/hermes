@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/enums/diagnostics_visibility.dart';
 import 'package:hermes/core/enums/message_role.dart';
+import 'package:hermes/core/helpers/scroll.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/core/models/workspace.dart';
@@ -155,19 +156,178 @@ void main() {
 
     final listView = tester.widget<ListView>(find.byType(ListView));
     final controller = listView.controller!;
-    controller.jumpTo(controller.position.maxScrollExtent);
-    await tester.pump();
+    await tester.drag(find.byType(ListView), const Offset(0, 500));
+    await tester.pumpAndSettle();
 
     expect(find.text('Scroll to bottom'), findsOneWidget);
     expect(
-      _isVisible(tester, find.byKey(const ValueKey('message_m39'))),
-      false,
+      controller.position.pixels,
+      lessThan(controller.position.maxScrollExtent),
     );
 
     await tester.tap(find.text('Scroll to bottom'));
     await tester.pumpAndSettle();
 
     expect(_isVisible(tester, find.byKey(const ValueKey('message_m39'))), true);
+    expect(find.text('Scroll to bottom'), findsNothing);
+  });
+
+  testWidgets('follows streaming growth without waiting for a quiet period', (
+    tester,
+  ) async {
+    await _setViewport(tester, const Size(420, 640));
+    final chat = tabs.activeChat!;
+    chat.messageStore.setMessages([
+      chat.systemPrompt,
+      for (var i = 0; i < 30; i++)
+        Bubble(
+          id: 'stream-$i',
+          role: i.isEven ? MessageRole.user : MessageRole.assistant,
+          text: 'Chat message $i',
+          reasoning: '',
+        ),
+    ]);
+
+    await tester.pumpWidget(_chatViewApp(tabs));
+    await tester.pumpAndSettle();
+
+    final listView = tester.widget<ListView>(find.byType(ListView));
+    final controller = listView.controller!;
+    for (var i = 1; i <= 5; i++) {
+      final latest = chat.messageStore.last;
+      chat.messageStore.upsert(
+        latest.copyWith(text: List.filled(i * 4, 'streaming line').join('\n')),
+      );
+      await tester.pump();
+      expect(controller.position.pixels, controller.position.maxScrollExtent);
+    }
+  });
+
+  testWidgets('new messages do not take over while reading older content', (
+    tester,
+  ) async {
+    await _setViewport(tester, const Size(420, 640));
+    final chat = tabs.activeChat!;
+    chat.messageStore.setMessages([
+      chat.systemPrompt,
+      for (var i = 0; i < 40; i++)
+        Bubble(
+          id: 'paused-$i',
+          role: i.isEven ? MessageRole.user : MessageRole.assistant,
+          text: 'Chat message $i',
+          reasoning: '',
+        ),
+    ]);
+
+    await tester.pumpWidget(_chatViewApp(tabs));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView), const Offset(0, 220));
+    await tester.pumpAndSettle();
+
+    final controller = tester
+        .widget<ListView>(find.byType(ListView))
+        .controller!;
+    final readingOffset = controller.position.pixels;
+    chat.insertMessage('A newly submitted prompt', MessageRole.user);
+    await tester.pump();
+
+    expect(controller.position.pixels, readingOffset);
+    expect(find.text('Scroll to bottom'), findsOneWidget);
+  });
+
+  testWidgets('restores each tab reading position for the session', (
+    tester,
+  ) async {
+    await _setViewport(tester, const Size(420, 640));
+    final firstChat = tabs.activeChat!;
+    firstChat.messageStore.setMessages([
+      firstChat.systemPrompt,
+      for (var i = 0; i < 40; i++)
+        Bubble(
+          id: 'tab-a-$i',
+          role: i.isEven ? MessageRole.user : MessageRole.assistant,
+          text: 'First tab message $i',
+          reasoning: '',
+        ),
+    ]);
+
+    await tester.pumpWidget(_activeChatViewApp(tabs));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView), const Offset(0, 240));
+    await tester.pumpAndSettle();
+    final firstController =
+        tester.widget<ListView>(find.byType(ListView)).controller!
+            as ChatScrollController;
+    final firstOffset = firstController.position.pixels;
+    expect(firstController.mode, ChatScrollMode.paused);
+
+    tabs.newTab();
+    await tester.pumpAndSettle();
+    await tabs.selectTab(firstChat.tabId);
+    await tester.pumpAndSettle();
+
+    final restoredController =
+        tester.widget<ListView>(find.byType(ListView)).controller!
+            as ChatScrollController;
+    final restored = restoredController.position.pixels;
+    expect(
+      restored,
+      closeTo(firstOffset, 0.01),
+      reason:
+          'mode=${restoredController.mode}, max=${restoredController.position.maxScrollExtent}',
+    );
+    expect(find.text('Scroll to bottom'), findsOneWidget);
+
+    final secondChat = tabs.tabs.firstWhere(
+      (chat) => chat.tabId != firstChat.tabId,
+    );
+    await tabs.closeTab(secondChat.tabId);
+  });
+
+  testWidgets('wholesale history replacement resets the same tab to latest', (
+    tester,
+  ) async {
+    await _setViewport(tester, const Size(420, 640));
+    final chat = tabs.activeChat!;
+    chat.messageStore.setMessages([
+      chat.systemPrompt,
+      for (var i = 0; i < 40; i++)
+        Bubble(
+          id: 'old-$i',
+          role: i.isEven ? MessageRole.user : MessageRole.assistant,
+          text: 'Old message $i',
+          reasoning: '',
+        ),
+    ]);
+
+    await tester.pumpWidget(_chatViewApp(tabs));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView), const Offset(0, 240));
+    await tester.pumpAndSettle();
+    expect(find.text('Scroll to bottom'), findsOneWidget);
+
+    await tester.runAsync(chat.newChat);
+    chat.messageStore.setMessages([
+      chat.systemPrompt,
+      for (var i = 0; i < 40; i++)
+        Bubble(
+          id: 'new-$i',
+          role: i.isEven ? MessageRole.user : MessageRole.assistant,
+          text: 'New message $i',
+          reasoning: '',
+        ),
+    ]);
+    await tester.pump();
+    await tester.pump();
+
+    final controller = tester
+        .widget<ListView>(find.byType(ListView))
+        .controller!;
+    expect(controller.position.pixels, controller.position.maxScrollExtent);
+    expect(
+      _isVisible(tester, find.byKey(const ValueKey('message_new-39'))),
+      true,
+    );
     expect(find.text('Scroll to bottom'), findsNothing);
   });
 
@@ -220,6 +380,25 @@ Widget _chatViewApp(ChatTabsService tabs) {
   return MaterialApp(
     home: Scaffold(
       body: ChatView(chat: tabs.activeChat!, onOpenWorkspace: () {}),
+    ),
+  );
+}
+
+Widget _activeChatViewApp(ChatTabsService tabs) {
+  return MaterialApp(
+    home: Scaffold(
+      body: AnimatedBuilder(
+        animation: tabs,
+        builder: (context, _) {
+          final chat = tabs.activeChat;
+          if (chat == null) return const SizedBox.shrink();
+          return ChatView(
+            key: ValueKey('chat_${chat.tabId}'),
+            chat: chat,
+            onOpenWorkspace: () {},
+          );
+        },
+      ),
     ),
   );
 }
