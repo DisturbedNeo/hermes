@@ -402,6 +402,12 @@ class _ProjectActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final canRun = !chat.taskBusy && !project.isTerminal;
+    final exhaustedRecovery = project.recoveryIncidents
+        .where(
+          (incident) =>
+              incident.status == ProjectRecoveryIncidentStatus.exhausted,
+        )
+        .firstOrNull;
     return Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -470,6 +476,21 @@ class _ProjectActions extends StatelessWidget {
                   : () => unawaited(chat.approveNextProjectTask()),
             ),
           ),
+        if (exhaustedRecovery != null)
+          AccessibleWidget(
+            label: 'Retry project recovery',
+            isButton: true,
+            enabled: !chat.taskBusy,
+            child: FilledButton.tonalIcon(
+              icon: const Icon(Icons.replay),
+              label: const Text('Retry Recovery'),
+              onPressed: chat.taskBusy
+                  ? null
+                  : () => unawaited(
+                      chat.retryProjectRecovery(exhaustedRecovery.id),
+                    ),
+            ),
+          ),
         AccessibleWidget(
           label: 'Edit project',
           isButton: true,
@@ -488,9 +509,9 @@ class _ProjectActions extends StatelessWidget {
                       onSave: chat.updateProjectPlan,
                     );
                     if (saved && context.mounted) {
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(const SnackBar(content: Text('Project saved')));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Project saved')),
+                      );
                     }
                   },
           ),
@@ -510,7 +531,6 @@ class _ProjectActions extends StatelessWidget {
       ],
     );
   }
-
 }
 
 class _ProjectQuestionCard extends StatefulWidget {
@@ -810,9 +830,9 @@ class _Actions extends StatelessWidget {
                       onSave: chat.updateTaskPlan,
                     );
                     if (saved && context.mounted) {
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(const SnackBar(content: Text('Task plan saved')));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Task plan saved')),
+                      );
                     }
                   },
           ),
@@ -866,7 +886,6 @@ class _Actions extends StatelessWidget {
       ],
     );
   }
-
 }
 
 class _ApprovalCard extends StatelessWidget {
@@ -1090,7 +1109,9 @@ class _ArtifactList extends StatelessWidget {
                 onError: (error) {
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Could not open artifact: $error')),
+                      SnackBar(
+                        content: Text('Could not open artifact: $error'),
+                      ),
                     );
                   }
                 },
@@ -1204,6 +1225,10 @@ class _ProjectTaskDetails extends StatelessWidget {
             ),
           ),
         ],
+        if (task.failure != null) ...[
+          const SizedBox(height: 6),
+          _ProjectFailureDetails(failure: task.failure!),
+        ],
       ],
     );
   }
@@ -1226,23 +1251,73 @@ class _ProjectTaskBoardList extends StatelessWidget {
         for (final task in tasks)
           AccessibleWidget(
             label: 'Project task: ${task.title}, status ${task.status.wire}',
-            child: ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(_projectTaskStatusIcon(task.status)),
-              title: Text(task.title),
-              subtitle: Text(
-                [
-                  task.status.wire,
-                  task.objective,
-                  if (task.doneCriteria.isNotEmpty)
-                    'Done: ${task.doneCriteria.join('; ')}',
-                  if (task.outOfScope.isNotEmpty)
-                    'Out: ${task.outOfScope.join('; ')}',
-                ].join('\n'),
-              ),
-              isThreeLine: true,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(_projectTaskStatusIcon(task.status)),
+                  title: Text(task.title),
+                  subtitle: Text(
+                    [
+                      task.status.wire,
+                      task.objective,
+                      if (task.doneCriteria.isNotEmpty)
+                        'Done: ${task.doneCriteria.join('; ')}',
+                      if (task.outOfScope.isNotEmpty)
+                        'Out: ${task.outOfScope.join('; ')}',
+                    ].join('\n'),
+                  ),
+                  isThreeLine: true,
+                ),
+                if (task.failure != null)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 40, bottom: 8),
+                    child: _ProjectFailureDetails(failure: task.failure!),
+                  ),
+              ],
             ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ProjectFailureDetails extends StatelessWidget {
+  final ProjectTaskFailure failure;
+
+  const _ProjectFailureDetails({required this.failure});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          children: [
+            if (failure.gateId != null)
+              _StatusChip(label: 'gate: ${failure.gateId}'),
+            _StatusChip(label: 'failure: ${failure.disposition.wire}'),
+            if (failure.advisoryErrorCount > 0)
+              _StatusChip(label: 'advisory: ${failure.advisoryErrorCount}'),
+            if (failure.resolvedErrorCount > 0)
+              _StatusChip(label: 'resolved: ${failure.resolvedErrorCount}'),
+            if (failure.unresolvedErrorCount > 0)
+              _StatusChip(label: 'unresolved: ${failure.unresolvedErrorCount}'),
+            for (final code in failure.errorCodes.take(4))
+              _StatusChip(label: code),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(failure.summary, style: theme.textTheme.bodySmall),
+        if (failure.toolCallIds.isNotEmpty)
+          Text(
+            'Related calls: ${failure.toolCallIds.join(', ')}',
+            style: theme.textTheme.bodySmall,
           ),
       ],
     );
@@ -1553,4 +1628,5 @@ IconData _projectDecisionIcon(ProjectDecisionType decision) =>
       ProjectDecisionType.splitTask => Icons.call_split_outlined,
       ProjectDecisionType.evaluateTask => Icons.fact_check_outlined,
       ProjectDecisionType.refreshBacklog => Icons.playlist_add_check_outlined,
+      ProjectDecisionType.retryRecovery => Icons.replay,
     };

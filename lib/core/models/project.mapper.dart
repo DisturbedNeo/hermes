@@ -353,6 +353,8 @@ class ProjectDecisionTypeMapper extends EnumMapper<ProjectDecisionType> {
         return ProjectDecisionType.evaluateTask;
       case 'refresh_backlog':
         return ProjectDecisionType.refreshBacklog;
+      case 'retry_recovery':
+        return ProjectDecisionType.retryRecovery;
       default:
         return ProjectDecisionType.values[3];
     }
@@ -377,6 +379,8 @@ class ProjectDecisionTypeMapper extends EnumMapper<ProjectDecisionType> {
         return 'evaluate_task';
       case ProjectDecisionType.refreshBacklog:
         return 'refresh_backlog';
+      case ProjectDecisionType.retryRecovery:
+        return 'retry_recovery';
     }
   }
 }
@@ -823,6 +827,7 @@ class ProjectTaskMapper extends ClassMapperBase<ProjectTask> {
       MapperContainer.globals.use(_instance = ProjectTaskMapper._());
       ProjectArtifactMapper.ensureInitialized();
       ProjectTaskStatusMapper.ensureInitialized();
+      ProjectTaskFailureMapper.ensureInitialized();
     }
     return _instance!;
   }
@@ -913,6 +918,12 @@ class ProjectTaskMapper extends ClassMapperBase<ProjectTask> {
     _$rejectionReason,
     hook: JsonNullableStringHook(),
   );
+  static ProjectTaskFailure? _$failure(ProjectTask v) => v.failure;
+  static const Field<ProjectTask, ProjectTaskFailure> _f$failure = Field(
+    'failure',
+    _$failure,
+    opt: true,
+  );
   static DateTime _$createdAt(ProjectTask v) => v.createdAt;
   static const Field<ProjectTask, DateTime> _f$createdAt = Field(
     'createdAt',
@@ -941,6 +952,7 @@ class ProjectTaskMapper extends ClassMapperBase<ProjectTask> {
     #recoveryIncidentId: _f$recoveryIncidentId,
     #fingerprint: _f$fingerprint,
     #rejectionReason: _f$rejectionReason,
+    #failure: _f$failure,
     #createdAt: _f$createdAt,
     #updatedAt: _f$updatedAt,
   };
@@ -964,6 +976,7 @@ class ProjectTaskMapper extends ClassMapperBase<ProjectTask> {
       recoveryIncidentId: data.dec(_f$recoveryIncidentId),
       fingerprint: data.dec(_f$fingerprint),
       rejectionReason: data.dec(_f$rejectionReason),
+      failure: data.dec(_f$failure),
       createdAt: data.dec(_f$createdAt),
       updatedAt: data.dec(_f$updatedAt),
     );
@@ -1104,6 +1117,141 @@ mixin ProjectArtifactMappable {
     return ProjectArtifactMapper.ensureInitialized().encodeMap<ProjectArtifact>(
       this as ProjectArtifact,
     );
+  }
+}
+
+/// @nodoc
+class ProjectTaskFailureMapper extends ClassMapperBase<ProjectTaskFailure> {
+  ProjectTaskFailureMapper._();
+
+  static ProjectTaskFailureMapper? _instance;
+  static ProjectTaskFailureMapper ensureInitialized() {
+    if (_instance == null) {
+      MapperContainer.globals.use(_instance = ProjectTaskFailureMapper._());
+      TaskGateFailureDispositionMapper.ensureInitialized();
+    }
+    return _instance!;
+  }
+
+  @override
+  final String id = 'ProjectTaskFailure';
+
+  static String? _$gateId(ProjectTaskFailure v) => v.gateId;
+  static const Field<ProjectTaskFailure, String> _f$gateId = Field(
+    'gateId',
+    _$gateId,
+    opt: true,
+    hook: JsonNullableStringHook(),
+  );
+  static TaskGateFailureDisposition _$disposition(ProjectTaskFailure v) =>
+      v.disposition;
+  static const Field<ProjectTaskFailure, TaskGateFailureDisposition>
+  _f$disposition = Field('disposition', _$disposition, hook: EnumAliasHook({}));
+  static String _$failureKey(ProjectTaskFailure v) => v.failureKey;
+  static const Field<ProjectTaskFailure, String> _f$failureKey = Field(
+    'failureKey',
+    _$failureKey,
+    hook: JsonStringHook(),
+  );
+  static String _$summary(ProjectTaskFailure v) => v.summary;
+  static const Field<ProjectTaskFailure, String> _f$summary = Field(
+    'summary',
+    _$summary,
+    hook: JsonStringHook(),
+  );
+  static List<String> _$errorCodes(ProjectTaskFailure v) => v.errorCodes;
+  static const Field<ProjectTaskFailure, List<String>> _f$errorCodes = Field(
+    'errorCodes',
+    _$errorCodes,
+    opt: true,
+    def: const [],
+    hook: JsonStringListHook(),
+  );
+  static List<String> _$toolCallIds(ProjectTaskFailure v) => v.toolCallIds;
+  static const Field<ProjectTaskFailure, List<String>> _f$toolCallIds = Field(
+    'toolCallIds',
+    _$toolCallIds,
+    opt: true,
+    def: const [],
+    hook: JsonStringListHook(),
+  );
+  static int _$advisoryErrorCount(ProjectTaskFailure v) => v.advisoryErrorCount;
+  static const Field<ProjectTaskFailure, int> _f$advisoryErrorCount = Field(
+    'advisoryErrorCount',
+    _$advisoryErrorCount,
+    opt: true,
+    def: 0,
+    hook: JsonIntHook(),
+  );
+  static int _$resolvedErrorCount(ProjectTaskFailure v) => v.resolvedErrorCount;
+  static const Field<ProjectTaskFailure, int> _f$resolvedErrorCount = Field(
+    'resolvedErrorCount',
+    _$resolvedErrorCount,
+    opt: true,
+    def: 0,
+    hook: JsonIntHook(),
+  );
+  static int _$unresolvedErrorCount(ProjectTaskFailure v) =>
+      v.unresolvedErrorCount;
+  static const Field<ProjectTaskFailure, int> _f$unresolvedErrorCount = Field(
+    'unresolvedErrorCount',
+    _$unresolvedErrorCount,
+    opt: true,
+    def: 0,
+    hook: JsonIntHook(),
+  );
+
+  @override
+  final MappableFields<ProjectTaskFailure> fields = const {
+    #gateId: _f$gateId,
+    #disposition: _f$disposition,
+    #failureKey: _f$failureKey,
+    #summary: _f$summary,
+    #errorCodes: _f$errorCodes,
+    #toolCallIds: _f$toolCallIds,
+    #advisoryErrorCount: _f$advisoryErrorCount,
+    #resolvedErrorCount: _f$resolvedErrorCount,
+    #unresolvedErrorCount: _f$unresolvedErrorCount,
+  };
+  @override
+  final bool ignoreNull = true;
+
+  static ProjectTaskFailure _instantiate(DecodingData data) {
+    return ProjectTaskFailure(
+      gateId: data.dec(_f$gateId),
+      disposition: data.dec(_f$disposition),
+      failureKey: data.dec(_f$failureKey),
+      summary: data.dec(_f$summary),
+      errorCodes: data.dec(_f$errorCodes),
+      toolCallIds: data.dec(_f$toolCallIds),
+      advisoryErrorCount: data.dec(_f$advisoryErrorCount),
+      resolvedErrorCount: data.dec(_f$resolvedErrorCount),
+      unresolvedErrorCount: data.dec(_f$unresolvedErrorCount),
+    );
+  }
+
+  @override
+  final Function instantiate = _instantiate;
+
+  static ProjectTaskFailure fromMap(Map<String, dynamic> map) {
+    return ensureInitialized().decodeMap<ProjectTaskFailure>(map);
+  }
+
+  static ProjectTaskFailure fromJson(String json) {
+    return ensureInitialized().decodeJson<ProjectTaskFailure>(json);
+  }
+}
+
+/// @nodoc
+mixin ProjectTaskFailureMappable {
+  String toJson() {
+    return ProjectTaskFailureMapper.ensureInitialized()
+        .encodeJson<ProjectTaskFailure>(this as ProjectTaskFailure);
+  }
+
+  Map<String, dynamic> toMap() {
+    return ProjectTaskFailureMapper.ensureInitialized()
+        .encodeMap<ProjectTaskFailure>(this as ProjectTaskFailure);
   }
 }
 
@@ -1601,6 +1749,7 @@ class ProjectDecisionRecordMapper
           'splittask': 'split_task',
           'evaluatetask': 'evaluate_task',
           'refreshbacklog': 'refresh_backlog',
+          'retryrecovery': 'retry_recovery',
         }),
       );
   static String _$summary(ProjectDecisionRecord v) => v.summary;

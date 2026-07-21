@@ -31,6 +31,20 @@ const Set<String> kTaskGateCatalog = {
   'model_review',
 };
 
+class TaskGateEvidence {
+  final List<TaskToolCallRecord> stepToolCalls;
+  final List<TaskToolCallRecord> taskToolCalls;
+  final List<TaskArtifact> stepArtifacts;
+  final List<TaskArtifact> taskArtifacts;
+
+  const TaskGateEvidence({
+    required this.stepToolCalls,
+    required this.taskToolCalls,
+    required this.stepArtifacts,
+    required this.taskArtifacts,
+  });
+}
+
 class TaskGateEvaluation {
   final List<TaskGateResult> results;
 
@@ -75,21 +89,31 @@ class TaskGateEvaluator {
     required TaskDocument task,
     required TaskStep step,
     required List<TaskGate> gates,
-    required List<TaskToolCallRecord> toolCalls,
-    required List<TaskArtifact> artifacts,
+    List<TaskToolCallRecord> toolCalls = const [],
+    List<TaskArtifact> artifacts = const [],
+    TaskGateEvidence? evidence,
     ChatClient? client,
     String baseSystemPrompt = '',
   }) async {
     final results = <TaskGateResult>[];
     for (final gate in gates) {
+      final taskScoped = gate.scope.trim().toLowerCase() == 'task';
       results.add(
         await _evaluateGate(
           workspace: workspace,
           task: task,
           step: step,
           gate: gate,
-          toolCalls: toolCalls,
-          artifacts: artifacts,
+          toolCalls: evidence == null
+              ? toolCalls
+              : taskScoped
+              ? evidence.taskToolCalls
+              : evidence.stepToolCalls,
+          artifacts: evidence == null
+              ? artifacts
+              : taskScoped
+              ? evidence.taskArtifacts
+              : evidence.stepArtifacts,
           client: client,
           baseSystemPrompt: baseSystemPrompt,
         ),
@@ -292,7 +316,7 @@ class TaskGateEvaluator {
     }
 
     final lastMutation = _lastMutationIndex(toolCalls);
-    for (var i = lastMutation + 1; i < toolCalls.length; i++) {
+    for (var i = toolCalls.length - 1; i > lastMutation; i--) {
       final call = toolCalls[i];
       if (call.toolName != 'run_command') continue;
       final callArgs = jsonMap(call.arguments);
@@ -341,107 +365,80 @@ class TaskGateEvaluator {
     List<TaskToolCallRecord> toolCalls,
     DateTime now,
   ) {
+    final advisory = <Map<String, String>>[];
+    final resolved = <Map<String, String>>[];
     final unresolved = <Map<String, String>>[];
-    final recoverable = <Map<String, String>>[];
 
-    for (final call in toolCalls) {
+    for (var i = 0; i < toolCalls.length; i++) {
+      final call = toolCalls[i];
       if (call.toolName == 'finish_task_step') continue;
-      final error = call.error?.trim();
-      if (error == null || error.isEmpty) continue;
-
-      final category = _recoverableToolErrorCategory(call, error);
-      final entry = <String, String>{'toolName': call.toolName, 'error': error};
-      if (category != null) entry['category'] = category;
-      if (category == null) {
-        unresolved.add(entry);
+      final error = _effectiveToolError(call);
+      if (error == null) continue;
+      final operationKey = _operationKey(call);
+      final entry = <String, String>{
+        'callId': call.id,
+        'toolName': call.toolName,
+        'operationKey': operationKey,
+        'code': error.code,
+        'message': error.message,
+        'disposition': error.disposition.wire,
+      };
+      if (error.disposition == TaskToolErrorDisposition.advisory) {
+        advisory.add(entry);
+        continue;
+      }
+      final resolvingCall = toolCalls.indexed
+          .skip(i + 1)
+          .where(
+            (indexed) =>
+                _operationKey(indexed.$2) == operationKey &&
+                _callSucceeded(indexed.$2),
+          )
+          .map((indexed) => indexed.$2)
+          .firstOrNull;
+      if (resolvingCall != null) {
+        resolved.add({...entry, 'resolvedByCallId': resolvingCall.id});
       } else {
-        recoverable.add(entry);
+        unresolved.add(entry);
       }
     }
 
     if (unresolved.isNotEmpty) {
+      final blocking = unresolved.any(
+        (entry) => entry['disposition'] == TaskToolErrorDisposition.fatal.wire,
+      );
       return _result(
         gate,
         TaskGateStatus.failed,
         'Unresolved tool errors must be fixed before completion.',
         now,
         {
-          'errors': unresolved,
-          if (recoverable.isNotEmpty) 'recoverableErrors': recoverable,
+          'unresolvedErrors': unresolved,
+          if (resolved.isNotEmpty) 'resolvedErrors': resolved,
+          if (advisory.isNotEmpty) 'advisoryErrors': advisory,
         },
+        blocking
+            ? TaskGateFailureDisposition.blocking
+            : TaskGateFailureDisposition.repairable,
       );
     }
 
     return _result(
       gate,
       _passStatus(gate),
-      recoverable.isEmpty
+      advisory.isEmpty && resolved.isEmpty
           ? 'No unresolved tool errors.'
-          : 'No unresolved tool errors. ${recoverable.length} recoverable tool guard issue(s) were recorded.',
+          : 'No unresolved tool errors. ${advisory.length} advisory and ${resolved.length} resolved error(s) were recorded.',
       now,
-      recoverable.isEmpty ? const {} : {'recoverableErrors': recoverable},
+      {
+        if (resolved.isNotEmpty) 'resolvedErrors': resolved,
+        if (advisory.isNotEmpty) 'advisoryErrors': advisory,
+      },
     );
   }
 
-  String? _recoverableToolErrorCategory(TaskToolCallRecord call, String error) {
-    final normalised = error.toLowerCase();
-    final result = _resultSummaryMap(call);
-    final reason = jsonNullableString(result['reason'])?.toLowerCase() ?? '';
-
-    if (_containsAny(normalised, const [
-      'blocked by terminal policy',
-      'shell command substitution is blocked',
-      'find -delete is blocked',
-      'git clean is blocked',
-      'git reset --hard is blocked',
-      'terminal command is not whitelisted',
-      'terminal commands are disabled',
-      'tool is not available for this task step',
-      'read-only steps may only',
-      'read-only steps cannot',
-      'task steps may only create artifacts',
-      'use workspace-relative paths only',
-      'path escapes the workspace',
-      'refusing to delete the workspace root',
-    ])) {
-      return 'guard_denial';
-    }
-
-    if (_containsAny(normalised, const [
-      'path not found',
-      'path is not a directory',
-      'path is a directory',
-      'file is too large to read',
-      'patch text was not found',
-      'search returned too many results',
-      'search results are too large',
-      'no existing parent directory found',
-    ])) {
-      return 'workspace_validation';
-    }
-
-    if (_containsAny(normalised, const [
-      'arguments must be a json object',
-      'formatexception',
-      'is not a subtype of type',
-      'requires a path',
-      'requires string content',
-      'command is required',
-      'search query is required',
-    ])) {
-      return 'invalid_tool_arguments';
-    }
-
-    if (normalised == 'tool call skipped by task runner.' &&
-        reason.contains('repeated the same tool call')) {
-      return 'loop_guard';
-    }
-
-    return null;
-  }
-
-  bool _containsAny(String value, List<String> needles) {
-    return needles.any(value.contains);
+  TaskToolError? _effectiveToolError(TaskToolCallRecord call) {
+    return call.effectiveToolError;
   }
 
   TaskGateResult _noFailedCommands(
@@ -449,13 +446,19 @@ class TaskGateEvaluator {
     List<TaskToolCallRecord> toolCalls,
     DateTime now,
   ) {
-    final failed = <Map<String, dynamic>>[];
+    final latestCommands = <String, TaskToolCallRecord>{};
     final lastMutation = _lastMutationIndex(toolCalls);
     for (var i = lastMutation + 1; i < toolCalls.length; i++) {
       final call = toolCalls[i];
       if (call.toolName != 'run_command') continue;
+      latestCommands[_operationKey(call)] = call;
+    }
+    final failed = <Map<String, dynamic>>[];
+    for (final call in latestCommands.values) {
       final result = _resultSummaryMap(call);
-      final exitCode = jsonInt(result['exit_code'], fallback: 0);
+      final exitCode = _effectiveToolError(call) == null
+          ? jsonInt(result['exit_code'], fallback: 0)
+          : -1;
       if (exitCode != 0) {
         failed.add({
           'command': result['command'] ?? _commandText(call),
@@ -825,7 +828,9 @@ $prompt
   int _lastMutationIndex(List<TaskToolCallRecord> toolCalls) {
     var index = -1;
     for (var i = 0; i < toolCalls.length; i++) {
-      if (_isMutatingCall(toolCalls[i])) index = i;
+      if (_callSucceeded(toolCalls[i]) && _isMutatingCall(toolCalls[i])) {
+        index = i;
+      }
     }
     return index;
   }
@@ -844,6 +849,39 @@ $prompt
     return TerminalCommandClassifier.isClearlyMutating(
       TerminalCommandClassifier.classify(_commandText(call)),
     );
+  }
+
+  bool _callSucceeded(TaskToolCallRecord call) {
+    if (_effectiveToolError(call) != null) return false;
+    if (call.outcome != TaskToolCallOutcome.succeeded) return false;
+    if (call.toolName != 'run_command') return true;
+    return jsonInt(_resultSummaryMap(call)['exit_code'], fallback: 0) == 0;
+  }
+
+  String _operationKey(TaskToolCallRecord call) {
+    final recorded = call.operationKey?.trim();
+    if (recorded != null && recorded.isNotEmpty) return recorded;
+    final arguments = jsonMap(call.arguments);
+    String normalisePath(Object? value) {
+      final raw = value?.toString().trim() ?? '';
+      return raw.isEmpty ? '.' : path.normalize(raw);
+    }
+
+    return switch (call.toolName) {
+      'read_file' => 'read:${normalisePath(arguments['path'])}',
+      'list_directory' => 'list:${normalisePath(arguments['path'])}',
+      'search_files' =>
+        'search:${normalisePath(arguments['path'])}:${jsonString(arguments['query']).trim()}',
+      'write_file' ||
+      'patch_file' => 'write:${normalisePath(arguments['path'])}',
+      'create_directory' => 'mkdir:${normalisePath(arguments['path'])}',
+      'delete_path' => 'delete:${normalisePath(arguments['path'])}',
+      'rename_path' =>
+        'rename:${normalisePath(arguments['from'])}->${normalisePath(arguments['to'])}',
+      'run_command' =>
+        'command:${path.normalize(jsonString(arguments['working_directory'] ?? arguments['workingDirectory'], fallback: '.'))}:${_commandText(call)}',
+      _ => call.toolName,
+    };
   }
 
   Map<String, dynamic> _resultSummaryMap(TaskToolCallRecord call) {
@@ -909,6 +947,7 @@ $prompt
     String summary,
     DateTime evaluatedAt, [
     Map<String, dynamic> details = const {},
+    TaskGateFailureDisposition? failureDisposition,
   ]) {
     return TaskGateResult(
       gateId: gate.id,
@@ -921,6 +960,11 @@ $prompt
           'description': gate.description,
         ...details,
       },
+      failureDisposition:
+          failureDisposition ??
+          (status == TaskGateStatus.failed
+              ? TaskGateFailureDisposition.repairable
+              : null),
       evaluatedAt: evaluatedAt,
     );
   }

@@ -78,6 +78,8 @@ enum ProjectDecisionType {
   evaluateTask,
   @MappableValue('refresh_backlog')
   refreshBacklog,
+  @MappableValue('retry_recovery')
+  retryRecovery,
 }
 
 extension ProjectStatusWire on ProjectStatus {
@@ -118,6 +120,7 @@ extension ProjectDecisionTypeWire on ProjectDecisionType {
     ProjectDecisionType.splitTask => 'split_task',
     ProjectDecisionType.evaluateTask => 'evaluate_task',
     ProjectDecisionType.refreshBacklog => 'refresh_backlog',
+    ProjectDecisionType.retryRecovery => 'retry_recovery',
     _ => name,
   };
 }
@@ -603,6 +606,7 @@ class ProjectTask with ProjectTaskMappable {
   final String fingerprint;
   @MappableField(hook: JsonNullableStringHook())
   final String? rejectionReason;
+  final ProjectTaskFailure? failure;
   @MappableField(hook: JsonDateHook())
   final DateTime createdAt;
   @MappableField(hook: JsonDateHook())
@@ -622,6 +626,7 @@ class ProjectTask with ProjectTaskMappable {
     this.recoveryIncidentId,
     required this.fingerprint,
     required this.rejectionReason,
+    this.failure,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -640,6 +645,7 @@ class ProjectTask with ProjectTaskMappable {
     Object? recoveryIncidentId = kSentinel,
     String? fingerprint,
     Object? rejectionReason = kSentinel,
+    Object? failure = kSentinel,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -664,6 +670,7 @@ class ProjectTask with ProjectTaskMappable {
             projectTaskFingerprint(nextObjective, nextCriteria),
           ),
       rejectionReason: resolve(rejectionReason, this.rejectionReason),
+      failure: resolve(failure, this.failure),
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -690,10 +697,45 @@ class ProjectTask with ProjectTaskMappable {
       recoveryIncidentId: null,
       fingerprint: projectTaskFingerprint(objective, criteria),
       rejectionReason: null,
+      failure: null,
       createdAt: ref.createdAt,
       updatedAt: ref.updatedAt,
     );
   }
+}
+
+@MappableClass(ignoreNull: true)
+class ProjectTaskFailure with ProjectTaskFailureMappable {
+  @MappableField(hook: JsonNullableStringHook())
+  final String? gateId;
+  @MappableField(hook: EnumAliasHook({}))
+  final TaskGateFailureDisposition disposition;
+  @MappableField(hook: JsonStringHook())
+  final String failureKey;
+  @MappableField(hook: JsonStringHook())
+  final String summary;
+  @MappableField(hook: JsonStringListHook())
+  final List<String> errorCodes;
+  @MappableField(hook: JsonStringListHook())
+  final List<String> toolCallIds;
+  @MappableField(hook: JsonIntHook())
+  final int advisoryErrorCount;
+  @MappableField(hook: JsonIntHook())
+  final int resolvedErrorCount;
+  @MappableField(hook: JsonIntHook())
+  final int unresolvedErrorCount;
+
+  const ProjectTaskFailure({
+    this.gateId,
+    required this.disposition,
+    required this.failureKey,
+    required this.summary,
+    this.errorCodes = const [],
+    this.toolCallIds = const [],
+    this.advisoryErrorCount = 0,
+    this.resolvedErrorCount = 0,
+    this.unresolvedErrorCount = 0,
+  });
 }
 
 @MappableClass(ignoreNull: true, hook: ProjectArtifactJsonHook())
@@ -872,6 +914,7 @@ class ProjectDecisionRecord with ProjectDecisionRecordMappable {
       'splittask': 'split_task',
       'evaluatetask': 'evaluate_task',
       'refreshbacklog': 'refresh_backlog',
+      'retryrecovery': 'retry_recovery',
     }),
   )
   final ProjectDecisionType decision;

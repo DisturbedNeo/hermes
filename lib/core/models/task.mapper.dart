@@ -285,6 +285,177 @@ extension TaskGateStatusMapperExtension on TaskGateStatus {
 }
 
 /// @nodoc
+
+class TaskToolCallOutcomeMapper extends EnumMapper<TaskToolCallOutcome> {
+  TaskToolCallOutcomeMapper._();
+
+  static TaskToolCallOutcomeMapper? _instance;
+  static TaskToolCallOutcomeMapper ensureInitialized() {
+    if (_instance == null) {
+      MapperContainer.globals.use(_instance = TaskToolCallOutcomeMapper._());
+    }
+    return _instance!;
+  }
+
+  static TaskToolCallOutcome fromValue(dynamic value) {
+    ensureInitialized();
+    return MapperContainer.globals.fromValue(value);
+  }
+
+  @override
+  TaskToolCallOutcome decode(dynamic value) {
+    switch (value) {
+      case r'succeeded':
+        return TaskToolCallOutcome.succeeded;
+      case r'denied':
+        return TaskToolCallOutcome.denied;
+      case r'failed':
+        return TaskToolCallOutcome.failed;
+      case r'skipped':
+        return TaskToolCallOutcome.skipped;
+      default:
+        return TaskToolCallOutcome.values[0];
+    }
+  }
+
+  @override
+  dynamic encode(TaskToolCallOutcome self) {
+    switch (self) {
+      case TaskToolCallOutcome.succeeded:
+        return r'succeeded';
+      case TaskToolCallOutcome.denied:
+        return r'denied';
+      case TaskToolCallOutcome.failed:
+        return r'failed';
+      case TaskToolCallOutcome.skipped:
+        return r'skipped';
+    }
+  }
+}
+
+/// @nodoc
+
+extension TaskToolCallOutcomeMapperExtension on TaskToolCallOutcome {
+  String toValue() {
+    TaskToolCallOutcomeMapper.ensureInitialized();
+    return MapperContainer.globals.toValue<TaskToolCallOutcome>(this) as String;
+  }
+}
+
+/// @nodoc
+
+class TaskToolErrorDispositionMapper
+    extends EnumMapper<TaskToolErrorDisposition> {
+  TaskToolErrorDispositionMapper._();
+
+  static TaskToolErrorDispositionMapper? _instance;
+  static TaskToolErrorDispositionMapper ensureInitialized() {
+    if (_instance == null) {
+      MapperContainer.globals.use(
+        _instance = TaskToolErrorDispositionMapper._(),
+      );
+    }
+    return _instance!;
+  }
+
+  static TaskToolErrorDisposition fromValue(dynamic value) {
+    ensureInitialized();
+    return MapperContainer.globals.fromValue(value);
+  }
+
+  @override
+  TaskToolErrorDisposition decode(dynamic value) {
+    switch (value) {
+      case r'advisory':
+        return TaskToolErrorDisposition.advisory;
+      case r'retryable':
+        return TaskToolErrorDisposition.retryable;
+      case r'fatal':
+        return TaskToolErrorDisposition.fatal;
+      default:
+        return TaskToolErrorDisposition.values[2];
+    }
+  }
+
+  @override
+  dynamic encode(TaskToolErrorDisposition self) {
+    switch (self) {
+      case TaskToolErrorDisposition.advisory:
+        return r'advisory';
+      case TaskToolErrorDisposition.retryable:
+        return r'retryable';
+      case TaskToolErrorDisposition.fatal:
+        return r'fatal';
+    }
+  }
+}
+
+/// @nodoc
+
+extension TaskToolErrorDispositionMapperExtension on TaskToolErrorDisposition {
+  String toValue() {
+    TaskToolErrorDispositionMapper.ensureInitialized();
+    return MapperContainer.globals.toValue<TaskToolErrorDisposition>(this)
+        as String;
+  }
+}
+
+/// @nodoc
+
+class TaskGateFailureDispositionMapper
+    extends EnumMapper<TaskGateFailureDisposition> {
+  TaskGateFailureDispositionMapper._();
+
+  static TaskGateFailureDispositionMapper? _instance;
+  static TaskGateFailureDispositionMapper ensureInitialized() {
+    if (_instance == null) {
+      MapperContainer.globals.use(
+        _instance = TaskGateFailureDispositionMapper._(),
+      );
+    }
+    return _instance!;
+  }
+
+  static TaskGateFailureDisposition fromValue(dynamic value) {
+    ensureInitialized();
+    return MapperContainer.globals.fromValue(value);
+  }
+
+  @override
+  TaskGateFailureDisposition decode(dynamic value) {
+    switch (value) {
+      case r'repairable':
+        return TaskGateFailureDisposition.repairable;
+      case r'blocking':
+        return TaskGateFailureDisposition.blocking;
+      default:
+        return TaskGateFailureDisposition.values[0];
+    }
+  }
+
+  @override
+  dynamic encode(TaskGateFailureDisposition self) {
+    switch (self) {
+      case TaskGateFailureDisposition.repairable:
+        return r'repairable';
+      case TaskGateFailureDisposition.blocking:
+        return r'blocking';
+    }
+  }
+}
+
+/// @nodoc
+
+extension TaskGateFailureDispositionMapperExtension
+    on TaskGateFailureDisposition {
+  String toValue() {
+    TaskGateFailureDispositionMapper.ensureInitialized();
+    return MapperContainer.globals.toValue<TaskGateFailureDisposition>(this)
+        as String;
+  }
+}
+
+/// @nodoc
 class RefinedTaskBriefMapper extends ClassMapperBase<RefinedTaskBrief> {
   RefinedTaskBriefMapper._();
 
@@ -1115,6 +1286,8 @@ class TaskToolCallRecordMapper extends ClassMapperBase<TaskToolCallRecord> {
   static TaskToolCallRecordMapper ensureInitialized() {
     if (_instance == null) {
       MapperContainer.globals.use(_instance = TaskToolCallRecordMapper._());
+      TaskToolCallOutcomeMapper.ensureInitialized();
+      TaskToolErrorMapper.ensureInitialized();
     }
     return _instance!;
   }
@@ -1178,6 +1351,28 @@ class TaskToolCallRecordMapper extends ClassMapperBase<TaskToolCallRecord> {
     opt: true,
     hook: JsonNullableStringHook(),
   );
+  static TaskToolCallOutcome _$outcome(TaskToolCallRecord v) => v.outcome;
+  static const Field<TaskToolCallRecord, TaskToolCallOutcome> _f$outcome =
+      Field(
+        'outcome',
+        _$outcome,
+        opt: true,
+        def: TaskToolCallOutcome.succeeded,
+        hook: EnumAliasHook({}),
+      );
+  static String? _$operationKey(TaskToolCallRecord v) => v.operationKey;
+  static const Field<TaskToolCallRecord, String> _f$operationKey = Field(
+    'operationKey',
+    _$operationKey,
+    opt: true,
+    hook: JsonNullableStringHook(),
+  );
+  static TaskToolError? _$toolError(TaskToolCallRecord v) => v.toolError;
+  static const Field<TaskToolCallRecord, TaskToolError> _f$toolError = Field(
+    'toolError',
+    _$toolError,
+    opt: true,
+  );
 
   @override
   final MappableFields<TaskToolCallRecord> fields = const {
@@ -1190,6 +1385,9 @@ class TaskToolCallRecordMapper extends ClassMapperBase<TaskToolCallRecord> {
     #result: _f$result,
     #resultSummary: _f$resultSummary,
     #error: _f$error,
+    #outcome: _f$outcome,
+    #operationKey: _f$operationKey,
+    #toolError: _f$toolError,
   };
   @override
   final bool ignoreNull = true;
@@ -1205,6 +1403,9 @@ class TaskToolCallRecordMapper extends ClassMapperBase<TaskToolCallRecord> {
       result: data.dec(_f$result),
       resultSummary: data.dec(_f$resultSummary),
       error: data.dec(_f$error),
+      outcome: data.dec(_f$outcome),
+      operationKey: data.dec(_f$operationKey),
+      toolError: data.dec(_f$toolError),
     );
   }
 
@@ -1234,6 +1435,83 @@ mixin TaskToolCallRecordMappable {
 }
 
 /// @nodoc
+class TaskToolErrorMapper extends ClassMapperBase<TaskToolError> {
+  TaskToolErrorMapper._();
+
+  static TaskToolErrorMapper? _instance;
+  static TaskToolErrorMapper ensureInitialized() {
+    if (_instance == null) {
+      MapperContainer.globals.use(_instance = TaskToolErrorMapper._());
+      TaskToolErrorDispositionMapper.ensureInitialized();
+    }
+    return _instance!;
+  }
+
+  @override
+  final String id = 'TaskToolError';
+
+  static String _$code(TaskToolError v) => v.code;
+  static const Field<TaskToolError, String> _f$code = Field(
+    'code',
+    _$code,
+    hook: JsonStringHook(fallback: 'unknown_tool_error'),
+  );
+  static String _$message(TaskToolError v) => v.message;
+  static const Field<TaskToolError, String> _f$message = Field(
+    'message',
+    _$message,
+    hook: JsonStringHook(),
+  );
+  static TaskToolErrorDisposition _$disposition(TaskToolError v) =>
+      v.disposition;
+  static const Field<TaskToolError, TaskToolErrorDisposition> _f$disposition =
+      Field('disposition', _$disposition, hook: EnumAliasHook({}));
+
+  @override
+  final MappableFields<TaskToolError> fields = const {
+    #code: _f$code,
+    #message: _f$message,
+    #disposition: _f$disposition,
+  };
+  @override
+  final bool ignoreNull = true;
+
+  static TaskToolError _instantiate(DecodingData data) {
+    return TaskToolError(
+      code: data.dec(_f$code),
+      message: data.dec(_f$message),
+      disposition: data.dec(_f$disposition),
+    );
+  }
+
+  @override
+  final Function instantiate = _instantiate;
+
+  static TaskToolError fromMap(Map<String, dynamic> map) {
+    return ensureInitialized().decodeMap<TaskToolError>(map);
+  }
+
+  static TaskToolError fromJson(String json) {
+    return ensureInitialized().decodeJson<TaskToolError>(json);
+  }
+}
+
+/// @nodoc
+mixin TaskToolErrorMappable {
+  String toJson() {
+    return TaskToolErrorMapper.ensureInitialized().encodeJson<TaskToolError>(
+      this as TaskToolError,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return TaskToolErrorMapper.ensureInitialized().encodeMap<TaskToolError>(
+      this as TaskToolError,
+    );
+  }
+}
+
+/// @nodoc
 class TaskGateResultMapper extends ClassMapperBase<TaskGateResult> {
   TaskGateResultMapper._();
 
@@ -1242,6 +1520,7 @@ class TaskGateResultMapper extends ClassMapperBase<TaskGateResult> {
     if (_instance == null) {
       MapperContainer.globals.use(_instance = TaskGateResultMapper._());
       TaskGateStatusMapper.ensureInitialized();
+      TaskGateFailureDispositionMapper.ensureInitialized();
     }
     return _instance!;
   }
@@ -1275,6 +1554,15 @@ class TaskGateResultMapper extends ClassMapperBase<TaskGateResult> {
     def: const {},
     hook: JsonMapValueHook(),
   );
+  static TaskGateFailureDisposition? _$failureDisposition(TaskGateResult v) =>
+      v.failureDisposition;
+  static const Field<TaskGateResult, TaskGateFailureDisposition>
+  _f$failureDisposition = Field(
+    'failureDisposition',
+    _$failureDisposition,
+    opt: true,
+    hook: EnumAliasHook({}),
+  );
   static DateTime _$evaluatedAt(TaskGateResult v) => v.evaluatedAt;
   static const Field<TaskGateResult, DateTime> _f$evaluatedAt = Field(
     'evaluatedAt',
@@ -1288,6 +1576,7 @@ class TaskGateResultMapper extends ClassMapperBase<TaskGateResult> {
     #status: _f$status,
     #summary: _f$summary,
     #details: _f$details,
+    #failureDisposition: _f$failureDisposition,
     #evaluatedAt: _f$evaluatedAt,
   };
   @override
@@ -1301,6 +1590,7 @@ class TaskGateResultMapper extends ClassMapperBase<TaskGateResult> {
       status: data.dec(_f$status),
       summary: data.dec(_f$summary),
       details: data.dec(_f$details),
+      failureDisposition: data.dec(_f$failureDisposition),
       evaluatedAt: data.dec(_f$evaluatedAt),
     );
   }

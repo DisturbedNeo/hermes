@@ -104,6 +104,33 @@ void main() {
     expect(find.text('Project task'), findsOneWidget);
     expect(find.text('Recent Decisions'), findsOneWidget);
   });
+
+  testWidgets('blocked recovery renders structured diagnostics and retry', (
+    tester,
+  ) async {
+    chat.activeProject = _projectWithExhaustedRecovery();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 900,
+            child: TaskPanel(
+              chat: chat,
+              expanded: true,
+              onToggleExpanded: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Retry Recovery'), findsOneWidget);
+    expect(find.text('workspace_io_failure'), findsOneWidget);
+    expect(find.text('unresolved: 1'), findsOneWidget);
+  });
 }
 
 TaskDocument _taskWithArtifact() {
@@ -186,6 +213,72 @@ ProjectDocument _projectWithTask() {
         createdAt: now,
       ),
     ],
+    createdAt: now,
+    updatedAt: now,
+  );
+}
+
+ProjectDocument _projectWithExhaustedRecovery() {
+  final now = DateTime(2024, 1, 1);
+  final failure = const ProjectTaskFailure(
+    gateId: 'no_tool_errors',
+    disposition: TaskGateFailureDisposition.repairable,
+    failureKey: 'no_tool_errors|workspace_io_failure',
+    summary: 'A retryable workspace operation failed.',
+    errorCodes: ['workspace_io_failure'],
+    toolCallIds: ['call_1'],
+    unresolvedErrorCount: 1,
+  );
+  return ProjectDocument(
+    id: 'project_recovery',
+    title: 'Recovery project',
+    originalGoal: 'Build project.',
+    refinedGoal: 'Build project.',
+    constraints: const [],
+    successCriteria: const ['Project works.'],
+    failedTasks: [
+      ProjectTask(
+        id: 'failed_task',
+        title: 'Failed task',
+        objective: 'Build the project.',
+        relevantSuccessCriteria: const ['Project works.'],
+        doneCriteria: const ['Project works.'],
+        outOfScope: const [],
+        context: const [],
+        expectedArtifacts: const [],
+        status: ProjectTaskStatus.failed,
+        taskDocumentId: 'task_failed',
+        recoveryIncidentId: 'recovery_1',
+        fingerprint: 'failed_task',
+        rejectionReason: failure.summary,
+        failure: failure,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    ],
+    recoveryIncidents: [
+      ProjectRecoveryIncident(
+        id: 'recovery_1',
+        status: ProjectRecoveryIncidentStatus.exhausted,
+        sourceTaskIds: const ['task_failed'],
+        sourceTaskTitles: const ['Failed task'],
+        failedGateId: 'no_tool_errors',
+        failureSummary: failure.summary,
+        attemptCount: 3,
+        recoveryTaskIds: const [],
+        createdAt: now,
+        updatedAt: now,
+        resolvedAt: now,
+      ),
+    ],
+    status: ProjectStatus.blocked,
+    phase: ProjectPhase.execution,
+    activeTaskId: null,
+    blocker: ProjectBlocker(
+      type: ProjectBlockerType.recoveryFailed,
+      message: 'Recovery exhausted.',
+      createdAt: now,
+    ),
     createdAt: now,
     updatedAt: now,
   );

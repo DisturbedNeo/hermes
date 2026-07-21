@@ -1,9 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/subagent_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/tools/tool.dart';
+import 'package:hermes/core/tools/tool_error.dart';
 
 abstract class WorkspaceTool extends Tool {
   final WorkspaceSandbox sandbox;
@@ -21,7 +24,13 @@ abstract class WorkspaceTool extends Tool {
   @override
   Future<String> process(String input, {WorkspaceToolContext? context}) async {
     if (context == null || context.workspace.missing) {
-      return jsonEncode({'error': 'No active workspace is available.'});
+      return jsonEncode(
+        toolErrorPayload(
+          code: 'workspace_unavailable',
+          message: 'No active workspace is available.',
+          disposition: TaskToolErrorDisposition.retryable,
+        ),
+      );
     }
 
     try {
@@ -31,8 +40,38 @@ abstract class WorkspaceTool extends Tool {
           : Map<String, dynamic>.from(decoded as Map);
       final result = await run(args, context);
       return jsonEncode(result);
+    } on WorkspaceSandboxException catch (e) {
+      return jsonEncode(
+        toolErrorPayload(
+          code: e.code,
+          message: e.message,
+          disposition: TaskToolErrorDisposition.advisory,
+        ),
+      );
+    } on FormatException catch (e) {
+      return jsonEncode(
+        toolErrorPayload(
+          code: 'invalid_tool_arguments',
+          message: e.toString(),
+          disposition: TaskToolErrorDisposition.advisory,
+        ),
+      );
+    } on FileSystemException catch (e) {
+      return jsonEncode(
+        toolErrorPayload(
+          code: 'workspace_io_failure',
+          message: e.message,
+          disposition: TaskToolErrorDisposition.retryable,
+        ),
+      );
     } catch (e) {
-      return jsonEncode({'error': e.toString()});
+      return jsonEncode(
+        toolErrorPayload(
+          code: 'unexpected_tool_failure',
+          message: e.toString(),
+          disposition: TaskToolErrorDisposition.fatal,
+        ),
+      );
     }
   }
 
@@ -127,8 +166,12 @@ class ReadFileTool extends WorkspaceTool {
     final subagentService = context.subagentService as SubagentService?;
     if (subagentService == null) {
       return {
-        'error':
-            'Subagent service not available. Cannot perform extraction request.',
+        ...toolErrorPayload(
+          code: 'tool_dependency_unavailable',
+          message:
+              'Subagent service not available. Cannot perform extraction request.',
+          disposition: TaskToolErrorDisposition.retryable,
+        ),
       };
     }
 
@@ -157,7 +200,11 @@ class ReadFileTool extends WorkspaceTool {
 
       return {'extracted': extracted};
     } catch (e) {
-      return {'error': 'Failed to extract information: $e'};
+      return toolErrorPayload(
+        code: 'subagent_extraction_failed',
+        message: 'Failed to extract information: $e',
+        disposition: TaskToolErrorDisposition.retryable,
+      );
     }
   }
 }
@@ -415,10 +462,14 @@ class RunCommandTool extends WorkspaceTool {
     WorkspaceToolContext context,
   ) {
     if (!context.workspace.commandExecutionApproved) {
-      return Future.value({
-        'error':
-            'Terminal commands are disabled for this chat. Enable them from the workspace chip first.',
-      });
+      return Future.value(
+        toolErrorPayload(
+          code: 'command_execution_disabled',
+          message:
+              'Terminal commands are disabled for this chat. Enable them from the workspace chip first.',
+          disposition: TaskToolErrorDisposition.advisory,
+        ),
+      );
     }
 
     final rawArgs = input['args'];

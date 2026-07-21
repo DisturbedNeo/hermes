@@ -1075,6 +1075,24 @@ class ChatService extends ChangeNotifier
     await reloadTasks();
   }
 
+  Future<void> retryProjectRecovery(String incidentId) async {
+    final currentWorkspace = workspace;
+    final snapshot = activeProject;
+    if (currentWorkspace == null ||
+        currentWorkspace.missing ||
+        snapshot == null ||
+        taskBusy) {
+      return;
+    }
+
+    activeProject = await _projectService.retryRecoveryIncident(
+      workspace: currentWorkspace,
+      snapshot: snapshot,
+      incidentId: incidentId,
+    );
+    await reloadTasks();
+  }
+
   Future<void> approveNextProjectTask() async {
     final currentWorkspace = workspace;
     final snapshot = activeProject;

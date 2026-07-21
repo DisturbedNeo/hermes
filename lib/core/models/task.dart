@@ -45,6 +45,15 @@ enum TaskRunStatus {
 @MappableEnum(defaultValue: TaskGateStatus.pending)
 enum TaskGateStatus { passed, failed, pending, advisory }
 
+@MappableEnum(defaultValue: TaskToolCallOutcome.succeeded)
+enum TaskToolCallOutcome { succeeded, denied, failed, skipped }
+
+@MappableEnum(defaultValue: TaskToolErrorDisposition.fatal)
+enum TaskToolErrorDisposition { advisory, retryable, fatal }
+
+@MappableEnum(defaultValue: TaskGateFailureDisposition.repairable)
+enum TaskGateFailureDisposition { repairable, blocking }
+
 extension ExecutionModeWire on ExecutionMode {
   String get wire => switch (this) {
     ExecutionMode.continueTask => 'continue_task',
@@ -76,6 +85,18 @@ extension TaskRunStatusWire on TaskRunStatus {
 }
 
 extension TaskGateStatusWire on TaskGateStatus {
+  String get wire => name;
+}
+
+extension TaskToolCallOutcomeWire on TaskToolCallOutcome {
+  String get wire => name;
+}
+
+extension TaskToolErrorDispositionWire on TaskToolErrorDisposition {
+  String get wire => name;
+}
+
+extension TaskGateFailureDispositionWire on TaskGateFailureDisposition {
   String get wire => name;
 }
 
@@ -365,6 +386,8 @@ class TaskGateResult with TaskGateResultMappable {
   final String summary;
   @MappableField(hook: JsonMapValueHook())
   final Map<String, dynamic> details;
+  @MappableField(hook: EnumAliasHook({}))
+  final TaskGateFailureDisposition? failureDisposition;
   @MappableField(hook: JsonDateHook())
   final DateTime evaluatedAt;
 
@@ -373,6 +396,7 @@ class TaskGateResult with TaskGateResultMappable {
     required this.status,
     required this.summary,
     this.details = const {},
+    this.failureDisposition,
     required this.evaluatedAt,
   });
 }
@@ -473,6 +497,22 @@ class TaskRun with TaskRunMappable {
 }
 
 @MappableClass(ignoreNull: true)
+class TaskToolError with TaskToolErrorMappable {
+  @MappableField(hook: JsonStringHook(fallback: 'unknown_tool_error'))
+  final String code;
+  @MappableField(hook: JsonStringHook())
+  final String message;
+  @MappableField(hook: EnumAliasHook({}))
+  final TaskToolErrorDisposition disposition;
+
+  const TaskToolError({
+    required this.code,
+    required this.message,
+    required this.disposition,
+  });
+}
+
+@MappableClass(ignoreNull: true)
 class TaskToolCallRecord with TaskToolCallRecordMappable {
   @MappableField(hook: JsonStringHook())
   final String id;
@@ -488,6 +528,11 @@ class TaskToolCallRecord with TaskToolCallRecordMappable {
   final String? resultSummary;
   @MappableField(hook: JsonNullableStringHook())
   final String? error;
+  @MappableField(hook: EnumAliasHook({}))
+  final TaskToolCallOutcome outcome;
+  @MappableField(hook: JsonNullableStringHook())
+  final String? operationKey;
+  final TaskToolError? toolError;
   @MappableField(hook: JsonDateHook())
   final DateTime timestamp;
 
@@ -501,7 +546,71 @@ class TaskToolCallRecord with TaskToolCallRecordMappable {
     this.result,
     this.resultSummary,
     this.error,
+    this.outcome = TaskToolCallOutcome.succeeded,
+    this.operationKey,
+    this.toolError,
   });
+}
+
+extension TaskToolCallRecordCompatibility on TaskToolCallRecord {
+  TaskToolError? get effectiveToolError {
+    if (toolError != null) return toolError;
+    final message = error?.trim();
+    if (message == null || message.isEmpty) return null;
+    final normalised = message.toLowerCase();
+    final advisoryCodes = <String, List<String>>{
+      'guard_denial': [
+        'blocked by terminal policy',
+        'command substitution is blocked',
+        'terminal command is not whitelisted',
+        'terminal commands are disabled',
+        'tool is not available',
+        'read-only steps',
+        'task steps may only create artifacts',
+        'use workspace-relative paths only',
+        'path escapes the workspace',
+        'refusing to delete the workspace root',
+        'file deletion commands are blocked',
+        'find -delete is blocked',
+        'git clean is blocked',
+        'git reset --hard is blocked',
+      ],
+      'workspace_validation': [
+        'path not found',
+        'path is not a directory',
+        'path is a directory',
+        'file is too large',
+        'patch text was not found',
+        'search returned too many',
+        'search results are too large',
+        'no existing parent directory',
+      ],
+      'invalid_tool_arguments': [
+        'arguments must be a json object',
+        'formatexception',
+        'is not a subtype of type',
+        'requires a path',
+        'requires string content',
+        'command is required',
+        'search query is required',
+      ],
+      'loop_guard': ['tool call skipped by task runner'],
+    };
+    for (final entry in advisoryCodes.entries) {
+      if (entry.value.any(normalised.contains)) {
+        return TaskToolError(
+          code: entry.key,
+          message: message,
+          disposition: TaskToolErrorDisposition.advisory,
+        );
+      }
+    }
+    return TaskToolError(
+      code: 'legacy_unclassified_error',
+      message: message,
+      disposition: TaskToolErrorDisposition.fatal,
+    );
+  }
 }
 
 @MappableClass(ignoreNull: true)

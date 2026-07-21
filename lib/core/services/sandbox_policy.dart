@@ -49,8 +49,12 @@ class WorkspacePath {
 /// Exception thrown when a sandbox operation violates policy.
 class WorkspaceSandboxException implements Exception {
   final String message;
+  final String code;
 
-  const WorkspaceSandboxException(this.message);
+  const WorkspaceSandboxException(
+    this.message, {
+    this.code = 'workspace_validation',
+  });
 
   @override
   String toString() => message;

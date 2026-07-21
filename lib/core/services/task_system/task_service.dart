@@ -31,6 +31,7 @@ import 'package:hermes/core/services/task_system/task_summary.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/serialization/model_json.dart';
+import 'package:hermes/core/tools/tool_error.dart';
 import 'package:path/path.dart' as path;
 
 part 'task_service.mapper.dart';
@@ -1329,6 +1330,17 @@ ${_encoder.convert(ModelJson.encode(task))}
             result: result,
             resultSummary: _cap(resultJson, 1200),
             error: finish.error,
+            outcome: finish.error == null
+                ? TaskToolCallOutcome.succeeded
+                : TaskToolCallOutcome.failed,
+            operationKey: 'finish_task_step',
+            toolError: finish.error == null
+                ? null
+                : TaskToolError(
+                    code: 'invalid_finish_arguments',
+                    message: finish.error!,
+                    disposition: TaskToolErrorDisposition.advisory,
+                  ),
             timestamp: DateTime.now(),
           ),
         );
@@ -1420,8 +1432,8 @@ ${_encoder.convert(ModelJson.encode(task))}
           blockedReason: loopGuardReason,
         );
         cancellationToken?.throwIfCancelled();
-        final error = _toolError(resultJson);
         final result = _structuredToolResult(call.name, resultJson);
+        final toolError = _toolErrorInfo(result);
         toolCalls.add(
           TaskToolCallRecord(
             id: callId,
@@ -1431,7 +1443,10 @@ ${_encoder.convert(ModelJson.encode(task))}
             arguments: args,
             result: result,
             resultSummary: _cap(resultJson, 1200),
-            error: error,
+            error: toolError?.message,
+            outcome: _toolCallOutcome(result, toolError),
+            operationKey: _operationKey(call.name, args),
+            toolError: toolError,
             timestamp: DateTime.now(),
           ),
         );
@@ -1513,16 +1528,30 @@ ${_encoder.convert(ModelJson.encode(task))}
   }) async {
     final gates = _completionGates(task, step);
     if (gates.isEmpty) return execution;
+    final stepArtifacts = execution.artifacts.isEmpty
+        ? step.artifacts
+        : execution.artifacts;
+    final taskToolCalls = [
+      for (final run in task.runs) ...run.toolCalls,
+      ...execution.toolCalls,
+    ];
+    final taskArtifacts = <TaskArtifact>[
+      for (final run in task.runs) ...run.artifacts,
+      for (final taskStep in task.steps) ...taskStep.artifacts,
+      ...stepArtifacts,
+    ];
 
     final evaluation = await _gateEvaluator.evaluate(
       workspace: workspace,
       task: task,
       step: step,
       gates: gates,
-      toolCalls: execution.toolCalls,
-      artifacts: execution.artifacts.isEmpty
-          ? step.artifacts
-          : execution.artifacts,
+      evidence: TaskGateEvidence(
+        stepToolCalls: execution.toolCalls,
+        taskToolCalls: taskToolCalls,
+        stepArtifacts: stepArtifacts,
+        taskArtifacts: taskArtifacts,
+      ),
       client: client,
       baseSystemPrompt: baseSystemPrompt,
     );
@@ -1657,7 +1686,11 @@ ${_encoder.convert(ModelJson.encode(task))}
   }) {
     if (args is! Map) {
       const error = 'finish_task_step arguments must be a JSON object.';
-      final resultJson = jsonEncode({'error': error});
+      final resultJson = _taskToolErrorJson(
+        code: 'invalid_finish_arguments',
+        message: error,
+        disposition: TaskToolErrorDisposition.advisory,
+      );
       return _FinishToolCallResult(
         resultJson: resultJson,
         finalContent: resultJson,
@@ -1720,22 +1753,28 @@ ${_encoder.convert(ModelJson.encode(task))}
     required String? blockedReason,
   }) async {
     if (blockedReason != null) {
-      return jsonEncode({
-        'error': 'Tool call skipped by task runner.',
-        'reason': blockedReason,
-      });
+      return _taskToolErrorJson(
+        code: 'loop_guard',
+        message: 'Tool call skipped by task runner.',
+        disposition: TaskToolErrorDisposition.advisory,
+        details: {'reason': blockedReason, 'skipped': true},
+      );
     }
 
     if (!allowedToolIds.contains(call.name)) {
-      return jsonEncode({
-        'error': 'Tool is not available for this task step.',
-        'tool': call.name,
-        'mayEditFiles': step.mayEditFiles,
-        'availableTools': allowedToolIds.toList()..sort(),
-        'reason': step.mayEditFiles
-            ? 'The tool was not exposed to the task runner.'
-            : 'This read-only step can read files and create new task-owned artifact files, but cannot edit source files, overwrite files, run terminal commands, rename paths, or delete paths.',
-      });
+      return _taskToolErrorJson(
+        code: 'tool_not_available',
+        message: 'Tool is not available for this task step.',
+        disposition: TaskToolErrorDisposition.advisory,
+        details: {
+          'tool': call.name,
+          'mayEditFiles': step.mayEditFiles,
+          'availableTools': allowedToolIds.toList()..sort(),
+          'reason': step.mayEditFiles
+              ? 'The tool was not exposed to the task runner.'
+              : 'This read-only step can read files and create new task-owned artifact files, but cannot edit source files, overwrite files, run terminal commands, rename paths, or delete paths.',
+        },
+      );
     }
 
     if (!step.mayEditFiles && call.name == 'run_command') {
@@ -1777,9 +1816,11 @@ ${_encoder.convert(ModelJson.encode(task))}
   ) {
     final decoded = TaskJson.decodeJsonOrString(call.arguments);
     if (decoded is! Map) {
-      return jsonEncode({
-        'error': 'run_command arguments must be a JSON object.',
-      });
+      return _taskToolErrorJson(
+        code: 'invalid_tool_arguments',
+        message: 'run_command arguments must be a JSON object.',
+        disposition: TaskToolErrorDisposition.advisory,
+      );
     }
     final args = jsonMap(decoded);
     final command = _commandTextFromParts(
@@ -1798,15 +1839,22 @@ ${_encoder.convert(ModelJson.encode(task))}
           path.normalize(item.workingDirectory) == workingDirectory,
     );
     if (allowed) return null;
-    return jsonEncode({
-      'error': 'Terminal command is not whitelisted for this read-only step.',
-      'command': command,
-      'working_directory': workingDirectory,
-      'allowedCommands': [
-        for (final item in allowedCommands)
-          {'command': item.command, 'working_directory': item.workingDirectory},
-      ],
-    });
+    return _taskToolErrorJson(
+      code: 'command_not_whitelisted',
+      message: 'Terminal command is not whitelisted for this read-only step.',
+      disposition: TaskToolErrorDisposition.advisory,
+      details: {
+        'command': command,
+        'working_directory': workingDirectory,
+        'allowedCommands': [
+          for (final item in allowedCommands)
+            {
+              'command': item.command,
+              'working_directory': item.workingDirectory,
+            },
+        ],
+      },
+    );
   }
 
   Future<String> _executeReadOnlyArtifactWrite({
@@ -1818,18 +1866,28 @@ ${_encoder.convert(ModelJson.encode(task))}
     try {
       final decoded = TaskJson.decodeJsonOrString(call.arguments);
       if (decoded is! Map) {
-        return jsonEncode({
-          'error': 'write_file arguments must be a JSON object.',
-        });
+        return _taskToolErrorJson(
+          code: 'invalid_tool_arguments',
+          message: 'write_file arguments must be a JSON object.',
+          disposition: TaskToolErrorDisposition.advisory,
+        );
       }
 
       final rawPath = decoded['path'];
       final content = decoded['content'];
       if (rawPath is! String || rawPath.trim().isEmpty) {
-        return jsonEncode({'error': 'write_file requires a path.'});
+        return _taskToolErrorJson(
+          code: 'invalid_tool_arguments',
+          message: 'write_file requires a path.',
+          disposition: TaskToolErrorDisposition.advisory,
+        );
       }
       if (content is! String) {
-        return jsonEncode({'error': 'write_file requires string content.'});
+        return _taskToolErrorJson(
+          code: 'invalid_tool_arguments',
+          message: 'write_file requires string content.',
+          disposition: TaskToolErrorDisposition.advisory,
+        );
       }
 
       final resolved = await _sandbox.resolve(
@@ -1838,28 +1896,38 @@ ${_encoder.convert(ModelJson.encode(task))}
         mustExist: false,
       );
       if (!_isInsideTaskDirectory(resolved.relativePath, task.id)) {
-        return jsonEncode({
-          'error': 'Read-only steps may only create task-owned artifact files.',
-          'path': resolved.relativePath,
-          'allowedPrefix': path.join('.agent', 'tasks', task.id),
-        });
+        return _taskToolErrorJson(
+          code: 'artifact_path_denied',
+          message: 'Read-only steps may only create task-owned artifact files.',
+          disposition: TaskToolErrorDisposition.advisory,
+          details: {
+            'path': resolved.relativePath,
+            'allowedPrefix': path.join('.agent', 'tasks', task.id),
+          },
+        );
       }
       final allowedPaths = _declaredCurrentStepArtifactPaths(task.id, step);
       if (!allowedPaths.contains(path.normalize(resolved.relativePath))) {
-        return jsonEncode({
-          'error':
+        return _taskToolErrorJson(
+          code: 'artifact_not_declared',
+          message:
               'Read-only steps may only create artifacts declared on the current step.',
-          'path': resolved.relativePath,
-          'allowedArtifactPaths': allowedPaths.toList()..sort(),
-        });
+          disposition: TaskToolErrorDisposition.advisory,
+          details: {
+            'path': resolved.relativePath,
+            'allowedArtifactPaths': allowedPaths.toList()..sort(),
+          },
+        );
       }
 
       final existingType = await FileSystemEntity.type(resolved.absolutePath);
       if (existingType != FileSystemEntityType.notFound) {
-        return jsonEncode({
-          'error': 'Read-only steps cannot overwrite existing files.',
-          'path': resolved.relativePath,
-        });
+        return _taskToolErrorJson(
+          code: 'read_only_overwrite_denied',
+          message: 'Read-only steps cannot overwrite existing files.',
+          disposition: TaskToolErrorDisposition.advisory,
+          details: {'path': resolved.relativePath},
+        );
       }
 
       final result = await _sandbox.writeFile(
@@ -1868,8 +1936,18 @@ ${_encoder.convert(ModelJson.encode(task))}
         content,
       );
       return jsonEncode(result);
+    } on WorkspaceSandboxException catch (e) {
+      return _taskToolErrorJson(
+        code: e.code,
+        message: e.message,
+        disposition: TaskToolErrorDisposition.advisory,
+      );
     } catch (e) {
-      return jsonEncode({'error': e.toString()});
+      return _taskToolErrorJson(
+        code: 'workspace_io_failure',
+        message: e.toString(),
+        disposition: TaskToolErrorDisposition.retryable,
+      );
     }
   }
 
@@ -1896,14 +1974,28 @@ ${_encoder.convert(ModelJson.encode(task))}
       final allowedPaths = _declaredCurrentStepArtifactPaths(task.id, step);
       if (allowedPaths.contains(artifactPath)) return null;
 
-      return jsonEncode({
-        'error':
+      return _taskToolErrorJson(
+        code: 'artifact_not_declared',
+        message:
             'Task steps may only create artifacts declared on the current step.',
-        'path': resolved.relativePath,
-        'allowedArtifactPaths': allowedPaths.toList()..sort(),
-      });
+        disposition: TaskToolErrorDisposition.advisory,
+        details: {
+          'path': resolved.relativePath,
+          'allowedArtifactPaths': allowedPaths.toList()..sort(),
+        },
+      );
+    } on WorkspaceSandboxException catch (e) {
+      return _taskToolErrorJson(
+        code: e.code,
+        message: e.message,
+        disposition: TaskToolErrorDisposition.advisory,
+      );
     } catch (e) {
-      return jsonEncode({'error': e.toString()});
+      return _taskToolErrorJson(
+        code: 'workspace_io_failure',
+        message: e.toString(),
+        disposition: TaskToolErrorDisposition.retryable,
+      );
     }
   }
 
@@ -3305,16 +3397,61 @@ $whitelist
     };
   }
 
-  String? _toolError(String resultJson) {
-    try {
-      final decoded = jsonDecode(resultJson);
-      if (decoded is Map && decoded['error'] != null) {
-        return decoded['error'].toString();
-      }
-    } catch (_) {
-      return null;
+  TaskToolError? _toolErrorInfo(Map<String, dynamic>? result) {
+    if (result == null) return null;
+    return taskToolErrorFromResult(result);
+  }
+
+  TaskToolCallOutcome _toolCallOutcome(
+    Map<String, dynamic>? result,
+    TaskToolError? error,
+  ) {
+    if (result?['skipped'] == true) return TaskToolCallOutcome.skipped;
+    if (error == null) return TaskToolCallOutcome.succeeded;
+    if (error.disposition == TaskToolErrorDisposition.advisory) {
+      return TaskToolCallOutcome.denied;
     }
-    return null;
+    return TaskToolCallOutcome.failed;
+  }
+
+  String _operationKey(String toolName, Object? rawArguments) {
+    final arguments = jsonMap(rawArguments);
+    String normalisePath(Object? value) {
+      final raw = value?.toString().trim() ?? '';
+      return raw.isEmpty ? '.' : path.normalize(raw);
+    }
+
+    return switch (toolName) {
+      'read_file' => 'read:${normalisePath(arguments['path'])}',
+      'list_directory' => 'list:${normalisePath(arguments['path'])}',
+      'search_files' =>
+        'search:${normalisePath(arguments['path'])}:${jsonString(arguments['query']).trim()}',
+      'write_file' ||
+      'patch_file' => 'write:${normalisePath(arguments['path'])}',
+      'create_directory' => 'mkdir:${normalisePath(arguments['path'])}',
+      'delete_path' => 'delete:${normalisePath(arguments['path'])}',
+      'rename_path' =>
+        'rename:${normalisePath(arguments['from'])}->${normalisePath(arguments['to'])}',
+      'run_command' =>
+        'command:${path.normalize(jsonString(arguments['working_directory'] ?? arguments['workingDirectory'], fallback: '.'))}:${_commandTextFromParts(jsonString(arguments['command']), jsonStringList(arguments['args']))}',
+      _ => toolName,
+    };
+  }
+
+  String _taskToolErrorJson({
+    required String code,
+    required String message,
+    required TaskToolErrorDisposition disposition,
+    Map<String, dynamic> details = const {},
+  }) {
+    return jsonEncode(
+      toolErrorPayload(
+        code: code,
+        message: message,
+        disposition: disposition,
+        details: details,
+      ),
+    );
   }
 
   Map<String, dynamic>? _structuredToolResult(
@@ -3341,6 +3478,8 @@ $whitelist
       copyKey('skipped');
       copyKey('path');
     }
+    copyKey('error_code');
+    copyKey('error_disposition');
 
     return result.isEmpty ? null : result;
   }

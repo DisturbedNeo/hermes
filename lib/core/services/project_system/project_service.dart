@@ -22,12 +22,6 @@ import 'package:path/path.dart' as path;
 typedef ProjectTaskSnapshotSink = void Function(TaskDocument? task);
 typedef ProjectCompactionStatusSink = void Function(String status);
 
-const Set<String> _recoveryWorthyGateIds = {
-  'command_passes',
-  'no_failed_commands',
-  'workspace_clean_enough',
-};
-
 class ProjectRunResult {
   final ProjectDocument project;
   final TaskDocument? activeTask;
@@ -286,6 +280,88 @@ class ProjectService {
           );
     await _repository.saveSnapshot(workspace.rootPath, recovered);
     return ProjectRunResult(project: recovered, activeTask: recoveredTask);
+  }
+
+  Future<ProjectDocument> retryRecoveryIncident({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String incidentId,
+  }) async {
+    final incident = snapshot.recoveryIncidents
+        .where(
+          (item) =>
+              item.id == incidentId &&
+              item.status == ProjectRecoveryIncidentStatus.exhausted,
+        )
+        .firstOrNull;
+    if (incident == null) return snapshot;
+    final sourceTask = snapshot.failedTasks.reversed
+        .where((task) => task.recoveryIncidentId == incidentId)
+        .firstOrNull;
+    if (sourceTask == null) return snapshot;
+
+    final now = DateTime.now();
+    final gateResult = TaskGateResult(
+      gateId: incident.failedGateId,
+      status: TaskGateStatus.failed,
+      summary: incident.failureSummary,
+      details: {
+        'required': true,
+        if (incident.command?.trim().isNotEmpty == true)
+          'command': incident.command,
+        if (incident.workingDirectory?.trim().isNotEmpty == true)
+          'workingDirectory': incident.workingDirectory,
+      },
+      failureDisposition: TaskGateFailureDisposition.repairable,
+      evaluatedAt: now,
+    );
+    final failure = _RecoveryFailure(
+      gateResult: gateResult,
+      command: incident.command,
+      workingDirectory: incident.workingDirectory,
+      summary: incident.failureSummary,
+    );
+    final recoveryTask = _recoveryTaskForIncident(
+      incidentId: incident.id,
+      sourceTask: sourceTask,
+      failure: failure,
+      attemptNumber: incident.attemptCount + 1,
+      now: now,
+    );
+    final reactivated = incident.copyWith(
+      status: ProjectRecoveryIncidentStatus.active,
+      maxAttempts: incident.attemptCount + 1,
+      recoveryTaskIds: _appendUnique(incident.recoveryTaskIds, recoveryTask.id),
+      updatedAt: now,
+      resolvedAt: null,
+    );
+    final updated = snapshot.copyWith(
+      status: ProjectStatus.active,
+      phase: ProjectPhase.execution,
+      blocker: null,
+      backlog: [
+        recoveryTask,
+        ...snapshot.backlog.where(
+          (task) => task.recoveryIncidentId != incident.id,
+        ),
+      ],
+      recoveryIncidents: _upsertRecoveryIncident(
+        snapshot.recoveryIncidents,
+        reactivated,
+      ),
+      decisions: [
+        ...snapshot.decisions,
+        _decision(
+          ProjectDecisionType.retryRecovery,
+          'Granted one additional recovery attempt for ${incident.id}.',
+          incident.failureSummary,
+          task: recoveryTask,
+        ),
+      ],
+      updatedAt: now,
+    );
+    await _repository.saveSnapshot(workspace.rootPath, updated);
+    return updated;
   }
 
   Future<ProjectRunResult> runNextProjectTask({
@@ -1132,9 +1208,11 @@ class ProjectService {
       autonomy: questionAutonomy,
     );
     if (!evaluation.taskAccepted) {
+      final failure = _projectTaskFailure(evaluation);
       var failedTask = task.copyWith(
         status: ProjectTaskStatus.failed,
         rejectionReason: evaluation.failureReason,
+        failure: failure,
         updatedAt: now,
       );
       final recoveryUpdate = _recoveryUpdateForFailedTask(
@@ -1152,6 +1230,9 @@ class ProjectService {
       );
       final reachedFailureLimit = failedBudgetCount >= project.maxFailedTasks;
       final exhaustedIncident = recoveryUpdate.exhaustedIncident;
+      final blockingFailure =
+          failure.disposition == TaskGateFailureDisposition.blocking &&
+          recoveryUpdate.incident == null;
       return project.copyWith(
         currentTask: null,
         activeTaskId: null,
@@ -1164,10 +1245,10 @@ class ProjectService {
         ],
         recoveryIncidents: recoveryIncidents,
         openQuestions: filteredQuestions.blocking,
-        status: exhaustedIncident != null
+        status: exhaustedIncident != null || blockingFailure
             ? ProjectStatus.blocked
             : reachedFailureLimit
-            ? ProjectStatus.failed
+            ? ProjectStatus.blocked
             : ProjectStatus.active,
         phase: ProjectPhase.execution,
         blocker: exhaustedIncident != null
@@ -1183,6 +1264,13 @@ class ProjectService {
                 type: ProjectBlockerType.maxFailures,
                 message:
                     'Project reached the maximum failed task limit of ${project.maxFailedTasks}.',
+                createdAt: now,
+              )
+            : blockingFailure
+            ? ProjectBlocker(
+                type: ProjectBlockerType.taskFailed,
+                message: failure.summary,
+                taskId: failedTask.taskDocumentId ?? failedTask.id,
                 createdAt: now,
               )
             : null,
@@ -1670,7 +1758,8 @@ class ProjectService {
         )
         .where(
           (result) =>
-              _recoveryWorthyGateIds.contains(result.gateId) ||
+              result.failureDisposition ==
+                  TaskGateFailureDisposition.repairable ||
               failedTask.recoveryIncidentId != null,
         )
         .firstOrNull;
@@ -1682,6 +1771,7 @@ class ProjectService {
     );
     final summary = [
       failedGate.summary,
+      _gateDiagnosticSummary(failedGate),
       if (evaluation.failureReason?.trim().isNotEmpty == true)
         evaluation.failureReason!.trim(),
     ].where((item) => item.trim().isNotEmpty).join('\n\n');
@@ -1690,6 +1780,77 @@ class ProjectService {
       command: command,
       workingDirectory: workingDirectory,
       summary: _cap(summary.isEmpty ? 'Required gate failed.' : summary, 2000),
+    );
+  }
+
+  String _gateDiagnosticSummary(TaskGateResult result) {
+    final unresolved = result.details['unresolvedErrors'];
+    if (unresolved is! List) return '';
+    final lines = unresolved.whereType<Map>().take(10).map((raw) {
+      final item = jsonMap(raw);
+      final code = jsonString(item['code'], fallback: 'unknown_tool_error');
+      final toolName = jsonString(item['toolName'], fallback: 'tool');
+      final operation = jsonString(item['operationKey']);
+      final message = jsonString(item['message']);
+      return '- $code ($toolName${operation.isEmpty ? '' : ', $operation'}): $message';
+    }).toList();
+    return lines.isEmpty ? '' : 'Unresolved diagnostics:\n${lines.join('\n')}';
+  }
+
+  ProjectTaskFailure _projectTaskFailure(ProjectEvaluation evaluation) {
+    final gate = evaluation.gateResults
+        .where(
+          (result) =>
+              result.status == TaskGateStatus.failed &&
+              result.details['required'] == true,
+        )
+        .firstOrNull;
+    final unresolved = gate?.details['unresolvedErrors'];
+    final advisory = gate?.details['advisoryErrors'];
+    final resolved = gate?.details['resolvedErrors'];
+    final errorMaps = unresolved is List
+        ? unresolved.whereType<Map>().map(jsonMap).toList()
+        : const <Map<String, dynamic>>[];
+    final errorCodes =
+        errorMaps
+            .map((item) => jsonString(item['code']))
+            .where((item) => item.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+    final callIds = errorMaps
+        .map((item) => jsonString(item['callId']))
+        .where((item) => item.isNotEmpty)
+        .take(10)
+        .toList();
+    final operationKeys =
+        errorMaps
+            .map((item) => jsonString(item['operationKey']))
+            .where((item) => item.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+    final disposition =
+        gate?.failureDisposition ?? TaskGateFailureDisposition.blocking;
+    final summary = evaluation.failureReason?.trim().isNotEmpty == true
+        ? evaluation.failureReason!.trim()
+        : gate?.summary ?? 'Task execution failed.';
+    final keyParts = [
+      gate?.gateId ?? 'execution',
+      ...errorCodes,
+      ...operationKeys,
+      if (errorCodes.isEmpty && operationKeys.isEmpty) _normalise(summary),
+    ];
+    return ProjectTaskFailure(
+      gateId: gate?.gateId,
+      disposition: disposition,
+      failureKey: _cap(keyParts.join('|'), 500),
+      summary: _cap(summary, 2000),
+      errorCodes: errorCodes,
+      toolCallIds: callIds,
+      advisoryErrorCount: advisory is List ? advisory.length : 0,
+      resolvedErrorCount: resolved is List ? resolved.length : 0,
+      unresolvedErrorCount: unresolved is List ? unresolved.length : 0,
     );
   }
 
@@ -1877,6 +2038,12 @@ class ProjectService {
               task.status == ProjectTaskStatus.failed &&
               task.recoveryIncidentId == null,
         )
+        .map(
+          (task) =>
+              task.failure?.failureKey ??
+              '${task.fingerprint}|${_normalise(task.rejectionReason ?? '')}',
+        )
+        .toSet()
         .length;
     final exhaustedIncidents = recoveryIncidents
         .where(

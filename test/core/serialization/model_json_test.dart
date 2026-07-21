@@ -50,6 +50,14 @@ void main() {
       runId: 'run_1',
       toolName: 'run_command',
       arguments: const {'command': 'dart test'},
+      outcome: TaskToolCallOutcome.failed,
+      operationKey: 'command:.:dart test',
+      error: 'Process failed to start.',
+      toolError: const TaskToolError(
+        code: 'process_launch_failed',
+        message: 'Process failed to start.',
+        disposition: TaskToolErrorDisposition.retryable,
+      ),
       timestamp: now,
     );
     final step = TaskStep(
@@ -119,11 +127,33 @@ void main() {
     });
     expect(ModelJson.encode(gateResult)['status'], 'passed');
     expect(ModelJson.encode(toolCall), isNot(contains('result')));
+    expect(ModelJson.encode(toolCall)['outcome'], 'failed');
+    expect(ModelJson.encode(toolCall)['toolError'], {
+      'code': 'process_launch_failed',
+      'message': 'Process failed to start.',
+      'disposition': 'retryable',
+    });
     expect(ModelJson.encode(step)['status'], 'pending');
     expect(ModelJson.encode(run)['status'], 'needs_replan');
     expect(ModelJson.encode(approval)['stepId'], 'step_1');
     expect(ModelJson.encode(question)['question'], 'Continue?');
     expect(ModelJson.encode(document), containsPair('schemaVersion', 2));
+
+    final legacyCall = ModelJson.decode<TaskToolCallRecord>({
+      'id': 'legacy_call',
+      'stepId': 'step_1',
+      'runId': 'run_1',
+      'toolName': 'read_file',
+      'error': 'Path not found.',
+      'timestamp': now.toIso8601String(),
+    });
+    expect(legacyCall.outcome, TaskToolCallOutcome.succeeded);
+    expect(legacyCall.toolError, isNull);
+    expect(
+      legacyCall.effectiveToolError?.disposition,
+      TaskToolErrorDisposition.advisory,
+    );
+    expect(legacyCall.error, 'Path not found.');
 
     final brief = ModelJson.decode<RefinedTaskBrief>({
       'title': 'Brief',
@@ -157,6 +187,15 @@ void main() {
       taskDocumentId: null,
       fingerprint: 'fingerprint',
       rejectionReason: null,
+      failure: const ProjectTaskFailure(
+        gateId: 'no_tool_errors',
+        disposition: TaskGateFailureDisposition.repairable,
+        failureKey: 'no_tool_errors|workspace_io_failure',
+        summary: 'A workspace operation failed.',
+        errorCodes: ['workspace_io_failure'],
+        toolCallIds: ['call_1'],
+        unresolvedErrorCount: 1,
+      ),
       createdAt: now,
       updatedAt: now,
     );
@@ -200,6 +239,17 @@ void main() {
 
     expect(ModelJson.encode(artifact), isNot(contains('taskDocumentId')));
     expect(ModelJson.encode(task)['expectedArtifacts'], hasLength(1));
+    expect(ModelJson.encode(task)['failure'], {
+      'gateId': 'no_tool_errors',
+      'disposition': 'repairable',
+      'failureKey': 'no_tool_errors|workspace_io_failure',
+      'summary': 'A workspace operation failed.',
+      'errorCodes': ['workspace_io_failure'],
+      'toolCallIds': ['call_1'],
+      'advisoryErrorCount': 0,
+      'resolvedErrorCount': 0,
+      'unresolvedErrorCount': 1,
+    });
     expect(ModelJson.encode(incident)['maxAttempts'], 3);
     expect(ModelJson.encode(decision)['decision'], 'create_task');
     expect(ModelJson.encode(blocker)['type'], 'task_failed');

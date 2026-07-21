@@ -22,6 +22,7 @@ void initializeMappers() {
   p3.ProjectStateMapper.ensureInitialized();
   p3.ProjectRecoveryIncidentMapper.ensureInitialized();
   p3.ProjectTaskMapper.ensureInitialized();
+  p3.ProjectTaskFailureMapper.ensureInitialized();
   p3.ProjectArtifactMapper.ensureInitialized();
   p3.ProjectTaskRefMapper.ensureInitialized();
   p3.ProjectDecisionRecordMapper.ensureInitialized();
@@ -43,6 +44,7 @@ void initializeMappers() {
   p5.TaskGateResultMapper.ensureInitialized();
   p5.TaskArtifactMapper.ensureInitialized();
   p5.TaskRunMapper.ensureInitialized();
+  p5.TaskToolErrorMapper.ensureInitialized();
   p5.TaskToolCallRecordMapper.ensureInitialized();
   p5.PendingTaskApprovalMapper.ensureInitialized();
   p5.PendingTaskQuestionMapper.ensureInitialized();
@@ -50,6 +52,9 @@ void initializeMappers() {
   p5.TaskStepStatusMapper.ensureInitialized();
   p5.TaskRunStatusMapper.ensureInitialized();
   p5.TaskGateStatusMapper.ensureInitialized();
+  p5.TaskToolCallOutcomeMapper.ensureInitialized();
+  p5.TaskToolErrorDispositionMapper.ensureInitialized();
+  p5.TaskGateFailureDispositionMapper.ensureInitialized();
   p6.AgentQuestionMapper.ensureInitialized();
   p6.QuestionKindMapper.ensureInitialized();
   p7.TaskPlanningContextMapper.ensureInitialized();

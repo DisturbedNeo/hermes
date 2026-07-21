@@ -797,6 +797,119 @@ void main() {
       },
     );
 
+    test('routes retryable tool errors into project recovery', () async {
+      await File('${root.path}/source.txt').writeAsString('source');
+      final project = await service.createProject(
+        workspace: workspace,
+        userPrompt: 'Build the app',
+        chatSessionId: 'chat_1',
+      );
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: jsonEncode({'task': _projectTaskJson()}),
+        ),
+        _finaliseTaskResponse(_taskPlanJson()),
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'read_file',
+              arguments: jsonEncode({
+                'path': 'source.txt',
+                'request': 'Summarize this file.',
+              }),
+            ),
+          ],
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'The bounded work is complete.',
+            'memoryUpdate': 'Implementation finished.',
+          }),
+        ),
+      ]);
+
+      final result = await service.runProject(
+        client: client,
+        workspace: workspace,
+        snapshot: project,
+        baseSystemPrompt: 'system',
+        maxNewTasks: 1,
+      );
+
+      expect(result.project.status, ProjectStatus.paused);
+      expect(result.project.recoveryIncidents, hasLength(1));
+      expect(
+        result.project.recoveryIncidents.single.failedGateId,
+        'no_tool_errors',
+      );
+      expect(
+        result.project.failedTasks.single.failure?.disposition,
+        TaskGateFailureDisposition.repairable,
+      );
+      expect(
+        result.project.failedTasks.single.failure?.errorCodes,
+        contains('tool_dependency_unavailable'),
+      );
+    });
+
+    test('maximum distinct failures block instead of failing', () async {
+      final first =
+          _projectTask(
+            id: 'failed_1',
+            objective: 'First failure',
+            status: ProjectTaskStatus.failed,
+          ).copyWith(
+            failure: const ProjectTaskFailure(
+              disposition: TaskGateFailureDisposition.blocking,
+              failureKey: 'failure_1',
+              summary: 'First failure.',
+            ),
+          );
+      final second =
+          _projectTask(
+            id: 'failed_2',
+            objective: 'Second failure',
+            status: ProjectTaskStatus.failed,
+          ).copyWith(
+            failure: const ProjectTaskFailure(
+              disposition: TaskGateFailureDisposition.blocking,
+              failureKey: 'failure_2',
+              summary: 'Second failure.',
+            ),
+          );
+      final queued = _projectTask(id: 'third', objective: 'Third failure');
+      final project = (await service.createProject(
+        workspace: workspace,
+        userPrompt: 'Build the app',
+        chatSessionId: 'chat_1',
+      )).copyWith(failedTasks: [first, second], backlog: [queued]);
+      final client = _QueueCompletionClient([
+        _finaliseTaskResponse(_taskPlanJson()),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'failed',
+            'summary': 'Third distinct execution failure.',
+            'memoryUpdate': '',
+            'error': 'Third distinct execution failure.',
+          }),
+        ),
+      ]);
+
+      final result = await service.runProject(
+        client: client,
+        workspace: workspace,
+        snapshot: project,
+        baseSystemPrompt: 'system',
+        maxNewTasks: 1,
+      );
+
+      expect(result.project.status, ProjectStatus.blocked);
+      expect(result.project.blocker?.type, ProjectBlockerType.maxFailures);
+      expect(result.project.isTerminal, isFalse);
+    });
+
     test(
       'selects recovery task before normal backlog and resolves incident',
       () async {
@@ -986,6 +1099,68 @@ void main() {
         expect(result.project.recoveryIncidents.single.attemptCount, 3);
       },
     );
+
+    test('manual recovery retry persists one additional attempt', () async {
+      final now = DateTime(2026, 1, 1);
+      final incident = ProjectRecoveryIncident(
+        id: 'recovery_1',
+        status: ProjectRecoveryIncidentStatus.exhausted,
+        sourceTaskIds: const ['task_source'],
+        sourceTaskTitles: const ['Source task'],
+        failedGateId: 'no_tool_errors',
+        failureSummary: 'A retryable tool error remains unresolved.',
+        attemptCount: 3,
+        recoveryTaskIds: const ['recovery_1', 'recovery_2', 'recovery_3'],
+        createdAt: now,
+        updatedAt: now,
+        resolvedAt: now,
+      );
+      final failedSource = _projectTask(
+        id: 'failed_source',
+        objective: 'Original source task',
+        recoveryIncidentId: incident.id,
+        status: ProjectTaskStatus.failed,
+      );
+      final project =
+          (await service.createProject(
+            workspace: workspace,
+            userPrompt: 'Build the app',
+            chatSessionId: 'chat_1',
+          )).copyWith(
+            status: ProjectStatus.blocked,
+            failedTasks: [failedSource],
+            recoveryIncidents: [incident],
+            blocker: ProjectBlocker(
+              type: ProjectBlockerType.recoveryFailed,
+              message: 'Recovery exhausted.',
+              createdAt: now,
+            ),
+          );
+
+      final updated = await service.retryRecoveryIncident(
+        workspace: workspace,
+        snapshot: project,
+        incidentId: incident.id,
+      );
+      final persisted = await service.repository.loadProject(
+        workspace.rootPath,
+        project.id,
+      );
+
+      expect(updated.status, ProjectStatus.active);
+      expect(updated.blocker, isNull);
+      expect(
+        updated.recoveryIncidents.single.status,
+        ProjectRecoveryIncidentStatus.active,
+      );
+      expect(updated.recoveryIncidents.single.maxAttempts, 4);
+      expect(updated.backlog.single.recoveryIncidentId, incident.id);
+      expect(
+        updated.decisions.last.decision,
+        ProjectDecisionType.retryRecovery,
+      );
+      expect(persisted?.recoveryIncidents.single.maxAttempts, 4);
+    });
   });
 }
 

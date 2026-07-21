@@ -217,10 +217,7 @@ void main() {
       );
 
       expect(evaluation.results.first.status, TaskGateStatus.passed);
-      expect(
-        evaluation.results.first.details['recoverableErrors'],
-        hasLength(3),
-      );
+      expect(evaluation.results.first.details['advisoryErrors'], hasLength(3));
       expect(evaluation.results.last.status, TaskGateStatus.failed);
     });
 
@@ -235,7 +232,124 @@ void main() {
       );
 
       expect(evaluation.results.single.status, TaskGateStatus.failed);
-      expect(evaluation.results.single.details['errors'], hasLength(1));
+      expect(
+        evaluation.results.single.details['unresolvedErrors'],
+        hasLength(1),
+      );
+      expect(
+        evaluation.results.single.failureDisposition,
+        TaskGateFailureDisposition.blocking,
+      );
+    });
+
+    test('no_tool_errors accepts a later successful equivalent call', () async {
+      final evaluation = await evaluator.evaluate(
+        workspace: workspace,
+        task: task,
+        step: step,
+        gates: const [TaskGate(id: 'no_tool_errors')],
+        toolCalls: [
+          _toolCall(
+            'patch_file',
+            id: 'failed_patch',
+            arguments: {'path': 'lib/a.dart'},
+            error: 'Temporary tool failure.',
+            toolError: const TaskToolError(
+              code: 'workspace_io_failure',
+              message: 'Temporary tool failure.',
+              disposition: TaskToolErrorDisposition.retryable,
+            ),
+            outcome: TaskToolCallOutcome.failed,
+          ),
+          _toolCall(
+            'patch_file',
+            id: 'successful_patch',
+            arguments: {'path': 'lib/a.dart'},
+          ),
+        ],
+        artifacts: const [],
+      );
+
+      expect(evaluation.results.single.status, TaskGateStatus.passed);
+      expect(evaluation.results.single.details['resolvedErrors'], hasLength(1));
+    });
+
+    test(
+      'command gates use latest outcomes and successful mutations',
+      () async {
+        final calls = [
+          _toolCall(
+            'patch_file',
+            id: 'mutation',
+            arguments: {'path': 'lib/a.dart'},
+          ),
+          _toolCall(
+            'run_command',
+            id: 'failed_test',
+            arguments: {'command': 'dart test', 'working_directory': '.'},
+            result: {'exit_code': 1, 'command': 'dart test'},
+          ),
+          _toolCall(
+            'run_command',
+            id: 'passed_test',
+            arguments: {'command': 'dart test', 'working_directory': '.'},
+            result: {'exit_code': 0, 'command': 'dart test'},
+          ),
+          _toolCall(
+            'patch_file',
+            id: 'failed_patch',
+            arguments: {'path': 'lib/a.dart'},
+            error: 'Patch text was not found.',
+            outcome: TaskToolCallOutcome.denied,
+          ),
+        ];
+        final evaluation = await evaluator.evaluate(
+          workspace: workspace,
+          task: task,
+          step: step,
+          gates: const [
+            TaskGate(
+              id: 'command_passes',
+              params: {'command': 'dart test', 'working_directory': '.'},
+            ),
+            TaskGate(id: 'no_failed_commands'),
+          ],
+          toolCalls: calls,
+          artifacts: const [],
+        );
+
+        expect(
+          evaluation.results.map((result) => result.status),
+          everyElement(TaskGateStatus.passed),
+        );
+      },
+    );
+
+    test('gate evidence respects task and step scope', () async {
+      final priorFailure = _toolCall(
+        'read_file',
+        id: 'prior_failure',
+        error: 'Tool crashed.',
+        outcome: TaskToolCallOutcome.failed,
+      );
+      final evaluation = await evaluator.evaluate(
+        workspace: workspace,
+        task: task,
+        step: step,
+        gates: const [
+          TaskGate(id: 'no_tool_errors', scope: 'step'),
+          TaskGate(id: 'no_tool_errors', scope: 'task'),
+        ],
+        evidence: TaskGateEvidence(
+          stepToolCalls: const [],
+          taskToolCalls: [priorFailure],
+          stepArtifacts: const [],
+          taskArtifacts: const [],
+        ),
+      );
+
+      expect(evaluation.results.first.status, TaskGateStatus.passed);
+      expect(evaluation.results.last.status, TaskGateStatus.failed);
     });
 
     test('content and parser gates validate files', () async {
@@ -317,13 +431,16 @@ void main() {
 
 TaskToolCallRecord _toolCall(
   String toolName, {
+  String? id,
   Map<String, dynamic> arguments = const {},
   Map<String, dynamic> result = const {},
   String? resultSummary,
   String? error,
+  TaskToolCallOutcome outcome = TaskToolCallOutcome.succeeded,
+  TaskToolError? toolError,
 }) {
   return TaskToolCallRecord(
-    id: 'call_$toolName',
+    id: id ?? 'call_$toolName',
     stepId: 'step_1',
     runId: 'run_1',
     toolName: toolName,
@@ -331,6 +448,8 @@ TaskToolCallRecord _toolCall(
     result: result,
     resultSummary: resultSummary ?? jsonEncode(result),
     error: error,
+    outcome: outcome,
+    toolError: toolError,
     timestamp: DateTime(2026, 1, 1),
   );
 }

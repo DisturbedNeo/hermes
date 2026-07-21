@@ -1,9 +1,11 @@
 import 'dart:convert';
 
 import 'package:hermes/core/models/workspace.dart';
+import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/tools/calculator_tool.dart';
 import 'package:hermes/core/tools/tool.dart';
+import 'package:hermes/core/tools/tool_error.dart';
 import 'package:hermes/core/tools/workspace_tools.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/services/subagent_service.dart';
@@ -78,12 +80,26 @@ class ToolService {
     final tool = _toolRegistry[toolId];
 
     if (tool == null) {
-      return Future.value(jsonEncode({'error': 'Unknown tool: $toolId'}));
+      return Future.value(
+        jsonEncode(
+          toolErrorPayload(
+            code: 'unknown_tool',
+            message: 'Unknown tool: $toolId',
+            disposition: TaskToolErrorDisposition.advisory,
+          ),
+        ),
+      );
     }
 
     if (tool.requiresWorkspace && context == null) {
       return Future.value(
-        jsonEncode({'error': 'This tool requires an active workspace.'}),
+        jsonEncode(
+          toolErrorPayload(
+            code: 'workspace_required',
+            message: 'This tool requires an active workspace.',
+            disposition: TaskToolErrorDisposition.retryable,
+          ),
+        ),
       );
     }
 
