@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:hermes/core/helpers/a11y.dart';
@@ -7,6 +6,7 @@ import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/ui/common/state_display.dart';
+import 'package:hermes/ui/chat/task_panel_dialogs.dart';
 
 class TaskPanel extends StatelessWidget {
   final ChatService chat;
@@ -479,7 +479,20 @@ class _ProjectActions extends StatelessWidget {
             label: const Text('Edit Project'),
             onPressed: chat.taskBusy
                 ? null
-                : () => unawaited(_editProject(context, chat)),
+                : () async {
+                    final initial = chat.activeProjectJson;
+                    if (initial == null) return;
+                    final saved = await EditProjectDialog.show(
+                      context,
+                      initialJson: initial,
+                      onSave: chat.updateProjectPlan,
+                    );
+                    if (saved && context.mounted) {
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(const SnackBar(content: Text('Project saved')));
+                    }
+                  },
           ),
         ),
         AccessibleWidget(
@@ -498,82 +511,6 @@ class _ProjectActions extends StatelessWidget {
     );
   }
 
-  Future<void> _editProject(BuildContext context, ChatService chat) async {
-    final initial = chat.activeProjectJson;
-    if (initial == null) return;
-    final controller = TextEditingController(text: initial);
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        var saving = false;
-        String? error;
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('Edit Project'),
-              content: SizedBox(
-                width: 820,
-                child: TextField(
-                  controller: controller,
-                  minLines: 16,
-                  maxLines: 22,
-                  style: const TextStyle(fontFamily: 'monospace'),
-                  decoration: InputDecoration(
-                    border: const OutlineInputBorder(),
-                    errorText: error,
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: saving
-                      ? null
-                      : () => Navigator.of(dialogContext).pop(false),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton.icon(
-                  icon: saving
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.save_outlined),
-                  label: const Text('Save'),
-                  onPressed: saving
-                      ? null
-                      : () async {
-                          setState(() {
-                            saving = true;
-                            error = null;
-                          });
-                          try {
-                            jsonDecode(controller.text);
-                            await chat.updateProjectPlan(controller.text);
-                            if (dialogContext.mounted) {
-                              Navigator.of(dialogContext).pop(true);
-                            }
-                          } catch (e) {
-                            setState(() {
-                              saving = false;
-                              error = e.toString();
-                            });
-                          }
-                        },
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-    controller.dispose();
-    if (saved == true && context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Project saved')));
-    }
-  }
 }
 
 class _ProjectQuestionCard extends StatefulWidget {
@@ -864,7 +801,20 @@ class _Actions extends StatelessWidget {
             label: const Text('Edit Plan'),
             onPressed: chat.taskBusy
                 ? null
-                : () => unawaited(_editPlan(context, chat)),
+                : () async {
+                    final initial = chat.activeTaskJson;
+                    if (initial == null) return;
+                    final saved = await EditPlanDialog.show(
+                      context,
+                      initialJson: initial,
+                      onSave: chat.updateTaskPlan,
+                    );
+                    if (saved && context.mounted) {
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(const SnackBar(content: Text('Task plan saved')));
+                    }
+                  },
           ),
         ),
         AccessibleWidget(
@@ -917,82 +867,6 @@ class _Actions extends StatelessWidget {
     );
   }
 
-  Future<void> _editPlan(BuildContext context, ChatService chat) async {
-    final initial = chat.activeTaskJson;
-    if (initial == null) return;
-    final controller = TextEditingController(text: initial);
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        var saving = false;
-        String? error;
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('Edit Plan'),
-              content: SizedBox(
-                width: 820,
-                child: TextField(
-                  controller: controller,
-                  minLines: 16,
-                  maxLines: 22,
-                  style: const TextStyle(fontFamily: 'monospace'),
-                  decoration: InputDecoration(
-                    border: const OutlineInputBorder(),
-                    errorText: error,
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: saving
-                      ? null
-                      : () => Navigator.of(dialogContext).pop(false),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton.icon(
-                  icon: saving
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.save_outlined),
-                  label: const Text('Save'),
-                  onPressed: saving
-                      ? null
-                      : () async {
-                          setState(() {
-                            saving = true;
-                            error = null;
-                          });
-                          try {
-                            jsonDecode(controller.text);
-                            await chat.updateTaskPlan(controller.text);
-                            if (dialogContext.mounted) {
-                              Navigator.of(dialogContext).pop(true);
-                            }
-                          } catch (e) {
-                            setState(() {
-                              saving = false;
-                              error = e.toString();
-                            });
-                          }
-                        },
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-    controller.dispose();
-    if (saved == true && context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Task plan saved')));
-    }
-  }
 }
 
 class _ApprovalCard extends StatelessWidget {
@@ -1209,44 +1083,22 @@ class _ArtifactList extends StatelessWidget {
               subtitle: artifact.description == null
                   ? null
                   : Text(artifact.description!),
-              onTap: () => unawaited(_showArtifact(context, artifact.path)),
+              onTap: () => ArtifactViewerDialog.show(
+                context,
+                path: artifact.path,
+                chat: chat,
+                onError: (error) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Could not open artifact: $error')),
+                    );
+                  }
+                },
+              ),
             ),
           ),
       ],
     );
-  }
-
-  Future<void> _showArtifact(BuildContext context, String path) async {
-    try {
-      final content = await chat.readTaskArtifact(path);
-      if (!context.mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text(path),
-          content: SizedBox(
-            width: 760,
-            child: SingleChildScrollView(
-              child: SelectableText(
-                content,
-                style: const TextStyle(fontFamily: 'monospace'),
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close'),
-            ),
-          ],
-        ),
-      );
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not open artifact: $e')));
-    }
   }
 }
 

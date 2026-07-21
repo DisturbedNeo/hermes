@@ -1,26 +1,19 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/helpers/responsive.dart';
 import 'package:hermes/core/helpers/scroll.dart';
-import 'package:hermes/core/helpers/style.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/keyboard_shortcuts.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
-import 'package:hermes/ui/chat/message/bubble_surface.dart';
-import 'package:hermes/ui/chat/message/message_actions.dart';
 import 'package:hermes/ui/chat/composer.dart';
 import 'package:hermes/ui/chat/diagnostics_bar.dart';
 import 'package:hermes/ui/chat/task_panel.dart';
-import 'package:hermes/ui/chat/message/markdown_view.dart';
-import 'package:hermes/ui/chat/message/message_bubble.dart';
-import 'package:hermes/ui/chat/message/message_row.dart';
-import 'package:hermes/ui/chat/message/message_timestamp.dart';
 import 'package:hermes/ui/chat/workspace_bar.dart';
+import 'package:hermes/ui/chat/chat_view_presenter.dart';
 
 class ChatView extends StatefulWidget {
   final ChatService chat;
@@ -212,7 +205,7 @@ class _ChatViewState extends State<ChatView> {
   }) {
     return Column(
       children: [
-        if (chat.pendingModelRestore != null) _ModelRestoreBanner(chat: chat),
+        if (chat.pendingModelRestore != null) _buildModelRestoreBanner(chat),
         WorkspaceBar(chat: chat, onOpenWorkspace: widget.onOpenWorkspace),
         if (includeInlineTaskPanel && showTaskPanel && !_taskPanelExpanded)
           TaskPanel(
@@ -228,13 +221,7 @@ class _ChatViewState extends State<ChatView> {
               onToggleExpanded: _toggleTaskPanel,
             ),
           ),
-        Expanded(
-          child: _MessageList(
-            scroll: _scroll,
-            chat: chat,
-            onScrollToBottom: _handleScrollToBottom,
-          ),
-        ),
+        Expanded(child: _buildMessageList(chat)),
         const Divider(height: 1),
         _buildFooter(
           chat: chat,
@@ -242,6 +229,35 @@ class _ChatViewState extends State<ChatView> {
           maxHeight: footerMaxHeight,
         ),
       ],
+    );
+  }
+
+  Widget _buildModelRestoreBanner(ChatService chat) {
+    final snapshot = chat.pendingModelRestore!;
+    final issue = chat.pendingModelRestoreIssue;
+
+    return ModelRestoreBannerWidget(
+      issue: issue,
+      modelName: snapshot.modelName,
+      onRestore: () async {
+        try {
+          await chat.restorePendingModel();
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to restore model: $e')),
+          );
+        }
+      },
+      onDismiss: chat.dismissPendingModelRestore,
+    );
+  }
+
+  Widget _buildMessageList(ChatService chat) {
+    return _MessageListPresenter(
+      scroll: _scroll,
+      chat: chat,
+      onScrollToBottom: _handleScrollToBottom,
     );
   }
 
@@ -298,22 +314,53 @@ class _ChatViewState extends State<ChatView> {
   }
 }
 
-class _MessageList extends StatefulWidget {
+// ---------------------------------------------------------------------------
+// Display item data classes (used by business logic in _MessageListPresenterState)
+// ---------------------------------------------------------------------------
+
+/// Base class for items in the message display list.
+class _DisplayItem {
+  final String messageId;
+
+  const _DisplayItem(this.messageId);
+}
+
+/// Represents a regular chat message bubble.
+class _MessageDisplayItem extends _DisplayItem {
+  const _MessageDisplayItem(super.messageId);
+}
+
+/// Represents a summarised memory group with its covered message IDs.
+class _SummaryDisplayItem extends _DisplayItem {
+  final List<String> coveredMessageIds;
+
+  const _SummaryDisplayItem(super.messageId, {required this.coveredMessageIds});
+}
+
+// ---------------------------------------------------------------------------
+// Message list presenter — manages display-item computation and message store
+// subscriptions (business logic + state), delegates rendering to presenter.
+// ---------------------------------------------------------------------------
+
+/// Internal widget that owns the message-list state: display item computation,
+/// message-store subscriptions, and scroll-button visibility. It delegates pure
+/// UI rendering to [MessageListWidget] from the presenter module.
+class _MessageListPresenter extends StatefulWidget {
   final ChatScrollController scroll;
   final ChatService chat;
   final VoidCallback onScrollToBottom;
 
-  const _MessageList({
+  const _MessageListPresenter({
     required this.scroll,
     required this.chat,
     required this.onScrollToBottom,
   });
 
   @override
-  State<_MessageList> createState() => _MessageListState();
+  State<_MessageListPresenter> createState() => _MessageListPresenterState();
 }
 
-class _MessageListState extends State<_MessageList> {
+class _MessageListPresenterState extends State<_MessageListPresenter> {
   bool _showScrollButton = false;
   late List<_DisplayItem> _displayItems;
   late Map<String, int> _displayItemIndices;
@@ -331,7 +378,7 @@ class _MessageListState extends State<_MessageList> {
   }
 
   @override
-  void didUpdateWidget(_MessageList oldWidget) {
+  void didUpdateWidget(_MessageListPresenter oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.chat != oldWidget.chat) {
       oldWidget.chat.messageStore.removeListener(_handleMessageStoreChanged);
@@ -400,70 +447,31 @@ class _MessageListState extends State<_MessageList> {
       children: [
         NotificationListener<ScrollNotification>(
           onNotification: _handleScrollNotification,
-          child: ListView.builder(
+          child: MessageListWidget(
+            displayItems: _displayItems,
+            displayItemIndices: _displayItemIndices,
             controller: widget.scroll,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-            itemCount: _displayItems.length,
-            findChildIndexCallback: (key) {
-              if (key is! ValueKey<String>) return null;
-              return _displayItemIndices[key.value];
-            },
             itemBuilder: (_, i) {
               final item = _displayItems[i];
-
-              return _LiveMessageItem(
+              return LiveMessageItemWidget(
                 key: ValueKey('message_${item.messageId}'),
-                item: item,
                 chat: widget.chat,
+                messageId: item.messageId,
+                isSummary: item is _SummaryDisplayItem,
+                coveredMessageIds: item is _SummaryDisplayItem
+                    ? item.coveredMessageIds
+                    : const [],
               );
             },
+            onScrollToBottom: widget.onScrollToBottom,
+            showScrollButton: _showScrollButton,
           ),
         ),
-        // Floating scroll-to-bottom button that appears when user scrolls away
-        if (_showScrollButton)
-          Positioned(
-            bottom: 16,
-            right: 16,
-            child: Material(
-              elevation: 4,
-              color: Theme.of(context).colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(20),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(20),
-                onTap: widget.onScrollToBottom,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.expand_more,
-                        size: 20,
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Scroll to bottom',
-                        style: Theme.of(context).textTheme.labelMedium
-                            ?.copyWith(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onPrimaryContainer,
-                              fontWeight: FontWeight.w500,
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
       ],
     );
   }
+
+  // -- Business logic: display item computation --------------------------------
 
   List<_DisplayItem> _buildDisplayItems(List<Bubble> messages) {
     final bySummary = <String, List<String>>{};
@@ -490,238 +498,5 @@ class _MessageListState extends State<_MessageList> {
     return {
       for (var i = 0; i < items.length; i++) 'message_${items[i].messageId}': i,
     };
-  }
-}
-
-class _DisplayItem {
-  final String messageId;
-
-  const _DisplayItem(this.messageId);
-}
-
-class _MessageDisplayItem extends _DisplayItem {
-  const _MessageDisplayItem(super.messageId);
-}
-
-class _SummaryDisplayItem extends _DisplayItem {
-  final List<String> coveredMessageIds;
-
-  const _SummaryDisplayItem(super.messageId, {required this.coveredMessageIds});
-}
-
-class _LiveMessageItem extends StatefulWidget {
-  final _DisplayItem item;
-  final ChatService chat;
-
-  const _LiveMessageItem({super.key, required this.item, required this.chat});
-
-  @override
-  State<_LiveMessageItem> createState() => _LiveMessageItemState();
-}
-
-class _LiveMessageItemState extends State<_LiveMessageItem> {
-  Bubble? _message;
-
-  @override
-  void initState() {
-    super.initState();
-    _message = widget.chat.messageStore.messageById(widget.item.messageId);
-    widget.chat.messageStore.addListener(_handleMessageStoreChanged);
-  }
-
-  @override
-  void didUpdateWidget(covariant _LiveMessageItem oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.chat != oldWidget.chat) {
-      oldWidget.chat.messageStore.removeListener(_handleMessageStoreChanged);
-      widget.chat.messageStore.addListener(_handleMessageStoreChanged);
-    }
-
-    if (widget.chat != oldWidget.chat ||
-        widget.item.messageId != oldWidget.item.messageId) {
-      _message = widget.chat.messageStore.messageById(widget.item.messageId);
-    }
-  }
-
-  @override
-  void dispose() {
-    widget.chat.messageStore.removeListener(_handleMessageStoreChanged);
-    super.dispose();
-  }
-
-  void _handleMessageStoreChanged() {
-    final next = widget.chat.messageStore.messageById(widget.item.messageId);
-    if (identical(next, _message)) return;
-    setState(() => _message = next);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final message = _message;
-    if (message == null) return const SizedBox.shrink();
-
-    final item = widget.item;
-    final isSummary = item is _SummaryDisplayItem;
-    final isUser = !isSummary && message.role == MessageRole.user;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: MessageRow(
-        isUser: isUser,
-        bubble: isSummary
-            ? _SummaryMemoryGroup(
-                key: ValueKey('summary_${message.id}'),
-                summary: message,
-                coveredMessages: item.coveredMessageIds
-                    .map(widget.chat.messageStore.messageById)
-                    .whereType<Bubble>()
-                    .toList(growable: false),
-              )
-            : MessageBubble(
-                key: ValueKey('bubble_${message.id}'),
-                b: message,
-                onSave: (newReasoning, newText) {
-                  widget.chat.messageStore.upsert(
-                    message.copyWith(reasoning: newReasoning, text: newText),
-                  );
-                },
-                editable: !widget.chat.chatStream.isStreaming,
-              ),
-        actions: MessageActions(
-          key: ValueKey('actions_${message.id}'),
-          message: message,
-          chat: widget.chat,
-        ),
-      ),
-    );
-  }
-}
-
-class _SummaryMemoryGroup extends StatefulWidget {
-  final Bubble summary;
-  final List<Bubble> coveredMessages;
-
-  const _SummaryMemoryGroup({
-    super.key,
-    required this.summary,
-    required this.coveredMessages,
-  });
-
-  @override
-  State<_SummaryMemoryGroup> createState() => _SummaryMemoryGroupState();
-}
-
-class _SummaryMemoryGroupState extends State<_SummaryMemoryGroup> {
-  bool _expanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final (bg, fg) = getColorsForRole(scheme, MessageRole.system);
-    final count = widget.coveredMessages.length;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        BubbleSurface(
-          borderRadius: BorderRadius.circular(8),
-          background: bg,
-          onTap: count == 0
-              ? null
-              : () => setState(() => _expanded = !_expanded),
-          enabled: count > 0,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    _expanded
-                        ? Icons.keyboard_arrow_down
-                        : Icons.keyboard_arrow_right,
-                    size: 20,
-                    color: fg,
-                  ),
-                  const SizedBox(width: 6),
-                  Icon(Icons.assignment_outlined, size: 18, color: fg),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '$count messages summarised',
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.labelMedium?.copyWith(color: fg),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: MarkdownView(data: widget.summary.text),
-              ),
-            ],
-          ),
-        ),
-        if (widget.summary.createdAt != null) ...[
-          const SizedBox(height: 2),
-          MessageTimestamp(createdAt: widget.summary.createdAt!),
-        ],
-        if (_expanded) ...[
-          const SizedBox(height: 8),
-          for (final message in widget.coveredMessages)
-            Padding(
-              padding: const EdgeInsets.only(left: 18, bottom: 8),
-              child: Opacity(
-                opacity: 0.82,
-                child: MessageRow(
-                  isUser: message.role == MessageRole.user,
-                  bubble: MessageBubble(b: message, editable: false),
-                ),
-              ),
-            ),
-        ],
-      ],
-    );
-  }
-}
-
-class _ModelRestoreBanner extends StatelessWidget {
-  final ChatService chat;
-
-  const _ModelRestoreBanner({required this.chat});
-
-  @override
-  Widget build(BuildContext context) {
-    final snapshot = chat.pendingModelRestore!;
-    final issue = chat.pendingModelRestoreIssue;
-
-    return MaterialBanner(
-      content: Text(
-        issue ??
-            'This chat was saved with ${snapshot.modelName}. Restore its saved model configuration?',
-      ),
-      actions: [
-        if (issue == null)
-          TextButton(
-            onPressed: () async {
-              try {
-                await chat.restorePendingModel();
-              } catch (e) {
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Failed to restore model: $e')),
-                );
-              }
-            },
-            child: const Text('Restore'),
-          ),
-        TextButton(
-          onPressed: chat.dismissPendingModelRestore,
-          child: const Text('Dismiss'),
-        ),
-      ],
-    );
   }
 }

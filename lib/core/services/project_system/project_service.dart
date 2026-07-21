@@ -12,7 +12,7 @@ import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/project_system/project_model_calls.dart';
-import 'package:hermes/core/services/project_system/project_storage_service.dart';
+import 'package:hermes/core/services/project_system/project_repository.dart';
 import 'package:hermes/core/services/question_policy_service.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
@@ -38,27 +38,27 @@ class ProjectRunResult {
 class ProjectService {
   ProjectService({
     required TaskService taskService,
-    ProjectStorageService? storage,
+    ProjectRepository? repository,
     ProjectModelCalls? modelCalls,
   }) : _taskService = taskService,
-       _storage = storage ?? ProjectStorageService(),
+       _repository = repository ?? ProjectRepository(),
        _modelCalls =
            modelCalls ??
            ProjectModelCalls(toolService: taskService.toolService);
 
   final TaskService _taskService;
-  final ProjectStorageService _storage;
+  final ProjectRepository _repository;
   final ProjectModelCalls _modelCalls;
   final QuestionPolicyService _questionPolicy = const QuestionPolicyService();
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
 
-  ProjectStorageService get storage => _storage;
+  ProjectRepository get repository => _repository;
 
   Future<List<ProjectSummary>> listProjects(
     WorkspaceAttachment workspace, {
     String? chatSessionId,
   }) {
-    return _storage.listProjects(
+    return _repository.listProjects(
       workspace.rootPath,
       chatSessionId: chatSessionId,
     );
@@ -68,7 +68,7 @@ class ProjectService {
     WorkspaceAttachment workspace, {
     String? chatSessionId,
   }) {
-    return _storage.loadLatestProject(
+    return _repository.loadLatestProject(
       workspace.rootPath,
       chatSessionId: chatSessionId,
     );
@@ -79,7 +79,7 @@ class ProjectService {
     String projectId, {
     String? chatSessionId,
   }) {
-    return _storage.loadProject(
+    return _repository.loadProject(
       workspace.rootPath,
       projectId,
       chatSessionId: chatSessionId,
@@ -91,7 +91,7 @@ class ProjectService {
     required String chatSessionId,
   }) {
     if (workspace.missing) return Future.value(0);
-    return _storage.deleteProjectsForChatSession(
+    return _repository.deleteProjectsForChatSession(
       workspace.rootPath,
       chatSessionId: chatSessionId,
     );
@@ -102,7 +102,7 @@ class ProjectService {
     required Set<String> retainedChatSessionIds,
   }) {
     if (workspace.missing) return Future.value(0);
-    return _storage.deleteOrphanedChatProjects(
+    return _repository.deleteOrphanedChatProjects(
       workspace.rootPath,
       retainedChatSessionIds: retainedChatSessionIds,
     );
@@ -118,7 +118,7 @@ class ProjectService {
       chatSessionId: chatSessionId,
       updatedAt: DateTime.now(),
     );
-    await _storage.saveSnapshot(workspace.rootPath, updated);
+    await _repository.saveSnapshot(workspace.rootPath, updated);
     return updated;
   }
 
@@ -203,7 +203,7 @@ class ProjectService {
       createdAt: now,
       updatedAt: now,
     );
-    await _storage.saveSnapshot(workspace.rootPath, project);
+    await _repository.saveSnapshot(workspace.rootPath, project);
     return project;
   }
 
@@ -222,7 +222,7 @@ class ProjectService {
       createdAt: snapshot.createdAt,
       updatedAt: DateTime.now(),
     );
-    await _storage.saveSnapshot(workspace.rootPath, updated);
+    await _repository.saveSnapshot(workspace.rootPath, updated);
     return updated;
   }
 
@@ -252,7 +252,7 @@ class ProjectService {
         phase: ProjectPhase.planning,
         updatedAt: now,
       );
-      await _storage.saveSnapshot(workspace.rootPath, recovered);
+      await _repository.saveSnapshot(workspace.rootPath, recovered);
       return ProjectRunResult(project: recovered);
     }
 
@@ -263,7 +263,7 @@ class ProjectService {
         'Recovered an interrupted project, but its active task was missing.',
         now,
       );
-      await _storage.saveSnapshot(workspace.rootPath, blocked);
+      await _repository.saveSnapshot(workspace.rootPath, blocked);
       onTaskUpdated?.call(null);
       return ProjectRunResult(project: blocked);
     }
@@ -284,7 +284,7 @@ class ProjectService {
             now,
             taskId: recoveredTask.id,
           );
-    await _storage.saveSnapshot(workspace.rootPath, recovered);
+    await _repository.saveSnapshot(workspace.rootPath, recovered);
     return ProjectRunResult(project: recovered, activeTask: recoveredTask);
   }
 
@@ -348,7 +348,7 @@ class ProjectService {
         maxIterations: _normaliseOptionalLimit(maxIterations),
         updatedAt: DateTime.now(),
       );
-      await _storage.saveSnapshot(workspace.rootPath, project);
+      await _repository.saveSnapshot(workspace.rootPath, project);
     }
     if (project.isTerminal) {
       return ProjectRunResult(project: project, activeTask: activeTask);
@@ -364,7 +364,7 @@ class ProjectService {
         blocker: null,
         updatedAt: DateTime.now(),
       );
-      await _storage.saveSnapshot(workspace.rootPath, project);
+      await _repository.saveSnapshot(workspace.rootPath, project);
     }
 
     final allowedIterations = maxNewTasks <= 0 ? null : maxNewTasks;
@@ -394,13 +394,13 @@ class ProjectService {
                 : ProjectStatus.waitingForUser,
             updatedAt: DateTime.now(),
           );
-          await _storage.saveSnapshot(workspace.rootPath, project);
+          await _repository.saveSnapshot(workspace.rootPath, project);
         }
       }
       if (project.openQuestions.isNotEmpty ||
           project.blocker?.type == ProjectBlockerType.question) {
         project = _waitingForUser(project, DateTime.now());
-        await _storage.saveSnapshot(workspace.rootPath, project);
+        await _repository.saveSnapshot(workspace.rootPath, project);
         return ProjectRunResult(project: project, activeTask: activeTask);
       }
       if (project.status == ProjectStatus.blocked &&
@@ -415,7 +415,7 @@ class ProjectService {
           'Project reached the maximum iteration limit of ${project.maxIterations}.',
           DateTime.now(),
         );
-        await _storage.saveSnapshot(workspace.rootPath, project);
+        await _repository.saveSnapshot(workspace.rootPath, project);
         return ProjectRunResult(project: project, activeTask: activeTask);
       }
       if (allowedIterations != null && runIterations >= allowedIterations) {
@@ -423,7 +423,7 @@ class ProjectService {
           status: ProjectStatus.paused,
           updatedAt: DateTime.now(),
         );
-        await _storage.saveSnapshot(workspace.rootPath, project);
+        await _repository.saveSnapshot(workspace.rootPath, project);
         return ProjectRunResult(project: project, activeTask: activeTask);
       }
 
@@ -455,7 +455,7 @@ class ProjectService {
             DateTime.now(),
           );
         }
-        await _storage.saveSnapshot(workspace.rootPath, project);
+        await _repository.saveSnapshot(workspace.rootPath, project);
         return ProjectRunResult(project: project, activeTask: activeTask);
       }
 
@@ -472,7 +472,7 @@ class ProjectService {
           onModelOutput: onModelOutput,
         );
         if (project.status == ProjectStatus.blocked) {
-          await _storage.saveSnapshot(workspace.rootPath, project);
+          await _repository.saveSnapshot(workspace.rootPath, project);
           return ProjectRunResult(project: project, activeTask: activeTask);
         }
         final recoveryMadeProgress = _invalidTaskRecoveryMadeProgress(
@@ -491,10 +491,10 @@ class ProjectService {
             'Project task selection produced $consecutiveInvalidCandidates invalid candidates in a row.',
             DateTime.now(),
           );
-          await _storage.saveSnapshot(workspace.rootPath, project);
+          await _repository.saveSnapshot(workspace.rootPath, project);
           return ProjectRunResult(project: project, activeTask: activeTask);
         }
-        await _storage.saveSnapshot(workspace.rootPath, project);
+        await _repository.saveSnapshot(workspace.rootPath, project);
         continue;
       }
       consecutiveInvalidCandidates = 0;
@@ -526,7 +526,7 @@ class ProjectService {
         phase: ProjectPhase.verification,
         updatedAt: now,
       );
-      await _storage.saveSnapshot(workspace.rootPath, project);
+      await _repository.saveSnapshot(workspace.rootPath, project);
 
       final evaluation = _evaluateTaskResult(
         project.currentTask ?? candidate,
@@ -550,7 +550,7 @@ class ProjectService {
         iterationCount: project.iterationCount + 1,
         updatedAt: DateTime.now(),
       );
-      await _storage.saveSnapshot(workspace.rootPath, project);
+      await _repository.saveSnapshot(workspace.rootPath, project);
       runIterations++;
       if (project.status == ProjectStatus.completed ||
           project.status == ProjectStatus.failed ||
@@ -584,7 +584,7 @@ class ProjectService {
       ],
       updatedAt: DateTime.now(),
     );
-    await _storage.saveSnapshot(workspace.rootPath, updated);
+    await _repository.saveSnapshot(workspace.rootPath, updated);
     return updated;
   }
 
@@ -613,7 +613,7 @@ class ProjectService {
       ],
       updatedAt: DateTime.now(),
     );
-    await _storage.saveSnapshot(workspace.rootPath, updated);
+    await _repository.saveSnapshot(workspace.rootPath, updated);
     return updated;
   }
 
@@ -625,7 +625,7 @@ class ProjectService {
       status: ProjectStatus.paused,
       updatedAt: DateTime.now(),
     );
-    await _storage.saveSnapshot(workspace.rootPath, updated);
+    await _repository.saveSnapshot(workspace.rootPath, updated);
     return updated;
   }
 
@@ -644,7 +644,7 @@ class ProjectService {
       blocker: null,
       updatedAt: DateTime.now(),
     );
-    await _storage.saveSnapshot(workspace.rootPath, updated);
+    await _repository.saveSnapshot(workspace.rootPath, updated);
     return updated;
   }
 
@@ -665,7 +665,7 @@ class ProjectService {
       completedAt: now,
       updatedAt: now,
     );
-    await _storage.saveSnapshot(workspace.rootPath, updated);
+    await _repository.saveSnapshot(workspace.rootPath, updated);
     return updated;
   }
 
@@ -962,7 +962,7 @@ class ProjectService {
       ],
       updatedAt: now,
     );
-    await _storage.saveSnapshot(workspace.rootPath, workingProject);
+    await _repository.saveSnapshot(workspace.rootPath, workingProject);
 
     final existingTask = workingProject.activeTaskId == null
         ? null
@@ -994,7 +994,7 @@ class ProjectService {
       ),
       updatedAt: DateTime.now(),
     );
-    await _storage.saveSnapshot(workspace.rootPath, workingProject);
+    await _repository.saveSnapshot(workspace.rootPath, workingProject);
     onTaskUpdated?.call(activeTask);
 
     while (activeTask.nextRunnableStep != null && !activeTask.isTerminal) {
@@ -1022,14 +1022,14 @@ class ProjectService {
         activeTask,
         DateTime.now(),
       );
-      await _storage.saveSnapshot(workspace.rootPath, workingProject);
+      await _repository.saveSnapshot(workspace.rootPath, workingProject);
 
       if (cancellationToken?.isCancelled == true) {
         final paused = workingProject.copyWith(
           status: ProjectStatus.paused,
           updatedAt: DateTime.now(),
         );
-        await _storage.saveSnapshot(workspace.rootPath, paused);
+        await _repository.saveSnapshot(workspace.rootPath, paused);
         return _ProjectTaskExecution(project: paused, activeTask: activeTask);
       }
 
@@ -1042,7 +1042,7 @@ class ProjectService {
           DateTime.now(),
           taskId: activeTask.id,
         ).copyWith(status: ProjectStatus.waitingForUser);
-        await _storage.saveSnapshot(workspace.rootPath, blocked);
+        await _repository.saveSnapshot(workspace.rootPath, blocked);
         return _ProjectTaskExecution(project: blocked, activeTask: activeTask);
       }
     }

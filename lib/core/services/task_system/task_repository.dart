@@ -6,7 +6,7 @@ import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/services/task_system/task_summary.dart';
 import 'package:path/path.dart' as path;
 
-class TaskStorageService {
+class TaskRepository {
   static const String tasksRoot = '.agent/tasks';
   static const String documentFileName = 'task.json';
 

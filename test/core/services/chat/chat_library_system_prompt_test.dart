@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
+import 'package:hermes/core/services/chat_library_repository.dart';
 import 'package:hermes/core/services/preferences_service.dart';
+import 'package:hermes/core/services/system_prompt_library_repository.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -16,6 +18,7 @@ void main() {
   late Directory tempDir;
   late String databasePath;
   late ChatLibraryService chatLibrary;
+  late SystemPromptLibraryRepository promptLibraryRepository;
   late SystemPromptLibraryService promptLibrary;
 
   setUp(() async {
@@ -25,13 +28,17 @@ void main() {
     );
     databasePath = path.join(tempDir.path, 'hermes.db');
     final preferences = PreferencesService();
-    chatLibrary = ChatLibraryService(
+    final chatLibraryRepository = ChatLibraryRepository(
+      preferencesService: preferences,
+      databasePath: databasePath,
+    );
+    chatLibrary = ChatLibraryService(repository: chatLibraryRepository);
+    promptLibraryRepository = SystemPromptLibraryRepository(
       preferencesService: preferences,
       databasePath: databasePath,
     );
     promptLibrary = SystemPromptLibraryService(
-      preferencesService: preferences,
-      databasePath: databasePath,
+      repository: promptLibraryRepository,
     );
   });
 

@@ -11,10 +11,12 @@ import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
+import 'package:hermes/core/services/chat_library_repository.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
+import 'package:hermes/core/services/system_prompt_library_repository.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
@@ -28,6 +30,7 @@ void main() {
   late Directory tempDir;
   late PreferencesService preferences;
   late ChatLibraryService chatLibrary;
+  late SystemPromptLibraryRepository promptLibraryRepository;
   late SystemPromptLibraryService promptLibrary;
   late ToolService toolService;
   late TaskService taskService;
@@ -45,13 +48,17 @@ void main() {
     toolService = ToolService(workspaceSandbox: sandbox);
     taskService = TaskService(toolService: toolService, sandbox: sandbox);
     workspaceService = WorkspaceService(sandbox: sandbox);
-    chatLibrary = ChatLibraryService(
+    final chatLibraryRepository = ChatLibraryRepository(
+      preferencesService: preferences,
+      databasePath: ':memory:',
+    );
+    chatLibrary = ChatLibraryService(repository: chatLibraryRepository);
+    promptLibraryRepository = SystemPromptLibraryRepository(
       preferencesService: preferences,
       databasePath: ':memory:',
     );
     promptLibrary = SystemPromptLibraryService(
-      preferencesService: preferences,
-      databasePath: ':memory:',
+      repository: promptLibraryRepository,
     );
     tabs = ChatTabsService(
       chatLibrary: chatLibrary,
@@ -353,6 +360,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('09/05/26 04:07'), findsOneWidget);
+  });
+
+  testWidgets('updates message content when display shape is unchanged', (
+    tester,
+  ) async {
+    final chat = tabs.activeChat!;
+    chat.insertMessage('Initial message text', MessageRole.user);
+
+    await tester.pumpWidget(_chatViewApp(tabs, preferences, toolService));
+    await tester.pumpAndSettle();
+
+    final message = chat.messageStore.last;
+    chat.messageStore.upsert(message.copyWith(text: 'Updated message text'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+
+    expect(find.text('Initial message text'), findsNothing);
+    expect(find.text('Updated message text'), findsOneWidget);
   });
 
   testWidgets('Ctrl slash focuses the composer', (tester) async {

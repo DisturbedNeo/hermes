@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/prompt_library_seed_data.dart';
+import 'package:hermes/core/services/system_prompt_library_repository.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -14,16 +15,18 @@ void main() {
 
   late Directory tempDir;
   late String databasePath;
+  late SystemPromptLibraryRepository repository;
   late SystemPromptLibraryService library;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     tempDir = await Directory.systemTemp.createTemp('hermes_prompts_test_');
     databasePath = path.join(tempDir.path, 'hermes.db');
-    library = SystemPromptLibraryService(
+    repository = SystemPromptLibraryRepository(
       preferencesService: PreferencesService(),
       databasePath: databasePath,
     );
+    library = SystemPromptLibraryService(repository: repository);
   });
 
   tearDown(() async {
@@ -128,10 +131,11 @@ void main() {
       await library.deletePreset(preset.id);
       await library.deleteModule(module.id);
       await library.dispose();
-      library = SystemPromptLibraryService(
+      repository = SystemPromptLibraryRepository(
         preferencesService: PreferencesService(),
         databasePath: databasePath,
       );
+      library = SystemPromptLibraryService(repository: repository);
 
       expect(await library.getPreset(preset.id), isNull);
       expect(await library.getModule(module.id), isNull);
@@ -312,10 +316,11 @@ void main() {
     });
     await db.close();
 
-    library = SystemPromptLibraryService(
+    repository = SystemPromptLibraryRepository(
       preferencesService: PreferencesService(),
       databasePath: databasePath,
     );
+    library = SystemPromptLibraryService(repository: repository);
 
     final migrated = await library.getPreset('legacy-1');
     expect(migrated?.name, 'Old prompt');

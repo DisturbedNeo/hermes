@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
+import 'package:hermes/core/services/chat_library_repository.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/prompt_assembler.dart';
+import 'package:hermes/core/services/system_prompt_library_repository.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
@@ -25,10 +27,11 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     preferences = PreferencesService();
-    chatLibrary = ChatLibraryService(
+    final chatLibraryRepository = ChatLibraryRepository(
       preferencesService: preferences,
       databasePath: ':memory:',
     );
+    chatLibrary = ChatLibraryService(repository: chatLibraryRepository);
     promptLibrary = _FakeSystemPromptLibraryService();
     final sandbox = WorkspaceSandbox();
     final toolService = ToolService(workspaceSandbox: sandbox);
@@ -290,7 +293,12 @@ Future<void> _pumpAsyncWork(WidgetTester tester) async {
 
 class _FakeSystemPromptLibraryService extends SystemPromptLibraryService {
   _FakeSystemPromptLibraryService()
-    : super(preferencesService: PreferencesService(), databasePath: ':memory:');
+    : super(
+        repository: SystemPromptLibraryRepository(
+          preferencesService: PreferencesService(),
+          databasePath: ':memory:',
+        ),
+      );
 
   final List<PromptPreset> _presets = [];
   final List<PromptModule> _modules = [];

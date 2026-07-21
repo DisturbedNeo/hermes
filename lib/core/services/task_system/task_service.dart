@@ -26,7 +26,7 @@ import 'package:hermes/core/services/task_system/finalizer_tool_call_runner.dart
 import 'package:hermes/core/services/task_system/task_gate_evaluator.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
-import 'package:hermes/core/services/task_system/task_storage_service.dart';
+import 'package:hermes/core/services/task_system/task_repository.dart';
 import 'package:hermes/core/services/task_system/task_summary.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
@@ -312,22 +312,22 @@ class TaskService {
   TaskService({
     required ToolService toolService,
     required WorkspaceSandbox sandbox,
-    TaskStorageService? storage,
+    TaskRepository? repository,
   }) : _toolService = toolService,
        _creationRunner = FinalizerToolCallRunner(toolService: toolService),
-       _storage = storage ?? TaskStorageService(),
+       _repository = repository ?? TaskRepository(),
        _sandbox = sandbox,
        _gateEvaluator = TaskGateEvaluator(sandbox: sandbox);
 
   final ToolService _toolService;
   final FinalizerToolCallRunner _creationRunner;
-  final TaskStorageService _storage;
+  final TaskRepository _repository;
   final WorkspaceSandbox _sandbox;
   final TaskGateEvaluator _gateEvaluator;
   final QuestionPolicyService _questionPolicy = const QuestionPolicyService();
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
 
-  TaskStorageService get storage => _storage;
+  TaskRepository get repository => _repository;
   ToolService get toolService => _toolService;
 
   Future<List<TaskSummary>> listTasks(
@@ -335,7 +335,7 @@ class TaskService {
     String? chatSessionId,
     String? projectId,
   }) {
-    return _storage.listTasks(
+    return _repository.listTasks(
       workspace.rootPath,
       chatSessionId: chatSessionId,
       projectId: projectId,
@@ -347,7 +347,7 @@ class TaskService {
     String? chatSessionId,
     String? projectId,
   }) {
-    return _storage.loadLatestTask(
+    return _repository.loadLatestTask(
       workspace.rootPath,
       chatSessionId: chatSessionId,
       projectId: projectId,
@@ -360,7 +360,7 @@ class TaskService {
     String? chatSessionId,
     String? projectId,
   }) {
-    return _storage.loadTask(
+    return _repository.loadTask(
       workspace.rootPath,
       taskId,
       chatSessionId: chatSessionId,
@@ -373,7 +373,7 @@ class TaskService {
     required String chatSessionId,
   }) {
     if (workspace.missing) return Future.value(0);
-    return _storage.deleteTasksForChatSession(
+    return _repository.deleteTasksForChatSession(
       workspace.rootPath,
       chatSessionId: chatSessionId,
     );
@@ -384,7 +384,7 @@ class TaskService {
     required Set<String> retainedChatSessionIds,
   }) {
     if (workspace.missing) return Future.value(0);
-    return _storage.deleteOrphanedChatTasks(
+    return _repository.deleteOrphanedChatTasks(
       workspace.rootPath,
       retainedChatSessionIds: retainedChatSessionIds,
     );
@@ -400,7 +400,7 @@ class TaskService {
       chatSessionId: chatSessionId,
       updatedAt: DateTime.now(),
     );
-    await _storage.saveSnapshot(workspace.rootPath, updated);
+    await _repository.saveSnapshot(workspace.rootPath, updated);
     return updated;
   }
 
@@ -425,7 +425,7 @@ class TaskService {
         'Recovered an interrupted task. Review the current step before continuing.',
       ),
     );
-    await _storage.saveSnapshot(workspace.rootPath, recovered);
+    await _repository.saveSnapshot(workspace.rootPath, recovered);
     return recovered;
   }
 
@@ -582,7 +582,7 @@ $userPrompt
             );
     }
 
-    await _storage.saveSnapshot(workspace.rootPath, task);
+    await _repository.saveSnapshot(workspace.rootPath, task);
     return task;
   }
 
@@ -604,7 +604,7 @@ $userPrompt
       snapshot,
       now,
     );
-    await _storage.saveSnapshot(workspace.rootPath, normalised);
+    await _repository.saveSnapshot(workspace.rootPath, normalised);
     return normalised;
   }
 
@@ -627,7 +627,7 @@ $userPrompt
     final step = working.nextRunnableStep;
     if (step == null) {
       final completed = _markCompleted(working);
-      await _storage.saveSnapshot(workspace.rootPath, completed);
+      await _repository.saveSnapshot(workspace.rootPath, completed);
       return completed;
     }
 
@@ -651,7 +651,7 @@ $userPrompt
             ),
             updatedAt: DateTime.now(),
           );
-      await _storage.saveSnapshot(workspace.rootPath, blocked);
+      await _repository.saveSnapshot(workspace.rootPath, blocked);
       return blocked;
     }
 
@@ -680,7 +680,7 @@ $userPrompt
           pendingQuestion: null,
           updatedAt: now,
         );
-    await _storage.saveSnapshot(workspace.rootPath, working);
+    await _repository.saveSnapshot(workspace.rootPath, working);
 
     try {
       var execution = await _executeStep(
@@ -748,7 +748,7 @@ $userPrompt
           break;
       }
 
-      await _storage.saveSnapshot(workspace.rootPath, working);
+      await _repository.saveSnapshot(workspace.rootPath, working);
       return working;
     } on TaskCancelledException catch (e) {
       final cancelledAt = DateTime.now();
@@ -771,7 +771,7 @@ $userPrompt
             pendingQuestion: null,
             updatedAt: cancelledAt,
           );
-      await _storage.saveSnapshot(workspace.rootPath, working);
+      await _repository.saveSnapshot(workspace.rootPath, working);
       return working;
     } catch (e) {
       final failedRun = run.copyWith(
@@ -791,7 +791,7 @@ $userPrompt
             currentStepId: step.id,
             updatedAt: DateTime.now(),
           );
-      await _storage.saveSnapshot(workspace.rootPath, working);
+      await _repository.saveSnapshot(workspace.rootPath, working);
       return working;
     }
   }
@@ -815,7 +815,7 @@ $userPrompt
           pendingApproval: null,
           updatedAt: DateTime.now(),
         );
-    await _storage.saveSnapshot(workspace.rootPath, updated);
+    await _repository.saveSnapshot(workspace.rootPath, updated);
     return updated;
   }
 
@@ -837,7 +837,7 @@ $userPrompt
           pendingQuestion: null,
           updatedAt: DateTime.now(),
         );
-    await _storage.saveSnapshot(workspace.rootPath, updated);
+    await _repository.saveSnapshot(workspace.rootPath, updated);
     return updated;
   }
 
@@ -866,7 +866,7 @@ $userPrompt
         ),
       ],
     );
-    await _storage.saveSnapshot(workspace.rootPath, updated);
+    await _repository.saveSnapshot(workspace.rootPath, updated);
     return updated;
   }
 
@@ -883,7 +883,7 @@ $userPrompt
       completedAt: now,
       updatedAt: now,
     );
-    await _storage.saveSnapshot(workspace.rootPath, updated);
+    await _repository.saveSnapshot(workspace.rootPath, updated);
     return updated;
   }
 
@@ -921,7 +921,7 @@ $userPrompt
           ),
           updatedAt: DateTime.now(),
         );
-    await _storage.saveSnapshot(workspace.rootPath, updated);
+    await _repository.saveSnapshot(workspace.rootPath, updated);
     return updated;
   }
 
@@ -943,7 +943,7 @@ $userPrompt
       onModelOutput: onModelOutput,
       cancellationToken: cancellationToken,
     );
-    await _storage.saveSnapshot(workspace.rootPath, updated);
+    await _repository.saveSnapshot(workspace.rootPath, updated);
     return updated;
   }
 
@@ -965,7 +965,7 @@ $userPrompt
       rootFiles: rootFiles,
       gitAvailable: rootFiles.contains('.git'),
       commandExecutionApproved: workspace.commandExecutionApproved,
-      existingTaskIds: (await _storage.listTasks(
+      existingTaskIds: (await _repository.listTasks(
         workspace.rootPath,
         chatSessionId: chatSessionId,
       )).map((task) => task.id).toList(),
@@ -1487,7 +1487,7 @@ ${_encoder.convert(ModelJson.encode(task))}
       }
     }
 
-    await _storage.saveLog(
+    await _repository.saveLog(
       workspace.rootPath,
       task.id,
       '${step.id}-${run.runId}.md',

@@ -14,13 +14,15 @@ import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
+import 'package:hermes/core/services/chat_library_repository.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
-import 'package:hermes/core/services/task_system/task_storage_service.dart';
+import 'package:hermes/core/services/task_system/task_repository.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/preferences_service.dart';
+import 'package:hermes/core/services/system_prompt_library_repository.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
@@ -42,10 +44,11 @@ void main() {
       SharedPreferences.setMockInitialValues({});
       tempDir = await Directory.systemTemp.createTemp('hermes_chat_service_');
       preferences = PreferencesService();
-      chatLibrary = ChatLibraryService(
+      final chatLibraryRepository = ChatLibraryRepository(
         preferencesService: preferences,
         databasePath: path.join(tempDir.path, 'hermes.db'),
       );
+      chatLibrary = ChatLibraryService(repository: chatLibraryRepository);
       serverManager = LlamaServerManager();
       final sandbox = WorkspaceSandbox();
       final toolService = ToolService(workspaceSandbox: sandbox);
@@ -87,6 +90,20 @@ void main() {
       expect(systemText, startsWith('Review code carefully.'));
       expect(systemText, contains('This chat has an attached workspace.'));
       expect(systemText, contains(tempDir.path));
+    });
+
+    test('uses workspace tools attached after chat construction', () async {
+      final client = _RecordingStreamClient();
+      serverManager.chatClient = client;
+      await chat.attachWorkspace(tempDir.path);
+
+      await chat.send('Inspect the workspace');
+      final extraParams = await client.extraParams.future.timeout(
+        const Duration(seconds: 2),
+      );
+
+      expect(_toolNames(extraParams), contains('list_directory'));
+      expect(_toolNames(extraParams), contains('read_file'));
     });
 
     test('locks prompt changes after meaningful content or save', () async {
@@ -280,7 +297,7 @@ void main() {
       chat.activeProject = _projectDocument();
       await ProjectService(
         taskService: _createTaskService(),
-      ).storage.saveSnapshot(tempDir.path, chat.activeProject!);
+      ).repository.saveSnapshot(tempDir.path, chat.activeProject!);
 
       await chat.send('/continue-project');
 
@@ -588,7 +605,7 @@ void main() {
         expect(
           (await ProjectService(
             taskService: _createTaskService(),
-          ).storage.listProjects(tempDir.path)),
+          ).repository.listProjects(tempDir.path)),
           hasLength(1),
         );
       },
@@ -604,7 +621,7 @@ void main() {
       ]);
       await chat.attachWorkspace(tempDir.path);
       chat.activeTask = _taskDocument();
-      await TaskStorageService().saveSnapshot(tempDir.path, chat.activeTask!);
+      await TaskRepository().saveSnapshot(tempDir.path, chat.activeTask!);
 
       await chat.send('/continue');
 
@@ -620,6 +637,7 @@ void main() {
     late Directory tempDir;
     late PreferencesService preferences;
     late ChatLibraryService chatLibrary;
+    late SystemPromptLibraryRepository promptLibraryRepository;
     late SystemPromptLibraryService promptLibrary;
     late ChatTabsService tabs;
 
@@ -628,13 +646,17 @@ void main() {
       tempDir = await Directory.systemTemp.createTemp('hermes_chat_tabs_');
       final databasePath = path.join(tempDir.path, 'hermes.db');
       preferences = PreferencesService();
-      chatLibrary = ChatLibraryService(
+      final chatLibraryRepository = ChatLibraryRepository(
+        preferencesService: preferences,
+        databasePath: databasePath,
+      );
+      chatLibrary = ChatLibraryService(repository: chatLibraryRepository);
+      promptLibraryRepository = SystemPromptLibraryRepository(
         preferencesService: preferences,
         databasePath: databasePath,
       );
       promptLibrary = SystemPromptLibraryService(
-        preferencesService: preferences,
-        databasePath: databasePath,
+        repository: promptLibraryRepository,
       );
       final sandbox = WorkspaceSandbox();
       final toolService = ToolService(workspaceSandbox: sandbox);
@@ -731,7 +753,7 @@ void main() {
         id: 'task_orphaned',
         chatSessionId: 'deleted_chat',
       );
-      await TaskStorageService().saveSnapshot(tempDir.path, orphaned);
+      await TaskRepository().saveSnapshot(tempDir.path, orphaned);
       final taskDir = Directory(
         path.join(tempDir.path, '.agent', 'tasks', 'task_orphaned'),
       );
@@ -751,7 +773,7 @@ void main() {
       );
       await ProjectService(
         taskService: _createTaskService(),
-      ).storage.saveSnapshot(tempDir.path, orphaned);
+      ).repository.saveSnapshot(tempDir.path, orphaned);
       final projectDir = Directory(
         path.join(tempDir.path, '.agent', 'projects', 'project_orphaned'),
       );
@@ -930,6 +952,44 @@ class _QueueChatClient extends ChatClient {
 
   @override
   void dispose() {}
+}
+
+class _RecordingStreamClient extends ChatClient {
+  _RecordingStreamClient() : super(baseUrl: 'http://localhost', model: 'test');
+
+  final Completer<Map<String, dynamic>> extraParams = Completer();
+
+  @override
+  Stream<ChatToken> streamMessage({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+  }) async* {
+    if (!this.extraParams.isCompleted) {
+      this.extraParams.complete(extraParams ?? const {});
+    }
+    yield ChatToken(content: 'Done.');
+  }
+
+  @override
+  Future<ChatCompletionResponse> completeChat({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+  }) {
+    throw UnsupportedError('This test client only supports streaming.');
+  }
+
+  @override
+  void dispose() {}
+}
+
+Set<String> _toolNames(Map<String, dynamic>? extraParams) {
+  final tools = extraParams?['tools'];
+  if (tools is! List) return const {};
+  return {
+    for (final tool in tools.whereType<Map>())
+      if (tool['function'] is Map)
+        ((tool['function'] as Map)['name'] ?? '').toString(),
+  }..remove('');
 }
 
 class _QueueCompletionClient extends ChatClient {

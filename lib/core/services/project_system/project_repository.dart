@@ -5,12 +5,19 @@ import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:path/path.dart' as path;
 
-class ProjectStorageService {
+/// Repository responsible for all project data access, JSON mapping,
+/// and file system interactions.
+class ProjectRepository {
   static const String projectsRoot = '.agent/projects';
   static const String documentFileName = 'project.json';
 
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
 
+  // ── Listing ──────────────────────────────────────────────────────────
+
+  /// Lists project summaries in the given workspace root, optionally
+  /// filtered by [chatSessionId]. Returns an empty list when no projects
+  /// directory exists.
   Future<List<ProjectSummary>> listProjects(
     String workspaceRoot, {
     String? chatSessionId,
@@ -48,6 +55,9 @@ class ProjectStorageService {
     return summaries;
   }
 
+  /// Loads the most recently updated project in [workspaceRoot],
+  /// optionally filtered by [chatSessionId]. Returns `null` when no
+  /// matching project exists.
   Future<ProjectDocument?> loadLatestProject(
     String workspaceRoot, {
     String? chatSessionId,
@@ -64,6 +74,12 @@ class ProjectStorageService {
     );
   }
 
+  // ── Loading ──────────────────────────────────────────────────────────
+
+  /// Loads a single project by [projectId] from the given workspace root.
+  /// Returns `null` when the project does not exist or its
+  /// [chatSessionId] does not match (when provided). Performs an
+  /// in-place schema migration if the stored version is stale.
   Future<ProjectDocument?> loadProject(
     String workspaceRoot,
     String projectId, {
@@ -89,6 +105,10 @@ class ProjectStorageService {
     return project;
   }
 
+  // ── Saving ───────────────────────────────────────────────────────────
+
+  /// Persists [project] to disk under the given workspace root. Creates
+  /// the project directory if it does not already exist.
   Future<void> saveSnapshot(
     String workspaceRoot,
     ProjectDocument project,
@@ -101,6 +121,11 @@ class ProjectStorageService {
     );
   }
 
+  // ── Deletion ─────────────────────────────────────────────────────────
+
+  /// Deletes a single project directory. Returns `true` when the project
+  /// was deleted, `false` when it did not exist. Throws [ArgumentError]
+  /// if [projectId] resolves outside the projects root (path traversal).
   Future<bool> deleteProject(String workspaceRoot, String projectId) async {
     final root = Directory(path.join(workspaceRoot, projectsRoot));
     final dir = _projectDirectory(workspaceRoot, projectId);
@@ -110,6 +135,8 @@ class ProjectStorageService {
     return true;
   }
 
+  /// Deletes all projects associated with [chatSessionId]. Returns the
+  /// number of projects deleted.
   Future<int> deleteProjectsForChatSession(
     String workspaceRoot, {
     required String chatSessionId,
@@ -125,6 +152,8 @@ class ProjectStorageService {
     return deleted;
   }
 
+  /// Deletes all projects whose [chatSessionId] is not in
+  /// [retainedChatSessionIds]. Returns the number of projects deleted.
   Future<int> deleteOrphanedChatProjects(
     String workspaceRoot, {
     required Set<String> retainedChatSessionIds,
@@ -142,10 +171,17 @@ class ProjectStorageService {
     return deleted;
   }
 
+  // ── Auxiliary paths ──────────────────────────────────────────────────
+
+  /// Returns a POSIX-style relative path for a file inside a project's
+  /// directory (e.g. `".agent/projects/<id>/<fileName>"`).
   String projectRelativePath(String projectId, String fileName) {
     return path.posix.join(projectsRoot, projectId, fileName);
   }
 
+  /// Writes [content] to a log file named [name] inside the given
+  /// project's `logs/` directory. Throws [ArgumentError] if [name] is
+  /// not a plain filename (contains slashes or is absolute).
   Future<void> saveLog(
     String workspaceRoot,
     String projectId,
@@ -161,6 +197,8 @@ class ProjectStorageService {
     await dir.create(recursive: true);
     await _writeText(File(path.join(dir.path, name)), content);
   }
+
+  // ── Private helpers ──────────────────────────────────────────────────
 
   Directory _projectDirectory(String workspaceRoot, String projectId) {
     return Directory(path.join(workspaceRoot, projectsRoot, projectId));

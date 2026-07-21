@@ -3,9 +3,12 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
+import 'package:hermes/core/services/chat_library_repository.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/project_system/project_service.dart';
+import 'package:hermes/core/services/system_prompt_library_repository.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
+import 'package:hermes/core/services/task_system/task_repository.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/theme_manager.dart';
 import 'package:hermes/core/services/tool_service.dart';
@@ -36,16 +39,24 @@ class AppDependencies {
     final themeManager = ThemeManager(preferencesService: preferencesService);
     final workspaceService = WorkspaceService(sandbox: workspaceSandbox);
     final toolService = ToolService(workspaceSandbox: workspaceSandbox);
+    final taskRepository = TaskRepository();
     final taskService = TaskService(
       toolService: toolService,
       sandbox: workspaceSandbox,
+      repository: taskRepository,
     );
     final projectService = ProjectService(taskService: taskService);
+    final chatLibraryRepository = ChatLibraryRepository(
+      preferencesService: preferencesService,
+    );
     final chatLibraryService = ChatLibraryService(
+      repository: chatLibraryRepository,
+    );
+    final systemPromptLibraryRepository = SystemPromptLibraryRepository(
       preferencesService: preferencesService,
     );
     final systemPromptLibraryService = SystemPromptLibraryService(
-      preferencesService: preferencesService,
+      repository: systemPromptLibraryRepository,
     );
     final chatTabsService = ChatTabsService(
       chatLibrary: chatLibraryService,

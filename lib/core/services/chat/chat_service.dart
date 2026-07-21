@@ -3,9 +3,6 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:hermes/core/enums/message_role.dart';
-import 'package:hermes/core/enums/stream_state.dart';
-import 'package:hermes/core/services/chat/chat_stream.dart';
-import 'package:hermes/core/helpers/chat/compaction_manager.dart';
 import 'package:hermes/core/helpers/chat/context_estimator.dart';
 import 'package:hermes/core/helpers/chat/throttled_scheduler.dart';
 import 'package:hermes/core/helpers/uuid.dart';
@@ -20,10 +17,10 @@ import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/helpers/chat/assistant_ops.dart';
 import 'package:hermes/core/helpers/chat/content_normaliser.dart';
-import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
+import 'package:hermes/core/services/chat/chat_session_manager.dart';
+import 'package:hermes/core/services/chat/chat_stream.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
-import 'package:hermes/core/helpers/chat/tool_caller.dart';
 import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
@@ -37,7 +34,8 @@ import 'package:hermes/core/services/workspace_service.dart';
 
 import '../disposable.dart';
 
-class ChatService extends ChangeNotifier implements Disposable {
+class ChatService extends ChangeNotifier
+    implements Disposable, ChatSessionCallbacks {
   static const String defaultSystemPromptName = 'Default';
   static const String defaultSystemPromptText = 'You are a helpful assistant.';
   static const Duration _contextEstimateThrottle = Duration(milliseconds: 500);
@@ -48,7 +46,7 @@ class ChatService extends ChangeNotifier implements Disposable {
   final String tabId;
   final LlamaServerManager serverManager;
   final MessageStore messageStore = MessageStore();
-  final ChatStream chatStream = ChatStream<ChatToken>();
+  final ChatStream<ChatToken> chatStream = ChatStream<ChatToken>();
 
   final ToolService _toolService;
   final TaskService _taskService;
@@ -74,6 +72,10 @@ class ChatService extends ChangeNotifier implements Disposable {
   Future<void> _saveChain = Future.value();
   String _chatSessionScopeId = uuid.v7();
 
+  // ── ChatSessionManager instance ─────────────────────────────────────────
+
+  late final ChatSessionManager _session;
+
   String? currentChatId;
   SavedChat? currentSavedChat;
   ModelConfigurationSnapshot? currentModelSnapshot;
@@ -98,7 +100,6 @@ class ChatService extends ChangeNotifier implements Disposable {
   String? _taskModelOutputLabel;
   String? _taskModelOutputTextSection;
   String? _taskModelOutputReasoningLabel;
-  String? _taskModelOutputMessageId;
   int? _taskModelOutputContextEstimate;
   TaskCancellationToken? _taskCancellationToken;
   late final ThrottledScheduler _contextEstimateScheduler;
@@ -126,6 +127,7 @@ class ChatService extends ChangeNotifier implements Disposable {
        _projectService = projectService {
     currentSystemPromptSnapshot = initialSystemPromptSnapshot;
     messageStore.setMessages([systemPrompt]);
+
     _contextEstimateScheduler = ThrottledScheduler(
       interval: _contextEstimateThrottle,
       onTick: _updateContextEstimate,
@@ -140,8 +142,113 @@ class ChatService extends ChangeNotifier implements Disposable {
     _preferencesService.addListener(_handlePreferencesChanged);
     unawaited(_loadTaskSystemSettings());
     chatStream.onStop = serverManager.diagnostics.recordStreamEnded;
+
     currentModelSnapshot = _activeServerSnapshot;
+
+    // Initialize the session manager with all streaming/LLM dependencies
+    _session = ChatSessionManager(
+      messageStore: messageStore,
+      chatStream: chatStream,
+      serverManager: serverManager,
+      toolService: _toolService,
+      preferencesService: _preferencesService,
+      callbacks: this,
+    );
   }
+
+  // ── ChatSessionCallbacks implementation ─────────────────────────────────
+
+  @override
+  void onNotifyListeners() => notifyListeners();
+
+  @override
+  bool onIsDisposed() => _disposed;
+
+  @override
+  bool onIsTaskModelOutputActive() => taskModelOutputActive;
+
+  @override
+  int? onGetTaskModelOutputContextEstimate() => _taskModelOutputContextEstimate;
+
+  @override
+  WorkspaceAttachment? onGetWorkspace() => workspace;
+
+  @override
+  ModelConfigurationSnapshot? onGetCurrentModelSnapshot() =>
+      currentModelSnapshot;
+
+  @override
+  int? onGetDiagnosticsContextLimit() => _diagnosticsContextLimit;
+
+  @override
+  List<String> onGetDefaultToolIds() => defaultToolIds;
+
+  @override
+  bool onGetWorkspaceToolsEnabled() => workspaceToolsEnabled;
+
+  @override
+  String onBuildSystemPrompt({String? currentUserRequest}) =>
+      _buildSystemPrompt(currentUserRequest: currentUserRequest);
+
+  @override
+  void onWorkspaceChanged() {
+    if (currentChatId != null) {
+      _dirty = true;
+      _scheduleAutosave();
+    }
+    notifyListeners();
+  }
+
+  // Task model output state accessors/mutators
+  @override
+  String? onGetTaskModelOutputLabel() => _taskModelOutputLabel;
+
+  @override
+  void onSetTaskModelOutputLabel(String? label) {
+    _taskModelOutputLabel = label;
+  }
+
+  @override
+  String? onGetTaskModelOutputTextSection() => _taskModelOutputTextSection;
+
+  @override
+  void onSetTaskModelOutputTextSection(String? section) {
+    _taskModelOutputTextSection = section;
+  }
+
+  @override
+  String onGetTaskModelOutputReasoning() => taskModelOutputReasoning;
+
+  @override
+  void onSetTaskModelOutputReasoning(String reasoning) {
+    taskModelOutputReasoning = reasoning;
+  }
+
+  @override
+  void onAppendTaskModelText(String text) {
+    taskModelOutputText += text;
+  }
+
+  @override
+  void onAppendTaskModelOutputText(String text) {
+    taskModelOutputText += text;
+  }
+
+  @override
+  void onRequestContextEstimateUpdate({bool immediate = false}) {
+    _requestContextEstimateUpdate(immediate: immediate);
+  }
+
+  @override
+  String? onGetTaskModelOutputReasoningLabel() =>
+      _taskModelOutputReasoningLabel;
+
+  @override
+  void onSetTaskModelOutputReasoningLabel(String label) {
+    _taskModelOutputReasoningLabel = label;
+  }
+
+  // ── Public API (session management + orchestration) ─────────────────────
 
   bool get isDirty => _dirty;
 
@@ -523,7 +630,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       ),
     );
 
-    await _streamAssistantResponse(
+    await _session.streamAssistantResponse(
       includeToolResults: false,
       addGenerationPrompt: true,
       selectedToolIds: tools ?? const [],
@@ -556,7 +663,7 @@ class ChatService extends ChangeNotifier implements Disposable {
         ? lastMessage.id
         : null;
 
-    await _streamAssistantResponse(
+    await _session.streamAssistantResponse(
       includeToolResults: false,
       addGenerationPrompt: lastMessage.role != MessageRole.assistant,
       selectedToolIds: tools ?? const [],
@@ -583,15 +690,7 @@ class ChatService extends ChangeNotifier implements Disposable {
   }
 
   Future<void> cancelGeneration() async {
-    if (!chatStream.isStreaming) return;
-
-    final current = messageStore.currentMessage;
-    if (current != null) {
-      messageStore.upsert(ContentNormaliser.normalise(current));
-    }
-
-    messageStore.clearCurrentId();
-    await chatStream.stop();
+    await _session.cancelGeneration();
   }
 
   Future<void> cancelTaskRun() async {
@@ -765,6 +864,8 @@ class ChatService extends ChangeNotifier implements Disposable {
   Future<void> planActiveTask({bool runAfterPlanning = false}) async {
     if (runAfterPlanning) await runTask();
   }
+
+  // ── Task orchestration ──────────────────────────────────────────────────
 
   Future<void> _runTaskInternal({bool keepBusy = false}) async {
     final currentWorkspace = workspace;
@@ -995,43 +1096,39 @@ class ChatService extends ChangeNotifier implements Disposable {
     switch (command.name) {
       case 'task':
         if (command.argument.trim().isEmpty) {
-          _insertUserAndAssistant(
+          _session.insertUserAndAssistant(
             command.raw,
             'Usage: `/task <request>` creates and runs a structured task.',
           );
           return;
         }
         await _startTaskFromPrompt(command.argument, runFirstPhase: true);
-        break;
       case 'plan':
         if (command.argument.trim().isEmpty) {
-          _insertUserAndAssistant(
+          _session.insertUserAndAssistant(
             command.raw,
             'Usage: `/plan <request>` creates a task plan without running it.',
           );
           return;
         }
         await _startTaskFromPrompt(command.argument, runFirstPhase: false);
-        break;
       case 'refine':
         await _refinePromptFromCommand(command);
-        break;
       case 'continue':
         await _continueTaskFromCommand(command.raw);
-        break;
       case 'project':
         if (command.argument.trim().isEmpty) {
-          _insertUserAndAssistant(
+          _session.insertUserAndAssistant(
             command.raw,
             'Usage: `/project <goal>` creates and runs a supervised project.',
           );
           return;
         }
         await _startProjectFromPrompt(command.argument, runAfterCreation: true);
-        break;
       case 'continue-project':
         await _continueProjectFromCommand(command.raw);
-        break;
+      default:
+        throw StateError('Unknown slash command: ${command.name}');
     }
   }
 
@@ -1041,14 +1138,14 @@ class ChatService extends ChangeNotifier implements Disposable {
 
     final prompt = command.argument.trim();
     if (prompt.isEmpty) {
-      _insertUserAndAssistant(
+      _session.insertUserAndAssistant(
         command.raw,
         'Usage: `/refine <request>` creates a Task Brief without planning or running a task.',
       );
       return;
     }
     if (!await _taskSystemEnabled()) {
-      _insertUserAndAssistant(
+      _session.insertUserAndAssistant(
         command.raw,
         'Structured tasks are disabled in Settings.',
       );
@@ -1107,7 +1204,7 @@ class ChatService extends ChangeNotifier implements Disposable {
 
   Future<void> _continueTaskFromCommand(String rawCommand) async {
     if (!await _taskSystemEnabled()) {
-      _insertUserAndAssistant(
+      _session.insertUserAndAssistant(
         rawCommand,
         'Structured tasks are disabled in Settings.',
       );
@@ -1167,7 +1264,7 @@ class ChatService extends ChangeNotifier implements Disposable {
 
   Future<void> _continueProjectFromCommand(String rawCommand) async {
     if (!await _taskSystemEnabled()) {
-      _insertUserAndAssistant(
+      _session.insertUserAndAssistant(
         rawCommand,
         'Structured tasks are disabled in Settings.',
       );
@@ -1234,7 +1331,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     if (client == null) return;
     final settings = await _refreshTaskSystemSettings();
     if (!settings.enabled) {
-      _insertUserAndAssistant(
+      _session.insertUserAndAssistant(
         prompt,
         'Structured tasks are disabled in Settings.',
       );
@@ -1407,15 +1504,206 @@ class ChatService extends ChangeNotifier implements Disposable {
     }
   }
 
-  Future<String> readTaskArtifact(String artifactPath) async {
+  Future<void> _runNextTaskStepInternal({bool keepBusy = false}) async {
     final currentWorkspace = workspace;
-    if (currentWorkspace == null || currentWorkspace.missing) {
-      throw StateError('No active workspace is attached.');
+    final client = serverManager.chatClient;
+    final snapshot = activeTask;
+    if (currentWorkspace == null ||
+        currentWorkspace.missing ||
+        client == null ||
+        snapshot == null ||
+        taskBusy && !keepBusy) {
+      return;
     }
-    return _taskService.readArtifact(
-      workspace: currentWorkspace,
-      artifactPath: artifactPath,
+
+    final nextStep = snapshot.nextRunnableStep;
+    if (nextStep == null) {
+      _insertTaskAssistantMessage(
+        'Task `${snapshot.title}` has no pending steps.',
+      );
+      return;
+    }
+
+    final token = _beginTaskCancellationScope(reuseExisting: keepBusy);
+
+    if (!keepBusy) {
+      taskBusy = true;
+      taskError = null;
+      _beginTaskModelOutput('Task Step Model Output');
+      notifyListeners();
+    }
+    taskStatusMessage = 'Running step ${nextStep.id}: ${nextStep.title}';
+    notifyListeners();
+
+    try {
+      final compactionSettings = await _preferencesService
+          .getCompactionSettings();
+      final updated = await _taskService.runNextStep(
+        client: client,
+        workspace: currentWorkspace,
+        snapshot: snapshot,
+        baseSystemPrompt: _buildTaskSystemPrompt(snapshot),
+        requirePhaseApproval: taskSystemSettings.requireApprovalBeforeFileEdits,
+        questionAutonomy: taskSystemSettings.questionAutonomy,
+        compactionSettings: compactionSettings,
+        contextLimitTokens: _diagnosticsContextLimit,
+        onCompactionStatus: (status) {
+          taskStatusMessage = status;
+          notifyListeners();
+        },
+        onModelOutput: _handleTaskModelOutput,
+        cancellationToken: token,
+      );
+      activeTask = updated;
+      await reloadTasks();
+      _insertTaskAssistantMessage(_stepFinishedMessage(updated));
+    } on TaskCancelledException {
+      _insertTaskAssistantMessage('Task step cancelled.');
+    } catch (e) {
+      taskError = e;
+      _insertTaskErrorBubble('Failed to run task step: $e');
+    } finally {
+      if (!keepBusy) {
+        taskBusy = false;
+        _endTaskCancellationScope(token);
+        taskStatusMessage = null;
+        _finishTaskModelOutput();
+        notifyListeners();
+      }
+    }
+  }
+
+  // ── Task creation (shared by send() in task/project mode and slash commands) ──
+
+  Future<void> _startTaskFromPrompt(
+    String prompt, {
+    required bool runFirstPhase,
+  }) async {
+    final currentWorkspace = workspace;
+    final client = serverManager.chatClient;
+    if (client == null) return;
+    final settings = await _refreshTaskSystemSettings();
+    if (!settings.enabled) {
+      _session.insertUserAndAssistant(
+        prompt,
+        'Structured tasks are disabled in Settings.',
+      );
+      return;
+    }
+
+    _adoptActiveModelIfRestoreDismissed();
+    messageStore.upsert(
+      Bubble(
+        id: uuid.v7(),
+        role: MessageRole.user,
+        text: prompt,
+        reasoning: '',
+        createdAt: DateTime.now(),
+      ),
     );
+
+    if (currentWorkspace == null || currentWorkspace.missing) {
+      messageStore.upsert(
+        Bubble(
+          id: uuid.v7(),
+          role: MessageRole.assistant,
+          text:
+              'Task mode needs an attached workspace so it can persist `.agent/tasks` artifacts. Attach a workspace and try again.',
+          reasoning: '',
+          createdAt: DateTime.now(),
+        ),
+      );
+      return;
+    }
+
+    taskBusy = true;
+    final token = _beginTaskCancellationScope();
+    taskError = null;
+    taskStatusMessage = runFirstPhase
+        ? 'Creating task plan and preparing first phase...'
+        : 'Creating task plan...';
+    _beginTaskModelOutput('Task Creation Model Output');
+    notifyListeners();
+
+    try {
+      final scopeId = await _ensureTaskScopeId();
+      final snapshot = await _taskService.createTask(
+        client: client,
+        workspace: currentWorkspace,
+        userPrompt: prompt,
+        selectedMode: ExecutionMode.task,
+        baseSystemPrompt: _buildSystemPrompt(currentUserRequest: prompt),
+        chatSessionId: scopeId,
+        onModelOutput: _handleTaskModelOutput,
+        cancellationToken: token,
+      );
+      activeTask = snapshot;
+      await reloadTasks();
+      _insertTaskAssistantMessage(_taskCreatedMessage(snapshot));
+
+      if (runFirstPhase) {
+        activeTask = snapshot;
+        await _runTaskInternal(keepBusy: true);
+      }
+    } on TaskCancelledException {
+      _insertTaskAssistantMessage('Task creation cancelled.');
+    } catch (e) {
+      taskError = e;
+      _insertTaskErrorBubble('Failed to create task: $e');
+    } finally {
+      taskBusy = false;
+      _endTaskCancellationScope(token);
+      taskStatusMessage = null;
+      _finishTaskModelOutput();
+      notifyListeners();
+    }
+  }
+
+  // ── Business operations delegated to other services ─────────────────────
+
+  Future<void> replanRemainingTask() async {
+    final currentWorkspace = workspace;
+    final client = serverManager.chatClient;
+    final snapshot = activeTask;
+    if (currentWorkspace == null ||
+        currentWorkspace.missing ||
+        client == null ||
+        snapshot == null ||
+        taskBusy) {
+      return;
+    }
+
+    taskBusy = true;
+    final token = _beginTaskCancellationScope();
+    taskError = null;
+    taskStatusMessage = 'Replanning unfinished work...';
+    _beginTaskModelOutput('Replan Model Output');
+    notifyListeners();
+    try {
+      activeTask = await _taskService.replanUnfinished(
+        client: client,
+        workspace: currentWorkspace,
+        snapshot: snapshot,
+        baseSystemPrompt: _buildTaskSystemPrompt(snapshot),
+        onModelOutput: _handleTaskModelOutput,
+        cancellationToken: token,
+      );
+      await reloadTasks();
+      _insertTaskAssistantMessage(
+        'Unfinished work replanned for **${activeTask!.title}**. Next step: `${activeTask!.currentStepId ?? 'none'}`.',
+      );
+    } on TaskCancelledException {
+      _insertTaskAssistantMessage('Replan cancelled.');
+    } catch (e) {
+      taskError = e;
+      rethrow;
+    } finally {
+      taskBusy = false;
+      _endTaskCancellationScope(token);
+      taskStatusMessage = null;
+      _finishTaskModelOutput();
+      notifyListeners();
+    }
   }
 
   Future<void> updateTaskTaskBrief(String rawJson) async {
@@ -1494,491 +1782,18 @@ class ChatService extends ChangeNotifier implements Disposable {
     }
   }
 
-  Future<void> replanRemainingTask() async {
+  Future<String> readTaskArtifact(String artifactPath) async {
     final currentWorkspace = workspace;
-    final client = serverManager.chatClient;
-    final snapshot = activeTask;
-    if (currentWorkspace == null ||
-        currentWorkspace.missing ||
-        client == null ||
-        snapshot == null ||
-        taskBusy) {
-      return;
-    }
-
-    taskBusy = true;
-    final token = _beginTaskCancellationScope();
-    taskError = null;
-    taskStatusMessage = 'Replanning unfinished work...';
-    _beginTaskModelOutput('Replan Model Output');
-    notifyListeners();
-    try {
-      activeTask = await _taskService.replanUnfinished(
-        client: client,
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-        baseSystemPrompt: _buildTaskSystemPrompt(snapshot),
-        onModelOutput: _handleTaskModelOutput,
-        cancellationToken: token,
-      );
-      await reloadTasks();
-      _insertTaskAssistantMessage(
-        'Unfinished work replanned for **${activeTask!.title}**. Next step: `${activeTask!.currentStepId ?? 'none'}`.',
-      );
-    } on TaskCancelledException {
-      _insertTaskAssistantMessage('Replan cancelled.');
-    } catch (e) {
-      taskError = e;
-      rethrow;
-    } finally {
-      taskBusy = false;
-      _endTaskCancellationScope(token);
-      taskStatusMessage = null;
-      _finishTaskModelOutput();
-      notifyListeners();
-    }
-  }
-
-  Future<void> _startTaskFromPrompt(
-    String prompt, {
-    required bool runFirstPhase,
-  }) async {
-    final currentWorkspace = workspace;
-    final client = serverManager.chatClient;
-    if (client == null) return;
-    final settings = await _refreshTaskSystemSettings();
-    if (!settings.enabled) {
-      _insertUserAndAssistant(
-        prompt,
-        'Structured tasks are disabled in Settings.',
-      );
-      return;
-    }
-
-    _adoptActiveModelIfRestoreDismissed();
-    messageStore.upsert(
-      Bubble(
-        id: uuid.v7(),
-        role: MessageRole.user,
-        text: prompt,
-        reasoning: '',
-        createdAt: DateTime.now(),
-      ),
-    );
-
     if (currentWorkspace == null || currentWorkspace.missing) {
-      messageStore.upsert(
-        Bubble(
-          id: uuid.v7(),
-          role: MessageRole.assistant,
-          text:
-              'Task mode needs an attached workspace so it can persist `.agent/tasks` artifacts. Attach a workspace and try again.',
-          reasoning: '',
-          createdAt: DateTime.now(),
-        ),
-      );
-      return;
+      throw StateError('No active workspace is attached.');
     }
-
-    taskBusy = true;
-    final token = _beginTaskCancellationScope();
-    taskError = null;
-    taskStatusMessage = runFirstPhase
-        ? 'Creating task plan and preparing first phase...'
-        : 'Creating task plan...';
-    _beginTaskModelOutput('Task Creation Model Output');
-    notifyListeners();
-
-    try {
-      final scopeId = await _ensureTaskScopeId();
-      final snapshot = await _taskService.createTask(
-        client: client,
-        workspace: currentWorkspace,
-        userPrompt: prompt,
-        selectedMode: ExecutionMode.task,
-        baseSystemPrompt: _buildSystemPrompt(currentUserRequest: prompt),
-        chatSessionId: scopeId,
-        onModelOutput: _handleTaskModelOutput,
-        cancellationToken: token,
-      );
-      activeTask = snapshot;
-      await reloadTasks();
-      _insertTaskAssistantMessage(_taskCreatedMessage(snapshot));
-
-      if (runFirstPhase) {
-        activeTask = snapshot;
-        await _runTaskInternal(keepBusy: true);
-      }
-    } on TaskCancelledException {
-      _insertTaskAssistantMessage('Task creation cancelled.');
-    } catch (e) {
-      taskError = e;
-      _insertTaskErrorBubble('Failed to create task: $e');
-    } finally {
-      taskBusy = false;
-      _endTaskCancellationScope(token);
-      taskStatusMessage = null;
-      _finishTaskModelOutput();
-      notifyListeners();
-    }
-  }
-
-  Future<void> _runNextTaskStepInternal({bool keepBusy = false}) async {
-    final currentWorkspace = workspace;
-    final client = serverManager.chatClient;
-    final snapshot = activeTask;
-    if (currentWorkspace == null ||
-        currentWorkspace.missing ||
-        client == null ||
-        snapshot == null ||
-        taskBusy && !keepBusy) {
-      return;
-    }
-
-    final nextStep = snapshot.nextRunnableStep;
-    if (nextStep == null) {
-      _insertTaskAssistantMessage(
-        'Task `${snapshot.title}` has no pending steps.',
-      );
-      return;
-    }
-
-    final token = _beginTaskCancellationScope(reuseExisting: keepBusy);
-
-    if (!keepBusy) {
-      taskBusy = true;
-      taskError = null;
-      _beginTaskModelOutput('Task Step Model Output');
-      notifyListeners();
-    }
-    taskStatusMessage = 'Running step ${nextStep.id}: ${nextStep.title}';
-    notifyListeners();
-
-    try {
-      final compactionSettings = await _preferencesService
-          .getCompactionSettings();
-      final updated = await _taskService.runNextStep(
-        client: client,
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-        baseSystemPrompt: _buildTaskSystemPrompt(snapshot),
-        requirePhaseApproval: taskSystemSettings.requireApprovalBeforeFileEdits,
-        questionAutonomy: taskSystemSettings.questionAutonomy,
-        compactionSettings: compactionSettings,
-        contextLimitTokens: _diagnosticsContextLimit,
-        onCompactionStatus: (status) {
-          taskStatusMessage = status;
-          notifyListeners();
-        },
-        onModelOutput: _handleTaskModelOutput,
-        cancellationToken: token,
-      );
-      activeTask = updated;
-      await reloadTasks();
-      _insertTaskAssistantMessage(_stepFinishedMessage(updated));
-    } on TaskCancelledException {
-      _insertTaskAssistantMessage('Task step cancelled.');
-    } catch (e) {
-      taskError = e;
-      _insertTaskErrorBubble('Failed to run task step: $e');
-    } finally {
-      if (!keepBusy) {
-        taskBusy = false;
-        _endTaskCancellationScope(token);
-        taskStatusMessage = null;
-        _finishTaskModelOutput();
-        notifyListeners();
-      }
-    }
-  }
-
-  Future<void> _streamAssistantResponse({
-    required bool includeToolResults,
-    required bool addGenerationPrompt,
-    List<String> selectedToolIds = const [],
-    String? anchorId,
-    String? targetAssistantId,
-  }) async {
-    if (chatStream.isStreaming) return;
-    final client = serverManager.chatClient;
-    if (client == null) return;
-
-    chatStream.setState(StreamState.streaming);
-
-    final activeToolIds = selectedToolIds.isEmpty
-        ? defaultToolIds
-        : selectedToolIds;
-    final extraParams = ToolCaller.buildExtraParams(
-      addGenerationPrompt: addGenerationPrompt,
-      toolDefs: activeToolIds.isNotEmpty
-          ? _toolService.getToolDefinitions(
-              ids: activeToolIds,
-              includeWorkspaceTools: workspaceToolsEnabled,
-            )
-          : const [],
-    );
-
-    try {
-      final emergencyOmittedMessageIds = await _compactContextIfNeeded(
-        client: client,
-        extraParams: extraParams,
-      );
-
-      final targetIndex = targetAssistantId == null
-          ? -1
-          : messageStore.messages.indexWhere(
-              (m) =>
-                  m.id == targetAssistantId && m.role == MessageRole.assistant,
-            );
-
-      final contextIndex = targetIndex >= 0
-          ? targetIndex
-          : () {
-              final bubble = Bubble(
-                id: uuid.v7(),
-                role: MessageRole.assistant,
-                text: '',
-                reasoning: '',
-                createdAt: DateTime.now(),
-              );
-              messageStore.upsert(bubble);
-              messageStore.setCurrentId(bubble.id);
-
-              if (anchorId != null) {
-                final index = messageStore.messages.indexWhere(
-                  (m) => m.id == anchorId,
-                );
-                return index > 0 ? (messageStore.messages.length - 2) : index;
-              }
-
-              return messageStore.messages.length - 2;
-            }();
-
-      if (targetIndex >= 0) {
-        messageStore.setCurrentId(targetAssistantId);
-      }
-
-      final currentUserRequest = _currentUserRequestFor(contextIndex);
-      final payloadMessages = _payloadMessages(
-        currentUserRequest: currentUserRequest,
-      );
-
-      final payload = includeToolResults
-          ? PayloadBuilder.buildPayloadWithTools(
-              messages: payloadMessages,
-              upToIndexInclusive: contextIndex,
-              omitCoveredMessages: true,
-              omittedMessageIds: emergencyOmittedMessageIds,
-            )
-          : PayloadBuilder.buildPayload(
-              messages: payloadMessages,
-              upToIndexInclusive: contextIndex,
-              omitCoveredMessages: true,
-              omittedMessageIds: emergencyOmittedMessageIds,
-            );
-
-      serverManager.diagnostics.recordStreamStarted(
-        estimatedContextTokens: ContextEstimator.estimateChatCompletionRequest(
-          messages: payload,
-          extraParams: extraParams,
-        ),
-        contextLimitTokens: currentModelSnapshot?.nCtx,
-      );
-
-      final sub = client.streamMessage(
-        messages: payload,
-        extraParams: extraParams,
-      );
-
-      chatStream.attach(
-        sub.listen(
-          _handleStreamToken,
-          onError: (e, _) async => await _handleStreamTerminal(error: e),
-          onDone: () async => await _handleStreamTerminal(),
-          cancelOnError: true,
-        ),
-      );
-    } catch (e) {
-      serverManager.diagnostics.recordCompactionFailed(e);
-      messageStore.clearCurrentId();
-      await chatStream.stop(next: StreamState.error);
-      _requestContextEstimateUpdate(immediate: true);
-    }
-  }
-
-  Future<Set<String>> _compactContextIfNeeded({
-    required ChatClient client,
-    required Map<String, dynamic> extraParams,
-  }) async {
-    final snapshot = currentModelSnapshot;
-    if (snapshot == null) return const {};
-
-    final settings = await _preferencesService.getCompactionSettings();
-    final manager = CompactionManager(settings: settings, client: client);
-    if (!manager.shouldCompact(
-      messages: messageStore.messages,
-      contextLimit: snapshot.nCtx,
-      extraParams: extraParams,
-    )) {
-      return const {};
-    }
-
-    void status(String message) {
-      if (serverManager.diagnostics.compactionActive) {
-        serverManager.diagnostics.recordCompactionStatus(message);
-      } else {
-        serverManager.diagnostics.recordCompactionStarted(message);
-      }
-      notifyListeners();
-    }
-
-    final result = await manager.compactIfNeeded(
-      messageStore: messageStore,
-      contextLimit: snapshot.nCtx,
-      extraParams: extraParams,
-      onStatusChanged: status,
-    );
-
-    final finishStatus = result.emergencyPayloadTruncation
-        ? 'Emergency context truncation active for this request.'
-        : result.compacted
-        ? 'Context compaction complete.'
-        : 'Context compaction not needed.';
-    final savedTokens = result.compacted || result.emergencyPayloadTruncation
-        ? result.estimatedTokensSaved
-        : null;
-    final affectedMessages = result.compacted
-        ? result.messagesCovered
-        : result.emergencyPayloadTruncation
-        ? result.emergencyOmittedMessageIds.length
-        : null;
-
-    serverManager.diagnostics.recordCompactionFinished(
-      status: finishStatus,
-      tokensSaved: savedTokens,
-      messagesCovered: affectedMessages,
-    );
-
-    return result.emergencyOmittedMessageIds;
-  }
-
-  void _handleStreamToken(ChatToken token) {
-    serverManager.diagnostics.recordStreamOutput(_streamedText(token));
-    messageStore.appendToken(token);
-  }
-
-  String _streamedText(ChatToken token) {
-    return [
-      token.content,
-      token.reasoning,
-      token.tool?.name,
-      token.tool?.argumentsChunk,
-    ].whereType<String>().join();
-  }
-
-  Future<void> _runToolsAndContinue(List<BubbleToolCall> calls) async {
-    final assistantBubble = messageStore.currentMessage;
-
-    if (assistantBubble == null) {
-      messageStore.clearCurrentId();
-      return;
-    }
-
-    final Map<int, BubbleToolCall> updated = Map.of(assistantBubble.tools);
-
-    for (final entry in assistantBubble.tools.entries) {
-      final toolIndex = entry.key;
-      final toolCall = entry.value;
-
-      final toolName = toolCall.name;
-      final argsJson = toolCall.arguments;
-
-      if (toolName == null || argsJson == null) {
-        updated[toolIndex] = toolCall.copyWith(
-          result: '{"error":"missing tool name or args"}',
-        );
-        continue;
-      }
-
-      final resultJson = await _toolService.execute(
-        toolId: toolName,
-        argumentsJson: argsJson,
-        context: hasActiveWorkspace
-            ? WorkspaceToolContext(workspace: workspace!)
-            : null,
-      );
-
-      updated[toolIndex] = toolCall.copyWith(result: resultJson);
-    }
-
-    messageStore.upsert(assistantBubble.copyWith(tools: updated));
-
-    await _streamAssistantResponse(
-      includeToolResults: true,
-      addGenerationPrompt: true,
-      selectedToolIds: const [],
-      anchorId: assistantBubble.id,
+    return _taskService.readArtifact(
+      workspace: currentWorkspace,
+      artifactPath: artifactPath,
     );
   }
 
-  Future<void> _handleStreamTerminal({Object? error}) async {
-    if (error != null) {
-      serverManager.diagnostics.recordStreamError(error);
-      messageStore.appendCurrentError(error);
-      messageStore.clearCurrentId();
-      await chatStream.stop(next: StreamState.error);
-      _requestContextEstimateUpdate(immediate: true);
-      return;
-    }
-
-    if (messageStore.currentMessage != null) {
-      messageStore.upsert(
-        ContentNormaliser.normalise(messageStore.currentMessage!),
-      );
-    }
-
-    await chatStream.stop();
-    serverManager.diagnostics.recordStreamEnded();
-    _requestContextEstimateUpdate(immediate: true);
-
-    final toolCalls = ToolCaller.extractToolCalls(messageStore.currentMessage);
-    if (toolCalls.isNotEmpty) {
-      try {
-        await _runToolsAndContinue(toolCalls);
-      } catch (e) {
-        messageStore.appendCurrentError(e);
-        messageStore.clearCurrentId();
-        await chatStream.stop(next: StreamState.error);
-        _requestContextEstimateUpdate(immediate: true);
-      }
-
-      return;
-    }
-
-    messageStore.clearCurrentId();
-  }
-
-  @override
-  Future<void> dispose() async {
-    if (_disposed) return;
-
-    messageStore.removeListener(_handleMessagesChanged);
-    _preferencesService.removeListener(_handlePreferencesChanged);
-    _contextEstimateScheduler.cancel();
-    _taskModelOutputNotifier.cancel();
-    _autosaveTimer?.cancel();
-    await flushCurrentChat();
-    await _deleteTransientTasksForCurrentScope();
-    await _deleteTransientProjectsForCurrentScope();
-    _disposed = true;
-    messageStore.clearCurrentId();
-    messageStore.clearToolBuffers();
-    try {
-      await chatStream.stop();
-    } finally {
-      super.dispose();
-    }
-  }
+  // ── Session state management ────────────────────────────────────────────
 
   void _handleMessagesChanged() {
     _requestContextEstimateUpdate();
@@ -2095,7 +1910,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       blocker: null,
       updatedAt: DateTime.now(),
     );
-    await _projectService.storage.saveSnapshot(
+    await _projectService.repository.saveSnapshot(
       currentWorkspace.rootPath,
       activeProject!,
     );
@@ -2120,6 +1935,8 @@ class ChatService extends ChangeNotifier implements Disposable {
     taskCancellationRequested = false;
   }
 
+  // ── Task model output management ────────────────────────────────────────
+
   void _beginTaskModelOutput(String title) {
     _finishTaskModelOutputBubble(clearCurrent: true);
     taskModelOutputTitle = title;
@@ -2129,7 +1946,6 @@ class ChatService extends ChangeNotifier implements Disposable {
     _taskModelOutputLabel = null;
     _taskModelOutputTextSection = null;
     _taskModelOutputReasoningLabel = null;
-    _taskModelOutputMessageId = null;
     _taskModelOutputContextEstimate = null;
   }
 
@@ -2143,7 +1959,6 @@ class ChatService extends ChangeNotifier implements Disposable {
     _taskModelOutputLabel = null;
     _taskModelOutputTextSection = null;
     _taskModelOutputReasoningLabel = null;
-    _taskModelOutputMessageId = null;
     _taskModelOutputContextEstimate = null;
     if (notify && !_disposed) notifyListeners();
   }
@@ -2162,38 +1977,38 @@ class ChatService extends ChangeNotifier implements Disposable {
           estimatedContextTokens: event.estimatedContextTokens,
           contextLimitTokens: _diagnosticsContextLimit,
         );
-        _startTaskModelOutputBubble();
+        _session.startTaskModelOutputBubble();
         _taskModelOutputLabel = event.label;
         _taskModelOutputTextSection = null;
-        _appendTaskModelText('\n\n## ${event.label}\n');
+        taskModelOutputText += '\n\n## ${event.label}\n';
       case TaskModelOutputEventType.content:
         _ensureTaskModelTextSection(event.label, 'output');
-        _appendTaskModelText(event.text);
+        taskModelOutputText += event.text;
         serverManager.diagnostics.recordStreamOutput(event.text);
-        _appendTaskModelToken(event);
+        _session.appendTaskModelToken(event);
       case TaskModelOutputEventType.reasoning:
         _ensureTaskModelReasoningSection(event.label);
         taskModelOutputReasoning += event.text;
         serverManager.diagnostics.recordStreamOutput(event.text);
-        _appendTaskModelToken(event);
+        _session.appendTaskModelToken(event);
       case TaskModelOutputEventType.toolCall:
         _ensureTaskModelTextSection(event.label, 'tool-call');
-        _appendTaskModelText('\nTool call:\n${event.text}\n');
+        taskModelOutputText += '\nTool call:\n${event.text}\n';
         serverManager.diagnostics.recordStreamOutput(event.text);
-        _appendTaskModelToken(event);
+        _session.appendTaskModelToken(event);
       case TaskModelOutputEventType.toolResult:
         _ensureTaskModelTextSection(event.label, 'tool-result');
-        _appendTaskModelText('\nTool result:\n${event.text}\n');
-        _appendTaskToolResult(event);
+        taskModelOutputText += '\nTool result:\n${event.text}\n';
+        _session.appendTaskToolResult(event);
       case TaskModelOutputEventType.done:
         notifyImmediately = true;
         serverManager.diagnostics.recordStreamEnded();
         _taskModelOutputTextSection = null;
-        _normaliseTaskModelOutputBubble();
+        _session.normaliseTaskModelOutputBubble();
       case TaskModelOutputEventType.error:
         notifyImmediately = true;
         _ensureTaskModelTextSection(event.label, 'error');
-        _appendTaskModelText('\nError: ${event.text}\n');
+        taskModelOutputText += '\nError: ${event.text}\n';
         serverManager.diagnostics.recordStreamError(event.text);
         messageStore.appendCurrentError(event.text);
     }
@@ -2212,70 +2027,34 @@ class ChatService extends ChangeNotifier implements Disposable {
     _taskModelOutputNotifier.schedule();
   }
 
-  void _startTaskModelOutputBubble() {
-    _finishTaskModelOutputBubble(clearCurrent: true);
-    final bubble = Bubble(
-      id: uuid.v7(),
-      role: MessageRole.assistant,
-      text: '',
-      reasoning: '',
-      createdAt: DateTime.now(),
-    );
-    messageStore.upsert(bubble);
-    messageStore.setCurrentId(bubble.id);
-    _taskModelOutputMessageId = bubble.id;
-  }
-
-  void _appendTaskModelToken(TaskModelOutputEvent event) {
-    final token = event.token;
-    if (token == null) return;
-    if (!_taskModelOutputCurrentBubbleIsActive()) {
-      _startTaskModelOutputBubble();
+  void _ensureTaskModelTextSection(String label, String section) {
+    if (_taskModelOutputLabel != label) {
+      _taskModelOutputLabel = label;
+      _taskModelOutputTextSection = null;
+      taskModelOutputText += '\n\n## $label\n';
     }
-    messageStore.appendToken(switch (event.type) {
-      TaskModelOutputEventType.content => ChatToken(content: token.content),
-      TaskModelOutputEventType.reasoning => ChatToken(
-        reasoning: token.reasoning,
-      ),
-      TaskModelOutputEventType.toolCall => ChatToken(tool: token.tool),
-      _ => token,
-    });
-  }
-
-  void _appendTaskToolResult(TaskModelOutputEvent event) {
-    if (!_taskModelOutputCurrentBubbleIsActive()) return;
-    final current = messageStore.currentMessage;
-    final index = event.toolIndex;
-    if (current == null || index == null) return;
-    final updated = Map<int, BubbleToolCall>.from(current.tools);
-    final existing = updated[index] ?? const BubbleToolCall();
-    updated[index] = existing.copyWith(result: event.text);
-    messageStore.upsert(current.copyWith(tools: updated));
-  }
-
-  bool _taskModelOutputCurrentBubbleIsActive() {
-    final id = _taskModelOutputMessageId;
-    final current = messageStore.currentMessage;
-    return id != null && current != null && current.id == id;
-  }
-
-  void _normaliseTaskModelOutputBubble() {
-    final id = _taskModelOutputMessageId;
-    if (id == null) return;
-    final index = messageStore.messages.indexWhere(
-      (message) => message.id == id,
-    );
-    if (index < 0) return;
-    final message = messageStore.messages[index];
-    if (message.role == MessageRole.assistant) {
-      messageStore.upsert(ContentNormaliser.normalise(message));
+    if (_taskModelOutputTextSection == section) return;
+    _taskModelOutputTextSection = section;
+    switch (section) {
+      case 'output':
+      case 'tool-call':
+      case 'tool-result':
+      case 'error':
+        taskModelOutputText += '\n';
     }
+  }
+
+  void _ensureTaskModelReasoningSection(String label) {
+    if (_taskModelOutputReasoningLabel == label) return;
+    _taskModelOutputReasoningLabel = label;
+    taskModelOutputReasoning +=
+        '${taskModelOutputReasoning.trim().isEmpty ? '' : '\n\n'}## $label\n';
   }
 
   void _finishTaskModelOutputBubble({required bool clearCurrent}) {
-    final id = _taskModelOutputMessageId;
+    final id = _session.taskModelOutputMessageId;
     if (id == null) return;
-    _normaliseTaskModelOutputBubble();
+    _session.normaliseTaskModelOutputBubble();
     final index = messageStore.messages.indexWhere(
       (message) => message.id == id,
     );
@@ -2290,38 +2069,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     if (clearCurrent && messageStore.currentMessage?.id == id) {
       messageStore.clearCurrentId();
     }
-    _taskModelOutputMessageId = null;
-  }
-
-  void _ensureTaskModelTextSection(String label, String section) {
-    if (_taskModelOutputLabel != label) {
-      _taskModelOutputLabel = label;
-      _taskModelOutputTextSection = null;
-      _appendTaskModelText('\n\n## $label\n');
-    }
-    if (_taskModelOutputTextSection == section) return;
-    _taskModelOutputTextSection = section;
-    switch (section) {
-      case 'output':
-        _appendTaskModelText('\n');
-      case 'tool-call':
-        _appendTaskModelText('\n');
-      case 'tool-result':
-        _appendTaskModelText('\n');
-      case 'error':
-        _appendTaskModelText('\n');
-    }
-  }
-
-  void _ensureTaskModelReasoningSection(String label) {
-    if (_taskModelOutputReasoningLabel == label) return;
-    _taskModelOutputReasoningLabel = label;
-    taskModelOutputReasoning +=
-        '${taskModelOutputReasoning.trim().isEmpty ? '' : '\n\n'}## $label\n';
-  }
-
-  void _appendTaskModelText(String text) {
-    taskModelOutputText += text;
+    _session.clearTaskModelOutputBubble();
   }
 
   void _finishTaskModelOutput() {
@@ -2356,6 +2104,8 @@ class ChatService extends ChangeNotifier implements Disposable {
       ),
     );
   }
+
+  // ── Context estimation ──────────────────────────────────────────────────
 
   void _requestContextEstimateUpdate({bool immediate = false}) {
     if (_disposed) return;
@@ -2567,6 +2317,8 @@ class ChatService extends ChangeNotifier implements Disposable {
     );
   }
 
+  // ── System prompt construction ──────────────────────────────────────────
+
   String _buildSystemPrompt({
     String? currentUserRequest,
     List<String> additionalModuleIds = const [],
@@ -2663,17 +2415,6 @@ Workspace rules:
     );
   }
 
-  String? _currentUserRequestFor(int contextIndex) {
-    final end = contextIndex.clamp(0, messageStore.messages.length - 1);
-    for (var i = end; i >= 0; i--) {
-      final message = messageStore.messages[i];
-      if (message.role == MessageRole.user && message.text.trim().isNotEmpty) {
-        return message.text.trim();
-      }
-    }
-    return null;
-  }
-
   List<String> _autoModuleIdsForWorkspace() {
     final currentWorkspace = workspace;
     if (currentWorkspace == null) return const [];
@@ -2681,6 +2422,8 @@ Workspace rules:
         ? const [BuiltInPromptIds.workspaceMissingModule]
         : const [BuiltInPromptIds.workspaceRulesModule];
   }
+
+  // ── Slash command parsing ───────────────────────────────────────────────
 
   _SlashCommand? _parseSlashCommand(String text) {
     final match = RegExp(
@@ -2692,28 +2435,6 @@ Workspace rules:
       argument: match.group(2)?.trim() ?? '',
       raw: text,
     );
-  }
-
-  void _insertUserAndAssistant(String userText, String assistantText) {
-    messageStore
-      ..upsert(
-        Bubble(
-          id: uuid.v7(),
-          role: MessageRole.user,
-          text: userText,
-          reasoning: '',
-          createdAt: DateTime.now(),
-        ),
-      )
-      ..upsert(
-        Bubble(
-          id: uuid.v7(),
-          role: MessageRole.assistant,
-          text: assistantText,
-          reasoning: '',
-          createdAt: DateTime.now(),
-        ),
-      );
   }
 
   void _markWorkspaceChanged() {
@@ -2741,6 +2462,8 @@ Workspace rules:
     }
     notifyListeners();
   }
+
+  // ── Status message builders ─────────────────────────────────────────────
 
   String _taskBriefMessage(RefinedTaskBrief brief) {
     final buffer = StringBuffer()
@@ -2866,6 +2589,29 @@ Workspace rules:
       }
     }
     return buffer.toString().trim();
+  }
+
+  // ── Disposable ──────────────────────────────────────────────────────────
+
+  @override
+  Future<void> dispose() async {
+    if (_disposed) return;
+    messageStore.removeListener(_handleMessagesChanged);
+    _preferencesService.removeListener(_handlePreferencesChanged);
+    _contextEstimateScheduler.cancel();
+    _taskModelOutputNotifier.cancel();
+    _autosaveTimer?.cancel();
+    await flushCurrentChat();
+    await _deleteTransientTasksForCurrentScope();
+    await _deleteTransientProjectsForCurrentScope();
+    _disposed = true;
+    messageStore.clearCurrentId();
+    messageStore.clearToolBuffers();
+    try {
+      await chatStream.stop();
+    } finally {
+      super.dispose();
+    }
   }
 }
 

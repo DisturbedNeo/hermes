@@ -3,17 +3,17 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/task.dart';
-import 'package:hermes/core/services/task_system/task_storage_service.dart';
+import 'package:hermes/core/services/task_system/task_repository.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
-  group('TaskStorageService v2', () {
+  group('TaskRepository v2', () {
     late Directory root;
-    late TaskStorageService storage;
+    late TaskRepository repository;
 
     setUp(() async {
       root = await Directory.systemTemp.createTemp('hermes_task_storage_');
-      storage = TaskStorageService();
+      repository = TaskRepository();
     });
 
     tearDown(() async {
@@ -25,14 +25,14 @@ void main() {
     test('saves and loads a single task document', () async {
       final task = _task(id: 'task_test');
 
-      await storage.saveSnapshot(root.path, task);
+      await repository.saveSnapshot(root.path, task);
 
       final file = File(
         path.join(root.path, '.agent', 'tasks', 'task_test', 'task.json'),
       );
       expect(file.existsSync(), isTrue);
 
-      final loaded = await storage.loadTask(root.path, 'task_test');
+      final loaded = await repository.loadTask(root.path, 'task_test');
       expect(loaded?.id, 'task_test');
       expect(loaded?.steps.single.title, 'Step 1');
       expect(loaded?.status, TaskStatus.paused);
@@ -47,60 +47,60 @@ void main() {
         path.join(oldTaskDir.path, 'task-spec.yaml'),
       ).writeAsString('{}');
 
-      await storage.saveSnapshot(
+      await repository.saveSnapshot(
         root.path,
         _task(id: 'task_old', updatedAt: DateTime(2026, 1, 1)),
       );
-      await storage.saveSnapshot(
+      await repository.saveSnapshot(
         root.path,
         _task(id: 'task_new', updatedAt: DateTime(2026, 1, 2)),
       );
 
-      final tasks = await storage.listTasks(root.path);
+      final tasks = await repository.listTasks(root.path);
 
       expect(tasks.map((task) => task.id), ['task_new', 'task_old']);
     });
 
     test('filters and deletes by chat session', () async {
-      await storage.saveSnapshot(
+      await repository.saveSnapshot(
         root.path,
         _task(id: 'task_a', chatSessionId: 'chat_a'),
       );
-      await storage.saveSnapshot(
+      await repository.saveSnapshot(
         root.path,
         _task(id: 'task_b', chatSessionId: 'chat_b'),
       );
 
       expect(
-        (await storage.listTasks(
+        (await repository.listTasks(
           root.path,
           chatSessionId: 'chat_a',
         )).map((task) => task.id),
         ['task_a'],
       );
 
-      final deleted = await storage.deleteTasksForChatSession(
+      final deleted = await repository.deleteTasksForChatSession(
         root.path,
         chatSessionId: 'chat_a',
       );
 
       expect(deleted, 1);
-      expect(await storage.loadTask(root.path, 'task_a'), isNull);
-      expect(await storage.loadTask(root.path, 'task_b'), isNotNull);
+      expect(await repository.loadTask(root.path, 'task_a'), isNull);
+      expect(await repository.loadTask(root.path, 'task_b'), isNotNull);
     });
 
     test('filters by project id', () async {
-      await storage.saveSnapshot(
+      await repository.saveSnapshot(
         root.path,
         _task(id: 'task_a', projectId: 'project_a'),
       );
-      await storage.saveSnapshot(
+      await repository.saveSnapshot(
         root.path,
         _task(id: 'task_b', projectId: 'project_b'),
       );
 
       expect(
-        (await storage.listTasks(
+        (await repository.listTasks(
           root.path,
           projectId: 'project_a',
         )).map((task) => task.id),
@@ -108,14 +108,14 @@ void main() {
       );
 
       expect(
-        await storage.loadTask(root.path, 'task_b', projectId: 'project_a'),
+        await repository.loadTask(root.path, 'task_b', projectId: 'project_a'),
         isNull,
       );
     });
 
     test('round-trips the raw task json shape', () async {
       final task = _task(id: 'task_json');
-      await storage.saveSnapshot(root.path, task);
+      await repository.saveSnapshot(root.path, task);
 
       final file = File(
         path.join(root.path, '.agent', 'tasks', 'task_json', 'task.json'),

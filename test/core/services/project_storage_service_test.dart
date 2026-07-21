@@ -3,17 +3,17 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/project.dart';
-import 'package:hermes/core/services/project_system/project_storage_service.dart';
+import 'package:hermes/core/services/project_system/project_repository.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
-  group('ProjectStorageService', () {
+  group('ProjectRepository', () {
     late Directory root;
-    late ProjectStorageService storage;
+    late ProjectRepository repository;
 
     setUp(() async {
-      root = await Directory.systemTemp.createTemp('hermes_project_storage_');
-      storage = ProjectStorageService();
+      root = await Directory.systemTemp.createTemp('hermes_project_repository_');
+      repository = ProjectRepository();
     });
 
     tearDown(() async {
@@ -25,7 +25,7 @@ void main() {
     test('saves and loads a single project document', () async {
       final project = _project(id: 'project_test');
 
-      await storage.saveSnapshot(root.path, project);
+      await repository.saveSnapshot(root.path, project);
 
       final file = File(
         path.join(
@@ -38,23 +38,23 @@ void main() {
       );
       expect(file.existsSync(), isTrue);
 
-      final loaded = await storage.loadProject(root.path, 'project_test');
+      final loaded = await repository.loadProject(root.path, 'project_test');
       expect(loaded?.id, 'project_test');
       expect(loaded?.title, 'Test project');
       expect(loaded?.status, ProjectStatus.paused);
     });
 
     test('lists projects newest first', () async {
-      await storage.saveSnapshot(
+      await repository.saveSnapshot(
         root.path,
         _project(id: 'project_old', updatedAt: DateTime(2026, 1, 1)),
       );
-      await storage.saveSnapshot(
+      await repository.saveSnapshot(
         root.path,
         _project(id: 'project_new', updatedAt: DateTime(2026, 1, 2)),
       );
 
-      final projects = await storage.listProjects(root.path);
+      final projects = await repository.listProjects(root.path);
 
       expect(projects.map((project) => project.id), [
         'project_new',
@@ -63,56 +63,56 @@ void main() {
     });
 
     test('filters and deletes by chat session', () async {
-      await storage.saveSnapshot(
+      await repository.saveSnapshot(
         root.path,
         _project(id: 'project_a', chatSessionId: 'chat_a'),
       );
-      await storage.saveSnapshot(
+      await repository.saveSnapshot(
         root.path,
         _project(id: 'project_b', chatSessionId: 'chat_b'),
       );
 
       expect(
-        (await storage.listProjects(
+        (await repository.listProjects(
           root.path,
           chatSessionId: 'chat_a',
         )).map((project) => project.id),
         ['project_a'],
       );
 
-      final deleted = await storage.deleteProjectsForChatSession(
+      final deleted = await repository.deleteProjectsForChatSession(
         root.path,
         chatSessionId: 'chat_a',
       );
 
       expect(deleted, 1);
-      expect(await storage.loadProject(root.path, 'project_a'), isNull);
-      expect(await storage.loadProject(root.path, 'project_b'), isNotNull);
+      expect(await repository.loadProject(root.path, 'project_a'), isNull);
+      expect(await repository.loadProject(root.path, 'project_b'), isNotNull);
     });
 
     test('deletes orphaned chat projects', () async {
-      await storage.saveSnapshot(
+      await repository.saveSnapshot(
         root.path,
         _project(id: 'project_saved', chatSessionId: 'chat_saved'),
       );
-      await storage.saveSnapshot(
+      await repository.saveSnapshot(
         root.path,
         _project(id: 'project_orphaned', chatSessionId: 'chat_deleted'),
       );
 
-      final deleted = await storage.deleteOrphanedChatProjects(
+      final deleted = await repository.deleteOrphanedChatProjects(
         root.path,
         retainedChatSessionIds: {'chat_saved'},
       );
 
       expect(deleted, 1);
-      expect(await storage.loadProject(root.path, 'project_saved'), isNotNull);
-      expect(await storage.loadProject(root.path, 'project_orphaned'), isNull);
+      expect(await repository.loadProject(root.path, 'project_saved'), isNotNull);
+      expect(await repository.loadProject(root.path, 'project_orphaned'), isNull);
     });
 
     test('round-trips the raw project json shape', () async {
       final project = _project(id: 'project_json');
-      await storage.saveSnapshot(root.path, project);
+      await repository.saveSnapshot(root.path, project);
 
       final file = File(
         path.join(
@@ -133,14 +133,14 @@ void main() {
 
     test('rejects delete paths outside project root', () async {
       expect(
-        storage.deleteProject(root.path, '../outside'),
+        repository.deleteProject(root.path, '../outside'),
         throwsArgumentError,
       );
     });
 
     test('rejects log names outside the project log folder', () async {
       expect(
-        storage.saveLog(root.path, 'project_test', '../project.json', '{}'),
+        repository.saveLog(root.path, 'project_test', '../project.json', '{}'),
         throwsArgumentError,
       );
     });

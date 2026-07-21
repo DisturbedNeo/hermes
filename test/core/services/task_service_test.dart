@@ -305,7 +305,7 @@ void main() {
           status: TaskStepStatus.pending,
         ),
       );
-      await service.storage.saveSnapshot(root.path, task);
+      await service.repository.saveSnapshot(root.path, task);
       final client = _QueueChatClient([
         jsonEncode({
           'status': 'completed',

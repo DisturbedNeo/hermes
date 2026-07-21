@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
+import 'package:hermes/core/services/chat_library_repository.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/preferences_service.dart';
@@ -30,10 +31,11 @@ void main() {
     final taskService = TaskService(toolService: toolService, sandbox: sandbox);
 
     preferences = PreferencesService();
-    chatLibrary = ChatLibraryService(
+    final chatLibraryRepository = ChatLibraryRepository(
       preferencesService: preferences,
       databasePath: ':memory:',
     );
+    chatLibrary = ChatLibraryService(repository: chatLibraryRepository);
     serverManager = LlamaServerManager();
     chat = ChatService(
       serverManager: serverManager,

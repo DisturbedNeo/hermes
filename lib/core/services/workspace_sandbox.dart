@@ -1,3 +1,11 @@
+/// Workspace sandbox: file system operations and execution orchestration.
+///
+/// Policy configuration, rule definitions, and validation logic are isolated
+/// in [sandbox_policy.dart]. This class has a single responsibility — perform
+/// sandboxed I/O and command execution using those policies.
+
+library;
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -5,13 +13,19 @@ import 'dart:io';
 import 'package:path/path.dart' as path;
 
 import 'package:hermes/core/services/terminal_command_classifier.dart';
+import 'sandbox_policy.dart';
+
+// Re-export for backward compatibility with existing imports.
+export 'sandbox_policy.dart' show WorkspacePath, WorkspaceSandboxException;
 
 class WorkspaceSandbox {
-  static const int maxReadBytes = 1024 * 1024;
-  static const int maxSearchResults = 100;
-  static const int maxSearchOutputBytes = 64 * 1024;
-  static const int maxCommandOutputBytes = 64 * 1024;
-  static const Duration commandTimeout = Duration(seconds: 30);
+  // Backward-compatible static accessors for constants previously defined here.
+  // These delegate to the canonical definitions in sandbox_policy.dart.
+  static const int maxReadBytes = kMaxReadBytes;
+  static const int maxSearchResults = kMaxSearchResults;
+  static const int maxSearchOutputBytes = kMaxSearchOutputBytes;
+  static const int maxCommandOutputBytes = kMaxCommandOutputBytes;
+  static const Duration commandTimeout = kCommandTimeout;
 
   Future<String> canonicalRoot(String rootPath) async {
     final dir = Directory(rootPath);
@@ -38,7 +52,7 @@ class WorkspaceSandbox {
         ? await _resolveExisting(requested)
         : await _resolveCreatable(requested);
 
-    _assertInside(root, canonical);
+    assertInside(root, canonical);
 
     if (mustExist) {
       final type = await FileSystemEntity.type(canonical);
@@ -71,8 +85,8 @@ class WorkspaceSandbox {
       final type = stat.type == FileSystemEntityType.directory
           ? 'directory'
           : stat.type == FileSystemEntityType.link
-          ? 'link'
-          : 'file';
+              ? 'link'
+              : 'file';
       entries.add({
         'path': _relative(resolved.rootPath, entity.path),
         'name': path.basename(entity.path),
@@ -103,7 +117,7 @@ class WorkspaceSandbox {
     }
     final file = File(resolved.absolutePath);
     final length = await file.length();
-    if (length > maxReadBytes) {
+    if (length > kMaxReadBytes) {
       throw WorkspaceSandboxException(
         'File is too large to read ($length bytes).',
       );
@@ -200,19 +214,6 @@ class WorkspaceSandbox {
     return {'path': resolved.relativePath};
   }
 
-  /// Returns true if the given [basename] is a hidden dot entry name.
-  static bool _isDotEntry(String basename) =>
-      basename.isNotEmpty &&
-      basename != '.' &&
-      basename != '..' &&
-      basename.startsWith('.');
-
-  static bool _pathContainsDotEntry(String relativePath) {
-    final normalised = path.normalize(relativePath);
-    if (normalised == '.') return false;
-    return path.split(normalised).any(_isDotEntry);
-  }
-
   Future<List<Map<String, dynamic>>> searchFiles(
     String rootPath,
     String query, {
@@ -228,16 +229,16 @@ class WorkspaceSandbox {
 
     // Only include hidden dot-folders when the requested search root itself is
     // inside one, e.g. ".agent" or "packages/.cache".
-    final isExplicitDotSearch = _pathContainsDotEntry(root.relativePath);
+    final isExplicitDotSearch = pathContainsDotEntry(root.relativePath);
 
     final results = <Map<String, dynamic>>[];
     final pendingDirectories = <Directory>[Directory(root.absolutePath)];
 
-    while (pendingDirectories.isNotEmpty && results.length < maxSearchResults) {
+    while (pendingDirectories.isNotEmpty && results.length < kMaxSearchResults) {
       final directory = pendingDirectories.removeLast();
       try {
         await for (final entity in directory.list(followLinks: false)) {
-          if (results.length >= maxSearchResults) break;
+          if (results.length >= kMaxSearchResults) break;
 
           final basename = path.basename(entity.path);
           if (entity is Directory) {
@@ -247,7 +248,7 @@ class WorkspaceSandbox {
           }
 
           if (entity is! File) continue;
-          if (await entity.length() > maxReadBytes) continue;
+          if (await entity.length() > kMaxReadBytes) continue;
 
           final rel = _relative(root.rootPath, entity.path);
           try {
@@ -261,9 +262,9 @@ class WorkspaceSandbox {
                 'line': i + 1,
                 'preview': lines[i].trim(),
               };
-              _throwIfSearchOutputTooLarge([...results, result]);
+              throwIfSearchOutputTooLarge([...results, result]);
               results.add(result);
-              if (results.length >= maxSearchResults) break;
+              if (results.length >= kMaxSearchResults) break;
             }
           } on FormatException {
             continue;
@@ -277,24 +278,14 @@ class WorkspaceSandbox {
     }
 
     // Graceful error when the search was too broad.
-    if (results.length >= maxSearchResults) {
+    if (results.length >= kMaxSearchResults) {
       throw WorkspaceSandboxException(
-        'Search returned too many results ($maxSearchResults+ matches). '
+        'Search returned too many results ($kMaxSearchResults+ matches). '
         'Narrow your query or specify a more targeted path to continue.',
       );
     }
 
     return results;
-  }
-
-  void _throwIfSearchOutputTooLarge(List<Map<String, dynamic>> results) {
-    final encodedBytes = utf8.encode(jsonEncode({'matches': results})).length;
-    if (encodedBytes <= maxSearchOutputBytes) return;
-    throw WorkspaceSandboxException(
-      'Search results are too large to return safely '
-      '($encodedBytes bytes, limit $maxSearchOutputBytes bytes). '
-      'Narrow your query or specify a more targeted path to continue.',
-    );
   }
 
   Future<Map<String, dynamic>> runCommand(
@@ -323,16 +314,20 @@ class WorkspaceSandbox {
     final result = await Process.run('bash', [
       '-lc',
       commandLine,
-    ], workingDirectory: cwd.absolutePath).timeout(commandTimeout);
+    ], workingDirectory: cwd.absolutePath).timeout(kCommandTimeout);
 
     return {
       'command': commandLine,
       'working_directory': cwd.relativePath,
       'exit_code': result.exitCode,
-      'stdout': _capOutput(result.stdout.toString()),
-      'stderr': _capOutput(result.stderr.toString()),
+      'stdout': capOutput(result.stdout.toString()),
+      'stderr': capOutput(result.stderr.toString()),
     };
   }
+
+  // ---------------------------------------------------------------------------
+  // Internal Helpers (operational mechanics, not policy)
+  // ---------------------------------------------------------------------------
 
   String _commandLine({
     required String? command,
@@ -388,15 +383,6 @@ class WorkspaceSandbox {
     }
   }
 
-  void _assertInside(String root, String candidate) {
-    final relative = path.relative(candidate, from: root);
-    if (relative == '.' ||
-        (!relative.startsWith('..') && !path.isAbsolute(relative))) {
-      return;
-    }
-    throw WorkspaceSandboxException('Path escapes the workspace.');
-  }
-
   String _relative(String root, String absolute) {
     final rel = path.relative(absolute, from: root);
     return rel == '' ? '.' : path.normalize(rel);
@@ -414,30 +400,10 @@ class WorkspaceSandbox {
     }
   }
 
-  String _capOutput(String value) {
-    final bytes = utf8.encode(value);
-    if (bytes.length <= maxCommandOutputBytes) return value;
-    return '${utf8.decode(bytes.take(maxCommandOutputBytes).toList(), allowMalformed: true)}\n... output truncated ...';
-  }
-}
-
-class WorkspacePath {
-  final String rootPath;
-  final String absolutePath;
-  final String relativePath;
-
-  const WorkspacePath({
-    required this.rootPath,
-    required this.absolutePath,
-    required this.relativePath,
-  });
-}
-
-class WorkspaceSandboxException implements Exception {
-  final String message;
-
-  const WorkspaceSandboxException(this.message);
-
-  @override
-  String toString() => message;
+  // Re-use the policy helper for dot-entry detection in search.
+  static bool _isDotEntry(String basename) =>
+      basename.isNotEmpty &&
+      basename != '.' &&
+      basename != '..' &&
+      basename.startsWith('.');
 }

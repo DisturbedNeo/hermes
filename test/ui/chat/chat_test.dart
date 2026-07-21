@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
+import 'package:hermes/core/services/chat_library_repository.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
+import 'package:hermes/core/services/system_prompt_library_repository.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
@@ -30,14 +32,16 @@ void main() {
     toolService = ToolService(workspaceSandbox: sandbox);
     workspaceService = WorkspaceService(sandbox: sandbox);
     final taskService = TaskService(toolService: toolService, sandbox: sandbox);
-    chatLibrary = ChatLibraryService(
+    final chatLibraryRepository = ChatLibraryRepository(
       preferencesService: preferences,
       databasePath: ':memory:',
     );
-    promptLibrary = SystemPromptLibraryService(
+    chatLibrary = ChatLibraryService(repository: chatLibraryRepository);
+    final repository = SystemPromptLibraryRepository(
       preferencesService: preferences,
       databasePath: ':memory:',
     );
+    promptLibrary = SystemPromptLibraryService(repository: repository);
     tabs = ChatTabsService(
       chatLibrary: chatLibrary,
       systemPromptLibrary: promptLibrary,
