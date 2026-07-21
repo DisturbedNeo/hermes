@@ -1485,6 +1485,24 @@ void main() {
       expect(updated.runs.single.toolCalls, hasLength(3));
       expect(updated.runs.single.toolCalls.last.error, contains('skipped'));
     });
+
+    test(
+      'pauses and preserves a step after transport retry is exhausted',
+      () async {
+        final updated = await service.runNextStep(
+          client: _TransportFailureClient(),
+          workspace: workspace,
+          snapshot: _task(),
+          baseSystemPrompt: 'system',
+        );
+
+        expect(updated.status, TaskStatus.paused);
+        expect(updated.currentStep?.status, TaskStepStatus.pending);
+        expect(updated.runs.single.status, TaskRunStatus.failed);
+        expect(updated.runs.single.error, contains('Model transport failed'));
+        expect(updated.runs.single.summary, contains('Resume the task'));
+      },
+    );
   });
 }
 
@@ -1647,3 +1665,30 @@ class _QueueCompletionClient extends ChatClient {
   @override
   void dispose() {}
 }
+
+class _TransportFailureClient extends ChatClient {
+  _TransportFailureClient() : super(baseUrl: 'http://localhost', model: 'test');
+
+  @override
+  Future<ChatCompletionResponse> completeChat({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+  }) {
+    throw _transportFailure();
+  }
+
+  @override
+  void dispose() {}
+}
+
+ChatTransportException _transportFailure() => ChatTransportException(
+  kind: ChatTransportFailureKind.brokenPipe,
+  uri: Uri.parse('http://localhost/v1/chat/completions'),
+  attempts: 2,
+  outputStarted: false,
+  cause: const SocketException(
+    'Write failed',
+    osError: OSError('Broken pipe', 32),
+  ),
+  causeStackTrace: StackTrace.empty,
+);

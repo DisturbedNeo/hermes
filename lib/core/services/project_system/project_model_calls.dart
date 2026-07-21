@@ -142,6 +142,8 @@ $originalGoal
         ),
         backlog: _tasksFromJson(json['backlog']),
       );
+    } on ChatTransportException {
+      rethrow;
     } catch (_) {
       return _fallbackInitialisation(originalGoal);
     }
@@ -204,6 +206,8 @@ ${_encoder.convert(ModelJson.encode(project))}
           json['openQuestions'] ?? json['open_questions'],
         ),
       );
+    } on ChatTransportException {
+      rethrow;
     } catch (_) {
       return const ProjectBacklogRefresh(
         backlog: [],
@@ -263,6 +267,8 @@ ${_encoder.convert(ModelJson.encode(project))}
       if (raw is Map) {
         return _taskFromMap(Map<String, dynamic>.from(raw), 0);
       }
+    } on ChatTransportException {
+      rethrow;
     } catch (_) {
       return project.backlog.isEmpty
           ? _fallbackNextTask(project)
@@ -319,6 +325,8 @@ ${_encoder.convert(ModelJson.encode(project))}
 ''',
       );
       return _tasksFromJson(json['tasks']).take(5).toList();
+    } on ChatTransportException {
+      rethrow;
     } catch (_) {
       return const [];
     }
@@ -366,6 +374,8 @@ ${_encoder.convert(ModelJson.encode(project))}
           json['openQuestions'] ?? json['open_questions'],
         ),
       );
+    } on ChatTransportException {
+      rethrow;
     } catch (_) {
       return ProjectCompletionAssessment(
         complete: false,

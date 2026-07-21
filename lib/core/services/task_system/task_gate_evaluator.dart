@@ -201,6 +201,8 @@ class TaskGateEvaluator {
           now,
         ),
       };
+    } on ChatTransportException {
+      rethrow;
     } catch (e) {
       return _result(
         gate,

@@ -63,6 +63,8 @@ $fileContent
       );
 
       return _visibleModelOutput(completion.content);
+    } on ChatTransportException {
+      rethrow;
     } catch (e) {
       if (kDebugMode) {
         print('[SubagentService] Extraction failed: $e');

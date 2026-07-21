@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -101,19 +102,93 @@ List<ChatToken> _tokensFromDelta(Map delta, Uri? chatUri) {
   return tokens;
 }
 
+typedef ChatHttpClientFactory = http.Client Function();
+
+enum ChatTransportFailureKind {
+  brokenPipe,
+  connectionReset,
+  connectionRefused,
+  connectionClosed,
+  socket,
+}
+
+class ChatTransportEvent {
+  final DateTime timestamp;
+  final ChatTransportFailureKind kind;
+  final Uri uri;
+  final int attempt;
+  final bool willRetry;
+  final bool outputStarted;
+  final Object error;
+  final StackTrace stackTrace;
+
+  ChatTransportEvent({
+    required this.kind,
+    required this.uri,
+    required this.attempt,
+    required this.willRetry,
+    required this.outputStarted,
+    required this.error,
+    required this.stackTrace,
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
+}
+
+class ChatTransportException implements Exception {
+  final ChatTransportFailureKind kind;
+  final Uri uri;
+  final int attempts;
+  final bool outputStarted;
+  final Object cause;
+  final StackTrace causeStackTrace;
+
+  const ChatTransportException({
+    required this.kind,
+    required this.uri,
+    required this.attempts,
+    required this.outputStarted,
+    required this.cause,
+    required this.causeStackTrace,
+  });
+
+  @override
+  String toString() {
+    final phase = outputStarted ? ' after model output began' : '';
+    return 'Model transport failed$phase after $attempts attempt(s): $cause';
+  }
+}
+
 class ChatClient {
+  static const Duration _retryDelay = Duration(milliseconds: 100);
+  static const int _maxAttempts = 2;
+
   final String _baseUrl;
   final String _model;
-  final http.Client _client = http.Client();
+  final ChatHttpClientFactory _clientFactory;
+  final void Function(ChatTransportEvent)? _onTransportEvent;
+  final Set<http.Client> _activeClients = {};
+  bool _isDisposed = false;
 
-  ChatClient({required String baseUrl, required String model, String? apiKey})
-    : _model = model,
-      _baseUrl = baseUrl;
+  ChatClient({
+    required String baseUrl,
+    required String model,
+    String? apiKey,
+    ChatHttpClientFactory? clientFactory,
+    void Function(ChatTransportEvent)? onTransportEvent,
+  }) : _model = model,
+       _baseUrl = baseUrl,
+       _clientFactory = clientFactory ?? http.Client.new,
+       _onTransportEvent = onTransportEvent;
 
   bool get supportsStreamingCancellation => runtimeType == ChatClient;
 
   void dispose() {
-    _client.close();
+    if (_isDisposed) return;
+    _isDisposed = true;
+    for (final client in _activeClients.toList()) {
+      client.close();
+    }
+    _activeClients.clear();
   }
 
   Future<String> completeMessage({
@@ -140,20 +215,15 @@ class ChatClient {
     };
 
     final chatUri = Uri.parse('$_baseUrl/v1/chat/completions');
-    final response = await _client.post(
-      chatUri,
-      headers: const {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode(body),
-    );
-
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      _throwHttpException(response.statusCode, response.body, chatUri);
-    }
-
-    return _completionFromBody(response.body, chatUri);
+    return _runBeforeOutputRetry(chatUri, (client) async {
+      final request = _request(chatUri, accept: 'application/json', body: body);
+      final streamed = await client.send(request);
+      final responseBody = await streamed.stream.bytesToString();
+      if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+        _throwHttpException(streamed.statusCode, responseBody, chatUri);
+      }
+      return _completionFromBody(responseBody, chatUri);
+    });
   }
 
   Future<ChatCompletionResponse> completeChatStreamed({
@@ -166,36 +236,6 @@ class ChatClient {
         messages: messages,
         extraParams: extraParams,
       );
-      _emitCompletionTokens(completion, onToken);
-      return completion;
-    }
-
-    final body = {
-      'model': _model,
-      'messages': messages.map(ModelJson.encode).toList(),
-      'stream': true,
-      ...?extraParams,
-    };
-
-    final chatUri = Uri.parse('$_baseUrl/v1/chat/completions');
-    final req = http.Request('POST', chatUri)
-      ..headers.addAll(const {
-        'Accept': 'text/event-stream',
-        'Content-Type': 'application/json',
-      })
-      ..body = jsonEncode(body);
-
-    final streamed = await _client.send(req);
-
-    if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
-      final responseBody = await streamed.stream.bytesToString();
-      _throwHttpException(streamed.statusCode, responseBody, chatUri);
-    }
-
-    final contentType = streamed.headers['content-type'] ?? '';
-    if (!contentType.toLowerCase().contains('text/event-stream')) {
-      final responseBody = await streamed.stream.bytesToString();
-      final completion = _completionFromBody(responseBody, chatUri);
       _emitCompletionTokens(completion, onToken);
       return completion;
     }
@@ -225,22 +265,10 @@ class ChatClient {
       }
     }
 
-    final lines = streamed.stream
-        .transform(utf8.decoder)
-        .transform(const LineSplitter());
-    final parser = _SseParser(chatUri);
-
-    await for (final line in lines) {
-      parser.addLine(line);
-      if (line.isEmpty) {
-        for (final token in parser.flush()) {
-          record(token);
-        }
-        if (parser.sawDone) break;
-      }
-    }
-
-    for (final token in parser.flush()) {
+    await for (final token in streamMessage(
+      messages: messages,
+      extraParams: extraParams,
+    )) {
       record(token);
     }
 
@@ -298,39 +326,209 @@ class ChatClient {
 
     final chatUri = Uri.parse('$_baseUrl/v1/chat/completions');
 
-    final headers = {
-      'Accept': 'text/event-stream',
-      'Content-Type': 'application/json',
-    };
-
-    final req = http.Request('POST', chatUri)
-      ..headers.addAll(headers)
-      ..body = jsonEncode(body);
-
-    final streamed = await _client.send(req);
-
-    if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
-      final responseBody = await streamed.stream.bytesToString();
-      _throwHttpException(streamed.statusCode, responseBody, chatUri);
-    }
-
-    final lines = streamed.stream
-        .transform(utf8.decoder)
-        .transform(const LineSplitter());
-    final parser = _SseParser(chatUri);
-
-    await for (final line in lines) {
-      parser.addLine(line);
-      if (line.isEmpty) {
-        for (final token in parser.flush()) {
+    var outputStarted = false;
+    for (var attempt = 1; attempt <= _maxAttempts; attempt++) {
+      try {
+        await for (final token in _streamAttempt(chatUri, body)) {
+          outputStarted = true;
           yield token;
         }
-        if (parser.sawDone) break;
+        return;
+      } catch (error, stackTrace) {
+        final kind = _transportKind(error);
+        if (kind == null) rethrow;
+        final willRetry = !outputStarted && attempt < _maxAttempts;
+        _emitTransportEvent(
+          ChatTransportEvent(
+            kind: kind,
+            uri: chatUri,
+            attempt: attempt,
+            willRetry: willRetry,
+            outputStarted: outputStarted,
+            error: error,
+            stackTrace: stackTrace,
+          ),
+        );
+        if (!willRetry) {
+          throw ChatTransportException(
+            kind: kind,
+            uri: chatUri,
+            attempts: attempt,
+            outputStarted: outputStarted,
+            cause: error,
+            causeStackTrace: stackTrace,
+          );
+        }
+        await Future<void>.delayed(_retryDelay);
       }
     }
+  }
 
-    for (final token in parser.flush()) {
-      yield token;
+  Stream<ChatToken> _streamAttempt(
+    Uri chatUri,
+    Map<String, dynamic> body,
+  ) async* {
+    final client = _openClient();
+    try {
+      final request = _request(
+        chatUri,
+        accept: 'text/event-stream',
+        body: body,
+      );
+      final streamed = await client.send(request);
+      if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+        final responseBody = await streamed.stream.bytesToString();
+        _throwHttpException(streamed.statusCode, responseBody, chatUri);
+      }
+
+      final contentType = streamed.headers['content-type'] ?? '';
+      if (!contentType.toLowerCase().contains('text/event-stream')) {
+        final responseBody = await streamed.stream.bytesToString();
+        final completion = _completionFromBody(responseBody, chatUri);
+        if (completion.reasoning.isNotEmpty) {
+          yield ChatToken(reasoning: completion.reasoning);
+        }
+        if (completion.content.isNotEmpty) {
+          yield ChatToken(content: completion.content);
+        }
+        for (var i = 0; i < completion.toolCalls.length; i++) {
+          final call = completion.toolCalls[i];
+          yield ChatToken(
+            tool: ToolCallDelta(
+              index: i,
+              id: call.id,
+              name: call.name,
+              argumentsChunk: call.arguments,
+            ),
+          );
+        }
+        return;
+      }
+
+      final lines = streamed.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter());
+      final parser = _SseParser(chatUri);
+      await for (final line in lines) {
+        parser.addLine(line);
+        if (line.isEmpty) {
+          for (final token in parser.flush()) {
+            yield token;
+          }
+          if (parser.sawDone) break;
+        }
+      }
+      for (final token in parser.flush()) {
+        yield token;
+      }
+    } finally {
+      _closeClient(client);
+    }
+  }
+
+  Future<T> _runBeforeOutputRetry<T>(
+    Uri uri,
+    Future<T> Function(http.Client client) operation,
+  ) async {
+    for (var attempt = 1; attempt <= _maxAttempts; attempt++) {
+      try {
+        return await _withClient(operation);
+      } catch (error, stackTrace) {
+        final kind = _transportKind(error);
+        if (kind == null) rethrow;
+        final willRetry = attempt < _maxAttempts;
+        _emitTransportEvent(
+          ChatTransportEvent(
+            kind: kind,
+            uri: uri,
+            attempt: attempt,
+            willRetry: willRetry,
+            outputStarted: false,
+            error: error,
+            stackTrace: stackTrace,
+          ),
+        );
+        if (!willRetry) {
+          throw ChatTransportException(
+            kind: kind,
+            uri: uri,
+            attempts: attempt,
+            outputStarted: false,
+            cause: error,
+            causeStackTrace: stackTrace,
+          );
+        }
+        await Future<void>.delayed(_retryDelay);
+      }
+    }
+    throw StateError('Unreachable retry state');
+  }
+
+  Future<T> _withClient<T>(
+    Future<T> Function(http.Client client) operation,
+  ) async {
+    final client = _openClient();
+    try {
+      return await operation(client);
+    } finally {
+      _closeClient(client);
+    }
+  }
+
+  http.Client _openClient() {
+    if (_isDisposed) {
+      throw StateError('ChatClient is already disposed.');
+    }
+    final client = _clientFactory();
+    _activeClients.add(client);
+    return client;
+  }
+
+  void _closeClient(http.Client client) {
+    _activeClients.remove(client);
+    client.close();
+  }
+
+  http.Request _request(
+    Uri uri, {
+    required String accept,
+    required Map<String, dynamic> body,
+  }) {
+    return http.Request('POST', uri)
+      ..persistentConnection = false
+      ..headers.addAll({
+        'Accept': accept,
+        'Content-Type': 'application/json',
+        'Connection': 'close',
+      })
+      ..body = jsonEncode(body);
+  }
+
+  ChatTransportFailureKind? _transportKind(Object error) {
+    if (error is http.RequestAbortedException) return null;
+    if (error is SocketException) {
+      return switch (error.osError?.errorCode) {
+        32 => ChatTransportFailureKind.brokenPipe,
+        54 || 104 => ChatTransportFailureKind.connectionReset,
+        61 || 111 => ChatTransportFailureKind.connectionRefused,
+        _ => ChatTransportFailureKind.socket,
+      };
+    }
+    if (error is http.ClientException) {
+      final message = error.message.toLowerCase();
+      if (message.contains('connection closed') ||
+          message.contains('closed before')) {
+        return ChatTransportFailureKind.connectionClosed;
+      }
+    }
+    return null;
+  }
+
+  void _emitTransportEvent(ChatTransportEvent event) {
+    try {
+      _onTransportEvent?.call(event);
+    } catch (_) {
+      // Observability must never interfere with model requests.
     }
   }
 

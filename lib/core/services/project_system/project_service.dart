@@ -535,7 +535,13 @@ class ProjectService {
         return ProjectRunResult(project: project, activeTask: activeTask);
       }
 
-      final validation = _validateProjectTask(candidate, project);
+      final resumingActiveTask =
+          project.currentTask?.id == candidate.id &&
+          project.activeTaskId != null &&
+          activeTask?.id == project.activeTaskId;
+      final validation = resumingActiveTask
+          ? const _ProjectTaskValidation(true, [])
+          : _validateProjectTask(candidate, project);
       if (!validation.valid) {
         final projectBeforeRecovery = project;
         project = await _handleInvalidProjectTask(
@@ -1099,6 +1105,16 @@ class ProjectService {
         DateTime.now(),
       );
       await _repository.saveSnapshot(workspace.rootPath, workingProject);
+
+      if (activeTask.status == TaskStatus.paused) {
+        final paused = workingProject.copyWith(
+          status: ProjectStatus.paused,
+          blocker: null,
+          updatedAt: DateTime.now(),
+        );
+        await _repository.saveSnapshot(workspace.rootPath, paused);
+        return _ProjectTaskExecution(project: paused, activeTask: activeTask);
+      }
 
       if (cancellationToken?.isCancelled == true) {
         final paused = workingProject.copyWith(

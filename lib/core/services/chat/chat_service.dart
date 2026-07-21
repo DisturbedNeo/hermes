@@ -902,6 +902,7 @@ class ChatService extends ChangeNotifier
         final updated = activeTask;
         if (updated == null ||
             updated.status == TaskStatus.completed ||
+            updated.status == TaskStatus.paused ||
             updated.status == TaskStatus.blocked ||
             updated.status == TaskStatus.failed ||
             updated.status == TaskStatus.cancelled) {
@@ -2558,7 +2559,14 @@ Workspace rules:
       ..writeln('Project status: **${snapshot.title}**')
       ..writeln()
       ..writeln('Status: `${snapshot.status.wire}`');
-    if (snapshot.completionSummary.trim().isNotEmpty) {
+    if (snapshot.status == ProjectStatus.paused &&
+        snapshot.activeTaskId != null) {
+      buffer
+        ..writeln()
+        ..writeln(
+          'Model transport was interrupted. Resume the project to retry the current step.',
+        );
+    } else if (snapshot.completionSummary.trim().isNotEmpty) {
       buffer
         ..writeln()
         ..writeln(snapshot.completionSummary.trim());
@@ -2581,7 +2589,13 @@ Workspace rules:
       ..writeln('Task step finished: **${latestRun?.stepId ?? 'step'}**')
       ..writeln()
       ..writeln('Task status: `${snapshot.status.wire}`');
-    if (latestRun != null) {
+    if (snapshot.status == TaskStatus.paused) {
+      buffer
+        ..writeln()
+        ..writeln(
+          'Model transport was interrupted. Resume the task to retry this step.',
+        );
+    } else if (latestRun != null) {
       buffer
         ..writeln()
         ..writeln(latestRun.summary);

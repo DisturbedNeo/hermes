@@ -9,6 +9,7 @@ import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/model_session_diagnostics.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/core/services/model_diagnostic_bundle_writer.dart';
 
 export 'package:hermes/core/helpers/server_health_checker.dart'
     show LlamaServerStartupCancelled;
@@ -59,12 +60,17 @@ List<String> buildLlamaServerArguments({
 }
 
 class LlamaServerManager implements Disposable {
+  final ModelDiagnosticBundleWriter _diagnosticBundleWriter;
   final ValueNotifier<LlamaServerHandle?> handle = ValueNotifier(null);
   final ModelSessionDiagnostics diagnostics = ModelSessionDiagnostics();
   ChatClient? chatClient;
   String? currentModelName;
 
   LlamaServerHandle? get current => handle.value;
+
+  LlamaServerManager({ModelDiagnosticBundleWriter? diagnosticBundleWriter})
+    : _diagnosticBundleWriter =
+          diagnosticBundleWriter ?? ModelDiagnosticBundleWriter();
 
   Future<void> startWithSnapshot(ModelConfigurationSnapshot snapshot) {
     return start(
@@ -248,7 +254,11 @@ class LlamaServerManager implements Disposable {
 
       _throwIfCancelled(generation);
 
-      final newClient = ChatClient(baseUrl: baseUrl, model: modelName);
+      final newClient = ChatClient(
+        baseUrl: baseUrl,
+        model: modelName,
+        onTransportEvent: _recordTransportEvent,
+      );
 
       if (generation != _startGeneration) {
         newClient.dispose();
@@ -318,6 +328,42 @@ class LlamaServerManager implements Disposable {
     final port = socket.port;
     await socket.close();
     return port;
+  }
+
+  void _recordTransportEvent(ChatTransportEvent event) {
+    diagnostics.recordTransportEvent(
+      kind: event.kind.name,
+      attempt: event.attempt,
+      willRetry: event.willRetry,
+      outputStarted: event.outputStarted,
+      error: event.error,
+    );
+    if (event.willRetry) return;
+
+    final currentHandle = handle.value;
+    unawaited(
+      _diagnosticBundleWriter.writeTransportFailure(
+        timestamp: event.timestamp,
+        modelName:
+            currentModelName ?? diagnostics.modelSnapshot?.modelName ?? '',
+        baseUrl: diagnostics.baseUrl ?? event.uri.origin,
+        serverState: diagnostics.state.name,
+        processRunning: currentHandle != null,
+        processId: currentHandle?.process.pid,
+        failureKind: event.kind.name,
+        attempt: event.attempt,
+        outputStarted: event.outputStarted,
+        error: event.error,
+        stackTrace: event.stackTrace,
+        recentLogs: diagnostics.logs.map(
+          (entry) => {
+            'timestamp': entry.timestamp.toUtc().toIso8601String(),
+            'source': entry.source,
+            'message': entry.message,
+          },
+        ),
+      ),
+    );
   }
 
   @override

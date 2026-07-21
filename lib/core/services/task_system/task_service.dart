@@ -492,6 +492,8 @@ $userPrompt
       );
     } on TaskCancelledException {
       rethrow;
+    } on ChatTransportException {
+      rethrow;
     } catch (_) {
       return _fallbackBrief(userPrompt);
     }
@@ -563,6 +565,8 @@ $userPrompt
         }
       }
     } on TaskCancelledException {
+      rethrow;
+    } on ChatTransportException {
       rethrow;
     } catch (_) {
       task = planningContext == null
@@ -771,6 +775,31 @@ $userPrompt
             pendingApproval: null,
             pendingQuestion: null,
             updatedAt: cancelledAt,
+          );
+      await _repository.saveSnapshot(workspace.rootPath, working);
+      return working;
+    } on ChatTransportException catch (e) {
+      final pausedAt = DateTime.now();
+      final pausedRun = run.copyWith(
+        status: TaskRunStatus.failed,
+        completedAt: pausedAt,
+        summary:
+            'Model transport was interrupted after automatic retry. '
+            'Resume the task to retry this step.',
+        error: e.toString(),
+      );
+      working = _replaceLastRun(working, pausedRun);
+      working =
+          _replaceStep(
+            working,
+            step.id,
+            step.copyWith(status: TaskStepStatus.pending),
+          ).copyWith(
+            status: TaskStatus.paused,
+            currentStepId: step.id,
+            pendingApproval: null,
+            pendingQuestion: null,
+            updatedAt: pausedAt,
           );
       await _repository.saveSnapshot(workspace.rootPath, working);
       return working;
@@ -1172,6 +1201,8 @@ ${_encoder.convert(ModelJson.encode(task))}
         return repaired;
       }
     } on TaskCancelledException {
+      rethrow;
+    } on ChatTransportException {
       rethrow;
     } catch (_) {
       // Fall through to deterministic bounded fallback.
@@ -2172,6 +2203,8 @@ ${_encoder.convert(ModelJson.encode(snapshot))}
         replacement = [_fallbackExecutionStep(snapshot.id, snapshot.goal)];
       }
     } on TaskCancelledException {
+      rethrow;
+    } on ChatTransportException {
       rethrow;
     } catch (_) {
       replacement = [_fallbackExecutionStep(snapshot.id, snapshot.goal)];

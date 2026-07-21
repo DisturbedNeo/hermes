@@ -181,6 +181,25 @@ class ModelSessionDiagnostics extends ChangeNotifier {
     recordStreamEnded();
   }
 
+  void recordTransportEvent({
+    required String kind,
+    required int attempt,
+    required bool willRetry,
+    required bool outputStarted,
+    required Object error,
+  }) {
+    final action = willRetry ? 'retrying' : 'request paused';
+    addLog(
+      'transport',
+      '$kind on attempt $attempt ($action, outputStarted=$outputStarted): '
+          '$error',
+    );
+    if (!willRetry) {
+      lastError = error.toString();
+    }
+    notifyListeners();
+  }
+
   void recordCompactionStarted(String status) {
     compactionActive = true;
     lastCompactionStatus = status;

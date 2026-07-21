@@ -80,6 +80,69 @@ void main() {
       },
     );
 
+    test(
+      'pauses on transport failure and resumes the preserved task',
+      () async {
+        final project = await service.createProject(
+          workspace: workspace,
+          userPrompt: 'Build the reporting screen',
+          chatSessionId: 'chat_1',
+        );
+        final client = _ObjectQueueClient([
+          jsonEncode({'task': _projectTaskJson()}),
+          _finaliseTaskResponse(_taskPlanJson()),
+          _projectTransportFailure(),
+          jsonEncode({
+            'status': 'completed',
+            'summary': 'Task complete after resume.',
+            'memoryUpdate': 'Transport recovery succeeded.',
+          }),
+          jsonEncode({
+            'complete': true,
+            'finalSummary': 'Reporting screen project is complete.',
+            'remainingCriteria': [],
+            'openQuestions': [],
+          }),
+        ]);
+
+        final pausedResult = await service.runProject(
+          client: client,
+          workspace: workspace,
+          snapshot: project,
+          baseSystemPrompt: 'system',
+          maxNewTasks: 0,
+        );
+
+        expect(pausedResult.project.status, ProjectStatus.paused);
+        expect(pausedResult.project.currentTask, isNotNull);
+        expect(pausedResult.project.activeTaskId, pausedResult.activeTask?.id);
+        expect(pausedResult.project.failedTasks, isEmpty);
+        expect(pausedResult.project.blocker, isNull);
+        expect(pausedResult.project.iterationCount, 0);
+        expect(pausedResult.activeTask?.status, TaskStatus.paused);
+        expect(
+          pausedResult.activeTask?.currentStep?.status,
+          TaskStepStatus.pending,
+        );
+
+        final resumedResult = await service.runProject(
+          client: client,
+          workspace: workspace,
+          snapshot: pausedResult.project,
+          baseSystemPrompt: 'system',
+          maxNewTasks: 0,
+        );
+
+        expect(
+          resumedResult.project.status,
+          ProjectStatus.completed,
+          reason: resumedResult.project.blocker?.message,
+        );
+        expect(resumedResult.project.failedTasks, isEmpty);
+        expect(resumedResult.project.iterationCount, 1);
+      },
+    );
+
     test('pauses after the per-run project task limit', () async {
       final project = await service.createProject(
         workspace: workspace,
@@ -1339,3 +1402,37 @@ class _QueueCompletionClient extends ChatClient {
   @override
   void dispose() {}
 }
+
+class _ObjectQueueClient extends ChatClient {
+  _ObjectQueueClient(this._responses)
+    : super(baseUrl: 'http://localhost', model: 'test');
+
+  final List<Object> _responses;
+  var _index = 0;
+
+  @override
+  Future<ChatCompletionResponse> completeChat({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+  }) async {
+    final response = _responses[_index++];
+    if (response is ChatTransportException) throw response;
+    if (response is ChatCompletionResponse) return response;
+    return ChatCompletionResponse(content: response as String);
+  }
+
+  @override
+  void dispose() {}
+}
+
+ChatTransportException _projectTransportFailure() => ChatTransportException(
+  kind: ChatTransportFailureKind.brokenPipe,
+  uri: Uri.parse('http://localhost/v1/chat/completions'),
+  attempts: 2,
+  outputStarted: false,
+  cause: const SocketException(
+    'Write failed',
+    osError: OSError('Broken pipe', 32),
+  ),
+  causeStackTrace: StackTrace.empty,
+);
