@@ -185,8 +185,6 @@ class LlamaServerManager implements Disposable {
 
     final args = buildLlamaServerArguments(snapshot: snapshot, port: port);
 
-    print(args);
-
     await _stopHandles();
     _throwIfCancelled(generation);
 
