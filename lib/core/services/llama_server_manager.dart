@@ -48,7 +48,10 @@ List<String> buildLlamaServerArguments({
       '--cache-reuse', '${snapshot.cacheReuse}',
     ] else
       '--no-cache-prompt',
-    if (!snapshot.thinking) ...[
+    if (snapshot.thinking) ...[
+      '--reasoning', 'on'
+    ] else ...[
+      '--reasoning', 'off',
       '--chat-template-kwargs', '{"enable_thinking": false}',
     ],
     if (snapshot.kvCacheQuantizationEnabled) ...[
@@ -181,6 +184,8 @@ class LlamaServerManager implements Disposable {
     _throwIfCancelled(generation);
 
     final args = buildLlamaServerArguments(snapshot: snapshot, port: port);
+
+    print(args);
 
     await _stopHandles();
     _throwIfCancelled(generation);
