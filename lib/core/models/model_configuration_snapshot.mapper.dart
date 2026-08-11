@@ -78,6 +78,14 @@ class ModelConfigurationSnapshotMapper
     _$topK,
     hook: JsonIntHook(fallback: 40),
   );
+  static double _$minP(ModelConfigurationSnapshot v) => v.minP;
+  static const Field<ModelConfigurationSnapshot, double> _f$minP = Field(
+    'minP',
+    _$minP,
+    opt: true,
+    def: 0.05,
+    hook: JsonDoubleHook(fallback: 0.05),
+  );
   static int _$nBatch(ModelConfigurationSnapshot v) => v.nBatch;
   static const Field<ModelConfigurationSnapshot, int> _f$nBatch = Field(
     'nBatch',
@@ -178,6 +186,7 @@ class ModelConfigurationSnapshotMapper
     #temperature: _f$temperature,
     #topP: _f$topP,
     #topK: _f$topK,
+    #minP: _f$minP,
     #nBatch: _f$nBatch,
     #nUBatch: _f$nUBatch,
     #mirostat: _f$mirostat,
@@ -205,6 +214,7 @@ class ModelConfigurationSnapshotMapper
       temperature: data.dec(_f$temperature),
       topP: data.dec(_f$topP),
       topK: data.dec(_f$topK),
+      minP: data.dec(_f$minP),
       nBatch: data.dec(_f$nBatch),
       nUBatch: data.dec(_f$nUBatch),
       mirostat: data.dec(_f$mirostat),

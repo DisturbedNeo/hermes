@@ -44,6 +44,8 @@ class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
   final double topP;
   @MappableField(hook: JsonIntHook(fallback: 40))
   final int topK;
+  @MappableField(hook: JsonDoubleHook(fallback: 0.05))
+  final double minP;
   @MappableField(hook: JsonIntHook(fallback: 2048))
   final int nBatch;
   @MappableField(hook: JsonIntHook(fallback: 512))
@@ -83,6 +85,7 @@ class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
     required this.temperature,
     required this.topP,
     required this.topK,
+    this.minP = 0.05,
     required this.nBatch,
     required this.nUBatch,
     required this.mirostat,
@@ -110,6 +113,7 @@ class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
         _doubleMatches(temperature, other.temperature) &&
         _doubleMatches(topP, other.topP) &&
         topK == other.topK &&
+        _doubleMatches(minP, other.minP) &&
         nBatch == other.nBatch &&
         nUBatch == other.nUBatch &&
         mirostat == other.mirostat &&
@@ -142,6 +146,7 @@ class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
     _doubleHashValue(temperature),
     _doubleHashValue(topP),
     topK,
+    _doubleHashValue(minP),
     nBatch,
     nUBatch,
     mirostat,

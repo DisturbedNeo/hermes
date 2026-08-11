@@ -7,6 +7,7 @@ void main() {
     final snapshot = ModelJson.decode<ModelConfigurationSnapshot>(const {});
 
     expect(snapshot.nThreads, ModelConfigurationSnapshot.defaultNThreads);
+    expect(snapshot.minP, 0.05);
     expect(snapshot.flashAttention, isTrue);
     expect(snapshot.cachePrompt, isTrue);
     expect(snapshot.cacheReuse, ModelConfigurationSnapshot.defaultCacheReuse);
@@ -32,6 +33,7 @@ void main() {
       temperature: 0.7,
       topP: 0.8,
       topK: 20,
+      minP: 0.0,
       nBatch: 2048,
       nUBatch: 512,
       mirostat: 0,
@@ -52,6 +54,7 @@ void main() {
     expect(encoded, containsPair('flashAttention', true));
     expect(encoded, containsPair('cachePrompt', true));
     expect(encoded, containsPair('cacheReuse', 512));
+    expect(encoded, containsPair('minP', 0.0));
     expect(encoded, containsPair('kvCacheQuantizationEnabled', true));
     expect(encoded, containsPair('kvCacheTypeK', 'q4_0'));
     expect(encoded, containsPair('kvCacheTypeV', 'q8_0'));
@@ -61,6 +64,7 @@ void main() {
     final first = _snapshot(
       temperature: double.nan,
       topP: double.nan,
+      minP: double.nan,
       repeatPenalty: double.nan,
       presencePenalty: double.nan,
       frequencyPenalty: double.nan,
@@ -68,6 +72,7 @@ void main() {
     final second = _snapshot(
       temperature: double.nan,
       topP: double.nan,
+      minP: double.nan,
       repeatPenalty: double.nan,
       presencePenalty: double.nan,
       frequencyPenalty: double.nan,
@@ -102,6 +107,7 @@ void main() {
 ModelConfigurationSnapshot _snapshot({
   double temperature = 0.7,
   double topP = 0.8,
+  double minP = 0.05,
   double repeatPenalty = 1,
   double presencePenalty = 1.5,
   double frequencyPenalty = 0,
@@ -116,6 +122,7 @@ ModelConfigurationSnapshot _snapshot({
     temperature: temperature,
     topP: topP,
     topK: 20,
+    minP: minP,
     nBatch: 2048,
     nUBatch: 512,
     mirostat: 0,

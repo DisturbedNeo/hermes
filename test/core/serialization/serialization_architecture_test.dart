@@ -7,6 +7,7 @@ void main() {
     const dtoSources = [
       'lib/core/models/chat_message.dart',
       'lib/core/models/model_configuration_snapshot.dart',
+      'lib/core/models/model_load_configuration.dart',
       'lib/core/models/project.dart',
       'lib/core/models/system_prompt.dart',
       'lib/core/models/task.dart',
@@ -50,6 +51,7 @@ void main() {
       'lib/core/models/project.mapper.dart',
       'lib/core/models/system_prompt.mapper.dart',
       'lib/core/models/model_configuration_snapshot.mapper.dart',
+      'lib/core/models/model_load_configuration.mapper.dart',
       'lib/core/serialization/mappers.init.dart',
     ]) {
       expect(File(path).existsSync(), isTrue, reason: '$path is missing.');

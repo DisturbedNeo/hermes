@@ -3,26 +3,34 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
+import 'package:hermes/core/models/model_load_configuration.dart';
 import 'package:hermes/ui/model_configuration/slider_control.dart';
 
 typedef ModelConfigurationConfirm =
-    Future<void> Function(ModelConfigurationSnapshot snapshot);
+    Future<void> Function(
+      ModelLoadConfiguration configuration, {
+      required bool saveAsDefault,
+    });
+
+typedef ModelConfigurationReset = Future<bool> Function();
 
 class ModelConfiguration extends StatefulWidget {
   const ModelConfiguration({
     super.key,
     required this.modelName,
-    required this.modelPath,
-    required this.llamaCppDirectory,
+    required this.initialConfiguration,
+    required this.hasSavedConfiguration,
     required this.onConfirm,
+    required this.onResetSavedConfiguration,
     this.onCancel,
   });
 
   final String modelName;
-  final String modelPath;
-  final String llamaCppDirectory;
+  final ModelLoadConfiguration initialConfiguration;
+  final bool hasSavedConfiguration;
 
   final ModelConfigurationConfirm onConfirm;
+  final ModelConfigurationReset onResetSavedConfiguration;
 
   final FutureOr<void> Function()? onCancel;
 
@@ -36,61 +44,94 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
   static const double _dialogMaxWidth = 760;
   static const double _dialogHorizontalInset = 40;
 
-  int _ctx = 64;
-  int _threads = ModelConfigurationSnapshot.defaultNThreads;
-  int _gpuLayers = 999;
-  double _temperature = 0.7;
-  double _topP = 0.8;
-  int _topK = 20;
-  int _batch = 8192;
-  int _uBatch = 4096;
-  int _miroStatMode = 0;
-  double _repeatPenalty = 1.0;
-  int _repeatLastN = 64;
-  double _presencePenalty = 1.5;
-  double _frequencyPenalty = 0.0;
-  bool _thinking = false;
-  bool _flashAttention = true;
-  bool _cachePrompt = true;
-  int _cacheReuse = ModelConfigurationSnapshot.defaultCacheReuse;
-  bool _kvCacheQuantizationEnabled = true;
-  String _kvCacheTypeK = ModelConfigurationSnapshot.defaultKvCacheType;
-  String _kvCacheTypeV = ModelConfigurationSnapshot.defaultKvCacheType;
+  late int _ctx;
+  late int _threads;
+  late int _gpuLayers;
+  late double _temperature;
+  late double _topP;
+  late int _topK;
+  late double _minP;
+  late int _batch;
+  late int _uBatch;
+  late int _miroStatMode;
+  late double _repeatPenalty;
+  late int _repeatLastN;
+  late double _presencePenalty;
+  late double _frequencyPenalty;
+  late bool _thinking;
+  late bool _flashAttention;
+  late bool _cachePrompt;
+  late int _cacheReuse;
+  late bool _kvCacheQuantizationEnabled;
+  late String _kvCacheTypeK;
+  late String _kvCacheTypeV;
+  late bool _hasSavedConfiguration;
   bool _submitting = false;
+  bool _resetting = false;
 
-  Future<void> _confirm() async {
-    if (_submitting) return;
+  @override
+  void initState() {
+    super.initState();
+    _hasSavedConfiguration = widget.hasSavedConfiguration;
+    _applyConfiguration(widget.initialConfiguration);
+  }
+
+  void _applyConfiguration(ModelLoadConfiguration configuration) {
+    final config = configuration.normalised();
+    _ctx = config.nCtx ~/ 1024;
+    _threads = config.nThreads;
+    _gpuLayers = config.nGpuLayers;
+    _temperature = config.temperature;
+    _topP = config.topP;
+    _topK = config.topK;
+    _minP = config.minP;
+    _batch = config.nBatch;
+    _uBatch = config.nUBatch;
+    _miroStatMode = config.mirostat;
+    _repeatPenalty = config.repeatPenalty;
+    _repeatLastN = config.repeatLastN;
+    _presencePenalty = config.presencePenalty;
+    _frequencyPenalty = config.frequencyPenalty;
+    _thinking = config.thinking;
+    _flashAttention = config.flashAttention;
+    _cachePrompt = config.cachePrompt;
+    _cacheReuse = config.cacheReuse;
+    _kvCacheQuantizationEnabled = config.kvCacheQuantizationEnabled;
+    _kvCacheTypeK = config.kvCacheTypeK;
+    _kvCacheTypeV = config.kvCacheTypeV;
+  }
+
+  ModelLoadConfiguration get _configuration => ModelLoadConfiguration(
+    nCtx: _ctx * 1024,
+    nThreads: _threads,
+    nGpuLayers: _gpuLayers,
+    temperature: _temperature,
+    topP: _topP,
+    topK: _topK,
+    minP: _minP,
+    nBatch: _batch,
+    nUBatch: _uBatch,
+    mirostat: _miroStatMode,
+    repeatPenalty: _repeatPenalty,
+    repeatLastN: _repeatLastN,
+    presencePenalty: _presencePenalty,
+    frequencyPenalty: _frequencyPenalty,
+    thinking: _thinking,
+    flashAttention: _flashAttention,
+    cachePrompt: _cachePrompt,
+    cacheReuse: _cacheReuse,
+    kvCacheQuantizationEnabled: _kvCacheQuantizationEnabled,
+    kvCacheTypeK: _kvCacheTypeK,
+    kvCacheTypeV: _kvCacheTypeV,
+  );
+
+  Future<void> _confirm({required bool saveAsDefault}) async {
+    if (_submitting || _resetting) return;
 
     setState(() => _submitting = true);
 
     try {
-      await widget.onConfirm(
-        ModelConfigurationSnapshot(
-          modelName: widget.modelName,
-          modelPath: widget.modelPath,
-          llamaCppDirectory: widget.llamaCppDirectory,
-          nCtx: _ctx * 1024,
-          nThreads: _threads,
-          nGpuLayers: _gpuLayers,
-          temperature: _temperature,
-          topP: _topP,
-          topK: _topK,
-          nBatch: _batch,
-          nUBatch: _uBatch,
-          mirostat: _miroStatMode,
-          repeatPenalty: _repeatPenalty,
-          repeatLastN: _repeatLastN,
-          presencePenalty: _presencePenalty,
-          frequencyPenalty: _frequencyPenalty,
-          thinking: _thinking,
-          flashAttention: _flashAttention,
-          cachePrompt: _cachePrompt,
-          cacheReuse: _cacheReuse,
-          kvCacheQuantizationEnabled: _kvCacheQuantizationEnabled,
-          kvCacheTypeK: _kvCacheTypeK,
-          kvCacheTypeV: _kvCacheTypeV,
-        ),
-      );
+      await widget.onConfirm(_configuration, saveAsDefault: saveAsDefault);
 
       if (mounted) {
         Navigator.of(context).pop();
@@ -106,6 +147,36 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
         setState(() => _submitting = false);
       }
     }
+  }
+
+  Future<void> _resetToDefaults() async {
+    if (_submitting || _resetting) return;
+
+    setState(() => _resetting = true);
+    bool removed;
+    try {
+      removed = await widget.onResetSavedConfiguration();
+    } catch (_) {
+      removed = false;
+    }
+    if (!mounted) return;
+
+    if (!removed) {
+      setState(() => _resetting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to reset saved configuration')),
+      );
+      return;
+    }
+
+    setState(() {
+      _applyConfiguration(ModelLoadConfiguration.defaults());
+      _hasSavedConfiguration = false;
+      _resetting = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Saved configuration removed')),
+    );
   }
 
   void _cancel() {
@@ -149,6 +220,13 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Text(
+              _hasSavedConfiguration
+                  ? 'Saved configuration loaded for ${widget.modelName}'
+                  : 'Using default configuration for ${widget.modelName}',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 12),
             _ConfigurationSection(
               title: 'Core',
               subtitle: 'Most-used startup choices',
@@ -246,6 +324,14 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                   max: 100,
                   step: 1,
                   onChanged: (v) => setState(() => _topK = v),
+                ),
+                SliderControl.decimal(
+                  label: 'Min P',
+                  value: _minP,
+                  min: 0.0,
+                  max: 1.0,
+                  step: 0.05,
+                  onChanged: (v) => setState(() => _minP = v),
                 ),
                 SliderControl.integer(
                   label: 'Mirostat',
@@ -373,15 +459,36 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
         ),
       ),
       actions: [
-        TextButton(onPressed: _cancel, child: const Text('Cancel')),
+        if (_hasSavedConfiguration)
+          TextButton(
+            onPressed: _submitting || _resetting ? null : _resetToDefaults,
+            child: _resetting
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Reset to defaults'),
+          ),
+        TextButton(
+          onPressed: _submitting || _resetting ? null : _cancel,
+          child: const Text('Cancel'),
+        ),
+        OutlinedButton(
+          onPressed: _submitting || _resetting
+              ? null
+              : () => _confirm(saveAsDefault: false),
+          child: const Text('Load model'),
+        ),
         FilledButton(
-          onPressed: _submitting ? null : _confirm,
+          onPressed: _submitting || _resetting
+              ? null
+              : () => _confirm(saveAsDefault: true),
           child: _submitting
               ? const SizedBox.square(
                   dimension: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('Confirm'),
+              : const Text('Save & load'),
         ),
       ],
     );

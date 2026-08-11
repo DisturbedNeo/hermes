@@ -20,6 +20,10 @@ abstract final class PreferencesKeys {
   /// Directory containing model files.
   static const String modelsDirectory = 'models_directory';
 
+  /// Prefix for JSON-encoded load configurations keyed by model alias.
+  static const String modelLoadConfigurationPrefix =
+      'model_load_configuration_';
+
   /// Visibility level for diagnostics overlays.
   static const String diagnosticsVisibility = 'diagnostics_visibility';
 

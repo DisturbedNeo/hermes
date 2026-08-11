@@ -14,6 +14,7 @@ void main() {
     temperature: 0.7,
     topP: 0.8,
     topK: 20,
+    minP: 0.0,
     nBatch: 2048,
     nUBatch: 512,
     mirostat: 0,
@@ -35,6 +36,7 @@ void main() {
 
     expect(_valueAfter(args, '-t'), '8');
     expect(_valueAfter(args, '--threads-batch'), '8');
+    expect(_valueAfter(args, '--min-p'), '0.0');
     expect(args, contains('--flash-attn'));
     expect(_valueAfter(args, '--flash-attn'), 'on');
     expect(args, contains('--cache-prompt'));

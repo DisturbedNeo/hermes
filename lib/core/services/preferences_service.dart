@@ -4,7 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:hermes/core/enums/diagnostics_visibility.dart';
 import 'package:hermes/core/helpers/preferences_keys.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
+import 'package:hermes/core/models/model_load_configuration.dart';
 import 'package:hermes/core/models/task_system_settings.dart';
+import 'package:hermes/core/serialization/model_json.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -96,6 +98,37 @@ class PreferencesService extends ChangeNotifier {
       (await _prefs).getString(PreferencesKeys.modelsDirectory);
   Future<bool> setModelsDirectory(String directory) async =>
       (await _prefs).setString(PreferencesKeys.modelsDirectory, directory);
+
+  Future<ModelLoadConfiguration?> getModelLoadConfiguration(
+    String modelAlias,
+  ) async {
+    final encoded = (await _prefs).getString(
+      _modelLoadConfigurationKey(modelAlias),
+    );
+    if (encoded == null || encoded.isEmpty) return null;
+
+    try {
+      return ModelJson.decodeString<ModelLoadConfiguration>(
+        encoded,
+      ).normalised();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> setModelLoadConfiguration(
+    String modelAlias,
+    ModelLoadConfiguration configuration,
+  ) async => (await _prefs).setString(
+    _modelLoadConfigurationKey(modelAlias),
+    ModelJson.encodeString(configuration.normalised()),
+  );
+
+  Future<bool> removeModelLoadConfiguration(String modelAlias) async =>
+      (await _prefs).remove(_modelLoadConfigurationKey(modelAlias));
+
+  String _modelLoadConfigurationKey(String modelAlias) =>
+      '${PreferencesKeys.modelLoadConfigurationPrefix}$modelAlias';
 
   Future<DiagnosticsVisibility> getDiagnosticsVisibility() async =>
       DiagnosticsVisibilityLabel.fromName(

@@ -1,4 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hermes/core/helpers/preferences_keys.dart';
+import 'package:hermes/core/models/model_configuration_snapshot.dart';
+import 'package:hermes/core/models/model_load_configuration.dart';
 import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -44,4 +49,99 @@ void main() {
       expect(settings.questionAutonomy, QuestionAutonomy.autonomous);
     });
   });
+
+  group('PreferencesService model load configurations', () {
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+    });
+
+    test('stores configurations independently by exact alias', () async {
+      final service = PreferencesService();
+      final alpha = _configuration(temperature: 0.4);
+      final upperAlpha = _configuration(temperature: 1.2);
+
+      expect(await service.setModelLoadConfiguration('alpha', alpha), isTrue);
+      expect(
+        await service.setModelLoadConfiguration('Alpha', upperAlpha),
+        isTrue,
+      );
+
+      expect(
+        (await service.getModelLoadConfiguration('alpha'))?.temperature,
+        0.4,
+      );
+      expect(
+        (await service.getModelLoadConfiguration('Alpha'))?.temperature,
+        1.2,
+      );
+      expect(await service.getModelLoadConfiguration('missing'), isNull);
+    });
+
+    test(
+      'overwrites and removes one alias without affecting another',
+      () async {
+        final service = PreferencesService();
+        await service.setModelLoadConfiguration(
+          'alpha',
+          _configuration(temperature: 0.4),
+        );
+        await service.setModelLoadConfiguration(
+          'beta',
+          _configuration(temperature: 0.8),
+        );
+        await service.setModelLoadConfiguration(
+          'alpha',
+          _configuration(temperature: 1.1),
+        );
+
+        expect(
+          (await service.getModelLoadConfiguration('alpha'))?.temperature,
+          1.1,
+        );
+        expect(await service.removeModelLoadConfiguration('alpha'), isTrue);
+        expect(await service.getModelLoadConfiguration('alpha'), isNull);
+        expect(
+          (await service.getModelLoadConfiguration('beta'))?.temperature,
+          0.8,
+        );
+      },
+    );
+
+    test('returns null for malformed persisted JSON', () async {
+      SharedPreferences.setMockInitialValues({
+        '${PreferencesKeys.modelLoadConfigurationPrefix}broken': '{nope',
+      });
+
+      expect(
+        await PreferencesService().getModelLoadConfiguration('broken'),
+        isNull,
+      );
+    });
+  });
 }
+
+ModelLoadConfiguration _configuration({required double temperature}) =>
+    ModelLoadConfiguration(
+      nCtx: ModelLoadConfiguration.defaultNCtx,
+      nThreads: Platform.numberOfProcessors,
+      nGpuLayers: ModelLoadConfiguration.defaultNGpuLayers,
+      temperature: temperature,
+      topP: ModelLoadConfiguration.defaultTopP,
+      topK: ModelLoadConfiguration.defaultTopK,
+      minP: ModelLoadConfiguration.defaultMinP,
+      nBatch: ModelLoadConfiguration.defaultNBatch,
+      nUBatch: ModelLoadConfiguration.defaultNUBatch,
+      mirostat: ModelLoadConfiguration.defaultMirostat,
+      repeatPenalty: ModelLoadConfiguration.defaultRepeatPenalty,
+      repeatLastN: ModelLoadConfiguration.defaultRepeatLastN,
+      presencePenalty: ModelLoadConfiguration.defaultPresencePenalty,
+      frequencyPenalty: ModelLoadConfiguration.defaultFrequencyPenalty,
+      thinking: ModelLoadConfiguration.defaultThinking,
+      flashAttention: ModelLoadConfiguration.defaultFlashAttention,
+      cachePrompt: ModelLoadConfiguration.defaultCachePrompt,
+      cacheReuse: ModelConfigurationSnapshot.defaultCacheReuse,
+      kvCacheQuantizationEnabled:
+          ModelLoadConfiguration.defaultKvCacheQuantizationEnabled,
+      kvCacheTypeK: ModelLoadConfiguration.defaultKvCacheType,
+      kvCacheTypeV: ModelLoadConfiguration.defaultKvCacheType,
+    );

@@ -3,10 +3,29 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/core/helpers/models_directory.dart';
+import 'package:hermes/core/models/model_load_configuration.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/ui/chat/message/dot_pulse.dart';
 import 'package:hermes/ui/model_configuration/model_configuration.dart';
+
+enum ModelConfigurationSaveOutcome { notRequested, saved, failed }
+
+@visibleForTesting
+Future<ModelConfigurationSaveOutcome> startModelAndMaybeSaveConfiguration({
+  required Future<void> Function() startModel,
+  required VoidCallback onModelStarted,
+  required bool saveAsDefault,
+  required Future<bool> Function() saveConfiguration,
+}) async {
+  await startModel();
+  onModelStarted();
+  if (!saveAsDefault) return ModelConfigurationSaveOutcome.notRequested;
+
+  return await saveConfiguration()
+      ? ModelConfigurationSaveOutcome.saved
+      : ModelConfigurationSaveOutcome.failed;
+}
 
 class ModelPicker extends StatefulWidget {
   const ModelPicker({
@@ -179,6 +198,8 @@ class _ModelPickerState extends State<ModelPicker> {
                         final llamaCppDirectory =
                             await _preferencesService.getLlamaCppDirectory() ??
                             '';
+                        final savedConfiguration = await _preferencesService
+                            .getModelLoadConfiguration(v);
                         if (!context.mounted) return;
 
                         showDialog<void>(
@@ -186,38 +207,77 @@ class _ModelPickerState extends State<ModelPicker> {
                           barrierDismissible: false,
                           builder: (_) => ModelConfiguration(
                             modelName: v,
-                            modelPath: file.path,
-                            llamaCppDirectory: llamaCppDirectory,
+                            initialConfiguration:
+                                savedConfiguration ??
+                                ModelLoadConfiguration.defaults(),
+                            hasSavedConfiguration: savedConfiguration != null,
+                            onResetSavedConfiguration: () => _preferencesService
+                                .removeModelLoadConfiguration(v),
                             onCancel: _tabs.serverManager.stop,
-                            onConfirm: (snapshot) async {
-                              setState(() {
-                                _selected = v;
-                                _loading = true;
-                                _error = null;
-                              });
-
-                              try {
-                                await _tabs.serverManager.startWithSnapshot(
-                                  snapshot,
-                                );
-                                _tabs.activeChat?.setCurrentModelSnapshot(
-                                  snapshot,
-                                );
-                              } catch (_) {
-                                if (mounted) {
-                                  setState(
-                                    () => _selected =
-                                        _tabs.serverManager.currentModelName,
+                            onConfirm:
+                                (
+                                  configuration, {
+                                  required saveAsDefault,
+                                }) async {
+                                  final snapshot = configuration.toSnapshot(
+                                    modelName: v,
+                                    modelPath: file.path,
+                                    llamaCppDirectory: llamaCppDirectory,
                                   );
-                                }
+                                  setState(() {
+                                    _selected = v;
+                                    _loading = true;
+                                    _error = null;
+                                  });
 
-                                rethrow;
-                              } finally {
-                                if (mounted) {
-                                  setState(() => _loading = false);
-                                }
-                              }
-                            },
+                                  try {
+                                    final saveOutcome =
+                                        await startModelAndMaybeSaveConfiguration(
+                                          startModel: () => _tabs.serverManager
+                                              .startWithSnapshot(snapshot),
+                                          onModelStarted: () => _tabs.activeChat
+                                              ?.setCurrentModelSnapshot(
+                                                snapshot,
+                                              ),
+                                          saveAsDefault: saveAsDefault,
+                                          saveConfiguration: () =>
+                                              _preferencesService
+                                                  .setModelLoadConfiguration(
+                                                    v,
+                                                    configuration,
+                                                  ),
+                                        );
+                                    if (saveOutcome ==
+                                            ModelConfigurationSaveOutcome
+                                                .failed &&
+                                        context.mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Model loaded, but its configuration '
+                                            'could not be saved',
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  } catch (_) {
+                                    if (mounted) {
+                                      setState(
+                                        () => _selected = _tabs
+                                            .serverManager
+                                            .currentModelName,
+                                      );
+                                    }
+
+                                    rethrow;
+                                  } finally {
+                                    if (mounted) {
+                                      setState(() => _loading = false);
+                                    }
+                                  }
+                                },
                           ),
                         );
                       },
