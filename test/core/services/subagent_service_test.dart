@@ -101,6 +101,7 @@ class _FakeChatClient extends ChatClient {
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
+    Object? cancellationToken,
   }) async {
     seenExtraParams = extraParams;
     return _response;

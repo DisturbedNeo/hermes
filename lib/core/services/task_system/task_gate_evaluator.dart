@@ -7,6 +7,7 @@ import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/terminal_command_classifier.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
@@ -94,9 +95,11 @@ class TaskGateEvaluator {
     TaskGateEvidence? evidence,
     ChatClient? client,
     String baseSystemPrompt = '',
+    CancellationToken? cancellationToken,
   }) async {
     final results = <TaskGateResult>[];
     for (final gate in gates) {
+      cancellationToken?.throwIfCancelled();
       final taskScoped = gate.scope.trim().toLowerCase() == 'task';
       results.add(
         await _evaluateGate(
@@ -116,6 +119,7 @@ class TaskGateEvaluator {
               : evidence.stepArtifacts,
           client: client,
           baseSystemPrompt: baseSystemPrompt,
+          cancellationToken: cancellationToken,
         ),
       );
     }
@@ -131,7 +135,9 @@ class TaskGateEvaluator {
     required List<TaskArtifact> artifacts,
     required ChatClient? client,
     required String baseSystemPrompt,
+    CancellationToken? cancellationToken,
   }) async {
+    cancellationToken?.throwIfCancelled();
     final now = DateTime.now();
     if (!kTaskGateCatalog.contains(gate.id)) {
       return _result(
@@ -179,6 +185,7 @@ class TaskGateEvaluator {
           workspace,
           gate,
           now,
+          cancellationToken,
         ),
         'human_approval' => _result(
           gate,
@@ -193,6 +200,7 @@ class TaskGateEvaluator {
           client,
           baseSystemPrompt,
           now,
+          cancellationToken,
         ),
         _ => _result(
           gate,
@@ -201,6 +209,8 @@ class TaskGateEvaluator {
           now,
         ),
       };
+    } on OperationCancelledException {
+      rethrow;
     } on ChatTransportException {
       rethrow;
     } catch (e) {
@@ -680,6 +690,7 @@ class TaskGateEvaluator {
     WorkspaceAttachment workspace,
     TaskGate gate,
     DateTime now,
+    CancellationToken? cancellationToken,
   ) async {
     final git = Directory(path.join(workspace.rootPath, '.git'));
     if (!await git.exists()) {
@@ -702,6 +713,7 @@ class TaskGateEvaluator {
       workspace.rootPath,
       executable: 'git',
       arguments: const ['status', '--porcelain'],
+      cancellationToken: cancellationToken,
     );
     final exitCode = jsonInt(result['exit_code'], fallback: -1);
     if (exitCode != 0) {
@@ -741,6 +753,7 @@ class TaskGateEvaluator {
     ChatClient? client,
     String baseSystemPrompt,
     DateTime now,
+    CancellationToken? cancellationToken,
   ) async {
     if (client == null) {
       return _result(
@@ -777,6 +790,7 @@ $prompt
 ''',
         ),
       ],
+      cancellationToken: cancellationToken,
     );
     final json = TaskJson.tryParseObject(text) ?? const <String, dynamic>{};
     final passed = jsonBool(json['passed'], fallback: true);

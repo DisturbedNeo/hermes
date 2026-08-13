@@ -11,6 +11,15 @@ import 'package:hermes/core/models/tool_definition.dart';
 
 void main() {
   group('ContextEstimator', () {
+    test('uses a conservative UTF-8-aware fallback', () {
+      expect(ContextEstimator.estimateText('abcdef'), 2);
+      expect(ContextEstimator.estimateText('你好'), 3);
+      expect(
+        ContextEstimator.estimateText('你好'),
+        greaterThan(ContextEstimator.estimateText('ab')),
+      );
+    });
+
     test('counts serialized tool call metadata', () {
       final estimate = ContextEstimator.estimateChatCompletionRequest(
         messages: [

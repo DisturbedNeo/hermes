@@ -1357,6 +1357,7 @@ class _QueueChatClient extends ChatClient {
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
+    Object? cancellationToken,
   }) async {
     _requests.add(List<ChatMessage>.of(messages));
     final index = _index >= _responses.length ? _responses.length - 1 : _index;
@@ -1381,6 +1382,7 @@ class _QueueCompletionClient extends ChatClient {
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
+    Object? cancellationToken,
   }) async {
     seenMessages.add(List<ChatMessage>.of(messages));
     seenToolNames.add(_toolNames(extraParams));
@@ -1414,6 +1416,7 @@ class _ObjectQueueClient extends ChatClient {
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
+    Object? cancellationToken,
   }) async {
     final response = _responses[_index++];
     if (response is ChatTransportException) throw response;

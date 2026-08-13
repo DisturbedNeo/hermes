@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/models/chat_token.dart';
+import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:http/http.dart' as http;
 
 /// Parses SSE (Server-Sent Events) stream payloads into [ChatToken]s.
@@ -158,16 +159,35 @@ class ChatTransportException implements Exception {
   }
 }
 
+class ChatRequestTimeoutException implements Exception {
+  final Uri uri;
+  final Duration inactivityTimeout;
+
+  const ChatRequestTimeoutException({
+    required this.uri,
+    required this.inactivityTimeout,
+  });
+
+  @override
+  String toString() =>
+      'Model request received no data for ${inactivityTimeout.inSeconds} seconds: $uri';
+}
+
 class ChatClient {
   static const Duration _retryDelay = Duration(milliseconds: 100);
   static const int _maxAttempts = 2;
+  static const Duration defaultInactivityTimeout = Duration(minutes: 10);
+  static const Duration defaultTokenCountTimeout = Duration(seconds: 5);
 
   final String _baseUrl;
   final String _model;
   final ChatHttpClientFactory _clientFactory;
   final void Function(ChatTransportEvent)? _onTransportEvent;
+  final Duration inactivityTimeout;
+  final Duration tokenCountTimeout;
   final Set<http.Client> _activeClients = {};
   bool _isDisposed = false;
+  bool _inputTokenEndpointUnsupported = false;
 
   ChatClient({
     required String baseUrl,
@@ -175,6 +195,8 @@ class ChatClient {
     String? apiKey,
     ChatHttpClientFactory? clientFactory,
     void Function(ChatTransportEvent)? onTransportEvent,
+    this.inactivityTimeout = defaultInactivityTimeout,
+    this.tokenCountTimeout = defaultTokenCountTimeout,
   }) : _model = model,
        _baseUrl = baseUrl,
        _clientFactory = clientFactory ?? http.Client.new,
@@ -194,10 +216,12 @@ class ChatClient {
   Future<String> completeMessage({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
+    CancellationToken? cancellationToken,
   }) async {
     final completion = await completeChat(
       messages: messages,
       extraParams: extraParams,
+      cancellationToken: cancellationToken,
     );
     if (completion.content.isNotEmpty) return completion.content;
     return completion.reasoning;
@@ -206,6 +230,7 @@ class ChatClient {
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
+    CancellationToken? cancellationToken,
   }) async {
     final body = {
       'model': _model,
@@ -215,10 +240,20 @@ class ChatClient {
     };
 
     final chatUri = Uri.parse('$_baseUrl/v1/chat/completions');
-    return _runBeforeOutputRetry(chatUri, (client) async {
+    return _runBeforeOutputRetry(chatUri, cancellationToken, (client) async {
       final request = _request(chatUri, accept: 'application/json', body: body);
-      final streamed = await client.send(request);
-      final responseBody = await streamed.stream.bytesToString();
+      final streamed = await _sendWithTimeout(
+        client,
+        request,
+        chatUri,
+        inactivityTimeout,
+      );
+      final responseBody = await _readResponseBody(
+        streamed.stream,
+        client,
+        chatUri,
+        inactivityTimeout,
+      );
       if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
         _throwHttpException(streamed.statusCode, responseBody, chatUri);
       }
@@ -230,11 +265,13 @@ class ChatClient {
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
     void Function(ChatToken token)? onToken,
+    CancellationToken? cancellationToken,
   }) async {
     if (runtimeType != ChatClient) {
       final completion = await completeChat(
         messages: messages,
         extraParams: extraParams,
+        cancellationToken: cancellationToken,
       );
       _emitCompletionTokens(completion, onToken);
       return completion;
@@ -268,6 +305,7 @@ class ChatClient {
     await for (final token in streamMessage(
       messages: messages,
       extraParams: extraParams,
+      cancellationToken: cancellationToken,
     )) {
       record(token);
     }
@@ -316,7 +354,9 @@ class ChatClient {
   Stream<ChatToken> streamMessage({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
+    CancellationToken? cancellationToken,
   }) async* {
+    cancellationToken?.throwIfCancelled();
     final body = {
       'model': _model,
       'messages': messages.map(ModelJson.encode).toList(),
@@ -329,12 +369,17 @@ class ChatClient {
     var outputStarted = false;
     for (var attempt = 1; attempt <= _maxAttempts; attempt++) {
       try {
-        await for (final token in _streamAttempt(chatUri, body)) {
+        await for (final token in _streamAttempt(
+          chatUri,
+          body,
+          cancellationToken,
+        )) {
           outputStarted = true;
           yield token;
         }
         return;
       } catch (error, stackTrace) {
+        cancellationToken?.throwIfCancelled();
         final kind = _transportKind(error);
         if (kind == null) rethrow;
         final willRetry = !outputStarted && attempt < _maxAttempts;
@@ -360,6 +405,7 @@ class ChatClient {
           );
         }
         await Future<void>.delayed(_retryDelay);
+        cancellationToken?.throwIfCancelled();
       }
     }
   }
@@ -367,23 +413,41 @@ class ChatClient {
   Stream<ChatToken> _streamAttempt(
     Uri chatUri,
     Map<String, dynamic> body,
+    CancellationToken? cancellationToken,
   ) async* {
     final client = _openClient();
+    final unregister = cancellationToken?.onCancel(client.close);
     try {
+      cancellationToken?.throwIfCancelled();
       final request = _request(
         chatUri,
         accept: 'text/event-stream',
         body: body,
       );
-      final streamed = await client.send(request);
+      final streamed = await _sendWithTimeout(
+        client,
+        request,
+        chatUri,
+        inactivityTimeout,
+      );
       if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
-        final responseBody = await streamed.stream.bytesToString();
+        final responseBody = await _readResponseBody(
+          streamed.stream,
+          client,
+          chatUri,
+          inactivityTimeout,
+        );
         _throwHttpException(streamed.statusCode, responseBody, chatUri);
       }
 
       final contentType = streamed.headers['content-type'] ?? '';
       if (!contentType.toLowerCase().contains('text/event-stream')) {
-        final responseBody = await streamed.stream.bytesToString();
+        final responseBody = await _readResponseBody(
+          streamed.stream,
+          client,
+          chatUri,
+          inactivityTimeout,
+        );
         final completion = _completionFromBody(responseBody, chatUri);
         if (completion.reasoning.isNotEmpty) {
           yield ChatToken(reasoning: completion.reasoning);
@@ -405,9 +469,12 @@ class ChatClient {
         return;
       }
 
-      final lines = streamed.stream
-          .transform(utf8.decoder)
-          .transform(const LineSplitter());
+      final lines = _responseStreamWithTimeout(
+        streamed.stream,
+        client,
+        chatUri,
+        inactivityTimeout,
+      ).transform(utf8.decoder).transform(const LineSplitter());
       final parser = _SseParser(chatUri);
       await for (final line in lines) {
         parser.addLine(line);
@@ -422,18 +489,22 @@ class ChatClient {
         yield token;
       }
     } finally {
+      unregister?.call();
       _closeClient(client);
     }
   }
 
   Future<T> _runBeforeOutputRetry<T>(
     Uri uri,
+    CancellationToken? cancellationToken,
     Future<T> Function(http.Client client) operation,
   ) async {
     for (var attempt = 1; attempt <= _maxAttempts; attempt++) {
       try {
-        return await _withClient(operation);
+        cancellationToken?.throwIfCancelled();
+        return await _withClient(operation, cancellationToken);
       } catch (error, stackTrace) {
+        cancellationToken?.throwIfCancelled();
         final kind = _transportKind(error);
         if (kind == null) rethrow;
         final willRetry = attempt < _maxAttempts;
@@ -459,6 +530,7 @@ class ChatClient {
           );
         }
         await Future<void>.delayed(_retryDelay);
+        cancellationToken?.throwIfCancelled();
       }
     }
     throw StateError('Unreachable retry state');
@@ -466,13 +538,122 @@ class ChatClient {
 
   Future<T> _withClient<T>(
     Future<T> Function(http.Client client) operation,
+    CancellationToken? cancellationToken,
   ) async {
     final client = _openClient();
+    final unregister = cancellationToken?.onCancel(client.close);
     try {
+      cancellationToken?.throwIfCancelled();
       return await operation(client);
     } finally {
+      unregister?.call();
       _closeClient(client);
     }
+  }
+
+  Future<int?> countInputTokens({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+    CancellationToken? cancellationToken,
+  }) async {
+    if (runtimeType != ChatClient) return null;
+    if (_inputTokenEndpointUnsupported) return null;
+    cancellationToken?.throwIfCancelled();
+
+    final uri = Uri.parse('$_baseUrl/v1/chat/completions/input_tokens');
+    final body = {
+      'model': _model,
+      'messages': messages.map(ModelJson.encode).toList(),
+      ...?extraParams,
+    };
+
+    try {
+      return await _withClient((client) async {
+        final request = _request(uri, accept: 'application/json', body: body);
+        final streamed = await _sendWithTimeout(
+          client,
+          request,
+          uri,
+          tokenCountTimeout,
+        );
+        if (streamed.statusCode == HttpStatus.notFound ||
+            streamed.statusCode == HttpStatus.methodNotAllowed) {
+          _inputTokenEndpointUnsupported = true;
+          return null;
+        }
+        if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+          return null;
+        }
+        final responseBody = await _readResponseBody(
+          streamed.stream,
+          client,
+          uri,
+          tokenCountTimeout,
+        );
+        final decoded = jsonDecode(responseBody);
+        final value = decoded is Map ? decoded['input_tokens'] : null;
+        if (value is int) return value;
+        if (value is num) return value.toInt();
+        return int.tryParse(value?.toString() ?? '');
+      }, cancellationToken);
+    } on OperationCancelledException {
+      rethrow;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<http.StreamedResponse> _sendWithTimeout(
+    http.Client client,
+    http.BaseRequest request,
+    Uri uri,
+    Duration timeout,
+  ) {
+    return client
+        .send(request)
+        .timeout(
+          timeout,
+          onTimeout: () {
+            client.close();
+            throw ChatRequestTimeoutException(
+              uri: uri,
+              inactivityTimeout: timeout,
+            );
+          },
+        );
+  }
+
+  Stream<List<int>> _responseStreamWithTimeout(
+    Stream<List<int>> stream,
+    http.Client client,
+    Uri uri,
+    Duration timeout,
+  ) {
+    return stream.timeout(
+      timeout,
+      onTimeout: (sink) {
+        client.close();
+        sink.addError(
+          ChatRequestTimeoutException(uri: uri, inactivityTimeout: timeout),
+        );
+        sink.close();
+      },
+    );
+  }
+
+  Future<String> _readResponseBody(
+    Stream<List<int>> stream,
+    http.Client client,
+    Uri uri,
+    Duration timeout,
+  ) async {
+    final bytes = await _responseStreamWithTimeout(
+      stream,
+      client,
+      uri,
+      timeout,
+    ).expand((chunk) => chunk).toList();
+    return utf8.decode(bytes);
   }
 
   http.Client _openClient() {

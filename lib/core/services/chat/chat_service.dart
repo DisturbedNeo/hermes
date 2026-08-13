@@ -21,6 +21,7 @@ import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_session_manager.dart';
 import 'package:hermes/core/services/chat/chat_stream.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
+import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
@@ -101,7 +102,7 @@ class ChatService extends ChangeNotifier
   String? _taskModelOutputTextSection;
   String? _taskModelOutputReasoningLabel;
   int? _taskModelOutputContextEstimate;
-  TaskCancellationToken? _taskCancellationToken;
+  CancellationToken? _taskCancellationToken;
   late final ThrottledScheduler _contextEstimateScheduler;
   late final ThrottledScheduler _taskModelOutputNotifier;
 
@@ -909,7 +910,7 @@ class ChatService extends ChangeNotifier
           break;
         }
       }
-    } on TaskCancelledException {
+    } on OperationCancelledException {
       _insertTaskAssistantMessage('Task run cancelled.');
     } catch (e) {
       taskError = e;
@@ -1207,7 +1208,7 @@ class ChatService extends ChangeNotifier
           createdAt: DateTime.now(),
         ),
       );
-    } on TaskCancelledException {
+    } on OperationCancelledException {
       _insertTaskAssistantMessage('Task brief refinement cancelled.');
     } catch (e) {
       taskError = e;
@@ -1437,7 +1438,7 @@ class ChatService extends ChangeNotifier
         activeProject = project;
         await _runProjectInternal(keepBusy: true);
       }
-    } on TaskCancelledException {
+    } on OperationCancelledException {
       _insertTaskAssistantMessage('Project creation cancelled.');
     } catch (e) {
       taskError = e;
@@ -1507,7 +1508,7 @@ class ChatService extends ChangeNotifier
       activeTask = result.activeTask;
       await reloadTasks();
       _insertTaskAssistantMessage(_projectStatusMessage(result.project));
-    } on TaskCancelledException {
+    } on OperationCancelledException {
       _insertTaskAssistantMessage('Project run cancelled.');
     } catch (e) {
       taskError = e;
@@ -1576,7 +1577,7 @@ class ChatService extends ChangeNotifier
       activeTask = updated;
       await reloadTasks();
       _insertTaskAssistantMessage(_stepFinishedMessage(updated));
-    } on TaskCancelledException {
+    } on OperationCancelledException {
       _insertTaskAssistantMessage('Task step cancelled.');
     } catch (e) {
       taskError = e;
@@ -1664,7 +1665,7 @@ class ChatService extends ChangeNotifier
         activeTask = snapshot;
         await _runTaskInternal(keepBusy: true);
       }
-    } on TaskCancelledException {
+    } on OperationCancelledException {
       _insertTaskAssistantMessage('Task creation cancelled.');
     } catch (e) {
       taskError = e;
@@ -1711,7 +1712,7 @@ class ChatService extends ChangeNotifier
       _insertTaskAssistantMessage(
         'Unfinished work replanned for **${activeTask!.title}**. Next step: `${activeTask!.currentStepId ?? 'none'}`.',
       );
-    } on TaskCancelledException {
+    } on OperationCancelledException {
       _insertTaskAssistantMessage('Replan cancelled.');
     } catch (e) {
       taskError = e;
@@ -1935,20 +1936,18 @@ class ChatService extends ChangeNotifier
     );
   }
 
-  TaskCancellationToken _beginTaskCancellationScope({
-    bool reuseExisting = false,
-  }) {
+  CancellationToken _beginTaskCancellationScope({bool reuseExisting = false}) {
     if (reuseExisting) {
       final existing = _taskCancellationToken;
       if (existing != null) return existing;
     }
-    final token = TaskCancellationToken();
+    final token = CancellationToken();
     _taskCancellationToken = token;
     taskCancellationRequested = false;
     return token;
   }
 
-  void _endTaskCancellationScope(TaskCancellationToken token) {
+  void _endTaskCancellationScope(CancellationToken token) {
     if (!identical(_taskCancellationToken, token)) return;
     _taskCancellationToken = null;
     taskCancellationRequested = false;

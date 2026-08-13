@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/subagent_service.dart';
+import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/tools/tool.dart';
 import 'package:hermes/core/tools/tool_error.dart';
@@ -40,6 +41,8 @@ abstract class WorkspaceTool extends Tool {
           : Map<String, dynamic>.from(decoded as Map);
       final result = await run(args, context);
       return jsonEncode(result);
+    } on OperationCancelledException {
+      rethrow;
     } on WorkspaceSandboxException catch (e) {
       return jsonEncode(
         toolErrorPayload(
@@ -484,6 +487,7 @@ class RunCommandTool extends WorkspaceTool {
       executable: args.isEmpty ? null : command,
       arguments: args,
       workingDirectory: stringArg(input, 'working_directory', fallback: '.'),
+      cancellationToken: context.cancellationToken,
     );
   }
 }

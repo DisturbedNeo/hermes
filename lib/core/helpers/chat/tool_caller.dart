@@ -290,12 +290,18 @@ class ToolCaller {
   }
 
   static List<BubbleToolCall> extractToolCalls(Bubble? b) {
-    if (b == null || b.tools.isEmpty) return const [];
+    return extractPendingToolEntries(b).map((entry) => entry.value).toList();
+  }
 
-    final calls = b.tools.entries.where((t) => t.value.result == null).toList()
-      ..sort((a, b) => a.key.compareTo(b.key));
-
-    return calls.map((c) => c.value).toList();
+  static List<MapEntry<int, BubbleToolCall>> extractPendingToolEntries(
+    Bubble? bubble,
+  ) {
+    if (bubble == null || bubble.tools.isEmpty) return const [];
+    final calls = bubble.tools.entries
+        .where((entry) => entry.value.result == null)
+        .toList();
+    calls.sort((a, b) => a.key.compareTo(b.key));
+    return calls;
   }
 
   static Bubble withResult(

@@ -12,6 +12,7 @@ import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
 
 class CompactionManager {
@@ -47,7 +48,9 @@ class CompactionManager {
     required int contextLimit,
     required Map<String, dynamic> extraParams,
     required void Function(String status) onStatusChanged,
+    CancellationToken? cancellationToken,
   }) async {
+    cancellationToken?.throwIfCancelled();
     final messages = messageStore.messages.toList();
     if (!settings.enabled || contextLimit <= 0 || messages.isEmpty) {
       return const CompactionResult(compacted: false);
@@ -57,9 +60,10 @@ class CompactionManager {
       return const CompactionResult(compacted: false);
     }
 
-    final estimatedBefore = _estimateOutgoingPayload(
+    final estimatedBefore = await _countOutgoingPayload(
       messages: messages,
       extraParams: extraParams,
+      cancellationToken: cancellationToken,
     );
     final triggerTokens = (contextLimit * settings.triggerThreshold).ceil();
     if (estimatedBefore < triggerTokens) {
@@ -102,7 +106,10 @@ class CompactionManager {
         previousSummaryText: existingSummary?.text,
         contextLimit: contextLimit,
         onStatusChanged: onStatusChanged,
+        cancellationToken: cancellationToken,
       );
+    } on OperationCancelledException {
+      rethrow;
     } catch (error) {
       if (settings.allowEmergencyPayloadTruncation) {
         return _emergencyResult(
@@ -124,6 +131,8 @@ class CompactionManager {
       );
     }
 
+    cancellationToken?.throwIfCancelled();
+
     final summaryId = existingSummary?.id ?? uuid.v7();
     final summaryBubble = Bubble(
       id: summaryId,
@@ -140,9 +149,10 @@ class CompactionManager {
       summaryBubble: summaryBubble,
       coveredMessageIds: candidateMessages.map((message) => message.id),
     );
-    final estimatedAfter = _estimateOutgoingPayload(
+    final estimatedAfter = await _countOutgoingPayload(
       messages: proposedMessages,
       extraParams: extraParams,
+      cancellationToken: cancellationToken,
     );
 
     if (estimatedAfter >= estimatedBefore) {
@@ -225,6 +235,7 @@ class CompactionManager {
     required String? previousSummaryText,
     required int contextLimit,
     required void Function(String status) onStatusChanged,
+    CancellationToken? cancellationToken,
   }) async {
     final chunks = _chunkCandidates(
       candidates: candidates,
@@ -235,6 +246,7 @@ class CompactionManager {
 
     final intermediate = <ContextSummary>[];
     for (var i = 0; i < chunks.length; i++) {
+      cancellationToken?.throwIfCancelled();
       if (chunks.length > 1) {
         onStatusChanged('Summarising context chunk ${i + 1}/${chunks.length}.');
       }
@@ -248,6 +260,7 @@ class CompactionManager {
           addGenerationPrompt: true,
           toolDefs: const [],
         ),
+        cancellationToken: cancellationToken,
       );
       intermediate.add(_parseSummary(raw, chunks[i]));
     }
@@ -266,6 +279,7 @@ class CompactionManager {
         addGenerationPrompt: true,
         toolDefs: const [],
       ),
+      cancellationToken: cancellationToken,
     );
 
     return _parseSummary(mergeRaw, candidates);
@@ -533,6 +547,31 @@ class CompactionManager {
       messages: payload,
       extraParams: extraParams,
     );
+  }
+
+  Future<int> _countOutgoingPayload({
+    required List<Bubble> messages,
+    required Map<String, dynamic> extraParams,
+    Set<String> omittedMessageIds = const {},
+    CancellationToken? cancellationToken,
+  }) async {
+    if (messages.isEmpty) return 0;
+    final payload = PayloadBuilder.buildPayloadWithTools(
+      messages: messages,
+      upToIndexInclusive: messages.length - 1,
+      omitCoveredMessages: true,
+      omittedMessageIds: omittedMessageIds,
+    );
+    final exact = await client.countInputTokens(
+      messages: payload,
+      extraParams: extraParams,
+      cancellationToken: cancellationToken,
+    );
+    return exact ??
+        ContextEstimator.estimateChatCompletionRequest(
+          messages: payload,
+          extraParams: extraParams,
+        );
   }
 
   List<Bubble> _selectCandidates(

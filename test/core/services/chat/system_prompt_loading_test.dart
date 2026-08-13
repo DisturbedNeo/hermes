@@ -7,6 +7,7 @@ import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/helpers/chat/context_estimator.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/chat_token.dart';
+import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
@@ -16,6 +17,7 @@ import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat_library_repository.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
+import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
@@ -104,6 +106,65 @@ void main() {
 
       expect(_toolNames(extraParams), contains('list_directory'));
       expect(_toolNames(extraParams), contains('read_file'));
+    });
+
+    test(
+      'cancels during pre-stream context accounting without a stale bubble',
+      () async {
+        final client = _BlockingCountClient();
+        serverManager.chatClient = client;
+        chat.setCurrentModelSnapshot(
+          ModelJson.decode<ModelConfigurationSnapshot>({
+            'modelName': 'test',
+            'nCtx': 4096,
+          }),
+        );
+
+        final send = chat.send('Cancel before streaming');
+        await client.countStarted.future.timeout(const Duration(seconds: 2));
+        await chat.cancelGeneration();
+        await send.timeout(const Duration(seconds: 2));
+
+        expect(client.streamCalls, 0);
+        expect(
+          chat.messageStore.messages.where(
+            (message) => message.role == MessageRole.assistant,
+          ),
+          isEmpty,
+        );
+        expect(chat.chatStream.isStreaming, isFalse);
+      },
+    );
+
+    test('persists each tool result and cancels remaining tool work', () async {
+      final client = _TwoToolClient();
+      serverManager.chatClient = client;
+      await chat.attachWorkspace(tempDir.path);
+      chat.setCommandExecutionApproved(true);
+
+      await chat.send('Run two tools');
+      Bubble? toolBubble;
+      for (var i = 0; i < 100; i++) {
+        toolBubble = chat.messageStore.messages
+            .where((message) => message.tools.length == 2)
+            .firstOrNull;
+        if (toolBubble?.tools[0]?.result != null) break;
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(toolBubble?.tools[0]?.result, contains('"result":3'));
+      expect(toolBubble?.tools[1]?.result, isNull);
+      expect(chat.chatStream.isStreaming, isTrue);
+
+      await chat.cancelGeneration();
+
+      final cancelledBubble = chat.messageStore.messages.firstWhere(
+        (message) => message.id == toolBubble!.id,
+      );
+      expect(cancelledBubble.tools[0]?.result, contains('"result":3'));
+      expect(cancelledBubble.tools[1]?.result, contains('operation_cancelled'));
+      expect(client.streamCalls, 1);
+      expect(chat.chatStream.isStreaming, isFalse);
     });
 
     test('locks prompt changes after meaningful content or save', () async {
@@ -944,6 +1005,7 @@ class _QueueChatClient extends ChatClient {
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
+    Object? cancellationToken,
   }) async {
     final index = _index >= _responses.length ? _responses.length - 1 : _index;
     _index++;
@@ -963,6 +1025,7 @@ class _RecordingStreamClient extends ChatClient {
   Stream<ChatToken> streamMessage({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
+    Object? cancellationToken,
   }) async* {
     if (!this.extraParams.isCompleted) {
       this.extraParams.complete(extraParams ?? const {});
@@ -974,6 +1037,7 @@ class _RecordingStreamClient extends ChatClient {
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
+    Object? cancellationToken,
   }) {
     throw UnsupportedError('This test client only supports streaming.');
   }
@@ -1003,6 +1067,7 @@ class _QueueCompletionClient extends ChatClient {
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
+    Object? cancellationToken,
   }) async {
     final index = _index >= _responses.length ? _responses.length - 1 : _index;
     _index++;
@@ -1030,6 +1095,7 @@ class _StuckTaskClient extends ChatClient {
   Stream<ChatToken> streamMessage({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
+    Object? cancellationToken,
   }) {
     requestEstimates.add(
       ContextEstimator.estimateChatCompletionRequest(
@@ -1076,8 +1142,81 @@ class _StuckTaskClient extends ChatClient {
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
+    Object? cancellationToken,
   }) {
     throw UnsupportedError('This test client only supports streaming.');
+  }
+
+  @override
+  void dispose() {}
+}
+
+class _BlockingCountClient extends ChatClient {
+  _BlockingCountClient() : super(baseUrl: 'http://localhost', model: 'test');
+
+  final Completer<void> countStarted = Completer<void>();
+  var streamCalls = 0;
+
+  @override
+  Future<int?> countInputTokens({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+    CancellationToken? cancellationToken,
+  }) async {
+    if (!countStarted.isCompleted) countStarted.complete();
+    final cancelled = Completer<void>();
+    final unregister = cancellationToken?.onCancel(cancelled.complete);
+    try {
+      await cancelled.future;
+      cancellationToken?.throwIfCancelled();
+      return 1;
+    } finally {
+      unregister?.call();
+    }
+  }
+
+  @override
+  Stream<ChatToken> streamMessage({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+    Object? cancellationToken,
+  }) {
+    streamCalls++;
+    return const Stream.empty();
+  }
+
+  @override
+  void dispose() {}
+}
+
+class _TwoToolClient extends ChatClient {
+  _TwoToolClient() : super(baseUrl: 'http://localhost', model: 'test');
+
+  var streamCalls = 0;
+
+  @override
+  Stream<ChatToken> streamMessage({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+    Object? cancellationToken,
+  }) async* {
+    streamCalls++;
+    yield ChatToken(
+      tool: ToolCallDelta(
+        index: 0,
+        id: 'calculator_call',
+        name: 'calculator',
+        argumentsChunk: '{"paramA":1,"paramB":2,"operator":"+"}',
+      ),
+    );
+    yield ChatToken(
+      tool: ToolCallDelta(
+        index: 1,
+        id: 'command_call',
+        name: 'run_command',
+        argumentsChunk: '{"command":"sleep 30"}',
+      ),
+    );
   }
 
   @override

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:http/http.dart' as http;
 
 void main() {
@@ -558,6 +559,178 @@ void main() {
       },
       timeout: const Timeout(Duration(seconds: 10)),
     );
+
+    test(
+      'counts the exact input token request with completion parameters',
+      () async {
+        Map<String, dynamic>? requestBody;
+        final client = ChatClient(
+          baseUrl: 'http://localhost',
+          model: 'test-model',
+          clientFactory: () => _ScriptedClient((request) async {
+            requestBody = jsonDecode(await request.finalize().bytesToString());
+            expect(request.url.path, '/v1/chat/completions/input_tokens');
+            return http.StreamedResponse(
+              Stream.value(utf8.encode('{"input_tokens":321}')),
+              HttpStatus.ok,
+            );
+          }),
+        );
+
+        final count = await client.countInputTokens(
+          messages: const [ChatMessage(role: 'user', content: 'hello')],
+          extraParams: const {'tools': [], 'add_generation_prompt': true},
+        );
+
+        expect(count, 321);
+        expect(requestBody?['model'], 'test-model');
+        expect(requestBody?['messages'], hasLength(1));
+        expect(requestBody?['add_generation_prompt'], isTrue);
+      },
+    );
+
+    test('caches definitive token-count endpoint incompatibility', () async {
+      var requests = 0;
+      final client = ChatClient(
+        baseUrl: 'http://localhost',
+        model: 'test-model',
+        clientFactory: () => _ScriptedClient((_) async {
+          requests++;
+          return http.StreamedResponse(
+            const Stream.empty(),
+            HttpStatus.notFound,
+          );
+        }),
+      );
+
+      expect(await client.countInputTokens(messages: const []), isNull);
+      expect(await client.countInputTokens(messages: const []), isNull);
+      expect(requests, 1);
+    });
+
+    test('times out a model request after an inactivity window', () async {
+      final client = ChatClient(
+        baseUrl: 'http://localhost',
+        model: 'test-model',
+        inactivityTimeout: const Duration(milliseconds: 30),
+        clientFactory: () =>
+            _ScriptedClient((_) => Completer<http.StreamedResponse>().future),
+      );
+
+      await expectLater(
+        client.completeChat(
+          messages: const [ChatMessage(role: 'user', content: 'wait')],
+        ),
+        throwsA(isA<ChatRequestTimeoutException>()),
+      );
+    });
+
+    test(
+      'resets the inactivity timeout whenever response data arrives',
+      () async {
+        final controller = StreamController<List<int>>();
+        final timer = Timer.periodic(const Duration(milliseconds: 20), (timer) {
+          switch (timer.tick) {
+            case 1:
+              controller.add(utf8.encode('{"choices":['));
+            case 2:
+              controller.add(utf8.encode('{"message":{"content":"ok"}}'));
+            default:
+              controller.add(utf8.encode(']}'));
+              unawaited(controller.close());
+              timer.cancel();
+          }
+        });
+        addTearDown(() {
+          timer.cancel();
+          return controller.close();
+        });
+        final client = ChatClient(
+          baseUrl: 'http://localhost',
+          model: 'test-model',
+          inactivityTimeout: const Duration(milliseconds: 35),
+          clientFactory: () => _ScriptedClient(
+            (_) async =>
+                http.StreamedResponse(controller.stream, HttpStatus.ok),
+          ),
+        );
+
+        final completion = await client.completeChat(
+          messages: const [ChatMessage(role: 'user', content: 'stream slowly')],
+        );
+
+        expect(completion.content, 'ok');
+      },
+    );
+
+    test('falls back when token counting fails transiently', () async {
+      var requests = 0;
+      final client = ChatClient(
+        baseUrl: 'http://localhost',
+        model: 'test-model',
+        clientFactory: () => _ScriptedClient((_) async {
+          requests++;
+          return http.StreamedResponse(
+            const Stream.empty(),
+            HttpStatus.serviceUnavailable,
+          );
+        }),
+      );
+
+      expect(await client.countInputTokens(messages: const []), isNull);
+      expect(await client.countInputTokens(messages: const []), isNull);
+      expect(requests, 2);
+    });
+
+    test(
+      'cancelling one request leaves a concurrent request running',
+      () async {
+        final pending = Completer<http.StreamedResponse>();
+        var clientIndex = 0;
+        final clients = <_ScriptedClient>[];
+        final client = ChatClient(
+          baseUrl: 'http://localhost',
+          model: 'test-model',
+          clientFactory: () {
+            final index = clientIndex++;
+            late final _ScriptedClient scripted;
+            scripted = _ScriptedClient(
+              (_) => index == 0
+                  ? pending.future
+                  : Future.value(_jsonResponse('second')),
+              onClose: () {
+                if (index == 0 && !pending.isCompleted) {
+                  pending.completeError(
+                    http.RequestAbortedException(Uri.parse('http://localhost')),
+                  );
+                }
+              },
+            );
+            clients.add(scripted);
+            return scripted;
+          },
+        );
+        final token = CancellationToken();
+
+        final first = client.completeChat(
+          messages: const [ChatMessage(role: 'user', content: 'first')],
+          cancellationToken: token,
+        );
+        final second = client.completeChat(
+          messages: const [ChatMessage(role: 'user', content: 'second')],
+        );
+        final firstExpectation = expectLater(
+          first,
+          throwsA(isA<OperationCancelledException>()),
+        );
+        await token.cancel();
+
+        await firstExpectation;
+        expect((await second).content, 'second');
+        expect(clients.first.closed, isTrue);
+        expect(clients.last.closed, isTrue);
+      },
+    );
   });
 }
 
@@ -586,8 +759,9 @@ class _ScriptedClient extends http.BaseClient {
   final Future<http.StreamedResponse> Function(http.BaseRequest request)
   _handler;
   bool closed = false;
+  final void Function()? onClose;
 
-  _ScriptedClient(this._handler);
+  _ScriptedClient(this._handler, {this.onClose});
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) {
@@ -597,5 +771,6 @@ class _ScriptedClient extends http.BaseClient {
   @override
   void close() {
     closed = true;
+    onClose?.call();
   }
 }

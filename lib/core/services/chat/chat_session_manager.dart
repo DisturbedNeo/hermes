@@ -12,6 +12,7 @@ import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/chat/chat_stream.dart';
+import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
 import 'package:hermes/core/helpers/chat/payload_builder.dart';
 import 'package:hermes/core/helpers/chat/assistant_ops.dart';
@@ -38,6 +39,8 @@ class ChatSessionManager implements Disposable {
 
   /// Callbacks into business logic that live in [ChatService].
   final ChatSessionCallbacks _callbacks;
+  CancellationToken? _activeGenerationToken;
+  int _generationSerial = 0;
 
   // Session policy depends on mutable chat state. Read it through callbacks so
   // workspace attachment, model changes, and saved-chat loading take effect on
@@ -88,7 +91,34 @@ class ChatSessionManager implements Disposable {
     final client = _serverManager.chatClient;
     if (client == null) return;
 
+    final token = CancellationToken();
+    final generationId = ++_generationSerial;
+    _activeGenerationToken = token;
     _chatStream.setState(StreamState.streaming);
+
+    await _streamGenerationRequest(
+      client: client,
+      token: token,
+      generationId: generationId,
+      includeToolResults: includeToolResults,
+      addGenerationPrompt: addGenerationPrompt,
+      selectedToolIds: selectedToolIds,
+      anchorId: anchorId,
+      targetAssistantId: targetAssistantId,
+    );
+  }
+
+  Future<void> _streamGenerationRequest({
+    required ChatClient client,
+    required CancellationToken token,
+    required int generationId,
+    required bool includeToolResults,
+    required bool addGenerationPrompt,
+    required List<String> selectedToolIds,
+    String? anchorId,
+    String? targetAssistantId,
+  }) async {
+    token.throwIfCancelled();
 
     final activeToolIds = selectedToolIds.isEmpty
         ? defaultToolIds
@@ -107,7 +137,9 @@ class ChatSessionManager implements Disposable {
       final emergencyOmittedMessageIds = await _compactContextIfNeeded(
         client: client,
         extraParams: extraParams,
+        cancellationToken: token,
       );
+      token.throwIfCancelled();
 
       final targetIndex = targetAssistantId == null
           ? -1
@@ -162,46 +194,82 @@ class ChatSessionManager implements Disposable {
               omittedMessageIds: emergencyOmittedMessageIds,
             );
 
+      final exactTokens = await client.countInputTokens(
+        messages: payload,
+        extraParams: extraParams,
+        cancellationToken: token,
+      );
+      token.throwIfCancelled();
       _serverManager.diagnostics.recordStreamStarted(
-        estimatedContextTokens: ContextEstimator.estimateChatCompletionRequest(
-          messages: payload,
-          extraParams: extraParams,
-        ),
+        estimatedContextTokens:
+            exactTokens ??
+            ContextEstimator.estimateChatCompletionRequest(
+              messages: payload,
+              extraParams: extraParams,
+            ),
         contextLimitTokens: currentModelSnapshot?.nCtx,
       );
 
       final sub = client.streamMessage(
         messages: payload,
         extraParams: extraParams,
+        cancellationToken: token,
       );
+
+      var terminalHandled = false;
+      Future<void> terminal({Object? error}) async {
+        if (terminalHandled) return;
+        terminalHandled = true;
+        await _handleStreamTerminal(
+          error: error,
+          token: token,
+          generationId: generationId,
+        );
+      }
 
       _chatStream.attach(
         sub.listen(
-          _handleStreamToken,
-          onError: (e, _) async => await _handleStreamTerminal(error: e),
-          onDone: () async => await _handleStreamTerminal(),
+          (value) {
+            if (_isActiveGeneration(token, generationId)) {
+              _handleStreamToken(value);
+            }
+          },
+          onError: (e, _) async => terminal(error: e),
+          onDone: () async => terminal(),
           cancelOnError: true,
         ),
       );
+    } on OperationCancelledException {
+      await _finishCancelledGeneration(token, generationId);
     } catch (e) {
+      if (!_isActiveGeneration(token, generationId)) return;
       _serverManager.diagnostics.recordCompactionFailed(e);
       _messageStore.clearCurrentId();
       await _chatStream.stop(next: StreamState.error);
+      _activeGenerationToken = null;
       requestContextEstimateUpdate(immediate: true);
     }
   }
 
   /// Cancels the current streaming operation and normalizes the current message.
   Future<void> cancelGeneration() async {
-    if (!_chatStream.isStreaming) return;
+    final token = _activeGenerationToken;
+    if (token == null) return;
 
     final current = _messageStore.currentMessage;
     if (current != null) {
-      _messageStore.upsert(ContentNormaliser.normalise(current));
+      _messageStore.upsert(
+        ContentNormaliser.normalise(_withCancelledPendingTools(current)),
+      );
     }
 
+    await token.cancel();
     _messageStore.clearCurrentId();
     await _chatStream.stop();
+    if (identical(_activeGenerationToken, token)) {
+      _activeGenerationToken = null;
+    }
+    requestContextEstimateUpdate(immediate: true);
   }
 
   /// Inserts a user message followed by an assistant acknowledgment.
@@ -237,20 +305,13 @@ class ChatSessionManager implements Disposable {
   Future<Set<String>> _compactContextIfNeeded({
     required ChatClient client,
     required Map<String, dynamic> extraParams,
+    CancellationToken? cancellationToken,
   }) async {
     final snapshot = currentModelSnapshot;
     if (snapshot == null) return const {};
 
     final settings = await _preferencesService.getCompactionSettings();
     final manager = CompactionManager(settings: settings, client: client);
-    if (!manager.shouldCompact(
-      messages: _messageStore.messages,
-      contextLimit: snapshot.nCtx,
-      extraParams: extraParams,
-    )) {
-      return const {};
-    }
-
     void status(String message) {
       if (_serverManager.diagnostics.compactionActive) {
         _serverManager.diagnostics.recordCompactionStatus(message);
@@ -265,6 +326,7 @@ class ChatSessionManager implements Disposable {
       contextLimit: snapshot.nCtx,
       extraParams: extraParams,
       onStatusChanged: status,
+      cancellationToken: cancellationToken,
     );
 
     final finishStatus = result.emergencyPayloadTruncation
@@ -305,12 +367,22 @@ class ChatSessionManager implements Disposable {
     ].whereType<String>().join();
   }
 
-  Future<void> _handleStreamTerminal({Object? error}) async {
+  Future<void> _handleStreamTerminal({
+    Object? error,
+    required CancellationToken token,
+    required int generationId,
+  }) async {
+    if (!_isActiveGeneration(token, generationId)) return;
+    if (token.isCancelled || error is OperationCancelledException) {
+      await _finishCancelledGeneration(token, generationId);
+      return;
+    }
     if (error != null) {
       _serverManager.diagnostics.recordStreamError(error);
       _messageStore.appendCurrentError(error);
       _messageStore.clearCurrentId();
       await _chatStream.stop(next: StreamState.error);
+      _activeGenerationToken = null;
       requestContextEstimateUpdate(immediate: true);
       return;
     }
@@ -321,18 +393,28 @@ class ChatSessionManager implements Disposable {
       );
     }
 
-    await _chatStream.stop();
+    await _chatStream.detach();
     _serverManager.diagnostics.recordStreamEnded();
     requestContextEstimateUpdate(immediate: true);
 
-    final toolCalls = ToolCaller.extractToolCalls(_messageStore.currentMessage);
+    final toolCalls = ToolCaller.extractPendingToolEntries(
+      _messageStore.currentMessage,
+    );
     if (toolCalls.isNotEmpty) {
       try {
-        await _runToolsAndContinue(toolCalls);
+        await _runToolsAndContinue(
+          toolCalls,
+          token: token,
+          generationId: generationId,
+        );
+      } on OperationCancelledException {
+        await _finishCancelledGeneration(token, generationId);
       } catch (e) {
+        if (!_isActiveGeneration(token, generationId)) return;
         _messageStore.appendCurrentError(e);
         _messageStore.clearCurrentId();
         await _chatStream.stop(next: StreamState.error);
+        _activeGenerationToken = null;
         requestContextEstimateUpdate(immediate: true);
       }
 
@@ -340,9 +422,15 @@ class ChatSessionManager implements Disposable {
     }
 
     _messageStore.clearCurrentId();
+    _activeGenerationToken = null;
+    await _chatStream.stop();
   }
 
-  Future<void> _runToolsAndContinue(List<BubbleToolCall> calls) async {
+  Future<void> _runToolsAndContinue(
+    List<MapEntry<int, BubbleToolCall>> calls, {
+    required CancellationToken token,
+    required int generationId,
+  }) async {
     final assistantBubble = _messageStore.currentMessage;
 
     if (assistantBubble == null) {
@@ -350,9 +438,8 @@ class ChatSessionManager implements Disposable {
       return;
     }
 
-    final Map<int, BubbleToolCall> updated = Map.of(assistantBubble.tools);
-
-    for (final entry in assistantBubble.tools.entries) {
+    for (final entry in calls) {
+      token.throwIfCancelled();
       final toolIndex = entry.key;
       final toolCall = entry.value;
 
@@ -360,8 +447,10 @@ class ChatSessionManager implements Disposable {
       final argsJson = toolCall.arguments;
 
       if (toolName == null || argsJson == null) {
-        updated[toolIndex] = toolCall.copyWith(
-          result: '{"error":"missing tool name or args"}',
+        _persistToolResult(
+          assistantBubble.id,
+          toolIndex,
+          toolCall.copyWith(result: '{"error":"missing tool name or args"}'),
         );
         continue;
       }
@@ -370,21 +459,77 @@ class ChatSessionManager implements Disposable {
         toolId: toolName,
         argumentsJson: argsJson,
         context: workspace != null && !workspace!.missing
-            ? WorkspaceToolContext(workspace: workspace!)
+            ? WorkspaceToolContext(
+                workspace: workspace!,
+                cancellationToken: token,
+              )
             : null,
       );
-
-      updated[toolIndex] = toolCall.copyWith(result: resultJson);
+      token.throwIfCancelled();
+      _persistToolResult(
+        assistantBubble.id,
+        toolIndex,
+        toolCall.copyWith(result: resultJson),
+      );
     }
 
-    _messageStore.upsert(assistantBubble.copyWith(tools: updated));
-
-    await streamAssistantResponse(
+    token.throwIfCancelled();
+    await _streamGenerationRequest(
+      client: _serverManager.chatClient!,
+      token: token,
+      generationId: generationId,
       includeToolResults: true,
       addGenerationPrompt: true,
       selectedToolIds: const [],
       anchorId: assistantBubble.id,
     );
+  }
+
+  bool _isActiveGeneration(CancellationToken token, int generationId) =>
+      identical(_activeGenerationToken, token) &&
+      generationId == _generationSerial;
+
+  void _persistToolResult(
+    String bubbleId,
+    int toolIndex,
+    BubbleToolCall result,
+  ) {
+    final index = _messageStore.messages.indexWhere((m) => m.id == bubbleId);
+    if (index < 0) return;
+    final bubble = _messageStore.messages[index];
+    final tools = Map<int, BubbleToolCall>.from(bubble.tools);
+    tools[toolIndex] = result;
+    _messageStore.upsert(bubble.copyWith(tools: tools));
+  }
+
+  Bubble _withCancelledPendingTools(Bubble bubble) {
+    if (bubble.tools.isEmpty) return bubble;
+    final tools = Map<int, BubbleToolCall>.from(bubble.tools);
+    for (final entry in tools.entries.toList()) {
+      if (entry.value.result != null) continue;
+      tools[entry.key] = entry.value.copyWith(
+        result:
+            '{"error":"tool execution cancelled","code":"operation_cancelled","warning":"An interrupted command may have made partial changes."}',
+      );
+    }
+    return bubble.copyWith(tools: tools);
+  }
+
+  Future<void> _finishCancelledGeneration(
+    CancellationToken token,
+    int generationId,
+  ) async {
+    if (!_isActiveGeneration(token, generationId)) return;
+    final current = _messageStore.currentMessage;
+    if (current != null) {
+      _messageStore.upsert(
+        ContentNormaliser.normalise(_withCancelledPendingTools(current)),
+      );
+    }
+    _messageStore.clearCurrentId();
+    _activeGenerationToken = null;
+    await _chatStream.stop();
+    requestContextEstimateUpdate(immediate: true);
   }
 
   void finishTaskModelOutputBubble({required bool clearCurrent}) {

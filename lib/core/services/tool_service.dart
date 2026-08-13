@@ -108,9 +108,11 @@ class ToolService {
         ? WorkspaceToolContext(
             workspace: context.workspace,
             subagentService: _subagentService,
+            cancellationToken: context.cancellationToken,
           )
         : context;
 
+    effectiveContext?.cancellationToken?.throwIfCancelled();
     return tool.process(argumentsJson, context: effectiveContext);
   }
 }

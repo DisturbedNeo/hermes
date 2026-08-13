@@ -12,6 +12,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as path;
 
+import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/terminal_command_classifier.dart';
 import 'sandbox_policy.dart';
 
@@ -19,6 +20,14 @@ import 'sandbox_policy.dart';
 export 'sandbox_policy.dart' show WorkspacePath, WorkspaceSandboxException;
 
 class WorkspaceSandbox {
+  WorkspaceSandbox({
+    Duration commandTimeout = kCommandTimeout,
+    this.commandTerminationGrace = const Duration(seconds: 2),
+  }) : _commandTimeout = commandTimeout;
+
+  final Duration _commandTimeout;
+  final Duration commandTerminationGrace;
+
   // Backward-compatible static accessors for constants previously defined here.
   // These delegate to the canonical definitions in sandbox_policy.dart.
   static const int maxReadBytes = kMaxReadBytes;
@@ -85,8 +94,8 @@ class WorkspaceSandbox {
       final type = stat.type == FileSystemEntityType.directory
           ? 'directory'
           : stat.type == FileSystemEntityType.link
-              ? 'link'
-              : 'file';
+          ? 'link'
+          : 'file';
       entries.add({
         'path': _relative(resolved.rootPath, entity.path),
         'name': path.basename(entity.path),
@@ -234,7 +243,8 @@ class WorkspaceSandbox {
     final results = <Map<String, dynamic>>[];
     final pendingDirectories = <Directory>[Directory(root.absolutePath)];
 
-    while (pendingDirectories.isNotEmpty && results.length < kMaxSearchResults) {
+    while (pendingDirectories.isNotEmpty &&
+        results.length < kMaxSearchResults) {
       final directory = pendingDirectories.removeLast();
       try {
         await for (final entity in directory.list(followLinks: false)) {
@@ -294,7 +304,9 @@ class WorkspaceSandbox {
     String? executable,
     List<String> arguments = const [],
     String workingDirectory = '.',
+    CancellationToken? cancellationToken,
   }) async {
+    cancellationToken?.throwIfCancelled();
     final commandLine = _commandLine(
       command: command,
       executable: executable,
@@ -311,18 +323,98 @@ class WorkspaceSandbox {
     }
 
     final cwd = await resolve(rootPath, workingDirectory, directory: true);
-    final result = await Process.run('bash', [
-      '-lc',
-      commandLine,
-    ], workingDirectory: cwd.absolutePath).timeout(kCommandTimeout);
+    late final Process process;
+    try {
+      process = await Process.start('setsid', [
+        'bash',
+        '-lc',
+        commandLine,
+      ], workingDirectory: cwd.absolutePath);
+    } on ProcessException catch (error) {
+      throw WorkspaceSandboxException(
+        'Could not start an isolated command process: ${error.message}',
+        code: 'command_execution_unavailable',
+      );
+    }
 
-    return {
-      'command': commandLine,
-      'working_directory': cwd.relativePath,
-      'exit_code': result.exitCode,
-      'stdout': capOutput(result.stdout.toString()),
-      'stderr': capOutput(result.stderr.toString()),
-    };
+    final stdout = _BoundedOutputCollector(kMaxCommandOutputBytes);
+    final stderr = _BoundedOutputCollector(kMaxCommandOutputBytes);
+    final stdoutDone = process.stdout.listen(stdout.add).asFuture<void>();
+    final stderrDone = process.stderr.listen(stderr.add).asFuture<void>();
+    final cancelled = Completer<_CommandEndReason>();
+    final unregister = cancellationToken?.onCancel(() {
+      if (!cancelled.isCompleted) {
+        cancelled.complete(_CommandEndReason.cancelled);
+      }
+    });
+
+    late final _CommandEndReason reason;
+    try {
+      reason = await Future.any([
+        process.exitCode.then((_) => _CommandEndReason.exited),
+        Future<_CommandEndReason>.delayed(
+          _commandTimeout,
+          () => _CommandEndReason.timedOut,
+        ),
+        cancelled.future,
+      ]);
+
+      if (reason != _CommandEndReason.exited) {
+        await _terminateProcessGroup(process);
+      }
+
+      final exitCode = await process.exitCode;
+      await Future.wait([stdoutDone, stderrDone]);
+
+      if (reason == _CommandEndReason.cancelled) {
+        throw const OperationCancelledException();
+      }
+      if (reason == _CommandEndReason.timedOut) {
+        throw WorkspaceSandboxException(
+          'Command timed out after ${_commandTimeout.inSeconds} seconds.',
+          code: 'command_timeout',
+        );
+      }
+
+      return {
+        'command': commandLine,
+        'working_directory': cwd.relativePath,
+        'exit_code': exitCode,
+        'stdout': stdout.text,
+        'stderr': stderr.text,
+      };
+    } finally {
+      unregister?.call();
+    }
+  }
+
+  Future<void> _terminateProcessGroup(Process process) async {
+    await _signalProcessGroup(process, 'TERM', ProcessSignal.sigterm);
+    try {
+      await process.exitCode.timeout(commandTerminationGrace);
+      return;
+    } on TimeoutException {
+      await _signalProcessGroup(process, 'KILL', ProcessSignal.sigkill);
+      await process.exitCode;
+    }
+  }
+
+  Future<void> _signalProcessGroup(
+    Process process,
+    String signal,
+    ProcessSignal fallbackSignal,
+  ) async {
+    try {
+      final result = await Process.run('kill', [
+        '-$signal',
+        '--',
+        '-${process.pid}',
+      ]);
+      if (result.exitCode == 0) return;
+    } on ProcessException {
+      // Fall back to the session leader below.
+    }
+    process.kill(fallbackSignal);
   }
 
   // ---------------------------------------------------------------------------
@@ -406,4 +498,27 @@ class WorkspaceSandbox {
       basename != '.' &&
       basename != '..' &&
       basename.startsWith('.');
+}
+
+enum _CommandEndReason { exited, timedOut, cancelled }
+
+class _BoundedOutputCollector {
+  _BoundedOutputCollector(this.limit);
+
+  final int limit;
+  final List<int> _bytes = [];
+  bool _truncated = false;
+
+  void add(List<int> chunk) {
+    final remaining = limit - _bytes.length;
+    if (remaining > 0) {
+      _bytes.addAll(chunk.take(remaining));
+    }
+    if (chunk.length > remaining) _truncated = true;
+  }
+
+  String get text {
+    final value = utf8.decode(_bytes, allowMalformed: true);
+    return _truncated ? '$value\n... output truncated ...' : value;
+  }
 }

@@ -1,7 +1,7 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:hermes/core/models/project.dart';
+import 'package:hermes/core/services/atomic_json_snapshot_store.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:path/path.dart' as path;
 
@@ -11,7 +11,7 @@ class ProjectRepository {
   static const String projectsRoot = '.agent/projects';
   static const String documentFileName = 'project.json';
 
-  final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
+  final AtomicJsonSnapshotStore _snapshots = const AtomicJsonSnapshotStore();
 
   // ── Listing ──────────────────────────────────────────────────────────
 
@@ -32,7 +32,9 @@ class ProjectRepository {
       if (!await file.exists()) continue;
 
       try {
-        final project = ModelJson.decode<ProjectDocument>(await _readMap(file));
+        final raw = await _snapshots.readMap(file, isValid: _isProjectMap);
+        if (raw == null) continue;
+        final project = ModelJson.decode<ProjectDocument>(raw);
         if (chatSessionId != null && project.chatSessionId != chatSessionId) {
           continue;
         }
@@ -85,15 +87,10 @@ class ProjectRepository {
     String projectId, {
     String? chatSessionId,
   }) async {
-    final file = File(
-      path.join(
-        _projectDirectory(workspaceRoot, projectId).path,
-        documentFileName,
-      ),
-    );
-    if (!await file.exists()) return null;
-
-    final raw = await _readMap(file);
+    final dir = _validatedProjectDirectory(workspaceRoot, projectId);
+    final file = File(path.join(dir.path, documentFileName));
+    final raw = await _snapshots.readMap(file, isValid: _isProjectMap);
+    if (raw == null) return null;
     final rawVersion = _rawSchemaVersion(raw);
     final project = ModelJson.decode<ProjectDocument>(raw);
     if (chatSessionId != null && project.chatSessionId != chatSessionId) {
@@ -113,11 +110,12 @@ class ProjectRepository {
     String workspaceRoot,
     ProjectDocument project,
   ) async {
-    final dir = _projectDirectory(workspaceRoot, project.id);
+    final dir = _validatedProjectDirectory(workspaceRoot, project.id);
     await dir.create(recursive: true);
-    await _writeMap(
+    await _snapshots.writeMap(
       File(path.join(dir.path, documentFileName)),
       ModelJson.encode(project),
+      isValid: _isProjectMap,
     );
   }
 
@@ -127,9 +125,7 @@ class ProjectRepository {
   /// was deleted, `false` when it did not exist. Throws [ArgumentError]
   /// if [projectId] resolves outside the projects root (path traversal).
   Future<bool> deleteProject(String workspaceRoot, String projectId) async {
-    final root = Directory(path.join(workspaceRoot, projectsRoot));
-    final dir = _projectDirectory(workspaceRoot, projectId);
-    _throwIfOutsideProjectsRoot(root, dir);
+    final dir = _validatedProjectDirectory(workspaceRoot, projectId);
     if (!await dir.exists()) return false;
     await dir.delete(recursive: true);
     return true;
@@ -176,6 +172,8 @@ class ProjectRepository {
   /// Returns a POSIX-style relative path for a file inside a project's
   /// directory (e.g. `".agent/projects/<id>/<fileName>"`).
   String projectRelativePath(String projectId, String fileName) {
+    _validatePathSegment(projectId, 'projectId');
+    _validateFileName(fileName, 'fileName');
     return path.posix.join(projectsRoot, projectId, fileName);
   }
 
@@ -188,12 +186,9 @@ class ProjectRepository {
     String name,
     String content,
   ) async {
-    if (path.basename(name) != name || path.isAbsolute(name)) {
-      throw ArgumentError.value(name, 'name', 'Log file name is invalid');
-    }
-    final dir = Directory(
-      path.join(_projectDirectory(workspaceRoot, projectId).path, 'logs'),
-    );
+    _validateFileName(name, 'name');
+    final projectDir = _validatedProjectDirectory(workspaceRoot, projectId);
+    final dir = Directory(path.join(projectDir.path, 'logs'));
     await dir.create(recursive: true);
     await _writeText(File(path.join(dir.path, name)), content);
   }
@@ -202,6 +197,28 @@ class ProjectRepository {
 
   Directory _projectDirectory(String workspaceRoot, String projectId) {
     return Directory(path.join(workspaceRoot, projectsRoot, projectId));
+  }
+
+  Directory _validatedProjectDirectory(String workspaceRoot, String projectId) {
+    _validatePathSegment(projectId, 'projectId');
+    final root = Directory(path.join(workspaceRoot, projectsRoot));
+    final dir = _projectDirectory(workspaceRoot, projectId);
+    _throwIfOutsideProjectsRoot(root, dir);
+    return dir;
+  }
+
+  void _validatePathSegment(String value, String argumentName) {
+    if (value.isEmpty ||
+        path.isAbsolute(value) ||
+        path.basename(value) != value ||
+        value == '.' ||
+        value == '..') {
+      throw ArgumentError.value(value, argumentName, 'Path segment is invalid');
+    }
+  }
+
+  void _validateFileName(String value, String argumentName) {
+    _validatePathSegment(value, argumentName);
   }
 
   void _throwIfOutsideProjectsRoot(Directory root, Directory dir) {
@@ -216,14 +233,6 @@ class ProjectRepository {
     }
   }
 
-  Future<Map<String, dynamic>> _readMap(File file) async {
-    final content = await file.readAsString();
-    final decoded = jsonDecode(content);
-    if (decoded is Map<String, dynamic>) return decoded;
-    if (decoded is Map) return Map<String, dynamic>.from(decoded);
-    throw const FormatException('Expected a JSON object');
-  }
-
   int _rawSchemaVersion(Map<String, dynamic> map) {
     final value = map['schemaVersion'] ?? map['schema_version'];
     if (value is int) return value;
@@ -232,12 +241,17 @@ class ProjectRepository {
     return 0;
   }
 
-  Future<void> _writeMap(File file, Map<String, dynamic> map) {
-    return _writeText(file, '${_encoder.convert(map)}\n');
-  }
-
   Future<void> _writeText(File file, String content) async {
     await file.parent.create(recursive: true);
     await file.writeAsString(content);
+  }
+
+  bool _isProjectMap(Map<String, dynamic> map) {
+    try {
+      final project = ModelJson.decode<ProjectDocument>(map);
+      return project.id.trim().isNotEmpty;
+    } catch (_) {
+      return false;
+    }
   }
 }

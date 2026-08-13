@@ -11,6 +11,7 @@ import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/project_system/project_model_calls.dart';
 import 'package:hermes/core/services/project_system/project_repository.dart';
 import 'package:hermes/core/services/question_policy_service.dart';
@@ -127,7 +128,7 @@ class ProjectService {
     String baseSystemPrompt = '',
     int? maxIterations,
     TaskModelOutputSink? onModelOutput,
-    TaskCancellationToken? cancellationToken,
+    CancellationToken? cancellationToken,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
   }) async {
     cancellationToken?.throwIfCancelled();
@@ -145,6 +146,7 @@ class ProjectService {
             originalGoal: userPrompt,
             workspaceMetadata: metadata,
             onModelOutput: onModelOutput,
+            cancellationToken: cancellationToken,
           );
     cancellationToken?.throwIfCancelled();
     final filteredQuestions = _filterProjectQuestions(
@@ -375,7 +377,7 @@ class ProjectService {
     ProjectCompactionStatusSink? onCompactionStatus,
     TaskModelOutputSink? onModelOutput,
     ProjectTaskSnapshotSink? onTaskUpdated,
-    TaskCancellationToken? cancellationToken,
+    CancellationToken? cancellationToken,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
   }) {
     return runProject(
@@ -408,7 +410,7 @@ class ProjectService {
     ProjectCompactionStatusSink? onCompactionStatus,
     TaskModelOutputSink? onModelOutput,
     ProjectTaskSnapshotSink? onTaskUpdated,
-    TaskCancellationToken? cancellationToken,
+    CancellationToken? cancellationToken,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
   }) async {
     cancellationToken?.throwIfCancelled();
@@ -510,6 +512,7 @@ class ProjectService {
               project: project,
               baseSystemPrompt: baseSystemPrompt,
               onModelOutput: onModelOutput,
+              cancellationToken: cancellationToken,
             )
           : project.currentTask!;
 
@@ -520,6 +523,7 @@ class ProjectService {
           baseSystemPrompt: baseSystemPrompt,
           onModelOutput: onModelOutput,
           questionAutonomy: questionAutonomy,
+          cancellationToken: cancellationToken,
         );
         if (!project.isTerminal &&
             project.status != ProjectStatus.waitingForUser &&
@@ -552,6 +556,7 @@ class ProjectService {
           violations: validation.violations,
           baseSystemPrompt: baseSystemPrompt,
           onModelOutput: onModelOutput,
+          cancellationToken: cancellationToken,
         );
         if (project.status == ProjectStatus.blocked) {
           await _repository.saveSnapshot(workspace.rootPath, project);
@@ -627,6 +632,7 @@ class ProjectService {
         baseSystemPrompt: baseSystemPrompt,
         onModelOutput: onModelOutput,
         questionAutonomy: questionAutonomy,
+        cancellationToken: cancellationToken,
       );
       project = project.copyWith(
         iterationCount: project.iterationCount + 1,
@@ -804,6 +810,7 @@ class ProjectService {
     required ProjectDocument project,
     required String baseSystemPrompt,
     TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
   }) async {
     final recoveryTask = _activeRecoveryTask(project);
     if (recoveryTask != null) return recoveryTask;
@@ -825,6 +832,7 @@ class ProjectService {
       workspaceMetadata: metadata,
       forbiddenFingerprints: _knownFingerprints(project),
       onModelOutput: onModelOutput,
+      cancellationToken: cancellationToken,
     );
     return proposed ?? project.backlog.first;
   }
@@ -863,6 +871,7 @@ class ProjectService {
     required List<String> violations,
     required String baseSystemPrompt,
     TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
   }) async {
     final duplicateViolation = violations.any(
       (violation) =>
@@ -942,6 +951,7 @@ class ProjectService {
       oversizedTask: task,
       violations: violations,
       onModelOutput: onModelOutput,
+      cancellationToken: cancellationToken,
     );
     final known = _knownFingerprints(project)..add(task.fingerprint);
     final splitTasks =
@@ -1016,7 +1026,7 @@ class ProjectService {
     ProjectCompactionStatusSink? onCompactionStatus,
     TaskModelOutputSink? onModelOutput,
     ProjectTaskSnapshotSink? onTaskUpdated,
-    TaskCancellationToken? cancellationToken,
+    CancellationToken? cancellationToken,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
   }) async {
     cancellationToken?.throwIfCancelled();
@@ -1365,6 +1375,7 @@ class ProjectService {
     required String baseSystemPrompt,
     TaskModelOutputSink? onModelOutput,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
+    CancellationToken? cancellationToken,
   }) async {
     if (project.isTerminal ||
         project.status == ProjectStatus.blocked ||
@@ -1387,6 +1398,7 @@ class ProjectService {
       baseSystemPrompt: baseSystemPrompt,
       project: project,
       onModelOutput: onModelOutput,
+      cancellationToken: cancellationToken,
     );
     final remaining = {
       ...remainingByState,

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/task.dart';
+import 'package:hermes/core/services/atomic_json_snapshot_store.dart';
 import 'package:hermes/core/services/task_system/task_repository.dart';
 import 'package:path/path.dart' as path;
 
@@ -126,6 +127,72 @@ void main() {
       expect(decoded['steps'], isA<List>());
       expect(decoded['runs'], isA<List>());
       expect(decoded['projectId'], isNull);
+    });
+
+    test('recovers and repairs a corrupt primary from its backup', () async {
+      await repository.saveSnapshot(
+        root.path,
+        _task(id: 'task_recovery', updatedAt: DateTime(2026, 1, 1)),
+      );
+      await repository.saveSnapshot(
+        root.path,
+        _task(id: 'task_recovery', updatedAt: DateTime(2026, 1, 2)),
+      );
+      final file = File(
+        path.join(root.path, '.agent', 'tasks', 'task_recovery', 'task.json'),
+      );
+      await file.writeAsString('{broken');
+
+      final recovered = await repository.loadTask(root.path, 'task_recovery');
+
+      expect(recovered?.updatedAt, DateTime(2026, 1, 1));
+      expect(jsonDecode(await file.readAsString()), isA<Map>());
+    });
+
+    test('throws a typed error when primary and backup are corrupt', () async {
+      await repository.saveSnapshot(root.path, _task(id: 'task_corrupt'));
+      await repository.saveSnapshot(root.path, _task(id: 'task_corrupt'));
+      final file = File(
+        path.join(root.path, '.agent', 'tasks', 'task_corrupt', 'task.json'),
+      );
+      await file.writeAsString('{}');
+      await File('${file.path}.bak').writeAsString('{broken');
+
+      await expectLater(
+        repository.loadTask(root.path, 'task_corrupt'),
+        throwsA(isA<SnapshotCorruptionException>()),
+      );
+      expect(await repository.listTasks(root.path), isEmpty);
+    });
+
+    test('ignores a stale interrupted temporary snapshot', () async {
+      await repository.saveSnapshot(root.path, _task(id: 'task_stable'));
+      final directory = Directory(
+        path.join(root.path, '.agent', 'tasks', 'task_stable'),
+      );
+      await File(
+        path.join(directory.path, 'task.json.tmp.interrupted'),
+      ).writeAsString('{partial');
+
+      final loaded = await repository.loadTask(root.path, 'task_stable');
+
+      expect(loaded?.id, 'task_stable');
+    });
+
+    test('validates task ids and log names for every path API', () async {
+      expect(
+        repository.saveSnapshot(root.path, _task(id: '../outside')),
+        throwsArgumentError,
+      );
+      expect(repository.loadTask(root.path, '../outside'), throwsArgumentError);
+      expect(
+        repository.saveLog(root.path, 'task_test', '../task.json', '{}'),
+        throwsArgumentError,
+      );
+      expect(
+        () => repository.taskRelativePath('../outside', 'task.json'),
+        throwsArgumentError,
+      );
     });
   });
 }

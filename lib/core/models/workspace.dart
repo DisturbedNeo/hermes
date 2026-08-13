@@ -1,4 +1,5 @@
 import 'package:path/path.dart' as path;
+import 'package:hermes/core/services/cancellation_token.dart';
 
 class WorkspaceAttachment {
   final String rootPath;
@@ -49,6 +50,11 @@ class WorkspaceAttachment {
 class WorkspaceToolContext {
   final WorkspaceAttachment workspace;
   final Object? subagentService;
+  final CancellationToken? cancellationToken;
 
-  const WorkspaceToolContext({required this.workspace, this.subagentService});
+  const WorkspaceToolContext({
+    required this.workspace,
+    this.subagentService,
+    this.cancellationToken,
+  });
 }

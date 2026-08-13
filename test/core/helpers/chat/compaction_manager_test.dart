@@ -22,6 +22,14 @@ void main() {
       server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       serverSub = server.listen((request) async {
         final body = await utf8.decoder.bind(request).join();
+        if (request.uri.path == '/v1/chat/completions/input_tokens') {
+          request.response.headers.contentType = ContentType.json;
+          request.response.write(
+            jsonEncode({'input_tokens': (body.length / 4).ceil()}),
+          );
+          await request.response.close();
+          return;
+        }
         requests.add(jsonDecode(body) as Map<String, dynamic>);
 
         request.response.headers.contentType = ContentType.json;

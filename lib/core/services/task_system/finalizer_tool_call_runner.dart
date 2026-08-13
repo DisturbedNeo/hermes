@@ -6,6 +6,7 @@ import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/tool_service.dart';
@@ -45,6 +46,7 @@ class FinalizerToolCallRunner {
     int maxRepeatedToolCalls = defaultMaxRepeatedToolCalls,
     TaskModelOutputSink? onModelOutput,
     void Function()? throwIfCancelled,
+    CancellationToken? cancellationToken,
   }) async {
     final allowedToolIds = {
       if (allowReadOnlyTools) ...kCreationReadOnlyToolIds,
@@ -60,7 +62,10 @@ class FinalizerToolCallRunner {
       ChatMessage(role: 'system', content: system),
       ChatMessage(role: 'user', content: user),
     ];
-    final context = WorkspaceToolContext(workspace: workspace);
+    final context = WorkspaceToolContext(
+      workspace: workspace,
+      cancellationToken: cancellationToken,
+    );
     var toolCallCount = 0;
     var consecutiveRepeatCount = 0;
     String? previousToolKey;
@@ -73,6 +78,7 @@ class FinalizerToolCallRunner {
         messages: messages,
         toolDefs: toolDefs,
         onModelOutput: onModelOutput,
+        cancellationToken: cancellationToken,
       );
       throwIfCancelled?.call();
 
@@ -158,6 +164,7 @@ class FinalizerToolCallRunner {
           allowedToolIds: allowedToolIds,
           context: context,
           blockedReason: loopGuardReason,
+          cancellationToken: cancellationToken,
         );
         toolCallCount++;
         _emit(
@@ -187,6 +194,7 @@ class FinalizerToolCallRunner {
       ],
       toolDefs: const [],
       onModelOutput: onModelOutput,
+      cancellationToken: cancellationToken,
     );
     final text = repair.content.trim().isNotEmpty
         ? repair.content
@@ -200,6 +208,7 @@ class FinalizerToolCallRunner {
     required List<ChatMessage> messages,
     required List<ToolDefinition> toolDefs,
     TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
   }) async {
     _emit(
       onModelOutput,
@@ -216,12 +225,14 @@ class FinalizerToolCallRunner {
             extraParams: extraParams,
             label: label,
             onModelOutput: onModelOutput,
+            cancellationToken: cancellationToken,
           )
         : await client.completeChatStreamed(
             messages: messages,
             extraParams: extraParams,
             onToken: (token) =>
                 _emitToken(sink: onModelOutput, label: label, token: token),
+            cancellationToken: cancellationToken,
           );
     _emit(
       onModelOutput,
@@ -236,6 +247,7 @@ class FinalizerToolCallRunner {
     required Map<String, dynamic> extraParams,
     required String label,
     TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
   }) async {
     final content = StringBuffer();
     final reasoning = StringBuffer();
@@ -243,6 +255,7 @@ class FinalizerToolCallRunner {
     await for (final token in client.streamMessage(
       messages: messages,
       extraParams: extraParams,
+      cancellationToken: cancellationToken,
     )) {
       _emitToken(sink: onModelOutput, label: label, token: token);
       final contentToken = token.content;
@@ -328,7 +341,9 @@ class FinalizerToolCallRunner {
     required Set<String> allowedToolIds,
     required WorkspaceToolContext context,
     required String? blockedReason,
+    CancellationToken? cancellationToken,
   }) {
+    cancellationToken?.throwIfCancelled();
     if (blockedReason != null) {
       return Future.value(
         jsonEncode({

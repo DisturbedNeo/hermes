@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
+import 'package:hermes/core/services/cancellation_token.dart';
 
 void main() {
   group('WorkspaceSandbox', () {
@@ -293,6 +294,89 @@ void main() {
 
       expect(await file.exists(), isTrue);
     });
+
+    test('runCommand kills the process group on timeout', () async {
+      final timedSandbox = WorkspaceSandbox(
+        commandTimeout: const Duration(milliseconds: 250),
+        commandTerminationGrace: const Duration(milliseconds: 100),
+      );
+
+      await expectLater(
+        timedSandbox.runCommand(
+          root.path,
+          command:
+              'sleep 30 & child=\$!; echo \$child > child.pid; wait \$child',
+        ),
+        throwsA(
+          isA<WorkspaceSandboxException>().having(
+            (error) => error.code,
+            'code',
+            'command_timeout',
+          ),
+        ),
+      );
+
+      final pid = int.parse(
+        (await File('${root.path}/child.pid').readAsString()).trim(),
+      );
+      expect(await _processExists(pid), isFalse);
+    });
+
+    test('runCommand escalates when the process group ignores TERM', () async {
+      final timedSandbox = WorkspaceSandbox(
+        commandTimeout: const Duration(milliseconds: 250),
+        commandTerminationGrace: const Duration(milliseconds: 100),
+      );
+
+      await expectLater(
+        timedSandbox.runCommand(
+          root.path,
+          command:
+              'trap \'\' TERM; echo \$\$ > stubborn.pid; while true; do sleep 1; done',
+        ),
+        throwsA(
+          isA<WorkspaceSandboxException>().having(
+            (error) => error.code,
+            'code',
+            'command_timeout',
+          ),
+        ),
+      );
+
+      final pid = int.parse(
+        (await File('${root.path}/stubborn.pid').readAsString()).trim(),
+      );
+      expect(await _processExists(pid), isFalse);
+    });
+
+    test('runCommand kills the process group when cancelled', () async {
+      final token = CancellationToken();
+      final running = sandbox.runCommand(
+        root.path,
+        command: 'sleep 30 & child=\$!; echo \$child > child.pid; wait \$child',
+        cancellationToken: token,
+      );
+      final pidFile = File('${root.path}/child.pid');
+      for (var i = 0; i < 50 && !await pidFile.exists(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      await token.cancel();
+      await expectLater(running, throwsA(isA<OperationCancelledException>()));
+      final pid = int.parse((await pidFile.readAsString()).trim());
+      expect(await _processExists(pid), isFalse);
+    });
+
+    test('runCommand drains and bounds large output', () async {
+      final result = await sandbox.runCommand(
+        root.path,
+        command: 'yes x | head -c 200000',
+      );
+
+      expect(result['exit_code'], 0);
+      expect(result['stdout'], endsWith('... output truncated ...'));
+      expect((result['stdout'] as String).length, lessThan(70000));
+    });
   });
 
   group('ToolService workspace tools', () {
@@ -366,4 +450,9 @@ void main() {
       expect(await File('${root.path}/generated.txt').exists(), isTrue);
     });
   });
+}
+
+Future<bool> _processExists(int pid) async {
+  final result = await Process.run('kill', ['-0', '$pid']);
+  return result.exitCode == 0;
 }

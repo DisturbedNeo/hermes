@@ -20,6 +20,7 @@ import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
 import 'package:hermes/core/services/question_policy_service.dart';
 import 'package:hermes/core/services/task_system/finalizer_tool_call_runner.dart';
@@ -36,8 +37,6 @@ import 'package:path/path.dart' as path;
 
 part 'task_service.mapper.dart';
 
-typedef TaskCancelRegistration = void Function();
-typedef TaskCancelCallback = FutureOr<void> Function();
 typedef TaskCompactionStatusSink = void Function(String status);
 
 @MappableClass(generateMethods: GenerateMethods.encode)
@@ -61,43 +60,6 @@ class TaskPlanningContext with TaskPlanningContextMappable {
     this.requiredGates = const [],
     this.maxSteps = 3,
   });
-}
-
-class TaskCancellationToken {
-  final List<TaskCancelCallback> _callbacks = [];
-  bool _isCancelled = false;
-
-  bool get isCancelled => _isCancelled;
-
-  void throwIfCancelled() {
-    if (_isCancelled) throw const TaskCancelledException();
-  }
-
-  TaskCancelRegistration onCancel(TaskCancelCallback callback) {
-    if (_isCancelled) {
-      Future.microtask(callback);
-      return () {};
-    }
-    _callbacks.add(callback);
-    return () => _callbacks.remove(callback);
-  }
-
-  Future<void> cancel() async {
-    if (_isCancelled) return;
-    _isCancelled = true;
-    final callbacks = List<TaskCancelCallback>.of(_callbacks);
-    _callbacks.clear();
-    for (final callback in callbacks) {
-      await callback();
-    }
-  }
-}
-
-class TaskCancelledException implements Exception {
-  const TaskCancelledException();
-
-  @override
-  String toString() => 'Task execution cancelled';
 }
 
 class _StreamingTaskToolCall {
@@ -451,7 +413,7 @@ class TaskService {
     required String userPrompt,
     ExecutionMode selectedMode = ExecutionMode.refine,
     TaskModelOutputSink? onModelOutput,
-    TaskCancellationToken? cancellationToken,
+    CancellationToken? cancellationToken,
   }) async {
     final metadata = workspace == null || workspace.missing
         ? const WorkspaceMetadata()
@@ -490,7 +452,7 @@ $userPrompt
         ModelJson.decode<RefinedTaskBrief>(json),
         userPrompt,
       );
-    } on TaskCancelledException {
+    } on OperationCancelledException {
       rethrow;
     } on ChatTransportException {
       rethrow;
@@ -509,7 +471,7 @@ $userPrompt
     String? projectId,
     TaskPlanningContext? planningContext,
     TaskModelOutputSink? onModelOutput,
-    TaskCancellationToken? cancellationToken,
+    CancellationToken? cancellationToken,
   }) async {
     final now = DateTime.now();
     final taskId = _newTaskId(userPrompt);
@@ -564,7 +526,7 @@ $userPrompt
           );
         }
       }
-    } on TaskCancelledException {
+    } on OperationCancelledException {
       rethrow;
     } on ChatTransportException {
       rethrow;
@@ -623,7 +585,7 @@ $userPrompt
     int? contextLimitTokens,
     TaskCompactionStatusSink? onCompactionStatus,
     TaskModelOutputSink? onModelOutput,
-    TaskCancellationToken? cancellationToken,
+    CancellationToken? cancellationToken,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
   }) async {
     cancellationToken?.throwIfCancelled();
@@ -711,6 +673,7 @@ $userPrompt
           step: step,
           execution: execution,
           baseSystemPrompt: baseSystemPrompt,
+          cancellationToken: cancellationToken,
         );
       } else if (execution.status == _StepExecutionStatus.blocked) {
         execution = _applyQuestionPolicy(execution, autonomy: questionAutonomy);
@@ -755,7 +718,7 @@ $userPrompt
 
       await _repository.saveSnapshot(workspace.rootPath, working);
       return working;
-    } on TaskCancelledException catch (e) {
+    } on OperationCancelledException catch (e) {
       final cancelledAt = DateTime.now();
       final cancelledRun = run.copyWith(
         status: TaskRunStatus.cancelled,
@@ -962,7 +925,7 @@ $userPrompt
     required String baseSystemPrompt,
     String reason = 'User requested a replan of unfinished work.',
     TaskModelOutputSink? onModelOutput,
-    TaskCancellationToken? cancellationToken,
+    CancellationToken? cancellationToken,
   }) async {
     final updated = await _replanUnfinished(
       client: client,
@@ -1101,7 +1064,7 @@ $userPrompt
     required String label,
     bool allowReadOnlyTools = true,
     TaskModelOutputSink? onModelOutput,
-    TaskCancellationToken? cancellationToken,
+    CancellationToken? cancellationToken,
   }) {
     return _creationRunner.completeWithFinalizer(
       client: client,
@@ -1141,6 +1104,7 @@ You did not call $_finaliseTaskCreationToolId. Return only the JSON object that 
       allowReadOnlyTools: allowReadOnlyTools,
       onModelOutput: onModelOutput,
       throwIfCancelled: cancellationToken?.throwIfCancelled,
+      cancellationToken: cancellationToken,
     );
   }
 
@@ -1158,7 +1122,7 @@ You did not call $_finaliseTaskCreationToolId. Return only the JSON object that 
     required String? projectId,
     required DateTime now,
     TaskModelOutputSink? onModelOutput,
-    TaskCancellationToken? cancellationToken,
+    CancellationToken? cancellationToken,
   }) async {
     try {
       final json = await _completeTaskCreation(
@@ -1200,7 +1164,7 @@ ${_encoder.convert(ModelJson.encode(task))}
       if (_projectPlanningViolations(repaired, planningContext).isEmpty) {
         return repaired;
       }
-    } on TaskCancelledException {
+    } on OperationCancelledException {
       rethrow;
     } on ChatTransportException {
       rethrow;
@@ -1280,7 +1244,7 @@ ${_encoder.convert(ModelJson.encode(task))}
     int? contextLimitTokens,
     TaskCompactionStatusSink? onCompactionStatus,
     TaskModelOutputSink? onModelOutput,
-    TaskCancellationToken? cancellationToken,
+    CancellationToken? cancellationToken,
   }) async {
     final allowedCommands = _allowedCommandsForStep(task, step);
     final allowedToolIds = _allowedToolIdsForStep(step, allowedCommands);
@@ -1301,7 +1265,10 @@ ${_encoder.convert(ModelJson.encode(task))}
         content: _buildStepPrompt(task, step, workspace),
       ),
     ];
-    final context = WorkspaceToolContext(workspace: workspace);
+    final context = WorkspaceToolContext(
+      workspace: workspace,
+      cancellationToken: cancellationToken,
+    );
     final toolCalls = <TaskToolCallRecord>[];
     var finalText = '';
     var finalContent = '';
@@ -1556,6 +1523,7 @@ ${_encoder.convert(ModelJson.encode(task))}
     required TaskStep step,
     required _StepExecutionOutput execution,
     required String baseSystemPrompt,
+    CancellationToken? cancellationToken,
   }) async {
     final gates = _completionGates(task, step);
     if (gates.isEmpty) return execution;
@@ -1585,6 +1553,7 @@ ${_encoder.convert(ModelJson.encode(task))}
       ),
       client: client,
       baseSystemPrompt: baseSystemPrompt,
+      cancellationToken: cancellationToken,
     );
     if (!evaluation.hasRequiredFailure && !evaluation.hasRequiredPending) {
       return execution.copyWith(gateResults: evaluation.results);
@@ -2082,7 +2051,7 @@ ${_encoder.convert(ModelJson.encode(task))}
     int? contextLimitTokens,
     TaskCompactionStatusSink? onCompactionStatus,
     TaskModelOutputSink? onModelOutput,
-    TaskCancellationToken? cancellationToken,
+    CancellationToken? cancellationToken,
   }) {
     return _completeChatForTask(
       client: client,
@@ -2146,7 +2115,7 @@ Do not call any more tools. Based only on the work already completed and the too
     required String baseSystemPrompt,
     required String reason,
     TaskModelOutputSink? onModelOutput,
-    TaskCancellationToken? cancellationToken,
+    CancellationToken? cancellationToken,
   }) async {
     final now = DateTime.now();
     final completed = snapshot.steps
@@ -2202,7 +2171,7 @@ ${_encoder.convert(ModelJson.encode(snapshot))}
       if (replacement.isEmpty) {
         replacement = [_fallbackExecutionStep(snapshot.id, snapshot.goal)];
       }
-    } on TaskCancelledException {
+    } on OperationCancelledException {
       rethrow;
     } on ChatTransportException {
       rethrow;
@@ -2577,7 +2546,7 @@ $whitelist
     required String user,
     required String label,
     TaskModelOutputSink? onModelOutput,
-    TaskCancellationToken? cancellationToken,
+    CancellationToken? cancellationToken,
   }) async {
     final completion = await _completeChatForTask(
       client: client,
@@ -2603,7 +2572,9 @@ $whitelist
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
     TaskCompactionStatusSink? onCompactionStatus,
+    CancellationToken? cancellationToken,
   }) async {
+    cancellationToken?.throwIfCancelled();
     final limit = contextLimitTokens;
     final settings = compactionSettings?.normalised();
     if (settings == null ||
@@ -2617,14 +2588,6 @@ $whitelist
     final store = MessageStore()
       ..setMessages(_bubblesFromChatMessages(messages));
     final manager = CompactionManager(settings: settings, client: client);
-    if (!manager.shouldCompact(
-      messages: store.messages,
-      contextLimit: limit,
-      extraParams: extraParams,
-    )) {
-      return messages;
-    }
-
     try {
       final result = await manager.compactIfNeeded(
         messageStore: store,
@@ -2632,6 +2595,7 @@ $whitelist
         extraParams: extraParams,
         onStatusChanged: (status) =>
             onCompactionStatus?.call('$label: $status'),
+        cancellationToken: cancellationToken,
       );
 
       if (result.compacted || result.emergencyPayloadTruncation) {
@@ -2659,6 +2623,8 @@ $whitelist
       }
 
       return messages;
+    } on OperationCancelledException {
+      rethrow;
     } catch (error) {
       onCompactionStatus?.call('$label: Context compaction failed: $error');
       rethrow;
@@ -2781,7 +2747,7 @@ $whitelist
     int? contextLimitTokens,
     TaskCompactionStatusSink? onCompactionStatus,
     TaskModelOutputSink? onModelOutput,
-    TaskCancellationToken? cancellationToken,
+    CancellationToken? cancellationToken,
   }) async {
     cancellationToken?.throwIfCancelled();
     final requestMessages = await _prepareTaskCompletionMessages(
@@ -2792,6 +2758,7 @@ $whitelist
       compactionSettings: compactionSettings,
       contextLimitTokens: contextLimitTokens,
       onCompactionStatus: onCompactionStatus,
+      cancellationToken: cancellationToken,
     );
     cancellationToken?.throwIfCancelled();
     final estimatedContextTokens =
@@ -2817,6 +2784,7 @@ $whitelist
             label: label,
             token: token,
           ),
+          cancellationToken: cancellationToken,
         );
         cancellationToken?.throwIfCancelled();
         return completion;
@@ -2860,7 +2828,11 @@ $whitelist
       }
 
       sub = client
-          .streamMessage(messages: requestMessages, extraParams: extraParams)
+          .streamMessage(
+            messages: requestMessages,
+            extraParams: extraParams,
+            cancellationToken: cancellationToken,
+          )
           .listen(
             record,
             onError: failIfNeeded,
@@ -2894,7 +2866,7 @@ $whitelist
 
       final unregister = cancellationToken?.onCancel(() async {
         await sub?.cancel();
-        failIfNeeded(const TaskCancelledException());
+        failIfNeeded(const OperationCancelledException());
       });
 
       try {

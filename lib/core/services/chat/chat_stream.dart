@@ -30,4 +30,11 @@ class ChatStream<T> extends ChangeNotifier {
     onStop?.call();
     setState(next);
   }
+
+  /// Releases the current subscription without ending the wider generation.
+  Future<void> detach() async {
+    final s = _sub;
+    _sub = null;
+    await s?.cancel();
+  }
 }

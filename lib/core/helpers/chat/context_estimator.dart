@@ -22,7 +22,15 @@ class ContextEstimator {
 
   static int estimateText(String text) {
     if (text.isEmpty) return 0;
-
-    return (text.length / 4).ceil();
+    var asciiBytes = 0;
+    var nonAsciiBytes = 0;
+    for (final byte in utf8.encode(text)) {
+      if (byte < 0x80) {
+        asciiBytes++;
+      } else {
+        nonAsciiBytes++;
+      }
+    }
+    return (asciiBytes / 3).ceil() + (nonAsciiBytes / 2).ceil();
   }
 }

@@ -1,7 +1,7 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:hermes/core/models/task.dart';
+import 'package:hermes/core/services/atomic_json_snapshot_store.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/services/task_system/task_summary.dart';
 import 'package:path/path.dart' as path;
@@ -10,7 +10,7 @@ class TaskRepository {
   static const String tasksRoot = '.agent/tasks';
   static const String documentFileName = 'task.json';
 
-  final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
+  final AtomicJsonSnapshotStore _snapshots = const AtomicJsonSnapshotStore();
 
   Future<List<TaskSummary>> listTasks(
     String workspaceRoot, {
@@ -27,7 +27,9 @@ class TaskRepository {
       if (!await file.exists()) continue;
 
       try {
-        final task = ModelJson.decode<TaskDocument>(await _readMap(file));
+        final raw = await _snapshots.readMap(file, isValid: _isTaskMap);
+        if (raw == null) continue;
+        final task = ModelJson.decode<TaskDocument>(raw);
         if (task.schemaVersion != TaskDocument.currentSchemaVersion) continue;
         if (chatSessionId != null && task.chatSessionId != chatSessionId) {
           continue;
@@ -77,12 +79,11 @@ class TaskRepository {
     String? chatSessionId,
     String? projectId,
   }) async {
-    final file = File(
-      path.join(_taskDirectory(workspaceRoot, taskId).path, documentFileName),
-    );
-    if (!await file.exists()) return null;
-
-    final task = ModelJson.decode<TaskDocument>(await _readMap(file));
+    final dir = _validatedTaskDirectory(workspaceRoot, taskId);
+    final file = File(path.join(dir.path, documentFileName));
+    final raw = await _snapshots.readMap(file, isValid: _isTaskMap);
+    if (raw == null) return null;
+    final task = ModelJson.decode<TaskDocument>(raw);
     if (task.schemaVersion != TaskDocument.currentSchemaVersion) return null;
     if (chatSessionId != null && task.chatSessionId != chatSessionId) {
       return null;
@@ -92,18 +93,17 @@ class TaskRepository {
   }
 
   Future<void> saveSnapshot(String workspaceRoot, TaskDocument task) async {
-    final dir = _taskDirectory(workspaceRoot, task.id);
+    final dir = _validatedTaskDirectory(workspaceRoot, task.id);
     await dir.create(recursive: true);
-    await _writeMap(
+    await _snapshots.writeMap(
       File(path.join(dir.path, documentFileName)),
       ModelJson.encode(task),
+      isValid: _isTaskMap,
     );
   }
 
   Future<bool> deleteTask(String workspaceRoot, String taskId) async {
-    final root = Directory(path.join(workspaceRoot, tasksRoot));
-    final dir = _taskDirectory(workspaceRoot, taskId);
-    _throwIfOutsideTasksRoot(root, dir);
+    final dir = _validatedTaskDirectory(workspaceRoot, taskId);
     if (!await dir.exists()) return false;
     await dir.delete(recursive: true);
     return true;
@@ -144,19 +144,43 @@ class TaskRepository {
     String name,
     String content,
   ) async {
-    final dir = Directory(
-      path.join(_taskDirectory(workspaceRoot, taskId).path, 'logs'),
-    );
+    final taskDir = _validatedTaskDirectory(workspaceRoot, taskId);
+    _validateFileName(name, 'name');
+    final dir = Directory(path.join(taskDir.path, 'logs'));
     await dir.create(recursive: true);
     await _writeText(File(path.join(dir.path, name)), content);
   }
 
   String taskRelativePath(String taskId, String fileName) {
+    _validatePathSegment(taskId, 'taskId');
+    _validateFileName(fileName, 'fileName');
     return path.posix.join(tasksRoot, taskId, fileName);
   }
 
   Directory _taskDirectory(String workspaceRoot, String taskId) {
     return Directory(path.join(workspaceRoot, tasksRoot, taskId));
+  }
+
+  Directory _validatedTaskDirectory(String workspaceRoot, String taskId) {
+    _validatePathSegment(taskId, 'taskId');
+    final root = Directory(path.join(workspaceRoot, tasksRoot));
+    final dir = _taskDirectory(workspaceRoot, taskId);
+    _throwIfOutsideTasksRoot(root, dir);
+    return dir;
+  }
+
+  void _validatePathSegment(String value, String argumentName) {
+    if (value.isEmpty ||
+        path.isAbsolute(value) ||
+        path.basename(value) != value ||
+        value == '.' ||
+        value == '..') {
+      throw ArgumentError.value(value, argumentName, 'Path segment is invalid');
+    }
+  }
+
+  void _validateFileName(String value, String argumentName) {
+    _validatePathSegment(value, argumentName);
   }
 
   void _throwIfOutsideTasksRoot(Directory root, Directory dir) {
@@ -167,20 +191,17 @@ class TaskRepository {
     }
   }
 
-  Future<Map<String, dynamic>> _readMap(File file) async {
-    final content = await file.readAsString();
-    final decoded = jsonDecode(content);
-    if (decoded is Map<String, dynamic>) return decoded;
-    if (decoded is Map) return Map<String, dynamic>.from(decoded);
-    throw const FormatException('Expected a JSON object');
-  }
-
-  Future<void> _writeMap(File file, Map<String, dynamic> map) {
-    return _writeText(file, '${_encoder.convert(map)}\n');
-  }
-
   Future<void> _writeText(File file, String content) async {
     await file.parent.create(recursive: true);
     await file.writeAsString(content);
+  }
+
+  bool _isTaskMap(Map<String, dynamic> map) {
+    try {
+      final task = ModelJson.decode<TaskDocument>(map);
+      return task.id.trim().isNotEmpty;
+    } catch (_) {
+      return false;
+    }
   }
 }

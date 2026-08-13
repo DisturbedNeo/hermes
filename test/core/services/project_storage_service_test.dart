@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/project.dart';
+import 'package:hermes/core/services/atomic_json_snapshot_store.dart';
 import 'package:hermes/core/services/project_system/project_repository.dart';
 import 'package:path/path.dart' as path;
 
@@ -12,7 +13,9 @@ void main() {
     late ProjectRepository repository;
 
     setUp(() async {
-      root = await Directory.systemTemp.createTemp('hermes_project_repository_');
+      root = await Directory.systemTemp.createTemp(
+        'hermes_project_repository_',
+      );
       repository = ProjectRepository();
     });
 
@@ -106,8 +109,14 @@ void main() {
       );
 
       expect(deleted, 1);
-      expect(await repository.loadProject(root.path, 'project_saved'), isNotNull);
-      expect(await repository.loadProject(root.path, 'project_orphaned'), isNull);
+      expect(
+        await repository.loadProject(root.path, 'project_saved'),
+        isNotNull,
+      );
+      expect(
+        await repository.loadProject(root.path, 'project_orphaned'),
+        isNull,
+      );
     });
 
     test('round-trips the raw project json shape', () async {
@@ -141,6 +150,72 @@ void main() {
     test('rejects log names outside the project log folder', () async {
       expect(
         repository.saveLog(root.path, 'project_test', '../project.json', '{}'),
+        throwsArgumentError,
+      );
+    });
+
+    test('recovers and repairs a corrupt primary from its backup', () async {
+      await repository.saveSnapshot(
+        root.path,
+        _project(id: 'project_recovery', updatedAt: DateTime(2026, 1, 1)),
+      );
+      await repository.saveSnapshot(
+        root.path,
+        _project(id: 'project_recovery', updatedAt: DateTime(2026, 1, 2)),
+      );
+      final file = File(
+        path.join(
+          root.path,
+          '.agent',
+          'projects',
+          'project_recovery',
+          'project.json',
+        ),
+      );
+      await file.writeAsString('{}');
+
+      final recovered = await repository.loadProject(
+        root.path,
+        'project_recovery',
+      );
+
+      expect(recovered?.updatedAt, DateTime(2026, 1, 1));
+      expect(jsonDecode(await file.readAsString()), isA<Map>());
+    });
+
+    test('throws a typed error when primary and backup are corrupt', () async {
+      await repository.saveSnapshot(root.path, _project(id: 'project_corrupt'));
+      await repository.saveSnapshot(root.path, _project(id: 'project_corrupt'));
+      final file = File(
+        path.join(
+          root.path,
+          '.agent',
+          'projects',
+          'project_corrupt',
+          'project.json',
+        ),
+      );
+      await file.writeAsString('{}');
+      await File('${file.path}.bak').writeAsString('{broken');
+
+      await expectLater(
+        repository.loadProject(root.path, 'project_corrupt'),
+        throwsA(isA<SnapshotCorruptionException>()),
+      );
+      expect(await repository.listProjects(root.path), isEmpty);
+    });
+
+    test('validates project ids across save, load, and relative paths', () {
+      expect(
+        repository.saveSnapshot(root.path, _project(id: '../outside')),
+        throwsArgumentError,
+      );
+      expect(
+        repository.loadProject(root.path, '../outside'),
+        throwsArgumentError,
+      );
+      expect(
+        () => repository.projectRelativePath('../outside', 'project.json'),
         throwsArgumentError,
       );
     });

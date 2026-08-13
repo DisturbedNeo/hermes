@@ -461,6 +461,7 @@ class _ReviewClient extends ChatClient {
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
+    Object? cancellationToken,
   }) async {
     return ChatCompletionResponse(
       content: jsonEncode({'passed': false, 'summary': 'Needs polish.'}),

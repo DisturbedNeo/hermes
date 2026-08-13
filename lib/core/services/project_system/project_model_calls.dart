@@ -8,6 +8,7 @@ import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/question_policy_service.dart';
 import 'package:hermes/core/services/task_system/finalizer_tool_call_runner.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
@@ -74,6 +75,7 @@ class ProjectModelCalls {
     required String originalGoal,
     required Map<String, dynamic> workspaceMetadata,
     TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
   }) async {
     try {
       final json = await _completeFinalizedJson(
@@ -82,6 +84,7 @@ class ProjectModelCalls {
         label: 'Project Initializer',
         system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
         onModelOutput: onModelOutput,
+        cancellationToken: cancellationToken,
         expectedShape:
             '{"title":"...","refinedGoal":"...","successCriteria":["..."],"constraints":["..."],"knownFacts":["..."],"openQuestions":[{"question":"..."}],"backlog":[]}',
         finalizerTool: _finaliseProjectCreationToolDefinition(
@@ -142,6 +145,8 @@ $originalGoal
         ),
         backlog: _tasksFromJson(json['backlog']),
       );
+    } on OperationCancelledException {
+      rethrow;
     } on ChatTransportException {
       rethrow;
     } catch (_) {
@@ -156,6 +161,7 @@ $originalGoal
     required ProjectState project,
     required Map<String, dynamic> workspaceMetadata,
     TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
   }) async {
     try {
       final json = await _completeFinalizedJson(
@@ -164,6 +170,7 @@ $originalGoal
         label: 'Project Backlog Refresh',
         system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
         onModelOutput: onModelOutput,
+        cancellationToken: cancellationToken,
         expectedShape:
             '{"backlog":[{"title":"...","objective":"...","relevantSuccessCriteria":["..."],"doneCriteria":["..."],"outOfScope":["..."],"context":["..."],"expectedArtifacts":[]}],"knownFacts":["..."],"openQuestions":[{"question":"..."}]}',
         finalizerTool: _finaliseProjectCreationToolDefinition(
@@ -206,6 +213,8 @@ ${_encoder.convert(ModelJson.encode(project))}
           json['openQuestions'] ?? json['open_questions'],
         ),
       );
+    } on OperationCancelledException {
+      rethrow;
     } on ChatTransportException {
       rethrow;
     } catch (_) {
@@ -224,6 +233,7 @@ ${_encoder.convert(ModelJson.encode(project))}
     required Map<String, dynamic> workspaceMetadata,
     required Set<String> forbiddenFingerprints,
     TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
   }) async {
     try {
       final json = await _completeJson(
@@ -231,6 +241,7 @@ ${_encoder.convert(ModelJson.encode(project))}
         label: 'Project Task Selector',
         system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
         onModelOutput: onModelOutput,
+        cancellationToken: cancellationToken,
         expectedShape:
             '{"task":{"title":"...","objective":"...","relevantSuccessCriteria":["..."],"doneCriteria":["..."],"outOfScope":["..."],"context":["..."],"expectedArtifacts":[]}}',
         user:
@@ -267,6 +278,8 @@ ${_encoder.convert(ModelJson.encode(project))}
       if (raw is Map) {
         return _taskFromMap(Map<String, dynamic>.from(raw), 0);
       }
+    } on OperationCancelledException {
+      rethrow;
     } on ChatTransportException {
       rethrow;
     } catch (_) {
@@ -286,6 +299,7 @@ ${_encoder.convert(ModelJson.encode(project))}
     required ProjectTask oversizedTask,
     required List<String> violations,
     TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
   }) async {
     try {
       final json = await _completeJson(
@@ -293,6 +307,7 @@ ${_encoder.convert(ModelJson.encode(project))}
         label: 'Project Task Splitter',
         system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
         onModelOutput: onModelOutput,
+        cancellationToken: cancellationToken,
         expectedShape:
             '{"tasks":[{"title":"...","objective":"...","relevantSuccessCriteria":["..."],"doneCriteria":["..."],"outOfScope":["..."],"context":["..."],"expectedArtifacts":[]}]}',
         user:
@@ -325,6 +340,8 @@ ${_encoder.convert(ModelJson.encode(project))}
 ''',
       );
       return _tasksFromJson(json['tasks']).take(5).toList();
+    } on OperationCancelledException {
+      rethrow;
     } on ChatTransportException {
       rethrow;
     } catch (_) {
@@ -337,6 +354,7 @@ ${_encoder.convert(ModelJson.encode(project))}
     required String baseSystemPrompt,
     required ProjectState project,
     TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
   }) async {
     try {
       final json = await _completeJson(
@@ -344,6 +362,7 @@ ${_encoder.convert(ModelJson.encode(project))}
         label: 'Project Completion Evaluator',
         system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
         onModelOutput: onModelOutput,
+        cancellationToken: cancellationToken,
         expectedShape:
             '{"complete":false,"finalSummary":"...","remainingCriteria":["..."],"openQuestions":[{"question":"..."}]}',
         user:
@@ -374,6 +393,8 @@ ${_encoder.convert(ModelJson.encode(project))}
           json['openQuestions'] ?? json['open_questions'],
         ),
       );
+    } on OperationCancelledException {
+      rethrow;
     } on ChatTransportException {
       rethrow;
     } catch (_) {
@@ -393,6 +414,7 @@ ${_encoder.convert(ModelJson.encode(project))}
     required String label,
     required String expectedShape,
     TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
   }) async {
     final first = await _completeRaw(
       client: client,
@@ -400,6 +422,7 @@ ${_encoder.convert(ModelJson.encode(project))}
       user: user,
       label: label,
       onModelOutput: onModelOutput,
+      cancellationToken: cancellationToken,
     );
     final parsed = TaskJson.tryParseObject(first);
     if (parsed != null) return parsed;
@@ -419,6 +442,7 @@ Return only the repaired JSON object.
 ''',
       label: '$label Repair',
       onModelOutput: onModelOutput,
+      cancellationToken: cancellationToken,
     );
     return TaskJson.parseObject(repaired);
   }
@@ -432,6 +456,7 @@ Return only the repaired JSON object.
     required String expectedShape,
     required ToolDefinition finalizerTool,
     TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
   }) {
     return _creationRunner.completeWithFinalizer(
       client: client,
@@ -454,6 +479,7 @@ You did not call $_finaliseProjectCreationToolId. Return only the JSON object th
 $expectedShape
 ''',
       onModelOutput: onModelOutput,
+      cancellationToken: cancellationToken,
     );
   }
 
@@ -463,6 +489,7 @@ $expectedShape
     required String user,
     required String label,
     TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
   }) async {
     _emit(
       onModelOutput,
@@ -499,6 +526,7 @@ $expectedShape
           );
         }
       },
+      cancellationToken: cancellationToken,
     );
     _emit(
       onModelOutput,
