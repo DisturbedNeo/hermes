@@ -11,7 +11,6 @@ void main() {
 
     expect(config.nCtx, 32 * 1024);
     expect(config.nThreads, Platform.numberOfProcessors);
-    expect(config.nGpuLayers, 999);
     expect(config.temperature, 0.7);
     expect(config.topP, 0.95);
     expect(config.topK, 20);
@@ -38,6 +37,9 @@ void main() {
       ModelJson.encodeString(original),
     );
     final defaults = ModelJson.decode<ModelLoadConfiguration>(const {});
+    final legacy = ModelJson.decode<ModelLoadConfiguration>(const {
+      'nGpuLayers': 24,
+    });
 
     expect(decoded.temperature, 1.2);
     expect(decoded.thinking, isTrue);
@@ -45,6 +47,7 @@ void main() {
     expect(defaults.nCtx, ModelLoadConfiguration.defaultNCtx);
     expect(defaults.topP, ModelLoadConfiguration.defaultTopP);
     expect(defaults.thinking, ModelLoadConfiguration.defaultThinking);
+    expect(ModelJson.encode(legacy), isNot(contains('nGpuLayers')));
   });
 
   test('binds runtime model identity only when creating a snapshot', () {
@@ -94,7 +97,6 @@ ModelLoadConfiguration _configuration({
 }) => ModelLoadConfiguration(
   nCtx: ModelLoadConfiguration.defaultNCtx,
   nThreads: Platform.numberOfProcessors,
-  nGpuLayers: ModelLoadConfiguration.defaultNGpuLayers,
   temperature: temperature,
   topP: ModelLoadConfiguration.defaultTopP,
   topK: ModelLoadConfiguration.defaultTopK,

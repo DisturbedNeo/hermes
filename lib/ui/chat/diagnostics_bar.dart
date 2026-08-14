@@ -152,7 +152,7 @@ class _DiagnosticsBand extends StatelessWidget {
         context,
         Icons.developer_board_outlined,
         'GPU layers',
-        snapshot == null ? 'n/a' : '${snapshot.nGpuLayers}',
+        snapshot == null ? 'n/a' : 'Auto',
       ),
       _metric(
         context,

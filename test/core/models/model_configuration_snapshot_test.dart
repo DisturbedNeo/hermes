@@ -5,6 +5,9 @@ import 'package:hermes/core/serialization/model_json.dart';
 void main() {
   test('uses model configuration defaults when snapshots omit them', () {
     final snapshot = ModelJson.decode<ModelConfigurationSnapshot>(const {});
+    final legacy = ModelJson.decode<ModelConfigurationSnapshot>(const {
+      'nGpuLayers': 24,
+    });
 
     expect(snapshot.nThreads, ModelConfigurationSnapshot.defaultNThreads);
     expect(snapshot.minP, 0.05);
@@ -20,6 +23,7 @@ void main() {
       snapshot.kvCacheTypeV,
       ModelConfigurationSnapshot.defaultKvCacheType,
     );
+    expect(ModelJson.encode(legacy), isNot(contains('nGpuLayers')));
   });
 
   test('serialises KV cache quantisation settings', () {
@@ -29,7 +33,6 @@ void main() {
       llamaCppDirectory: '/llama.cpp',
       nCtx: 8192,
       nThreads: 8,
-      nGpuLayers: 999,
       temperature: 0.7,
       topP: 0.8,
       topK: 20,
@@ -118,7 +121,6 @@ ModelConfigurationSnapshot _snapshot({
     llamaCppDirectory: '/llama.cpp',
     nCtx: 8192,
     nThreads: 8,
-    nGpuLayers: 999,
     temperature: temperature,
     topP: topP,
     topK: 20,

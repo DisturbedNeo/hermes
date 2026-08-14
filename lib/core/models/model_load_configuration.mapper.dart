@@ -36,12 +36,6 @@ class ModelLoadConfigurationMapper
     _$nThreads,
     hook: PlatformThreadsHook(),
   );
-  static int _$nGpuLayers(ModelLoadConfiguration v) => v.nGpuLayers;
-  static const Field<ModelLoadConfiguration, int> _f$nGpuLayers = Field(
-    'nGpuLayers',
-    _$nGpuLayers,
-    hook: JsonIntHook(fallback: 999),
-  );
   static double _$temperature(ModelLoadConfiguration v) => v.temperature;
   static const Field<ModelLoadConfiguration, double> _f$temperature = Field(
     'temperature',
@@ -162,7 +156,6 @@ class ModelLoadConfigurationMapper
   final MappableFields<ModelLoadConfiguration> fields = const {
     #nCtx: _f$nCtx,
     #nThreads: _f$nThreads,
-    #nGpuLayers: _f$nGpuLayers,
     #temperature: _f$temperature,
     #topP: _f$topP,
     #topK: _f$topK,
@@ -187,7 +180,6 @@ class ModelLoadConfigurationMapper
     return ModelLoadConfiguration(
       nCtx: data.dec(_f$nCtx),
       nThreads: data.dec(_f$nThreads),
-      nGpuLayers: data.dec(_f$nGpuLayers),
       temperature: data.dec(_f$temperature),
       topP: data.dec(_f$topP),
       topK: data.dec(_f$topK),

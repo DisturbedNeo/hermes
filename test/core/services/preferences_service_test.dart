@@ -124,7 +124,6 @@ ModelLoadConfiguration _configuration({required double temperature}) =>
     ModelLoadConfiguration(
       nCtx: ModelLoadConfiguration.defaultNCtx,
       nThreads: Platform.numberOfProcessors,
-      nGpuLayers: ModelLoadConfiguration.defaultNGpuLayers,
       temperature: temperature,
       topP: ModelLoadConfiguration.defaultTopP,
       topK: ModelLoadConfiguration.defaultTopK,

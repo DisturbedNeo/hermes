@@ -16,7 +16,6 @@ void main() {
     llamaCppDirectory: '/llama.cpp',
     nCtx: 8192,
     nThreads: 8,
-    nGpuLayers: 999,
     temperature: 0.7,
     topP: 0.8,
     topK: 20,
@@ -42,6 +41,9 @@ void main() {
 
     expect(_valueAfter(args, '-t'), '8');
     expect(_valueAfter(args, '--threads-batch'), '8');
+    expect(_valueAfter(args, '-ngl'), 'auto');
+    expect(_valueAfter(args, '--load-mode'), 'dio');
+    expect(args, isNot(contains('--no-mmap')));
     expect(_valueAfter(args, '--min-p'), '0.0');
     expect(args, contains('--flash-attn'));
     expect(_valueAfter(args, '--flash-attn'), 'on');

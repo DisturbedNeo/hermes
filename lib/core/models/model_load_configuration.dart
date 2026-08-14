@@ -9,7 +9,6 @@ part 'model_load_configuration.mapper.dart';
 @MappableClass()
 class ModelLoadConfiguration with ModelLoadConfigurationMappable {
   static const int defaultNCtx = 32 * 1024;
-  static const int defaultNGpuLayers = 999;
   static const double defaultTemperature = 0.7;
   static const double defaultTopP = 0.95;
   static const int defaultTopK = 20;
@@ -31,8 +30,6 @@ class ModelLoadConfiguration with ModelLoadConfigurationMappable {
   final int nCtx;
   @MappableField(hook: PlatformThreadsHook())
   final int nThreads;
-  @MappableField(hook: JsonIntHook(fallback: 999))
-  final int nGpuLayers;
   @MappableField(hook: JsonDoubleHook(fallback: 0.7))
   final double temperature;
   @MappableField(hook: JsonDoubleHook(fallback: 0.95))
@@ -73,7 +70,6 @@ class ModelLoadConfiguration with ModelLoadConfigurationMappable {
   const ModelLoadConfiguration({
     required this.nCtx,
     required this.nThreads,
-    required this.nGpuLayers,
     required this.temperature,
     required this.topP,
     required this.topK,
@@ -97,7 +93,6 @@ class ModelLoadConfiguration with ModelLoadConfigurationMappable {
   factory ModelLoadConfiguration.defaults() => ModelLoadConfiguration(
     nCtx: defaultNCtx,
     nThreads: ModelConfigurationSnapshot.defaultNThreads,
-    nGpuLayers: defaultNGpuLayers,
     temperature: defaultTemperature,
     topP: defaultTopP,
     topK: defaultTopK,
@@ -121,7 +116,6 @@ class ModelLoadConfiguration with ModelLoadConfigurationMappable {
   ModelLoadConfiguration normalised() => ModelLoadConfiguration(
     nCtx: (nCtx.clamp(1024, 2048 * 1024).toInt() ~/ 1024) * 1024,
     nThreads: nThreads.clamp(1, Platform.numberOfProcessors).toInt(),
-    nGpuLayers: nGpuLayers.clamp(0, 999).toInt(),
     temperature: temperature.clamp(0.0, 1.5).toDouble(),
     topP: topP.clamp(0.1, 1.0).toDouble(),
     topK: topK.clamp(0, 100).toInt(),
@@ -154,7 +148,6 @@ class ModelLoadConfiguration with ModelLoadConfigurationMappable {
       llamaCppDirectory: llamaCppDirectory,
       nCtx: config.nCtx,
       nThreads: config.nThreads,
-      nGpuLayers: config.nGpuLayers,
       temperature: config.temperature,
       topP: config.topP,
       topK: config.topK,

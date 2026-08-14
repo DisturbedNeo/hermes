@@ -46,7 +46,6 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
 
   late int _ctx;
   late int _threads;
-  late int _gpuLayers;
   late double _temperature;
   late double _topP;
   late int _topK;
@@ -80,7 +79,6 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
     final config = configuration.normalised();
     _ctx = config.nCtx ~/ 1024;
     _threads = config.nThreads;
-    _gpuLayers = config.nGpuLayers;
     _temperature = config.temperature;
     _topP = config.topP;
     _topK = config.topK;
@@ -104,7 +102,6 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
   ModelLoadConfiguration get _configuration => ModelLoadConfiguration(
     nCtx: _ctx * 1024,
     nThreads: _threads,
-    nGpuLayers: _gpuLayers,
     temperature: _temperature,
     topP: _topP,
     topK: _topK,
@@ -262,14 +259,6 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                   max: Platform.numberOfProcessors,
                   step: 1,
                   onChanged: (v) => setState(() => _threads = v),
-                ),
-                SliderControl.integer(
-                  label: 'GPU Layers',
-                  value: _gpuLayers,
-                  min: 0,
-                  max: 999,
-                  step: 1,
-                  onChanged: (v) => setState(() => _gpuLayers = v),
                 ),
                 SliderControl.integer(
                   label: 'Batch',

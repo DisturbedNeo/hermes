@@ -36,8 +36,6 @@ class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
   final int nCtx;
   @MappableField(hook: PlatformThreadsHook())
   final int nThreads;
-  @MappableField(hook: JsonIntHook())
-  final int nGpuLayers;
   @MappableField(hook: JsonDoubleHook(fallback: 0.7))
   final double temperature;
   @MappableField(hook: JsonDoubleHook(fallback: 0.9))
@@ -81,7 +79,6 @@ class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
     required this.llamaCppDirectory,
     required this.nCtx,
     required this.nThreads,
-    required this.nGpuLayers,
     required this.temperature,
     required this.topP,
     required this.topK,
@@ -109,7 +106,6 @@ class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
         llamaCppDirectory == other.llamaCppDirectory &&
         nCtx == other.nCtx &&
         nThreads == other.nThreads &&
-        nGpuLayers == other.nGpuLayers &&
         _doubleMatches(temperature, other.temperature) &&
         _doubleMatches(topP, other.topP) &&
         topK == other.topK &&
@@ -142,7 +138,6 @@ class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
     llamaCppDirectory,
     nCtx,
     nThreads,
-    nGpuLayers,
     _doubleHashValue(temperature),
     _doubleHashValue(topP),
     topK,

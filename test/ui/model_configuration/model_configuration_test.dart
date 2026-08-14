@@ -61,6 +61,13 @@ void main() {
     expect(find.text('Performance'), findsOneWidget);
     expect(find.text('Threads'), findsNothing);
     expect(find.text('Reset to defaults'), findsNothing);
+
+    await tester.ensureVisible(find.text('Performance'));
+    await tester.tap(find.text('Performance'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Threads'), findsOneWidget);
+    expect(find.text('GPU Layers'), findsNothing);
   });
 
   testWidgets('exposes Min P with the other sampling controls', (tester) async {
@@ -258,7 +265,6 @@ ModelLoadConfiguration _configuration({
 }) => ModelLoadConfiguration(
   nCtx: nCtx,
   nThreads: Platform.numberOfProcessors,
-  nGpuLayers: ModelLoadConfiguration.defaultNGpuLayers,
   temperature: ModelLoadConfiguration.defaultTemperature,
   topP: ModelLoadConfiguration.defaultTopP,
   topK: ModelLoadConfiguration.defaultTopK,

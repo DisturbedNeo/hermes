@@ -54,12 +54,6 @@ class ModelConfigurationSnapshotMapper
     _$nThreads,
     hook: PlatformThreadsHook(),
   );
-  static int _$nGpuLayers(ModelConfigurationSnapshot v) => v.nGpuLayers;
-  static const Field<ModelConfigurationSnapshot, int> _f$nGpuLayers = Field(
-    'nGpuLayers',
-    _$nGpuLayers,
-    hook: JsonIntHook(),
-  );
   static double _$temperature(ModelConfigurationSnapshot v) => v.temperature;
   static const Field<ModelConfigurationSnapshot, double> _f$temperature = Field(
     'temperature',
@@ -182,7 +176,6 @@ class ModelConfigurationSnapshotMapper
     #llamaCppDirectory: _f$llamaCppDirectory,
     #nCtx: _f$nCtx,
     #nThreads: _f$nThreads,
-    #nGpuLayers: _f$nGpuLayers,
     #temperature: _f$temperature,
     #topP: _f$topP,
     #topK: _f$topK,
@@ -210,7 +203,6 @@ class ModelConfigurationSnapshotMapper
       llamaCppDirectory: data.dec(_f$llamaCppDirectory),
       nCtx: data.dec(_f$nCtx),
       nThreads: data.dec(_f$nThreads),
-      nGpuLayers: data.dec(_f$nGpuLayers),
       temperature: data.dec(_f$temperature),
       topP: data.dec(_f$topP),
       topK: data.dec(_f$topK),
