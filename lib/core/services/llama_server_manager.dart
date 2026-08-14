@@ -16,6 +16,21 @@ export 'package:hermes/core/helpers/server_health_checker.dart'
 
 import 'disposable.dart';
 
+typedef LlamaProcessLauncher =
+    Future<Process> Function(
+      String executable,
+      List<String> arguments, {
+      String? workingDirectory,
+    });
+typedef LlamaPortAllocator = Future<int> Function();
+typedef LlamaHealthWaiter =
+    Future<void> Function({
+      required Uri baseUrl,
+      required Process process,
+      required String Function() recentOutput,
+      required bool Function() isCancelled,
+    });
+
 @visibleForTesting
 List<String> buildLlamaServerArguments({
   required ModelConfigurationSnapshot snapshot,
@@ -90,6 +105,9 @@ List<String> buildLlamaServerArguments({
 
 class LlamaServerManager implements Disposable {
   final ModelDiagnosticBundleWriter _diagnosticBundleWriter;
+  final LlamaProcessLauncher _processLauncher;
+  final LlamaPortAllocator _portAllocator;
+  final LlamaHealthWaiter _healthWaiter;
   final ValueNotifier<LlamaServerHandle?> handle = ValueNotifier(null);
   final ModelSessionDiagnostics diagnostics = ModelSessionDiagnostics();
   ChatClient? chatClient;
@@ -97,9 +115,16 @@ class LlamaServerManager implements Disposable {
 
   LlamaServerHandle? get current => handle.value;
 
-  LlamaServerManager({ModelDiagnosticBundleWriter? diagnosticBundleWriter})
-    : _diagnosticBundleWriter =
-          diagnosticBundleWriter ?? ModelDiagnosticBundleWriter();
+  LlamaServerManager({
+    ModelDiagnosticBundleWriter? diagnosticBundleWriter,
+    LlamaProcessLauncher? processLauncher,
+    LlamaPortAllocator? portAllocator,
+    LlamaHealthWaiter? healthWaiter,
+  }) : _diagnosticBundleWriter =
+           diagnosticBundleWriter ?? ModelDiagnosticBundleWriter(),
+       _processLauncher = processLauncher ?? _launchProcess,
+       _portAllocator = portAllocator ?? _getFreePort,
+       _healthWaiter = healthWaiter ?? _waitForHealth;
 
   Future<void> startWithSnapshot(ModelConfigurationSnapshot snapshot) {
     return start(
@@ -209,116 +234,100 @@ class LlamaServerManager implements Disposable {
       throw error;
     }
 
-    final port = await _getFreePort();
-    _throwIfCancelled(generation);
-
-    final args = buildLlamaServerArguments(snapshot: snapshot, port: port);
-
     await _stopHandles();
     _throwIfCancelled(generation);
 
-    final baseUrl = 'http://127.0.0.1:$port';
-    diagnostics.recordStarting(
-      snapshot: snapshot,
-      port: port,
-      baseUrl: baseUrl,
-      executablePath: llamaServerExe,
-    );
-
-    final Process process;
-    try {
-      process = await Process.start(
-        llamaServerExe,
-        args,
-        workingDirectory: llamaCppDirectory,
-      );
-    } catch (e, stackTrace) {
-      diagnostics.recordFailure(e);
-      Error.throwWithStackTrace(e, stackTrace);
-    }
-
-    final startupOutput = _StartupOutput();
-
-    final stdoutSub = process.stdout.transform(utf8.decoder).listen((line) {
-      startupOutput.add(line);
-      diagnostics.addLog('stdout', line);
-      if (kDebugMode) print(line);
-    });
-
-    final stderrSub = process.stderr.transform(utf8.decoder).listen((line) {
-      startupOutput.add(line);
-      diagnostics.addLog('stderr', line);
-      if (kDebugMode) print(line);
-    });
-
-    final newHandle = LlamaServerHandle(
-      process: process,
-      stdoutSub: stdoutSub,
-      stderrSub: stderrSub,
-    );
-
-    _startingHandle = newHandle;
-
-    unawaited(
-      process.exitCode.then((code) {
-        if (handle.value == newHandle || _startingHandle == newHandle) {
-          diagnostics.recordProcessExit(code);
-        }
-
-        if (handle.value == newHandle) {
-          chatClient?.dispose();
-          chatClient = null;
-          currentModelName = null;
-          handle.value = null;
-        }
-      }),
-    );
-
-    try {
-      final healthChecker = ServerHealthChecker(
-        baseUrl: Uri.parse(baseUrl),
-        process: process,
-        recentOutputGetter: () => startupOutput.recentOutput,
-      );
-      await healthChecker.waitForReady(
-        isCancelled: () => generation != _startGeneration,
-      );
-
+    for (var attempt = 1; attempt <= 3; attempt++) {
+      final port = await _portAllocator();
       _throwIfCancelled(generation);
-
-      final newClient = ChatClient(
+      final args = buildLlamaServerArguments(snapshot: snapshot, port: port);
+      final baseUrl = 'http://127.0.0.1:$port';
+      diagnostics.recordStarting(
+        snapshot: snapshot,
+        port: port,
         baseUrl: baseUrl,
-        model: modelName,
-        onTransportEvent: _recordTransportEvent,
+        executablePath: llamaServerExe,
       );
 
-      if (generation != _startGeneration) {
-        newClient.dispose();
-        throw const LlamaServerStartupCancelled();
+      final Process process;
+      try {
+        process = await _processLauncher(
+          llamaServerExe,
+          args,
+          workingDirectory: llamaCppDirectory,
+        );
+      } catch (e, stackTrace) {
+        diagnostics.recordFailure(e);
+        Error.throwWithStackTrace(e, stackTrace);
       }
 
-      chatClient = newClient;
-      currentModelName = modelName;
-      _startingHandle = null;
-      handle.value = newHandle;
-      diagnostics.recordReady();
-    } catch (e, stackTrace) {
-      chatClient = null;
-      if (_startingHandle == newHandle) {
-        _startingHandle = null;
-      }
-
-      if (e is LlamaServerStartupCancelled) {
-        diagnostics.recordCancelled();
-      } else {
-        diagnostics.recordFailure(e, recentOutput: startupOutput.recentOutput);
-      }
+      final startupOutput = _StartupOutput();
+      final stdoutSub = process.stdout.transform(utf8.decoder).listen((line) {
+        startupOutput.add(line);
+        diagnostics.addLog('stdout', line);
+        if (kDebugMode) print(line);
+      });
+      final stderrSub = process.stderr.transform(utf8.decoder).listen((line) {
+        startupOutput.add(line);
+        diagnostics.addLog('stderr', line);
+        if (kDebugMode) print(line);
+      });
+      final newHandle = LlamaServerHandle(
+        process: process,
+        stdoutSub: stdoutSub,
+        stderrSub: stderrSub,
+      );
+      _startingHandle = newHandle;
+      _watchProcessExit(newHandle);
 
       try {
-        await newHandle.stop();
-      } catch (_) {}
+        await _healthWaiter(
+          baseUrl: Uri.parse(baseUrl),
+          process: process,
+          recentOutput: () => startupOutput.recentOutput,
+          isCancelled: () => generation != _startGeneration,
+        );
+        _throwIfCancelled(generation);
 
-      Error.throwWithStackTrace(e, stackTrace);
+        final newClient = ChatClient(
+          baseUrl: baseUrl,
+          model: modelName,
+          onTransportEvent: _recordTransportEvent,
+        );
+        if (generation != _startGeneration) {
+          newClient.dispose();
+          throw const LlamaServerStartupCancelled();
+        }
+
+        chatClient = newClient;
+        currentModelName = modelName;
+        _startingHandle = null;
+        handle.value = newHandle;
+        diagnostics.recordReady();
+        return;
+      } catch (e, stackTrace) {
+        chatClient = null;
+        if (_startingHandle == newHandle) _startingHandle = null;
+        try {
+          await newHandle.stop();
+        } catch (_) {}
+
+        final retryBindCollision =
+            attempt < 3 &&
+            e is! LlamaServerStartupCancelled &&
+            _isAddressInUse(startupOutput.recentOutput);
+        if (retryBindCollision) continue;
+
+        if (e is LlamaServerStartupCancelled) {
+          diagnostics.recordCancelled();
+        } else {
+          diagnostics.recordFailure(
+            e,
+            recentOutput: startupOutput.recentOutput,
+          );
+        }
+        Error.throwWithStackTrace(e, stackTrace);
+      }
     }
   }
 
@@ -355,11 +364,60 @@ class LlamaServerManager implements Disposable {
     }
   }
 
-  Future<int> _getFreePort() async {
+  void _watchProcessExit(LlamaServerHandle serverHandle) {
+    unawaited(
+      serverHandle.process.exitCode.then((code) {
+        if (handle.value == serverHandle || _startingHandle == serverHandle) {
+          diagnostics.recordProcessExit(code);
+        }
+        if (handle.value == serverHandle) {
+          chatClient?.dispose();
+          chatClient = null;
+          currentModelName = null;
+          handle.value = null;
+        }
+      }),
+    );
+  }
+
+  bool _isAddressInUse(String output) {
+    final normalized = output.toLowerCase();
+    return normalized.contains('address already in use') ||
+        normalized.contains('failed to bind') ||
+        normalized.contains('error binding');
+  }
+
+  static Future<Process> _launchProcess(
+    String executable,
+    List<String> arguments, {
+    String? workingDirectory,
+  }) {
+    return Process.start(
+      executable,
+      arguments,
+      workingDirectory: workingDirectory,
+    );
+  }
+
+  static Future<int> _getFreePort() async {
     final socket = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
     final port = socket.port;
     await socket.close();
     return port;
+  }
+
+  static Future<void> _waitForHealth({
+    required Uri baseUrl,
+    required Process process,
+    required String Function() recentOutput,
+    required bool Function() isCancelled,
+  }) async {
+    final checker = ServerHealthChecker(
+      baseUrl: baseUrl,
+      process: process,
+      recentOutputGetter: recentOutput,
+    );
+    await checker.waitForReady(isCancelled: isCancelled);
   }
 
   void _recordTransportEvent(ChatTransportEvent event) {

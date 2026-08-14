@@ -2028,6 +2028,7 @@ class ChatService extends ChangeNotifier
         _ensureTaskModelTextSection(event.label, 'error');
         taskModelOutputText += '\nError: ${event.text}\n';
         serverManager.diagnostics.recordStreamError(event.text);
+        _session.flushPendingTokens();
         messageStore.appendCurrentError(event.text);
     }
 
@@ -2172,6 +2173,7 @@ class ChatService extends ChangeNotifier
   }
 
   Future<SavedChat> _queueSave({String? title, bool force = false}) {
+    _session.flushPendingTokens();
     _autosaveTimer?.cancel();
     _autosaveTimer = null;
 
@@ -2391,7 +2393,7 @@ Workspace rules:
 - Inspect relevant files before editing them.
 - Prefer small, precise changes.
 - Explain destructive file operations before performing them.
-- Terminal commands are guarded and are currently $terminalStatus.
+- Host terminal commands run with the application's host permissions, are not confined to the workspace, and are currently $terminalStatus.
 '''
         .trim();
   }
@@ -2627,6 +2629,7 @@ Workspace rules:
   @override
   Future<void> dispose() async {
     if (_disposed) return;
+    _session.flushPendingTokens();
     messageStore.removeListener(_handleMessagesChanged);
     _preferencesService.removeListener(_handlePreferencesChanged);
     _contextEstimateScheduler.cancel();
@@ -2641,6 +2644,7 @@ Workspace rules:
     try {
       await chatStream.stop();
     } finally {
+      await _session.dispose();
       super.dispose();
     }
   }

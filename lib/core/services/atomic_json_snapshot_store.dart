@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:path/path.dart' as path;
+
 class SnapshotCorruptionException implements Exception {
   const SnapshotCorruptionException(this.path, [this.cause]);
 
@@ -15,6 +17,7 @@ class SnapshotCorruptionException implements Exception {
 /// Crash-resistant JSON object storage with one last-known-good backup.
 class AtomicJsonSnapshotStore {
   static int _temporarySequence = 0;
+  static final Map<String, Future<void>> _pendingWrites = {};
 
   const AtomicJsonSnapshotStore();
 
@@ -64,6 +67,26 @@ class AtomicJsonSnapshotStore {
   }
 
   Future<void> writeMap(
+    File primary,
+    Map<String, dynamic> map, {
+    bool Function(Map<String, dynamic> map)? isValid,
+  }) async {
+    final key = path.normalize(primary.absolute.path);
+    final previous = _pendingWrites[key] ?? Future<void>.value();
+    final ready = previous.then<void>((_) {}, onError: (_, _) {});
+    late final Future<void> operation;
+    operation = ready.then((_) => _writeMapNow(primary, map, isValid: isValid));
+    _pendingWrites[key] = operation;
+    try {
+      await operation;
+    } finally {
+      if (identical(_pendingWrites[key], operation)) {
+        _pendingWrites.remove(key);
+      }
+    }
+  }
+
+  Future<void> _writeMapNow(
     File primary,
     Map<String, dynamic> map, {
     bool Function(Map<String, dynamic> map)? isValid,

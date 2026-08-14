@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/enums/message_role.dart';
+import 'package:hermes/core/helpers/chat/buffered_token_writer.dart';
 import 'package:hermes/core/models/bubble.dart';
+import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
 
 void main() {
@@ -163,6 +165,67 @@ void main() {
       );
 
       expect(store.displayRevision, greaterThan(revision));
+    });
+  });
+
+  group('BufferedTokenWriter', () {
+    test('publishes a large token burst with one notification', () {
+      final store = MessageStore();
+      store.setMessages([
+        const Bubble(
+          id: 'assistant',
+          role: MessageRole.assistant,
+          text: '',
+          reasoning: '',
+        ),
+      ], currentId: 'assistant');
+      var notifications = 0;
+      store.addListener(() => notifications++);
+      final writer = BufferedTokenWriter(messageStore: store);
+
+      for (var i = 0; i < 1000; i++) {
+        writer.add(ChatToken(content: 'x'));
+      }
+      writer.add(ChatToken(reasoning: 'thought'));
+      writer.flush();
+
+      expect(store.currentMessage?.text, List.filled(1000, 'x').join());
+      expect(store.currentMessage?.reasoning, 'thought');
+      expect(notifications, 1);
+      writer.dispose();
+    });
+
+    test('preserves tool delta order and flushes on disposal', () {
+      final store = MessageStore();
+      store.setMessages([
+        const Bubble(
+          id: 'assistant',
+          role: MessageRole.assistant,
+          text: '',
+          reasoning: '',
+        ),
+      ], currentId: 'assistant');
+      final writer = BufferedTokenWriter(messageStore: store)
+        ..add(
+          ChatToken(
+            tool: ToolCallDelta(
+              index: 0,
+              id: 'call_1',
+              name: 'read_file',
+              argumentsChunk: '{"path":',
+            ),
+          ),
+        )
+        ..add(
+          ChatToken(
+            tool: ToolCallDelta(index: 0, argumentsChunk: '"README.md"}'),
+          ),
+        );
+
+      writer.dispose();
+
+      expect(store.currentMessage?.tools[0]?.name, 'read_file');
+      expect(store.currentMessage?.tools[0]?.arguments, '{"path":"README.md"}');
     });
   });
 }

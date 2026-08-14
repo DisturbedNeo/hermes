@@ -6,14 +6,47 @@ import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
 
 extension AssistantOps on MessageStore {
-  void appendToken(ChatToken token) {
-    if (token.tool != null) {
-      applyCurrentToolDelta(token.tool!);
-    } else if (token.reasoning != null) {
-      appendCurrentReasoning(token.reasoning!);
-    } else if (token.content != null) {
-      appendCurrentText(token.content!);
+  void appendToken(ChatToken token) => appendTokens([token]);
+
+  void appendTokens(Iterable<ChatToken> tokens) {
+    var current = currentMessage;
+    if (current == null) return;
+
+    final text = StringBuffer(current.text);
+    final reasoning = StringBuffer(current.reasoning);
+    var tools = current.tools;
+    var changed = false;
+    for (final token in tokens) {
+      final tool = token.tool;
+      final reasoningChunk = token.reasoning;
+      final contentChunk = token.content;
+      if (tool != null) {
+        tools = toolCaller.applyDelta(
+          messageId: current.id,
+          delta: tool,
+          currentTools: tools,
+        );
+        changed = true;
+      } else if (reasoningChunk != null && reasoningChunk.isNotEmpty) {
+        reasoning.write(reasoningChunk);
+        changed = true;
+      } else if (contentChunk != null && contentChunk.isNotEmpty) {
+        text.write(contentChunk);
+        changed = true;
+      }
     }
+    if (!changed) return;
+
+    current = current.copyWith(
+      text: text.toString(),
+      reasoning: reasoning.toString(),
+      tools: tools,
+    );
+    upsert(
+      current.text.contains('</think>')
+          ? ContentNormaliser.normalise(current)
+          : current,
+    );
   }
 
   void appendCurrentText(String chunk) {

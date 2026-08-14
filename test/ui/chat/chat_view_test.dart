@@ -99,6 +99,34 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('host terminal access requires informed session consent', (
+    tester,
+  ) async {
+    await _setViewport(tester, const Size(900, 700));
+    final chat = tabs.activeChat!;
+    chat.workspace = WorkspaceAttachment(
+      rootPath: tempDir.path,
+      displayName: 'workspace',
+      lastOpenedAt: DateTime(2024, 1, 1),
+    );
+    await tester.pumpWidget(_chatViewApp(tabs, preferences, toolService));
+    await tester.pump();
+
+    await tester.tap(find.text('Host terminal'));
+    await tester.pumpAndSettle();
+    expect(find.text('Allow host terminal access?'), findsOneWidget);
+    expect(find.textContaining('not sandboxed'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(chat.workspace?.commandExecutionApproved, isFalse);
+
+    await tester.tap(find.text('Host terminal'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Allow for session'));
+    await tester.pumpAndSettle();
+    expect(chat.workspace?.commandExecutionApproved, isTrue);
+  });
+
   testWidgets('keeps the footer scrollable in a very short viewport', (
     tester,
   ) async {

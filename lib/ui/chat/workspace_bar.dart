@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
@@ -78,16 +80,22 @@ class WorkspaceBar extends StatelessWidget {
                   if (!missing)
                     AccessibleWidget(
                       label:
-                          'Terminal execution${workspace.commandExecutionApproved ? '' : ' not'} approved',
+                          'Host terminal access${workspace.commandExecutionApproved ? '' : ' not'} approved for this session',
                       selected: workspace.commandExecutionApproved,
 
                       child: FilterChip(
-                        label: const Text('Terminal'),
+                        label: const Text('Host terminal'),
                         avatar: const Icon(Icons.terminal, size: 16),
                         selected: workspace.commandExecutionApproved,
                         onSelected: chat.chatStream.isStreaming
                             ? null
-                            : chat.setCommandExecutionApproved,
+                            : (approved) => unawaited(
+                                _setHostTerminalApproval(
+                                  context,
+                                  chat,
+                                  approved,
+                                ),
+                              ),
                         visualDensity: VisualDensity.compact,
                       ),
                     ),
@@ -148,8 +156,12 @@ class _WorkspaceActionsMenu extends StatelessWidget {
             case _WorkspaceAction.toggleTerminal:
               final workspace = chat.workspace;
               if (workspace == null || workspace.missing) return;
-              chat.setCommandExecutionApproved(
-                !workspace.commandExecutionApproved,
+              unawaited(
+                _setHostTerminalApproval(
+                  context,
+                  chat,
+                  !workspace.commandExecutionApproved,
+                ),
               );
               break;
             case _WorkspaceAction.change:
@@ -166,7 +178,7 @@ class _WorkspaceActionsMenu extends StatelessWidget {
               value: _WorkspaceAction.toggleTerminal,
               checked: chat.workspace?.commandExecutionApproved ?? false,
               enabled: !chat.chatStream.isStreaming,
-              child: const Text('Terminal execution'),
+              child: const Text('Host terminal access'),
             ),
           const PopupMenuItem(
             value: _WorkspaceAction.change,
@@ -184,3 +196,38 @@ class _WorkspaceActionsMenu extends StatelessWidget {
 }
 
 enum _WorkspaceAction { toggleTerminal, change, detach }
+
+Future<void> _setHostTerminalApproval(
+  BuildContext context,
+  ChatService chat,
+  bool approved,
+) async {
+  if (!approved) {
+    chat.setCommandExecutionApproved(false);
+    return;
+  }
+
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Allow host terminal access?'),
+      content: const Text(
+        'Commands run with Hermes\' host permissions and are not sandboxed. '
+        'They may access files and credentials outside the workspace, run '
+        'installed programs, and use the network. Approval lasts only for '
+        'this chat session.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('Allow for session'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true) chat.setCommandExecutionApproved(true);
+}

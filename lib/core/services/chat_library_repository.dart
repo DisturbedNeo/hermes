@@ -12,6 +12,7 @@ import 'package:hermes/core/models/saved_chat.dart';
 import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/serialization/model_json.dart';
+import 'package:hermes/core/services/managed_lazy_database.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 
 /// Repository layer for the chat library.
@@ -24,30 +25,22 @@ class ChatLibraryRepository {
   final DatabaseFactory _databaseFactory;
   final String? _databasePath;
 
-  Database? _database;
-  Future<Database>? _opening;
+  late final ManagedLazyDatabase _database;
 
   ChatLibraryRepository({
     required PreferencesService preferencesService,
     DatabaseFactory? databaseFactory,
     String? databasePath,
-  })  : _preferencesService = preferencesService,
-        _databaseFactory = databaseFactory ?? databaseFactoryFfi,
-        _databasePath = databasePath;
-
-  Future<Database> get _db {
-    if (_database != null) return Future.value(_database);
-    return _opening ??= _open();
+  }) : _preferencesService = preferencesService,
+       _databaseFactory = databaseFactory ?? databaseFactoryFfi,
+       _databasePath = databasePath {
+    _database = ManagedLazyDatabase(_open);
   }
+
+  Future<Database> get _db => _database.database;
 
   /// Closes the underlying SQLite database connection.
-  Future<void> dispose() async {
-    final db = _database;
-    _database = null;
-    if (db != null) {
-      await db.close();
-    }
-  }
+  Future<void> dispose() => _database.dispose();
 
   // ── Public CRUD / query methods ────────────────────────────────────────
 
@@ -179,9 +172,10 @@ class ChatLibraryRepository {
         'model_snapshot_json': modelSnapshotJson,
         'workspace_root_path': workspace?.rootPath,
         'workspace_display_name': workspace?.displayName,
-        'workspace_last_opened_at': workspace?.lastOpenedAt.millisecondsSinceEpoch,
-        'workspace_command_approved':
-            workspace?.commandExecutionApproved == true ? 1 : 0,
+        'workspace_last_opened_at':
+            workspace?.lastOpenedAt.millisecondsSinceEpoch,
+        // Host-terminal consent is deliberately session-only.
+        'workspace_command_approved': 0,
         'system_prompt_snapshot_json': systemPromptSnapshot == null
             ? null
             : ModelJson.encodeString(systemPromptSnapshot),
@@ -231,7 +225,9 @@ class ChatLibraryRepository {
         lastOpenedAt: lastOpenedAt,
         modelSnapshot: modelSnapshotJson == null || modelSnapshotJson.isEmpty
             ? null
-            : ModelJson.decodeString<ModelConfigurationSnapshot>(modelSnapshotJson),
+            : ModelJson.decodeString<ModelConfigurationSnapshot>(
+                modelSnapshotJson,
+              ),
         workspace: workspace,
         systemPromptSnapshot: systemPromptSnapshot,
       );
@@ -241,10 +237,7 @@ class ChatLibraryRepository {
   }
 
   /// Renames a chat and refreshes its search index.
-  Future<void> renameChatData(
-    String chatId,
-    String title,
-  ) async {
+  Future<void> renameChatData(String chatId, String title) async {
     final db = await _db;
     await db.transaction((txn) async {
       final now = DateTime.now().millisecondsSinceEpoch;
@@ -322,8 +315,6 @@ class ChatLibraryRepository {
       ),
     );
 
-    _database = db;
-    _opening = null;
     return db;
   }
 
@@ -496,8 +487,8 @@ class ChatLibraryRepository {
               lastOpenedAt:
                   _nullableDate(workspaceLastOpenedAt) ??
                   DateTime.fromMillisecondsSinceEpoch(0),
-              commandExecutionApproved:
-                  (row['workspace_command_approved'] as int? ?? 0) == 1,
+              // Decode the legacy column but never restore host authority.
+              commandExecutionApproved: false,
             ),
       systemPromptSnapshot: _systemPromptFromRow(row),
     );

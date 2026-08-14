@@ -14,7 +14,7 @@ import 'package:http/http.dart' as http;
 /// decoding of chat completion deltas including reasoning, content, and tool calls.
 class _SseParser {
   final List<String> _eventData = [];
-  bool _sawDone = false;
+  bool _sawTerminal = false;
   final Uri? _chatUri;
 
   _SseParser([this._chatUri]);
@@ -29,7 +29,7 @@ class _SseParser {
     }
   }
 
-  bool get sawDone => _sawDone;
+  bool get sawTerminal => _sawTerminal;
 
   /// Parses buffered event data into tokens and clears the buffer.
   List<ChatToken> flush() {
@@ -38,66 +38,173 @@ class _SseParser {
     _eventData.clear();
 
     if (payload == '[DONE]') {
-      _sawDone = true;
+      _sawTerminal = true;
       return const [];
     }
 
-    return _chatUri != null
-        ? tokensFromPayload(payload, _chatUri)
-        : tokensFromPayload(payload);
+    final parsed = _parsePayload(payload, _chatUri);
+    if (parsed.terminal) _sawTerminal = true;
+    return parsed.tokens;
   }
+}
+
+class ChatProtocolException implements Exception {
+  const ChatProtocolException({required this.uri, required this.reason});
+
+  final Uri uri;
+  final String reason;
+
+  @override
+  String toString() => 'Invalid model stream from $uri: $reason';
+}
+
+class _ParsedSsePayload {
+  const _ParsedSsePayload(this.tokens, {this.terminal = false});
+
+  final List<ChatToken> tokens;
+  final bool terminal;
 }
 
 /// Parses an SSE event payload string into a list of [ChatToken]s.
 ///
-/// Returns an empty list for malformed JSON or unrecognized structures.
-/// Throws [HttpException] if the payload contains an error field.
+/// Throws [ChatProtocolException] for malformed or unrecognized payloads and
+/// [HttpException] when the server sends a valid error object.
 List<ChatToken> tokensFromPayload(String payload, [Uri? chatUri]) {
+  return _parsePayload(payload, chatUri).tokens;
+}
+
+_ParsedSsePayload _parsePayload(String payload, Uri? chatUri) {
+  final endpoint = chatUri ?? Uri();
+  late final Object? decoded;
   try {
-    final obj = jsonDecode(payload);
-
-    if (obj is Map && obj['error'] != null) {
-      final msg = obj['error']['message'] ?? obj['error'].toString();
-      if (chatUri != null) {
-        throw HttpException('Stream error: $msg', uri: chatUri);
-      }
-      // No URI available — log and skip.
-      return const [];
-    }
-
-    final choices = (obj is Map) ? obj['choices'] : null;
-    if (choices is List && choices.isNotEmpty) {
-      final delta = choices[0]?['delta'];
-      if (delta is Map) return _tokensFromDelta(delta, chatUri);
-    }
-  } on FormatException {
-    // Malformed JSON — silently skip.
+    decoded = jsonDecode(payload);
+  } on FormatException catch (error) {
+    throw ChatProtocolException(
+      uri: endpoint,
+      reason: 'Malformed JSON event: ${error.message}',
+    );
   }
 
-  return const [];
+  if (decoded is! Map) {
+    throw ChatProtocolException(
+      uri: endpoint,
+      reason: 'Expected a JSON object event.',
+    );
+  }
+
+  final error = decoded['error'];
+  if (error != null) {
+    if (error is! Map || error['message'] is! String) {
+      throw ChatProtocolException(
+        uri: endpoint,
+        reason: 'Malformed server error event.',
+      );
+    }
+    throw HttpException('Stream error: ${error['message']}', uri: chatUri);
+  }
+
+  final choices = decoded['choices'];
+  if (choices == null) {
+    if (decoded.containsKey('usage')) {
+      return const _ParsedSsePayload([]);
+    }
+    throw ChatProtocolException(
+      uri: endpoint,
+      reason: 'Event did not contain choices, usage, or an error.',
+    );
+  }
+  if (choices is! List) {
+    throw ChatProtocolException(
+      uri: endpoint,
+      reason: 'The choices field was not a list.',
+    );
+  }
+  if (choices.isEmpty) {
+    if (decoded.containsKey('usage')) {
+      return const _ParsedSsePayload([]);
+    }
+    throw ChatProtocolException(
+      uri: endpoint,
+      reason: 'The choices list was empty without usage metadata.',
+    );
+  }
+
+  final choice = choices.first;
+  if (choice is! Map) {
+    throw ChatProtocolException(
+      uri: endpoint,
+      reason: 'The first choice was not an object.',
+    );
+  }
+  final terminal = choice['finish_reason'] != null;
+  final delta = choice['delta'];
+  if (delta == null && terminal) {
+    return _ParsedSsePayload(const [], terminal: true);
+  }
+  if (delta is! Map) {
+    throw ChatProtocolException(
+      uri: endpoint,
+      reason: 'A choice did not contain a valid delta object.',
+    );
+  }
+  return _ParsedSsePayload(
+    _tokensFromDelta(delta, chatUri),
+    terminal: terminal,
+  );
 }
 
 List<ChatToken> _tokensFromDelta(Map delta, Uri? chatUri) {
   final tokens = <ChatToken>[];
 
+  final role = delta['role'];
+  if (role != null && role is! String) {
+    throw ChatProtocolException(
+      uri: chatUri ?? Uri(),
+      reason: 'A delta role was not a string.',
+    );
+  }
+
   final reasoningToken = delta['reasoning_content'] ?? delta['reasoning'];
+  if (reasoningToken != null && reasoningToken is! String) {
+    throw ChatProtocolException(
+      uri: chatUri ?? Uri(),
+      reason: 'A reasoning delta was not a string.',
+    );
+  }
   if (reasoningToken is String && reasoningToken.isNotEmpty) {
     tokens.add(ChatToken(reasoning: reasoningToken));
   }
 
   final contentToken = delta['content'];
+  if (contentToken != null && contentToken is! String) {
+    throw ChatProtocolException(
+      uri: chatUri ?? Uri(),
+      reason: 'A content delta was not a string.',
+    );
+  }
   if (contentToken is String && contentToken.isNotEmpty) {
     tokens.add(ChatToken(content: contentToken));
   }
 
   final toolCalls = delta['tool_calls'];
   if (toolCalls is List && toolCalls.isNotEmpty) {
+    if (toolCalls.any((item) => item is! Map)) {
+      throw ChatProtocolException(
+        uri: chatUri ?? Uri(),
+        reason: 'A tool-call delta was not an object.',
+      );
+    }
     tokens.addAll(
       toolCalls.whereType<Map>().map(_toolDeltaFromWire).whereType(),
     );
   } else if (toolCalls is Map) {
     final token = _toolDeltaFromWire(toolCalls);
     if (token != null) tokens.add(token);
+  } else if (toolCalls != null) {
+    throw ChatProtocolException(
+      uri: chatUri ?? Uri(),
+      reason: 'The tool_calls delta was not a list or object.',
+    );
   }
 
   return tokens;
@@ -482,11 +589,17 @@ class ChatClient {
           for (final token in parser.flush()) {
             yield token;
           }
-          if (parser.sawDone) break;
+          if (parser.sawTerminal) break;
         }
       }
       for (final token in parser.flush()) {
         yield token;
+      }
+      if (!parser.sawTerminal) {
+        throw ChatProtocolException(
+          uri: chatUri,
+          reason: 'The event stream ended without [DONE] or a finish_reason.',
+        );
       }
     } finally {
       unregister?.call();

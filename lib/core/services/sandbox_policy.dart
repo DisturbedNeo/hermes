@@ -26,7 +26,7 @@ const int kMaxSearchOutputBytes = 64 * 1024;
 /// Maximum bytes for command stdout/stderr output.
 const int kMaxCommandOutputBytes = 64 * 1024;
 
-/// Timeout applied to sandboxed command execution.
+/// Timeout applied to user-approved host command execution.
 const Duration kCommandTimeout = Duration(seconds: 30);
 
 // ---------------------------------------------------------------------------

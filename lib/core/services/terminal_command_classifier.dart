@@ -14,7 +14,8 @@ import 'package:hermes/core/services/terminal_command_parser.dart';
 /// Thin public API that delegates to [TerminalCommandParser].
 ///
 /// The parser handles syntax-level logic (tokenization, rule matching); this
-/// class exists solely as the stable boundary for consumers.
+/// class exists solely as the stable boundary for consumers. Classification
+/// is a guardrail, not a sandbox or complete security boundary.
 class TerminalCommandClassifier {
   const TerminalCommandClassifier._();
 
@@ -24,9 +25,10 @@ class TerminalCommandClassifier {
     required String executable,
     required List<String> arguments,
   }) {
-    return TerminalCommandParser.blockedReasonForTokens(
-      [executable, ...arguments],
-    );
+    return TerminalCommandParser.blockedReasonForTokens([
+      executable,
+      ...arguments,
+    ]);
   }
 
   /// Returns a reason why *command* is blocked (checks for shell substitution

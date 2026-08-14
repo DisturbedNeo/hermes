@@ -6,6 +6,7 @@ import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:hermes/core/models/system_prompt.dart';
+import 'package:hermes/core/services/managed_lazy_database.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/prompt_library_seed_data.dart';
 
@@ -19,8 +20,7 @@ class SystemPromptLibraryRepository {
   final DatabaseFactory _databaseFactory;
   final String? _databasePath;
 
-  Database? _database;
-  Future<Database>? _opening;
+  late final ManagedLazyDatabase _database;
 
   SystemPromptLibraryRepository({
     required PreferencesService preferencesService,
@@ -28,20 +28,13 @@ class SystemPromptLibraryRepository {
     String? databasePath,
   }) : _preferencesService = preferencesService,
        _databaseFactory = databaseFactory ?? databaseFactoryFfi,
-       _databasePath = databasePath;
-
-  Future<Database> get _db {
-    if (_database != null) return Future.value(_database);
-    return _opening ??= _open();
+       _databasePath = databasePath {
+    _database = ManagedLazyDatabase(_open);
   }
 
-  Future<void> dispose() async {
-    final db = _database;
-    _database = null;
-    if (db != null) {
-      await db.close();
-    }
-  }
+  Future<Database> get _db => _database.database;
+
+  Future<void> dispose() => _database.dispose();
 
   // ── Public CRUD / query methods ────────────────────────────────────────
 
@@ -297,7 +290,7 @@ Workspace rules:
 - Inspect relevant files before editing them.
 - Prefer small, precise changes.
 - Explain destructive file operations before performing them.
-- Terminal commands are guarded and may be unavailable unless the user enables them for this chat.
+- Host terminal commands require explicit user approval for this session. They run with the application's host permissions and are not confined to the workspace.
 '''
                 .trim(),
         priority: 80,
@@ -484,8 +477,6 @@ Workspace rules:
       ),
     );
 
-    _database = db;
-    _opening = null;
     return db;
   }
 

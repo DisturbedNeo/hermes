@@ -989,7 +989,7 @@ void main() {
 
       final executorPrompt = client.seenMessages.single.last.content;
       expect(client.seenToolNames.single, contains('run_command'));
-      expect(executorPrompt, contains('Terminal commands are enabled'));
+      expect(executorPrompt, contains('Host terminal access is approved'));
       expect(executorPrompt, contains('Tools exposed to this step'));
       expect(executorPrompt, contains('run_command'));
       expect(updated.status, TaskStatus.completed);

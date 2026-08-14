@@ -440,7 +440,7 @@ class RunCommandTool extends WorkspaceTool {
   final String name = 'Run command';
   @override
   final String description =
-      'Runs a guarded terminal command from inside the workspace. Requires user approval for the chat.';
+      'Runs a user-approved shell command on the host, with the workspace as its working directory. The command is not sandboxed and may access resources outside the workspace.';
   @override
   final Map<String, dynamic> schema = {
     'type': 'object',
@@ -469,7 +469,7 @@ class RunCommandTool extends WorkspaceTool {
         toolErrorPayload(
           code: 'command_execution_disabled',
           message:
-              'Terminal commands are disabled for this chat. Enable them from the workspace chip first.',
+              'Host terminal access is disabled for this session. Enable it from the workspace chip first.',
           disposition: TaskToolErrorDisposition.advisory,
         ),
       );

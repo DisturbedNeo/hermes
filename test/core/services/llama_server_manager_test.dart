@@ -1,4 +1,10 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hermes/core/helpers/server_health_checker.dart';
+import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
@@ -70,6 +76,106 @@ void main() {
     expect(args, isNot(contains('--cache-type-k')));
     expect(args, isNot(contains('--cache-type-v')));
   });
+
+  group('LlamaServerHandle', () {
+    test('stops escalating as soon as the process exits', () async {
+      for (final expected in [
+        ProcessSignal.sigint,
+        ProcessSignal.sigterm,
+        ProcessSignal.sigkill,
+      ]) {
+        final process = _FakeProcess(exitOn: expected);
+        final handle = _handle(process);
+        final first = handle.stop();
+        final second = handle.stop();
+
+        expect(identical(first, second), isTrue);
+        await Future.wait([first, second]);
+
+        expect(process.signals.last, expected);
+        expect(process.signals, [
+          ProcessSignal.sigint,
+          if (expected != ProcessSignal.sigint) ProcessSignal.sigterm,
+          if (expected == ProcessSignal.sigkill) ProcessSignal.sigkill,
+        ]);
+      }
+    });
+
+    test('does not signal a process that has already exited', () async {
+      final process = _FakeProcess()..completeExit();
+
+      await _handle(process).stop();
+
+      expect(process.signals, isEmpty);
+    });
+  });
+
+  test('repeated startup responses eventually hit the stall timeout', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final subscription = server.listen((request) async {
+      request.response.statusCode = HttpStatus.serviceUnavailable;
+      await request.response.close();
+    });
+    addTearDown(() async {
+      await subscription.cancel();
+      await server.close(force: true);
+    });
+    final process = _FakeProcess();
+    final checker = ServerHealthChecker(
+      baseUrl: Uri.parse('http://127.0.0.1:${server.port}'),
+      process: process,
+      healthRequestTimeout: const Duration(milliseconds: 100),
+      startupStallTimeout: const Duration(milliseconds: 40),
+    );
+
+    await expectLater(
+      checker.waitForReady(isCancelled: () => false),
+      throwsA(isA<StateError>()),
+    );
+  });
+
+  test('retries startup with a new port only after a bind collision', () async {
+    final directory = await Directory.systemTemp.createTemp('hermes_llama_');
+    addTearDown(() => directory.delete(recursive: true));
+    await File('${directory.path}/llama-server').writeAsString('');
+    final ports = [12001, 12002];
+    final processes = <_FakeProcess>[];
+    var launches = 0;
+    final manager = LlamaServerManager(
+      portAllocator: () async => ports.removeAt(0),
+      processLauncher: (_, _, {workingDirectory}) async {
+        final process = _FakeProcess(
+          exitOn: ProcessSignal.sigint,
+          stderrText: launches++ == 0 ? 'address already in use' : null,
+        );
+        processes.add(process);
+        return process;
+      },
+      healthWaiter:
+          ({
+            required baseUrl,
+            required process,
+            required recentOutput,
+            required isCancelled,
+          }) async {
+            await Future<void>.delayed(Duration.zero);
+            if (recentOutput().contains('address already in use')) {
+              throw StateError('llama-server exited before it was ready');
+            }
+          },
+    );
+    addTearDown(manager.dispose);
+
+    await manager.start(
+      llamaCppDirectory: directory.path,
+      modelPath: '${directory.path}/model.gguf',
+      modelName: 'model',
+    );
+
+    expect(launches, 2);
+    expect(manager.diagnostics.port, 12002);
+    expect(processes.first.signals, contains(ProcessSignal.sigint));
+  });
 }
 
 String _valueAfter(List<String> args, String flag) {
@@ -77,4 +183,53 @@ String _valueAfter(List<String> args, String flag) {
   expect(index, isNot(-1));
   expect(index + 1, lessThan(args.length));
   return args[index + 1];
+}
+
+LlamaServerHandle _handle(_FakeProcess process) {
+  return LlamaServerHandle(
+    process: process,
+    stdoutSub: const Stream<List<int>>.empty().listen((_) {}),
+    stderrSub: const Stream<List<int>>.empty().listen((_) {}),
+    interruptGrace: const Duration(milliseconds: 5),
+    terminateGrace: const Duration(milliseconds: 5),
+    killGrace: const Duration(milliseconds: 5),
+  );
+}
+
+class _FakeProcess implements Process {
+  _FakeProcess({this.exitOn, this.stderrText});
+
+  final ProcessSignal? exitOn;
+  final String? stderrText;
+  final Completer<int> _exitCode = Completer<int>();
+  final StreamController<List<int>> _stdin = StreamController<List<int>>();
+  final List<ProcessSignal> signals = [];
+
+  void completeExit() {
+    if (!_exitCode.isCompleted) _exitCode.complete(0);
+  }
+
+  @override
+  Future<int> get exitCode => _exitCode.future;
+
+  @override
+  int get pid => 42;
+
+  @override
+  IOSink get stdin => IOSink(_stdin.sink);
+
+  @override
+  Stream<List<int>> get stderr => stderrText == null
+      ? const Stream.empty()
+      : Stream.value(utf8.encode(stderrText!));
+
+  @override
+  Stream<List<int>> get stdout => const Stream.empty();
+
+  @override
+  bool kill([ProcessSignal signal = ProcessSignal.sigterm]) {
+    signals.add(signal);
+    if (signal == exitOn) completeExit();
+    return true;
+  }
 }

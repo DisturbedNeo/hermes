@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
+import 'package:hermes/core/services/workspace_service.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   group('WorkspaceSandbox', () {
@@ -13,6 +15,7 @@ void main() {
     late WorkspaceSandbox sandbox;
 
     setUp(() async {
+      SharedPreferences.setMockInitialValues({});
       root = await Directory.systemTemp.createTemp('hermes_workspace_');
       outside = await Directory.systemTemp.createTemp('hermes_outside_');
       sandbox = WorkspaceSandbox();
@@ -31,6 +34,20 @@ void main() {
 
       expect(resolved.relativePath, 'notes/chapter.txt');
       expect(resolved.absolutePath, endsWith('notes/chapter.txt'));
+    });
+
+    test('does not restore legacy host terminal approval', () async {
+      final service = WorkspaceService(sandbox: sandbox);
+      addTearDown(service.dispose);
+
+      final restored = await service.restore(
+        rootPath: root.path,
+        displayName: 'workspace',
+        lastOpenedAt: DateTime(2024),
+        commandExecutionApproved: true,
+      );
+
+      expect(restored.commandExecutionApproved, isFalse);
     });
 
     test('rejects parent traversal outside the workspace', () async {
@@ -423,7 +440,7 @@ void main() {
         ),
       );
 
-      expect(result, contains('Terminal commands are disabled'));
+      expect(result, contains('Host terminal access is disabled'));
     });
 
     test('reports blocked terminal commands as tool errors', () async {

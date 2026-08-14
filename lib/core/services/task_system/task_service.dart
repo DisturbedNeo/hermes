@@ -2481,8 +2481,8 @@ For declared artifact outputs, use artifact_exists and artifact_nonempty.
     WorkspaceAttachment workspace,
   ) {
     final terminalStatus = workspace.commandExecutionApproved
-        ? 'Terminal commands are enabled for this chat.'
-        : 'Terminal commands are disabled for this chat until the user enables them from the workspace chip.';
+        ? 'Host terminal access is approved for this session. Commands are not sandboxed.'
+        : 'Host terminal access is disabled until the user approves it from the workspace chip.';
     final allowedCommands = _allowedCommandsForStep(task, step);
     final availableTools = (_allowedToolIdsForStep(
       step,

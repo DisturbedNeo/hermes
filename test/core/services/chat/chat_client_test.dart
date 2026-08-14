@@ -11,6 +11,102 @@ import 'package:http/http.dart' as http;
 
 void main() {
   group('ChatClient stream parsing', () {
+    test(
+      'accepts finish_reason and tokenless metadata as termination',
+      () async {
+        final client = ChatClient(
+          baseUrl: 'http://localhost',
+          model: 'test-model',
+          clientFactory: () => _ScriptedClient(
+            (_) async => _sseResponse(
+              'data: ${jsonEncode({
+                'choices': [
+                  {
+                    'delta': {'role': 'assistant'},
+                    'finish_reason': null,
+                  },
+                ],
+              })}\n\n'
+              'data: ${jsonEncode({
+                'choices': <Object?>[],
+                'usage': {'completion_tokens': 1},
+              })}\n\n'
+              'data: ${jsonEncode({
+                'choices': [
+                  {'delta': <String, Object?>{}, 'finish_reason': 'stop'},
+                ],
+              })}\n\n',
+            ),
+          ),
+        );
+
+        expect(
+          await client.streamMessage(messages: const []).toList(),
+          isEmpty,
+        );
+      },
+    );
+
+    test('rejects malformed and unterminated event streams', () async {
+      final malformed = ChatClient(
+        baseUrl: 'http://localhost',
+        model: 'test-model',
+        clientFactory: () =>
+            _ScriptedClient((_) async => _sseResponse('data: {not-json}\n\n')),
+      );
+      await expectLater(
+        malformed.streamMessage(messages: const []).toList(),
+        throwsA(isA<ChatProtocolException>()),
+      );
+
+      final unterminated = ChatClient(
+        baseUrl: 'http://localhost',
+        model: 'test-model',
+        clientFactory: () => _ScriptedClient(
+          (_) async => _sseResponse(
+            'data: ${jsonEncode({
+              'choices': [
+                {
+                  'delta': {'content': 'partial'},
+                },
+              ],
+            })}\n\n',
+          ),
+        ),
+      );
+      final tokens = <ChatToken>[];
+      final completed = unterminated
+          .streamMessage(messages: const [])
+          .listen(tokens.add)
+          .asFuture<void>();
+
+      await expectLater(completed, throwsA(isA<ChatProtocolException>()));
+      expect(tokens.single.content, 'partial');
+    });
+
+    test('rejects malformed choice and error structures', () async {
+      for (final payload in [
+        {'choices': 'invalid'},
+        {
+          'choices': [42],
+        },
+        {'error': 'invalid'},
+        {'unexpected': true},
+      ]) {
+        final client = ChatClient(
+          baseUrl: 'http://localhost',
+          model: 'test-model',
+          clientFactory: () => _ScriptedClient(
+            (_) async => _sseResponse('data: ${jsonEncode(payload)}\n\n'),
+          ),
+        );
+        await expectLater(
+          client.streamMessage(messages: const []).toList(),
+          throwsA(isA<ChatProtocolException>()),
+        );
+      }
+    });
+
     test('parses non-streaming tool calls', () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
 
@@ -749,6 +845,14 @@ http.StreamedResponse _jsonResponse(String content) {
     ),
     HttpStatus.ok,
     headers: {'content-type': 'application/json'},
+  );
+}
+
+http.StreamedResponse _sseResponse(String body) {
+  return http.StreamedResponse(
+    Stream.value(utf8.encode(body)),
+    HttpStatus.ok,
+    headers: {'content-type': 'text/event-stream'},
   );
 }
 

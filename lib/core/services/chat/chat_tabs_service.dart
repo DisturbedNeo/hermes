@@ -245,8 +245,6 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
       initialSystemPromptSnapshot: systemPromptSnapshot,
     );
     tab.addListener(notifyListeners);
-    tab.messageStore.addListener(notifyListeners);
-    tab.chatStream.addListener(notifyListeners);
     return tab;
   }
 
@@ -258,8 +256,6 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
     if (index == -1) return;
 
     tab.removeListener(notifyListeners);
-    tab.messageStore.removeListener(notifyListeners);
-    tab.chatStream.removeListener(notifyListeners);
     _tabs.removeAt(index);
 
     if (activeTabId == tab.tabId) {

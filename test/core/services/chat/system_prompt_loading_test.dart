@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/enums/message_role.dart';
+import 'package:hermes/core/enums/stream_state.dart';
 import 'package:hermes/core/helpers/chat/context_estimator.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/chat_token.dart';
@@ -519,6 +520,7 @@ void main() {
 
         final sendFuture = chat.send('/task Build the reporting screen');
         await client.stepStarted.future.timeout(const Duration(seconds: 2));
+        await Future<void>.delayed(const Duration(milliseconds: 60));
 
         expect(chat.taskBusy, isTrue);
         expect(
@@ -756,6 +758,26 @@ void main() {
       expect(target, SystemPromptLoadTarget.currentChat);
       expect(tabs.activeChat?.currentSystemPromptSnapshot?.id, reviewer.id);
       expect(tabs.activeChat?.messageStore.first.text, reviewer.content);
+    });
+
+    test('does not relay per-message or stream events through all tabs', () {
+      var notifications = 0;
+      void listener() => notifications++;
+      tabs.addListener(listener);
+      addTearDown(() => tabs.removeListener(listener));
+      final chat = tabs.activeChat!;
+
+      chat.messageStore.upsert(
+        const Bubble(
+          id: 'assistant-token',
+          role: MessageRole.assistant,
+          text: 'token',
+          reasoning: '',
+        ),
+      );
+      chat.chatStream.setState(StreamState.streaming);
+
+      expect(notifications, 0);
     });
 
     test('deletes saved chat task folders from the chat list path', () async {

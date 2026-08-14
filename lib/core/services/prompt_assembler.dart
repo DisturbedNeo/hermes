@@ -141,7 +141,7 @@ Workspace rules:
 - Inspect relevant files before editing them.
 - Prefer small, precise changes.
 - Explain destructive file operations before performing them.
-- Terminal commands are guarded and may be unavailable unless the user enables them for this chat.
+- Host terminal commands require explicit user approval for this session. They run with the application's host permissions and are not confined to the workspace.
 '''
           .trim(),
       request,

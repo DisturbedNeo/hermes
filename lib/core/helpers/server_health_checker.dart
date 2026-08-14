@@ -62,6 +62,8 @@ class ServerHealthChecker {
 
     var delay = const Duration(milliseconds: 100);
     var lastProgressAt = DateTime.now();
+    var lastObservedOutput = recentOutputGetter?.call() ?? '';
+    var sawStartingResponse = false;
     final maxDelay = const Duration(seconds: 1);
 
     try {
@@ -87,7 +89,8 @@ class ServerHealthChecker {
             return true;
           }
 
-          if (res.statusCode == 503) {
+          if (res.statusCode == 503 && !sawStartingResponse) {
+            sawStartingResponse = true;
             lastProgressAt = DateTime.now();
           }
 
@@ -95,6 +98,12 @@ class ServerHealthChecker {
           await res.drain();
         } catch (e) {
           lastError = e;
+        }
+
+        final currentOutput = recentOutputGetter?.call() ?? '';
+        if (currentOutput != lastObservedOutput) {
+          lastObservedOutput = currentOutput;
+          lastProgressAt = DateTime.now();
         }
 
         if (DateTime.now().difference(lastProgressAt) > startupStallTimeout) {

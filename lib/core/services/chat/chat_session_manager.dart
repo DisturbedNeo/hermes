@@ -16,6 +16,7 @@ import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
 import 'package:hermes/core/helpers/chat/payload_builder.dart';
 import 'package:hermes/core/helpers/chat/assistant_ops.dart';
+import 'package:hermes/core/helpers/chat/buffered_token_writer.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
@@ -36,6 +37,7 @@ class ChatSessionManager implements Disposable {
   final LlamaServerManager _serverManager;
   final ToolService _toolService;
   final PreferencesService _preferencesService;
+  late final BufferedTokenWriter _tokenWriter;
 
   /// Callbacks into business logic that live in [ChatService].
   final ChatSessionCallbacks _callbacks;
@@ -70,7 +72,12 @@ class ChatSessionManager implements Disposable {
        _serverManager = serverManager,
        _toolService = toolService,
        _preferencesService = preferencesService,
-       _callbacks = callbacks;
+       _callbacks = callbacks {
+    _tokenWriter = BufferedTokenWriter(
+      messageStore: _messageStore,
+      onFlush: requestContextEstimateUpdate,
+    );
+  }
 
   // ── Public API ──────────────────────────────────────────────────────────
 
@@ -86,6 +93,7 @@ class ChatSessionManager implements Disposable {
     String? anchorId,
     String? targetAssistantId,
   }) async {
+    _tokenWriter.flush();
     if (_chatStream.isStreaming) return;
 
     final client = _serverManager.chatClient;
@@ -256,6 +264,7 @@ class ChatSessionManager implements Disposable {
     final token = _activeGenerationToken;
     if (token == null) return;
 
+    _tokenWriter.flush();
     final current = _messageStore.currentMessage;
     if (current != null) {
       _messageStore.upsert(
@@ -274,6 +283,7 @@ class ChatSessionManager implements Disposable {
 
   /// Inserts a user message followed by an assistant acknowledgment.
   void insertUserAndAssistant(String userText, String assistantText) {
+    _tokenWriter.flush();
     _messageStore
       ..upsert(
         Bubble(
@@ -354,8 +364,7 @@ class ChatSessionManager implements Disposable {
 
   void _handleStreamToken(ChatToken token) {
     _serverManager.diagnostics.recordStreamOutput(_streamedText(token));
-    _messageStore.appendToken(token);
-    requestContextEstimateUpdate();
+    _tokenWriter.add(token);
   }
 
   String _streamedText(ChatToken token) {
@@ -373,6 +382,7 @@ class ChatSessionManager implements Disposable {
     required int generationId,
   }) async {
     if (!_isActiveGeneration(token, generationId)) return;
+    _tokenWriter.flush();
     if (token.isCancelled || error is OperationCancelledException) {
       await _finishCancelledGeneration(token, generationId);
       return;
@@ -556,6 +566,7 @@ class ChatSessionManager implements Disposable {
   // ── Task model output bubble management ─────────────────────────────────
 
   void startTaskModelOutputBubble() {
+    _tokenWriter.flush();
     finishTaskModelOutputBubble(clearCurrent: true);
     final bubble = Bubble(
       id: uuid.v7(),
@@ -575,7 +586,7 @@ class ChatSessionManager implements Disposable {
     if (!_taskModelOutputCurrentBubbleIsActive()) {
       startTaskModelOutputBubble();
     }
-    _messageStore.appendToken(switch (event.type) {
+    _tokenWriter.add(switch (event.type) {
       TaskModelOutputEventType.content => ChatToken(content: token.content),
       TaskModelOutputEventType.reasoning => ChatToken(
         reasoning: token.reasoning,
@@ -586,6 +597,7 @@ class ChatSessionManager implements Disposable {
   }
 
   void appendTaskToolResult(TaskModelOutputEvent event) {
+    _tokenWriter.flush();
     if (!_taskModelOutputCurrentBubbleIsActive()) return;
     final current = _messageStore.currentMessage;
     final index = event.toolIndex;
@@ -603,6 +615,7 @@ class ChatSessionManager implements Disposable {
   }
 
   void normaliseTaskModelOutputBubble() {
+    _tokenWriter.flush();
     final id = _taskModelOutputMessageId;
     if (id == null) return;
     final index = _messageStore.messages.indexWhere(
@@ -727,6 +740,9 @@ class ChatSessionManager implements Disposable {
     _taskModelOutputMessageId = null;
   }
 
+  /// Publishes any buffered model output before state is read or persisted.
+  void flushPendingTokens() => _tokenWriter.flush();
+
   // ── Disposable ──────────────────────────────────────────────────────────
 
   bool _disposed = false;
@@ -735,6 +751,7 @@ class ChatSessionManager implements Disposable {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    _tokenWriter.dispose();
     try {
       await _chatStream.stop();
     } finally {}

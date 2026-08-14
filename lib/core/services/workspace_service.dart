@@ -34,6 +34,8 @@ class WorkspaceService extends ChangeNotifier {
     required DateTime lastOpenedAt,
     required bool commandExecutionApproved,
   }) async {
+    // The argument remains for saved-data compatibility. Host command consent
+    // is session-only and must never be restored.
     final exists = await Directory(rootPath).exists();
     if (!exists) {
       return WorkspaceAttachment(
@@ -41,7 +43,7 @@ class WorkspaceService extends ChangeNotifier {
         displayName: displayName,
         lastOpenedAt: lastOpenedAt,
         missing: true,
-        commandExecutionApproved: commandExecutionApproved,
+        commandExecutionApproved: false,
       );
     }
 
@@ -50,7 +52,7 @@ class WorkspaceService extends ChangeNotifier {
       rootPath: canonical,
       displayName: displayName.isEmpty ? path.basename(canonical) : displayName,
       lastOpenedAt: DateTime.now(),
-      commandExecutionApproved: commandExecutionApproved,
+      commandExecutionApproved: false,
     );
     await remember(restored);
     return restored;
