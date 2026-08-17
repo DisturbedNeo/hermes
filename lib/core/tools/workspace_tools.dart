@@ -202,6 +202,12 @@ class ReadFileTool extends WorkspaceTool {
       );
 
       return {'extracted': extracted};
+    } on OperationCancelledException {
+      rethrow;
+    } on WorkspaceSandboxException {
+      // Preserve workspace validation errors so WorkspaceTool.process can
+      // classify them as advisory, just like a standard read_file call.
+      rethrow;
     } catch (e) {
       return toolErrorPayload(
         code: 'subagent_extraction_failed',

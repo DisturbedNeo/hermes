@@ -554,7 +554,30 @@ class TaskToolCallRecord with TaskToolCallRecordMappable {
 
 extension TaskToolCallRecordCompatibility on TaskToolCallRecord {
   TaskToolError? get effectiveToolError {
-    if (toolError != null) return toolError;
+    if (toolError != null) {
+      final structured = toolError!;
+      final normalised = structured.message.toLowerCase();
+      final isLegacyRequestModeValidationError =
+          toolName == 'read_file' &&
+          structured.code == 'subagent_extraction_failed' &&
+          normalised.startsWith('failed to extract information:') &&
+          const [
+            'path not found',
+            'path is not a directory',
+            'path is a directory',
+            'file is too large',
+            'use workspace-relative paths only',
+            'path escapes the workspace',
+          ].any(normalised.contains);
+      if (isLegacyRequestModeValidationError) {
+        return TaskToolError(
+          code: 'workspace_validation',
+          message: structured.message,
+          disposition: TaskToolErrorDisposition.advisory,
+        );
+      }
+      return structured;
+    }
     final message = error?.trim();
     if (message == null || message.isEmpty) return null;
     final normalised = message.toLowerCase();

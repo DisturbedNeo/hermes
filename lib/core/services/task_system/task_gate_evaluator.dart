@@ -399,6 +399,8 @@ class TaskGateEvaluator {
       final operationKey = _operationKey(call);
       final entry = <String, String>{
         'callId': call.id,
+        'stepId': call.stepId,
+        'runId': call.runId,
         'toolName': call.toolName,
         'operationKey': operationKey,
         'code': error.code,
@@ -429,10 +431,14 @@ class TaskGateEvaluator {
       final blocking = unresolved.any(
         (entry) => entry['disposition'] == TaskToolErrorDisposition.fatal.wire,
       );
+      final origins = unresolved
+          .map((entry) => '${entry['toolName']} in step ${entry['stepId']}')
+          .toSet()
+          .join(', ');
       return _result(
         gate,
         TaskGateStatus.failed,
-        'Unresolved tool errors must be fixed before completion.',
+        'Unresolved tool errors must be fixed before completion: $origins.',
         now,
         {
           'unresolvedErrors': unresolved,

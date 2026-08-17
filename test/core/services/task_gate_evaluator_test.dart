@@ -313,6 +313,41 @@ void main() {
       expect(evaluation.results.last.status, TaskGateStatus.failed);
     });
 
+    test(
+      'no_tool_errors treats legacy request-mode path failures as advisory',
+      () async {
+        final evaluation = await evaluator.evaluate(
+          workspace: workspace,
+          task: task,
+          step: step,
+          gates: const [TaskGate(id: 'no_tool_errors')],
+          toolCalls: [
+            _toolCall(
+              'read_file',
+              arguments: const {
+                'path': 'lib/missing.dart',
+                'request': 'Summarize this file.',
+              },
+              error: 'Failed to extract information: Path not found.',
+              toolError: const TaskToolError(
+                code: 'subagent_extraction_failed',
+                message: 'Failed to extract information: Path not found.',
+                disposition: TaskToolErrorDisposition.retryable,
+              ),
+              outcome: TaskToolCallOutcome.failed,
+            ),
+          ],
+          artifacts: const [],
+        );
+
+        expect(evaluation.results.single.status, TaskGateStatus.passed);
+        expect(
+          evaluation.results.single.details['advisoryErrors'],
+          hasLength(1),
+        );
+      },
+    );
+
     test('no_tool_errors fails on unclassified tool failures', () async {
       final evaluation = await evaluator.evaluate(
         workspace: workspace,
@@ -328,6 +363,14 @@ void main() {
         evaluation.results.single.details['unresolvedErrors'],
         hasLength(1),
       );
+      expect(
+        evaluation.results.single.summary,
+        contains('read_file in step step_1'),
+      );
+      final unresolved =
+          evaluation.results.single.details['unresolvedErrors'] as List;
+      expect(unresolved.single['stepId'], 'step_1');
+      expect(unresolved.single['runId'], 'run_1');
       expect(
         evaluation.results.single.failureDisposition,
         TaskGateFailureDisposition.blocking,

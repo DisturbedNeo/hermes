@@ -88,6 +88,39 @@ void main() {
       expect(result, isNot(contains('internal extraction reasoning')));
     },
   );
+
+  test(
+    'read_file request mode preserves workspace validation errors',
+    () async {
+      final root = await Directory.systemTemp.createTemp('hermes_subagent_');
+      addTearDown(() async {
+        if (await root.exists()) await root.delete(recursive: true);
+      });
+
+      final client = _FakeChatClient(
+        const ChatCompletionResponse(content: 'should not be called'),
+      );
+      final service = ToolService(workspaceSandbox: WorkspaceSandbox())
+        ..setSubagentService(SubagentService(chatClientFactory: () => client));
+
+      final result = await service.execute(
+        toolId: 'read_file',
+        argumentsJson: jsonEncode({
+          'path': 'missing.txt',
+          'request': 'Return the facts.',
+        }),
+        context: WorkspaceToolContext(
+          workspace: WorkspaceAttachment.fromPath(root.path),
+        ),
+      );
+
+      final decoded = jsonDecode(result) as Map<String, dynamic>;
+      expect(decoded['error'], contains('Path not found'));
+      expect(decoded['error_code'], 'workspace_validation');
+      expect(decoded['error_disposition'], 'advisory');
+      expect(client.seenExtraParams, isNull);
+    },
+  );
 }
 
 class _FakeChatClient extends ChatClient {
