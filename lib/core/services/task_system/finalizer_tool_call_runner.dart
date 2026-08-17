@@ -233,6 +233,7 @@ class FinalizerToolCallRunner {
             onToken: (token) =>
                 _emitToken(sink: onModelOutput, label: label, token: token),
             cancellationToken: cancellationToken,
+            diagnosticsLabel: label,
           );
     _emit(
       onModelOutput,
@@ -256,6 +257,7 @@ class FinalizerToolCallRunner {
       messages: messages,
       extraParams: extraParams,
       cancellationToken: cancellationToken,
+      diagnosticsLabel: label,
     )) {
       _emitToken(sink: onModelOutput, label: label, token: token);
       final contentToken = token.content;

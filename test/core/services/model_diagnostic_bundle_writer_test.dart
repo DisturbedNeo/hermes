@@ -37,6 +37,15 @@ void main() {
             outputStarted: false,
             error: const SocketException('broken pipe'),
             stackTrace: StackTrace.empty,
+            latestTelemetry: const {
+              'callId': 'safe-call-id',
+              'promptTokens': 123,
+              'generatedTokens': 7,
+            },
+            serverProperties: const {
+              'buildInfo': 'llama-build-42',
+              'effectiveContextSize': 8192,
+            },
             recentLogs: const [
               {
                 'timestamp': '2026-01-01T00:00:00Z',
@@ -62,7 +71,12 @@ void main() {
         expect(bundle['serverState'], 'ready');
         expect(bundle['processRunning'], isTrue);
         expect((bundle['transport'] as Map)['kind'], 'brokenPipe');
-        expect(bundle.toString(), isNot(contains('prompt')));
+        expect((bundle['latestTelemetry'] as Map)['promptTokens'], 123);
+        expect(
+          (bundle['serverProperties'] as Map)['buildInfo'],
+          'llama-build-42',
+        );
+        expect(bundle.toString(), isNot(contains('secret user prompt')));
         expect(bundle.toString(), isNot(contains('request body')));
       },
     );

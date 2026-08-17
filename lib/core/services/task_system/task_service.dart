@@ -2796,6 +2796,8 @@ $whitelist
             token: token,
           ),
           cancellationToken: cancellationToken,
+          diagnosticsLabel: label,
+          contextLimitTokens: contextLimitTokens,
         );
         cancellationToken?.throwIfCancelled();
         return completion;
@@ -2843,6 +2845,8 @@ $whitelist
             messages: requestMessages,
             extraParams: extraParams,
             cancellationToken: cancellationToken,
+            diagnosticsLabel: label,
+            contextLimitTokens: contextLimitTokens,
           )
           .listen(
             record,

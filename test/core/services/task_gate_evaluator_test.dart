@@ -554,6 +554,9 @@ class _ReviewClient extends ChatClient {
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
     Object? cancellationToken,
+    String diagnosticsLabel = 'Model call',
+    int? contextLimitTokens,
+    int? inputTokensHint,
   }) async {
     return ChatCompletionResponse(
       content: jsonEncode({'passed': false, 'summary': 'Needs polish.'}),

@@ -60,6 +60,7 @@ $fileContent
             'reasoning_budget': 0,
           },
         },
+        diagnosticsLabel: 'Subagent extraction',
       );
 
       return _visibleModelOutput(completion.content);

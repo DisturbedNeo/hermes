@@ -142,7 +142,6 @@ class ChatService extends ChangeNotifier
     messageStore.addListener(_handleMessagesChanged);
     _preferencesService.addListener(_handlePreferencesChanged);
     unawaited(_loadTaskSystemSettings());
-    chatStream.onStop = serverManager.diagnostics.recordStreamEnded;
 
     currentModelSnapshot = _activeServerSnapshot;
 
@@ -1991,8 +1990,8 @@ class ChatService extends ChangeNotifier
       case TaskModelOutputEventType.start:
         notifyImmediately = true;
         _taskModelOutputContextEstimate = event.estimatedContextTokens;
-        serverManager.diagnostics.recordStreamStarted(
-          estimatedContextTokens: event.estimatedContextTokens,
+        serverManager.diagnostics.updateContextEstimate(
+          event.estimatedContextTokens,
           contextLimitTokens: _diagnosticsContextLimit,
         );
         _session.startTaskModelOutputBubble();
@@ -2002,17 +2001,14 @@ class ChatService extends ChangeNotifier
       case TaskModelOutputEventType.content:
         _ensureTaskModelTextSection(event.label, 'output');
         taskModelOutputText += event.text;
-        serverManager.diagnostics.recordStreamOutput(event.text);
         _session.appendTaskModelToken(event);
       case TaskModelOutputEventType.reasoning:
         _ensureTaskModelReasoningSection(event.label);
         taskModelOutputReasoning += event.text;
-        serverManager.diagnostics.recordStreamOutput(event.text);
         _session.appendTaskModelToken(event);
       case TaskModelOutputEventType.toolCall:
         _ensureTaskModelTextSection(event.label, 'tool-call');
         taskModelOutputText += '\nTool call:\n${event.text}\n';
-        serverManager.diagnostics.recordStreamOutput(event.text);
         _session.appendTaskModelToken(event);
       case TaskModelOutputEventType.toolResult:
         _ensureTaskModelTextSection(event.label, 'tool-result');
@@ -2020,14 +2016,12 @@ class ChatService extends ChangeNotifier
         _session.appendTaskToolResult(event);
       case TaskModelOutputEventType.done:
         notifyImmediately = true;
-        serverManager.diagnostics.recordStreamEnded();
         _taskModelOutputTextSection = null;
         _session.normaliseTaskModelOutputBubble();
       case TaskModelOutputEventType.error:
         notifyImmediately = true;
         _ensureTaskModelTextSection(event.label, 'error');
         taskModelOutputText += '\nError: ${event.text}\n';
-        serverManager.diagnostics.recordStreamError(event.text);
         _session.flushPendingTokens();
         messageStore.appendCurrentError(event.text);
     }

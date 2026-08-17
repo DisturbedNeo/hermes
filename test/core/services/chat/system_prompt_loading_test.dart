@@ -501,10 +501,9 @@ void main() {
 
         expect(client.requestEstimates, hasLength(2));
         expect(
-          serverManager.diagnostics.estimatedContextTokens,
+          serverManager.diagnostics.displayContextTokens,
           client.requestEstimates.last,
         );
-        expect(serverManager.diagnostics.isStreaming, isTrue);
 
         await chat.cancelTaskRun();
         await sendFuture.timeout(const Duration(seconds: 2));
@@ -1028,6 +1027,9 @@ class _QueueChatClient extends ChatClient {
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
     Object? cancellationToken,
+    String diagnosticsLabel = 'Model call',
+    int? contextLimitTokens,
+    int? inputTokensHint,
   }) async {
     final index = _index >= _responses.length ? _responses.length - 1 : _index;
     _index++;
@@ -1048,6 +1050,9 @@ class _RecordingStreamClient extends ChatClient {
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
     Object? cancellationToken,
+    String diagnosticsLabel = 'Model call',
+    int? contextLimitTokens,
+    int? inputTokensHint,
   }) async* {
     if (!this.extraParams.isCompleted) {
       this.extraParams.complete(extraParams ?? const {});
@@ -1060,6 +1065,9 @@ class _RecordingStreamClient extends ChatClient {
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
     Object? cancellationToken,
+    String diagnosticsLabel = 'Model call',
+    int? contextLimitTokens,
+    int? inputTokensHint,
   }) {
     throw UnsupportedError('This test client only supports streaming.');
   }
@@ -1090,6 +1098,9 @@ class _QueueCompletionClient extends ChatClient {
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
     Object? cancellationToken,
+    String diagnosticsLabel = 'Model call',
+    int? contextLimitTokens,
+    int? inputTokensHint,
   }) async {
     final index = _index >= _responses.length ? _responses.length - 1 : _index;
     _index++;
@@ -1118,6 +1129,9 @@ class _StuckTaskClient extends ChatClient {
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
     Object? cancellationToken,
+    String diagnosticsLabel = 'Model call',
+    int? contextLimitTokens,
+    int? inputTokensHint,
   }) {
     requestEstimates.add(
       ContextEstimator.estimateChatCompletionRequest(
@@ -1165,6 +1179,9 @@ class _StuckTaskClient extends ChatClient {
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
     Object? cancellationToken,
+    String diagnosticsLabel = 'Model call',
+    int? contextLimitTokens,
+    int? inputTokensHint,
   }) {
     throw UnsupportedError('This test client only supports streaming.');
   }
@@ -1202,6 +1219,9 @@ class _BlockingCountClient extends ChatClient {
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
     Object? cancellationToken,
+    String diagnosticsLabel = 'Model call',
+    int? contextLimitTokens,
+    int? inputTokensHint,
   }) {
     streamCalls++;
     return const Stream.empty();
@@ -1221,6 +1241,9 @@ class _TwoToolClient extends ChatClient {
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
     Object? cancellationToken,
+    String diagnosticsLabel = 'Model call',
+    int? contextLimitTokens,
+    int? inputTokensHint,
   }) async* {
     streamCalls++;
     yield ChatToken(

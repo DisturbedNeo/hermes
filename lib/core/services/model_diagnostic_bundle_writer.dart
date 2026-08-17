@@ -27,6 +27,8 @@ class ModelDiagnosticBundleWriter {
     required Object error,
     required StackTrace stackTrace,
     required Iterable<Map<String, String>> recentLogs,
+    Map<String, dynamic>? latestTelemetry,
+    Map<String, dynamic>? serverProperties,
   }) async {
     try {
       final supportDirectory = await _directoryProvider();
@@ -56,6 +58,8 @@ class ModelDiagnosticBundleWriter {
           'error': error.toString(),
           'stackTrace': stackTrace.toString(),
         },
+        'latestTelemetry': ?latestTelemetry,
+        'serverProperties': ?serverProperties,
         'recentServerLogs': recentLogs.toList(),
       };
       await file.writeAsString(

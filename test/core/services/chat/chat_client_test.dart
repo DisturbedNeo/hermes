@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/chat_token.dart';
+import 'package:hermes/core/models/model_call_diagnostics.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:http/http.dart' as http;
@@ -318,6 +319,209 @@ void main() {
       expect(completion.content, 'hello world');
       expect(completion.toolCalls.single.name, 'read_file');
       expect(completion.toolCalls.single.arguments, '{"path":"README.md"}');
+    });
+
+    test(
+      'merges telemetry options and retains usage after finish_reason',
+      () async {
+        Map<String, dynamic>? requestBody;
+        final snapshots = <ModelCallDiagnostics>[];
+        final client = ChatClient(
+          baseUrl: 'http://localhost',
+          model: 'test-model',
+          onDiagnostics: snapshots.add,
+          clientFactory: () => _ScriptedClient((request) async {
+            requestBody = jsonDecode(await request.finalize().bytesToString());
+            return _sseResponse(
+              'data: ${jsonEncode({
+                'id': 'req-7',
+                'system_fingerprint': 'build-abc',
+                'prompt_progress': {'total': 100, 'cache': 40, 'processed': 60, 'time_ms': 15.0},
+                'choices': [
+                  {
+                    'delta': {'content': 'ok'},
+                    'finish_reason': null,
+                  },
+                ],
+              })}\n\n'
+              'data: ${jsonEncode({
+                'choices': [
+                  {'delta': <String, Object?>{}, 'finish_reason': 'stop'},
+                ],
+              })}\n\n'
+              'data: ${jsonEncode({
+                'choices': <Object?>[],
+                'usage': {
+                  'prompt_tokens': 101,
+                  'completion_tokens': 3,
+                  'prompt_tokens_details': {'cached_tokens': 41},
+                },
+                'timings': {'cache_n': 41, 'prompt_n': 60, 'prompt_ms': 20.0, 'prompt_per_second': 5050.0, 'predicted_n': 3, 'predicted_ms': 30.0, 'predicted_per_second': 100.0, 'draft_n': 5, 'draft_n_accepted': 4},
+              })}\n\n'
+              'data: [DONE]\n\n',
+            );
+          }),
+        );
+
+        final result = await client.completeChatStreamed(
+          messages: const [ChatMessage(role: 'user', content: 'hello')],
+          extraParams: const {
+            'stream_options': {'custom': 'kept'},
+            'temperature': 0.2,
+          },
+          diagnosticsLabel: 'Chat response',
+          contextLimitTokens: 4096,
+        );
+
+        expect(requestBody?['stream_options'], {
+          'custom': 'kept',
+          'include_usage': true,
+        });
+        expect(requestBody?['timings_per_token'], isTrue);
+        expect(requestBody?['return_progress'], isTrue);
+        expect(result.content, 'ok');
+        expect(result.diagnostics?.serverRequestId, 'req-7');
+        expect(result.diagnostics?.systemFingerprint, 'build-abc');
+        expect(result.diagnostics?.finishReason, 'stop');
+        expect(result.diagnostics?.promptTokens, 101);
+        expect(result.diagnostics?.cachedPromptTokens, 41);
+        expect(result.diagnostics?.generatedTokens, 3);
+        expect(result.diagnostics?.generationTokensPerSecond, 100);
+        expect(result.diagnostics?.acceptedDraftTokens, 4);
+        expect(result.diagnostics?.status, ModelCallStatus.completed);
+        expect(snapshots.map((item) => item.callId).toSet(), hasLength(1));
+      },
+    );
+
+    test('collects final usage while live diagnostics are disabled', () async {
+      Map<String, dynamic>? requestBody;
+      final client = ChatClient(
+        baseUrl: 'http://localhost',
+        model: 'test-model',
+        liveDiagnosticsEnabled: () => false,
+        clientFactory: () => _ScriptedClient((request) async {
+          requestBody = jsonDecode(await request.finalize().bytesToString());
+          return _sseResponse(
+            'data: ${jsonEncode({
+              'choices': [
+                {'delta': <String, Object?>{}, 'finish_reason': 'stop'},
+              ],
+            })}\n\n'
+            'data: ${jsonEncode({
+              'choices': <Object?>[],
+              'usage': {'prompt_tokens': 12, 'completion_tokens': 2},
+            })}\n\n'
+            'data: [DONE]\n\n',
+          );
+        }),
+      );
+
+      final completion = await client.completeChatStreamed(messages: const []);
+
+      expect(requestBody?['stream_options'], {'include_usage': true});
+      expect(requestBody, isNot(contains('timings_per_token')));
+      expect(requestBody, isNot(contains('return_progress')));
+      expect(completion.diagnostics?.promptTokens, 12);
+      expect(completion.diagnostics?.generatedTokens, 2);
+    });
+
+    test('ignores malformed optional telemetry after a valid finish', () async {
+      final client = ChatClient(
+        baseUrl: 'http://localhost',
+        model: 'test-model',
+        clientFactory: () => _ScriptedClient(
+          (_) async => _sseResponse(
+            'data: ${jsonEncode({
+              'choices': [
+                {'delta': <String, Object?>{}, 'finish_reason': 'stop'},
+              ],
+            })}\n\n'
+            'data: ${jsonEncode({'choices': <Object?>[], 'usage': 'invalid'})}\n\n'
+            'data: [DONE]\n\n',
+          ),
+        ),
+      );
+
+      expect(await client.streamMessage(messages: const []).toList(), isEmpty);
+    });
+
+    test('retries and caches an enhanced telemetry incompatibility', () async {
+      final bodies = <Map<String, dynamic>>[];
+      final snapshots = <ModelCallDiagnostics>[];
+      final client = ChatClient(
+        baseUrl: 'http://localhost',
+        model: 'test-model',
+        onDiagnostics: snapshots.add,
+        clientFactory: () => _ScriptedClient((request) async {
+          bodies.add(jsonDecode(await request.finalize().bytesToString()));
+          if (bodies.length == 1) {
+            return http.StreamedResponse(
+              Stream.value(
+                utf8.encode(
+                  '{"error":{"message":"unknown field return_progress"}}',
+                ),
+              ),
+              HttpStatus.badRequest,
+            );
+          }
+          return _sseResponse(
+            'data: ${jsonEncode({
+              'choices': [
+                {'delta': <String, Object?>{}, 'finish_reason': 'stop'},
+              ],
+            })}\n\ndata: [DONE]\n\n',
+          );
+        }),
+      );
+
+      await client.streamMessage(messages: const []).toList();
+      await client.streamMessage(messages: const []).toList();
+
+      expect(bodies, hasLength(3));
+      expect(bodies.first, contains('return_progress'));
+      expect(bodies[1], isNot(contains('stream_options')));
+      expect(bodies[2], isNot(contains('stream_options')));
+      expect(snapshots.map((item) => item.callId).toSet(), hasLength(2));
+    });
+
+    test('parses non-streamed usage and timings into the response', () async {
+      final client = ChatClient(
+        baseUrl: 'http://localhost',
+        model: 'test-model',
+        clientFactory: () => _ScriptedClient(
+          (_) async => http.StreamedResponse(
+            Stream.value(
+              utf8.encode(
+                jsonEncode({
+                  'id': 'nonstream-1',
+                  'choices': [
+                    {
+                      'message': {'content': 'answer'},
+                      'finish_reason': 'length',
+                    },
+                  ],
+                  'usage': {'prompt_tokens': 9, 'completion_tokens': 4},
+                  'timings': {
+                    'prompt_ms': 2.0,
+                    'predicted_ms': 8.0,
+                    'predicted_per_second': 500.0,
+                  },
+                }),
+              ),
+            ),
+            HttpStatus.ok,
+            headers: {'content-type': 'application/json'},
+          ),
+        ),
+      );
+
+      final completion = await client.completeChat(messages: const []);
+
+      expect(completion.diagnostics?.serverRequestId, 'nonstream-1');
+      expect(completion.diagnostics?.promptTokens, 9);
+      expect(completion.diagnostics?.generatedTokens, 4);
+      expect(completion.diagnostics?.finishReason, 'length');
+      expect(completion.diagnostics?.accuracy, TelemetryAccuracy.exact);
     });
   });
 

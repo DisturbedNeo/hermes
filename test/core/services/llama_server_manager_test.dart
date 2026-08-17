@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/helpers/server_health_checker.dart';
 import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
+import 'package:hermes/core/models/model_session_diagnostics.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 
@@ -214,6 +215,69 @@ void main() {
     expect(manager.diagnostics.port, 12002);
     expect(processes.first.signals, contains(ProcessSignal.sigint));
   });
+
+  test(
+    'enriches ready diagnostics from props without delaying startup',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final subscription = server.listen((request) async {
+        expect(request.uri.path, '/props');
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..headers.contentType = ContentType.json
+          ..write(
+            jsonEncode({
+              'build_info': 'build-99',
+              'model_path': '/effective/model.gguf',
+              'total_slots': 2,
+              'default_generation_settings': {'n_ctx': 16384},
+              'chat_template_caps': {'tools': true},
+              'modalities': {'text': true},
+            }),
+          );
+        await request.response.close();
+      });
+      addTearDown(() async {
+        await subscription.cancel();
+        await server.close(force: true);
+      });
+      final directory = await Directory.systemTemp.createTemp('hermes_props_');
+      addTearDown(() => directory.delete(recursive: true));
+      await File('${directory.path}/llama-server').writeAsString('');
+      final manager = LlamaServerManager(
+        portAllocator: () async => server.port,
+        processLauncher: (_, _, {workingDirectory}) async =>
+            _FakeProcess(exitOn: ProcessSignal.sigint),
+        healthWaiter:
+            ({
+              required baseUrl,
+              required process,
+              required recentOutput,
+              required isCancelled,
+            }) async {},
+      );
+      addTearDown(manager.dispose);
+
+      await manager.start(
+        llamaCppDirectory: directory.path,
+        modelPath: '${directory.path}/model.gguf',
+        modelName: 'model',
+      );
+      for (
+        var i = 0;
+        i < 20 && manager.diagnostics.serverProperties == null;
+        i++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(manager.diagnostics.state, ModelServerState.ready);
+      expect(manager.diagnostics.serverProperties?.buildInfo, 'build-99');
+      expect(manager.diagnostics.serverProperties?.effectiveContextSize, 16384);
+      expect(manager.diagnostics.serverProperties?.totalSlots, 2);
+      expect(manager.diagnostics.contextLimitTokens, 16384);
+    },
+  );
 }
 
 String _valueAfter(List<String> args, String flag) {

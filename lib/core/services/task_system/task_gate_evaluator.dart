@@ -866,6 +866,7 @@ $prompt
         ),
       ],
       cancellationToken: cancellationToken,
+      diagnosticsLabel: 'Task gate review',
     );
     final json = TaskJson.tryParseObject(text) ?? const <String, dynamic>{};
     final passed = jsonBool(json['passed'], fallback: true);

@@ -1358,6 +1358,9 @@ class _QueueChatClient extends ChatClient {
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
     Object? cancellationToken,
+    String diagnosticsLabel = 'Model call',
+    int? contextLimitTokens,
+    int? inputTokensHint,
   }) async {
     _requests.add(List<ChatMessage>.of(messages));
     final index = _index >= _responses.length ? _responses.length - 1 : _index;
@@ -1383,6 +1386,9 @@ class _QueueCompletionClient extends ChatClient {
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
     Object? cancellationToken,
+    String diagnosticsLabel = 'Model call',
+    int? contextLimitTokens,
+    int? inputTokensHint,
   }) async {
     seenMessages.add(List<ChatMessage>.of(messages));
     seenToolNames.add(_toolNames(extraParams));
@@ -1417,6 +1423,9 @@ class _ObjectQueueClient extends ChatClient {
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
     Object? cancellationToken,
+    String diagnosticsLabel = 'Model call',
+    int? contextLimitTokens,
+    int? inputTokensHint,
   }) async {
     final response = _responses[_index++];
     if (response is ChatTransportException) throw response;

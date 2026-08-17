@@ -261,6 +261,8 @@ class CompactionManager {
           toolDefs: const [],
         ),
         cancellationToken: cancellationToken,
+        diagnosticsLabel: 'Context summary ${i + 1}/${chunks.length}',
+        contextLimitTokens: contextLimit,
       );
       intermediate.add(_parseSummary(raw, chunks[i]));
     }
@@ -280,6 +282,8 @@ class CompactionManager {
         toolDefs: const [],
       ),
       cancellationToken: cancellationToken,
+      diagnosticsLabel: 'Context summary merge',
+      contextLimitTokens: contextLimit,
     );
 
     return _parseSummary(mergeRaw, candidates);

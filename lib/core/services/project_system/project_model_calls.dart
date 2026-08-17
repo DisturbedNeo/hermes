@@ -500,6 +500,7 @@ $expectedShape
         ChatMessage(role: 'system', content: system),
         ChatMessage(role: 'user', content: user),
       ],
+      diagnosticsLabel: label,
       onToken: (token) {
         final content = token.content;
         if (content != null && content.isNotEmpty) {

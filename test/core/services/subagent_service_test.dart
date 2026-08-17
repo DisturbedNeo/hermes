@@ -102,6 +102,9 @@ class _FakeChatClient extends ChatClient {
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
     Object? cancellationToken,
+    String diagnosticsLabel = 'Model call',
+    int? contextLimitTokens,
+    int? inputTokensHint,
   }) async {
     seenExtraParams = extraParams;
     return _response;

@@ -345,6 +345,12 @@ class LlamaServerManager implements Disposable {
           baseUrl: baseUrl,
           model: modelName,
           onTransportEvent: _recordTransportEvent,
+          onDiagnostics: (value) {
+            if (generation == _startGeneration) {
+              diagnostics.recordCallDiagnostics(value);
+            }
+          },
+          liveDiagnosticsEnabled: () => diagnostics.liveTelemetryEnabled,
         );
         if (generation != _startGeneration) {
           newClient.dispose();
@@ -356,6 +362,7 @@ class LlamaServerManager implements Disposable {
         _startingHandle = null;
         handle.value = newHandle;
         diagnostics.recordReady();
+        unawaited(_loadServerProperties(newClient, generation));
         return;
       } catch (e, stackTrace) {
         chatClient = null;
@@ -381,6 +388,16 @@ class LlamaServerManager implements Disposable {
         Error.throwWithStackTrace(e, stackTrace);
       }
     }
+  }
+
+  Future<void> _loadServerProperties(ChatClient client, int generation) async {
+    final properties = await client.fetchServerProperties();
+    if (properties == null ||
+        generation != _startGeneration ||
+        !identical(chatClient, client)) {
+      return;
+    }
+    diagnostics.recordServerProperties(properties);
   }
 
   Future<void> stop() async {
@@ -497,6 +514,8 @@ class LlamaServerManager implements Disposable {
         outputStarted: event.outputStarted,
         error: event.error,
         stackTrace: event.stackTrace,
+        latestTelemetry: diagnostics.lastCall?.toSafeJson(),
+        serverProperties: diagnostics.serverProperties?.toSafeJson(),
         recentLogs: diagnostics.logs.map(
           (entry) => {
             'timestamp': entry.timestamp.toUtc().toIso8601String(),

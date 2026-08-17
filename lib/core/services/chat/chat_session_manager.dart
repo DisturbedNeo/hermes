@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/enums/stream_state.dart';
 import 'package:hermes/core/helpers/chat/compaction_manager.dart';
-import 'package:hermes/core/helpers/chat/context_estimator.dart';
 import 'package:hermes/core/helpers/chat/content_normaliser.dart';
 import 'package:hermes/core/helpers/chat/tool_caller.dart';
 import 'package:hermes/core/helpers/uuid.dart';
@@ -208,20 +207,16 @@ class ChatSessionManager implements Disposable {
         cancellationToken: token,
       );
       token.throwIfCancelled();
-      _serverManager.diagnostics.recordStreamStarted(
-        estimatedContextTokens:
-            exactTokens ??
-            ContextEstimator.estimateChatCompletionRequest(
-              messages: payload,
-              extraParams: extraParams,
-            ),
-        contextLimitTokens: currentModelSnapshot?.nCtx,
-      );
 
       final sub = client.streamMessage(
         messages: payload,
         extraParams: extraParams,
         cancellationToken: token,
+        diagnosticsLabel: includeToolResults
+            ? 'Tool continuation'
+            : 'Chat response',
+        contextLimitTokens: currentModelSnapshot?.nCtx,
+        inputTokensHint: exactTokens,
       );
 
       var terminalHandled = false;
@@ -363,17 +358,7 @@ class ChatSessionManager implements Disposable {
   }
 
   void _handleStreamToken(ChatToken token) {
-    _serverManager.diagnostics.recordStreamOutput(_streamedText(token));
     _tokenWriter.add(token);
-  }
-
-  String _streamedText(ChatToken token) {
-    return [
-      token.content,
-      token.reasoning,
-      token.tool?.name,
-      token.tool?.argumentsChunk,
-    ].whereType<String>().join();
   }
 
   Future<void> _handleStreamTerminal({
@@ -388,7 +373,6 @@ class ChatSessionManager implements Disposable {
       return;
     }
     if (error != null) {
-      _serverManager.diagnostics.recordStreamError(error);
       _messageStore.appendCurrentError(error);
       _messageStore.clearCurrentId();
       await _chatStream.stop(next: StreamState.error);
@@ -404,7 +388,6 @@ class ChatSessionManager implements Disposable {
     }
 
     await _chatStream.detach();
-    _serverManager.diagnostics.recordStreamEnded();
     requestContextEstimateUpdate(immediate: true);
 
     final toolCalls = ToolCaller.extractPendingToolEntries(

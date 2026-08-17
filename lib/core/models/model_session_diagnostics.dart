@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:hermes/core/helpers/chat/throttled_scheduler.dart';
+import 'package:hermes/core/models/model_call_diagnostics.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 
 enum ModelServerState { stopped, starting, ready, failed, cancelled }
@@ -32,11 +33,11 @@ class ModelSessionDiagnostics extends ChangeNotifier {
   Duration? startupDuration;
   String? lastError;
   String? recentFailureOutput;
+  LlamaServerProperties? serverProperties;
+  ModelSessionTotals sessionTotals = const ModelSessionTotals();
+  bool liveTelemetryEnabled = false;
 
   bool isStreaming = false;
-  DateTime? streamStartedAt;
-  DateTime? streamEndedAt;
-  int streamOutputCharacters = 0;
   int? estimatedContextTokens;
   int? contextLimitTokens;
   bool compactionActive = false;
@@ -45,6 +46,10 @@ class ModelSessionDiagnostics extends ChangeNotifier {
   int? lastCompactionMessagesCovered;
 
   final List<ModelSessionLogEntry> _logs = [];
+  final Map<String, ModelCallDiagnostics> _calls = {};
+  final Map<String, DateTime> _callUpdatedAt = {};
+  final Set<String> _finalizedCallIds = {};
+  DateTime? _estimateUpdatedAt;
   late final ThrottledScheduler _streamOutputNotifier;
 
   ModelSessionDiagnostics() {
@@ -56,17 +61,62 @@ class ModelSessionDiagnostics extends ChangeNotifier {
 
   List<ModelSessionLogEntry> get logs => List.unmodifiable(_logs);
 
-  double? get streamTokensPerSecond {
-    final started = streamStartedAt;
-    final estimatedOutputTokens = streamOutputCharacters / 4;
-    if (started == null || estimatedOutputTokens <= 0) return null;
+  Iterable<ModelCallDiagnostics> get activeCalls =>
+      _calls.values.where((call) => call.isActive);
 
-    final ended = isStreaming ? DateTime.now() : streamEndedAt;
-    final duration = (ended ?? DateTime.now()).difference(started);
-    final seconds = duration.inMilliseconds / 1000;
-    if (seconds <= 0) return null;
+  int get activeCallCount => activeCalls.length;
 
-    return estimatedOutputTokens / seconds;
+  ModelCallDiagnostics? get activeCall {
+    final active = activeCalls.toList();
+    if (active.isEmpty) return null;
+    active.sort(
+      (a, b) => (_callUpdatedAt[b.callId] ?? b.startedAt).compareTo(
+        _callUpdatedAt[a.callId] ?? a.startedAt,
+      ),
+    );
+    return active.first;
+  }
+
+  ModelCallDiagnostics? get lastCall {
+    if (_calls.isEmpty) return null;
+    final calls = _calls.values.toList()
+      ..sort(
+        (a, b) => (_callUpdatedAt[b.callId] ?? b.startedAt).compareTo(
+          _callUpdatedAt[a.callId] ?? a.startedAt,
+        ),
+      );
+    return calls.first;
+  }
+
+  ModelCallDiagnostics? get displayCall => activeCall ?? lastCall;
+
+  bool get displayContextIsEstimate {
+    if (activeCall != null) {
+      return !activeCall!.contextIsExact;
+    }
+    final call = lastCall;
+    final estimateAt = _estimateUpdatedAt;
+    final callAt = call == null ? null : _callUpdatedAt[call.callId];
+    if (estimatedContextTokens != null &&
+        estimateAt != null &&
+        (callAt == null || estimateAt.isAfter(callAt))) {
+      return true;
+    }
+    return call != null && !call.contextIsExact;
+  }
+
+  int? get displayContextTokens {
+    final active = activeCall;
+    if (active != null) return active.contextTokens;
+    final call = lastCall;
+    final estimateAt = _estimateUpdatedAt;
+    final callAt = call == null ? null : _callUpdatedAt[call.callId];
+    if (estimatedContextTokens != null &&
+        estimateAt != null &&
+        (callAt == null || estimateAt.isAfter(callAt))) {
+      return estimatedContextTokens;
+    }
+    return call?.contextTokens ?? estimatedContextTokens;
   }
 
   void recordStarting({
@@ -85,7 +135,9 @@ class ModelSessionDiagnostics extends ChangeNotifier {
     startupDuration = null;
     lastError = null;
     recentFailureOutput = null;
+    serverProperties = null;
     contextLimitTokens = snapshot.nCtx;
+    _resetCallMetrics();
     _resetStreamMetrics();
     addLog('lifecycle', 'Starting ${snapshot.modelName} on $baseUrl');
     notifyListeners();
@@ -139,24 +191,80 @@ class ModelSessionDiagnostics extends ChangeNotifier {
     notifyListeners();
   }
 
-  void recordStreamStarted({
-    int? estimatedContextTokens,
-    int? contextLimitTokens,
-  }) {
-    _streamOutputNotifier.cancel();
-    isStreaming = true;
-    streamStartedAt = DateTime.now();
-    streamEndedAt = null;
-    streamOutputCharacters = 0;
-    this.estimatedContextTokens = estimatedContextTokens;
-    this.contextLimitTokens = contextLimitTokens ?? this.contextLimitTokens;
-    notifyListeners();
+  void setLiveTelemetryEnabled(bool enabled) {
+    liveTelemetryEnabled = enabled;
   }
 
-  void recordStreamOutput(String text) {
-    if (!isStreaming || text.isEmpty) return;
-    streamOutputCharacters += text.length;
-    _streamOutputNotifier.schedule();
+  void recordCallDiagnostics(ModelCallDiagnostics value) {
+    final previous = _calls[value.callId];
+    final isNew = previous == null;
+    _calls[value.callId] = value;
+    _callUpdatedAt[value.callId] = DateTime.now();
+    if (value.status == ModelCallStatus.failed && value.error != null) {
+      lastError = value.error;
+    }
+
+    if (isNew) {
+      sessionTotals = _copyTotals(callsStarted: sessionTotals.callsStarted + 1);
+    }
+
+    if (!value.isActive && _finalizedCallIds.add(value.callId)) {
+      final ttft = value.timeToFirstToken;
+      final e2e = value.endToEndDuration;
+      sessionTotals = _copyTotals(
+        callsCompleted:
+            sessionTotals.callsCompleted +
+            (value.status == ModelCallStatus.completed ? 1 : 0),
+        callsFailed:
+            sessionTotals.callsFailed +
+            (value.status == ModelCallStatus.failed ? 1 : 0),
+        callsCancelled:
+            sessionTotals.callsCancelled +
+            (value.status == ModelCallStatus.cancelled ? 1 : 0),
+        promptTokens:
+            sessionTotals.promptTokens +
+            (value.promptTokensExact ? value.promptTokens ?? 0 : 0),
+        generatedTokens:
+            sessionTotals.generatedTokens +
+            (value.generatedTokensExact ? value.generatedTokens ?? 0 : 0),
+        cachedPromptTokens:
+            sessionTotals.cachedPromptTokens +
+            (value.cachedPromptTokensExact ? value.cachedPromptTokens ?? 0 : 0),
+        draftTokens: sessionTotals.draftTokens + (value.draftTokens ?? 0),
+        acceptedDraftTokens:
+            sessionTotals.acceptedDraftTokens +
+            (value.acceptedDraftTokens ?? 0),
+        promptMs: sessionTotals.promptMs + (value.promptMs ?? 0),
+        generationMs: sessionTotals.generationMs + (value.generationMs ?? 0),
+        endToEndDuration:
+            sessionTotals.endToEndDuration + (e2e ?? Duration.zero),
+        timeToFirstTokenTotal:
+            sessionTotals.timeToFirstTokenTotal + (ttft ?? Duration.zero),
+        timeToFirstTokenSamples:
+            sessionTotals.timeToFirstTokenSamples + (ttft == null ? 0 : 1),
+        exactCalls:
+            sessionTotals.exactCalls +
+            (value.accuracy == TelemetryAccuracy.exact ? 1 : 0),
+        fallbackCalls:
+            sessionTotals.fallbackCalls +
+            (value.accuracy == TelemetryAccuracy.estimated ? 1 : 0),
+      );
+    }
+
+    isStreaming = activeCallCount > 0;
+    final phaseChanged = previous?.status != value.status;
+    if (phaseChanged || !value.isActive) {
+      _streamOutputNotifier.cancel();
+      notifyListeners();
+    } else {
+      _streamOutputNotifier.schedule();
+    }
+  }
+
+  void recordServerProperties(LlamaServerProperties value) {
+    serverProperties = value;
+    contextLimitTokens = value.effectiveContextSize ?? contextLimitTokens;
+    notifyListeners();
   }
 
   void updateContextEstimate(
@@ -164,21 +272,9 @@ class ModelSessionDiagnostics extends ChangeNotifier {
     int? contextLimitTokens,
   }) {
     this.estimatedContextTokens = estimatedContextTokens;
+    _estimateUpdatedAt = DateTime.now();
     this.contextLimitTokens = contextLimitTokens ?? this.contextLimitTokens;
     notifyListeners();
-  }
-
-  void recordStreamEnded() {
-    if (!isStreaming) return;
-    _streamOutputNotifier.cancel();
-    isStreaming = false;
-    streamEndedAt = DateTime.now();
-    notifyListeners();
-  }
-
-  void recordStreamError(Object error) {
-    lastError = error.toString();
-    recordStreamEnded();
   }
 
   void recordTransportEvent({
@@ -275,10 +371,54 @@ class ModelSessionDiagnostics extends ChangeNotifier {
   void _resetStreamMetrics() {
     _streamOutputNotifier.cancel();
     isStreaming = false;
-    streamStartedAt = null;
-    streamEndedAt = null;
-    streamOutputCharacters = 0;
     estimatedContextTokens = null;
     compactionActive = false;
   }
+
+  void _resetCallMetrics() {
+    _calls.clear();
+    _callUpdatedAt.clear();
+    _finalizedCallIds.clear();
+    sessionTotals = const ModelSessionTotals();
+    _estimateUpdatedAt = null;
+  }
+
+  ModelSessionTotals _copyTotals({
+    int? callsStarted,
+    int? callsCompleted,
+    int? callsFailed,
+    int? callsCancelled,
+    int? promptTokens,
+    int? generatedTokens,
+    int? cachedPromptTokens,
+    int? draftTokens,
+    int? acceptedDraftTokens,
+    double? promptMs,
+    double? generationMs,
+    Duration? endToEndDuration,
+    Duration? timeToFirstTokenTotal,
+    int? timeToFirstTokenSamples,
+    int? exactCalls,
+    int? fallbackCalls,
+  }) => ModelSessionTotals(
+    callsStarted: callsStarted ?? sessionTotals.callsStarted,
+    callsCompleted: callsCompleted ?? sessionTotals.callsCompleted,
+    callsFailed: callsFailed ?? sessionTotals.callsFailed,
+    callsCancelled: callsCancelled ?? sessionTotals.callsCancelled,
+    promptTokens: promptTokens ?? sessionTotals.promptTokens,
+    generatedTokens: generatedTokens ?? sessionTotals.generatedTokens,
+    cachedPromptTokens: cachedPromptTokens ?? sessionTotals.cachedPromptTokens,
+    draftTokens: draftTokens ?? sessionTotals.draftTokens,
+    acceptedDraftTokens:
+        acceptedDraftTokens ?? sessionTotals.acceptedDraftTokens,
+    promptMs: promptMs ?? sessionTotals.promptMs,
+    generationMs: generationMs ?? sessionTotals.generationMs,
+    endToEndDuration: endToEndDuration ?? sessionTotals.endToEndDuration,
+    timeToFirstTokenTotal:
+        timeToFirstTokenTotal ?? sessionTotals.timeToFirstTokenTotal,
+    timeToFirstTokenSamples:
+        timeToFirstTokenSamples ?? sessionTotals.timeToFirstTokenSamples,
+    exactCalls: exactCalls ?? sessionTotals.exactCalls,
+    fallbackCalls: fallbackCalls ?? sessionTotals.fallbackCalls,
+  );
 }
