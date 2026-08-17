@@ -16,6 +16,10 @@ void main() {
         TerminalCommandClassifier.classify('sed -n "1,20p" lib/main.dart'),
         TerminalCommandClass.readOnly,
       );
+      expect(
+        TerminalCommandClassifier.classify('dart --version'),
+        TerminalCommandClass.readOnly,
+      );
     });
 
     test('classifies mutating workspace commands', () {
@@ -51,6 +55,10 @@ void main() {
       expect(
         TerminalCommandClassifier.classify('git checkout -b feature'),
         TerminalCommandClass.gitCommand,
+      );
+      expect(
+        TerminalCommandClassifier.classify('dart analyze && rm output.txt'),
+        TerminalCommandClass.unknown,
       );
     });
 

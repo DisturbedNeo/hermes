@@ -165,7 +165,13 @@ class TaskGateEvaluator {
         ),
         'command_passes' => _commandPasses(gate, toolCalls, now),
         'no_tool_errors' => _noToolErrors(gate, toolCalls, now),
-        'no_failed_commands' => _noFailedCommands(gate, toolCalls, now),
+        'no_failed_commands' => _noFailedCommands(
+          task,
+          step,
+          gate,
+          toolCalls,
+          now,
+        ),
         'content_contains' => await _contentContains(workspace, gate, now),
         'content_not_contains' => await _contentNotContains(
           workspace,
@@ -358,7 +364,9 @@ class TaskGateEvaluator {
       return _result(
         gate,
         TaskGateStatus.failed,
-        'Verification command failed with exit code $exitCode: $commandText.',
+        gate.required
+            ? 'Required verification command failed with exit code $exitCode: $commandText.'
+            : 'Advisory verification command failed with exit code $exitCode: $commandText.',
         now,
         {'command': commandText, 'exitCode': exitCode},
       );
@@ -366,7 +374,9 @@ class TaskGateEvaluator {
     return _result(
       gate,
       TaskGateStatus.pending,
-      'Required verification command has not run after the last workspace mutation: $commandText.',
+      gate.required
+          ? 'Required verification command has not run after the last workspace mutation: $commandText.'
+          : 'Advisory verification command was not run after the last workspace mutation: $commandText.',
       now,
       {'command': commandText, 'workingDirectory': workingDirectory},
     );
@@ -454,10 +464,13 @@ class TaskGateEvaluator {
   }
 
   TaskGateResult _noFailedCommands(
+    TaskDocument task,
+    TaskStep step,
     TaskGate gate,
     List<TaskToolCallRecord> toolCalls,
     DateTime now,
   ) {
+    final advisoryCommands = _advisoryCommandKeys(task, step, gate);
     final latestCommands = <String, TaskToolCallRecord>{};
     final lastMutation = _lastMutationIndex(toolCalls);
     for (var i = lastMutation + 1; i < toolCalls.length; i++) {
@@ -466,16 +479,22 @@ class TaskGateEvaluator {
       latestCommands[_operationKey(call)] = call;
     }
     final failed = <Map<String, dynamic>>[];
+    final advisoryFailed = <Map<String, dynamic>>[];
     for (final call in latestCommands.values) {
       final result = _resultSummaryMap(call);
       final exitCode = _effectiveToolError(call) == null
           ? jsonInt(result['exit_code'], fallback: 0)
           : -1;
       if (exitCode != 0) {
-        failed.add({
+        final failure = <String, dynamic>{
           'command': result['command'] ?? _commandText(call),
           'exitCode': exitCode,
-        });
+        };
+        if (advisoryCommands.contains(_commandKeyFromCall(call))) {
+          advisoryFailed.add(failure);
+          continue;
+        }
+        failed.add(failure);
       }
     }
     if (failed.isNotEmpty) {
@@ -490,9 +509,65 @@ class TaskGateEvaluator {
     return _result(
       gate,
       _passStatus(gate),
-      'No failed commands after the last workspace mutation.',
+      advisoryFailed.isEmpty
+          ? 'No failed commands after the last workspace mutation.'
+          : 'No blocking command failures after the last workspace mutation. ${advisoryFailed.length} advisory verification command(s) failed.',
       now,
+      {if (advisoryFailed.isNotEmpty) 'advisoryFailures': advisoryFailed},
     );
+  }
+
+  Set<String> _advisoryCommandKeys(
+    TaskDocument task,
+    TaskStep step,
+    TaskGate noFailedGate,
+  ) {
+    final taskScoped = noFailedGate.scope.trim().toLowerCase() == 'task';
+    final gates = taskScoped
+        ? <TaskGate>[
+            ...task.gates,
+            for (final taskStep in task.steps) ...taskStep.gates,
+          ]
+        : step.gates;
+    final required = <String>{};
+    final advisory = <String>{};
+    for (final gate in gates) {
+      if (gate.id != 'command_passes') continue;
+      final key = _commandKeyFromGate(gate);
+      if (key == null) continue;
+      (gate.required ? required : advisory).add(key);
+    }
+    return advisory.difference(required);
+  }
+
+  String? _commandKeyFromGate(TaskGate gate) {
+    final command = _commandTextFromParts(
+      jsonString(gate.params['command']),
+      jsonStringList(gate.params['args']),
+    );
+    if (command.isEmpty) return null;
+    final cwd = path.normalize(
+      jsonString(
+        gate.params['working_directory'] ?? gate.params['workingDirectory'],
+        fallback: '.',
+      ),
+    );
+    return '$cwd\x00$command';
+  }
+
+  String _commandKeyFromCall(TaskToolCallRecord call) {
+    final arguments = jsonMap(call.arguments);
+    final command = _commandTextFromParts(
+      jsonString(arguments['command']),
+      jsonStringList(arguments['args']),
+    );
+    final cwd = path.normalize(
+      jsonString(
+        arguments['working_directory'] ?? arguments['workingDirectory'],
+        fallback: '.',
+      ),
+    );
+    return '$cwd\x00$command';
   }
 
   Future<TaskGateResult> _contentContains(

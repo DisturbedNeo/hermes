@@ -9,6 +9,8 @@ import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/core/services/cancellation_token.dart';
+import 'package:hermes/core/services/host_command_runner.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
@@ -807,6 +809,303 @@ void main() {
         expect(
           updated.runs.single.gateResults.single.status,
           TaskGateStatus.passed,
+        );
+      },
+    );
+
+    test(
+      'read-only advisory command gate exposes and evaluates its command',
+      () async {
+        workspace = workspace.copyWith(commandExecutionApproved: true);
+        final task = _task(
+          step: const TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Inspect the toolchain',
+            instructions: ['Run dart --version for advisory evidence.'],
+            mayEditFiles: false,
+            artifacts: [],
+            gates: [
+              TaskGate(
+                id: 'command_passes',
+                required: false,
+                params: {'command': 'dart --version'},
+              ),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({'command': 'dart --version'}),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Collected advisory evidence.',
+              'memoryUpdate': '',
+            }),
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(client.seenToolNames.first, contains('run_command'));
+        expect(updated.status, TaskStatus.completed);
+        expect(
+          updated.runs.single.gateResults.single.status,
+          TaskGateStatus.advisory,
+        );
+      },
+    );
+
+    test(
+      'read-only step exposes multiple advisory verification commands',
+      () async {
+        workspace = workspace.copyWith(commandExecutionApproved: true);
+        final runner = _RecordingHostCommandRunner();
+        final sandbox = WorkspaceSandbox(hostCommandRunner: runner);
+        service = TaskService(
+          toolService: ToolService(workspaceSandbox: sandbox),
+          sandbox: sandbox,
+        );
+        final task = _task(
+          step: const TaskStep(
+            id: 'analyze_codebase',
+            title: 'Analyze codebase',
+            objective: 'Collect analyzer and test evidence.',
+            instructions: ['Run dart analyze and flutter test.'],
+            mayEditFiles: false,
+            artifacts: [],
+            gates: [
+              TaskGate(
+                id: 'command_passes',
+                required: false,
+                params: {'command': 'dart analyze', 'working_directory': '.'},
+              ),
+              TaskGate(
+                id: 'command_passes',
+                required: false,
+                params: {'command': 'flutter test', 'working_directory': '.'},
+              ),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({'command': 'dart analyze'}),
+              ),
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({'command': 'flutter test'}),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Collected analyzer and test evidence.',
+              'memoryUpdate': '',
+            }),
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(runner.commands, ['dart analyze', 'flutter test']);
+        expect(
+          updated.runs.single.gateResults.map((result) => result.status),
+          everyElement(TaskGateStatus.advisory),
+        );
+        expect(updated.status, TaskStatus.completed);
+      },
+    );
+
+    test('unsafe read-only command gates do not expose the terminal', () async {
+      workspace = workspace.copyWith(commandExecutionApproved: true);
+      final task = _task(
+        step: const TaskStep(
+          id: 'step_1',
+          title: 'Step 1',
+          objective: 'Inspect safely',
+          instructions: ['Do not mutate files.'],
+          mayEditFiles: false,
+          artifacts: [],
+          gates: [
+            TaskGate(
+              id: 'command_passes',
+              required: false,
+              params: {'command': 'rm generated.txt'},
+            ),
+            TaskGate(
+              id: 'command_passes',
+              required: false,
+              params: {'command': 'custom-check'},
+            ),
+          ],
+          status: TaskStepStatus.pending,
+        ),
+      );
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Skipped unsafe commands.',
+            'memoryUpdate': '',
+          }),
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(client.seenToolNames.single, isNot(contains('run_command')));
+      expect(updated.status, TaskStatus.completed);
+      expect(
+        updated.runs.single.gateResults.map((result) => result.status),
+        everyElement(TaskGateStatus.pending),
+      );
+    });
+
+    test(
+      'required unsafe read-only command gate triggers replanning',
+      () async {
+        workspace = workspace.copyWith(commandExecutionApproved: true);
+        final task = _task(
+          step: const TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Run an unsafe verification command',
+            instructions: ['Run rm generated.txt.'],
+            mayEditFiles: false,
+            artifacts: [],
+            gates: [
+              TaskGate(
+                id: 'command_passes',
+                params: {'command': 'rm generated.txt'},
+              ),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'The unsafe command was unavailable.',
+              'memoryUpdate': '',
+            }),
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'steps': [
+                {
+                  'id': 'safe_verification',
+                  'title': 'Verify safely',
+                  'objective': 'Use read-only inspection instead.',
+                  'instructions': ['Inspect without mutation.'],
+                  'mayEditFiles': false,
+                },
+              ],
+            }),
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(client.seenToolNames.first, isNot(contains('run_command')));
+        expect(updated.status, TaskStatus.paused);
+        expect(updated.currentStepId, 'safe_verification');
+        expect(updated.runs.map((run) => run.status), [
+          TaskRunStatus.needsReplan,
+          TaskRunStatus.replanned,
+        ]);
+      },
+    );
+
+    test(
+      'advisory command still requires workspace terminal approval',
+      () async {
+        final task = _task(
+          step: const TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Inspect the toolchain',
+            instructions: [
+              'Run dart --version if terminal access is approved.',
+            ],
+            mayEditFiles: false,
+            artifacts: [],
+            gates: [
+              TaskGate(
+                id: 'command_passes',
+                required: false,
+                params: {'command': 'dart --version'},
+              ),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({'command': 'dart --version'}),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Terminal access was unavailable.',
+              'memoryUpdate': '',
+            }),
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(updated.status, TaskStatus.completed);
+        expect(
+          updated.runs.single.toolCalls.single.error,
+          contains('terminal access is disabled'),
         );
       },
     );
@@ -1682,6 +1981,27 @@ class _TransportFailureClient extends ChatClient {
 
   @override
   void dispose() {}
+}
+
+class _RecordingHostCommandRunner extends HostCommandRunner {
+  final List<String> commands = [];
+
+  @override
+  Future<Map<String, dynamic>> run({
+    required String commandLine,
+    required String workingDirectory,
+    required String relativeWorkingDirectory,
+    CancellationToken? cancellationToken,
+  }) async {
+    commands.add(commandLine);
+    return {
+      'command': commandLine,
+      'working_directory': relativeWorkingDirectory,
+      'exit_code': 0,
+      'stdout': '',
+      'stderr': '',
+    };
+  }
 }
 
 ChatTransportException _transportFailure() => ChatTransportException(

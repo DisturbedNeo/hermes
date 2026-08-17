@@ -29,6 +29,7 @@ import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/task_system/task_repository.dart';
 import 'package:hermes/core/services/task_system/task_summary.dart';
+import 'package:hermes/core/services/terminal_command_classifier.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/serialization/model_json.dart';
@@ -1650,12 +1651,15 @@ ${_encoder.convert(ModelJson.encode(task))}
     final seen = <String>{};
     final commands = <_AllowedTaskCommand>[];
     for (final gate in _completionGates(task, step)) {
-      if (gate.id != 'command_passes' || !gate.required) continue;
+      if (gate.id != 'command_passes') continue;
       final command = _commandTextFromParts(
         jsonString(gate.params['command']),
         jsonStringList(gate.params['args']),
       );
       if (command.isEmpty) continue;
+      if (!step.mayEditFiles && !_isReadOnlyVerificationCommand(command)) {
+        continue;
+      }
       final workingDirectory = path.normalize(
         jsonString(
           gate.params['working_directory'] ?? gate.params['workingDirectory'],
@@ -1672,6 +1676,13 @@ ${_encoder.convert(ModelJson.encode(task))}
       );
     }
     return commands;
+  }
+
+  bool _isReadOnlyVerificationCommand(String command) {
+    return switch (TerminalCommandClassifier.classify(command)) {
+      TerminalCommandClass.readOnly || TerminalCommandClass.testCommand => true,
+      _ => false,
+    };
   }
 
   String _commandTextFromParts(String command, List<String> args) {
@@ -3610,8 +3621,8 @@ Use model_review only for subjective creative/research judgment; use determinist
 Read-only steps may create new task-owned artifact files under `.agent/tasks/<taskId>/`.
 Declare an artifact only on the step that will actually create it.
 Do not split broad "explore" and "analyze" work into separate steps when the exploration exists only to support the analysis.
-Mark mayEditFiles true only when a step may edit existing files, write outside the task folder, rename paths, delete paths, or run terminal commands beyond exact commands declared in required command_passes gates.
-A read-only step may include required command_passes gates for non-mutating verification commands; the runner will expose only those exact commands.
+Mark mayEditFiles true only when a step may edit existing files, write outside the task folder, rename paths, delete paths, or run terminal commands beyond exact commands declared in command_passes gates.
+A command_passes gate declares an exact permitted command for its step. Set required true when the command must run successfully for completion. Set required false when the command should still be attempted but absence or failure is advisory evidence. A read-only step may declare only non-mutating inspection, analysis, or test commands; the runner will expose only those exact commands.
 If the request involves opaque or binary documents such as .odt, .docx, .pdf, .xlsx, or archives, mark inspection/extraction steps mayEditFiles true when terminal commands may be needed and commandExecutionApproved is true in workspace metadata.
 Keep research/design/planning/reporting-to-task-folder steps read-only when they only read files and create new task-owned artifacts.
 Do not include review, retry, validation, terminal policy, or approval policy fields.
@@ -3629,7 +3640,7 @@ Only return status "blocked" with userQuestion for destructive or irreversible a
 You may read artifacts from completed prior steps and any artifact already created during the current step.
 Write and report only artifacts declared on the current step.
 If the current step needs a different artifact path, return status "needs_replan" instead of writing it.
-If the current step is read-only, you may create only the current step's declared task-owned artifact files under `.agent/tasks/<taskId>/`, and you may run only whitelisted verification terminal commands exposed for the step. You must not overwrite existing files, edit source files, rename paths, delete paths, or try to use other terminal commands as a workaround.
+If the current step is read-only, you may create only the current step's declared task-owned artifact files under `.agent/tasks/<taskId>/`, and you may run only whitelisted verification terminal commands exposed for the step. Attempt advisory verification commands when terminal execution is approved; their results are evidence even when they fail. You must not overwrite existing files, edit source files, rename paths, delete paths, or try to use other terminal commands as a workaround.
 If a later step is responsible for writing a report or changing files, leave that work for the later step.
 If the current plan is wrong or missing necessary follow-up work, return status "needs_replan" with a concrete replanRequest.
 If user input is truly required, return status "blocked" with userQuestion.
@@ -3648,8 +3659,8 @@ Use model_review only for subjective creative/research judgment; use determinist
 Read-only steps may create new task-owned artifact files under `.agent/tasks/<taskId>/`.
 Declare an artifact only on the step that will actually create it.
 Do not split broad "explore" and "analyze" work into separate steps when the exploration exists only to support the analysis.
-Mark mayEditFiles true only when a step may edit existing files, write outside the task folder, rename paths, delete paths, or run terminal commands beyond exact commands declared in required command_passes gates.
-A read-only step may include required command_passes gates for non-mutating verification commands; the runner will expose only those exact commands.
+Mark mayEditFiles true only when a step may edit existing files, write outside the task folder, rename paths, delete paths, or run terminal commands beyond exact commands declared in command_passes gates.
+A command_passes gate declares an exact permitted command for its step. Set required true when the command must run successfully for completion. Set required false when the command should still be attempted but absence or failure is advisory evidence. A read-only step may declare only non-mutating inspection, analysis, or test commands; the runner will expose only those exact commands.
 If unfinished work involves opaque or binary documents such as .odt, .docx, .pdf, .xlsx, or archives, mark inspection/extraction steps mayEditFiles true when terminal commands may be needed and commandExecutionApproved is true in workspace metadata.
 Do not include review, retry, validation, terminal policy, or approval policy fields.
 Return only valid JSON.

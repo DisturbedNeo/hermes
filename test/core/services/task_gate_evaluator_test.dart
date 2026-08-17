@@ -187,6 +187,98 @@ void main() {
       },
     );
 
+    test(
+      'advisory command failures remain evidence and do not fail no_failed_commands',
+      () async {
+        const advisoryGate = TaskGate(
+          id: 'command_passes',
+          required: false,
+          params: {'command': 'dart analyze', 'working_directory': '.'},
+        );
+        final advisoryStep = step.copyWith(gates: const [advisoryGate]);
+        final advisoryTask = task.copyWith(steps: [advisoryStep]);
+        final evaluation = await evaluator.evaluate(
+          workspace: workspace,
+          task: advisoryTask,
+          step: advisoryStep,
+          gates: const [
+            advisoryGate,
+            TaskGate(id: 'no_failed_commands', scope: 'task'),
+          ],
+          toolCalls: [
+            _toolCall(
+              'run_command',
+              arguments: {'command': 'dart analyze', 'working_directory': '.'},
+              result: {'exit_code': 1, 'command': 'dart analyze'},
+            ),
+          ],
+          artifacts: const [],
+        );
+
+        expect(evaluation.results.first.status, TaskGateStatus.failed);
+        expect(evaluation.results.first.details['required'], isFalse);
+        expect(evaluation.results.first.summary, startsWith('Advisory'));
+        expect(evaluation.results.last.status, TaskGateStatus.passed);
+        expect(
+          evaluation.results.last.details['advisoryFailures'],
+          hasLength(1),
+        );
+        expect(evaluation.hasRequiredFailure, isFalse);
+      },
+    );
+
+    test('unrelated failed commands remain blocking', () async {
+      const advisoryGate = TaskGate(
+        id: 'command_passes',
+        required: false,
+        params: {'command': 'dart analyze', 'working_directory': '.'},
+      );
+      final advisoryStep = step.copyWith(gates: const [advisoryGate]);
+      final advisoryTask = task.copyWith(steps: [advisoryStep]);
+      final evaluation = await evaluator.evaluate(
+        workspace: workspace,
+        task: advisoryTask,
+        step: advisoryStep,
+        gates: const [TaskGate(id: 'no_failed_commands')],
+        toolCalls: [
+          _toolCall(
+            'run_command',
+            arguments: {'command': 'dart analyze'},
+            result: {'exit_code': 1, 'command': 'dart analyze'},
+          ),
+          _toolCall(
+            'run_command',
+            arguments: {'command': 'dart --version'},
+            result: {'exit_code': 1, 'command': 'dart --version'},
+          ),
+        ],
+        artifacts: const [],
+      );
+
+      expect(evaluation.results.single.status, TaskGateStatus.failed);
+      expect(evaluation.hasRequiredFailure, isTrue);
+    });
+
+    test('missing advisory commands use non-required wording', () async {
+      const gate = TaskGate(
+        id: 'command_passes',
+        required: false,
+        params: {'command': 'flutter test'},
+      );
+      final evaluation = await evaluator.evaluate(
+        workspace: workspace,
+        task: task,
+        step: step,
+        gates: const [gate],
+        toolCalls: const [],
+        artifacts: const [],
+      );
+
+      expect(evaluation.results.single.status, TaskGateStatus.pending);
+      expect(evaluation.results.single.summary, startsWith('Advisory'));
+      expect(evaluation.hasRequiredPending, isFalse);
+    });
+
     test('no_tool_errors treats guard denials as recoverable evidence', () async {
       final evaluation = await evaluator.evaluate(
         workspace: workspace,

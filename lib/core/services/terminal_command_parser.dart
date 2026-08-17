@@ -78,11 +78,7 @@ const Set<String> kPrivilegeEscalationCommands = {
   'pkexec',
 };
 
-const Set<String> kProcessControlCommands = {
-  'kill',
-  'killall',
-  'pkill',
-};
+const Set<String> kProcessControlCommands = {'kill', 'killall', 'pkill'};
 
 const Set<String> kSystemControlCommands = {
   'shutdown',
@@ -231,8 +227,7 @@ class TerminalCommandParser {
     while (current.isNotEmpty) {
       final first = current.first;
       if (first == 'env') {
-        current =
-            current.skip(1).where((token) => !_isEnvFlag(token)).toList();
+        current = current.skip(1).where((token) => !_isEnvFlag(token)).toList();
         while (current.isNotEmpty && _isAssignment(current.first)) {
           current = current.skip(1).toList();
         }
@@ -262,7 +257,8 @@ class TerminalCommandParser {
     }.contains(executable)) {
       for (var i = 0; i < args.length; i++) {
         final arg = args[i];
-        final isCommandFlag = arg == '-c' ||
+        final isCommandFlag =
+            arg == '-c' ||
             (arg.startsWith('-') &&
                 !arg.startsWith('--') &&
                 arg.substring(1).contains('c'));
@@ -501,6 +497,11 @@ class TerminalCommandParser {
   }
 
   static bool _isReadOnlyCommand(String executable, List<String> args) {
+    if (const {'dart', 'flutter'}.contains(executable) &&
+        args.length == 1 &&
+        const {'--version', '-h', '--help'}.contains(args.first)) {
+      return true;
+    }
     if (const {
       'ls',
       'pwd',
@@ -704,7 +705,12 @@ class TerminalCommandParser {
     if (hasWorkspaceWriteSyntax(trimmed)) {
       return TerminalCommandClass.mutatingWorkspace;
     }
-    return classifyTokens(tokenize(trimmed));
+    if (hasShellCommandSubstitution(trimmed)) {
+      return TerminalCommandClass.unknown;
+    }
+    final segments = splitCommandSegments(trimmed);
+    if (segments.length != 1) return TerminalCommandClass.unknown;
+    return classifyTokens(tokenize(segments.single));
   }
 
   /// Returns `true` for classes that unambiguously mutate the workspace.
