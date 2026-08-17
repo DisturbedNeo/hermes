@@ -17,7 +17,7 @@ class ModelSessionLogEntry {
 }
 
 class ModelSessionDiagnostics extends ChangeNotifier {
-  static const int _maxLogEntries = 300;
+  static const int _maxLogEntries = 1000;
   static const Duration _streamOutputNotifyInterval = Duration(
     milliseconds: 500,
   );

@@ -41,66 +41,95 @@ List<String> buildLlamaServerArguments({
   return <String>[
     '-m',
     snapshot.modelPath,
+
     '--host',
     '127.0.0.1',
+
     '--port',
     '$port',
+
     '-c',
     '${snapshot.nCtx}',
+
+    '-np',
+    '1',
+
     '-t',
     '$nThreads',
+
     '--threads-batch',
     '$nThreads',
+
     '-ngl',
-    'auto',
+    'all',
+
     '--load-mode',
     'dio',
+
     '--temp',
     '${snapshot.temperature}',
+
     '--top-p',
     '${snapshot.topP}',
+
     '--top-k',
     '${snapshot.topK}',
+
     '--min-p',
     '${snapshot.minP}',
+
     '--mirostat',
     '${snapshot.mirostat}',
+
     '-b',
     '${snapshot.nBatch}',
+
     '-ub',
     '${snapshot.nUBatch}',
+
     '--repeat-penalty',
     '${snapshot.repeatPenalty}',
+
     '--repeat-last-n',
     '${snapshot.repeatLastN}',
+
     '--presence-penalty',
     '${snapshot.presencePenalty}',
+
     '--frequency-penalty',
     '${snapshot.frequencyPenalty}',
+
     '--flash-attn',
     snapshot.flashAttention ? 'on' : 'off',
+
     if (snapshot.cachePrompt) ...[
       '--cache-prompt',
+
       '--cache-reuse',
       '${snapshot.cacheReuse}',
     ] else
       '--no-cache-prompt',
+
     if (snapshot.thinking) ...[
       '--reasoning',
       'on',
     ] else ...[
       '--reasoning',
       'off',
+
       '--chat-template-kwargs',
       '{"enable_thinking": false}',
     ],
+
     if (snapshot.kvCacheQuantizationEnabled) ...[
       '--cache-type-k',
+
       snapshot.kvCacheTypeK,
       '--cache-type-v',
       snapshot.kvCacheTypeV,
     ],
-    '--jinja',
+
+    '--jinja'
   ];
 }
 
@@ -170,7 +199,7 @@ class LlamaServerManager implements Disposable {
     int topK = 40,
     double minP = 0.05,
     int nBatch = 2048,
-    int nUBatch = 512,
+    int nUBatch = 2048,
     int mirostat = 0,
     double repeatPenalty = 1.1,
     int repeatLastN = 256,
