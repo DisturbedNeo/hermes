@@ -22,7 +22,10 @@ void main() {
     expect(config.repeatLastN, 64);
     expect(config.presencePenalty, 0.0);
     expect(config.frequencyPenalty, 0.0);
-    expect(config.thinking, isFalse);
+    expect(config.thinking, isTrue);
+    expect(config.reasoningEffort, 'default');
+    expect(config.mtpEnabled, isFalse);
+    expect(config.mtpDraftTokens, 3);
     expect(config.flashAttention, isTrue);
     expect(config.cachePrompt, isTrue);
     expect(config.cacheReuse, 256);
@@ -32,7 +35,13 @@ void main() {
   });
 
   test('round trips through ModelJson and defaults omitted fields', () {
-    final original = _configuration(temperature: 1.2, thinking: true);
+    final original = _configuration(
+      temperature: 1.2,
+      thinking: true,
+      reasoningEffort: 'high',
+      mtpEnabled: true,
+      mtpDraftTokens: 7,
+    );
     final decoded = ModelJson.decodeString<ModelLoadConfiguration>(
       ModelJson.encodeString(original),
     );
@@ -43,15 +52,27 @@ void main() {
 
     expect(decoded.temperature, 1.2);
     expect(decoded.thinking, isTrue);
+    expect(decoded.reasoningEffort, 'high');
+    expect(decoded.mtpEnabled, isTrue);
+    expect(decoded.mtpDraftTokens, 7);
     expect(decoded.nCtx, original.nCtx);
     expect(defaults.nCtx, ModelLoadConfiguration.defaultNCtx);
     expect(defaults.topP, ModelLoadConfiguration.defaultTopP);
     expect(defaults.thinking, ModelLoadConfiguration.defaultThinking);
+    expect(defaults.reasoningEffort, 'default');
+    expect(defaults.mtpEnabled, isFalse);
+    expect(defaults.mtpDraftTokens, 3);
     expect(ModelJson.encode(legacy), isNot(contains('nGpuLayers')));
   });
 
   test('binds runtime model identity only when creating a snapshot', () {
-    final config = _configuration(temperature: 1.2, thinking: true);
+    final config = _configuration(
+      temperature: 1.2,
+      thinking: true,
+      reasoningEffort: 'medium',
+      mtpEnabled: true,
+      mtpDraftTokens: 4,
+    );
     final encoded = ModelJson.encode(config);
 
     final snapshot = config.toSnapshot(
@@ -65,6 +86,9 @@ void main() {
     expect(snapshot.llamaCppDirectory, '/new/llama.cpp');
     expect(snapshot.temperature, 1.2);
     expect(snapshot.thinking, isTrue);
+    expect(snapshot.reasoningEffort, 'medium');
+    expect(snapshot.mtpEnabled, isTrue);
+    expect(snapshot.mtpDraftTokens, 4);
     expect(encoded, isNot(contains('modelName')));
     expect(encoded, isNot(contains('modelPath')));
     expect(encoded, isNot(contains('llamaCppDirectory')));
@@ -77,6 +101,9 @@ void main() {
       'temperature': -10,
       'topP': 9,
       'minP': -2,
+      'reasoningEffort': 'unsupported',
+      'mtpEnabled': true,
+      'mtpDraftTokens': 99,
       'cacheReuse': 10,
       'kvCacheTypeK': 'invalid',
     }).normalised();
@@ -86,14 +113,30 @@ void main() {
     expect(normalised.temperature, 0.0);
     expect(normalised.topP, 1.0);
     expect(normalised.minP, 0.0);
+    expect(normalised.reasoningEffort, 'default');
+    expect(normalised.mtpEnabled, isTrue);
+    expect(
+      normalised.mtpDraftTokens,
+      ModelConfigurationSnapshot.maxMtpDraftTokens,
+    );
     expect(normalised.cacheReuse, ModelConfigurationSnapshot.minCacheReuse);
     expect(normalised.kvCacheTypeK, ModelLoadConfiguration.defaultKvCacheType);
+  });
+
+  test('discards reasoning effort when thinking is disabled', () {
+    final disabled = _configuration(thinking: false, reasoningEffort: 'xhigh');
+
+    expect(disabled.thinking, isFalse);
+    expect(disabled.reasoningEffort, 'default');
   });
 }
 
 ModelLoadConfiguration _configuration({
   double temperature = 0.7,
   bool thinking = false,
+  String reasoningEffort = ModelLoadConfiguration.defaultReasoningEffort,
+  bool mtpEnabled = ModelLoadConfiguration.defaultMtpEnabled,
+  int mtpDraftTokens = ModelLoadConfiguration.defaultMtpDraftTokens,
 }) => ModelLoadConfiguration(
   nCtx: ModelLoadConfiguration.defaultNCtx,
   nThreads: Platform.numberOfProcessors,
@@ -109,6 +152,9 @@ ModelLoadConfiguration _configuration({
   presencePenalty: ModelLoadConfiguration.defaultPresencePenalty,
   frequencyPenalty: ModelLoadConfiguration.defaultFrequencyPenalty,
   thinking: thinking,
+  reasoningEffort: reasoningEffort,
+  mtpEnabled: mtpEnabled,
+  mtpDraftTokens: mtpDraftTokens,
   flashAttention: ModelLoadConfiguration.defaultFlashAttention,
   cachePrompt: ModelLoadConfiguration.defaultCachePrompt,
   cacheReuse: ModelConfigurationSnapshot.defaultCacheReuse,

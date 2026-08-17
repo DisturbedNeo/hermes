@@ -111,7 +111,32 @@ class ModelLoadConfigurationMapper
   static const Field<ModelLoadConfiguration, bool> _f$thinking = Field(
     'thinking',
     _$thinking,
-    hook: JsonBoolHook(fallback: false),
+    hook: JsonBoolHook(fallback: true),
+  );
+  static String _$reasoningEffort(ModelLoadConfiguration v) =>
+      v.reasoningEffort;
+  static const Field<ModelLoadConfiguration, String> _f$reasoningEffort = Field(
+    'reasoningEffort',
+    _$reasoningEffort,
+    opt: true,
+    def: ModelLoadConfiguration.defaultReasoningEffort,
+    hook: ReasoningEffortHook(),
+  );
+  static bool _$mtpEnabled(ModelLoadConfiguration v) => v.mtpEnabled;
+  static const Field<ModelLoadConfiguration, bool> _f$mtpEnabled = Field(
+    'mtpEnabled',
+    _$mtpEnabled,
+    opt: true,
+    def: ModelLoadConfiguration.defaultMtpEnabled,
+    hook: JsonBoolHook(),
+  );
+  static int _$mtpDraftTokens(ModelLoadConfiguration v) => v.mtpDraftTokens;
+  static const Field<ModelLoadConfiguration, int> _f$mtpDraftTokens = Field(
+    'mtpDraftTokens',
+    _$mtpDraftTokens,
+    opt: true,
+    def: ModelLoadConfiguration.defaultMtpDraftTokens,
+    hook: JsonIntHook(fallback: 3, min: 1, max: 16),
   );
   static bool _$flashAttention(ModelLoadConfiguration v) => v.flashAttention;
   static const Field<ModelLoadConfiguration, bool> _f$flashAttention = Field(
@@ -168,6 +193,9 @@ class ModelLoadConfigurationMapper
     #presencePenalty: _f$presencePenalty,
     #frequencyPenalty: _f$frequencyPenalty,
     #thinking: _f$thinking,
+    #reasoningEffort: _f$reasoningEffort,
+    #mtpEnabled: _f$mtpEnabled,
+    #mtpDraftTokens: _f$mtpDraftTokens,
     #flashAttention: _f$flashAttention,
     #cachePrompt: _f$cachePrompt,
     #cacheReuse: _f$cacheReuse,
@@ -192,6 +220,9 @@ class ModelLoadConfigurationMapper
       presencePenalty: data.dec(_f$presencePenalty),
       frequencyPenalty: data.dec(_f$frequencyPenalty),
       thinking: data.dec(_f$thinking),
+      reasoningEffort: data.dec(_f$reasoningEffort),
+      mtpEnabled: data.dec(_f$mtpEnabled),
+      mtpDraftTokens: data.dec(_f$mtpDraftTokens),
       flashAttention: data.dec(_f$flashAttention),
       cachePrompt: data.dec(_f$cachePrompt),
       cacheReuse: data.dec(_f$cacheReuse),

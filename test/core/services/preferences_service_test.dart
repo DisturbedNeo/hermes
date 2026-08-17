@@ -57,7 +57,12 @@ void main() {
 
     test('stores configurations independently by exact alias', () async {
       final service = PreferencesService();
-      final alpha = _configuration(temperature: 0.4);
+      final alpha = _configuration(
+        temperature: 0.4,
+        reasoningEffort: 'high',
+        mtpEnabled: true,
+        mtpDraftTokens: 7,
+      );
       final upperAlpha = _configuration(temperature: 1.2);
 
       expect(await service.setModelLoadConfiguration('alpha', alpha), isTrue);
@@ -70,6 +75,10 @@ void main() {
         (await service.getModelLoadConfiguration('alpha'))?.temperature,
         0.4,
       );
+      final restoredAlpha = await service.getModelLoadConfiguration('alpha');
+      expect(restoredAlpha?.reasoningEffort, 'high');
+      expect(restoredAlpha?.mtpEnabled, isTrue);
+      expect(restoredAlpha?.mtpDraftTokens, 7);
       expect(
         (await service.getModelLoadConfiguration('Alpha'))?.temperature,
         1.2,
@@ -120,27 +129,34 @@ void main() {
   });
 }
 
-ModelLoadConfiguration _configuration({required double temperature}) =>
-    ModelLoadConfiguration(
-      nCtx: ModelLoadConfiguration.defaultNCtx,
-      nThreads: Platform.numberOfProcessors,
-      temperature: temperature,
-      topP: ModelLoadConfiguration.defaultTopP,
-      topK: ModelLoadConfiguration.defaultTopK,
-      minP: ModelLoadConfiguration.defaultMinP,
-      nBatch: ModelLoadConfiguration.defaultNBatch,
-      nUBatch: ModelLoadConfiguration.defaultNUBatch,
-      mirostat: ModelLoadConfiguration.defaultMirostat,
-      repeatPenalty: ModelLoadConfiguration.defaultRepeatPenalty,
-      repeatLastN: ModelLoadConfiguration.defaultRepeatLastN,
-      presencePenalty: ModelLoadConfiguration.defaultPresencePenalty,
-      frequencyPenalty: ModelLoadConfiguration.defaultFrequencyPenalty,
-      thinking: ModelLoadConfiguration.defaultThinking,
-      flashAttention: ModelLoadConfiguration.defaultFlashAttention,
-      cachePrompt: ModelLoadConfiguration.defaultCachePrompt,
-      cacheReuse: ModelConfigurationSnapshot.defaultCacheReuse,
-      kvCacheQuantizationEnabled:
-          ModelLoadConfiguration.defaultKvCacheQuantizationEnabled,
-      kvCacheTypeK: ModelLoadConfiguration.defaultKvCacheType,
-      kvCacheTypeV: ModelLoadConfiguration.defaultKvCacheType,
-    );
+ModelLoadConfiguration _configuration({
+  required double temperature,
+  String reasoningEffort = ModelLoadConfiguration.defaultReasoningEffort,
+  bool mtpEnabled = ModelLoadConfiguration.defaultMtpEnabled,
+  int mtpDraftTokens = ModelLoadConfiguration.defaultMtpDraftTokens,
+}) => ModelLoadConfiguration(
+  nCtx: ModelLoadConfiguration.defaultNCtx,
+  nThreads: Platform.numberOfProcessors,
+  temperature: temperature,
+  topP: ModelLoadConfiguration.defaultTopP,
+  topK: ModelLoadConfiguration.defaultTopK,
+  minP: ModelLoadConfiguration.defaultMinP,
+  nBatch: ModelLoadConfiguration.defaultNBatch,
+  nUBatch: ModelLoadConfiguration.defaultNUBatch,
+  mirostat: ModelLoadConfiguration.defaultMirostat,
+  repeatPenalty: ModelLoadConfiguration.defaultRepeatPenalty,
+  repeatLastN: ModelLoadConfiguration.defaultRepeatLastN,
+  presencePenalty: ModelLoadConfiguration.defaultPresencePenalty,
+  frequencyPenalty: ModelLoadConfiguration.defaultFrequencyPenalty,
+  thinking: ModelLoadConfiguration.defaultThinking,
+  reasoningEffort: reasoningEffort,
+  mtpEnabled: mtpEnabled,
+  mtpDraftTokens: mtpDraftTokens,
+  flashAttention: ModelLoadConfiguration.defaultFlashAttention,
+  cachePrompt: ModelLoadConfiguration.defaultCachePrompt,
+  cacheReuse: ModelConfigurationSnapshot.defaultCacheReuse,
+  kvCacheQuantizationEnabled:
+      ModelLoadConfiguration.defaultKvCacheQuantizationEnabled,
+  kvCacheTypeK: ModelLoadConfiguration.defaultKvCacheType,
+  kvCacheTypeV: ModelLoadConfiguration.defaultKvCacheType,
+);

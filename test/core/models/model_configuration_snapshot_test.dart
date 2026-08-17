@@ -11,6 +11,9 @@ void main() {
 
     expect(snapshot.nThreads, ModelConfigurationSnapshot.defaultNThreads);
     expect(snapshot.minP, 0.05);
+    expect(snapshot.reasoningEffort, 'default');
+    expect(snapshot.mtpEnabled, isFalse);
+    expect(snapshot.mtpDraftTokens, 3);
     expect(snapshot.flashAttention, isTrue);
     expect(snapshot.cachePrompt, isTrue);
     expect(snapshot.cacheReuse, ModelConfigurationSnapshot.defaultCacheReuse);
@@ -44,7 +47,10 @@ void main() {
       repeatLastN: 64,
       presencePenalty: 1.5,
       frequencyPenalty: 0,
-      thinking: false,
+      thinking: true,
+      reasoningEffort: 'xhigh',
+      mtpEnabled: true,
+      mtpDraftTokens: 7,
       flashAttention: true,
       cachePrompt: true,
       cacheReuse: 512,
@@ -58,6 +64,9 @@ void main() {
     expect(encoded, containsPair('cachePrompt', true));
     expect(encoded, containsPair('cacheReuse', 512));
     expect(encoded, containsPair('minP', 0.0));
+    expect(encoded, containsPair('reasoningEffort', 'xhigh'));
+    expect(encoded, containsPair('mtpEnabled', true));
+    expect(encoded, containsPair('mtpDraftTokens', 7));
     expect(encoded, containsPair('kvCacheQuantizationEnabled', true));
     expect(encoded, containsPair('kvCacheTypeK', 'q4_0'));
     expect(encoded, containsPair('kvCacheTypeV', 'q8_0'));
@@ -104,6 +113,40 @@ void main() {
 
     expect(belowMin.cacheReuse, ModelConfigurationSnapshot.minCacheReuse);
     expect(aboveMax.cacheReuse, ModelConfigurationSnapshot.maxCacheReuse);
+  });
+
+  test('normalises reasoning effort and MTP draft tokens when restored', () {
+    final invalid = ModelJson.decode<ModelConfigurationSnapshot>(const {
+      'reasoningEffort': 'unsupported',
+      'mtpEnabled': true,
+      'mtpDraftTokens': 100,
+    });
+    final minimum = ModelJson.decode<ModelConfigurationSnapshot>(const {
+      'reasoningEffort': 'X-HIGH',
+      'mtpDraftTokens': 0,
+    });
+
+    expect(invalid.reasoningEffort, 'default');
+    expect(invalid.mtpEnabled, isTrue);
+    expect(
+      invalid.mtpDraftTokens,
+      ModelConfigurationSnapshot.maxMtpDraftTokens,
+    );
+    expect(minimum.reasoningEffort, 'xhigh');
+    expect(
+      minimum.mtpDraftTokens,
+      ModelConfigurationSnapshot.minMtpDraftTokens,
+    );
+  });
+
+  test('discards reasoning effort when thinking is disabled', () {
+    final disabled = ModelJson.decode<ModelConfigurationSnapshot>(const {
+      'thinking': false,
+      'reasoningEffort': 'xhigh',
+    });
+
+    expect(disabled.thinking, isFalse);
+    expect(disabled.reasoningEffort, 'default');
   });
 }
 

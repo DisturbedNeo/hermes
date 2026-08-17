@@ -41,7 +41,7 @@ void main() {
 
     expect(_valueAfter(args, '-t'), '8');
     expect(_valueAfter(args, '--threads-batch'), '8');
-    expect(_valueAfter(args, '-ngl'), 'auto');
+    expect(_valueAfter(args, '-ngl'), 'all');
     expect(_valueAfter(args, '--load-mode'), 'dio');
     expect(args, isNot(contains('--no-mmap')));
     expect(_valueAfter(args, '--min-p'), '0.0');
@@ -77,6 +77,42 @@ void main() {
     expect(args, isNot(contains('--chat-template-kwargs')));
     expect(args, isNot(contains('--cache-type-k')));
     expect(args, isNot(contains('--cache-type-v')));
+    expect(args, isNot(contains('--reasoning-effort')));
+    expect(args, isNot(contains('--spec-type')));
+    expect(args, isNot(contains('--spec-draft-n-max')));
+  });
+
+  test('sets explicit reasoning effort and MTP startup flags', () {
+    final args = buildLlamaServerArguments(
+      snapshot: ModelJson.decode<ModelConfigurationSnapshot>({
+        ...ModelJson.encode(snapshot),
+        'thinking': true,
+        'reasoningEffort': 'xhigh',
+        'mtpEnabled': true,
+        'mtpDraftTokens': 7,
+      }),
+      port: 12345,
+    );
+
+    expect(_valueAfter(args, '--reasoning'), 'on');
+    expect(_valueAfter(args, '--reasoning-effort'), 'xhigh');
+    expect(_valueAfter(args, '--spec-type'), 'draft-mtp');
+    expect(_valueAfter(args, '--spec-draft-n-max'), '7');
+    expect(args, isNot(contains('--chat-template-kwargs')));
+  });
+
+  test('uses the model reasoning default without an effort override', () {
+    final args = buildLlamaServerArguments(
+      snapshot: ModelJson.decode<ModelConfigurationSnapshot>({
+        ...ModelJson.encode(snapshot),
+        'thinking': true,
+        'reasoningEffort': 'default',
+      }),
+      port: 12345,
+    );
+
+    expect(_valueAfter(args, '--reasoning'), 'on');
+    expect(args, isNot(contains('--reasoning-effort')));
   });
 
   group('LlamaServerHandle', () {

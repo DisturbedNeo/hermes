@@ -134,6 +134,32 @@ class ModelConfigurationSnapshotMapper
     _$thinking,
     hook: JsonBoolHook(fallback: true),
   );
+  static String _$reasoningEffort(ModelConfigurationSnapshot v) =>
+      v.reasoningEffort;
+  static const Field<ModelConfigurationSnapshot, String> _f$reasoningEffort =
+      Field(
+        'reasoningEffort',
+        _$reasoningEffort,
+        opt: true,
+        def: ModelConfigurationSnapshot.defaultReasoningEffort,
+        hook: ReasoningEffortHook(),
+      );
+  static bool _$mtpEnabled(ModelConfigurationSnapshot v) => v.mtpEnabled;
+  static const Field<ModelConfigurationSnapshot, bool> _f$mtpEnabled = Field(
+    'mtpEnabled',
+    _$mtpEnabled,
+    opt: true,
+    def: false,
+    hook: JsonBoolHook(),
+  );
+  static int _$mtpDraftTokens(ModelConfigurationSnapshot v) => v.mtpDraftTokens;
+  static const Field<ModelConfigurationSnapshot, int> _f$mtpDraftTokens = Field(
+    'mtpDraftTokens',
+    _$mtpDraftTokens,
+    opt: true,
+    def: ModelConfigurationSnapshot.defaultMtpDraftTokens,
+    hook: JsonIntHook(fallback: 3, min: 1, max: 16),
+  );
   static bool _$flashAttention(ModelConfigurationSnapshot v) =>
       v.flashAttention;
   static const Field<ModelConfigurationSnapshot, bool> _f$flashAttention =
@@ -188,6 +214,9 @@ class ModelConfigurationSnapshotMapper
     #presencePenalty: _f$presencePenalty,
     #frequencyPenalty: _f$frequencyPenalty,
     #thinking: _f$thinking,
+    #reasoningEffort: _f$reasoningEffort,
+    #mtpEnabled: _f$mtpEnabled,
+    #mtpDraftTokens: _f$mtpDraftTokens,
     #flashAttention: _f$flashAttention,
     #cachePrompt: _f$cachePrompt,
     #cacheReuse: _f$cacheReuse,
@@ -215,6 +244,9 @@ class ModelConfigurationSnapshotMapper
       presencePenalty: data.dec(_f$presencePenalty),
       frequencyPenalty: data.dec(_f$frequencyPenalty),
       thinking: data.dec(_f$thinking),
+      reasoningEffort: data.dec(_f$reasoningEffort),
+      mtpEnabled: data.dec(_f$mtpEnabled),
+      mtpDraftTokens: data.dec(_f$mtpDraftTokens),
       flashAttention: data.dec(_f$flashAttention),
       cachePrompt: data.dec(_f$cachePrompt),
       cacheReuse: data.dec(_f$cacheReuse),

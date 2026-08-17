@@ -43,6 +43,17 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
   static const double _dialogMinWidth = 480;
   static const double _dialogMaxWidth = 760;
   static const double _dialogHorizontalInset = 40;
+  static const String _reasoningOff = 'off';
+  static const Map<String, String> _reasoningLabels = {
+    _reasoningOff: 'Off',
+    'default': 'Default',
+    'minimal': 'Minimal',
+    'low': 'Low',
+    'medium': 'Medium',
+    'high': 'High',
+    'xhigh': 'X-high',
+    'max': 'Max',
+  };
 
   late int _ctx;
   late int _threads;
@@ -57,7 +68,9 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
   late int _repeatLastN;
   late double _presencePenalty;
   late double _frequencyPenalty;
-  late bool _thinking;
+  late String _reasoningMode;
+  late bool _mtpEnabled;
+  late int _mtpDraftTokens;
   late bool _flashAttention;
   late bool _cachePrompt;
   late int _cacheReuse;
@@ -90,7 +103,9 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
     _repeatLastN = config.repeatLastN;
     _presencePenalty = config.presencePenalty;
     _frequencyPenalty = config.frequencyPenalty;
-    _thinking = config.thinking;
+    _reasoningMode = config.thinking ? config.reasoningEffort : _reasoningOff;
+    _mtpEnabled = config.mtpEnabled;
+    _mtpDraftTokens = config.mtpDraftTokens;
     _flashAttention = config.flashAttention;
     _cachePrompt = config.cachePrompt;
     _cacheReuse = config.cacheReuse;
@@ -113,7 +128,12 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
     repeatLastN: _repeatLastN,
     presencePenalty: _presencePenalty,
     frequencyPenalty: _frequencyPenalty,
-    thinking: _thinking,
+    thinking: _reasoningMode != _reasoningOff,
+    reasoningEffort: _reasoningMode == _reasoningOff
+        ? ModelLoadConfiguration.defaultReasoningEffort
+        : _reasoningMode,
+    mtpEnabled: _mtpEnabled,
+    mtpDraftTokens: _mtpDraftTokens,
     flashAttention: _flashAttention,
     cachePrompt: _cachePrompt,
     cacheReuse: _cacheReuse,
@@ -238,11 +258,27 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                   step: 1,
                   onChanged: (v) => setState(() => _ctx = v),
                 ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Thinking'),
-                  value: _thinking,
-                  onChanged: (v) => setState(() => _thinking = v),
+                DropdownButtonFormField<String>(
+                  key: const ValueKey('reasoning-mode'),
+                  initialValue: _reasoningMode,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Reasoning',
+                    helperText: 'Controls thinking and model reasoning effort',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _reasoningLabels.entries
+                      .map(
+                        (entry) => DropdownMenuItem(
+                          value: entry.key,
+                          child: Text(entry.value),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (mode) {
+                    if (mode == null) return;
+                    setState(() => _reasoningMode = mode);
+                  },
                 ),
               ],
             ),
@@ -282,6 +318,25 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                   value: _flashAttention,
                   onChanged: (v) => setState(() => _flashAttention = v),
                 ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('MTP speculative decoding'),
+                  subtitle: const Text(
+                    'Requires a GGUF containing compatible MTP/NextN weights',
+                  ),
+                  value: _mtpEnabled,
+                  onChanged: (v) => setState(() => _mtpEnabled = v),
+                ),
+                if (_mtpEnabled)
+                  SliderControl.integer(
+                    key: const PageStorageKey<String>('mtp-draft-tokens'),
+                    label: 'Draft tokens',
+                    value: _mtpDraftTokens,
+                    min: ModelConfigurationSnapshot.minMtpDraftTokens,
+                    max: ModelConfigurationSnapshot.maxMtpDraftTokens,
+                    step: 1,
+                    onChanged: (v) => setState(() => _mtpDraftTokens = v),
+                  ),
               ],
             ),
             const SizedBox(height: 8),

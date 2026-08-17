@@ -113,12 +113,24 @@ List<String> buildLlamaServerArguments({
     if (snapshot.thinking) ...[
       '--reasoning',
       'on',
+      if (snapshot.reasoningEffort !=
+          ModelConfigurationSnapshot.defaultReasoningEffort) ...[
+        '--reasoning-effort',
+        snapshot.reasoningEffort,
+      ],
     ] else ...[
       '--reasoning',
       'off',
 
       '--chat-template-kwargs',
       '{"enable_thinking": false}',
+    ],
+
+    if (snapshot.mtpEnabled) ...[
+      '--spec-type',
+      'draft-mtp',
+      '--spec-draft-n-max',
+      '${snapshot.mtpDraftTokens}',
     ],
 
     if (snapshot.kvCacheQuantizationEnabled) ...[
@@ -129,7 +141,7 @@ List<String> buildLlamaServerArguments({
       snapshot.kvCacheTypeV,
     ],
 
-    '--jinja'
+    '--jinja',
   ];
 }
 
@@ -175,6 +187,9 @@ class LlamaServerManager implements Disposable {
       presencePenalty: snapshot.presencePenalty,
       frequencyPenalty: snapshot.frequencyPenalty,
       thinking: snapshot.thinking,
+      reasoningEffort: snapshot.reasoningEffort,
+      mtpEnabled: snapshot.mtpEnabled,
+      mtpDraftTokens: snapshot.mtpDraftTokens,
       flashAttention: snapshot.flashAttention,
       cachePrompt: snapshot.cachePrompt,
       cacheReuse: snapshot.cacheReuse,
@@ -206,6 +221,9 @@ class LlamaServerManager implements Disposable {
     double presencePenalty = 1.2,
     double frequencyPenalty = 0.5,
     bool thinking = true,
+    String reasoningEffort = ModelConfigurationSnapshot.defaultReasoningEffort,
+    bool mtpEnabled = false,
+    int mtpDraftTokens = ModelConfigurationSnapshot.defaultMtpDraftTokens,
     bool flashAttention = true,
     bool cachePrompt = true,
     int cacheReuse = ModelConfigurationSnapshot.defaultCacheReuse,
@@ -234,6 +252,13 @@ class LlamaServerManager implements Disposable {
       presencePenalty: presencePenalty,
       frequencyPenalty: frequencyPenalty,
       thinking: thinking,
+      reasoningEffort: thinking
+          ? ModelConfigurationSnapshot.normaliseReasoningEffort(reasoningEffort)
+          : ModelConfigurationSnapshot.defaultReasoningEffort,
+      mtpEnabled: mtpEnabled,
+      mtpDraftTokens: ModelConfigurationSnapshot.clampMtpDraftTokens(
+        mtpDraftTokens,
+      ),
       flashAttention: flashAttention,
       cachePrompt: cachePrompt,
       cacheReuse: ModelConfigurationSnapshot.clampCacheReuse(cacheReuse),

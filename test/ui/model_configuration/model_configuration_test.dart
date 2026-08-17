@@ -57,7 +57,8 @@ void main() {
     expect(find.text('Using default configuration for model'), findsOneWidget);
     expect(find.text('Core'), findsOneWidget);
     expect(find.text('Context (K)'), findsOneWidget);
-    expect(find.text('Thinking'), findsOneWidget);
+    expect(find.text('Reasoning'), findsOneWidget);
+    expect(find.text('Default'), findsOneWidget);
     expect(find.text('Performance'), findsOneWidget);
     expect(find.text('Threads'), findsNothing);
     expect(find.text('Reset to defaults'), findsNothing);
@@ -108,6 +109,31 @@ void main() {
     );
   });
 
+  testWidgets('shows MTP draft controls only when MTP is enabled', (
+    tester,
+  ) async {
+    await tester.pumpWidget(configurationApp());
+
+    await tester.ensureVisible(find.text('Performance'));
+    await tester.tap(find.text('Performance'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('MTP speculative decoding'), findsOneWidget);
+    expect(find.text('Draft tokens'), findsNothing);
+
+    await tester.ensureVisible(find.text('MTP speculative decoding'));
+    await tester.tap(
+      find.widgetWithText(SwitchListTile, 'MTP speculative decoding'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Draft tokens'), findsOneWidget);
+    expect(
+      find.text('Requires a GGUF containing compatible MTP/NextN weights'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('load model submits defaults without requesting a save', (
     tester,
   ) async {
@@ -131,6 +157,10 @@ void main() {
     expect(submitted?.nCtx, ModelLoadConfiguration.defaultNCtx);
     expect(submitted?.nThreads, Platform.numberOfProcessors);
     expect(submitted?.minP, ModelLoadConfiguration.defaultMinP);
+    expect(submitted?.thinking, isTrue);
+    expect(submitted?.reasoningEffort, 'default');
+    expect(submitted?.mtpEnabled, isFalse);
+    expect(submitted?.mtpDraftTokens, 3);
     expect(submitted?.flashAttention, isTrue);
     expect(submitted?.cachePrompt, isTrue);
     expect(submitted?.cacheReuse, ModelConfigurationSnapshot.defaultCacheReuse);
@@ -144,7 +174,13 @@ void main() {
   ) async {
     ModelLoadConfiguration? submitted;
     bool? saveRequested;
-    final saved = _configuration(nCtx: 128 * 1024, thinking: true);
+    final saved = _configuration(
+      nCtx: 128 * 1024,
+      thinking: true,
+      reasoningEffort: 'xhigh',
+      mtpEnabled: true,
+      mtpDraftTokens: 7,
+    );
 
     await tester.pumpWidget(
       configurationApp(
@@ -158,14 +194,7 @@ void main() {
     );
 
     expect(find.text('Saved configuration loaded for model'), findsOneWidget);
-    expect(
-      tester
-          .widget<SwitchListTile>(
-            find.widgetWithText(SwitchListTile, 'Thinking'),
-          )
-          .value,
-      isTrue,
-    );
+    expect(find.text('X-high'), findsOneWidget);
 
     await tester.ensureVisible(find.text('Save & load'));
     await tester.tap(find.text('Save & load'));
@@ -174,6 +203,36 @@ void main() {
     expect(saveRequested, isTrue);
     expect(submitted?.nCtx, 128 * 1024);
     expect(submitted?.thinking, isTrue);
+    expect(submitted?.reasoningEffort, 'xhigh');
+    expect(submitted?.mtpEnabled, isTrue);
+    expect(submitted?.mtpDraftTokens, 7);
+  });
+
+  testWidgets('maps the Off reasoning selection to disabled thinking', (
+    tester,
+  ) async {
+    ModelLoadConfiguration? submitted;
+    await tester.pumpWidget(
+      configurationApp(
+        onConfirm: (configuration, {required saveAsDefault}) async {
+          submitted = configuration;
+        },
+      ),
+    );
+
+    final reasoningSelector = find.byKey(const ValueKey('reasoning-mode'));
+    await tester.ensureVisible(reasoningSelector);
+    await tester.pumpAndSettle();
+    await tester.tap(reasoningSelector);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Off').last);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Load model'));
+    await tester.tap(find.text('Load model'));
+    await tester.pumpAndSettle();
+
+    expect(submitted?.thinking, isFalse);
+    expect(submitted?.reasoningEffort, 'default');
   });
 
   testWidgets('reset removes the preset and restores canonical defaults', (
@@ -184,7 +243,10 @@ void main() {
 
     await tester.pumpWidget(
       configurationApp(
-        initialConfiguration: _configuration(thinking: true),
+        initialConfiguration: _configuration(
+          thinking: true,
+          reasoningEffort: 'high',
+        ),
         hasSavedConfiguration: true,
         onReset: () async {
           resetCalls++;
@@ -207,12 +269,19 @@ void main() {
     await tester.tap(find.text('Load model'));
     await tester.pumpAndSettle();
     expect(submitted?.thinking, ModelLoadConfiguration.defaultThinking);
+    expect(
+      submitted?.reasoningEffort,
+      ModelLoadConfiguration.defaultReasoningEffort,
+    );
   });
 
   testWidgets('failed reset retains the saved configuration', (tester) async {
     await tester.pumpWidget(
       configurationApp(
-        initialConfiguration: _configuration(thinking: true),
+        initialConfiguration: _configuration(
+          thinking: true,
+          reasoningEffort: 'high',
+        ),
         hasSavedConfiguration: true,
         onReset: () async => false,
       ),
@@ -224,14 +293,7 @@ void main() {
     expect(find.text('Saved configuration loaded for model'), findsOneWidget);
     expect(find.text('Reset to defaults'), findsOneWidget);
     expect(find.text('Failed to reset saved configuration'), findsOneWidget);
-    expect(
-      tester
-          .widget<SwitchListTile>(
-            find.widgetWithText(SwitchListTile, 'Thinking'),
-          )
-          .value,
-      isTrue,
-    );
+    expect(find.text('High'), findsOneWidget);
   });
 
   testWidgets('prevents duplicate submissions while loading', (tester) async {
@@ -262,6 +324,9 @@ void main() {
 ModelLoadConfiguration _configuration({
   int nCtx = ModelLoadConfiguration.defaultNCtx,
   bool thinking = false,
+  String reasoningEffort = ModelLoadConfiguration.defaultReasoningEffort,
+  bool mtpEnabled = ModelLoadConfiguration.defaultMtpEnabled,
+  int mtpDraftTokens = ModelLoadConfiguration.defaultMtpDraftTokens,
 }) => ModelLoadConfiguration(
   nCtx: nCtx,
   nThreads: Platform.numberOfProcessors,
@@ -277,6 +342,9 @@ ModelLoadConfiguration _configuration({
   presencePenalty: ModelLoadConfiguration.defaultPresencePenalty,
   frequencyPenalty: ModelLoadConfiguration.defaultFrequencyPenalty,
   thinking: thinking,
+  reasoningEffort: reasoningEffort,
+  mtpEnabled: mtpEnabled,
+  mtpDraftTokens: mtpDraftTokens,
   flashAttention: ModelLoadConfiguration.defaultFlashAttention,
   cachePrompt: ModelLoadConfiguration.defaultCachePrompt,
   cacheReuse: ModelConfigurationSnapshot.defaultCacheReuse,

@@ -9,6 +9,10 @@ part 'model_configuration_snapshot.mapper.dart';
 @MappableClass()
 class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
   static const String defaultKvCacheType = 'q8_0';
+  static const String defaultReasoningEffort = 'default';
+  static const int defaultMtpDraftTokens = 3;
+  static const int minMtpDraftTokens = 1;
+  static const int maxMtpDraftTokens = 16;
   static const int defaultCacheReuse = 256;
   static const int minCacheReuse = 128;
   static const int maxCacheReuse = 1024;
@@ -22,6 +26,15 @@ class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
     'iq4_nl',
     'q5_0',
     'q5_1',
+  ];
+  static const List<String> allowedReasoningEfforts = [
+    defaultReasoningEffort,
+    'minimal',
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+    'max',
   ];
 
   static int get defaultNThreads => Platform.numberOfProcessors;
@@ -60,6 +73,12 @@ class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
   final double frequencyPenalty;
   @MappableField(hook: JsonBoolHook(fallback: true))
   final bool thinking;
+  @MappableField(hook: ReasoningEffortHook())
+  final String reasoningEffort;
+  @MappableField(hook: JsonBoolHook())
+  final bool mtpEnabled;
+  @MappableField(hook: JsonIntHook(fallback: 3, min: 1, max: 16))
+  final int mtpDraftTokens;
   @MappableField(hook: JsonBoolHook(fallback: true))
   final bool flashAttention;
   @MappableField(hook: JsonBoolHook(fallback: true))
@@ -91,13 +110,16 @@ class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
     required this.presencePenalty,
     required this.frequencyPenalty,
     required this.thinking,
+    String reasoningEffort = defaultReasoningEffort,
+    this.mtpEnabled = false,
+    this.mtpDraftTokens = defaultMtpDraftTokens,
     required this.flashAttention,
     required this.cachePrompt,
     required this.cacheReuse,
     required this.kvCacheQuantizationEnabled,
     required this.kvCacheTypeK,
     required this.kvCacheTypeV,
-  });
+  }) : reasoningEffort = thinking ? reasoningEffort : defaultReasoningEffort;
 
   bool matches(ModelConfigurationSnapshot? other) {
     if (other == null) return false;
@@ -118,6 +140,9 @@ class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
         _doubleMatches(presencePenalty, other.presencePenalty) &&
         _doubleMatches(frequencyPenalty, other.frequencyPenalty) &&
         thinking == other.thinking &&
+        reasoningEffort == other.reasoningEffort &&
+        mtpEnabled == other.mtpEnabled &&
+        mtpDraftTokens == other.mtpDraftTokens &&
         flashAttention == other.flashAttention &&
         cachePrompt == other.cachePrompt &&
         cacheReuse == other.cacheReuse &&
@@ -150,6 +175,9 @@ class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
     _doubleHashValue(presencePenalty),
     _doubleHashValue(frequencyPenalty),
     thinking,
+    reasoningEffort,
+    mtpEnabled,
+    mtpDraftTokens,
     flashAttention,
     cachePrompt,
     cacheReuse,
@@ -160,6 +188,16 @@ class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
 
   static int clampCacheReuse(int value) =>
       value.clamp(minCacheReuse, maxCacheReuse).toInt();
+
+  static int clampMtpDraftTokens(int value) =>
+      value.clamp(minMtpDraftTokens, maxMtpDraftTokens).toInt();
+
+  static String normaliseReasoningEffort(String value) {
+    final normalised = value.trim().toLowerCase().replaceAll('-', '');
+    return allowedReasoningEfforts.contains(normalised)
+        ? normalised
+        : defaultReasoningEffort;
+  }
 
   static bool _doubleMatches(double value, double other) =>
       value == other || (value.isNaN && other.isNaN);
@@ -199,4 +237,17 @@ class KvCacheTypeHook extends MappingHook {
   @override
   Object? beforeDecode(Object? value) =>
       ModelConfigurationSnapshot._kvCacheType(value);
+}
+
+class ReasoningEffortHook extends MappingHook {
+  const ReasoningEffortHook();
+
+  @override
+  Object? beforeDecode(Object? value) =>
+      ModelConfigurationSnapshot.normaliseReasoningEffort(
+        jsonString(
+          value,
+          fallback: ModelConfigurationSnapshot.defaultReasoningEffort,
+        ),
+      );
 }

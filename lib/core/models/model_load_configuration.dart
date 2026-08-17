@@ -20,7 +20,12 @@ class ModelLoadConfiguration with ModelLoadConfigurationMappable {
   static const int defaultRepeatLastN = 64;
   static const double defaultPresencePenalty = 0.0;
   static const double defaultFrequencyPenalty = 0.0;
-  static const bool defaultThinking = false;
+  static const bool defaultThinking = true;
+  static const String defaultReasoningEffort =
+      ModelConfigurationSnapshot.defaultReasoningEffort;
+  static const bool defaultMtpEnabled = false;
+  static const int defaultMtpDraftTokens =
+      ModelConfigurationSnapshot.defaultMtpDraftTokens;
   static const bool defaultFlashAttention = true;
   static const bool defaultCachePrompt = true;
   static const bool defaultKvCacheQuantizationEnabled = false;
@@ -52,8 +57,14 @@ class ModelLoadConfiguration with ModelLoadConfigurationMappable {
   final double presencePenalty;
   @MappableField(hook: JsonDoubleHook(fallback: 0.0))
   final double frequencyPenalty;
-  @MappableField(hook: JsonBoolHook(fallback: false))
+  @MappableField(hook: JsonBoolHook(fallback: true))
   final bool thinking;
+  @MappableField(hook: ReasoningEffortHook())
+  final String reasoningEffort;
+  @MappableField(hook: JsonBoolHook())
+  final bool mtpEnabled;
+  @MappableField(hook: JsonIntHook(fallback: 3, min: 1, max: 16))
+  final int mtpDraftTokens;
   @MappableField(hook: JsonBoolHook(fallback: true))
   final bool flashAttention;
   @MappableField(hook: JsonBoolHook(fallback: true))
@@ -82,13 +93,16 @@ class ModelLoadConfiguration with ModelLoadConfigurationMappable {
     required this.presencePenalty,
     required this.frequencyPenalty,
     required this.thinking,
+    String reasoningEffort = defaultReasoningEffort,
+    this.mtpEnabled = defaultMtpEnabled,
+    this.mtpDraftTokens = defaultMtpDraftTokens,
     required this.flashAttention,
     required this.cachePrompt,
     required this.cacheReuse,
     required this.kvCacheQuantizationEnabled,
     required this.kvCacheTypeK,
     required this.kvCacheTypeV,
-  });
+  }) : reasoningEffort = thinking ? reasoningEffort : defaultReasoningEffort;
 
   factory ModelLoadConfiguration.defaults() => ModelLoadConfiguration(
     nCtx: defaultNCtx,
@@ -105,6 +119,9 @@ class ModelLoadConfiguration with ModelLoadConfigurationMappable {
     presencePenalty: defaultPresencePenalty,
     frequencyPenalty: defaultFrequencyPenalty,
     thinking: defaultThinking,
+    reasoningEffort: defaultReasoningEffort,
+    mtpEnabled: defaultMtpEnabled,
+    mtpDraftTokens: defaultMtpDraftTokens,
     flashAttention: defaultFlashAttention,
     cachePrompt: defaultCachePrompt,
     cacheReuse: ModelConfigurationSnapshot.defaultCacheReuse,
@@ -128,6 +145,13 @@ class ModelLoadConfiguration with ModelLoadConfigurationMappable {
     presencePenalty: presencePenalty.clamp(-2.0, 2.0).toDouble(),
     frequencyPenalty: frequencyPenalty.clamp(-2.0, 2.0).toDouble(),
     thinking: thinking,
+    reasoningEffort: thinking
+        ? ModelConfigurationSnapshot.normaliseReasoningEffort(reasoningEffort)
+        : defaultReasoningEffort,
+    mtpEnabled: mtpEnabled,
+    mtpDraftTokens: ModelConfigurationSnapshot.clampMtpDraftTokens(
+      mtpDraftTokens,
+    ),
     flashAttention: flashAttention,
     cachePrompt: cachePrompt,
     cacheReuse: ModelConfigurationSnapshot.clampCacheReuse(cacheReuse),
@@ -160,6 +184,9 @@ class ModelLoadConfiguration with ModelLoadConfigurationMappable {
       presencePenalty: config.presencePenalty,
       frequencyPenalty: config.frequencyPenalty,
       thinking: config.thinking,
+      reasoningEffort: config.reasoningEffort,
+      mtpEnabled: config.mtpEnabled,
+      mtpDraftTokens: config.mtpDraftTokens,
       flashAttention: config.flashAttention,
       cachePrompt: config.cachePrompt,
       cacheReuse: config.cacheReuse,
