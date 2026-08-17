@@ -1,8 +1,11 @@
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/app_dependencies.dart';
+import 'package:hermes/core/enums/message_role.dart';
+import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
@@ -89,4 +92,176 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
   });
+
+  testWidgets('exit prompt can cancel or save all new chats', (tester) async {
+    var exitRequests = 0;
+    AppExitType? requestedExitType;
+    await tester.pumpWidget(
+      App(
+        exitApplication: (type) async {
+          requestedExitType = type;
+          exitRequests++;
+          return AppExitResponse.exit;
+        },
+      ),
+    );
+    await tester.pump();
+
+    final context = tester.element(find.byType(MaterialApp));
+    final chat = context.read<ChatTabsService>().activeChat!;
+    chat.messageStore.upsert(_userMessage('new-chat', 'Keep this chat'));
+
+    expect(await tester.binding.handleRequestAppExit(), AppExitResponse.cancel);
+    await _pumpAsyncUi(tester);
+    expect(find.text('Save new chats before exiting?'), findsOneWidget);
+    expect(find.text('Discard new chats'), findsOneWidget);
+    expect(find.text('Save all and exit'), findsOneWidget);
+
+    await tester.tap(find.text('Cancel'));
+    await _pumpAsyncUi(tester);
+    expect(exitRequests, 0);
+    expect(chat.currentChatId, isNull);
+
+    expect(await tester.binding.handleRequestAppExit(), AppExitResponse.cancel);
+    await _pumpAsyncUi(tester);
+    await tester.tap(find.text('Save all and exit'));
+    await _pumpAsyncUi(tester);
+
+    expect(chat.currentChatId, isNotNull);
+    expect(exitRequests, 1);
+    expect(requestedExitType, AppExitType.required);
+  });
+
+  testWidgets('exit prompt can discard only new chats', (tester) async {
+    var exitRequests = 0;
+    await tester.pumpWidget(
+      App(
+        exitApplication: (_) async {
+          exitRequests++;
+          return AppExitResponse.exit;
+        },
+      ),
+    );
+    await tester.pump();
+
+    final context = tester.element(find.byType(MaterialApp));
+    final chat = context.read<ChatTabsService>().activeChat!;
+    chat.messageStore.upsert(_userMessage('discard-chat', 'Discard this chat'));
+
+    await tester.binding.handleRequestAppExit();
+    await _pumpAsyncUi(tester);
+    await tester.tap(find.text('Discard new chats'));
+    await _pumpAsyncUi(tester);
+
+    expect(chat.currentChatId, isNull);
+    expect(exitRequests, 1);
+  });
+
+  testWidgets('blank new tabs exit without prompting', (tester) async {
+    var preparationAttempts = 0;
+    var exitRequests = 0;
+    await tester.pumpWidget(
+      App(
+        prepareForExit: (_) async {
+          preparationAttempts++;
+        },
+        exitApplication: (_) async {
+          exitRequests++;
+          return AppExitResponse.exit;
+        },
+      ),
+    );
+    await tester.pump();
+
+    await tester.binding.handleRequestAppExit();
+    await _pumpAsyncUi(tester);
+
+    expect(find.text('Save new chats before exiting?'), findsNothing);
+    expect(preparationAttempts, 1);
+    expect(exitRequests, 1);
+  });
+
+  testWidgets('failed exit save can retry successfully', (tester) async {
+    var exitRequests = 0;
+    var preparationAttempts = 0;
+    var failPreparation = true;
+    await tester.pumpWidget(
+      App(
+        prepareForExit: (_) async {
+          preparationAttempts++;
+          if (failPreparation) throw StateError('Injected save failure');
+        },
+        exitApplication: (_) async {
+          exitRequests++;
+          return AppExitResponse.exit;
+        },
+      ),
+    );
+    await tester.pump();
+
+    await tester.binding.handleRequestAppExit();
+    await _pumpAsyncUi(tester);
+    expect(find.text('Could not save chats'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Retry'), findsOneWidget);
+    expect(find.text('Exit without saving'), findsOneWidget);
+
+    failPreparation = false;
+    await tester.tap(find.widgetWithText(FilledButton, 'Retry'));
+    await _pumpAsyncUi(tester);
+    expect(preparationAttempts, 2);
+    expect(exitRequests, 1);
+  });
+
+  testWidgets('failed exit save can cancel or explicitly discard', (
+    tester,
+  ) async {
+    var exitRequests = 0;
+    await tester.pumpWidget(
+      App(
+        prepareForExit: (_) async {
+          throw StateError('Injected save failure');
+        },
+        exitApplication: (_) async {
+          exitRequests++;
+          return AppExitResponse.exit;
+        },
+      ),
+    );
+    await tester.pump();
+
+    final context = tester.element(find.byType(MaterialApp));
+    final tabs = context.read<ChatTabsService>();
+
+    await tester.binding.handleRequestAppExit();
+    await _pumpAsyncUi(tester);
+    expect(find.text('Could not save chats'), findsOneWidget);
+
+    await tester.tap(find.text('Cancel'));
+    await _pumpAsyncUi(tester);
+    expect(tabs.tabs, hasLength(1));
+    expect(exitRequests, 0);
+
+    await tester.binding.handleRequestAppExit();
+    await _pumpAsyncUi(tester);
+    await tester.tap(find.text('Exit without saving'));
+    await _pumpAsyncUi(tester);
+    expect(exitRequests, 1);
+  });
+}
+
+Bubble _userMessage(String id, String text) => Bubble(
+  id: id,
+  role: MessageRole.user,
+  text: text,
+  reasoning: '',
+  createdAt: DateTime.now(),
+);
+
+Future<void> _pumpAsyncUi(WidgetTester tester) async {
+  for (var i = 0; i < 12; i++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 25)),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+  }
 }

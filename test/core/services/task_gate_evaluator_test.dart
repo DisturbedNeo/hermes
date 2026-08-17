@@ -187,6 +187,57 @@ void main() {
       },
     );
 
+    test('command arguments are matched with exact shell grouping', () async {
+      const gate = TaskGate(
+        id: 'command_passes',
+        params: {
+          'command': 'printf',
+          'args': ['%s', 'hello world'],
+          'working_directory': '.',
+        },
+      );
+
+      final differentlyGrouped = await evaluator.evaluate(
+        workspace: workspace,
+        task: task,
+        step: step,
+        gates: const [gate],
+        toolCalls: [
+          _toolCall(
+            'run_command',
+            arguments: {
+              'command': 'printf',
+              'args': ['%s hello', 'world'],
+              'working_directory': '.',
+            },
+            result: {'exit_code': 0},
+          ),
+        ],
+        artifacts: const [],
+      );
+      expect(differentlyGrouped.results.single.status, TaskGateStatus.pending);
+
+      final exact = await evaluator.evaluate(
+        workspace: workspace,
+        task: task,
+        step: step,
+        gates: const [gate],
+        toolCalls: [
+          _toolCall(
+            'run_command',
+            arguments: {
+              'command': 'printf',
+              'args': ['%s', 'hello world'],
+              'working_directory': '.',
+            },
+            result: {'exit_code': 0},
+          ),
+        ],
+        artifacts: const [],
+      );
+      expect(exact.results.single.status, TaskGateStatus.passed);
+    });
+
     test(
       'advisory command failures remain evidence and do not fail no_failed_commands',
       () async {

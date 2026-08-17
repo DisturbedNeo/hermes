@@ -117,6 +117,87 @@ void main() {
       );
     });
 
+    test('blocks generated and inline interpreter commands', () {
+      expect(
+        TerminalCommandClassifier.blockedReasonForCommand(
+          "find . -name '*.tmp' | xargs rm",
+        ),
+        contains('xargs'),
+      );
+
+      for (final command in const [
+        'python -c "print(1)"',
+        'python3 -c "print(1)"',
+        'node -e "console.log(1)"',
+        'node --eval "console.log(1)"',
+        'node -p "1 + 1"',
+        'node --print "1 + 1"',
+        'perl -e "print 1"',
+        'ruby -e "puts 1"',
+        'lua -e "print(1)"',
+        'php -r "echo 1;"',
+      ]) {
+        expect(
+          TerminalCommandClassifier.blockedReasonForCommand(command),
+          contains('Inline interpreter code'),
+          reason: command,
+        );
+      }
+
+      expect(
+        TerminalCommandClassifier.blockedReasonForCommand(
+          'python3 scripts/check.py',
+        ),
+        isNull,
+      );
+    });
+
+    test('unwraps common process wrappers recursively', () {
+      for (final command in const [
+        'nohup rm generated.txt',
+        'nice -n 10 rm generated.txt',
+        'ionice -c 3 rm generated.txt',
+        'stdbuf -oL rm generated.txt',
+        'timeout 5 rm generated.txt',
+        'env FOO=bar timeout 5 nice -n 2 rm generated.txt',
+      ]) {
+        expect(
+          TerminalCommandClassifier.blockedReasonForCommand(command),
+          contains('File deletion commands'),
+          reason: command,
+        );
+      }
+
+      for (final command in const [
+        'nohup dart --version',
+        'nice -n 10 dart --version',
+        'ionice -c 3 dart --version',
+        'stdbuf -oL dart --version',
+        'timeout 5 dart --version',
+      ]) {
+        expect(
+          TerminalCommandClassifier.blockedReasonForCommand(command),
+          isNull,
+          reason: command,
+        );
+      }
+
+      for (final command in const [
+        'nohup --bad dart --version',
+        'nice -n',
+        'ionice -c',
+        'stdbuf dart --version',
+        'timeout --signal',
+        'timeout not-a-duration dart --version',
+      ]) {
+        expect(
+          TerminalCommandClassifier.blockedReasonForCommand(command),
+          contains('could not be classified safely'),
+          reason: command,
+        );
+      }
+    });
+
     test('blocks shell command substitution', () {
       expect(
         TerminalCommandClassifier.blockedReasonForCommand(

@@ -14,6 +14,7 @@ import 'package:path/path.dart' as path;
 
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/host_command_runner.dart';
+import 'package:hermes/core/services/terminal_command_parser.dart';
 import 'sandbox_policy.dart';
 
 // Re-export for backward compatibility with existing imports.
@@ -339,13 +340,10 @@ class WorkspaceSandbox {
     if (trimmed != null && trimmed.isNotEmpty) return trimmed;
     final legacyExecutable = executable?.trim();
     if (legacyExecutable == null || legacyExecutable.isEmpty) return '';
-    return [legacyExecutable, ...arguments.map(_shellQuote)].join(' ');
-  }
-
-  String _shellQuote(String value) {
-    if (value.isEmpty) return "''";
-    if (RegExp(r'^[A-Za-z0-9_@%+=:,./-]+$').hasMatch(value)) return value;
-    return "'${value.replaceAll("'", r"'\''")}'";
+    return TerminalCommandParser.commandTextFromParts(
+      legacyExecutable,
+      arguments,
+    );
   }
 
   Future<String> _resolveCreatable(String requested) async {

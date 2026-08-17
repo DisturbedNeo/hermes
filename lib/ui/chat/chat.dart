@@ -507,7 +507,14 @@ class _ChatState extends State<Chat> {
       }
     }
 
-    await _tabs.closeTab(tab.tabId);
+    try {
+      await _tabs.closeTab(tab.tabId);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to close chat: $e')));
+    }
   }
 }
 
@@ -596,7 +603,17 @@ class _ChatTab extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (tab.isUnsavedNonEmpty) ...[
+                    if (tab.saveFailure != null) ...[
+                      Tooltip(
+                        message: 'Changes haven’t been saved',
+                        child: Icon(
+                          Icons.sync_problem,
+                          size: 16,
+                          color: scheme.error,
+                        ),
+                      ),
+                      const SizedBox(width: 7),
+                    ] else if (tab.isUnsavedNonEmpty) ...[
                       Icon(Icons.circle, size: 8, color: scheme.primary),
                       const SizedBox(width: 7),
                     ],

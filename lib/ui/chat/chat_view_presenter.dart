@@ -335,3 +335,26 @@ class ModelRestoreBannerWidget extends StatelessWidget {
     );
   }
 }
+
+class SaveFailureBannerWidget extends StatelessWidget {
+  const SaveFailureBannerWidget({
+    super.key,
+    required this.error,
+    required this.onRetry,
+  });
+
+  final Object error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialBanner(
+      leading: Icon(
+        Icons.sync_problem,
+        color: Theme.of(context).colorScheme.error,
+      ),
+      content: Text('Changes haven’t been saved.\n$error'),
+      actions: [TextButton(onPressed: onRetry, child: const Text('Retry'))],
+    );
+  }
+}

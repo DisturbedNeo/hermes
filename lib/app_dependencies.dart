@@ -93,28 +93,58 @@ class AppDependencies {
   final SystemPromptLibraryService systemPromptLibraryService;
   final ChatTabsService chatTabsService;
 
+  bool _disposed = false;
   Future<void>? _disposeFuture;
 
   /// Disposes owned dependencies once, in reverse construction order.
-  Future<void> dispose() => _disposeFuture ??= _dispose();
+  Future<void> dispose() => _startDispose(discardChanges: false);
 
-  Future<void> _dispose() async {
-    await _disposeSafely(chatTabsService.dispose);
+  Future<void> disposeWithoutSaving() => _startDispose(discardChanges: true);
+
+  Future<void> _startDispose({required bool discardChanges}) {
+    if (_disposed) return _disposeFuture ?? Future.value();
+    final pending = _disposeFuture;
+    if (pending != null) return pending;
+
+    late final Future<void> operation;
+    operation = _dispose(discardChanges: discardChanges).whenComplete(() {
+      if (!_disposed && identical(_disposeFuture, operation)) {
+        _disposeFuture = null;
+      }
+    });
+    _disposeFuture = operation;
+    return operation;
+  }
+
+  Future<void> _dispose({required bool discardChanges}) async {
+    if (discardChanges) {
+      await _disposeSafely(chatTabsService.disposeWithoutSaving);
+    } else {
+      // A failed tab preflight must stop disposal before repositories close.
+      await chatTabsService.dispose();
+    }
     await _disposeSafely(systemPromptLibraryService.dispose);
     await _disposeSafely(chatLibraryService.dispose);
     await _disposeSafely(workspaceService.dispose);
     await _disposeSafely(themeManager.dispose);
     await _disposeSafely(preferencesService.dispose);
+    _disposed = true;
   }
 
   Future<void> _disposeSafely(FutureOr<void> Function() dispose) async {
     try {
       await dispose();
     } catch (error, stackTrace) {
-      if (kDebugMode) {
-        debugPrint('Failed to dispose an application dependency: $error');
-        debugPrintStack(stackTrace: stackTrace);
-      }
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'hermes application disposal',
+          context: ErrorDescription(
+            'while disposing an application dependency',
+          ),
+        ),
+      );
     }
   }
 }

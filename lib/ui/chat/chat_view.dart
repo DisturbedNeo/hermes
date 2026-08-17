@@ -205,6 +205,11 @@ class _ChatViewState extends State<ChatView> {
   }) {
     return Column(
       children: [
+        if (chat.saveFailure != null)
+          SaveFailureBannerWidget(
+            error: chat.saveFailure!.error,
+            onRetry: () => unawaited(_retrySave(chat)),
+          ),
         if (chat.pendingModelRestore != null) _buildModelRestoreBanner(chat),
         WorkspaceBar(chat: chat, onOpenWorkspace: widget.onOpenWorkspace),
         if (includeInlineTaskPanel && showTaskPanel && !_taskPanelExpanded)
@@ -230,6 +235,17 @@ class _ChatViewState extends State<ChatView> {
         ),
       ],
     );
+  }
+
+  Future<void> _retrySave(ChatService chat) async {
+    try {
+      await chat.retrySave();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to save chat: $error')));
+    }
   }
 
   Widget _buildModelRestoreBanner(ChatService chat) {

@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:hermes/app_dependencies.dart';
+import 'package:hermes/core/models/chat_persistence.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/keyboard_shortcuts.dart';
@@ -25,7 +26,10 @@ void main() {
 }
 
 class App extends StatefulWidget {
-  const App({super.key});
+  const App({super.key, this.exitApplication, this.prepareForExit});
+
+  final Future<AppExitResponse> Function(AppExitType type)? exitApplication;
+  final Future<void> Function(NewChatExitPolicy policy)? prepareForExit;
 
   @override
   State<App> createState() => _AppState();
@@ -42,8 +46,23 @@ class _AppState extends State<App> {
 
   @override
   void dispose() {
-    unawaited(_dependencies.dispose());
+    unawaited(_disposeDependencies());
     super.dispose();
+  }
+
+  Future<void> _disposeDependencies() async {
+    try {
+      await _dependencies.dispose();
+    } catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'hermes application disposal',
+          context: ErrorDescription('while disposing the application'),
+        ),
+      );
+    }
   }
 
   @override
@@ -83,7 +102,12 @@ class _AppState extends State<App> {
           workspaceService: context.read<WorkspaceService>(),
           preferencesService: context.read<PreferencesService>(),
           toolService: context.read<ToolService>(),
-          disposeDependencies: dependencies.dispose,
+          disposeWithoutSavingDependencies: dependencies.disposeWithoutSaving,
+          exitApplication:
+              widget.exitApplication ?? WidgetsBinding.instance.exitApplication,
+          prepareForExit:
+              widget.prepareForExit ??
+              dependencies.chatTabsService.prepareForExit,
         ),
       ),
     );
@@ -99,7 +123,9 @@ class _AppShell extends StatefulWidget {
     required this.workspaceService,
     required this.preferencesService,
     required this.toolService,
-    required this.disposeDependencies,
+    required this.disposeWithoutSavingDependencies,
+    required this.exitApplication,
+    required this.prepareForExit,
   });
 
   final ThemeManager themeManager;
@@ -109,7 +135,9 @@ class _AppShell extends StatefulWidget {
   final WorkspaceService workspaceService;
   final PreferencesService preferencesService;
   final ToolService toolService;
-  final Future<void> Function() disposeDependencies;
+  final Future<void> Function() disposeWithoutSavingDependencies;
+  final Future<AppExitResponse> Function(AppExitType type) exitApplication;
+  final Future<void> Function(NewChatExitPolicy policy) prepareForExit;
 
   @override
   State<_AppShell> createState() => _AppShellState();
@@ -183,18 +211,115 @@ class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
     if (_exitCleanupStarted) return AppExitResponse.cancel;
 
     _exitCleanupStarted = true;
-    Timer.run(() => unawaited(_disposeServicesAndExit()));
+    Timer.run(() => unawaited(_beginExit()));
 
     return AppExitResponse.cancel;
   }
 
-  Future<void> _disposeServicesAndExit() async {
-    try {
-      await widget.disposeDependencies();
-    } finally {
-      _exitAfterCleanup = true;
-      await WidgetsBinding.instance.exitApplication(AppExitType.required);
+  Future<void> _beginExit() async {
+    var policy = NewChatExitPolicy.discard;
+    if (widget.tabs.tabs.any((tab) => tab.isUnsavedNonEmpty)) {
+      final choice = await _showUnsavedChatsDialog();
+      if (choice == null || choice == _UnsavedChatsExitAction.cancel) {
+        _exitCleanupStarted = false;
+        return;
+      }
+      policy = choice == _UnsavedChatsExitAction.saveAll
+          ? NewChatExitPolicy.save
+          : NewChatExitPolicy.discard;
     }
+
+    await _prepareAndExit(policy);
+  }
+
+  Future<void> _prepareAndExit(NewChatExitPolicy policy) async {
+    try {
+      await widget.prepareForExit(policy);
+    } catch (error) {
+      final action = await _showExitFailureDialog(error);
+      if (action == _ExitFailureAction.retry) {
+        await _prepareAndExit(policy);
+        return;
+      }
+      if (action == _ExitFailureAction.exitWithoutSaving) {
+        await _finishExit();
+        return;
+      }
+      _exitCleanupStarted = false;
+      return;
+    }
+    await _finishExit();
+  }
+
+  Future<void> _finishExit() async {
+    await widget.disposeWithoutSavingDependencies();
+    _exitAfterCleanup = true;
+    await widget.exitApplication(AppExitType.required);
+  }
+
+  BuildContext? get _dialogContext => AppNavigator.navigatorKey.currentContext;
+
+  Future<_UnsavedChatsExitAction?> _showUnsavedChatsDialog() {
+    final dialogContext = _dialogContext;
+    if (dialogContext == null) return Future.value();
+    final count = widget.tabs.tabs.where((tab) => tab.isUnsavedNonEmpty).length;
+    return showDialog<_UnsavedChatsExitAction>(
+      context: dialogContext,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Save new chats before exiting?'),
+        content: Text(
+          count == 1
+              ? 'One new chat has not been saved.'
+              : '$count new chats have not been saved.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(context, _UnsavedChatsExitAction.cancel),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(context, _UnsavedChatsExitAction.discardNew),
+            child: const Text('Discard new chats'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(context, _UnsavedChatsExitAction.saveAll),
+            child: const Text('Save all and exit'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<_ExitFailureAction?> _showExitFailureDialog(Object error) {
+    final dialogContext = _dialogContext;
+    if (dialogContext == null) return Future.value();
+    return showDialog<_ExitFailureAction>(
+      context: dialogContext,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Could not save chats'),
+        content: Text('Hermes will stay open so you can retry.\n\n$error'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, _ExitFailureAction.cancel),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(context, _ExitFailureAction.exitWithoutSaving),
+            child: const Text('Exit without saving'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, _ExitFailureAction.retry),
+            child: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -229,3 +354,7 @@ class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
     );
   }
 }
+
+enum _UnsavedChatsExitAction { saveAll, discardNew, cancel }
+
+enum _ExitFailureAction { retry, exitWithoutSaving, cancel }

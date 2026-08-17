@@ -30,6 +30,7 @@ import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/task_system/task_repository.dart';
 import 'package:hermes/core/services/task_system/task_summary.dart';
 import 'package:hermes/core/services/terminal_command_classifier.dart';
+import 'package:hermes/core/services/terminal_command_parser.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/serialization/model_json.dart';
@@ -1686,7 +1687,7 @@ ${_encoder.convert(ModelJson.encode(task))}
   }
 
   String _commandTextFromParts(String command, List<String> args) {
-    return [command, ...args].where((item) => item.isNotEmpty).join(' ').trim();
+    return TerminalCommandParser.commandTextFromParts(command, args);
   }
 
   _FinishToolCallResult _finishStepFromToolCall({

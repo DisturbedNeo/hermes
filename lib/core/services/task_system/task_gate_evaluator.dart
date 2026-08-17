@@ -10,6 +10,7 @@ import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/terminal_command_classifier.dart';
+import 'package:hermes/core/services/terminal_command_parser.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:path/path.dart' as path;
 import 'package:yaml/yaml.dart';
@@ -999,7 +1000,7 @@ $prompt
   }
 
   String _commandTextFromParts(String command, List<String> args) {
-    return [command, ...args].where((item) => item.isNotEmpty).join(' ').trim();
+    return TerminalCommandParser.commandTextFromParts(command, args);
   }
 
   bool _looksLikeWellFormedXml(String content) {

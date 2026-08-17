@@ -3,6 +3,7 @@ import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:hermes/core/models/system_prompt.dart';
+import 'package:hermes/core/models/chat_persistence.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/project_system/project_service.dart';
@@ -36,6 +37,7 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
 
   String? activeTabId;
   bool _disposed = false;
+  Future<void>? _disposeFuture;
 
   ChatTabsService({
     required ChatLibraryService chatLibrary,
@@ -150,6 +152,55 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
     notifyListeners();
   }
 
+  Future<void> prepareForExit(NewChatExitPolicy newChatPolicy) async {
+    final failures = <ChatFlushFailure>[];
+    final tabsThatFailedToQuiesce = <String>{};
+    final snapshot = List<ChatService>.of(_tabs);
+
+    for (final tab in snapshot) {
+      try {
+        await tab.quiesceForExit();
+      } catch (error, stackTrace) {
+        tabsThatFailedToQuiesce.add(tab.tabId);
+        failures.add(
+          ChatFlushFailure(
+            tabId: tab.tabId,
+            title: tab.displayTitle,
+            stage: 'stop active work in',
+            error: error,
+            stackTrace: stackTrace,
+          ),
+        );
+      }
+    }
+
+    for (final tab in snapshot) {
+      if (tabsThatFailedToQuiesce.contains(tab.tabId)) continue;
+      try {
+        if (tab.currentChatId != null) {
+          await tab.flushCurrentChat();
+        } else if (newChatPolicy == NewChatExitPolicy.save &&
+            tab.isUnsavedNonEmpty) {
+          await tab.saveCurrentChat();
+        }
+      } catch (error, stackTrace) {
+        failures.add(
+          ChatFlushFailure(
+            tabId: tab.tabId,
+            title: tab.displayTitle,
+            stage: 'save',
+            error: error,
+            stackTrace: stackTrace,
+          ),
+        );
+      }
+    }
+
+    if (failures.isNotEmpty) {
+      throw ChatFlushException(List.unmodifiable(failures));
+    }
+  }
+
   Future<SystemPromptLoadTarget> loadSystemPromptIntoActiveChat(
     SavedSystemPrompt prompt,
   ) async {
@@ -256,6 +307,12 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
     if (index == -1) return;
 
     tab.removeListener(notifyListeners);
+    try {
+      await tab.dispose();
+    } catch (_) {
+      tab.addListener(notifyListeners);
+      rethrow;
+    }
     _tabs.removeAt(index);
 
     if (activeTabId == tab.tabId) {
@@ -267,21 +324,84 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
       }
     }
 
-    await tab.dispose();
     notifyListeners();
   }
 
   @override
-  Future<void> dispose() async {
-    if (_disposed) return;
+  // ignore: must_call_super, super.dispose is called by _dispose after async cleanup.
+  Future<void> dispose() => _startDispose(prepare: true);
+
+  Future<void> disposeWithoutSaving() => _startDispose(prepare: false);
+
+  Future<void> _startDispose({required bool prepare}) {
+    if (_disposed) return Future.value();
+    final pending = _disposeFuture;
+    if (pending != null) return pending;
+
+    late final Future<void> operation;
+    operation = _dispose(prepare: prepare).whenComplete(() {
+      if (!_disposed && identical(_disposeFuture, operation)) {
+        _disposeFuture = null;
+      }
+    });
+    _disposeFuture = operation;
+    return operation;
+  }
+
+  Future<void> _dispose({required bool prepare}) async {
+    if (prepare) {
+      await prepareForExit(NewChatExitPolicy.discard);
+    }
     _disposed = true;
 
     for (final tab in List<ChatService>.of(_tabs)) {
-      await _removeTab(tab);
+      tab.removeListener(notifyListeners);
+      _tabs.remove(tab);
+      try {
+        await tab.disposeWithoutSaving();
+      } catch (error, stackTrace) {
+        _reportDisposalFailure(
+          error,
+          stackTrace,
+          context: 'while disposing chat tab ${tab.tabId}',
+        );
+      }
     }
-    await _cleanupOrphanedTasks();
-    await serverManager.dispose();
-    super.dispose();
+    try {
+      await _cleanupOrphanedTasks();
+    } catch (error, stackTrace) {
+      _reportDisposalFailure(
+        error,
+        stackTrace,
+        context: 'while cleaning orphaned chat work',
+      );
+    }
+    try {
+      await serverManager.dispose();
+    } catch (error, stackTrace) {
+      _reportDisposalFailure(
+        error,
+        stackTrace,
+        context: 'while stopping the model server',
+      );
+    } finally {
+      super.dispose();
+    }
+  }
+
+  void _reportDisposalFailure(
+    Object error,
+    StackTrace stackTrace, {
+    required String context,
+  }) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: error,
+        stack: stackTrace,
+        library: 'hermes chat tabs disposal',
+        context: ErrorDescription(context),
+      ),
+    );
   }
 
   /// Collects unique workspaces from the given attachments, keyed by root path.

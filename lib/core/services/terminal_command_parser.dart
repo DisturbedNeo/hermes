@@ -115,6 +115,20 @@ const Set<String> kNetworkAdministrationCommands = {
 /// retains a single responsibility: routing parsed commands to execution
 /// strategies and formatting results.
 class TerminalCommandParser {
+  /// Quotes one argument for the POSIX shell command line used by the runner.
+  static String shellQuote(String value) {
+    if (value.isEmpty) return "''";
+    if (RegExp(r'^[A-Za-z0-9_@%+=:,./-]+$').hasMatch(value)) return value;
+    return "'${value.replaceAll("'", r"'\''")}'";
+  }
+
+  /// Produces the canonical command text used for execution and gate matching.
+  static String commandTextFromParts(String command, List<String> args) {
+    final executable = command.trim();
+    if (args.isEmpty) return executable;
+    return [executable, ...args.map(shellQuote)].join(' ').trim();
+  }
+
   const TerminalCommandParser._();
 
   // ---- Tokenization -------------------------------------------------------
@@ -223,23 +237,7 @@ class TerminalCommandParser {
 
   /// Strips known wrapper prefixes (`env …`, `time`, `command`) from *tokens*.
   static List<String> stripWrappers(List<String> tokens) {
-    var current = tokens;
-    while (current.isNotEmpty) {
-      final first = current.first;
-      if (first == 'env') {
-        current = current.skip(1).where((token) => !_isEnvFlag(token)).toList();
-        while (current.isNotEmpty && _isAssignment(current.first)) {
-          current = current.skip(1).toList();
-        }
-        continue;
-      }
-      if (first == 'time' || first == 'command') {
-        current = current.skip(1).toList();
-        continue;
-      }
-      break;
-    }
-    return current;
+    return _unwrapWrappers(tokens, strict: false).tokens;
   }
 
   // ---- Shell-command extraction -------------------------------------------
@@ -292,7 +290,11 @@ class TerminalCommandParser {
 
   /// Returns a human-readable reason why the command is blocked, or `null`.
   static String? blockedReasonForTokens(List<String> rawTokens) {
-    final tokens = stripWrappers(rawTokens);
+    final wrapperResult = _unwrapWrappers(rawTokens, strict: true);
+    if (wrapperResult.blockedReason != null) {
+      return wrapperResult.blockedReason;
+    }
+    final tokens = wrapperResult.tokens;
     if (tokens.isEmpty) return null;
 
     final executable = normaliseExecutable(tokens.first);
@@ -340,6 +342,12 @@ class TerminalCommandParser {
     if (kNetworkAdministrationCommands.contains(executable)) {
       return 'Network administration commands are blocked by terminal policy.';
     }
+    if (executable == 'xargs') {
+      return 'xargs is blocked by terminal policy because its generated command cannot be classified safely.';
+    }
+    if (_usesInlineInterpreterCode(executable, args)) {
+      return 'Inline interpreter code is blocked by terminal policy. Run a reviewed script file instead.';
+    }
     if (executable == 'git') {
       return _blockedGitReason(args);
     }
@@ -347,6 +355,302 @@ class TerminalCommandParser {
       return 'find -delete is blocked by terminal policy because it can delete many files.';
     }
     return null;
+  }
+
+  static bool _usesInlineInterpreterCode(String executable, List<String> args) {
+    bool hasShortFlag(String flag) => args.any(
+      (arg) =>
+          arg == flag || (arg.startsWith(flag) && arg.length > flag.length),
+    );
+
+    return switch (executable) {
+      'python' || 'python3' => hasShortFlag('-c'),
+      'node' =>
+        hasShortFlag('-e') ||
+            hasShortFlag('-p') ||
+            args.any(
+              (arg) =>
+                  arg == '--eval' ||
+                  arg.startsWith('--eval=') ||
+                  arg == '--print' ||
+                  arg.startsWith('--print='),
+            ),
+      'perl' || 'ruby' || 'lua' => hasShortFlag('-e'),
+      'php' => hasShortFlag('-r'),
+      _ => false,
+    };
+  }
+
+  static _WrapperParseResult _unwrapWrappers(
+    List<String> rawTokens, {
+    required bool strict,
+  }) {
+    var current = List<String>.of(rawTokens);
+    while (current.isNotEmpty) {
+      final executable = normaliseExecutable(current.first);
+      if (!const {
+        'env',
+        'time',
+        'command',
+        'nohup',
+        'nice',
+        'ionice',
+        'stdbuf',
+        'timeout',
+      }.contains(executable)) {
+        break;
+      }
+
+      final result = _unwrapSingleWrapper(executable, current);
+      if (result.blockedReason != null) {
+        return strict
+            ? result
+            : _WrapperParseResult(tokens: List<String>.of(rawTokens));
+      }
+      if (result.tokens.length >= current.length) break;
+      current = result.tokens;
+    }
+    return _WrapperParseResult(tokens: current);
+  }
+
+  static _WrapperParseResult _unwrapSingleWrapper(
+    String executable,
+    List<String> tokens,
+  ) {
+    _WrapperParseResult malformed() => _WrapperParseResult(
+      tokens: tokens,
+      blockedReason:
+          'The $executable wrapper is blocked because its arguments could not be classified safely.',
+    );
+
+    _WrapperParseResult remainder(int index) {
+      if (index >= tokens.length) return _WrapperParseResult(tokens: tokens);
+      return _WrapperParseResult(tokens: tokens.sublist(index));
+    }
+
+    var index = 1;
+    switch (executable) {
+      case 'env':
+        while (index < tokens.length) {
+          final token = tokens[index];
+          if (token == '--') {
+            index++;
+            break;
+          }
+          if (token == '-i' ||
+              token == '--ignore-environment' ||
+              token == '-0' ||
+              token == '--null') {
+            index++;
+            continue;
+          }
+          if (token == '-S' || token == '--split-string') return malformed();
+          if (token.startsWith('--split-string=')) return malformed();
+          if (token == '-u' ||
+              token == '--unset' ||
+              token == '-C' ||
+              token == '--chdir') {
+            if (index + 1 >= tokens.length) return malformed();
+            index += 2;
+            continue;
+          }
+          if (token.startsWith('--unset=') || token.startsWith('--chdir=')) {
+            index++;
+            continue;
+          }
+          if (token.startsWith('-')) return malformed();
+          break;
+        }
+        while (index < tokens.length && _isAssignment(tokens[index])) {
+          index++;
+        }
+        return remainder(index);
+
+      case 'time':
+        while (index < tokens.length && tokens[index].startsWith('-')) {
+          final token = tokens[index];
+          if (token == '--') {
+            index++;
+            break;
+          }
+          if (const {
+            '-p',
+            '--portability',
+            '-a',
+            '--append',
+            '-v',
+            '--verbose',
+          }.contains(token)) {
+            index++;
+            continue;
+          }
+          if (const {'-o', '--output', '-f', '--format'}.contains(token)) {
+            if (index + 1 >= tokens.length) return malformed();
+            index += 2;
+            continue;
+          }
+          if (token.startsWith('--output=') || token.startsWith('--format=')) {
+            index++;
+            continue;
+          }
+          return malformed();
+        }
+        return remainder(index);
+
+      case 'command':
+        if (index < tokens.length &&
+            (tokens[index] == '-v' || tokens[index] == '-V')) {
+          return _WrapperParseResult(tokens: tokens);
+        }
+        while (index < tokens.length && tokens[index] == '-p') {
+          index++;
+        }
+        if (index < tokens.length && tokens[index] == '--') index++;
+        if (index < tokens.length && tokens[index].startsWith('-')) {
+          return malformed();
+        }
+        return remainder(index);
+
+      case 'nohup':
+        if (index < tokens.length && tokens[index] == '--') index++;
+        if (index < tokens.length && tokens[index].startsWith('-')) {
+          if (tokens[index] == '--help' || tokens[index] == '--version') {
+            return _WrapperParseResult(tokens: tokens);
+          }
+          return malformed();
+        }
+        return remainder(index);
+
+      case 'nice':
+        while (index < tokens.length && tokens[index].startsWith('-')) {
+          final token = tokens[index];
+          if (token == '--') {
+            index++;
+            break;
+          }
+          if (token == '-n' || token == '--adjustment') {
+            if (index + 1 >= tokens.length) return malformed();
+            index += 2;
+            continue;
+          }
+          if (token.startsWith('--adjustment=') ||
+              RegExp(r'^-\d+$').hasMatch(token)) {
+            index++;
+            continue;
+          }
+          return malformed();
+        }
+        return remainder(index);
+
+      case 'ionice':
+        while (index < tokens.length && tokens[index].startsWith('-')) {
+          final token = tokens[index];
+          if (token == '--') {
+            index++;
+            break;
+          }
+          if (const {
+                '-p',
+                '--pid',
+                '-P',
+                '--pgid',
+                '-u',
+                '--uid',
+              }.contains(token) ||
+              token.startsWith('--pid=') ||
+              token.startsWith('--pgid=') ||
+              token.startsWith('--uid=')) {
+            return malformed();
+          }
+          if (const {'-c', '--class', '-n', '--classdata'}.contains(token)) {
+            if (index + 1 >= tokens.length) return malformed();
+            index += 2;
+            continue;
+          }
+          if (token.startsWith('--class=') ||
+              token.startsWith('--classdata=') ||
+              RegExp(r'^-[cn].+').hasMatch(token) ||
+              token == '-t' ||
+              token == '--ignore') {
+            index++;
+            continue;
+          }
+          return malformed();
+        }
+        return remainder(index);
+
+      case 'stdbuf':
+        var sawBufferOption = false;
+        while (index < tokens.length && tokens[index].startsWith('-')) {
+          final token = tokens[index];
+          if (token == '--') {
+            index++;
+            break;
+          }
+          if (const {'-i', '-o', '-e'}.contains(token)) {
+            if (index + 1 >= tokens.length) return malformed();
+            sawBufferOption = true;
+            index += 2;
+            continue;
+          }
+          if (const {'--input', '--output', '--error'}.contains(token)) {
+            if (index + 1 >= tokens.length) return malformed();
+            sawBufferOption = true;
+            index += 2;
+            continue;
+          }
+          if (RegExp(r'^-[ioe].+').hasMatch(token) ||
+              token.startsWith('--input=') ||
+              token.startsWith('--output=') ||
+              token.startsWith('--error=')) {
+            sawBufferOption = true;
+            index++;
+            continue;
+          }
+          return malformed();
+        }
+        if (!sawBufferOption) return malformed();
+        return remainder(index);
+
+      case 'timeout':
+        while (index < tokens.length && tokens[index].startsWith('-')) {
+          final token = tokens[index];
+          if (token == '--') {
+            index++;
+            break;
+          }
+          if (const {
+            '--preserve-status',
+            '--foreground',
+            '-v',
+            '--verbose',
+          }.contains(token)) {
+            index++;
+            continue;
+          }
+          if (const {'-s', '--signal', '-k', '--kill-after'}.contains(token)) {
+            if (index + 1 >= tokens.length) return malformed();
+            index += 2;
+            continue;
+          }
+          if (token.startsWith('--signal=') ||
+              token.startsWith('--kill-after=') ||
+              RegExp(r'^-[sk].+').hasMatch(token)) {
+            index++;
+            continue;
+          }
+          return malformed();
+        }
+        if (index >= tokens.length) return malformed();
+        final duration = tokens[index];
+        if (!RegExp(r'^(?:\d+(?:\.\d*)?|\.\d+)[smhd]?$').hasMatch(duration)) {
+          return malformed();
+        }
+        index++;
+        if (index >= tokens.length) return malformed();
+        return remainder(index);
+    }
+    return _WrapperParseResult(tokens: tokens);
   }
 
   static String? _blockedGitReason(List<String> args) {
@@ -450,9 +754,6 @@ class TerminalCommandParser {
   }
 
   // ---- Internal helpers ---------------------------------------------------
-
-  static bool _isEnvFlag(String token) =>
-      token.startsWith('-') && token != '--';
 
   static bool _isAssignment(String token) =>
       RegExp(r'^[A-Za-z_][A-Za-z0-9_]*=').hasMatch(token);
@@ -718,4 +1019,11 @@ class TerminalCommandParser {
     return commandClass == TerminalCommandClass.mutatingWorkspace ||
         commandClass == TerminalCommandClass.dependencyInstall;
   }
+}
+
+class _WrapperParseResult {
+  const _WrapperParseResult({required this.tokens, this.blockedReason});
+
+  final List<String> tokens;
+  final String? blockedReason;
 }

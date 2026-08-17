@@ -312,6 +312,33 @@ void main() {
       expect(await file.exists(), isTrue);
     });
 
+    test('runCommand blocks generated and wrapped deletion commands', () async {
+      final file = File('${root.path}/generated.txt')
+        ..writeAsStringSync('important');
+
+      for (final command in const [
+        'printf "generated.txt\\n" | xargs rm',
+        'timeout 5 nice -n 2 rm generated.txt',
+        'python -c "print(1)"',
+        'python3 -c "print(1)"',
+        'node -e "console.log(1)"',
+        'node --eval "console.log(1)"',
+        'node -p "1 + 1"',
+        'node --print "1 + 1"',
+        'perl -e "print 1"',
+        'ruby -e "puts 1"',
+        'lua -e "print(1)"',
+        'php -r "echo 1;"',
+      ]) {
+        await expectLater(
+          sandbox.runCommand(root.path, command: command),
+          throwsA(isA<WorkspaceSandboxException>()),
+        );
+      }
+
+      expect(await file.exists(), isTrue);
+    });
+
     test('runCommand kills the process group on timeout', () async {
       final timedSandbox = WorkspaceSandbox(
         commandTimeout: const Duration(milliseconds: 250),
@@ -414,7 +441,7 @@ void main() {
       expect(tools.map((tool) => tool.id), contains('run_command'));
       final runCommand = tools.singleWhere((tool) => tool.id == 'run_command');
       final properties = runCommand.schema['properties'] as Map;
-      expect(properties.keys, isNot(contains('args')));
+      expect(properties.keys, contains('args'));
     });
 
     test('rejects workspace tool execution without context', () async {
@@ -465,6 +492,27 @@ void main() {
       expect(result, contains('"error"'));
       expect(result, contains('File deletion commands'));
       expect(await File('${root.path}/generated.txt').exists(), isTrue);
+    });
+
+    test('runs declared command arguments with shell quoting', () async {
+      final root = await Directory.systemTemp.createTemp('hermes_workspace_');
+      addTearDown(() async {
+        if (await root.exists()) await root.delete(recursive: true);
+      });
+
+      final service = ToolService(workspaceSandbox: WorkspaceSandbox());
+      final result = await service.execute(
+        toolId: 'run_command',
+        argumentsJson: '{"command":"printf","args":["%s","hello world"]}',
+        context: WorkspaceToolContext(
+          workspace: WorkspaceAttachment.fromPath(
+            root.path,
+            commandExecutionApproved: true,
+          ),
+        ),
+      );
+
+      expect(result, contains('"stdout":"hello world"'));
     });
   });
 }
