@@ -68,10 +68,12 @@ class ChatService extends ChangeNotifier
 
   bool _disposed = false;
   bool _loadingSnapshot = false;
-  bool _dirty = false;
+  int _currentPersistenceRevision = 0;
+  int _persistedRevision = 0;
   int _historyRevision = 0;
   Timer? _autosaveTimer;
   Future<void> _saveChain = Future.value();
+  _PendingScopeMigration? _pendingScopeMigration;
   Future<void>? _disposeFuture;
   String _chatSessionScopeId = uuid.v7();
 
@@ -195,10 +197,7 @@ class ChatService extends ChangeNotifier
 
   @override
   void onWorkspaceChanged() {
-    if (currentChatId != null) {
-      _dirty = true;
-      _scheduleAutosave();
-    }
+    _markPersistableChange();
     notifyListeners();
   }
 
@@ -253,7 +252,12 @@ class ChatService extends ChangeNotifier
 
   // ── Public API (session management + orchestration) ─────────────────────
 
-  bool get isDirty => _dirty;
+  bool get isDirty =>
+      currentChatId != null &&
+      _currentPersistenceRevision != _persistedRevision;
+
+  bool get _hasPendingPersistence =>
+      _currentPersistenceRevision != _persistedRevision;
 
   bool get hasMeaningfulContent => messageStore.messages.any(
     (message) =>
@@ -330,6 +334,7 @@ class ChatService extends ChangeNotifier
     messageStore.setMessages([
       systemPrompt.copyWith(text: _buildSystemPrompt()),
     ]);
+    _resetPersistenceRevisions();
   }
 
   Future<bool> openChat(String id) async {
@@ -385,9 +390,9 @@ class ChatService extends ChangeNotifier
         activeTask = null;
       }
       currentSystemPromptSnapshot = snapshot.chat.systemPromptSnapshot;
-      _dirty = false;
       _historyRevision++;
       messageStore.setMessages(_withCurrentSystemPrompt(snapshot.messages));
+      _resetPersistenceRevisions();
       await _chatLibrary.markOpened(snapshot.chat.id);
       await refreshModelRestorePrompt();
     } finally {
@@ -429,19 +434,17 @@ class ChatService extends ChangeNotifier
   Future<void> flushCurrentChat() async {
     _autosaveTimer?.cancel();
     _autosaveTimer = null;
-    if (currentChatId != null && _dirty) {
+    while (true) {
+      await _saveChain;
+      if (currentChatId == null || !_hasPendingPersistence) return;
       await _queueSave(force: true);
     }
-    await _saveChain;
   }
 
   void setCurrentModelSnapshot(ModelConfigurationSnapshot snapshot) {
     currentModelSnapshot = snapshot;
     _requestContextEstimateUpdate(immediate: true);
-    if (currentChatId != null) {
-      _dirty = true;
-      _scheduleAutosave();
-    }
+    _markPersistableChange();
 
     if (pendingModelRestore?.matches(snapshot) ?? false) {
       pendingModelRestore = null;
@@ -1821,9 +1824,8 @@ class ChatService extends ChangeNotifier
 
   void _handleMessagesChanged() {
     _requestContextEstimateUpdate();
-    if (_disposed || _loadingSnapshot || currentChatId == null) return;
-    _dirty = true;
-    _scheduleAutosave();
+    if (_disposed || _loadingSnapshot) return;
+    _markPersistableChange();
   }
 
   void _handlePreferencesChanged() {
@@ -2164,11 +2166,23 @@ class ChatService extends ChangeNotifier
   }
 
   void _scheduleAutosave() {
+    if (_disposed || currentChatId == null) return;
     _autosaveTimer?.cancel();
     _autosaveTimer = Timer(const Duration(milliseconds: 600), () {
-      final save = _queueSave(force: true);
+      final save = _queueSave();
       unawaited(save.then<void>((_) {}, onError: (Object _, StackTrace _) {}));
     });
+  }
+
+  void _markPersistableChange() {
+    if (_disposed || _loadingSnapshot) return;
+    _currentPersistenceRevision++;
+    _scheduleAutosave();
+  }
+
+  void _resetPersistenceRevisions() {
+    _currentPersistenceRevision = 0;
+    _persistedRevision = 0;
   }
 
   Future<SavedChat> _queueSave({String? title, bool force = false}) {
@@ -2183,36 +2197,60 @@ class ChatService extends ChangeNotifier
         throw StateError('ChatService is disposed');
       }
 
-      if (!force && currentChatId != null && !_dirty) {
+      if (!force && currentChatId != null && !_hasPendingPersistence) {
         return currentSavedChat!;
       }
 
+      final capturedRevision = _currentPersistenceRevision;
       final previousChatId = currentChatId;
       final previousScopeId = _taskScopeId;
+      final capturedMessages = messageStore.messages.toList(growable: false);
+      final capturedModelSnapshot = currentModelSnapshot;
+      final capturedWorkspace = workspace;
+      final capturedSystemPromptSnapshot = currentSystemPromptSnapshot;
+      final capturedActiveTaskId = activeTask?.id;
+      final capturedActiveProjectId = activeProject?.id;
       final saved = await _chatLibrary.saveChatSnapshot(
-        chatId: currentChatId,
+        chatId: previousChatId,
         title: title,
-        messages: messageStore.messages.toList(),
-        modelSnapshot: currentModelSnapshot,
-        workspace: workspace,
-        systemPromptSnapshot: currentSystemPromptSnapshot,
+        messages: capturedMessages,
+        modelSnapshot: capturedModelSnapshot,
+        workspace: capturedWorkspace,
+        systemPromptSnapshot: capturedSystemPromptSnapshot,
       );
 
       currentChatId = saved.id;
       _chatSessionScopeId = saved.id;
       currentSavedChat = saved;
       if (previousChatId == null) {
-        await _migrateTaskScope(
+        _pendingScopeMigration ??= _PendingScopeMigration(
           previousScopeId: previousScopeId,
           savedChatId: saved.id,
-        );
-        await _migrateProjectScope(
-          previousScopeId: previousScopeId,
-          savedChatId: saved.id,
+          workspace: capturedWorkspace,
+          activeTaskId: capturedActiveTaskId,
+          activeProjectId: capturedActiveProjectId,
         );
       }
-      _dirty = false;
+      final pendingMigration = _pendingScopeMigration;
+      if (pendingMigration != null &&
+          pendingMigration.savedChatId == saved.id) {
+        await _migrateTaskScope(
+          previousScopeId: pendingMigration.previousScopeId,
+          savedChatId: pendingMigration.savedChatId,
+          migrationWorkspace: pendingMigration.workspace,
+          activeTaskId: pendingMigration.activeTaskId,
+        );
+        await _migrateProjectScope(
+          previousScopeId: pendingMigration.previousScopeId,
+          savedChatId: pendingMigration.savedChatId,
+          migrationWorkspace: pendingMigration.workspace,
+          activeProjectId: pendingMigration.activeProjectId,
+        );
+        _pendingScopeMigration = null;
+      }
+      _persistedRevision = capturedRevision;
       saveFailure = null;
+      if (_hasPendingPersistence) _scheduleAutosave();
       notifyListeners();
       return saved;
     });
@@ -2230,12 +2268,13 @@ class ChatService extends ChangeNotifier
   Future<void> _migrateTaskScope({
     required String previousScopeId,
     required String savedChatId,
+    required WorkspaceAttachment? migrationWorkspace,
+    required String? activeTaskId,
   }) async {
     if (previousScopeId == savedChatId) return;
-    final currentWorkspace = workspace;
+    final currentWorkspace = migrationWorkspace;
     if (currentWorkspace == null || currentWorkspace.missing) return;
 
-    final activeTaskId = activeTask?.id;
     final tasks = await _taskService.listTasks(
       currentWorkspace,
       chatSessionId: previousScopeId,
@@ -2252,25 +2291,30 @@ class ChatService extends ChangeNotifier
         snapshot: snapshot,
         chatSessionId: savedChatId,
       );
-      if (updated.id == activeTaskId) {
+      if (updated.id == activeTaskId &&
+          workspace?.rootPath == currentWorkspace.rootPath) {
         activeTask = updated;
       }
     }
-    availableTasks = await _taskService.listTasks(
+    final migratedTasks = await _taskService.listTasks(
       currentWorkspace,
       chatSessionId: savedChatId,
     );
+    if (workspace?.rootPath == currentWorkspace.rootPath) {
+      availableTasks = migratedTasks;
+    }
   }
 
   Future<void> _migrateProjectScope({
     required String previousScopeId,
     required String savedChatId,
+    required WorkspaceAttachment? migrationWorkspace,
+    required String? activeProjectId,
   }) async {
     if (previousScopeId == savedChatId) return;
-    final currentWorkspace = workspace;
+    final currentWorkspace = migrationWorkspace;
     if (currentWorkspace == null || currentWorkspace.missing) return;
 
-    final activeProjectId = activeProject?.id;
     final projects = await _projectService.listProjects(
       currentWorkspace,
       chatSessionId: previousScopeId,
@@ -2287,14 +2331,18 @@ class ChatService extends ChangeNotifier
         snapshot: snapshot,
         chatSessionId: savedChatId,
       );
-      if (updated.id == activeProjectId) {
+      if (updated.id == activeProjectId &&
+          workspace?.rootPath == currentWorkspace.rootPath) {
         activeProject = updated;
       }
     }
-    availableProjects = await _projectService.listProjects(
+    final migratedProjects = await _projectService.listProjects(
       currentWorkspace,
       chatSessionId: savedChatId,
     );
+    if (workspace?.rootPath == currentWorkspace.rootPath) {
+      availableProjects = migratedProjects;
+    }
   }
 
   Future<void> _prepareModelRestorePrompt(
@@ -2326,7 +2374,8 @@ class ChatService extends ChangeNotifier
     currentSystemPromptSnapshot = null;
     pendingModelRestore = null;
     pendingModelRestoreIssue = null;
-    _dirty = false;
+    _pendingScopeMigration = null;
+    _resetPersistenceRevisions();
     saveFailure = null;
     notifyListeners();
   }
@@ -2473,10 +2522,7 @@ Workspace rules:
   }
 
   void _markWorkspaceChanged() {
-    if (currentChatId != null) {
-      _dirty = true;
-      _scheduleAutosave();
-    }
+    _markPersistableChange();
     notifyListeners();
   }
 
@@ -2491,10 +2537,7 @@ Workspace rules:
 
     currentModelSnapshot = activeSnapshot;
     _requestContextEstimateUpdate(immediate: true);
-    if (currentChatId != null) {
-      _dirty = true;
-      _scheduleAutosave();
-    }
+    _markPersistableChange();
     notifyListeners();
   }
 
@@ -2753,4 +2796,20 @@ class _SlashCommand {
     required this.argument,
     required this.raw,
   });
+}
+
+class _PendingScopeMigration {
+  const _PendingScopeMigration({
+    required this.previousScopeId,
+    required this.savedChatId,
+    required this.workspace,
+    required this.activeTaskId,
+    required this.activeProjectId,
+  });
+
+  final String previousScopeId;
+  final String savedChatId;
+  final WorkspaceAttachment? workspace;
+  final String? activeTaskId;
+  final String? activeProjectId;
 }

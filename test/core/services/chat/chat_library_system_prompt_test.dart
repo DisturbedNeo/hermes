@@ -155,4 +155,128 @@ void main() {
       expect(restored?.messages.single.createdAt, createdAt);
     },
   );
+
+  test('saves only changed message rows and keeps FTS in sync', () async {
+    final firstCreated = DateTime(2026, 1, 2, 3, 4);
+    final secondCreated = DateTime(2026, 2, 3, 4, 5);
+    final first = Bubble(
+      id: 'first',
+      role: MessageRole.user,
+      text: 'obsolete-needle',
+      reasoning: '',
+      createdAt: firstCreated,
+    );
+    final second = Bubble(
+      id: 'second',
+      role: MessageRole.assistant,
+      text: 'original response',
+      reasoning: '',
+      createdAt: secondCreated,
+    );
+    final saved = await chatLibrary.saveChatSnapshot(
+      title: 'ZebraTitleToken',
+      messages: [first, second],
+      modelSnapshot: null,
+      workspace: null,
+      systemPromptSnapshot: null,
+    );
+    final db = await databaseFactoryFfi.openDatabase(
+      databasePath,
+      options: OpenDatabaseOptions(singleInstance: false),
+    );
+    addTearDown(db.close);
+    final before = await db.query(
+      'saved_chat_messages',
+      where: 'chat_id = ?',
+      whereArgs: [saved.id],
+      orderBy: 'position ASC',
+    );
+
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await chatLibrary.saveChatSnapshot(
+      chatId: saved.id,
+      messages: [first, second],
+      modelSnapshot: null,
+      workspace: null,
+      systemPromptSnapshot: null,
+    );
+    final unchanged = await db.query(
+      'saved_chat_messages',
+      where: 'chat_id = ?',
+      whereArgs: [saved.id],
+      orderBy: 'position ASC',
+    );
+    expect(
+      unchanged.map((row) => row['updated_at']),
+      before.map((row) => row['updated_at']),
+    );
+
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await chatLibrary.saveChatSnapshot(
+      chatId: saved.id,
+      title: 'QuartzTitleToken',
+      messages: [
+        Bubble(
+          id: 'second',
+          role: MessageRole.assistant,
+          text: 'updated-response-needle',
+          reasoning: '',
+          createdAt: DateTime(2030),
+        ),
+        const Bubble(
+          id: 'third',
+          role: MessageRole.user,
+          text: 'new-message-needle',
+          reasoning: '',
+        ),
+      ],
+      modelSnapshot: null,
+      workspace: null,
+      systemPromptSnapshot: null,
+    );
+
+    final restored = await chatLibrary.getChat(saved.id);
+    expect(restored?.messages.map((message) => message.id), [
+      'second',
+      'third',
+    ]);
+    expect(restored?.messages.first.createdAt, secondCreated);
+    expect(await chatLibrary.searchChats('obsolete-needle'), isEmpty);
+    expect(
+      (await chatLibrary.searchChats('updated-response-needle')).single.id,
+      saved.id,
+    );
+    expect(await chatLibrary.searchChats('ZebraTitleToken'), isEmpty);
+    expect(
+      (await chatLibrary.searchChats('QuartzTitleToken')).single.id,
+      saved.id,
+    );
+  });
+
+  test('rejects duplicate message ids before creating a chat', () async {
+    await expectLater(
+      chatLibrary.saveChatSnapshot(
+        title: 'Invalid chat',
+        messages: const [
+          Bubble(
+            id: 'duplicate',
+            role: MessageRole.user,
+            text: 'one',
+            reasoning: '',
+          ),
+          Bubble(
+            id: 'duplicate',
+            role: MessageRole.assistant,
+            text: 'two',
+            reasoning: '',
+          ),
+        ],
+        modelSnapshot: null,
+        workspace: null,
+        systemPromptSnapshot: null,
+      ),
+      throwsArgumentError,
+    );
+    expect(await chatLibrary.countChats(), 0);
+  });
 }

@@ -400,13 +400,21 @@ class TaskService {
   Future<String> readArtifact({
     required WorkspaceAttachment workspace,
     required String artifactPath,
+    CancellationToken? cancellationToken,
   }) async {
-    final resolved = await _sandbox.resolve(workspace.rootPath, artifactPath);
-    final file = File(resolved.absolutePath);
-    if (!await file.exists()) {
-      throw StateError('Artifact not found: $artifactPath');
+    try {
+      return await _sandbox.readFilePreview(
+        workspace.rootPath,
+        artifactPath,
+        maxChars: 240000,
+        cancellationToken: cancellationToken,
+      );
+    } on WorkspaceSandboxException catch (error) {
+      if (error.message.contains('Path not found')) {
+        throw StateError('Artifact not found: $artifactPath');
+      }
+      rethrow;
     }
-    return _cap(await file.readAsString(), 240000);
   }
 
   Future<RefinedTaskBrief> refineTaskBrief({

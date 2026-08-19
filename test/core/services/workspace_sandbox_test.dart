@@ -236,6 +236,141 @@ void main() {
       );
     });
 
+    test('bounds reads, writes, and patched results by UTF-8 bytes', () async {
+      final oversized = List.filled(
+        WorkspaceSandbox.maxWriteBytes + 1,
+        'x',
+      ).join();
+      final existing = File('${root.path}/existing.txt');
+      await existing.writeAsString('keep me');
+
+      await expectLater(
+        sandbox.writeFile(root.path, 'too-large.txt', oversized),
+        throwsA(
+          isA<WorkspaceSandboxException>().having(
+            (error) => error.code,
+            'code',
+            'workspace_file_too_large',
+          ),
+        ),
+      );
+      await expectLater(
+        sandbox.patchFile(root.path, 'existing.txt', 'keep me', oversized),
+        throwsA(
+          isA<WorkspaceSandboxException>().having(
+            (error) => error.code,
+            'code',
+            'workspace_file_too_large',
+          ),
+        ),
+      );
+      await File('${root.path}/oversized-read.txt').writeAsString(oversized);
+      await expectLater(
+        sandbox.readFile(root.path, 'oversized-read.txt'),
+        throwsA(
+          isA<WorkspaceSandboxException>().having(
+            (error) => error.code,
+            'code',
+            'workspace_file_too_large',
+          ),
+        ),
+      );
+
+      expect(await existing.readAsString(), 'keep me');
+      expect(await File('${root.path}/too-large.txt').exists(), isFalse);
+    });
+
+    test('atomic writes preserve permissions and leave no temp file', () async {
+      if (!Platform.isLinux) return;
+      final target = File('${root.path}/script.sh');
+      await target.writeAsString('#!/bin/sh\necho old\n');
+      expect((await Process.run('chmod', ['755', target.path])).exitCode, 0);
+
+      await sandbox.writeFile(root.path, 'script.sh', '#!/bin/sh\necho new\n');
+
+      expect(await target.readAsString(), '#!/bin/sh\necho new\n');
+      expect((await target.stat()).mode & 0x1ff, 0x1ed);
+      expect(
+        await target.parent
+            .list()
+            .where(
+              (entry) =>
+                  entry.path.contains('.script.sh.hermes-') &&
+                  entry.path.endsWith('.tmp'),
+            )
+            .isEmpty,
+        isTrue,
+      );
+    });
+
+    test('filesystem inspection honors cancellation', () async {
+      await File('${root.path}/notes.txt').writeAsString('needle');
+      final token = CancellationToken();
+      await token.cancel();
+
+      await expectLater(
+        sandbox.listDirectory(root.path, '.', cancellationToken: token),
+        throwsA(isA<OperationCancelledException>()),
+      );
+      await expectLater(
+        sandbox.readFile(root.path, 'notes.txt', cancellationToken: token),
+        throwsA(isA<OperationCancelledException>()),
+      );
+      await expectLater(
+        sandbox.searchFiles(root.path, 'needle', cancellationToken: token),
+        throwsA(isA<OperationCancelledException>()),
+      );
+    });
+
+    test('artifact previews stop at the requested character limit', () async {
+      await File(
+        '${root.path}/artifact.txt',
+      ).writeAsString(List.filled(100, 'abcd').join());
+
+      final preview = await sandbox.readFilePreview(
+        root.path,
+        'artifact.txt',
+        maxChars: 25,
+      );
+
+      expect(preview, '${List.filled(6, 'abcd').join()}a...');
+      expect(preview.length, 28);
+    });
+
+    test('directory listings reject more than the configured limit', () async {
+      for (var i = 0; i <= WorkspaceSandbox.maxDirectoryEntries; i++) {
+        File('${root.path}/entry_$i').createSync();
+      }
+
+      await expectLater(
+        sandbox.listDirectory(root.path, '.'),
+        throwsA(
+          isA<WorkspaceSandboxException>().having(
+            (error) => error.code,
+            'code',
+            'workspace_listing_too_large',
+          ),
+        ),
+      );
+    });
+
+    test('searches reject more than the configured file limit', () async {
+      for (var i = 0; i <= WorkspaceSandbox.maxSearchFiles; i++) {
+        File('${root.path}/file_$i').createSync();
+      }
+
+      await expectLater(
+        sandbox.searchFiles(root.path, 'not-present'),
+        throwsA(
+          isA<WorkspaceSandboxException>().having(
+            (error) => error.code,
+            'code',
+            'workspace_search_too_broad',
+          ),
+        ),
+      );
+    });
+
     test('runCommand blocks dangerous executables before spawning', () async {
       final file = File('${root.path}/generated.txt')
         ..writeAsStringSync('important');

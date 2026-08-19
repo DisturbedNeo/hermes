@@ -7,8 +7,10 @@
 
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:path/path.dart' as path;
 
@@ -38,6 +40,9 @@ class WorkspaceSandbox {
   // Backward-compatible static accessors for constants previously defined here.
   // These delegate to the canonical definitions in sandbox_policy.dart.
   static const int maxReadBytes = kMaxReadBytes;
+  static const int maxWriteBytes = kMaxWriteBytes;
+  static const int maxDirectoryEntries = kMaxDirectoryEntries;
+  static const int maxSearchFiles = kMaxSearchFiles;
   static const int maxSearchResults = kMaxSearchResults;
   static const int maxSearchOutputBytes = kMaxSearchOutputBytes;
   static const int maxCommandOutputBytes = kMaxCommandOutputBytes;
@@ -91,12 +96,22 @@ class WorkspaceSandbox {
 
   Future<List<Map<String, dynamic>>> listDirectory(
     String rootPath,
-    String relativePath,
-  ) async {
+    String relativePath, {
+    CancellationToken? cancellationToken,
+  }) async {
+    cancellationToken?.throwIfCancelled();
     final resolved = await resolve(rootPath, relativePath, directory: true);
     final entries = <Map<String, dynamic>>[];
 
     await for (final entity in Directory(resolved.absolutePath).list()) {
+      cancellationToken?.throwIfCancelled();
+      if (entries.length >= kMaxDirectoryEntries) {
+        throw WorkspaceSandboxException(
+          'Directory contains more than $kMaxDirectoryEntries entries. '
+          'Use a more targeted path to continue.',
+          code: 'workspace_listing_too_large',
+        );
+      }
       final stat = await entity.stat();
       final type = stat.type == FileSystemEntityType.directory
           ? 'directory'
@@ -122,8 +137,10 @@ class WorkspaceSandbox {
 
   Future<Map<String, dynamic>> readFile(
     String rootPath,
-    String relativePath,
-  ) async {
+    String relativePath, {
+    CancellationToken? cancellationToken,
+  }) async {
+    cancellationToken?.throwIfCancelled();
     final resolved = await resolve(rootPath, relativePath);
     final type = await FileSystemEntity.type(resolved.absolutePath);
     if (type == FileSystemEntityType.directory) {
@@ -131,34 +148,71 @@ class WorkspaceSandbox {
         'Path is a directory. Use list_directory for directories: ${resolved.relativePath}',
       );
     }
-    final file = File(resolved.absolutePath);
-    final length = await file.length();
-    if (length > kMaxReadBytes) {
-      throw WorkspaceSandboxException(
-        'File is too large to read ($length bytes).',
-      );
-    }
+    final content = await _readUtf8File(
+      File(resolved.absolutePath),
+      maxBytes: kMaxReadBytes,
+      cancellationToken: cancellationToken,
+    );
 
     return {
       'path': resolved.relativePath,
-      'content': await file.readAsString(),
-      'bytes': length,
+      'content': content.text,
+      'bytes': content.bytes,
     };
+  }
+
+  Future<String> readFilePreview(
+    String rootPath,
+    String relativePath, {
+    required int maxChars,
+    CancellationToken? cancellationToken,
+  }) async {
+    cancellationToken?.throwIfCancelled();
+    final resolved = await resolve(rootPath, relativePath);
+    final type = await FileSystemEntity.type(resolved.absolutePath);
+    if (type == FileSystemEntityType.directory) {
+      throw WorkspaceSandboxException(
+        'Path is a directory: ${resolved.relativePath}',
+      );
+    }
+
+    final buffer = StringBuffer();
+    var length = 0;
+    var truncated = false;
+    final decoded = File(
+      resolved.absolutePath,
+    ).openRead().transform(utf8.decoder);
+    await for (final chunk in decoded) {
+      cancellationToken?.throwIfCancelled();
+      final remaining = maxChars - length;
+      if (chunk.length > remaining) {
+        if (remaining > 0) buffer.write(chunk.substring(0, remaining));
+        truncated = true;
+        break;
+      }
+      buffer.write(chunk);
+      length += chunk.length;
+    }
+    cancellationToken?.throwIfCancelled();
+    return truncated ? '${buffer.toString()}...' : buffer.toString();
   }
 
   Future<Map<String, dynamic>> writeFile(
     String rootPath,
     String relativePath,
-    String content,
-  ) async {
+    String content, {
+    CancellationToken? cancellationToken,
+  }) async {
+    cancellationToken?.throwIfCancelled();
     final resolved = await resolve(rootPath, relativePath, mustExist: false);
-    final file = File(resolved.absolutePath);
-    await file.parent.create(recursive: true);
-    await file.writeAsString(content);
-    return {
-      'path': resolved.relativePath,
-      'bytes': utf8.encode(content).length,
-    };
+    final bytes = utf8.encode(content);
+    _throwIfWriteTooLarge(bytes.length);
+    await _atomicWrite(
+      File(resolved.absolutePath),
+      bytes,
+      cancellationToken: cancellationToken,
+    );
+    return {'path': resolved.relativePath, 'bytes': bytes.length};
   }
 
   Future<Map<String, dynamic>> patchFile(
@@ -167,17 +221,25 @@ class WorkspaceSandbox {
     String oldText,
     String newText, {
     bool replaceAll = false,
+    CancellationToken? cancellationToken,
   }) async {
+    cancellationToken?.throwIfCancelled();
     final resolved = await resolve(rootPath, relativePath);
     final file = File(resolved.absolutePath);
-    final current = await file.readAsString();
+    final current = (await _readUtf8File(
+      file,
+      maxBytes: kMaxReadBytes,
+      cancellationToken: cancellationToken,
+    )).text;
     if (!current.contains(oldText)) {
       throw WorkspaceSandboxException('Patch text was not found.');
     }
     final updated = replaceAll
         ? current.replaceAll(oldText, newText)
         : current.replaceFirst(oldText, newText);
-    await file.writeAsString(updated);
+    final bytes = utf8.encode(updated);
+    _throwIfWriteTooLarge(bytes.length);
+    await _atomicWrite(file, bytes, cancellationToken: cancellationToken);
     return {
       'path': resolved.relativePath,
       'replacements': replaceAll ? _countMatches(current, oldText) : 1,
@@ -234,7 +296,9 @@ class WorkspaceSandbox {
     String rootPath,
     String query, {
     String relativePath = '.',
+    CancellationToken? cancellationToken,
   }) async {
+    cancellationToken?.throwIfCancelled();
     final trimmed = query.trim();
     if (trimmed.isEmpty) {
       throw WorkspaceSandboxException('Search query is required.');
@@ -249,12 +313,15 @@ class WorkspaceSandbox {
 
     final results = <Map<String, dynamic>>[];
     final pendingDirectories = <Directory>[Directory(root.absolutePath)];
+    final lowerQuery = trimmed.toLowerCase();
+    var scannedFiles = 0;
 
     while (pendingDirectories.isNotEmpty &&
         results.length < kMaxSearchResults) {
       final directory = pendingDirectories.removeLast();
       try {
         await for (final entity in directory.list(followLinks: false)) {
+          cancellationToken?.throwIfCancelled();
           if (results.length >= kMaxSearchResults) break;
 
           final basename = path.basename(entity.path);
@@ -265,25 +332,59 @@ class WorkspaceSandbox {
           }
 
           if (entity is! File) continue;
-          if (await entity.length() > kMaxReadBytes) continue;
+          scannedFiles++;
+          if (scannedFiles > kMaxSearchFiles) {
+            throw WorkspaceSandboxException(
+              'Search examined more than $kMaxSearchFiles files. '
+              'Narrow the query or specify a more targeted path to continue.',
+              code: 'workspace_search_too_broad',
+            );
+          }
 
           final rel = _relative(root.rootPath, entity.path);
           try {
-            final lines = await entity.readAsLines();
-            for (var i = 0; i < lines.length; i++) {
-              if (!lines[i].toLowerCase().contains(trimmed.toLowerCase())) {
+            var lineNumber = 0;
+            var fileBytes = 0;
+            final byteStream = entity.openRead().transform(
+              StreamTransformer<List<int>, List<int>>.fromHandlers(
+                handleData: (chunk, sink) {
+                  cancellationToken?.throwIfCancelled();
+                  fileBytes += chunk.length;
+                  if (fileBytes > kMaxReadBytes) {
+                    sink.addError(
+                      const WorkspaceSandboxException(
+                        'File is too large to search safely.',
+                        code: 'workspace_file_too_large',
+                      ),
+                    );
+                    return;
+                  }
+                  sink.add(chunk);
+                },
+              ),
+            );
+            final lines = byteStream
+                .transform(utf8.decoder)
+                .transform(const LineSplitter());
+            await for (final line in lines) {
+              cancellationToken?.throwIfCancelled();
+              lineNumber++;
+              if (!line.toLowerCase().contains(lowerQuery)) {
                 continue;
               }
               final result = {
                 'path': rel,
-                'line': i + 1,
-                'preview': lines[i].trim(),
+                'line': lineNumber,
+                'preview': line.trim(),
               };
               throwIfSearchOutputTooLarge([...results, result]);
               results.add(result);
               if (results.length >= kMaxSearchResults) break;
             }
           } on FormatException {
+            continue;
+          } on WorkspaceSandboxException catch (error) {
+            if (error.code != 'workspace_file_too_large') rethrow;
             continue;
           } on FileSystemException {
             continue;
@@ -330,6 +431,97 @@ class WorkspaceSandbox {
   // ---------------------------------------------------------------------------
   // Internal Helpers (operational mechanics, not policy)
   // ---------------------------------------------------------------------------
+
+  Future<_Utf8FileContent> _readUtf8File(
+    File file, {
+    required int maxBytes,
+    CancellationToken? cancellationToken,
+  }) async {
+    cancellationToken?.throwIfCancelled();
+    final bytes = BytesBuilder();
+    var byteCount = 0;
+    await for (final chunk in file.openRead()) {
+      cancellationToken?.throwIfCancelled();
+      byteCount += chunk.length;
+      if (byteCount > maxBytes) {
+        throw WorkspaceSandboxException(
+          'File is too large to read (limit $maxBytes bytes).',
+          code: 'workspace_file_too_large',
+        );
+      }
+      bytes.add(chunk);
+    }
+    cancellationToken?.throwIfCancelled();
+    return _Utf8FileContent(utf8.decode(bytes.takeBytes()), byteCount);
+  }
+
+  void _throwIfWriteTooLarge(int bytes) {
+    if (bytes <= kMaxWriteBytes) return;
+    throw WorkspaceSandboxException(
+      'File is too large to write ($bytes bytes, limit $kMaxWriteBytes bytes).',
+      code: 'workspace_file_too_large',
+    );
+  }
+
+  Future<void> _atomicWrite(
+    File destination,
+    List<int> bytes, {
+    CancellationToken? cancellationToken,
+  }) async {
+    cancellationToken?.throwIfCancelled();
+    await destination.parent.create(recursive: true);
+    final temp = await _createTemporarySibling(destination);
+    var committed = false;
+    try {
+      if (await destination.exists()) {
+        final originalMode = (await destination.stat()).mode;
+        await destination.copy(temp.path);
+        await _applyPosixMode(temp, originalMode);
+      }
+      cancellationToken?.throwIfCancelled();
+      await temp.writeAsBytes(bytes, flush: true);
+      cancellationToken?.throwIfCancelled();
+      await temp.rename(destination.path);
+      committed = true;
+    } finally {
+      if (!committed && await temp.exists()) {
+        await temp.delete();
+      }
+    }
+  }
+
+  Future<void> _applyPosixMode(File file, int mode) async {
+    if (!Platform.isLinux && !Platform.isMacOS) return;
+    final permissions = (mode & 0xfff).toRadixString(8);
+    final result = await Process.run('chmod', [permissions, file.path]);
+    if (result.exitCode != 0) {
+      throw FileSystemException(
+        'Unable to preserve file permissions during atomic replacement.',
+        file.path,
+      );
+    }
+  }
+
+  Future<File> _createTemporarySibling(File destination) async {
+    for (var attempt = 0; attempt < 100; attempt++) {
+      final temp = File(
+        path.join(
+          destination.parent.path,
+          '.${path.basename(destination.path)}.hermes-$pid-'
+          '${DateTime.now().microsecondsSinceEpoch}-$attempt.tmp',
+        ),
+      );
+      try {
+        return await temp.create(exclusive: true);
+      } on FileSystemException {
+        continue;
+      }
+    }
+    throw FileSystemException(
+      'Unable to create a temporary file for atomic replacement.',
+      destination.path,
+    );
+  }
 
   String _commandLine({
     required String? command,
@@ -405,4 +597,11 @@ class WorkspaceSandbox {
       basename != '.' &&
       basename != '..' &&
       basename.startsWith('.');
+}
+
+class _Utf8FileContent {
+  const _Utf8FileContent(this.text, this.bytes);
+
+  final String text;
+  final int bytes;
 }

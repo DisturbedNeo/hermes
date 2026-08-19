@@ -120,6 +120,7 @@ class ListDirectoryTool extends WorkspaceTool {
       'entries': await sandbox.listDirectory(
         context.workspace.rootPath,
         stringArg(input, 'path', fallback: '.'),
+        cancellationToken: context.cancellationToken,
       ),
     };
   }
@@ -162,7 +163,11 @@ class ReadFileTool extends WorkspaceTool {
 
     if (request.isEmpty) {
       // Standard read - return full file content
-      return sandbox.readFile(context.workspace.rootPath, filePath);
+      return sandbox.readFile(
+        context.workspace.rootPath,
+        filePath,
+        cancellationToken: context.cancellationToken,
+      );
     }
 
     // Request mode - extract specific information using subagent
@@ -182,6 +187,7 @@ class ReadFileTool extends WorkspaceTool {
       final fileContent = await sandbox.readFile(
         context.workspace.rootPath,
         filePath,
+        cancellationToken: context.cancellationToken,
       );
 
       // Check if the read returned an error
@@ -250,6 +256,7 @@ class WriteFileTool extends WorkspaceTool {
       context.workspace.rootPath,
       stringArg(input, 'path'),
       stringArg(input, 'content'),
+      cancellationToken: context.cancellationToken,
     );
   }
 }
@@ -293,6 +300,7 @@ class PatchFileTool extends WorkspaceTool {
       stringArg(input, 'old_text'),
       stringArg(input, 'new_text'),
       replaceAll: boolArg(input, 'replace_all'),
+      cancellationToken: context.cancellationToken,
     );
   }
 }
@@ -331,6 +339,7 @@ class SearchFilesTool extends WorkspaceTool {
         context.workspace.rootPath,
         stringArg(input, 'query'),
         relativePath: stringArg(input, 'path', fallback: '.'),
+        cancellationToken: context.cancellationToken,
       ),
     };
   }

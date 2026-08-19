@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -122,6 +123,63 @@ void main() {
     expect(chat.saveFailure, isNull);
   });
 
+  test('first save keeps edits made while persistence is in flight', () async {
+    SharedPreferences.setMockInitialValues({});
+    final tempDir = await Directory.systemTemp.createTemp(
+      'hermes_save_revision_',
+    );
+    final preferences = PreferencesService();
+    final library = _DelayedChatLibraryService(
+      ChatLibraryRepository(
+        preferencesService: preferences,
+        databasePath: path.join(tempDir.path, 'hermes.db'),
+      ),
+    );
+    final serverManager = LlamaServerManager();
+    final sandbox = WorkspaceSandbox();
+    final tools = ToolService(workspaceSandbox: sandbox);
+    final tasks = TaskService(toolService: tools, sandbox: sandbox);
+    final chat = ChatService(
+      serverManager: serverManager,
+      toolService: tools,
+      taskService: tasks,
+      projectService: ProjectService(taskService: tasks),
+      chatLibrary: library,
+      workspaceService: WorkspaceService(sandbox: sandbox),
+      preferencesService: preferences,
+    );
+    addTearDown(() async {
+      await chat.disposeWithoutSaving();
+      await serverManager.dispose();
+      await library.dispose();
+      preferences.dispose();
+      if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    });
+
+    chat.messageStore.upsert(_message('first', 'Captured by first save'));
+    library.delayNextSave();
+    final firstSave = chat.saveCurrentChat();
+    await library.saveStarted;
+
+    chat.messageStore.upsert(_message('second', 'Added during first save'));
+    library.releaseSave();
+    await firstSave;
+
+    expect(chat.currentChatId, isNotNull);
+    expect(chat.isDirty, isTrue);
+    expect(
+      library.savedSnapshots.single.map((message) => message.id),
+      isNot(contains('second')),
+    );
+
+    await chat.flushCurrentChat();
+
+    final restored = await library.getChat(chat.currentChatId!);
+    expect(restored?.messages.map((message) => message.id), contains('second'));
+    expect(library.saveAttempts, 2);
+    expect(chat.isDirty, isFalse);
+  });
+
   test('exit preparation attempts every tab and can be retried', () async {
     SharedPreferences.setMockInitialValues({});
     final tempDir = await Directory.systemTemp.createTemp('hermes_tab_flush_');
@@ -233,6 +291,54 @@ class _FailingChatLibraryService extends ChatLibraryService {
     if (_failuresRemaining > 0) {
       _failuresRemaining--;
       return Future.error(StateError('Injected save failure'));
+    }
+    return super.saveChatSnapshot(
+      messages: messages,
+      modelSnapshot: modelSnapshot,
+      workspace: workspace,
+      systemPromptSnapshot: systemPromptSnapshot,
+      chatId: chatId,
+      title: title,
+    );
+  }
+}
+
+class _DelayedChatLibraryService extends ChatLibraryService {
+  _DelayedChatLibraryService(ChatLibraryRepository repository)
+    : super(repository: repository);
+
+  final savedSnapshots = <List<Bubble>>[];
+  var saveAttempts = 0;
+  Completer<void>? _saveStarted;
+  Completer<void>? _saveRelease;
+
+  Future<void> get saveStarted => _saveStarted!.future;
+
+  void delayNextSave() {
+    _saveStarted = Completer<void>();
+    _saveRelease = Completer<void>();
+  }
+
+  void releaseSave() => _saveRelease!.complete();
+
+  @override
+  Future<SavedChat> saveChatSnapshot({
+    required List<Bubble> messages,
+    required ModelConfigurationSnapshot? modelSnapshot,
+    required WorkspaceAttachment? workspace,
+    required SystemPromptSnapshot? systemPromptSnapshot,
+    String? chatId,
+    String? title,
+  }) async {
+    saveAttempts++;
+    savedSnapshots.add(List<Bubble>.of(messages));
+    final started = _saveStarted;
+    final release = _saveRelease;
+    if (started != null && release != null) {
+      started.complete();
+      await release.future;
+      _saveStarted = null;
+      _saveRelease = null;
     }
     return super.saveChatSnapshot(
       messages: messages,

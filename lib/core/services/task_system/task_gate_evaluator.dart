@@ -173,21 +173,43 @@ class TaskGateEvaluator {
           toolCalls,
           now,
         ),
-        'content_contains' => await _contentContains(workspace, gate, now),
+        'content_contains' => await _contentContains(
+          workspace,
+          gate,
+          now,
+          cancellationToken,
+        ),
         'content_not_contains' => await _contentNotContains(
           workspace,
           gate,
           now,
+          cancellationToken,
         ),
-        'json_valid' => await _jsonValid(workspace, gate, now),
-        'yaml_valid' => await _yamlValid(workspace, gate, now),
-        'xml_valid' => await _xmlValid(workspace, gate, now),
+        'json_valid' => await _jsonValid(
+          workspace,
+          gate,
+          now,
+          cancellationToken,
+        ),
+        'yaml_valid' => await _yamlValid(
+          workspace,
+          gate,
+          now,
+          cancellationToken,
+        ),
+        'xml_valid' => await _xmlValid(workspace, gate, now, cancellationToken),
         'markdown_links_valid' => await _markdownLinksValid(
           workspace,
           gate,
           now,
+          cancellationToken,
         ),
-        'schema_matches' => await _schemaMatches(workspace, gate, now),
+        'schema_matches' => await _schemaMatches(
+          workspace,
+          gate,
+          now,
+          cancellationToken,
+        ),
         'workspace_clean_enough' => await _workspaceCleanEnough(
           workspace,
           gate,
@@ -581,8 +603,9 @@ class TaskGateEvaluator {
     WorkspaceAttachment workspace,
     TaskGate gate,
     DateTime now,
+    CancellationToken? cancellationToken,
   ) async {
-    final content = await _readGateFile(workspace, gate);
+    final content = await _readGateFile(workspace, gate, cancellationToken);
     final required = jsonStringList(
       gate.params['mustContain'] ?? gate.params['contains'],
     );
@@ -610,8 +633,9 @@ class TaskGateEvaluator {
     WorkspaceAttachment workspace,
     TaskGate gate,
     DateTime now,
+    CancellationToken? cancellationToken,
   ) async {
-    final content = await _readGateFile(workspace, gate);
+    final content = await _readGateFile(workspace, gate, cancellationToken);
     final forbidden = jsonStringList(
       gate.params['mustNotContain'] ??
           gate.params['notContain'] ??
@@ -641,8 +665,9 @@ class TaskGateEvaluator {
     WorkspaceAttachment workspace,
     TaskGate gate,
     DateTime now,
+    CancellationToken? cancellationToken,
   ) async {
-    final content = await _readGateFile(workspace, gate);
+    final content = await _readGateFile(workspace, gate, cancellationToken);
     jsonDecode(content);
     return _result(gate, _passStatus(gate), 'JSON is valid.', now);
   }
@@ -651,8 +676,9 @@ class TaskGateEvaluator {
     WorkspaceAttachment workspace,
     TaskGate gate,
     DateTime now,
+    CancellationToken? cancellationToken,
   ) async {
-    final content = await _readGateFile(workspace, gate);
+    final content = await _readGateFile(workspace, gate, cancellationToken);
     loadYaml(content);
     return _result(gate, _passStatus(gate), 'YAML is valid.', now);
   }
@@ -661,8 +687,13 @@ class TaskGateEvaluator {
     WorkspaceAttachment workspace,
     TaskGate gate,
     DateTime now,
+    CancellationToken? cancellationToken,
   ) async {
-    final content = (await _readGateFile(workspace, gate)).trim();
+    final content = (await _readGateFile(
+      workspace,
+      gate,
+      cancellationToken,
+    )).trim();
     if (!_looksLikeWellFormedXml(content)) {
       return _result(
         gate,
@@ -678,12 +709,14 @@ class TaskGateEvaluator {
     WorkspaceAttachment workspace,
     TaskGate gate,
     DateTime now,
+    CancellationToken? cancellationToken,
   ) async {
     final filePath = _gatePath(gate);
-    final content = await _readGateFile(workspace, gate);
+    final content = await _readGateFile(workspace, gate, cancellationToken);
     final missing = <String>[];
     final linkPattern = RegExp(r'\[[^\]]+\]\(([^)]+)\)');
     for (final match in linkPattern.allMatches(content)) {
+      cancellationToken?.throwIfCancelled();
       final rawTarget = match.group(1)?.trim() ?? '';
       if (rawTarget.isEmpty ||
           rawTarget.startsWith('#') ||
@@ -727,8 +760,9 @@ class TaskGateEvaluator {
     WorkspaceAttachment workspace,
     TaskGate gate,
     DateTime now,
+    CancellationToken? cancellationToken,
   ) async {
-    final content = await _readGateFile(workspace, gate);
+    final content = await _readGateFile(workspace, gate, cancellationToken);
     final decoded = jsonDecode(content);
     if (decoded is! Map) {
       return _result(
@@ -912,16 +946,14 @@ $prompt
   Future<String> _readGateFile(
     WorkspaceAttachment workspace,
     TaskGate gate,
+    CancellationToken? cancellationToken,
   ) async {
-    final resolved = await _sandbox.resolve(
+    final result = await _sandbox.readFile(
       workspace.rootPath,
       _gatePath(gate),
+      cancellationToken: cancellationToken,
     );
-    final file = File(resolved.absolutePath);
-    if (!await file.exists()) {
-      throw StateError('File not found: ${resolved.relativePath}');
-    }
-    return file.readAsString();
+    return result['content'] as String;
   }
 
   int _lastMutationIndex(List<TaskToolCallRecord> toolCalls) {

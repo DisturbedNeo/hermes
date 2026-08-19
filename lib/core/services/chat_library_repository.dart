@@ -135,6 +135,17 @@ class ChatLibraryRepository {
     required SystemPromptSnapshot? systemPromptSnapshot,
     required List<Bubble> messages,
   }) async {
+    final messageIds = <String>{};
+    for (final message in messages) {
+      if (!messageIds.add(message.id)) {
+        throw ArgumentError.value(
+          message.id,
+          'messages',
+          'Duplicate message id',
+        );
+      }
+    }
+
     final db = await _db;
     final id = chatId ?? uuid.v7();
 
@@ -163,7 +174,7 @@ class ChatLibraryRepository {
           ? null
           : _nullableDate(existing.single['last_opened_at'] as int?);
 
-      await txn.insert('saved_chats', {
+      final chatValues = <String, Object?>{
         'id': id,
         'title': resolvedTitle,
         'created_at': createdAt.millisecondsSinceEpoch,
@@ -182,21 +193,40 @@ class ChatLibraryRepository {
         'system_prompt_id': systemPromptSnapshot?.id,
         'system_prompt_name': systemPromptSnapshot?.name,
         'system_prompt_text': systemPromptSnapshot?.text,
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      };
+      if (existing.isEmpty) {
+        await txn.insert('saved_chats', chatValues);
+      } else {
+        final updateValues = Map<String, Object?>.of(chatValues)..remove('id');
+        await txn.update(
+          'saved_chats',
+          updateValues,
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      }
 
-      // Delete old messages.
-      await txn.delete(
-        'saved_chat_messages',
-        where: 'chat_id = ?',
-        whereArgs: [id],
-      );
+      final existingMessageRows = existing.isEmpty
+          ? <Map<String, Object?>>[]
+          : await txn.query(
+              'saved_chat_messages',
+              where: 'chat_id = ?',
+              whereArgs: [id],
+            );
+      final existingMessages = {
+        for (final row in existingMessageRows) row['message_id'] as String: row,
+      };
+      final changedMessages = <Bubble>[];
+      final messageBatch = txn.batch();
+      var hasMessageChanges = false;
 
-      // Insert new messages.
-      final batch = txn.batch();
       for (var i = 0; i < messages.length; i++) {
         final message = messages[i];
-        final messageCreatedAt = message.createdAt ?? now;
-        batch.insert('saved_chat_messages', {
+        final existingMessage = existingMessages[message.id];
+        final messageCreatedAt = existingMessage == null
+            ? message.createdAt ?? now
+            : _date(existingMessage['created_at'] as int);
+        final messageValues = <String, Object?>{
           'chat_id': id,
           'message_id': message.id,
           'role': message.role.wire,
@@ -210,12 +240,55 @@ class ChatLibraryRepository {
           'position': i,
           'created_at': messageCreatedAt.millisecondsSinceEpoch,
           'updated_at': now.millisecondsSinceEpoch,
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        };
+        if (existingMessage == null) {
+          messageBatch.insert('saved_chat_messages', messageValues);
+          hasMessageChanges = true;
+          changedMessages.add(message);
+        } else if (_messageRowChanged(existingMessage, messageValues)) {
+          final updateValues = Map<String, Object?>.of(messageValues)
+            ..remove('chat_id')
+            ..remove('message_id')
+            ..remove('created_at');
+          messageBatch.update(
+            'saved_chat_messages',
+            updateValues,
+            where: 'chat_id = ? AND message_id = ?',
+            whereArgs: [id, message.id],
+          );
+          hasMessageChanges = true;
+          changedMessages.add(message);
+        }
       }
-      await batch.commit(noResult: true);
 
-      // Refresh FTS search index.
-      await _refreshSearchIndex(txn, id, resolvedTitle, messages);
+      final removedMessageIds = existingMessages.keys
+          .where((messageId) => !messageIds.contains(messageId))
+          .toList(growable: false);
+      for (final messageId in removedMessageIds) {
+        messageBatch.delete(
+          'saved_chat_messages',
+          where: 'chat_id = ? AND message_id = ?',
+          whereArgs: [id, messageId],
+        );
+        hasMessageChanges = true;
+      }
+      if (hasMessageChanges) {
+        await messageBatch.commit(noResult: true);
+      }
+
+      final titleChanged =
+          existing.isNotEmpty && existing.single['title'] != resolvedTitle;
+      if (existing.isEmpty || titleChanged) {
+        await _refreshSearchIndex(txn, id, resolvedTitle, messages);
+      } else if (changedMessages.isNotEmpty || removedMessageIds.isNotEmpty) {
+        await _refreshChangedSearchRows(
+          txn,
+          id,
+          resolvedTitle,
+          changedMessages,
+          removedMessageIds,
+        );
+      }
 
       saved = SavedChat(
         id: id,
@@ -447,6 +520,55 @@ class ChatLibraryRepository {
     }
 
     await batch.commit(noResult: true);
+  }
+
+  Future<void> _refreshChangedSearchRows(
+    Transaction txn,
+    String chatId,
+    String title,
+    List<Bubble> changedMessages,
+    List<String> removedMessageIds,
+  ) async {
+    final batch = txn.batch();
+    for (final messageId in {
+      ...removedMessageIds,
+      ...changedMessages.map((message) => message.id),
+    }) {
+      batch.delete(
+        'saved_chat_search',
+        where: 'chat_id = ? AND message_id = ?',
+        whereArgs: [chatId, messageId],
+      );
+    }
+    for (final message in changedMessages) {
+      batch.insert('saved_chat_search', {
+        'chat_id': chatId,
+        'message_id': message.id,
+        'title': title,
+        'body': '${message.text}\n${message.reasoning}',
+      });
+    }
+    await batch.commit(noResult: true);
+  }
+
+  bool _messageRowChanged(
+    Map<String, Object?> existing,
+    Map<String, Object?> candidate,
+  ) {
+    const comparedColumns = [
+      'role',
+      'text',
+      'reasoning',
+      'tools_json',
+      'omitted_from_model_payload',
+      'summary_id',
+      'is_summary_memory',
+      'summary_schema_version',
+      'position',
+    ];
+    return comparedColumns.any(
+      (column) => existing[column] != candidate[column],
+    );
   }
 
   Future<void> _ensureColumn(

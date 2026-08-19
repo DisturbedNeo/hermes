@@ -17,6 +17,15 @@ import 'package:path/path.dart' as path;
 /// Maximum bytes allowed when reading a single file.
 const int kMaxReadBytes = 1024 * 1024;
 
+/// Maximum UTF-8 bytes allowed when creating or replacing a file.
+const int kMaxWriteBytes = 1024 * 1024;
+
+/// Maximum number of entries returned by one directory listing.
+const int kMaxDirectoryEntries = 2000;
+
+/// Maximum number of files a single search may examine.
+const int kMaxSearchFiles = 10000;
+
 /// Maximum number of search match results to return.
 const int kMaxSearchResults = 100;
 

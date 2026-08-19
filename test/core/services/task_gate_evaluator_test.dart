@@ -6,7 +6,9 @@ import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/task_system/task_gate_evaluator.dart';
+import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
@@ -102,6 +104,55 @@ void main() {
       );
 
       expect(failed.results.single.status, TaskGateStatus.failed);
+    });
+
+    test('content gates fail safely for oversized files', () async {
+      await File(path.join(root.path, 'out.md')).writeAsString(
+        List.filled(WorkspaceSandbox.maxReadBytes + 1, 'x').join(),
+      );
+
+      final evaluation = await evaluator.evaluate(
+        workspace: workspace,
+        task: task,
+        step: step,
+        gates: const [
+          TaskGate(
+            id: 'content_contains',
+            params: {
+              'path': 'out.md',
+              'contains': ['x'],
+            },
+          ),
+        ],
+      );
+
+      expect(evaluation.results.single.status, TaskGateStatus.failed);
+      expect(evaluation.results.single.summary, contains('too large'));
+    });
+
+    test('content gates propagate cancellation', () async {
+      await File(path.join(root.path, 'out.md')).writeAsString('done');
+      final token = CancellationToken();
+      await token.cancel();
+
+      await expectLater(
+        evaluator.evaluate(
+          workspace: workspace,
+          task: task,
+          step: step,
+          gates: const [
+            TaskGate(
+              id: 'content_contains',
+              params: {
+                'path': 'out.md',
+                'contains': ['done'],
+              },
+            ),
+          ],
+          cancellationToken: token,
+        ),
+        throwsA(isA<OperationCancelledException>()),
+      );
     });
 
     test(
