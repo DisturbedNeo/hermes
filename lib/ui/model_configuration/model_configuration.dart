@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/model_load_configuration.dart';
@@ -70,6 +72,8 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
   late double _frequencyPenalty;
   late String _reasoningMode;
   late bool _mtpEnabled;
+  late final TextEditingController _mtpModelPathController;
+  late final ScrollController _mtpModelPathScrollController;
   late int _mtpDraftTokens;
   late bool _flashAttention;
   late bool _cachePrompt;
@@ -84,8 +88,17 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
   @override
   void initState() {
     super.initState();
+    _mtpModelPathController = TextEditingController();
+    _mtpModelPathScrollController = ScrollController(keepScrollOffset: false);
     _hasSavedConfiguration = widget.hasSavedConfiguration;
     _applyConfiguration(widget.initialConfiguration);
+  }
+
+  @override
+  void dispose() {
+    _mtpModelPathController.dispose();
+    _mtpModelPathScrollController.dispose();
+    super.dispose();
   }
 
   void _applyConfiguration(ModelLoadConfiguration configuration) {
@@ -105,6 +118,7 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
     _frequencyPenalty = config.frequencyPenalty;
     _reasoningMode = config.thinking ? config.reasoningEffort : _reasoningOff;
     _mtpEnabled = config.mtpEnabled;
+    _mtpModelPathController.text = config.mtpModelPath ?? '';
     _mtpDraftTokens = config.mtpDraftTokens;
     _flashAttention = config.flashAttention;
     _cachePrompt = config.cachePrompt;
@@ -133,6 +147,9 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
         ? ModelLoadConfiguration.defaultReasoningEffort
         : _reasoningMode,
     mtpEnabled: _mtpEnabled,
+    mtpModelPath: ModelConfigurationSnapshot.normaliseOptionalModelPath(
+      _mtpModelPathController.text,
+    ),
     mtpDraftTokens: _mtpDraftTokens,
     flashAttention: _flashAttention,
     cachePrompt: _cachePrompt,
@@ -194,6 +211,20 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Saved configuration removed')),
     );
+  }
+
+  Future<void> _selectMtpModelFile() async {
+    const typeGroup = XTypeGroup(
+      label: 'GGUF models',
+      extensions: <String>['gguf'],
+    );
+    final file = await openFile(
+      acceptedTypeGroups: const <XTypeGroup>[typeGroup],
+      confirmButtonText: 'Select MTP model',
+    );
+    if (file == null || !mounted) return;
+
+    _mtpModelPathController.text = file.path;
   }
 
   void _cancel() {
@@ -322,12 +353,30 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                   contentPadding: EdgeInsets.zero,
                   title: const Text('MTP speculative decoding'),
                   subtitle: const Text(
-                    'Requires a GGUF containing compatible MTP/NextN weights',
+                    'Uses compatible MTP/NextN weights from the main GGUF or '
+                    'a sidecar',
                   ),
                   value: _mtpEnabled,
                   onChanged: (v) => setState(() => _mtpEnabled = v),
                 ),
-                if (_mtpEnabled)
+                if (_mtpEnabled) ...[
+                  TextFormField(
+                    key: const ValueKey('mtp-model-path'),
+                    controller: _mtpModelPathController,
+                    scrollController: _mtpModelPathScrollController,
+                    decoration: InputDecoration(
+                      labelText: 'MTP model file (optional)',
+                      helperText:
+                          'Leave blank to use weights bundled in the main GGUF',
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        tooltip: 'Select MTP model file',
+                        onPressed: _selectMtpModelFile,
+                        icon: const Icon(Icons.folder_open),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   SliderControl.integer(
                     key: const PageStorageKey<String>('mtp-draft-tokens'),
                     label: 'Draft tokens',
@@ -337,6 +386,7 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                     step: 1,
                     onChanged: (v) => setState(() => _mtpDraftTokens = v),
                   ),
+                ],
               ],
             ),
             const SizedBox(height: 8),

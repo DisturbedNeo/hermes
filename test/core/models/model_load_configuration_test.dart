@@ -25,6 +25,7 @@ void main() {
     expect(config.thinking, isTrue);
     expect(config.reasoningEffort, 'default');
     expect(config.mtpEnabled, isFalse);
+    expect(config.mtpModelPath, isNull);
     expect(config.mtpDraftTokens, 3);
     expect(config.flashAttention, isTrue);
     expect(config.cachePrompt, isTrue);
@@ -40,6 +41,7 @@ void main() {
       thinking: true,
       reasoningEffort: 'high',
       mtpEnabled: true,
+      mtpModelPath: '/models/mtp.gguf',
       mtpDraftTokens: 7,
     );
     final decoded = ModelJson.decodeString<ModelLoadConfiguration>(
@@ -54,6 +56,7 @@ void main() {
     expect(decoded.thinking, isTrue);
     expect(decoded.reasoningEffort, 'high');
     expect(decoded.mtpEnabled, isTrue);
+    expect(decoded.mtpModelPath, '/models/mtp.gguf');
     expect(decoded.mtpDraftTokens, 7);
     expect(decoded.nCtx, original.nCtx);
     expect(defaults.nCtx, ModelLoadConfiguration.defaultNCtx);
@@ -61,6 +64,7 @@ void main() {
     expect(defaults.thinking, ModelLoadConfiguration.defaultThinking);
     expect(defaults.reasoningEffort, 'default');
     expect(defaults.mtpEnabled, isFalse);
+    expect(defaults.mtpModelPath, isNull);
     expect(defaults.mtpDraftTokens, 3);
     expect(ModelJson.encode(legacy), isNot(contains('nGpuLayers')));
   });
@@ -71,6 +75,7 @@ void main() {
       thinking: true,
       reasoningEffort: 'medium',
       mtpEnabled: true,
+      mtpModelPath: '/models/mtp.gguf',
       mtpDraftTokens: 4,
     );
     final encoded = ModelJson.encode(config);
@@ -88,6 +93,7 @@ void main() {
     expect(snapshot.thinking, isTrue);
     expect(snapshot.reasoningEffort, 'medium');
     expect(snapshot.mtpEnabled, isTrue);
+    expect(snapshot.mtpModelPath, '/models/mtp.gguf');
     expect(snapshot.mtpDraftTokens, 4);
     expect(encoded, isNot(contains('modelName')));
     expect(encoded, isNot(contains('modelPath')));
@@ -103,6 +109,7 @@ void main() {
       'minP': -2,
       'reasoningEffort': 'unsupported',
       'mtpEnabled': true,
+      'mtpModelPath': '  /models/mtp.gguf  ',
       'mtpDraftTokens': 99,
       'cacheReuse': 10,
       'kvCacheTypeK': 'invalid',
@@ -115,6 +122,7 @@ void main() {
     expect(normalised.minP, 0.0);
     expect(normalised.reasoningEffort, 'default');
     expect(normalised.mtpEnabled, isTrue);
+    expect(normalised.mtpModelPath, '/models/mtp.gguf');
     expect(
       normalised.mtpDraftTokens,
       ModelConfigurationSnapshot.maxMtpDraftTokens,
@@ -136,6 +144,7 @@ ModelLoadConfiguration _configuration({
   bool thinking = false,
   String reasoningEffort = ModelLoadConfiguration.defaultReasoningEffort,
   bool mtpEnabled = ModelLoadConfiguration.defaultMtpEnabled,
+  String? mtpModelPath,
   int mtpDraftTokens = ModelLoadConfiguration.defaultMtpDraftTokens,
 }) => ModelLoadConfiguration(
   nCtx: ModelLoadConfiguration.defaultNCtx,
@@ -154,6 +163,7 @@ ModelLoadConfiguration _configuration({
   thinking: thinking,
   reasoningEffort: reasoningEffort,
   mtpEnabled: mtpEnabled,
+  mtpModelPath: mtpModelPath,
   mtpDraftTokens: mtpDraftTokens,
   flashAttention: ModelLoadConfiguration.defaultFlashAttention,
   cachePrompt: ModelLoadConfiguration.defaultCachePrompt,

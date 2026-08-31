@@ -77,6 +77,8 @@ class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
   final String reasoningEffort;
   @MappableField(hook: JsonBoolHook())
   final bool mtpEnabled;
+  @MappableField(hook: NullableModelPathHook())
+  final String? mtpModelPath;
   @MappableField(hook: JsonIntHook(fallback: 3, min: 1, max: 16))
   final int mtpDraftTokens;
   @MappableField(hook: JsonBoolHook(fallback: true))
@@ -112,6 +114,7 @@ class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
     required this.thinking,
     String reasoningEffort = defaultReasoningEffort,
     this.mtpEnabled = false,
+    this.mtpModelPath,
     this.mtpDraftTokens = defaultMtpDraftTokens,
     required this.flashAttention,
     required this.cachePrompt,
@@ -142,6 +145,7 @@ class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
         thinking == other.thinking &&
         reasoningEffort == other.reasoningEffort &&
         mtpEnabled == other.mtpEnabled &&
+        mtpModelPath == other.mtpModelPath &&
         mtpDraftTokens == other.mtpDraftTokens &&
         flashAttention == other.flashAttention &&
         cachePrompt == other.cachePrompt &&
@@ -177,6 +181,7 @@ class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
     thinking,
     reasoningEffort,
     mtpEnabled,
+    mtpModelPath,
     mtpDraftTokens,
     flashAttention,
     cachePrompt,
@@ -191,6 +196,11 @@ class ModelConfigurationSnapshot with ModelConfigurationSnapshotMappable {
 
   static int clampMtpDraftTokens(int value) =>
       value.clamp(minMtpDraftTokens, maxMtpDraftTokens).toInt();
+
+  static String? normaliseOptionalModelPath(String? value) {
+    final normalised = value?.trim();
+    return normalised == null || normalised.isEmpty ? null : normalised;
+  }
 
   static String normaliseReasoningEffort(String value) {
     final normalised = value.trim().toLowerCase().replaceAll('-', '');
@@ -249,5 +259,15 @@ class ReasoningEffortHook extends MappingHook {
           value,
           fallback: ModelConfigurationSnapshot.defaultReasoningEffort,
         ),
+      );
+}
+
+class NullableModelPathHook extends MappingHook {
+  const NullableModelPathHook();
+
+  @override
+  Object? beforeDecode(Object? value) =>
+      ModelConfigurationSnapshot.normaliseOptionalModelPath(
+        value is String ? value : null,
       );
 }

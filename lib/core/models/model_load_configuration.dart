@@ -63,6 +63,8 @@ class ModelLoadConfiguration with ModelLoadConfigurationMappable {
   final String reasoningEffort;
   @MappableField(hook: JsonBoolHook())
   final bool mtpEnabled;
+  @MappableField(hook: NullableModelPathHook())
+  final String? mtpModelPath;
   @MappableField(hook: JsonIntHook(fallback: 3, min: 1, max: 16))
   final int mtpDraftTokens;
   @MappableField(hook: JsonBoolHook(fallback: true))
@@ -95,6 +97,7 @@ class ModelLoadConfiguration with ModelLoadConfigurationMappable {
     required this.thinking,
     String reasoningEffort = defaultReasoningEffort,
     this.mtpEnabled = defaultMtpEnabled,
+    this.mtpModelPath,
     this.mtpDraftTokens = defaultMtpDraftTokens,
     required this.flashAttention,
     required this.cachePrompt,
@@ -121,6 +124,7 @@ class ModelLoadConfiguration with ModelLoadConfigurationMappable {
     thinking: defaultThinking,
     reasoningEffort: defaultReasoningEffort,
     mtpEnabled: defaultMtpEnabled,
+    mtpModelPath: null,
     mtpDraftTokens: defaultMtpDraftTokens,
     flashAttention: defaultFlashAttention,
     cachePrompt: defaultCachePrompt,
@@ -149,6 +153,9 @@ class ModelLoadConfiguration with ModelLoadConfigurationMappable {
         ? ModelConfigurationSnapshot.normaliseReasoningEffort(reasoningEffort)
         : defaultReasoningEffort,
     mtpEnabled: mtpEnabled,
+    mtpModelPath: ModelConfigurationSnapshot.normaliseOptionalModelPath(
+      mtpModelPath,
+    ),
     mtpDraftTokens: ModelConfigurationSnapshot.clampMtpDraftTokens(
       mtpDraftTokens,
     ),
@@ -186,6 +193,7 @@ class ModelLoadConfiguration with ModelLoadConfigurationMappable {
       thinking: config.thinking,
       reasoningEffort: config.reasoningEffort,
       mtpEnabled: config.mtpEnabled,
+      mtpModelPath: config.mtpModelPath,
       mtpDraftTokens: config.mtpDraftTokens,
       flashAttention: config.flashAttention,
       cachePrompt: config.cachePrompt,

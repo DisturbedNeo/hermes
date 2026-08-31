@@ -37,6 +37,9 @@ List<String> buildLlamaServerArguments({
   required int port,
 }) {
   final nThreads = snapshot.nThreads;
+  final mtpModelPath = ModelConfigurationSnapshot.normaliseOptionalModelPath(
+    snapshot.mtpModelPath,
+  );
 
   return <String>[
     '-m',
@@ -127,6 +130,7 @@ List<String> buildLlamaServerArguments({
     ],
 
     if (snapshot.mtpEnabled) ...[
+      if (mtpModelPath != null) ...['--spec-draft-model', mtpModelPath],
       '--spec-type',
       'draft-mtp',
       '--spec-draft-n-max',
@@ -189,6 +193,7 @@ class LlamaServerManager implements Disposable {
       thinking: snapshot.thinking,
       reasoningEffort: snapshot.reasoningEffort,
       mtpEnabled: snapshot.mtpEnabled,
+      mtpModelPath: snapshot.mtpModelPath,
       mtpDraftTokens: snapshot.mtpDraftTokens,
       flashAttention: snapshot.flashAttention,
       cachePrompt: snapshot.cachePrompt,
@@ -223,6 +228,7 @@ class LlamaServerManager implements Disposable {
     bool thinking = true,
     String reasoningEffort = ModelConfigurationSnapshot.defaultReasoningEffort,
     bool mtpEnabled = false,
+    String? mtpModelPath,
     int mtpDraftTokens = ModelConfigurationSnapshot.defaultMtpDraftTokens,
     bool flashAttention = true,
     bool cachePrompt = true,
@@ -256,6 +262,9 @@ class LlamaServerManager implements Disposable {
           ? ModelConfigurationSnapshot.normaliseReasoningEffort(reasoningEffort)
           : ModelConfigurationSnapshot.defaultReasoningEffort,
       mtpEnabled: mtpEnabled,
+      mtpModelPath: ModelConfigurationSnapshot.normaliseOptionalModelPath(
+        mtpModelPath,
+      ),
       mtpDraftTokens: ModelConfigurationSnapshot.clampMtpDraftTokens(
         mtpDraftTokens,
       ),

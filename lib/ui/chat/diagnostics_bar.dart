@@ -487,8 +487,10 @@ class _DiagnosticsBand extends StatelessWidget {
             Icons.auto_awesome,
             'MTP',
             snapshot.mtpEnabled
-                ? 'On / ${snapshot.mtpDraftTokens} draft tokens'
+                ? '${snapshot.mtpModelPath == null ? 'Bundled' : 'Sidecar'} / '
+                      '${snapshot.mtpDraftTokens} draft tokens'
                 : 'Off',
+            tooltip: snapshot.mtpModelPath,
           ),
         ],
       ],

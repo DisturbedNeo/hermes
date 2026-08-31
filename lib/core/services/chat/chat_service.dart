@@ -461,6 +461,12 @@ class ChatService extends ChangeNotifier
     if (!await File(snapshot.modelPath).exists()) {
       throw FlutterError('Saved model file not found: ${snapshot.modelPath}');
     }
+    final mtpModelPath = snapshot.mtpModelPath;
+    if (snapshot.mtpEnabled &&
+        mtpModelPath != null &&
+        !await File(mtpModelPath).exists()) {
+      throw FlutterError('Saved MTP model file not found: $mtpModelPath');
+    }
 
     pendingModelRestore = null;
     pendingModelRestoreIssue = null;
@@ -2357,6 +2363,15 @@ class ChatService extends ChangeNotifier
     if (!await File(snapshot.modelPath).exists()) {
       pendingModelRestoreIssue =
           'Saved model file not found: ${snapshot.modelPath}';
+      return;
+    }
+
+    final mtpModelPath = snapshot.mtpModelPath;
+    if (snapshot.mtpEnabled &&
+        mtpModelPath != null &&
+        !await File(mtpModelPath).exists()) {
+      pendingModelRestoreIssue =
+          'Saved MTP model file not found: $mtpModelPath';
     }
   }
 

@@ -119,6 +119,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('MTP speculative decoding'), findsOneWidget);
+    expect(find.text('MTP model file (optional)'), findsNothing);
     expect(find.text('Draft tokens'), findsNothing);
 
     await tester.ensureVisible(find.text('MTP speculative decoding'));
@@ -128,8 +129,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Draft tokens'), findsOneWidget);
+    expect(find.text('MTP model file (optional)'), findsOneWidget);
     expect(
-      find.text('Requires a GGUF containing compatible MTP/NextN weights'),
+      find.text(
+        'Uses compatible MTP/NextN weights from the main GGUF or a sidecar',
+      ),
       findsOneWidget,
     );
   });
@@ -160,6 +164,7 @@ void main() {
     expect(submitted?.thinking, isTrue);
     expect(submitted?.reasoningEffort, 'default');
     expect(submitted?.mtpEnabled, isFalse);
+    expect(submitted?.mtpModelPath, isNull);
     expect(submitted?.mtpDraftTokens, 3);
     expect(submitted?.flashAttention, isTrue);
     expect(submitted?.cachePrompt, isTrue);
@@ -179,6 +184,7 @@ void main() {
       thinking: true,
       reasoningEffort: 'xhigh',
       mtpEnabled: true,
+      mtpModelPath: '/models/mtp.gguf',
       mtpDraftTokens: 7,
     );
 
@@ -195,6 +201,10 @@ void main() {
 
     expect(find.text('Saved configuration loaded for model'), findsOneWidget);
     expect(find.text('X-high'), findsOneWidget);
+    await tester.ensureVisible(find.text('Performance'));
+    await tester.tap(find.text('Performance'));
+    await tester.pumpAndSettle();
+    expect(find.text('/models/mtp.gguf'), findsOneWidget);
 
     await tester.ensureVisible(find.text('Save & load'));
     await tester.tap(find.text('Save & load'));
@@ -205,6 +215,7 @@ void main() {
     expect(submitted?.thinking, isTrue);
     expect(submitted?.reasoningEffort, 'xhigh');
     expect(submitted?.mtpEnabled, isTrue);
+    expect(submitted?.mtpModelPath, '/models/mtp.gguf');
     expect(submitted?.mtpDraftTokens, 7);
   });
 
@@ -326,6 +337,7 @@ ModelLoadConfiguration _configuration({
   bool thinking = false,
   String reasoningEffort = ModelLoadConfiguration.defaultReasoningEffort,
   bool mtpEnabled = ModelLoadConfiguration.defaultMtpEnabled,
+  String? mtpModelPath,
   int mtpDraftTokens = ModelLoadConfiguration.defaultMtpDraftTokens,
 }) => ModelLoadConfiguration(
   nCtx: nCtx,
@@ -344,6 +356,7 @@ ModelLoadConfiguration _configuration({
   thinking: thinking,
   reasoningEffort: reasoningEffort,
   mtpEnabled: mtpEnabled,
+  mtpModelPath: mtpModelPath,
   mtpDraftTokens: mtpDraftTokens,
   flashAttention: ModelLoadConfiguration.defaultFlashAttention,
   cachePrompt: ModelLoadConfiguration.defaultCachePrompt,

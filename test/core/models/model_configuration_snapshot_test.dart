@@ -13,6 +13,7 @@ void main() {
     expect(snapshot.minP, 0.05);
     expect(snapshot.reasoningEffort, 'default');
     expect(snapshot.mtpEnabled, isFalse);
+    expect(snapshot.mtpModelPath, isNull);
     expect(snapshot.mtpDraftTokens, 3);
     expect(snapshot.flashAttention, isTrue);
     expect(snapshot.cachePrompt, isTrue);
@@ -50,6 +51,7 @@ void main() {
       thinking: true,
       reasoningEffort: 'xhigh',
       mtpEnabled: true,
+      mtpModelPath: '/models/mtp.gguf',
       mtpDraftTokens: 7,
       flashAttention: true,
       cachePrompt: true,
@@ -66,6 +68,7 @@ void main() {
     expect(encoded, containsPair('minP', 0.0));
     expect(encoded, containsPair('reasoningEffort', 'xhigh'));
     expect(encoded, containsPair('mtpEnabled', true));
+    expect(encoded, containsPair('mtpModelPath', '/models/mtp.gguf'));
     expect(encoded, containsPair('mtpDraftTokens', 7));
     expect(encoded, containsPair('kvCacheQuantizationEnabled', true));
     expect(encoded, containsPair('kvCacheTypeK', 'q4_0'));
@@ -119,6 +122,7 @@ void main() {
     final invalid = ModelJson.decode<ModelConfigurationSnapshot>(const {
       'reasoningEffort': 'unsupported',
       'mtpEnabled': true,
+      'mtpModelPath': '   ',
       'mtpDraftTokens': 100,
     });
     final minimum = ModelJson.decode<ModelConfigurationSnapshot>(const {
@@ -128,6 +132,7 @@ void main() {
 
     expect(invalid.reasoningEffort, 'default');
     expect(invalid.mtpEnabled, isTrue);
+    expect(invalid.mtpModelPath, isNull);
     expect(
       invalid.mtpDraftTokens,
       ModelConfigurationSnapshot.maxMtpDraftTokens,

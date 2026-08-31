@@ -61,6 +61,7 @@ void main() {
         temperature: 0.4,
         reasoningEffort: 'high',
         mtpEnabled: true,
+        mtpModelPath: '/models/mtp.gguf',
         mtpDraftTokens: 7,
       );
       final upperAlpha = _configuration(temperature: 1.2);
@@ -78,6 +79,7 @@ void main() {
       final restoredAlpha = await service.getModelLoadConfiguration('alpha');
       expect(restoredAlpha?.reasoningEffort, 'high');
       expect(restoredAlpha?.mtpEnabled, isTrue);
+      expect(restoredAlpha?.mtpModelPath, '/models/mtp.gguf');
       expect(restoredAlpha?.mtpDraftTokens, 7);
       expect(
         (await service.getModelLoadConfiguration('Alpha'))?.temperature,
@@ -133,6 +135,7 @@ ModelLoadConfiguration _configuration({
   required double temperature,
   String reasoningEffort = ModelLoadConfiguration.defaultReasoningEffort,
   bool mtpEnabled = ModelLoadConfiguration.defaultMtpEnabled,
+  String? mtpModelPath,
   int mtpDraftTokens = ModelLoadConfiguration.defaultMtpDraftTokens,
 }) => ModelLoadConfiguration(
   nCtx: ModelLoadConfiguration.defaultNCtx,
@@ -151,6 +154,7 @@ ModelLoadConfiguration _configuration({
   thinking: ModelLoadConfiguration.defaultThinking,
   reasoningEffort: reasoningEffort,
   mtpEnabled: mtpEnabled,
+  mtpModelPath: mtpModelPath,
   mtpDraftTokens: mtpDraftTokens,
   flashAttention: ModelLoadConfiguration.defaultFlashAttention,
   cachePrompt: ModelLoadConfiguration.defaultCachePrompt,

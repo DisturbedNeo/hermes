@@ -66,6 +66,7 @@ void main() {
         'flashAttention': false,
         'cachePrompt': false,
         'kvCacheQuantizationEnabled': false,
+        'mtpModelPath': '/models/mtp.gguf',
       }),
       port: 12345,
     );
@@ -80,6 +81,7 @@ void main() {
     expect(args, isNot(contains('--cache-type-v')));
     expect(args, isNot(contains('--reasoning-effort')));
     expect(args, isNot(contains('--spec-type')));
+    expect(args, isNot(contains('--spec-draft-model')));
     expect(args, isNot(contains('--spec-draft-n-max')));
   });
 
@@ -90,6 +92,7 @@ void main() {
         'thinking': true,
         'reasoningEffort': 'xhigh',
         'mtpEnabled': true,
+        'mtpModelPath': '/models/mtp.gguf',
         'mtpDraftTokens': 7,
       }),
       port: 12345,
@@ -97,6 +100,7 @@ void main() {
 
     expect(_valueAfter(args, '--reasoning'), 'on');
     expect(_valueAfter(args, '--reasoning-effort'), 'xhigh');
+    expect(_valueAfter(args, '--spec-draft-model'), '/models/mtp.gguf');
     expect(_valueAfter(args, '--spec-type'), 'draft-mtp');
     expect(_valueAfter(args, '--spec-draft-n-max'), '7');
     expect(args, isNot(contains('--chat-template-kwargs')));

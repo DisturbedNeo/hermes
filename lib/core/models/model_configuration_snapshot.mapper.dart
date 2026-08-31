@@ -152,6 +152,14 @@ class ModelConfigurationSnapshotMapper
     def: false,
     hook: JsonBoolHook(),
   );
+  static String? _$mtpModelPath(ModelConfigurationSnapshot v) => v.mtpModelPath;
+  static const Field<ModelConfigurationSnapshot, String> _f$mtpModelPath =
+      Field(
+        'mtpModelPath',
+        _$mtpModelPath,
+        opt: true,
+        hook: NullableModelPathHook(),
+      );
   static int _$mtpDraftTokens(ModelConfigurationSnapshot v) => v.mtpDraftTokens;
   static const Field<ModelConfigurationSnapshot, int> _f$mtpDraftTokens = Field(
     'mtpDraftTokens',
@@ -216,6 +224,7 @@ class ModelConfigurationSnapshotMapper
     #thinking: _f$thinking,
     #reasoningEffort: _f$reasoningEffort,
     #mtpEnabled: _f$mtpEnabled,
+    #mtpModelPath: _f$mtpModelPath,
     #mtpDraftTokens: _f$mtpDraftTokens,
     #flashAttention: _f$flashAttention,
     #cachePrompt: _f$cachePrompt,
@@ -246,6 +255,7 @@ class ModelConfigurationSnapshotMapper
       thinking: data.dec(_f$thinking),
       reasoningEffort: data.dec(_f$reasoningEffort),
       mtpEnabled: data.dec(_f$mtpEnabled),
+      mtpModelPath: data.dec(_f$mtpModelPath),
       mtpDraftTokens: data.dec(_f$mtpDraftTokens),
       flashAttention: data.dec(_f$flashAttention),
       cachePrompt: data.dec(_f$cachePrompt),
