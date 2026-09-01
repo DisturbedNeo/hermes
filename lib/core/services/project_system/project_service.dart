@@ -1116,7 +1116,11 @@ class ProjectService {
       );
       await _repository.saveSnapshot(workspace.rootPath, workingProject);
 
-      if (activeTask.status == TaskStatus.paused) {
+      final latestRun = activeTask.runs.isEmpty ? null : activeTask.runs.last;
+      final interrupted =
+          latestRun?.status == TaskRunStatus.failed ||
+          latestRun?.status == TaskRunStatus.cancelled;
+      if (activeTask.status == TaskStatus.paused && interrupted) {
         final paused = workingProject.copyWith(
           status: ProjectStatus.paused,
           blocker: null,

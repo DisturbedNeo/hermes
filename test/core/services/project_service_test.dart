@@ -81,6 +81,61 @@ void main() {
     );
 
     test(
+      'continues through successful intermediate steps without pausing',
+      () async {
+        final project = await service.createProject(
+          workspace: workspace,
+          userPrompt: 'Build the reporting screen',
+          chatSessionId: 'chat_1',
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: jsonEncode({'task': _projectTaskJson()}),
+          ),
+          _finaliseTaskResponse(_multiStepTaskPlanJson()),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'First step complete.',
+              'memoryUpdate': 'Prepared the reporting data.',
+            }),
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Second step complete.',
+              'memoryUpdate': 'Rendered the reporting screen.',
+            }),
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'complete': true,
+              'finalSummary': 'Reporting screen project is complete.',
+              'remainingCriteria': [],
+              'openQuestions': [],
+            }),
+          ),
+        ]);
+
+        final result = await service.runProject(
+          client: client,
+          workspace: workspace,
+          snapshot: project,
+          baseSystemPrompt: 'system',
+          maxNewTasks: 5,
+        );
+
+        expect(result.project.status, ProjectStatus.completed);
+        expect(result.project.completedTasks, hasLength(1));
+        expect(result.activeTask?.status, TaskStatus.completed);
+        expect(result.activeTask?.runs.map((run) => run.status), [
+          TaskRunStatus.completed,
+          TaskRunStatus.completed,
+        ]);
+      },
+    );
+
+    test(
       'pauses on transport failure and resumes the preserved task',
       () async {
         final project = await service.createProject(
@@ -1256,6 +1311,31 @@ Map<String, dynamic> _taskPlanJson() {
         'title': 'Build slice',
         'objective': 'Build the first slice.',
         'instructions': ['Do the bounded work.'],
+        'mayEditFiles': false,
+      },
+    ],
+  };
+}
+
+Map<String, dynamic> _multiStepTaskPlanJson() {
+  return {
+    'title': 'Implement slice',
+    'goal': 'Implement the first reporting screen slice',
+    'constraints': ['Stay inside workspace.'],
+    'successCriteria': ['The slice is implemented and summarized.'],
+    'steps': [
+      {
+        'id': 'prepare',
+        'title': 'Prepare data',
+        'objective': 'Prepare the reporting data.',
+        'instructions': ['Do the first bounded step.'],
+        'mayEditFiles': false,
+      },
+      {
+        'id': 'render',
+        'title': 'Render screen',
+        'objective': 'Render the reporting screen.',
+        'instructions': ['Do the second bounded step.'],
         'mayEditFiles': false,
       },
     ],
