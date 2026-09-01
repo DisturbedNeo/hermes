@@ -742,6 +742,14 @@ void main() {
         baseSystemPrompt: 'system',
       );
 
+      final executorPrompt = client.seenMessages.first.last.content;
+      expect(executorPrompt, contains('Exact-command requirement'));
+      expect(
+        executorPrompt,
+        contains(
+          'A variation may be available through this step\'s broader terminal permission, but it will not satisfy the gate.',
+        ),
+      );
       expect(updated.status, TaskStatus.completed);
       expect(
         updated.runs.single.gateResults.single.status,
@@ -804,8 +812,82 @@ void main() {
         final executorPrompt = client.seenMessages.first.last.content;
         expect(client.seenToolNames.first, contains('run_command'));
         expect(executorPrompt, contains('Whitelisted terminal commands'));
+        expect(executorPrompt, contains('Exact-command requirement'));
+        expect(
+          executorPrompt,
+          contains('Do not add or remove arguments, flags, pipes, redirects'),
+        );
         expect(updated.status, TaskStatus.completed);
         expect(updated.runs.single.toolCalls.single.error, isNull);
+        expect(
+          updated.runs.single.gateResults.single.status,
+          TaskGateStatus.passed,
+        );
+      },
+    );
+
+    test(
+      'read-only build gate exposes and runs the exact classified build command',
+      () async {
+        workspace = workspace.copyWith(commandExecutionApproved: true);
+        final runner = _RecordingHostCommandRunner();
+        final sandbox = WorkspaceSandbox(hostCommandRunner: runner);
+        service = TaskService(
+          toolService: ToolService(workspaceSandbox: sandbox),
+          sandbox: sandbox,
+        );
+        final task = _task(
+          step: const TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Verify the solution build',
+            instructions: ['Run dotnet build Observability.sln exactly.'],
+            mayEditFiles: false,
+            artifacts: [],
+            gates: [
+              TaskGate(
+                id: 'command_passes',
+                params: {
+                  'command': 'dotnet build Observability.sln',
+                  'working_directory': '.',
+                },
+              ),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({
+                  'command': 'dotnet build Observability.sln',
+                  'working_directory': '.',
+                }),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Verified the solution build.',
+              'memoryUpdate': '',
+            }),
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(client.seenToolNames.first, contains('run_command'));
+        expect(runner.commands, ['dotnet build Observability.sln']);
+        expect(updated.status, TaskStatus.completed);
         expect(
           updated.runs.single.gateResults.single.status,
           TaskGateStatus.passed,
@@ -942,7 +1024,7 @@ void main() {
       },
     );
 
-    test('unsafe read-only command gates do not expose the terminal', () async {
+    test('command classification does not hide exact gated commands', () async {
       workspace = workspace.copyWith(commandExecutionApproved: true);
       final task = _task(
         step: const TaskStep(
@@ -984,7 +1066,7 @@ void main() {
         baseSystemPrompt: 'system',
       );
 
-      expect(client.seenToolNames.single, isNot(contains('run_command')));
+      expect(client.seenToolNames.single, contains('run_command'));
       expect(updated.status, TaskStatus.completed);
       expect(
         updated.runs.single.gateResults.map((result) => result.status),
@@ -1043,7 +1125,7 @@ void main() {
           baseSystemPrompt: 'system',
         );
 
-        expect(client.seenToolNames.first, isNot(contains('run_command')));
+        expect(client.seenToolNames.first, contains('run_command'));
         expect(updated.status, TaskStatus.paused);
         expect(updated.currentStepId, 'safe_verification');
         expect(updated.runs.map((run) => run.status), [
@@ -1181,7 +1263,7 @@ void main() {
         ]);
         expect(
           updated.runs.first.toolCalls.single.error,
-          contains('not whitelisted'),
+          contains('must exactly match'),
         );
         expect(
           updated.runs.first.gateResults
