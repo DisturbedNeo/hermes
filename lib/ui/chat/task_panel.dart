@@ -6,6 +6,7 @@ import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/ui/common/state_display.dart';
+import 'package:hermes/ui/chat/project_panel_sections.dart';
 import 'package:hermes/ui/chat/task_panel_dialogs.dart';
 
 class TaskPanel extends StatelessWidget {
@@ -286,30 +287,27 @@ class _ProjectBody extends StatelessWidget {
           _ProjectBlockerCard(project: project),
         ],
         const SizedBox(height: 12),
-        _Section(
-          title: 'Goal',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(project.refinedGoal, style: theme.textTheme.bodyMedium),
-              if (project.originalGoal != project.refinedGoal) ...[
-                const SizedBox(height: 6),
-                Text(
-                  'Original: ${project.originalGoal}',
-                  style: theme.textTheme.bodySmall,
-                ),
-              ],
-            ],
-          ),
-        ),
+        ProjectOutcomeSection(project: project),
         const SizedBox(height: 10),
-        _Section(
-          title: 'Success Criteria',
-          child: _StringList(
-            items: project.successCriteria,
-            empty: 'No success criteria recorded.',
+        ProjectRevisionSection(project: project, chat: chat),
+        const SizedBox(height: 10),
+        ProjectRoadmapSection(project: project),
+        if (activeTask != null) ...[
+          const SizedBox(height: 10),
+          _Section(
+            title: 'Task Executor',
+            child: _CurrentProjectTask(chat: chat, task: activeTask),
           ),
-        ),
+        ],
+        const SizedBox(height: 10),
+        ProjectEvidenceSection(project: project, chat: chat),
+        if (project.originalGoal != project.refinedGoal) ...[
+          const SizedBox(height: 10),
+          _Section(
+            title: 'Original Goal',
+            child: Text(project.originalGoal, style: theme.textTheme.bodySmall),
+          ),
+        ],
         if (project.constraints.isNotEmpty) ...[
           const SizedBox(height: 10),
           _Section(
@@ -327,28 +325,6 @@ class _ProjectBody extends StatelessWidget {
             ),
           ),
         ],
-        if (project.currentTask != null) ...[
-          const SizedBox(height: 10),
-          _Section(
-            title: 'Current Project Task',
-            child: _ProjectTaskDetails(task: project.currentTask!),
-          ),
-        ],
-        if (activeTask != null) ...[
-          const SizedBox(height: 10),
-          _Section(
-            title: 'Task Executor',
-            child: _CurrentProjectTask(chat: chat, task: activeTask),
-          ),
-        ],
-        const SizedBox(height: 10),
-        _Section(
-          title: 'Backlog',
-          child: _ProjectTaskBoardList(
-            tasks: project.backlog,
-            empty: 'No queued project tasks.',
-          ),
-        ),
         const SizedBox(height: 10),
         _Section(
           title: 'Completed Tasks',
@@ -370,11 +346,13 @@ class _ProjectBody extends StatelessWidget {
           title: 'Open Questions',
           child: _ProjectQuestionList(project: project),
         ),
-        const SizedBox(height: 10),
-        _Section(
-          title: 'Artifacts',
-          child: _ProjectArtifactBoardList(project: project),
-        ),
+        if (project.artifacts.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          _Section(
+            title: 'Project Artifacts',
+            child: _ProjectArtifactBoardList(project: project),
+          ),
+        ],
         if (project.knownFacts.isNotEmpty) ...[
           const SizedBox(height: 10),
           _Section(
@@ -401,7 +379,15 @@ class _ProjectActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final canRun = !chat.taskBusy && !project.isTerminal;
+    final canRun =
+        !chat.taskBusy &&
+        !project.isTerminal &&
+        project.pendingPlanApproval == null;
+    final canReplan =
+        !chat.taskBusy &&
+        !project.isTerminal &&
+        project.currentTask == null &&
+        project.pendingPlanApproval == null;
     final exhaustedRecovery = project.recoveryIncidents
         .where(
           (incident) =>
@@ -430,12 +416,12 @@ class _ProjectActions extends StatelessWidget {
             ),
           ),
         AccessibleWidget(
-          label: 'Run next project task',
+          label: 'Run next ready project task',
           isButton: true,
           enabled: canRun,
           child: FilledButton.icon(
             icon: const Icon(Icons.play_arrow),
-            label: const Text('Run Next Task'),
+            label: const Text('Run Next Ready Task'),
             onPressed: canRun
                 ? () => unawaited(chat.runNextProjectTask())
                 : null,
@@ -449,6 +435,24 @@ class _ProjectActions extends StatelessWidget {
             icon: const Icon(Icons.fast_forward),
             label: const Text('Continue Project'),
             onPressed: canRun ? () => unawaited(chat.runProject()) : null,
+          ),
+        ),
+        AccessibleWidget(
+          label: 'Replan project',
+          isButton: true,
+          enabled: canReplan,
+          child: OutlinedButton.icon(
+            key: const ValueKey('replan-project'),
+            icon: const Icon(Icons.route_outlined),
+            label: const Text('Replan'),
+            onPressed: canReplan
+                ? () async {
+                    final reason = await ProjectReplanDialog.show(context);
+                    if (reason != null && context.mounted) {
+                      unawaited(chat.replanProject(reason));
+                    }
+                  }
+                : null,
           ),
         ),
         AccessibleWidget(
@@ -492,12 +496,12 @@ class _ProjectActions extends StatelessWidget {
             ),
           ),
         AccessibleWidget(
-          label: 'Edit project',
+          label: 'Edit project JSON',
           isButton: true,
           enabled: !chat.taskBusy,
           child: OutlinedButton.icon(
-            icon: const Icon(Icons.edit_note),
-            label: const Text('Edit Project'),
+            icon: const Icon(Icons.data_object),
+            label: const Text('Edit Project JSON'),
             onPressed: chat.taskBusy
                 ? null
                 : () async {
@@ -619,6 +623,29 @@ class _CurrentProjectTask extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final project = chat.activeProject;
+    final projectTask = project?.currentTask?.taskDocumentId == task.id
+        ? project!.currentTask
+        : project?.taskById(task.id);
+    final criterionIds = task.projectCriterionIds.isNotEmpty
+        ? task.projectCriterionIds
+        : projectTask?.criterionIds ?? const <String>[];
+    final criterionStatements = task.projectCriteria.isNotEmpty
+        ? task.projectCriteria.map((item) => item.statement).toList()
+        : [
+            for (final criterionId in criterionIds)
+              project?.criterionStatement(criterionId) ?? criterionId,
+          ];
+    final evidenceExpectations = task.projectEvidenceExpectations.isNotEmpty
+        ? task.projectEvidenceExpectations
+              .map((item) => '${item.type}: ${item.description}')
+              .toList()
+        : [
+            for (final expectation
+                in projectTask?.expectedEvidence ??
+                    const <ProjectEvidenceExpectation>[])
+              '${expectation.type.name}: ${expectation.description}',
+          ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -636,6 +663,18 @@ class _CurrentProjectTask extends StatelessWidget {
             _StatusChip(label: task.status.wire),
           ],
         ),
+        if (criterionStatements.isNotEmpty ||
+            evidenceExpectations.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _StringList(title: 'Project criteria', items: criterionStatements),
+          if (evidenceExpectations.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            _StringList(
+              title: 'Expected evidence',
+              items: evidenceExpectations,
+            ),
+          ],
+        ],
         const SizedBox(height: 8),
         _Actions(chat: chat, task: task, next: task.nextRunnableStep),
         if (task.pendingApproval != null) ...[
@@ -1171,69 +1210,6 @@ class _RunList extends StatelessWidget {
   }
 }
 
-class _ProjectTaskDetails extends StatelessWidget {
-  final ProjectTask task;
-
-  const _ProjectTaskDetails({required this.task});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 6,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Text(
-              task.title,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            _StatusChip(label: task.status.wire),
-            if (task.taskDocumentId != null)
-              _StatusChip(label: task.taskDocumentId!),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Text(task.objective, style: theme.textTheme.bodySmall),
-        const SizedBox(height: 8),
-        _StringList(
-          title: 'Done',
-          items: task.doneCriteria,
-          empty: 'No done criteria recorded.',
-        ),
-        const SizedBox(height: 6),
-        _StringList(
-          title: 'Out of scope',
-          items: task.outOfScope,
-          empty: 'No out-of-scope items recorded.',
-        ),
-        if (task.relevantSuccessCriteria.isNotEmpty) ...[
-          const SizedBox(height: 6),
-          _StringList(title: 'Covers', items: task.relevantSuccessCriteria),
-        ],
-        if (task.rejectionReason?.trim().isNotEmpty == true) ...[
-          const SizedBox(height: 6),
-          Text(
-            task.rejectionReason!,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.error,
-            ),
-          ),
-        ],
-        if (task.failure != null) ...[
-          const SizedBox(height: 6),
-          _ProjectFailureDetails(failure: task.failure!),
-        ],
-      ],
-    );
-  }
-}
-
 class _ProjectTaskBoardList extends StatelessWidget {
   final List<ProjectTask> tasks;
   final String empty;
@@ -1392,15 +1368,14 @@ class _ProjectArtifactBoardList extends StatelessWidget {
 class _StringList extends StatelessWidget {
   final String? title;
   final List<String> items;
-  final String empty;
 
-  const _StringList({required this.items, this.title, this.empty = 'None.'});
+  const _StringList({required this.items, this.title});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final text = items.isEmpty
-        ? empty
+        ? 'None.'
         : items.map((item) => '- $item').join('\n');
     if (title == null) return Text(text, style: theme.textTheme.bodySmall);
     return Column(
@@ -1615,6 +1590,8 @@ IconData _projectTaskStatusIcon(ProjectTaskStatus status) => switch (status) {
   ProjectTaskStatus.failed => Icons.error_outline,
   ProjectTaskStatus.rejected => Icons.cancel_outlined,
   ProjectTaskStatus.split => Icons.call_split_outlined,
+  ProjectTaskStatus.deferred => Icons.pause_circle_outline,
+  ProjectTaskStatus.obsolete => Icons.archive_outlined,
   ProjectTaskStatus.cancelled => Icons.stop_circle_outlined,
 };
 
@@ -1629,4 +1606,7 @@ IconData _projectDecisionIcon(ProjectDecisionType decision) =>
       ProjectDecisionType.evaluateTask => Icons.fact_check_outlined,
       ProjectDecisionType.refreshBacklog => Icons.playlist_add_check_outlined,
       ProjectDecisionType.retryRecovery => Icons.replay,
+      ProjectDecisionType.applyPlanRevision => Icons.alt_route_outlined,
+      ProjectDecisionType.approvePlanRevision => Icons.approval_outlined,
+      ProjectDecisionType.rejectPlanRevision => Icons.unpublished_outlined,
     };

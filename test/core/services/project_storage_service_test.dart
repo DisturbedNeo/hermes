@@ -134,11 +134,64 @@ void main() {
       );
       final decoded = jsonDecode(await file.readAsString());
 
-      expect(decoded['schemaVersion'], 2);
+      expect(decoded['schemaVersion'], ProjectDocument.currentSchemaVersion);
+      expect(decoded['criteria'], isA<List>());
+      expect(decoded['memory'], isA<List>());
+      expect(decoded.containsKey('successCriteria'), isFalse);
+      expect(decoded.containsKey('knownFacts'), isFalse);
       expect(decoded['backlog'], isA<List>());
       expect(decoded['completedTasks'], isA<List>());
       expect(decoded['decisions'], isA<List>());
     });
+
+    test(
+      'refuses a newer project schema without restoring or rewriting it',
+      () async {
+        await repository.saveSnapshot(
+          root.path,
+          _project(id: 'project_future'),
+        );
+        await repository.saveSnapshot(
+          root.path,
+          _project(id: 'project_future'),
+        );
+        final file = File(
+          path.join(
+            root.path,
+            '.agent',
+            'projects',
+            'project_future',
+            'project.json',
+          ),
+        );
+        final raw =
+            Map<String, dynamic>.from(
+                jsonDecode(await file.readAsString()) as Map,
+              )
+              ..['schemaVersion'] = ProjectDocument.currentSchemaVersion + 1
+              ..['futureOnly'] = {'preserve': true};
+        final futureContent = jsonEncode(raw);
+        await file.writeAsString(futureContent);
+
+        await expectLater(
+          repository.loadProject(root.path, 'project_future'),
+          throwsA(
+            isA<UnsupportedSnapshotSchemaException>()
+                .having(
+                  (error) => error.foundVersion,
+                  'foundVersion',
+                  ProjectDocument.currentSchemaVersion + 1,
+                )
+                .having(
+                  (error) => error.supportedVersion,
+                  'supportedVersion',
+                  ProjectDocument.currentSchemaVersion,
+                ),
+          ),
+        );
+        expect(await file.readAsString(), futureContent);
+      },
+    );
 
     test('rejects delete paths outside project root', () async {
       expect(

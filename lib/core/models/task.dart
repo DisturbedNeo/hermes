@@ -1,4 +1,5 @@
 import 'package:dart_mappable/dart_mappable.dart';
+import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/helpers/sentinel.dart' show kSentinel, resolve;
 import 'package:hermes/core/serialization/json_hooks.dart';
 
@@ -53,6 +54,70 @@ enum TaskToolErrorDisposition { advisory, retryable, fatal }
 
 @MappableEnum(defaultValue: TaskGateFailureDisposition.repairable)
 enum TaskGateFailureDisposition { repairable, blocking }
+
+@MappableEnum(defaultValue: TaskEvidenceClaimType.taskClaim)
+enum TaskEvidenceClaimType {
+  gate,
+  artifact,
+  command,
+  @MappableValue('task_claim')
+  taskClaim,
+  @MappableValue('user_approval')
+  userApproval,
+}
+
+@MappableEnum(defaultValue: TaskEvidenceClaimStrength.advisory)
+enum TaskEvidenceClaimStrength { advisory, supporting, conclusive }
+
+/// Project outcome context copied into a bounded task at creation time.
+@MappableClass(ignoreNull: true)
+class TaskProjectCriterion with TaskProjectCriterionMappable {
+  @MappableField(hook: JsonStringHook())
+  final String id;
+  @MappableField(hook: JsonStringHook())
+  final String statement;
+  @MappableField(hook: JsonBoolHook(fallback: true))
+  final bool required;
+  @MappableField(hook: JsonStringHook(fallback: 'mixed'))
+  final String verificationMode;
+
+  const TaskProjectCriterion({
+    required this.id,
+    required this.statement,
+    this.required = true,
+    this.verificationMode = 'mixed',
+  });
+}
+
+/// Evidence contract copied from the selected project task.
+@MappableClass(ignoreNull: true)
+class TaskProjectEvidenceExpectation
+    with TaskProjectEvidenceExpectationMappable {
+  @MappableField(hook: JsonStringHook())
+  final String id;
+  @MappableField(hook: JsonStringHook(fallback: 'task_claim'))
+  final String type;
+  @MappableField(hook: JsonStringListHook())
+  final List<String> criterionIds;
+  @MappableField(hook: JsonStringHook())
+  final String description;
+  @MappableField(hook: JsonBoolHook(fallback: true))
+  final bool required;
+  @MappableField(hook: JsonNullableStringHook())
+  final String? sourceRef;
+  @MappableField(hook: JsonMapValueHook())
+  final Map<String, dynamic> details;
+
+  const TaskProjectEvidenceExpectation({
+    required this.id,
+    required this.type,
+    this.criterionIds = const [],
+    required this.description,
+    this.required = true,
+    this.sourceRef,
+    this.details = const {},
+  });
+}
 
 extension ExecutionModeWire on ExecutionMode {
   String get wire => switch (this) {
@@ -153,17 +218,9 @@ class RefinedTaskBrief with RefinedTaskBriefMappable {
   });
 }
 
-@MappableClass(
-  ignoreNull: true,
-  hook: JsonModelHook(
-    aliases: {
-      'goal': ['objective'],
-    },
-    omitEmpty: {'gates'},
-  ),
-)
+@MappableClass(ignoreNull: true, hook: TaskDocumentJsonHook())
 class TaskDocument with TaskDocumentMappable {
-  static const int currentSchemaVersion = 2;
+  static const int currentSchemaVersion = 3;
 
   @MappableField(hook: JsonIntHook())
   final int schemaVersion;
@@ -197,6 +254,12 @@ class TaskDocument with TaskDocumentMappable {
   final String? chatSessionId;
   @MappableField(hook: JsonNullableStringHook())
   final String? projectId;
+  @MappableField(hook: JsonStringListHook())
+  final List<String> projectCriterionIds;
+  @MappableField(hook: JsonObjectListHook())
+  final List<TaskProjectCriterion> projectCriteria;
+  @MappableField(hook: JsonObjectListHook())
+  final List<TaskProjectEvidenceExpectation> projectEvidenceExpectations;
   @MappableField(hook: JsonDateHook())
   final DateTime createdAt;
   @MappableField(hook: JsonDateHook())
@@ -224,6 +287,9 @@ class TaskDocument with TaskDocumentMappable {
     this.pendingQuestion,
     this.chatSessionId,
     this.projectId,
+    this.projectCriterionIds = const [],
+    this.projectCriteria = const [],
+    this.projectEvidenceExpectations = const [],
     this.completedAt,
   });
 
@@ -245,6 +311,9 @@ class TaskDocument with TaskDocumentMappable {
     Object? pendingQuestion = kSentinel,
     Object? chatSessionId = kSentinel,
     Object? projectId = kSentinel,
+    List<String>? projectCriterionIds,
+    List<TaskProjectCriterion>? projectCriteria,
+    List<TaskProjectEvidenceExpectation>? projectEvidenceExpectations,
     DateTime? createdAt,
     DateTime? updatedAt,
     Object? completedAt = kSentinel,
@@ -267,6 +336,10 @@ class TaskDocument with TaskDocumentMappable {
       pendingQuestion: resolve(pendingQuestion, this.pendingQuestion),
       chatSessionId: resolve(chatSessionId, this.chatSessionId),
       projectId: resolve(projectId, this.projectId),
+      projectCriterionIds: projectCriterionIds ?? this.projectCriterionIds,
+      projectCriteria: projectCriteria ?? this.projectCriteria,
+      projectEvidenceExpectations:
+          projectEvidenceExpectations ?? this.projectEvidenceExpectations,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       completedAt: resolve(completedAt, this.completedAt),
@@ -296,6 +369,34 @@ class TaskDocument with TaskDocumentMappable {
       if (step.id == id) return step;
     }
     return null;
+  }
+}
+
+class TaskDocumentJsonHook extends JsonModelHook {
+  const TaskDocumentJsonHook()
+    : super(
+        aliases: const {
+          'goal': ['objective'],
+        },
+        omitEmpty: const {'gates', 'projectCriterionIds'},
+        outputOverrides: const {
+          'schemaVersion': TaskDocument.currentSchemaVersion,
+        },
+      );
+
+  @override
+  Object? beforeDecode(Object? value) {
+    final normalized = super.beforeDecode(value);
+    if (normalized is! Map) return normalized;
+    final json = Map<String, dynamic>.from(normalized);
+    final version = jsonInt(json['schemaVersion']);
+    if (version > TaskDocument.currentSchemaVersion) {
+      throw FormatException(
+        'Unsupported task schema version $version; maximum supported '
+        'version is ${TaskDocument.currentSchemaVersion}.',
+      );
+    }
+    return json..['schemaVersion'] = TaskDocument.currentSchemaVersion;
   }
 }
 
@@ -420,9 +521,34 @@ class TaskArtifact with TaskArtifactMappable {
   });
 }
 
+@MappableClass(ignoreNull: true)
+class TaskEvidenceClaim with TaskEvidenceClaimMappable {
+  @MappableField(hook: JsonStringHook())
+  final String criterionId;
+  @MappableField(hook: JsonStringHook())
+  final String claim;
+  @MappableField(hook: EnumAliasHook({}))
+  final TaskEvidenceClaimType evidenceType;
+  @MappableField(hook: JsonStringHook())
+  final String sourceRef;
+  @MappableField(hook: EnumAliasHook({}))
+  final TaskEvidenceClaimStrength suggestedStrength;
+  @MappableField(hook: JsonNullableStringHook())
+  final String? runId;
+
+  const TaskEvidenceClaim({
+    required this.criterionId,
+    required this.claim,
+    this.evidenceType = TaskEvidenceClaimType.taskClaim,
+    required this.sourceRef,
+    this.suggestedStrength = TaskEvidenceClaimStrength.advisory,
+    this.runId,
+  });
+}
+
 @MappableClass(
   ignoreNull: true,
-  hook: JsonModelHook(omitEmpty: {'gateResults'}),
+  hook: JsonModelHook(omitEmpty: {'gateResults', 'evidenceClaims'}),
 )
 class TaskRun with TaskRunMappable {
   @MappableField(hook: JsonStringHook())
@@ -441,6 +567,8 @@ class TaskRun with TaskRunMappable {
   final List<TaskArtifact> artifacts;
   @MappableField(hook: JsonObjectListHook())
   final List<TaskGateResult> gateResults;
+  @MappableField(hook: JsonObjectListHook())
+  final List<TaskEvidenceClaim> evidenceClaims;
   @MappableField(hook: JsonDateHook())
   final DateTime startedAt;
   @MappableField(hook: JsonNullableDateHook())
@@ -459,6 +587,7 @@ class TaskRun with TaskRunMappable {
     required this.toolCalls,
     required this.artifacts,
     this.gateResults = const [],
+    this.evidenceClaims = const [],
     required this.startedAt,
     this.completedAt,
     this.replanReason,
@@ -474,6 +603,7 @@ class TaskRun with TaskRunMappable {
     List<TaskToolCallRecord>? toolCalls,
     List<TaskArtifact>? artifacts,
     List<TaskGateResult>? gateResults,
+    List<TaskEvidenceClaim>? evidenceClaims,
     DateTime? startedAt,
     Object? completedAt = kSentinel,
     Object? replanReason = kSentinel,
@@ -488,6 +618,7 @@ class TaskRun with TaskRunMappable {
       toolCalls: toolCalls ?? this.toolCalls,
       artifacts: artifacts ?? this.artifacts,
       gateResults: gateResults ?? this.gateResults,
+      evidenceClaims: evidenceClaims ?? this.evidenceClaims,
       startedAt: startedAt ?? this.startedAt,
       completedAt: resolve(completedAt, this.completedAt),
       replanReason: resolve(replanReason, this.replanReason),

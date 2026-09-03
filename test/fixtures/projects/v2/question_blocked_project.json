@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 2,
+  "id": "project_fixture_question",
+  "title": "Question-blocked fixture project",
+  "originalGoal": "Publish a release",
+  "refinedGoal": "Publish the release to the user-selected account",
+  "successCriteria": ["The release is published to the selected account."],
+  "constraints": ["Do not choose an account on the user's behalf."],
+  "backlog": [],
+  "completedTasks": [],
+  "failedTasks": [],
+  "artifacts": [],
+  "recoveryIncidents": [],
+  "knownFacts": [],
+  "openQuestions": [
+    {
+      "id": "question_fixture_account",
+      "question": "Which publishing account should be used?",
+      "createdAt": "2026-01-01T09:00:00.000Z"
+    }
+  ],
+  "status": "waiting_for_user",
+  "phase": "discovery",
+  "iterationCount": 0,
+  "maxIterations": 25,
+  "maxFailedTasks": 3,
+  "completionSummary": "",
+  "blocker": {
+    "type": "question",
+    "message": "Which publishing account should be used?",
+    "createdAt": "2026-01-01T09:00:00.000Z"
+  },
+  "decisions": [],
+  "createdAt": "2026-01-01T09:00:00.000Z",
+  "updatedAt": "2026-01-01T09:00:00.000Z"
+}

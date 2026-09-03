@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 2,
+  "id": "project_fixture_active",
+  "title": "Active fixture project",
+  "originalGoal": "Build a reporting workflow",
+  "refinedGoal": "Build and verify a reporting workflow",
+  "successCriteria": ["The reporting workflow is implemented and verified."],
+  "constraints": ["Stay within the attached workspace."],
+  "backlog": [
+    {
+      "id": "project_task_fixture_queued",
+      "title": "Implement report generation",
+      "objective": "Implement the bounded report-generation slice.",
+      "relevantSuccessCriteria": ["The reporting workflow is implemented and verified."],
+      "doneCriteria": ["Report generation is implemented and summarized."],
+      "outOfScope": ["Do not implement unrelated workflow features."],
+      "context": ["Use the existing reporting module."],
+      "expectedArtifacts": [],
+      "status": "queued",
+      "fingerprint": "implement the bounded report-generation slice.|the reporting workflow is implemented and verified.",
+      "createdAt": "2026-01-01T09:00:00.000Z",
+      "updatedAt": "2026-01-01T09:00:00.000Z"
+    }
+  ],
+  "completedTasks": [],
+  "failedTasks": [],
+  "artifacts": [],
+  "recoveryIncidents": [],
+  "knownFacts": ["The workspace already contains a reporting module."],
+  "openQuestions": [],
+  "status": "active",
+  "phase": "planning",
+  "iterationCount": 0,
+  "maxIterations": 25,
+  "maxFailedTasks": 3,
+  "completionSummary": "",
+  "decisions": [],
+  "createdAt": "2026-01-01T09:00:00.000Z",
+  "updatedAt": "2026-01-01T09:00:00.000Z"
+}

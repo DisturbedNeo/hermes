@@ -49,6 +49,9 @@ class TaskPlanningContext with TaskPlanningContextMappable {
   final List<String> outOfScope;
   final List<TaskArtifact> expectedArtifacts;
   final List<TaskGate> requiredGates;
+  final List<String> criterionIds;
+  final List<TaskProjectCriterion> criteria;
+  final List<TaskProjectEvidenceExpectation> expectedEvidence;
   final int maxSteps;
 
   const TaskPlanningContext({
@@ -59,6 +62,9 @@ class TaskPlanningContext with TaskPlanningContextMappable {
     this.outOfScope = const [],
     this.expectedArtifacts = const [],
     this.requiredGates = const [],
+    this.criterionIds = const [],
+    this.criteria = const [],
+    this.expectedEvidence = const [],
     this.maxSteps = 3,
   });
 }
@@ -149,6 +155,40 @@ const ToolDefinition _finishTaskStepToolDefinition = ToolDefinition(
             },
           },
           'required': ['path'],
+        },
+      },
+      'evidenceClaims': {
+        'type': 'array',
+        'description':
+            'Advisory claims about Project criteria supported by this step. Use only criterion IDs supplied in the task context.',
+        'items': {
+          'type': 'object',
+          'properties': {
+            'criterionId': {'type': 'string'},
+            'claim': {'type': 'string'},
+            'evidenceType': {
+              'type': 'string',
+              'enum': [
+                'gate',
+                'artifact',
+                'command',
+                'task_claim',
+                'user_approval',
+              ],
+            },
+            'sourceRef': {'type': 'string'},
+            'suggestedStrength': {
+              'type': 'string',
+              'enum': ['advisory', 'supporting', 'conclusive'],
+            },
+          },
+          'required': [
+            'criterionId',
+            'claim',
+            'evidenceType',
+            'sourceRef',
+            'suggestedStrength',
+          ],
         },
       },
       'userQuestion': {
@@ -558,6 +598,13 @@ $userPrompt
             );
     }
 
+    if (planningContext != null) {
+      task = task.copyWith(
+        projectCriterionIds: planningContext.criterionIds,
+        projectCriteria: planningContext.criteria,
+        projectEvidenceExpectations: planningContext.expectedEvidence,
+      );
+    }
     await _repository.saveSnapshot(workspace.rootPath, task);
     return task;
   }
@@ -576,6 +623,9 @@ $userPrompt
         id: snapshot.id,
         chatSessionId: snapshot.chatSessionId,
         projectId: snapshot.projectId,
+        projectCriterionIds: snapshot.projectCriterionIds,
+        projectCriteria: snapshot.projectCriteria,
+        projectEvidenceExpectations: snapshot.projectEvidenceExpectations,
       ),
       snapshot,
       now,
@@ -695,6 +745,17 @@ $userPrompt
         toolCalls: execution.toolCalls,
         artifacts: execution.artifacts,
         gateResults: execution.gateResults,
+        evidenceClaims: [
+          for (final claim in execution.evidenceClaims)
+            TaskEvidenceClaim(
+              criterionId: claim.criterionId,
+              claim: claim.claim,
+              evidenceType: claim.evidenceType,
+              sourceRef: claim.sourceRef,
+              suggestedStrength: claim.suggestedStrength,
+              runId: run.runId,
+            ),
+        ],
         replanReason: execution.replanRequest,
         error: execution.error,
       );
@@ -2085,6 +2146,7 @@ Do not call any more tools. Based only on the work already completed and the too
   "summary": "...",
   "memoryUpdate": "...",
   "artifacts": [{"path": "...", "description": "..."}],
+  "evidenceClaims": [{"criterionId":"project criterion ID","claim":"what this step demonstrates","evidenceType":"gate|artifact|command|task_claim|user_approval","sourceRef":"gate ID, artifact path, command, or run reference","suggestedStrength":"advisory|supporting|conclusive"}],
   "userQuestion": {"question":"only when blocked","reason":"why this blocks","defaultIfUnanswered":"reasonable default if any","riskOfAssuming":"risk if the default is wrong","kind":"blocking|preference|advisory"},
   "replanRequest": "only when needs_replan",
   "error": "only when failed"
@@ -2265,6 +2327,10 @@ ${_encoder.convert(ModelJson.encode(snapshot))}
       summary: summary,
       memoryUpdate: jsonString(json['memoryUpdate'] ?? json['memory_update']),
       artifacts: artifacts,
+      evidenceClaims: _evidenceClaimsFromJson(
+        json['evidenceClaims'] ?? json['evidence_claims'],
+        task.projectCriterionIds,
+      ),
       userQuestion: agentQuestion?.displayText,
       agentQuestion: agentQuestion,
       replanRequest: jsonNullableString(
@@ -2418,6 +2484,16 @@ ${_encoder.convert(ModelJson.encode(snapshot))}
         .map((run) => '- ${run.stepId}: ${run.summary}')
         .join('\n');
     final availableArtifacts = _buildAvailableArtifactInputs(task, step);
+    final stepIndex = task.steps.indexWhere((item) => item.id == step.id);
+    final isFinalPlannedStep =
+        stepIndex >= 0 &&
+        task.steps
+            .skip(stepIndex + 1)
+            .every(
+              (item) =>
+                  item.status == TaskStepStatus.completed ||
+                  item.status == TaskStepStatus.skipped,
+            );
     return '''
 Task goal:
 ${task.goal}
@@ -2430,6 +2506,12 @@ ${task.constraints.map((item) => '- $item').join('\n')}
 
 Success criteria:
 ${task.successCriteria.map((item) => '- $item').join('\n')}
+
+Linked Project criteria:
+${task.projectCriteria.isEmpty ? _encoder.convert(task.projectCriterionIds) : _encoder.convert(task.projectCriteria.map(ModelJson.encode).toList())}
+
+Expected Project evidence:
+${task.projectEvidenceExpectations.isEmpty ? 'None specified.' : _encoder.convert(task.projectEvidenceExpectations.map(ModelJson.encode).toList())}
 
 Current memory:
 ${task.memorySummary.trim().isEmpty ? 'None yet.' : task.memorySummary}
@@ -2449,12 +2531,16 @@ ${_stepToolPermissionText(task, step, workspace)}
 Previous run summaries:
 ${previousRuns.trim().isEmpty ? 'None yet.' : previousRuns}
 
+This ${isFinalPlannedStep ? 'is' : 'is not'} the final planned task step.
+${isFinalPlannedStep && task.projectCriterionIds.isNotEmpty ? 'For every linked criterion this task actually supports, include a final evidence claim tied to a real gate, command, artifact, user approval, or this task run. Do not claim unsupported outcomes.' : 'Evidence claims are optional at this stage; do not claim work that has not been verified.'}
+
 When finished, call finish_task_step with this result object. If finish_task_step is unavailable, return only JSON:
 {
   "status": "completed|blocked|needs_replan|failed",
   "summary": "...",
   "memoryUpdate": "...",
   "artifacts": [{"path": "...", "description": "..."}],
+  "evidenceClaims": [{"criterionId":"project criterion ID","claim":"what this step demonstrates","evidenceType":"gate|artifact|command|task_claim|user_approval","sourceRef":"gate ID, artifact path, command, or run reference","suggestedStrength":"advisory|supporting|conclusive"}],
   "userQuestion": {"question":"only when blocked","reason":"why this blocks","defaultIfUnanswered":"reasonable default if any","riskOfAssuming":"risk if the default is wrong","kind":"blocking|preference|advisory"},
   "replanRequest": "only when needs_replan",
   "error": "only when failed"
@@ -3094,6 +3180,55 @@ $whitelist
         .toList();
   }
 
+  List<TaskEvidenceClaim> _evidenceClaimsFromJson(
+    Object? value,
+    List<String> allowedCriterionIds,
+  ) {
+    if (value is! List || allowedCriterionIds.isEmpty) return const [];
+    final allowed = allowedCriterionIds.toSet();
+    final seen = <String>{};
+    final claims = <TaskEvidenceClaim>[];
+    for (final raw in value.whereType<Map>()) {
+      final map = Map<String, dynamic>.from(raw);
+      final criterionId = jsonString(map['criterionId'] ?? map['criterion_id']);
+      final claim = jsonString(map['claim']);
+      final sourceRef = jsonString(map['sourceRef'] ?? map['source_ref']);
+      if (!allowed.contains(criterionId) ||
+          claim.isEmpty ||
+          sourceRef.isEmpty) {
+        continue;
+      }
+      final evidenceType = switch (jsonString(
+        map['evidenceType'] ?? map['evidence_type'],
+      ).toLowerCase().replaceAll('-', '_')) {
+        'gate' => TaskEvidenceClaimType.gate,
+        'artifact' => TaskEvidenceClaimType.artifact,
+        'command' => TaskEvidenceClaimType.command,
+        'user_approval' || 'userapproval' => TaskEvidenceClaimType.userApproval,
+        _ => TaskEvidenceClaimType.taskClaim,
+      };
+      final strength = switch (jsonString(
+        map['suggestedStrength'] ?? map['suggested_strength'],
+      ).toLowerCase()) {
+        'conclusive' => TaskEvidenceClaimStrength.conclusive,
+        'supporting' => TaskEvidenceClaimStrength.supporting,
+        _ => TaskEvidenceClaimStrength.advisory,
+      };
+      final key = '$criterionId|${evidenceType.name}|$sourceRef|$claim';
+      if (!seen.add(key)) continue;
+      claims.add(
+        TaskEvidenceClaim(
+          criterionId: criterionId,
+          claim: claim,
+          evidenceType: evidenceType,
+          sourceRef: sourceRef,
+          suggestedStrength: strength,
+        ),
+      );
+    }
+    return claims;
+  }
+
   List<TaskGate> _gatesFromJson(
     Object? value, {
     required String fallbackScope,
@@ -3349,6 +3484,9 @@ $whitelist
       runs: const [],
       chatSessionId: chatSessionId,
       projectId: projectId,
+      projectCriterionIds: planningContext.criterionIds,
+      projectCriteria: planningContext.criteria,
+      projectEvidenceExpectations: planningContext.expectedEvidence,
       createdAt: now,
       updatedAt: now,
     );
@@ -3543,6 +3681,7 @@ class _StepExecutionOutput {
   final List<TaskArtifact> artifacts;
   final List<TaskToolCallRecord> toolCalls;
   final List<TaskGateResult> gateResults;
+  final List<TaskEvidenceClaim> evidenceClaims;
   final String? userQuestion;
   final AgentQuestion? agentQuestion;
   final String? replanRequest;
@@ -3556,6 +3695,7 @@ class _StepExecutionOutput {
     required this.artifacts,
     required this.toolCalls,
     this.gateResults = const [],
+    this.evidenceClaims = const [],
     this.userQuestion,
     this.agentQuestion,
     this.replanRequest,
@@ -3570,6 +3710,7 @@ class _StepExecutionOutput {
     List<TaskArtifact>? artifacts,
     List<TaskToolCallRecord>? toolCalls,
     List<TaskGateResult>? gateResults,
+    List<TaskEvidenceClaim>? evidenceClaims,
     Object? userQuestion = kSentinel,
     Object? agentQuestion = kSentinel,
     Object? replanRequest = kSentinel,
@@ -3583,6 +3724,7 @@ class _StepExecutionOutput {
       artifacts: artifacts ?? this.artifacts,
       toolCalls: toolCalls ?? this.toolCalls,
       gateResults: gateResults ?? this.gateResults,
+      evidenceClaims: evidenceClaims ?? this.evidenceClaims,
       userQuestion: resolve(userQuestion, this.userQuestion),
       agentQuestion: resolve(agentQuestion, this.agentQuestion),
       replanRequest: resolve(replanRequest, this.replanRequest),

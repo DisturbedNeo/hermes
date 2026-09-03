@@ -14,6 +14,12 @@ import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 
 void main() {
+  test('project task effort determines the bounded task step limit', () {
+    expect(projectTaskStepLimit(ProjectTaskEffort.small), 2);
+    expect(projectTaskStepLimit(ProjectTaskEffort.medium), 4);
+    expect(projectTaskStepLimit(ProjectTaskEffort.large), 6);
+  });
+
   group('ProjectService orchestrator runner', () {
     late Directory root;
     late WorkspaceAttachment workspace;
@@ -72,11 +78,44 @@ void main() {
           maxNewTasks: 5,
         );
 
-        expect(result.project.status, ProjectStatus.completed);
+        expect(
+          result.project.status,
+          ProjectStatus.completed,
+          reason: result.project.blocker?.message,
+        );
         expect(result.project.completedTasks, hasLength(1));
         expect(result.project.failedTasks, isEmpty);
         expect(result.project.completionSummary, contains('complete'));
         expect(result.activeTask?.status, TaskStatus.completed);
+        expect(result.project.evidence, isNotEmpty);
+        expect(
+          result.project.evidence.last.status,
+          ProjectEvidenceStatus.accepted,
+        );
+        expect(
+          result.project.criteria.single.status,
+          ProjectCriterionStatus.satisfied,
+        );
+        expect(result.project.diagnostics.taskExecutions, 1);
+        expect(result.project.diagnostics.completedTaskExecutions, 1);
+        expect(result.project.diagnostics.projectModelCalls, 2);
+        final taskPlanPrompt = client.seenMessages
+            .map((messages) => messages.last.content)
+            .firstWhere(
+              (content) => content.contains('Bounded Project task context'),
+            );
+        expect(taskPlanPrompt, contains('"maxSteps": 2'));
+        expect(taskPlanPrompt, contains('"statement"'));
+        expect(taskPlanPrompt, contains('"expectedEvidence"'));
+        expect(
+          result.project.memory.any(
+            (entry) =>
+                entry.kind == ProjectMemoryKind.summary &&
+                entry.sourceType == ProjectMemorySourceType.task &&
+                entry.sourceId == result.project.completedTasks.single.id,
+          ),
+          isTrue,
+        );
       },
     );
 
@@ -125,7 +164,11 @@ void main() {
           maxNewTasks: 5,
         );
 
-        expect(result.project.status, ProjectStatus.completed);
+        expect(
+          result.project.status,
+          ProjectStatus.completed,
+          reason: result.project.blocker?.message,
+        );
         expect(result.project.completedTasks, hasLength(1));
         expect(result.activeTask?.status, TaskStatus.completed);
         expect(result.activeTask?.runs.map((run) => run.status), [
@@ -231,65 +274,103 @@ void main() {
       expect(result.project.status, ProjectStatus.paused);
       expect(result.project.blocker, isNull);
       expect(result.project.completedTasks, hasLength(1));
+      expect(
+        result.project.criteria.single.status,
+        ProjectCriterionStatus.unsatisfied,
+      );
+      expect(
+        result.project.evidence.last.status,
+        ProjectEvidenceStatus.rejected,
+      );
     });
 
-    test(
-      'zero per-run project task limit continues until completion',
-      () async {
-        final project = await service.createProject(
-          workspace: workspace,
-          userPrompt: 'Build the app',
-          chatSessionId: 'chat_1',
-        );
-        final client = _QueueChatClient([
-          jsonEncode({
+    test('zero per-run project task limit continues until completion', () async {
+      final project = await service.createProject(
+        workspace: workspace,
+        userPrompt: 'Build the app',
+        chatSessionId: 'chat_1',
+      );
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: jsonEncode({
             'task': _projectTaskJson(objective: 'Implement the first slice'),
           }),
-          jsonEncode(_taskPlanJson()),
-          jsonEncode({
+        ),
+        _finaliseTaskResponse(_taskPlanJson()),
+        ChatCompletionResponse(
+          content: jsonEncode({
             'status': 'completed',
             'summary': 'First task complete.',
             'memoryUpdate': 'One slice is done.',
           }),
-          jsonEncode({
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
             'complete': false,
             'finalSummary': '',
             'remainingCriteria': ['Implement the second slice.'],
             'openQuestions': [],
           }),
-          jsonEncode({
-            'task': _projectTaskJson(
-              objective: 'Implement the second slice',
-              relevantSuccessCriteria: const ['Implement the second slice.'],
-            ),
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'summary': 'Add the second bounded slice.',
+            'rationale': 'The first slice revealed the remaining work.',
+            'taskAdditions': [
+              {
+                ..._projectTaskJson(objective: 'Implement the second slice'),
+                'criterionIds': ['criterion_001'],
+                'expectedEvidence': [
+                  {
+                    'id': 'expect_second_slice',
+                    'type': 'task_claim',
+                    'criterionIds': ['criterion_001'],
+                    'description':
+                        'The second slice done criteria are checked.',
+                  },
+                ],
+              },
+            ],
           }),
-          jsonEncode(_taskPlanJson()),
-          jsonEncode({
+        ),
+        _finaliseTaskResponse(_taskPlanJson()),
+        ChatCompletionResponse(
+          content: jsonEncode({
             'status': 'completed',
             'summary': 'Second task complete.',
             'memoryUpdate': 'The remaining slice is done.',
           }),
-          jsonEncode({
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
             'complete': true,
             'finalSummary': 'Project is complete.',
             'remainingCriteria': [],
             'openQuestions': [],
           }),
-        ]);
+        ),
+      ]);
 
-        final result = await service.runProject(
-          client: client,
-          workspace: workspace,
-          snapshot: project,
-          baseSystemPrompt: 'system',
-          maxNewTasks: 0,
-        );
+      final result = await service.runProject(
+        client: client,
+        workspace: workspace,
+        snapshot: project,
+        baseSystemPrompt: 'system',
+        maxNewTasks: 0,
+      );
 
-        expect(result.project.status, ProjectStatus.completed);
-        expect(result.project.completedTasks, hasLength(2));
-        expect(result.project.iterationCount, 2);
-      },
-    );
+      expect(
+        result.project.status,
+        ProjectStatus.completed,
+        reason:
+            '${result.project.blocker?.message}\n${client.seenMessages.map((messages) => messages.last.content.split('\n').first).join(' | ')}',
+      );
+      expect(result.project.completedTasks, hasLength(2));
+      expect(result.project.iterationCount, 2);
+      expect(result.project.diagnostics.taskExecutions, 2);
+      expect(result.project.diagnostics.planRevisionAttempts, 2);
+      expect(result.project.diagnostics.projectModelCalls, 4);
+    });
 
     test('zero total project iterations disables the total task cap', () async {
       final project = (await service.createProject(
@@ -362,6 +443,12 @@ void main() {
         expect(answered.pendingQuestion, isNull);
         expect(answered.blocker, isNull);
         expect(answered.knownFacts.join('\n'), contains('Desktop first.'));
+        final answerMemory = answered.memory.singleWhere(
+          (entry) => entry.sourceId == project.pendingQuestion!.id,
+        );
+        expect(answerMemory.kind, ProjectMemoryKind.requirement);
+        expect(answerMemory.sourceType, ProjectMemorySourceType.user);
+        expect(answerMemory.protected, isTrue);
       },
     );
 
@@ -404,8 +491,59 @@ void main() {
           project.knownFacts.join('\n'),
           contains('Which UI component should I prioritise?'),
         );
+        expect(project.memory.single.kind, ProjectMemoryKind.assumption);
       },
     );
+
+    test('user answer supersedes the planner assumption it resolves', () async {
+      final project = await service.createProject(
+        client: _QueueChatClient([
+          jsonEncode({
+            'title': 'Build app',
+            'refinedGoal': 'Build the app',
+            'successCriteria': ['App works'],
+            'constraints': ['Stay in workspace'],
+            'memory': [
+              {
+                'id': 'database_assumption',
+                'kind': 'assumption',
+                'content':
+                    'Assumed: SQLite\nOriginal question: Which database is the product requirement?',
+              },
+            ],
+            'openQuestions': [
+              {'question': 'Which database is the product requirement?'},
+            ],
+            'backlog': [],
+          }),
+        ]),
+        workspace: workspace,
+        userPrompt: 'Build the app',
+        chatSessionId: 'chat_1',
+        baseSystemPrompt: 'system',
+      );
+
+      final answered = await service.answerOpenQuestion(
+        workspace: workspace,
+        snapshot: project,
+        answer: 'PostgreSQL.',
+      );
+
+      final oldAssumption = answered.memory.singleWhere(
+        (entry) => entry.id == 'database_assumption',
+      );
+      final userRequirement = answered.memory.singleWhere(
+        (entry) => entry.sourceType == ProjectMemorySourceType.user,
+      );
+      expect(oldAssumption.active, isFalse);
+      expect(userRequirement.coveredEntryIds, ['database_assumption']);
+      expect(answered.knownFacts.join('\n'), isNot(contains('SQLite')));
+      expect(answered.knownFacts.join('\n'), contains('PostgreSQL'));
+      expect(
+        answered.pendingReplanTriggers,
+        contains(ProjectPlanRevisionTrigger.newContext),
+      );
+    });
 
     test('keeps credential initialization questions blocking', () async {
       final project = await service.createProject(
@@ -498,7 +636,100 @@ void main() {
       expect(updated.id, created.id);
       expect(updated.knownFacts.join('\n'), contains('SvelteKit'));
       expect(updated.status, ProjectStatus.active);
+      final contextMemory = updated.memory.last;
+      expect(contextMemory.kind, ProjectMemoryKind.requirement);
+      expect(contextMemory.sourceType, ProjectMemorySourceType.user);
+      expect(contextMemory.protected, isTrue);
     });
+
+    test('queues a manual replan and preserves its optional reason', () async {
+      final created = await service.createProject(
+        workspace: workspace,
+        userPrompt: 'Build the app',
+        chatSessionId: 'chat_1',
+      );
+
+      final stalled = created.copyWith(
+        status: ProjectStatus.blocked,
+        blocker: ProjectBlocker(
+          type: ProjectBlockerType.stagnation,
+          message: 'No criterion progress.',
+          createdAt: DateTime(2026, 1, 1),
+        ),
+        diagnostics: const ProjectDiagnostics(
+          consecutiveNoProgressIterations: 3,
+          recentNoProgressTaskIds: ['task_1', 'task_2', 'task_3'],
+        ),
+      );
+      final updated = await service.requestManualReplan(
+        workspace: workspace,
+        snapshot: stalled,
+        reason: 'Prioritise accessibility before visual polish.',
+      );
+
+      expect(
+        updated.pendingReplanTriggers,
+        contains(ProjectPlanRevisionTrigger.manual),
+      );
+      final reason = updated.memory.last;
+      expect(reason.content, contains('Prioritise accessibility'));
+      expect(reason.kind, ProjectMemoryKind.requirement);
+      expect(reason.sourceType, ProjectMemorySourceType.user);
+      expect(reason.protected, isTrue);
+      expect(updated.blocker, isNull);
+      expect(updated.diagnostics.consecutiveNoProgressIterations, 0);
+      expect(updated.diagnostics.recentNoProgressTaskIds, isEmpty);
+    });
+
+    test(
+      'persists auditable memory compaction without losing history',
+      () async {
+        final created = await service.createProject(
+          workspace: workspace,
+          userPrompt: 'Build the app',
+          chatSessionId: 'chat_1',
+        );
+        final now = DateTime(2026, 1, 1);
+        final facts = [
+          ProjectMemoryEntry(
+            id: 'fact_1',
+            kind: ProjectMemoryKind.fact,
+            content: 'The first setup step completed.',
+            sourceType: ProjectMemorySourceType.task,
+            sourceId: 'task_1',
+            confidence: ProjectMemoryConfidence.confirmed,
+            createdAt: now,
+            updatedAt: now,
+          ),
+          ProjectMemoryEntry(
+            id: 'fact_2',
+            kind: ProjectMemoryKind.fact,
+            content: 'The second setup step completed.',
+            sourceType: ProjectMemorySourceType.task,
+            sourceId: 'task_2',
+            confidence: ProjectMemoryConfidence.confirmed,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        ];
+
+        final compacted = await service.compactMemory(
+          workspace: workspace,
+          snapshot: created.copyWith(memory: facts),
+          coveredEntryIds: const ['fact_1', 'fact_2'],
+          summary: 'The two setup steps are complete.',
+        );
+        final persisted = await service.loadProject(workspace, created.id);
+
+        expect(compacted.memory, hasLength(3));
+        expect(
+          compacted.memory.take(2).every((entry) => !entry.active),
+          isTrue,
+        );
+        expect(compacted.memory.last.coveredEntryIds, ['fact_1', 'fact_2']);
+        expect(persisted!.memory.last.coveredEntryIds, ['fact_1', 'fact_2']);
+      },
+    );
 
     test(
       'empty backlog asks for exactly one next task instead of refreshing backlog',
@@ -593,6 +824,65 @@ void main() {
       expect(result.project.completedTasks.single.id, queuedTask.id);
       expect(client.taskSelectorRequestCount, 0);
     });
+
+    test(
+      'recalculates stale readiness and never executes a waiting task',
+      () async {
+        final project = await service.createProject(
+          workspace: workspace,
+          userPrompt: 'Build the app',
+          chatSessionId: 'chat_1',
+        );
+        final waitingTask = _projectTask(
+          id: 'waiting_task',
+          objective: 'Implement work whose prerequisite is unfinished',
+          dependsOnTaskIds: const ['prerequisite'],
+          readiness: ProjectTaskReadiness.ready,
+        );
+        final prerequisite = _projectTask(
+          id: 'prerequisite',
+          objective: 'Implement the prerequisite',
+          priority: ProjectTaskPriority.low,
+          readiness: ProjectTaskReadiness.waitingDependency,
+        );
+        final result = await service.runProject(
+          client: _QueueChatClient([
+            jsonEncode(_taskPlanJson()),
+            jsonEncode({
+              'status': 'completed',
+              'summary': 'Prerequisite complete.',
+              'memoryUpdate': 'Implemented the prerequisite.',
+            }),
+            jsonEncode({
+              'complete': false,
+              'finalSummary': '',
+              'remainingCriteria': ['Complete the stated project goal.'],
+              'openQuestions': [],
+            }),
+          ]),
+          workspace: workspace,
+          snapshot: project.copyWith(backlog: [waitingTask, prerequisite]),
+          baseSystemPrompt: 'system',
+          maxNewTasks: 1,
+        );
+
+        expect(result.project.completedTasks.single.id, 'prerequisite');
+        expect(
+          result.project.completedTasks.single.selectionRationale,
+          contains('deterministic scheduler'),
+        );
+        expect(
+          result.project.taskById('waiting_task')!.readiness,
+          ProjectTaskReadiness.ready,
+          reason: 'Completing the prerequisite should immediately unblock it.',
+        );
+        final persisted = await service.loadProject(workspace, project.id);
+        expect(
+          persisted!.taskById('waiting_task')!.readiness,
+          ProjectTaskReadiness.ready,
+        );
+      },
+    );
 
     test(
       'clears legacy duplicate-task blocker and resumes queued work',
@@ -696,7 +986,7 @@ void main() {
       },
     );
 
-    test('rejects completed duplicate proposals and continues', () async {
+    test('repairs a completed duplicate without rewriting history', () async {
       final project = await service.createProject(
         workspace: workspace,
         userPrompt: 'Build the app',
@@ -738,10 +1028,7 @@ void main() {
 
       expect(result.project.status, ProjectStatus.paused);
       expect(result.project.blocker, isNull);
-      expect(
-        result.project.failedTasks.single.status,
-        ProjectTaskStatus.rejected,
-      );
+      expect(result.project.failedTasks, isEmpty);
       expect(result.project.completedTasks, hasLength(2));
       expect(
         result.project.completedTasks.last.objective,
@@ -749,7 +1036,7 @@ void main() {
       );
     });
 
-    test('converts failed duplicate proposals into retry tasks', () async {
+    test('blocks a failed duplicate that has no retry context', () async {
       final project = await service.createProject(
         workspace: workspace,
         userPrompt: 'Build the app',
@@ -786,17 +1073,11 @@ void main() {
         maxNewTasks: 1,
       );
 
-      expect(result.project.status, ProjectStatus.paused);
-      expect(result.project.blocker, isNull);
-      expect(result.project.failedTasks, hasLength(2));
-      expect(
-        result.project.failedTasks.last.status,
-        ProjectTaskStatus.rejected,
-      );
-      expect(
-        result.project.completedTasks.single.objective,
-        startsWith('Retry'),
-      );
+      expect(result.project.status, ProjectStatus.blocked);
+      expect(result.project.blocker?.type, ProjectBlockerType.validation);
+      expect(result.project.failedTasks, hasLength(1));
+      expect(result.project.completedTasks, isEmpty);
+      expect(result.project.currentRevision, 1);
     });
 
     test('does not execute one giant task for a broad project goal', () async {
@@ -835,12 +1116,7 @@ void main() {
         maxNewTasks: 1,
       );
 
-      expect(
-        result.project.failedTasks.any(
-          (task) => task.objective.contains('entire project'),
-        ),
-        isTrue,
-      );
+      expect(result.project.failedTasks, isEmpty);
       expect(
         result.project.completedTasks.any(
           (task) => task.objective.contains('entire project'),
@@ -852,10 +1128,10 @@ void main() {
             false,
         isFalse,
       );
-      expect(result.project.completedTasks, hasLength(1));
-      expect(result.project.status, ProjectStatus.paused);
-      expect(result.project.blocker, isNull);
-      expect(client.taskSelectorRequestCount, 1);
+      expect(result.project.completedTasks, isEmpty);
+      expect(result.project.status, ProjectStatus.blocked);
+      expect(result.project.blocker?.type, ProjectBlockerType.validation);
+      expect(client.taskSelectorRequestCount, 0);
     });
 
     test(
@@ -912,6 +1188,13 @@ void main() {
         );
         expect(result.project.backlog.first.recoveryIncidentId, incident.id);
         expect(result.project.backlog.first.objective, contains('Restore'));
+        final risk = result.project.memory.singleWhere(
+          (entry) =>
+              entry.kind == ProjectMemoryKind.risk &&
+              entry.sourceId == incident.id,
+        );
+        expect(risk.active, isTrue);
+        expect(risk.protected, isTrue);
       },
     );
 
@@ -1065,6 +1348,19 @@ void main() {
             )).copyWith(
               backlog: [normalTask, recoveryTask],
               recoveryIncidents: [incident],
+              memory: [
+                ProjectMemoryEntry(
+                  id: 'recovery_risk',
+                  kind: ProjectMemoryKind.risk,
+                  content: 'The command gate is red.',
+                  sourceType: ProjectMemorySourceType.gate,
+                  sourceId: incident.id,
+                  confidence: ProjectMemoryConfidence.confirmed,
+                  protected: true,
+                  createdAt: now,
+                  updatedAt: now,
+                ),
+              ],
             );
         final client = _QueueCompletionClient([
           _finaliseTaskResponse(
@@ -1120,6 +1416,20 @@ void main() {
         expect(
           result.project.recoveryIncidents.single.status,
           ProjectRecoveryIncidentStatus.resolved,
+        );
+        expect(
+          result.project.memory
+              .singleWhere((entry) => entry.id == 'recovery_risk')
+              .active,
+          isFalse,
+        );
+        expect(
+          result.project.memory.any(
+            (entry) =>
+                entry.kind == ProjectMemoryKind.fact &&
+                entry.coveredEntryIds.contains('recovery_risk'),
+          ),
+          isTrue,
         );
       },
     );
@@ -1380,6 +1690,9 @@ ProjectTask _projectTask({
   required String id,
   required String objective,
   ProjectTaskStatus status = ProjectTaskStatus.queued,
+  List<String> dependsOnTaskIds = const [],
+  ProjectTaskPriority priority = ProjectTaskPriority.normal,
+  ProjectTaskReadiness readiness = ProjectTaskReadiness.ready,
   String? recoveryIncidentId,
 }) {
   final now = DateTime(2026, 1, 1);
@@ -1388,6 +1701,9 @@ ProjectTask _projectTask({
     title: objective,
     objective: objective,
     relevantSuccessCriteria: const ['Complete the stated project goal.'],
+    dependsOnTaskIds: dependsOnTaskIds,
+    priority: priority,
+    readiness: readiness,
     doneCriteria: const ['The task is completed and summarized.'],
     outOfScope: const ['Do not implement unrelated project work.'],
     context: const [],
@@ -1423,6 +1739,8 @@ class _QueueChatClient extends ChatClient {
   final List<String> _responses;
   var _index = 0;
   final List<List<ChatMessage>> _requests = [];
+
+  List<List<ChatMessage>> get seenMessages => _requests;
 
   int get taskSelectorRequestCount => _requests
       .where(

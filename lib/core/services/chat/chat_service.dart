@@ -1125,6 +1125,60 @@ class ChatService extends ChangeNotifier
     await reloadTasks();
   }
 
+  Future<void> approveProjectPlanRevision() async {
+    final currentWorkspace = workspace;
+    final snapshot = activeProject;
+    if (currentWorkspace == null ||
+        currentWorkspace.missing ||
+        snapshot == null ||
+        taskBusy ||
+        snapshot.pendingPlanApproval == null) {
+      return;
+    }
+    activeProject = await _projectService.approvePlanRevision(
+      workspace: currentWorkspace,
+      snapshot: snapshot,
+    );
+    await reloadTasks();
+  }
+
+  Future<void> rejectProjectPlanRevision() async {
+    final currentWorkspace = workspace;
+    final snapshot = activeProject;
+    if (currentWorkspace == null ||
+        currentWorkspace.missing ||
+        snapshot == null ||
+        taskBusy ||
+        snapshot.pendingPlanApproval == null) {
+      return;
+    }
+    activeProject = await _projectService.rejectPlanRevision(
+      workspace: currentWorkspace,
+      snapshot: snapshot,
+    );
+    await reloadTasks();
+  }
+
+  Future<void> replanProject([String reason = '']) async {
+    final currentWorkspace = workspace;
+    final snapshot = activeProject;
+    if (currentWorkspace == null ||
+        currentWorkspace.missing ||
+        snapshot == null ||
+        snapshot.currentTask != null ||
+        snapshot.pendingPlanApproval != null ||
+        taskBusy) {
+      return;
+    }
+    activeProject = await _projectService.requestManualReplan(
+      workspace: currentWorkspace,
+      snapshot: snapshot,
+      reason: reason,
+    );
+    await reloadTasks();
+    await _runProjectInternal();
+  }
+
   Future<void> _handleSlashCommand(_SlashCommand command) async {
     switch (command.name) {
       case 'task':
@@ -1937,14 +1991,9 @@ class ChatService extends ChangeNotifier
         type != ProjectBlockerType.taskFailed) {
       return;
     }
-    activeProject = project.copyWith(
-      status: ProjectStatus.active,
-      blocker: null,
-      updatedAt: DateTime.now(),
-    );
-    await _projectService.repository.saveSnapshot(
-      currentWorkspace.rootPath,
-      activeProject!,
+    activeProject = await _projectService.clearTaskBlocker(
+      workspace: currentWorkspace,
+      snapshot: project,
     );
   }
 

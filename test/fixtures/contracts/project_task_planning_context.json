@@ -1,0 +1,40 @@
+{
+  "projectGoal": "Ship an accessible reporting workflow.",
+  "projectTaskObjective": "Implement keyboard navigation for the report dialog.",
+  "knownFacts": [
+    "The application uses Flutter."
+  ],
+  "doneCriteria": [
+    "Every report-dialog action is keyboard reachable."
+  ],
+  "outOfScope": [
+    "Do not redesign report visuals."
+  ],
+  "expectedArtifacts": [],
+  "requiredGates": [],
+  "criterionIds": [
+    "criterion_accessibility"
+  ],
+  "criteria": [
+    {
+      "id": "criterion_accessibility",
+      "statement": "The reporting workflow is keyboard accessible.",
+      "required": true,
+      "verificationMode": "deterministic"
+    }
+  ],
+  "expectedEvidence": [
+    {
+      "id": "keyboard_tests",
+      "type": "command",
+      "criterionIds": [
+        "criterion_accessibility"
+      ],
+      "description": "The keyboard widget tests pass.",
+      "required": true,
+      "sourceRef": "flutter test test/ui/report_dialog_test.dart",
+      "details": {}
+    }
+  ],
+  "maxSteps": 4
+}

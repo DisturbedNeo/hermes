@@ -9,65 +9,28 @@ import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
+import 'package:hermes/core/services/project_system/project_planning_gateway.dart';
 import 'package:hermes/core/services/question_policy_service.dart';
 import 'package:hermes/core/services/task_system/finalizer_tool_call_runner.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/tool_service.dart';
 
-class ProjectInitialisation {
-  final String title;
-  final String refinedGoal;
-  final List<String> successCriteria;
-  final List<String> constraints;
-  final List<String> knownFacts;
-  final List<PendingProjectQuestion> openQuestions;
-  final List<ProjectTask> backlog;
+export 'package:hermes/core/services/project_system/project_planning_gateway.dart'
+    show
+        ProjectCompletionAssessment,
+        ProjectEvidenceSnapshot,
+        ProjectInitialisation,
+        ProjectPlanningGateway;
 
-  const ProjectInitialisation({
-    required this.title,
-    required this.refinedGoal,
-    required this.successCriteria,
-    required this.constraints,
-    required this.knownFacts,
-    required this.openQuestions,
-    required this.backlog,
-  });
-}
-
-class ProjectCompletionAssessment {
-  final bool complete;
-  final String finalSummary;
-  final List<String> remainingCriteria;
-  final List<PendingProjectQuestion> openQuestions;
-
-  const ProjectCompletionAssessment({
-    required this.complete,
-    required this.finalSummary,
-    required this.remainingCriteria,
-    required this.openQuestions,
-  });
-}
-
-class ProjectBacklogRefresh {
-  final List<ProjectTask> backlog;
-  final List<String> knownFacts;
-  final List<PendingProjectQuestion> openQuestions;
-
-  const ProjectBacklogRefresh({
-    required this.backlog,
-    required this.knownFacts,
-    required this.openQuestions,
-  });
-}
-
-class ProjectModelCalls {
+class ProjectModelCalls implements ProjectPlanningGateway {
   ProjectModelCalls({required ToolService toolService})
     : _creationRunner = FinalizerToolCallRunner(toolService: toolService);
 
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
   final FinalizerToolCallRunner _creationRunner;
 
+  @override
   Future<ProjectInitialisation> initializeProject({
     required ChatClient client,
     required String baseSystemPrompt,
@@ -86,31 +49,33 @@ class ProjectModelCalls {
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
         expectedShape:
-            '{"title":"...","refinedGoal":"...","successCriteria":["..."],"constraints":["..."],"knownFacts":["..."],"openQuestions":[{"question":"..."}],"backlog":[]}',
+            '{"title":"...","refinedGoal":"...","criteria":[{"id":"criterion_001","statement":"...","required":true,"verificationMode":"mixed"}],"constraints":["..."],"memory":[{"id":"memory_001","kind":"assumption","content":"..."}],"milestones":[{"id":"milestone_001","title":"...","objective":"...","criterionIds":["criterion_001"],"exitConditions":["..."],"order":1}],"openQuestions":[],"backlog":[{"id":"project_task_001","title":"...","objective":"...","criterionIds":["criterion_001"],"milestoneId":"milestone_001","doneCriteria":["..."],"outOfScope":["..."],"expectedEvidence":[{"id":"evidence_001","type":"task_claim","criterionIds":["criterion_001"],"description":"..."}]}]}',
         finalizerTool: _finaliseProjectCreationToolDefinition(
           requiredProperties: const [
             'title',
             'refinedGoal',
-            'successCriteria',
+            'criteria',
             'constraints',
           ],
         ),
         user:
             '''
 Initialize a persistent project state. Do not execute the project.
-Do not create a full task plan up front. Backlog is optional; include only tasks that are immediately obvious and small.
-Do not add openQuestions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; record a useful assumption in knownFacts instead.
+Create a rolling roadmap with one to three milestones and approximately three to seven detailed near-term tasks. Keep distant work coarse in milestone objectives rather than expanding an unbounded backlog.
+Every task needs stable IDs, dependencies, criterion and milestone links, priority, risk, effort, boundaries, expected evidence, and a concise rationale in selectionRationale.
+Do not add openQuestions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; record a typed assumption in memory instead.
 Add openQuestions only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
 
 Return only JSON:
 {
   "title": "...",
   "refinedGoal": "...",
-  "successCriteria": ["..."],
+  "criteria": [{"id":"criterion_001","statement":"...","required":true,"verificationMode":"mixed"}],
   "constraints": ["..."],
-  "knownFacts": ["..."],
+  "memory": [{"id":"memory_001","kind":"fact|assumption|requirement|decision|risk","content":"...","confidence":"confirmed|inferred|uncertain"}],
+  "milestones": [{"id":"milestone_001","title":"...","objective":"...","criterionIds":["criterion_001"],"exitConditions":["..."],"order":1}],
   "openQuestions": [{"question": "..."}],
-  "backlog": []
+  "backlog": [{"id":"project_task_001","title":"...","objective":"one bounded task","criterionIds":["criterion_001"],"milestoneId":"milestone_001","dependsOnTaskIds":[],"priority":"normal","risk":"low","riskReduction":"low","effort":"small","doneCriteria":["..."],"outOfScope":["..."],"expectedEvidence":[{"id":"expectation_001","type":"task_claim","criterionIds":["criterion_001"],"description":"...","required":true}],"readPaths":[],"writePaths":[],"selectionRationale":"..."}]
 }
 
 Workspace metadata:
@@ -127,13 +92,27 @@ $originalGoal
       final criteria = jsonStringList(
         json['successCriteria'] ?? json['success_criteria'],
       );
+      final structuredCriteria = _criteriaFromJson(json['criteria']);
+      final fallbackCriteria = structuredCriteria.isEmpty
+          ? [
+              for (var index = 0; index < criteria.length; index++)
+                ProjectCriterion(
+                  id: 'criterion_${(index + 1).toString().padLeft(3, '0')}',
+                  statement: criteria[index],
+                  createdAt: DateTime.now(),
+                  updatedAt: DateTime.now(),
+                ),
+            ]
+          : structuredCriteria;
       return ProjectInitialisation(
         title: jsonString(
           json['title'],
           fallback: _titleFromGoal(originalGoal),
         ),
         refinedGoal: refinedGoal,
-        successCriteria: criteria.isEmpty
+        successCriteria: structuredCriteria.isNotEmpty
+            ? structuredCriteria.map((item) => item.statement).toList()
+            : criteria.isEmpty
             ? ['Complete the stated project goal.']
             : criteria,
         constraints: jsonStringList(json['constraints']).isEmpty
@@ -143,7 +122,13 @@ $originalGoal
         openQuestions: _questionsFromJson(
           json['openQuestions'] ?? json['open_questions'],
         ),
-        backlog: _tasksFromJson(json['backlog']),
+        backlog: _bindTasksToCriteria(
+          _tasksFromJson(json['backlog']),
+          fallbackCriteria,
+        ),
+        criteria: structuredCriteria,
+        milestones: _milestonesFromJson(json['milestones']),
+        memory: _memoryFromJson(json['memory']),
       );
     } on OperationCancelledException {
       rethrow;
@@ -154,144 +139,121 @@ $originalGoal
     }
   }
 
-  Future<ProjectBacklogRefresh> refreshBacklog({
+  @override
+  Future<ProjectPlanProposal> revisePlan({
     required ChatClient client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required ProjectState project,
-    required Map<String, dynamic> workspaceMetadata,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) async {
-    try {
-      final json = await _completeFinalizedJson(
-        client: client,
-        workspace: workspace,
-        label: 'Project Backlog Refresh',
-        system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
-        onModelOutput: onModelOutput,
-        cancellationToken: cancellationToken,
-        expectedShape:
-            '{"backlog":[{"title":"...","objective":"...","relevantSuccessCriteria":["..."],"doneCriteria":["..."],"outOfScope":["..."],"context":["..."],"expectedArtifacts":[]}],"knownFacts":["..."],"openQuestions":[{"question":"..."}]}',
-        finalizerTool: _finaliseProjectCreationToolDefinition(
-          requiredProperties: const ['backlog'],
-        ),
-        user:
-            '''
-Refresh the project backlog. Return only small, bounded, independently verifiable tasks.
-Do not add openQuestions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; choose a reasonable next task/order and record the assumption in knownFacts.
-Add openQuestions only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
-
-Return only JSON:
-{
-  "backlog": [
-    {
-      "title": "...",
-      "objective": "one small bounded task",
-      "relevantSuccessCriteria": ["one or two criteria"],
-      "doneCriteria": ["..."],
-      "outOfScope": ["..."],
-      "context": ["..."],
-      "expectedArtifacts": [{"path": "...", "description": "...", "kind": "file"}]
-    }
-  ],
-  "knownFacts": ["..."],
-  "openQuestions": [{"question": "..."}]
-}
-
-Workspace metadata:
-${_encoder.convert(workspaceMetadata)}
-
-Project state:
-${_encoder.convert(ModelJson.encode(project))}
-''',
-      );
-      return ProjectBacklogRefresh(
-        backlog: _tasksFromJson(json['backlog']),
-        knownFacts: jsonStringList(json['knownFacts'] ?? json['known_facts']),
-        openQuestions: _questionsFromJson(
-          json['openQuestions'] ?? json['open_questions'],
-        ),
-      );
-    } on OperationCancelledException {
-      rethrow;
-    } on ChatTransportException {
-      rethrow;
-    } catch (_) {
-      return const ProjectBacklogRefresh(
-        backlog: [],
-        knownFacts: [],
-        openQuestions: [],
-      );
-    }
-  }
-
-  Future<ProjectTask?> proposeNextTask({
-    required ChatClient client,
-    required String baseSystemPrompt,
-    required ProjectState project,
-    required Map<String, dynamic> workspaceMetadata,
-    required Set<String> forbiddenFingerprints,
+    required ProjectEvidenceSnapshot evidenceSnapshot,
+    required List<ProjectPlanRevisionTrigger> triggers,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     try {
       final json = await _completeJson(
         client: client,
-        label: 'Project Task Selector',
+        label: 'Project Plan Revision',
         system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
         expectedShape:
-            '{"task":{"title":"...","objective":"...","relevantSuccessCriteria":["..."],"doneCriteria":["..."],"outOfScope":["..."],"context":["..."],"expectedArtifacts":[]}}',
+            '{"summary":"...","rationale":"...","assumptions":[],"criterionUpserts":[],"removedCriterionIds":[],"milestoneUpserts":[],"removedMilestoneIds":[],"taskAdditions":[],"taskUpdates":[],"deferredTaskIds":[],"obsoleteTaskIds":[],"memoryAdditions":[],"memorySupersessions":[],"openQuestions":[],"requiresApproval":false,"approvalReason":""}',
         user:
             '''
-Propose exactly one next bounded task for the existing persistent project.
-Valid queued backlog tasks are selected before this call. Do not repeat any backlog task or forbidden fingerprint; propose a new bounded task instead.
-Do not create a new project.
-Respect knownFacts and previous user answers; do not repeat questions that are already answered there.
+Propose one coherent revision to the rolling project plan for all supplied triggers.
+Do not execute work. Preserve completed task history, accepted evidence, gate results, recovery incidents, and protected user memory.
+Return only small, bounded, independently verifiable near-term tasks. Use stable existing IDs for updates and new unique IDs for additions.
+Do not add openQuestions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; choose a reasonable next task/order and record the assumption in memoryAdditions.
+Add openQuestions only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
 
 Return only JSON:
 {
-  "task": {
-    "title": "...",
-    "objective": "one small bounded task",
-    "relevantSuccessCriteria": ["one or two criteria"],
-    "doneCriteria": ["..."],
-    "outOfScope": ["..."],
-    "context": ["..."],
-    "expectedArtifacts": [{"path": "...", "description": "...", "kind": "file"}]
-  }
+  "summary": "...", "rationale": "...", "assumptions": [],
+  "criterionUpserts": [], "removedCriterionIds": [],
+  "milestoneUpserts": [], "removedMilestoneIds": [],
+  "taskAdditions": [], "taskUpdates": [],
+  "deferredTaskIds": [], "obsoleteTaskIds": [],
+  "memoryAdditions": [], "memorySupersessions": [],
+  "openQuestions": [], "requiresApproval": false, "approvalReason": ""
 }
 
-Forbidden task fingerprints:
-${_encoder.convert(forbiddenFingerprints.toList()..sort())}
+Revision triggers:
+${_encoder.convert(triggers.map((item) => item.name).toList())}
 
-Workspace metadata:
-${_encoder.convert(workspaceMetadata)}
+Bounded discovery snapshot:
+${_encoder.convert(evidenceSnapshot.toMap())}
 
 Project state:
 ${_encoder.convert(ModelJson.encode(project))}
 ''',
       );
-      final raw = json['task'];
-      if (raw is Map) {
-        return _taskFromMap(Map<String, dynamic>.from(raw), 0);
-      }
+      return _proposalFromJson(json, project: project, triggers: triggers);
     } on OperationCancelledException {
       rethrow;
     } on ChatTransportException {
       rethrow;
     } catch (_) {
-      return project.backlog.isEmpty
-          ? _fallbackNextTask(project)
-          : project.backlog.first;
+      return ProjectPlanProposal(
+        revision: project.currentRevision + 1,
+        triggers: triggers,
+        summary: 'No safe plan revision was produced.',
+        rationale: 'The planning call failed without a valid proposal.',
+        createdAt: DateTime.now(),
+      );
     }
-    return project.backlog.isEmpty
-        ? _fallbackNextTask(project)
-        : project.backlog.first;
   }
 
+  @override
+  Future<ProjectPlanProposal?> repairPlanProposal({
+    required ChatClient client,
+    required String baseSystemPrompt,
+    required WorkspaceAttachment workspace,
+    required ProjectState project,
+    required ProjectPlanProposal proposal,
+    required List<Map<String, String>> validationIssues,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  }) async {
+    try {
+      final json = await _completeJson(
+        client: client,
+        label: 'Project Plan Repair',
+        system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
+        onModelOutput: onModelOutput,
+        cancellationToken: cancellationToken,
+        expectedShape:
+            '{"summary":"...","rationale":"...","taskAdditions":[],"taskUpdates":[],"deferredTaskIds":[],"obsoleteTaskIds":[]}',
+        user:
+            '''
+Repair the proposed plan exactly once so every structured validation issue is resolved.
+Preserve its intent and revision number. Do not execute work or mutate immutable history.
+
+Validation issues:
+${_encoder.convert(validationIssues)}
+
+Invalid proposal:
+${_encoder.convert(ModelJson.encode(proposal))}
+
+Authoritative project state:
+${_encoder.convert(ModelJson.encode(project))}
+''',
+      );
+      return _proposalFromJson(
+        json,
+        project: project,
+        triggers: proposal.triggers,
+      );
+    } on OperationCancelledException {
+      rethrow;
+    } on ChatTransportException {
+      rethrow;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
   Future<List<ProjectTask>> splitTask({
     required ChatClient client,
     required String baseSystemPrompt,
@@ -339,7 +301,10 @@ Project state:
 ${_encoder.convert(ModelJson.encode(project))}
 ''',
       );
-      return _tasksFromJson(json['tasks']).take(5).toList();
+      return _bindTasksToCriteria(
+        _tasksFromJson(json['tasks']),
+        project.criteria,
+      ).take(5).toList();
     } on OperationCancelledException {
       rethrow;
     } on ChatTransportException {
@@ -349,6 +314,7 @@ ${_encoder.convert(ModelJson.encode(project))}
     }
   }
 
+  @override
   Future<ProjectCompletionAssessment> evaluateCompletion({
     required ChatClient client,
     required String baseSystemPrompt,
@@ -367,7 +333,9 @@ ${_encoder.convert(ModelJson.encode(project))}
             '{"complete":false,"finalSummary":"...","remainingCriteria":["..."],"openQuestions":[{"question":"..."}]}',
         user:
             '''
-Evaluate whether this project is complete. Do not mark complete unless every success criterion is satisfied by completed project tasks and artifacts.
+Perform one bounded semantic review of the unresolved Project criteria and their persisted evidence.
+Task completion alone is not evidence that a criterion is satisfied. Treat proposed task claims as advisory, inspect accepted gates and artifacts, and list every criterion that still lacks adequate evidence in remainingCriteria.
+Set complete only when every required criterion is adequately supported. Your decision will be persisted as an evidence-review rationale.
 Do not add openQuestions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences.
 Add openQuestions only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
 
@@ -568,11 +536,24 @@ $expectedShape
   ProjectTask _taskFromMap(Map<String, dynamic> map, int index) {
     map['id'] = jsonString(
       map['id'],
-      fallback: 'project_task_${index + 1}_${uuid.v7().substring(0, 8)}',
+      fallback: 'project_task_${index + 1}_${uuid.v7()}',
     );
     map['status'] ??= ProjectTaskStatus.queued.wire;
     final task = ModelJson.decode<ProjectTask>(map);
+    final expectedEvidence = task.expectedEvidence.isEmpty
+        ? [
+            ProjectEvidenceExpectation(
+              id: 'expect_${task.id}',
+              type: ProjectEvidenceType.taskClaim,
+              criterionIds: task.criterionIds,
+              description: task.doneCriteria.isEmpty
+                  ? 'The bounded task result is independently verified.'
+                  : task.doneCriteria.join(' '),
+            ),
+          ]
+        : task.expectedEvidence;
     return task.copyWith(
+      expectedEvidence: expectedEvidence,
       fingerprint: projectTaskFingerprint(
         task.objective,
         task.relevantSuccessCriteria,
@@ -580,41 +561,210 @@ $expectedShape
     );
   }
 
-  ProjectTask? _fallbackNextTask(ProjectState project) {
-    final remainingCriteria = project.successCriteria.where((criterion) {
-      final normalised = criterion.trim().toLowerCase();
-      return !project.completedTasks.any(
-        (task) => task.relevantSuccessCriteria.any(
-          (completed) => completed.trim().toLowerCase() == normalised,
+  ProjectPlanProposal _proposalFromJson(
+    Map<String, dynamic> json, {
+    required ProjectState project,
+    required List<ProjectPlanRevisionTrigger> triggers,
+  }) {
+    final rawTaskAdditions =
+        json['taskAdditions'] ??
+        json['task_additions'] ??
+        (json['task'] is Map ? [json['task']] : null);
+    final criterionUpserts = _criteriaFromJson(
+      json['criterionUpserts'] ?? json['criterion_upserts'],
+    );
+    final removedCriterionIds = jsonStringList(
+      json['removedCriterionIds'] ?? json['removed_criterion_ids'],
+    );
+    final availableCriteria = <String, ProjectCriterion>{
+      for (final criterion in project.criteria) criterion.id: criterion,
+      for (final criterion in criterionUpserts) criterion.id: criterion,
+    }..removeWhere((id, _) => removedCriterionIds.contains(id));
+    return ProjectPlanProposal(
+      revision: project.currentRevision + 1,
+      triggers: triggers.toSet().toList(),
+      summary: jsonString(
+        json['summary'],
+        fallback: 'Revise the rolling plan.',
+      ),
+      rationale: jsonString(
+        json['rationale'],
+        fallback: 'Respond to the collected replanning triggers.',
+      ),
+      assumptions: jsonStringList(json['assumptions']),
+      criterionUpserts: criterionUpserts,
+      removedCriterionIds: removedCriterionIds,
+      milestoneUpserts: _milestonesFromJson(
+        json['milestoneUpserts'] ?? json['milestone_upserts'],
+      ),
+      removedMilestoneIds: jsonStringList(
+        json['removedMilestoneIds'] ?? json['removed_milestone_ids'],
+      ),
+      taskAdditions: _bindTasksToCriteria(
+        _tasksFromJson(rawTaskAdditions),
+        availableCriteria.values,
+      ),
+      taskUpdates: _bindTasksToCriteria(
+        _tasksFromJson(json['taskUpdates'] ?? json['task_updates']),
+        availableCriteria.values,
+      ),
+      deferredTaskIds: jsonStringList(
+        json['deferredTaskIds'] ?? json['deferred_task_ids'],
+      ),
+      obsoleteTaskIds: jsonStringList(
+        json['obsoleteTaskIds'] ?? json['obsolete_task_ids'],
+      ),
+      memoryAdditions: _memoryFromJson(
+        json['memoryAdditions'] ?? json['memory_additions'],
+      ),
+      memorySupersessions: _memorySupersessionsFromJson(
+        json['memorySupersessions'] ?? json['memory_supersessions'],
+      ),
+      openQuestions: _questionsFromJson(
+        json['openQuestions'] ?? json['open_questions'],
+      ),
+      requiresApproval: jsonBool(
+        json['requiresApproval'] ?? json['requires_approval'],
+      ),
+      approvalReason: jsonString(
+        json['approvalReason'] ?? json['approval_reason'],
+      ),
+      createdAt: DateTime.now(),
+    );
+  }
+
+  List<ProjectTask> _bindTasksToCriteria(
+    List<ProjectTask> tasks,
+    Iterable<ProjectCriterion> criteria,
+  ) {
+    final available = criteria.toList();
+    final criterionIds = available.map((item) => item.id).toSet();
+    final byStatement = {
+      for (final criterion in available)
+        criterion.statement.trim().toLowerCase(): criterion.id,
+    };
+    String? resolveCriterion(String value) {
+      if (criterionIds.contains(value)) return value;
+      return byStatement[value.trim().toLowerCase()];
+    }
+
+    return [
+      for (final task in tasks)
+        (() {
+          final resolved = task.criterionIds
+              .map((value) => resolveCriterion(value) ?? value)
+              .toSet()
+              .toList();
+          final boundIds = resolved;
+          return task.copyWith(
+            criterionIds: boundIds,
+            expectedEvidence: [
+              for (final expectation in task.expectedEvidence)
+                ProjectEvidenceExpectation(
+                  id: expectation.id,
+                  type: expectation.type,
+                  criterionIds: expectation.criterionIds.isEmpty
+                      ? boundIds
+                      : expectation.criterionIds
+                            .map((value) => resolveCriterion(value) ?? value)
+                            .where(boundIds.contains)
+                            .toSet()
+                            .toList(),
+                  description: expectation.description,
+                  required: expectation.required,
+                  sourceRef: expectation.sourceRef,
+                  details: expectation.details,
+                ),
+            ],
+          );
+        })(),
+    ];
+  }
+
+  List<ProjectCriterion> _criteriaFromJson(Object? value) {
+    if (value is! List) return const [];
+    final now = DateTime.now();
+    final criteria = <ProjectCriterion>[];
+    for (var index = 0; index < value.length; index++) {
+      final raw = value[index];
+      if (raw is! Map) continue;
+      final map = Map<String, dynamic>.from(raw);
+      map['id'] = jsonString(
+        map['id'],
+        fallback: 'criterion_${(index + 1).toString().padLeft(3, '0')}',
+      );
+      map['statement'] = jsonString(map['statement']);
+      map['createdAt'] ??= now.toIso8601String();
+      map['updatedAt'] ??= now.toIso8601String();
+      criteria.add(ModelJson.decode<ProjectCriterion>(map));
+    }
+    return criteria;
+  }
+
+  List<ProjectMilestone> _milestonesFromJson(Object? value) {
+    if (value is! List) return const [];
+    final now = DateTime.now();
+    final milestones = <ProjectMilestone>[];
+    for (var index = 0; index < value.length; index++) {
+      final raw = value[index];
+      if (raw is! Map) continue;
+      final map = Map<String, dynamic>.from(raw);
+      map['id'] = jsonString(
+        map['id'],
+        fallback: 'milestone_${(index + 1).toString().padLeft(3, '0')}',
+      );
+      map['title'] = jsonString(
+        map['title'],
+        fallback: 'Milestone ${index + 1}',
+      );
+      map['objective'] = jsonString(map['objective'], fallback: map['title']);
+      map['order'] ??= index + 1;
+      map['createdAt'] ??= now.toIso8601String();
+      map['updatedAt'] ??= now.toIso8601String();
+      milestones.add(ModelJson.decode<ProjectMilestone>(map));
+    }
+    return milestones;
+  }
+
+  List<ProjectMemoryEntry> _memoryFromJson(Object? value) {
+    if (value is! List) return const [];
+    final now = DateTime.now();
+    final entries = <ProjectMemoryEntry>[];
+    for (var index = 0; index < value.length; index++) {
+      final raw = value[index];
+      if (raw is! Map) continue;
+      final map = Map<String, dynamic>.from(raw);
+      map['id'] = jsonString(
+        map['id'],
+        fallback: 'memory_${(index + 1).toString().padLeft(3, '0')}',
+      );
+      map['content'] = jsonString(map['content']);
+      map['sourceType'] ??= ProjectMemorySourceType.planner.name;
+      map['confidence'] ??= ProjectMemoryConfidence.inferred.name;
+      map['createdAt'] ??= now.toIso8601String();
+      map['updatedAt'] ??= now.toIso8601String();
+      entries.add(ModelJson.decode<ProjectMemoryEntry>(map));
+    }
+    return entries;
+  }
+
+  List<ProjectMemorySupersession> _memorySupersessionsFromJson(Object? value) {
+    if (value is! List) return const [];
+    final entries = <ProjectMemorySupersession>[];
+    for (final raw in value.whereType<Map>()) {
+      final entryId = jsonString(raw['entryId'] ?? raw['entry_id']);
+      final replacementId = jsonString(
+        raw['supersededById'] ?? raw['superseded_by_id'],
+      );
+      if (entryId.isEmpty || replacementId.isEmpty) continue;
+      entries.add(
+        ProjectMemorySupersession(
+          entryId: entryId,
+          supersededById: replacementId,
         ),
       );
-    }).toList();
-    final criterion = remainingCriteria.isEmpty
-        ? 'Identify the next smallest useful project task.'
-        : remainingCriteria.first;
-    final now = DateTime.now();
-    final objective = 'Make focused progress on: $criterion';
-    return ProjectTask(
-      id: 'project_task_${uuid.v7()}',
-      title: _titleFromGoal(criterion),
-      objective: objective,
-      relevantSuccessCriteria: [criterion],
-      doneCriteria: [
-        'Concrete progress for "$criterion" is completed and summarized.',
-      ],
-      outOfScope: const [
-        'Do not complete unrelated success criteria.',
-        'Do not expand this into the whole project.',
-      ],
-      context: project.knownFacts,
-      expectedArtifacts: const [],
-      status: ProjectTaskStatus.queued,
-      taskDocumentId: null,
-      fingerprint: projectTaskFingerprint(objective, [criterion]),
-      rejectionReason: null,
-      createdAt: now,
-      updatedAt: now,
-    );
+    }
+    return entries;
   }
 
   List<PendingProjectQuestion> _questionsFromJson(Object? value) {
@@ -655,6 +805,66 @@ ToolDefinition _finaliseProjectCreationToolDefinition({
       'properties': {
         'title': {'type': 'string'},
         'refinedGoal': {'type': 'string'},
+        'summary': {'type': 'string'},
+        'rationale': {'type': 'string'},
+        'criteria': {
+          'type': 'array',
+          'items': {'type': 'object'},
+        },
+        'memory': {
+          'type': 'array',
+          'items': {'type': 'object'},
+        },
+        'milestones': {
+          'type': 'array',
+          'items': {'type': 'object'},
+        },
+        'assumptions': {
+          'type': 'array',
+          'items': {'type': 'string'},
+        },
+        'criterionUpserts': {
+          'type': 'array',
+          'items': {'type': 'object'},
+        },
+        'removedCriterionIds': {
+          'type': 'array',
+          'items': {'type': 'string'},
+        },
+        'milestoneUpserts': {
+          'type': 'array',
+          'items': {'type': 'object'},
+        },
+        'removedMilestoneIds': {
+          'type': 'array',
+          'items': {'type': 'string'},
+        },
+        'taskAdditions': {
+          'type': 'array',
+          'items': {'type': 'object'},
+        },
+        'taskUpdates': {
+          'type': 'array',
+          'items': {'type': 'object'},
+        },
+        'deferredTaskIds': {
+          'type': 'array',
+          'items': {'type': 'string'},
+        },
+        'obsoleteTaskIds': {
+          'type': 'array',
+          'items': {'type': 'string'},
+        },
+        'memoryAdditions': {
+          'type': 'array',
+          'items': {'type': 'object'},
+        },
+        'memorySupersessions': {
+          'type': 'array',
+          'items': {'type': 'object'},
+        },
+        'requiresApproval': {'type': 'boolean'},
+        'approvalReason': {'type': 'string'},
         'successCriteria': {
           'type': 'array',
           'items': {'type': 'string'},

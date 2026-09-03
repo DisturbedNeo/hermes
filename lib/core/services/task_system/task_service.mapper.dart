@@ -18,6 +18,8 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
       MapperContainer.globals.use(_instance = TaskPlanningContextMapper._());
       TaskArtifactMapper.ensureInitialized();
       TaskGateMapper.ensureInitialized();
+      TaskProjectCriterionMapper.ensureInitialized();
+      TaskProjectEvidenceExpectationMapper.ensureInitialized();
     }
     return _instance!;
   }
@@ -68,6 +70,27 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
       v.requiredGates;
   static const Field<TaskPlanningContext, List<TaskGate>> _f$requiredGates =
       Field('requiredGates', _$requiredGates, opt: true, def: const []);
+  static List<String> _$criterionIds(TaskPlanningContext v) => v.criterionIds;
+  static const Field<TaskPlanningContext, List<String>> _f$criterionIds = Field(
+    'criterionIds',
+    _$criterionIds,
+    opt: true,
+    def: const [],
+  );
+  static List<TaskProjectCriterion> _$criteria(TaskPlanningContext v) =>
+      v.criteria;
+  static const Field<TaskPlanningContext, List<TaskProjectCriterion>>
+  _f$criteria = Field('criteria', _$criteria, opt: true, def: const []);
+  static List<TaskProjectEvidenceExpectation> _$expectedEvidence(
+    TaskPlanningContext v,
+  ) => v.expectedEvidence;
+  static const Field<TaskPlanningContext, List<TaskProjectEvidenceExpectation>>
+  _f$expectedEvidence = Field(
+    'expectedEvidence',
+    _$expectedEvidence,
+    opt: true,
+    def: const [],
+  );
   static int _$maxSteps(TaskPlanningContext v) => v.maxSteps;
   static const Field<TaskPlanningContext, int> _f$maxSteps = Field(
     'maxSteps',
@@ -85,6 +108,9 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
     #outOfScope: _f$outOfScope,
     #expectedArtifacts: _f$expectedArtifacts,
     #requiredGates: _f$requiredGates,
+    #criterionIds: _f$criterionIds,
+    #criteria: _f$criteria,
+    #expectedEvidence: _f$expectedEvidence,
     #maxSteps: _f$maxSteps,
   };
 
@@ -97,6 +123,9 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
       outOfScope: data.dec(_f$outOfScope),
       expectedArtifacts: data.dec(_f$expectedArtifacts),
       requiredGates: data.dec(_f$requiredGates),
+      criterionIds: data.dec(_f$criterionIds),
+      criteria: data.dec(_f$criteria),
+      expectedEvidence: data.dec(_f$expectedEvidence),
       maxSteps: data.dec(_f$maxSteps),
     );
   }

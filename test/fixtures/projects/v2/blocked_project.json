@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 2,
+  "id": "project_fixture_blocked",
+  "title": "Blocked fixture project",
+  "originalGoal": "Ship a verified build",
+  "refinedGoal": "Ship a verified build without bypassing failures",
+  "successCriteria": ["The build passes required verification."],
+  "constraints": ["Do not bypass required verification."],
+  "backlog": [],
+  "completedTasks": [],
+  "failedTasks": [
+    {
+      "id": "project_task_fixture_failed",
+      "title": "Verify build",
+      "objective": "Run the bounded build verification.",
+      "relevantSuccessCriteria": ["The build passes required verification."],
+      "doneCriteria": ["The required build verification passes."],
+      "outOfScope": ["Do not disable the verification command."],
+      "context": [],
+      "expectedArtifacts": [],
+      "status": "failed",
+      "taskDocumentId": "task_fixture_failed",
+      "fingerprint": "run the bounded build verification.|the build passes required verification.",
+      "failure": {
+        "gateId": "command_passes",
+        "disposition": "blocking",
+        "failureKey": "command_passes|flutter test",
+        "summary": "The required test command failed.",
+        "errorCodes": [],
+        "toolCallIds": [],
+        "advisoryErrorCount": 0,
+        "resolvedErrorCount": 0,
+        "unresolvedErrorCount": 1
+      },
+      "createdAt": "2026-01-01T09:00:00.000Z",
+      "updatedAt": "2026-01-01T10:00:00.000Z"
+    }
+  ],
+  "artifacts": [],
+  "recoveryIncidents": [],
+  "knownFacts": ["The required test command failed."],
+  "openQuestions": [],
+  "status": "blocked",
+  "phase": "verification",
+  "iterationCount": 1,
+  "maxIterations": 25,
+  "maxFailedTasks": 3,
+  "completionSummary": "",
+  "blocker": {
+    "type": "task_failed",
+    "message": "The required test command failed.",
+    "taskId": "task_fixture_failed",
+    "createdAt": "2026-01-01T10:00:00.000Z"
+  },
+  "decisions": [],
+  "createdAt": "2026-01-01T09:00:00.000Z",
+  "updatedAt": "2026-01-01T10:00:00.000Z"
+}

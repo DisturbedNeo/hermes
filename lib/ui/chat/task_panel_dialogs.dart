@@ -3,6 +3,66 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 
+/// Collects optional context for a user-requested project replan.
+class ProjectReplanDialog extends StatefulWidget {
+  const ProjectReplanDialog({super.key});
+
+  static Future<String?> show(BuildContext context) {
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) => const ProjectReplanDialog(),
+    );
+  }
+
+  @override
+  State<ProjectReplanDialog> createState() => _ProjectReplanDialogState();
+}
+
+class _ProjectReplanDialogState extends State<ProjectReplanDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Replan Project'),
+      content: SizedBox(
+        width: 520,
+        child: TextField(
+          key: const ValueKey('project-replan-reason'),
+          controller: _controller,
+          autofocus: true,
+          minLines: 3,
+          maxLines: 6,
+          textInputAction: TextInputAction.newline,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            labelText: 'Reason (optional)',
+            hintText: 'Describe new priorities, constraints, or context.',
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          key: const ValueKey('confirm-project-replan'),
+          icon: const Icon(Icons.route_outlined),
+          label: const Text('Request Replan'),
+          onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
+        ),
+      ],
+    );
+  }
+}
+
 /// Dialog for editing a project's JSON plan.
 ///
 /// Shows a [TextField] pre-filled with the current project JSON,
@@ -18,16 +78,15 @@ class EditProjectDialog extends StatefulWidget {
   });
 
   /// Shows the edit-project dialog and returns whether the user saved.
-  static Future<bool> show(BuildContext context, {
+  static Future<bool> show(
+    BuildContext context, {
     required String initialJson,
     required Future<void> Function(String json) onSave,
   }) {
     return showDialog<bool>(
       context: context,
-      builder: (dialogContext) => EditProjectDialog(
-        initialJson: initialJson,
-        onSave: onSave,
-      ),
+      builder: (dialogContext) =>
+          EditProjectDialog(initialJson: initialJson, onSave: onSave),
     ).then((result) => result ?? false);
   }
 
@@ -122,16 +181,15 @@ class EditPlanDialog extends StatefulWidget {
   });
 
   /// Shows the edit-plan dialog and returns whether the user saved.
-  static Future<bool> show(BuildContext context, {
+  static Future<bool> show(
+    BuildContext context, {
     required String initialJson,
     required Future<void> Function(String json) onSave,
   }) {
     return showDialog<bool>(
       context: context,
-      builder: (dialogContext) => EditPlanDialog(
-        initialJson: initialJson,
-        onSave: onSave,
-      ),
+      builder: (dialogContext) =>
+          EditPlanDialog(initialJson: initialJson, onSave: onSave),
     ).then((result) => result ?? false);
   }
 
@@ -225,18 +283,16 @@ class ArtifactViewerDialog extends StatefulWidget {
   });
 
   /// Shows the artifact viewer dialog.
-  static Future<void> show(BuildContext context, {
+  static Future<void> show(
+    BuildContext context, {
     required String path,
     required ChatService chat,
     void Function(String error)? onError,
   }) {
     return showDialog<void>(
       context: context,
-      builder: (dialogContext) => ArtifactViewerDialog(
-        path: path,
-        chat: chat,
-        onError: onError,
-      ),
+      builder: (dialogContext) =>
+          ArtifactViewerDialog(path: path, chat: chat, onError: onError),
     );
   }
 
@@ -281,8 +337,8 @@ class _ArtifactViewerDialogState extends State<ArtifactViewerDialog> {
               ),
             )
           : _error != null
-              ? Text('Failed to load: $_error')
-              : const Center(child: CircularProgressIndicator()),
+          ? Text('Failed to load: $_error')
+          : const Center(child: CircularProgressIndicator()),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),

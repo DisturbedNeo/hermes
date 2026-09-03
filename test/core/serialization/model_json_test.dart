@@ -137,7 +137,10 @@ void main() {
     expect(ModelJson.encode(run)['status'], 'needs_replan');
     expect(ModelJson.encode(approval)['stepId'], 'step_1');
     expect(ModelJson.encode(question)['question'], 'Continue?');
-    expect(ModelJson.encode(document), containsPair('schemaVersion', 2));
+    expect(
+      ModelJson.encode(document),
+      containsPair('schemaVersion', TaskDocument.currentSchemaVersion),
+    );
 
     final legacyCall = ModelJson.decode<TaskToolCallRecord>({
       'id': 'legacy_call',
@@ -278,7 +281,12 @@ void main() {
       'created_at': now.toIso8601String(),
       'updated_at': now.toIso8601String(),
     });
-    expect(migrated.schemaVersion, 2);
+    expect(migrated.schemaVersion, ProjectDocument.currentSchemaVersion);
+    expect(migrated.currentRevision, 1);
+    expect(
+      migrated.planHistory.single.trigger,
+      ProjectPlanRevisionTrigger.migration,
+    );
     expect(migrated.currentTask?.taskDocumentId, 'task_1');
     expect(ModelJson.encode(migrated), isNot(contains('tasks')));
   });
@@ -361,6 +369,19 @@ void main() {
     expect(ModelJson.encode(planning)['expectedArtifacts'], [
       {'path': 'out.md'},
     ]);
+
+    const diagnostics = ProjectDiagnostics(
+      projectModelCalls: 7,
+      completedTaskExecutions: 2,
+      consecutiveNoProgressIterations: 1,
+      recentNoProgressTaskIds: ['task_2'],
+    );
+    final decodedDiagnostics = ModelJson.decode<ProjectDiagnostics>(
+      ModelJson.encode(diagnostics),
+    );
+    expect(decodedDiagnostics.projectModelCalls, 7);
+    expect(decodedDiagnostics.projectModelCallsPerCompletedTask, 3.5);
+    expect(decodedDiagnostics.recentNoProgressTaskIds, ['task_2']);
 
     const metadata = WorkspaceMetadata(
       rootFiles: ['pubspec.yaml'],

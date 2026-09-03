@@ -230,6 +230,23 @@ void main() {
             projectTaskObjective: 'Implement the settings toggle',
             doneCriteria: ['The settings toggle works.'],
             outOfScope: ['Do not build the whole app.'],
+            criterionIds: ['criterion_accessibility'],
+            criteria: [
+              TaskProjectCriterion(
+                id: 'criterion_accessibility',
+                statement: 'The settings flow is keyboard accessible.',
+                verificationMode: 'deterministic',
+              ),
+            ],
+            expectedEvidence: [
+              TaskProjectEvidenceExpectation(
+                id: 'keyboard_tests',
+                type: 'command',
+                criterionIds: ['criterion_accessibility'],
+                description: 'The keyboard widget tests pass.',
+                sourceRef: 'flutter test',
+              ),
+            ],
             maxSteps: 3,
           ),
         );
@@ -242,8 +259,93 @@ void main() {
         );
         expect(plannerRequest, contains('Implement the settings toggle'));
         expect(plannerRequest, contains('Do not build the whole app.'));
+        expect(plannerRequest, contains('keyboard accessible'));
+        expect(plannerRequest, contains('keyboard widget tests pass'));
+        final task = await service.loadLatestTask(
+          workspace,
+          chatSessionId: 'chat_1',
+        );
+        expect(task!.projectCriteria.single.id, 'criterion_accessibility');
+        expect(task.projectEvidenceExpectations.single.id, 'keyboard_tests');
       },
     );
+
+    test(
+      'repairs a project plan that exceeds its effort-derived limit',
+      () async {
+        final oversized = _projectBoundedPlanJson(title: 'Oversized task');
+        oversized['steps'] = [
+          for (var index = 0; index < 3; index++)
+            {
+              'id': 'step_$index',
+              'title': 'Step $index',
+              'objective': 'Implement one part of the settings toggle.',
+              'instructions': ['Stay inside the bounded objective.'],
+              'mayEditFiles': true,
+            },
+        ];
+        final client = _QueueChatClient([
+          jsonEncode(oversized),
+          jsonEncode(_projectBoundedPlanJson(title: 'Repaired bounded task')),
+        ]);
+
+        final task = await service.createTask(
+          client: client,
+          workspace: workspace,
+          userPrompt: 'Implement the settings toggle',
+          selectedMode: ExecutionMode.task,
+          baseSystemPrompt: 'system',
+          chatSessionId: 'chat_1',
+          projectId: 'project_1',
+          planningContext: const TaskPlanningContext(
+            projectGoal: 'Build the whole app',
+            projectTaskObjective: 'Implement the settings toggle',
+            doneCriteria: ['The settings toggle works.'],
+            maxSteps: 2,
+          ),
+        );
+
+        expect(client.seenMessages, hasLength(2));
+        expect(task.steps, hasLength(1));
+        expect(task.title, 'Repaired bounded task');
+      },
+    );
+
+    test('planning context encoding matches the prompt contract fixture', () {
+      final expected = jsonDecode(
+        File(
+          'test/fixtures/contracts/project_task_planning_context.json',
+        ).readAsStringSync(),
+      );
+      const context = TaskPlanningContext(
+        projectGoal: 'Ship an accessible reporting workflow.',
+        projectTaskObjective:
+            'Implement keyboard navigation for the report dialog.',
+        knownFacts: ['The application uses Flutter.'],
+        doneCriteria: ['Every report-dialog action is keyboard reachable.'],
+        outOfScope: ['Do not redesign report visuals.'],
+        criterionIds: ['criterion_accessibility'],
+        criteria: [
+          TaskProjectCriterion(
+            id: 'criterion_accessibility',
+            statement: 'The reporting workflow is keyboard accessible.',
+            verificationMode: 'deterministic',
+          ),
+        ],
+        expectedEvidence: [
+          TaskProjectEvidenceExpectation(
+            id: 'keyboard_tests',
+            type: 'command',
+            criterionIds: ['criterion_accessibility'],
+            description: 'The keyboard widget tests pass.',
+            sourceRef: 'flutter test test/ui/report_dialog_test.dart',
+          ),
+        ],
+        maxSteps: 4,
+      );
+
+      expect(ModelJson.encode(context), expected);
+    });
 
     test(
       'falls back when project task planner expands to whole project',
@@ -374,6 +476,86 @@ void main() {
       expect(updated.memorySummary, contains('Found a Flutter app.'));
       expect(updated.runs.single.toolCalls.single.toolName, 'finish_task_step');
     });
+
+    test(
+      'persists validated project evidence claims from a finished step',
+      () async {
+        final task = _task(
+          projectCriterionIds: const ['criterion_001'],
+          projectCriteria: const [
+            TaskProjectCriterion(
+              id: 'criterion_001',
+              statement: 'The report passes verification.',
+              verificationMode: 'deterministic',
+            ),
+          ],
+          projectEvidenceExpectations: const [
+            TaskProjectEvidenceExpectation(
+              id: 'report_tests',
+              type: 'command',
+              criterionIds: ['criterion_001'],
+              description: 'The report verification command passes.',
+              sourceRef: 'dart test',
+            ),
+          ],
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'finish_task_step',
+                arguments: jsonEncode({
+                  'status': 'completed',
+                  'summary': 'Verified the report.',
+                  'evidenceClaims': [
+                    {
+                      'criterionId': 'criterion_001',
+                      'claim': 'The report passed its verification command.',
+                      'evidenceType': 'command',
+                      'sourceRef': 'dart test',
+                      'suggestedStrength': 'conclusive',
+                    },
+                    {
+                      'criterionId': 'unknown_criterion',
+                      'claim': 'This claim must be ignored.',
+                      'evidenceType': 'task_claim',
+                      'sourceRef': 'run',
+                      'suggestedStrength': 'advisory',
+                    },
+                  ],
+                }),
+              ),
+            ],
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(updated.runs.single.evidenceClaims, hasLength(1));
+        expect(
+          updated.runs.single.evidenceClaims.single.evidenceType,
+          TaskEvidenceClaimType.command,
+        );
+        expect(
+          updated.runs.single.evidenceClaims.single.suggestedStrength,
+          TaskEvidenceClaimStrength.conclusive,
+        );
+        expect(
+          updated.runs.single.evidenceClaims.single.runId,
+          updated.runs.single.runId,
+        );
+        final executionPrompt = client.seenMessages.single.last.content;
+        expect(executionPrompt, contains('The report passes verification.'));
+        expect(executionPrompt, contains('final planned task step'));
+        expect(executionPrompt, contains('include a final evidence claim'));
+      },
+    );
 
     test(
       'finish task step tool call skips sibling workspace tool calls',
@@ -1892,6 +2074,9 @@ TaskDocument _task({
   List<TaskStep>? steps,
   String? currentStepId,
   List<TaskGate> gates = const [],
+  List<String> projectCriterionIds = const [],
+  List<TaskProjectCriterion> projectCriteria = const [],
+  List<TaskProjectEvidenceExpectation> projectEvidenceExpectations = const [],
 }) {
   final now = DateTime(2026, 1, 1);
   final resolvedSteps = steps ?? [step ?? _step()];
@@ -1908,6 +2093,9 @@ TaskDocument _task({
     currentStepId: currentStepId ?? resolvedSteps.first.id,
     memorySummary: '',
     runs: const [],
+    projectCriterionIds: projectCriterionIds,
+    projectCriteria: projectCriteria,
+    projectEvidenceExpectations: projectEvidenceExpectations,
     createdAt: now,
     updatedAt: now,
   );

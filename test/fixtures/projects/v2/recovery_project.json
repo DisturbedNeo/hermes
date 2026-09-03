@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 2,
+  "id": "project_fixture_recovery",
+  "title": "Recovery fixture project",
+  "originalGoal": "Restore and complete the application",
+  "refinedGoal": "Restore required verification before continuing application work",
+  "successCriteria": ["Required verification passes.", "The application work is complete."],
+  "constraints": ["Recovery work must run before normal backlog work."],
+  "backlog": [
+    {
+      "id": "project_task_fixture_normal",
+      "title": "Continue application work",
+      "objective": "Implement the next normal application slice.",
+      "relevantSuccessCriteria": ["The application work is complete."],
+      "doneCriteria": ["The application slice is implemented."],
+      "outOfScope": ["Do not bypass recovery work."],
+      "context": [],
+      "expectedArtifacts": [],
+      "status": "queued",
+      "fingerprint": "implement the next normal application slice.|the application work is complete.",
+      "createdAt": "2026-01-01T09:00:00.000Z",
+      "updatedAt": "2026-01-01T09:00:00.000Z"
+    },
+    {
+      "id": "project_task_fixture_recovery",
+      "title": "Restore verification",
+      "objective": "Restore required project health gate: flutter test",
+      "relevantSuccessCriteria": ["Required verification passes."],
+      "doneCriteria": ["The required test command passes."],
+      "outOfScope": ["Do not continue normal feature work."],
+      "context": ["Previous verification failed."],
+      "expectedArtifacts": [],
+      "status": "queued",
+      "recoveryIncidentId": "recovery_fixture_1",
+      "fingerprint": "restore required project health gate: flutter test|required verification passes.",
+      "createdAt": "2026-01-01T10:00:00.000Z",
+      "updatedAt": "2026-01-01T10:00:00.000Z"
+    }
+  ],
+  "completedTasks": [],
+  "failedTasks": [
+    {
+      "id": "project_task_fixture_source_failure",
+      "title": "Verify application",
+      "objective": "Run the required application verification.",
+      "relevantSuccessCriteria": ["Required verification passes."],
+      "doneCriteria": ["The required test command passes."],
+      "outOfScope": ["Do not bypass verification."],
+      "context": [],
+      "expectedArtifacts": [],
+      "status": "failed",
+      "taskDocumentId": "task_fixture_source_failure",
+      "recoveryIncidentId": "recovery_fixture_1",
+      "fingerprint": "run the required application verification.|required verification passes.",
+      "failure": {
+        "gateId": "command_passes",
+        "disposition": "repairable",
+        "failureKey": "command_passes|flutter test",
+        "summary": "The required test command failed.",
+        "errorCodes": [],
+        "toolCallIds": [],
+        "advisoryErrorCount": 0,
+        "resolvedErrorCount": 0,
+        "unresolvedErrorCount": 1
+      },
+      "createdAt": "2026-01-01T09:00:00.000Z",
+      "updatedAt": "2026-01-01T10:00:00.000Z"
+    }
+  ],
+  "artifacts": [],
+  "recoveryIncidents": [
+    {
+      "id": "recovery_fixture_1",
+      "status": "active",
+      "sourceTaskIds": ["task_fixture_source_failure"],
+      "sourceTaskTitles": ["Verify application"],
+      "failedGateId": "command_passes",
+      "command": "flutter test",
+      "workingDirectory": ".",
+      "failureSummary": "The required test command failed.",
+      "attemptCount": 0,
+      "maxAttempts": 3,
+      "recoveryTaskIds": ["project_task_fixture_recovery"],
+      "createdAt": "2026-01-01T10:00:00.000Z",
+      "updatedAt": "2026-01-01T10:00:00.000Z"
+    }
+  ],
+  "knownFacts": ["The required test command failed and must be restored."],
+  "openQuestions": [],
+  "status": "active",
+  "phase": "execution",
+  "iterationCount": 1,
+  "maxIterations": 25,
+  "maxFailedTasks": 3,
+  "completionSummary": "",
+  "decisions": [],
+  "createdAt": "2026-01-01T09:00:00.000Z",
+  "updatedAt": "2026-01-01T10:00:00.000Z"
+}

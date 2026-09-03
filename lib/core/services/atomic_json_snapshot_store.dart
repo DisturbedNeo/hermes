@@ -14,6 +14,23 @@ class SnapshotCorruptionException implements Exception {
       'Snapshot is corrupt: $path${cause == null ? '' : ' ($cause)'}';
 }
 
+class UnsupportedSnapshotSchemaException implements Exception {
+  const UnsupportedSnapshotSchemaException({
+    required this.path,
+    required this.foundVersion,
+    required this.supportedVersion,
+  });
+
+  final String path;
+  final int foundVersion;
+  final int supportedVersion;
+
+  @override
+  String toString() =>
+      'Snapshot schema $foundVersion is newer than supported schema '
+      '$supportedVersion: $path';
+}
+
 /// Crash-resistant JSON object storage with one last-known-good backup.
 class AtomicJsonSnapshotStore {
   static int _temporarySequence = 0;

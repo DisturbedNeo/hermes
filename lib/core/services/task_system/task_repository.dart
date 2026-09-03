@@ -9,6 +9,7 @@ import 'package:path/path.dart' as path;
 class TaskRepository {
   static const String tasksRoot = '.agent/tasks';
   static const String documentFileName = 'task.json';
+  static const String v2BackupFileName = 'task.v2.json';
 
   final AtomicJsonSnapshotStore _snapshots = const AtomicJsonSnapshotStore();
 
@@ -83,12 +84,25 @@ class TaskRepository {
     final file = File(path.join(dir.path, documentFileName));
     final raw = await _snapshots.readMap(file, isValid: _isTaskMap);
     if (raw == null) return null;
+    final rawVersion = _rawSchemaVersion(raw);
+    if (rawVersion > TaskDocument.currentSchemaVersion) {
+      throw UnsupportedSnapshotSchemaException(
+        path: file.path,
+        foundVersion: rawVersion,
+        supportedVersion: TaskDocument.currentSchemaVersion,
+      );
+    }
     final task = ModelJson.decode<TaskDocument>(raw);
-    if (task.schemaVersion != TaskDocument.currentSchemaVersion) return null;
     if (chatSessionId != null && task.chatSessionId != chatSessionId) {
       return null;
     }
     if (projectId != null && task.projectId != projectId) return null;
+    if (rawVersion != TaskDocument.currentSchemaVersion) {
+      if (rawVersion == 2) {
+        await _writeV2MigrationBackup(dir, raw);
+      }
+      await saveSnapshot(workspaceRoot, task);
+    }
     return task;
   }
 
@@ -100,6 +114,23 @@ class TaskRepository {
       ModelJson.encode(task),
       isValid: _isTaskMap,
     );
+  }
+
+  Future<void> _writeV2MigrationBackup(
+    Directory taskDirectory,
+    Map<String, dynamic> raw,
+  ) async {
+    final backup = File(path.join(taskDirectory.path, v2BackupFileName));
+    if (await backup.exists()) return;
+    await _snapshots.writeMap(backup, raw, isValid: _isTaskMap);
+  }
+
+  int _rawSchemaVersion(Map<String, dynamic> map) {
+    final value = map['schemaVersion'] ?? map['schema_version'];
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
   }
 
   Future<bool> deleteTask(String workspaceRoot, String taskId) async {
@@ -197,6 +228,9 @@ class TaskRepository {
   }
 
   bool _isTaskMap(Map<String, dynamic> map) {
+    if (_rawSchemaVersion(map) > TaskDocument.currentSchemaVersion) {
+      return (map['id'] ?? '').toString().trim().isNotEmpty;
+    }
     try {
       final task = ModelJson.decode<TaskDocument>(map);
       return task.id.trim().isNotEmpty;

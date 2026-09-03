@@ -10,6 +10,7 @@ import 'package:path/path.dart' as path;
 class ProjectRepository {
   static const String projectsRoot = '.agent/projects';
   static const String documentFileName = 'project.json';
+  static const String v2BackupFileName = 'project.v2.json';
 
   final AtomicJsonSnapshotStore _snapshots = const AtomicJsonSnapshotStore();
 
@@ -92,11 +93,21 @@ class ProjectRepository {
     final raw = await _snapshots.readMap(file, isValid: _isProjectMap);
     if (raw == null) return null;
     final rawVersion = _rawSchemaVersion(raw);
+    if (rawVersion > ProjectDocument.currentSchemaVersion) {
+      throw UnsupportedSnapshotSchemaException(
+        path: file.path,
+        foundVersion: rawVersion,
+        supportedVersion: ProjectDocument.currentSchemaVersion,
+      );
+    }
     final project = ModelJson.decode<ProjectDocument>(raw);
     if (chatSessionId != null && project.chatSessionId != chatSessionId) {
       return null;
     }
     if (rawVersion != ProjectDocument.currentSchemaVersion) {
+      if (rawVersion == 2) {
+        await _writeV2MigrationBackup(dir, raw);
+      }
       await saveSnapshot(workspaceRoot, project);
     }
     return project;
@@ -195,6 +206,15 @@ class ProjectRepository {
 
   // ── Private helpers ──────────────────────────────────────────────────
 
+  Future<void> _writeV2MigrationBackup(
+    Directory projectDirectory,
+    Map<String, dynamic> raw,
+  ) async {
+    final backup = File(path.join(projectDirectory.path, v2BackupFileName));
+    if (await backup.exists()) return;
+    await _snapshots.writeMap(backup, raw, isValid: _isProjectMap);
+  }
+
   Directory _projectDirectory(String workspaceRoot, String projectId) {
     return Directory(path.join(workspaceRoot, projectsRoot, projectId));
   }
@@ -247,6 +267,9 @@ class ProjectRepository {
   }
 
   bool _isProjectMap(Map<String, dynamic> map) {
+    if (_rawSchemaVersion(map) > ProjectDocument.currentSchemaVersion) {
+      return (map['id'] ?? '').toString().trim().isNotEmpty;
+    }
     try {
       final project = ModelJson.decode<ProjectDocument>(map);
       return project.id.trim().isNotEmpty;

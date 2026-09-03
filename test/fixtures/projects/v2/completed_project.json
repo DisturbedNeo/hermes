@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 2,
+  "id": "project_fixture_completed",
+  "title": "Completed fixture project",
+  "originalGoal": "Create a project summary",
+  "refinedGoal": "Create and verify a project summary",
+  "successCriteria": ["The summary exists and is verified."],
+  "constraints": ["Stay within the attached workspace."],
+  "backlog": [],
+  "completedTasks": [
+    {
+      "id": "project_task_fixture_completed",
+      "title": "Create summary",
+      "objective": "Create the bounded project summary.",
+      "relevantSuccessCriteria": ["The summary exists and is verified."],
+      "doneCriteria": ["The summary is created and verified."],
+      "outOfScope": ["Do not modify unrelated documentation."],
+      "context": [],
+      "expectedArtifacts": [
+        {
+          "id": "artifact_fixture_summary",
+          "projectTaskId": "project_task_fixture_completed",
+          "taskDocumentId": "task_fixture_completed",
+          "path": "docs/summary.md",
+          "description": "Verified project summary",
+          "kind": "file",
+          "createdAt": "2026-01-01T10:00:00.000Z"
+        }
+      ],
+      "status": "completed",
+      "taskDocumentId": "task_fixture_completed",
+      "fingerprint": "create the bounded project summary.|the summary exists and is verified.",
+      "createdAt": "2026-01-01T09:00:00.000Z",
+      "updatedAt": "2026-01-01T10:00:00.000Z"
+    }
+  ],
+  "failedTasks": [],
+  "artifacts": [
+    {
+      "id": "artifact_fixture_summary",
+      "projectTaskId": "project_task_fixture_completed",
+      "taskDocumentId": "task_fixture_completed",
+      "path": "docs/summary.md",
+      "description": "Verified project summary",
+      "kind": "file",
+      "createdAt": "2026-01-01T10:00:00.000Z"
+    }
+  ],
+  "recoveryIncidents": [],
+  "knownFacts": ["The summary was created and verified."],
+  "openQuestions": [],
+  "status": "completed",
+  "phase": "finalization",
+  "iterationCount": 1,
+  "maxIterations": 25,
+  "maxFailedTasks": 3,
+  "completionSummary": "The project summary is complete.",
+  "decisions": [],
+  "createdAt": "2026-01-01T09:00:00.000Z",
+  "updatedAt": "2026-01-01T10:00:00.000Z",
+  "completedAt": "2026-01-01T10:00:00.000Z"
+}
