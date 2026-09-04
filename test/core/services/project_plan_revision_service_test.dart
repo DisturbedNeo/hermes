@@ -148,6 +148,99 @@ void main() {
       );
     });
 
+    test('criterion progress upsert applies without approval', () async {
+      final completedTask = _task(
+        id: 'task_completed',
+      ).copyWith(status: ProjectTaskStatus.completed);
+      final orphanedEvidence = ProjectEvidence(
+        id: 'evidence_completed_command',
+        type: ProjectEvidenceType.command,
+        criterionIds: const [],
+        projectTaskId: completedTask.id,
+        taskDocumentId: 'document_completed',
+        taskRunId: 'run_completed',
+        sourceRef: 'flutter test',
+        summary: 'Verification passed.',
+        status: ProjectEvidenceStatus.accepted,
+        strength: ProjectEvidenceStrength.conclusive,
+        createdAt: DateTime(2026, 1, 2),
+        evaluatedAt: DateTime(2026, 1, 2),
+      );
+      final withEvidence = project.copyWith(
+        completedTasks: [completedTask],
+        evidence: [orphanedEvidence],
+      );
+      final progress = withEvidence.criteria.single.copyWith(
+        status: ProjectCriterionStatus.satisfied,
+        evidenceIds: [orphanedEvidence.id],
+        notes: 'The completed task supplied accepted evidence.',
+      );
+      final proposal = _proposal(
+        withEvidence,
+        criterionUpserts: [progress],
+        taskAdditions: [_task(id: 'task_next')],
+      );
+      final previouslyPaused = withEvidence.copyWith(
+        status: ProjectStatus.paused,
+        pendingPlanApproval: PendingProjectPlanApproval(
+          revision: proposal.revision,
+          reason: 'The revision contains high-risk plan changes.',
+          summary: proposal.summary,
+          highRiskChanges: const [
+            'Success criteria or their verification policy changes.',
+          ],
+          createdAt: proposal.createdAt,
+          proposal: proposal,
+        ),
+        blocker: ProjectBlocker(
+          type: ProjectBlockerType.planApproval,
+          message: 'The revision contains high-risk plan changes.',
+          createdAt: proposal.createdAt,
+        ),
+      );
+
+      final result = await service.prepareAndApply(
+        project: previouslyPaused,
+        proposal: proposal,
+        workspaceRoot: workspace.path,
+      );
+
+      expect(result.awaitingApproval, isFalse);
+      expect(result.changed, isTrue);
+      expect(result.project.pendingPlanApproval, isNull);
+      expect(result.project.currentRevision, 2);
+      expect(
+        result.project.criteria.single.status,
+        ProjectCriterionStatus.satisfied,
+      );
+      expect(result.project.evidence.single.criterionIds, const [
+        'criterion_001',
+      ]);
+      expect(
+        result.project.evidence.single.details['linkedBy'],
+        'plan_revision_orphan_repair',
+      );
+    });
+
+    test('changing whether a criterion is required needs approval', () async {
+      final proposal = _proposal(
+        project,
+        criterionUpserts: [project.criteria.single.copyWith(required: false)],
+      );
+
+      final result = await service.prepareAndApply(
+        project: project,
+        proposal: proposal,
+        workspaceRoot: workspace.path,
+      );
+
+      expect(result.awaitingApproval, isTrue);
+      expect(
+        result.project.pendingPlanApproval?.highRiskChanges,
+        contains('Success criteria or their verification policy changes.'),
+      );
+    });
+
     test(
       'criterion contract edits stale old evidence and reset verification',
       () async {

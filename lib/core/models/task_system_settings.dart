@@ -1,3 +1,5 @@
+import 'package:hermes/core/models/project.dart';
+
 enum QuestionAutonomy {
   conservative,
   balanced,
@@ -37,6 +39,7 @@ class TaskSystemSettings {
   final int maxProjectTasksPerRun;
   final int maxProjectIterations;
   final QuestionAutonomy questionAutonomy;
+  final ProjectPlanApprovalPolicy planApprovalPolicy;
 
   const TaskSystemSettings({
     this.enabled = true,
@@ -46,6 +49,7 @@ class TaskSystemSettings {
     this.maxProjectTasksPerRun = 5,
     this.maxProjectIterations = 25,
     this.questionAutonomy = QuestionAutonomy.balanced,
+    this.planApprovalPolicy = ProjectPlanApprovalPolicy.highRiskOnly,
   });
 
   TaskSystemSettings copyWith({
@@ -56,6 +60,7 @@ class TaskSystemSettings {
     int? maxProjectTasksPerRun,
     int? maxProjectIterations,
     QuestionAutonomy? questionAutonomy,
+    ProjectPlanApprovalPolicy? planApprovalPolicy,
   }) {
     return TaskSystemSettings(
       enabled: enabled ?? this.enabled,
@@ -69,6 +74,7 @@ class TaskSystemSettings {
           maxProjectTasksPerRun ?? this.maxProjectTasksPerRun,
       maxProjectIterations: maxProjectIterations ?? this.maxProjectIterations,
       questionAutonomy: questionAutonomy ?? this.questionAutonomy,
+      planApprovalPolicy: planApprovalPolicy ?? this.planApprovalPolicy,
     );
   }
 
@@ -91,7 +97,8 @@ class TaskSystemSettings {
             showTaskMessagesInChat == other.showTaskMessagesInChat &&
             maxProjectTasksPerRun == other.maxProjectTasksPerRun &&
             maxProjectIterations == other.maxProjectIterations &&
-            questionAutonomy == other.questionAutonomy;
+            questionAutonomy == other.questionAutonomy &&
+            planApprovalPolicy == other.planApprovalPolicy;
   }
 
   @override
@@ -103,5 +110,6 @@ class TaskSystemSettings {
     maxProjectTasksPerRun,
     maxProjectIterations,
     questionAutonomy,
+    planApprovalPolicy,
   );
 }

@@ -5,6 +5,7 @@ import 'package:hermes/core/enums/diagnostics_visibility.dart';
 import 'package:hermes/core/helpers/preferences_keys.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/core/models/model_load_configuration.dart';
+import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:path/path.dart' as path;
@@ -213,6 +214,9 @@ class PreferencesService extends ChangeNotifier {
       questionAutonomy: QuestionAutonomy.parse(
         prefs.getString(PreferencesKeys.taskSystemQuestionAutonomy),
       ),
+      planApprovalPolicy: ProjectPlanApprovalPolicy.parse(
+        prefs.getString(PreferencesKeys.taskSystemPlanApprovalPolicy),
+      ),
     ).normalised();
   }
 
@@ -247,6 +251,10 @@ class PreferencesService extends ChangeNotifier {
         await prefs.setString(
           PreferencesKeys.taskSystemQuestionAutonomy,
           normalised.questionAutonomy.wire,
+        ) &&
+        await prefs.setString(
+          PreferencesKeys.taskSystemPlanApprovalPolicy,
+          normalised.planApprovalPolicy.wire,
         );
 
     if (saved) notifyListeners();

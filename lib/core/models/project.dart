@@ -139,7 +139,29 @@ enum ProjectPlanRevisionTrigger {
 }
 
 @MappableEnum(defaultValue: ProjectPlanApprovalPolicy.highRiskOnly)
-enum ProjectPlanApprovalPolicy { never, highRiskOnly, everyRevision }
+enum ProjectPlanApprovalPolicy {
+  never,
+  highRiskOnly,
+  everyRevision;
+
+  String get wire => name;
+
+  String get label => switch (this) {
+    ProjectPlanApprovalPolicy.never => 'Never (autonomous)',
+    ProjectPlanApprovalPolicy.highRiskOnly => 'High risk only',
+    ProjectPlanApprovalPolicy.everyRevision => 'Every revision',
+  };
+
+  static ProjectPlanApprovalPolicy parse(Object? value) {
+    final raw = value?.toString().trim().toLowerCase();
+    return switch (raw) {
+      'never' => ProjectPlanApprovalPolicy.never,
+      'everyrevision' ||
+      'every_revision' => ProjectPlanApprovalPolicy.everyRevision,
+      _ => ProjectPlanApprovalPolicy.highRiskOnly,
+    };
+  }
+}
 
 @MappableEnum(defaultValue: ProjectPlanRevisionApprover.automatic)
 enum ProjectPlanRevisionApprover { automatic, user }

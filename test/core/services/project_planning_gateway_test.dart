@@ -130,6 +130,42 @@ void main() {
       );
     });
 
+    test('initialization does not queue work with no criterion link', () async {
+      final now = DateTime(2026, 1, 1);
+      gateway.initialisation = ProjectInitialisation(
+        title: 'Unlinked project',
+        refinedGoal: 'Complete linked work only',
+        successCriteria: const ['Criterion one', 'Criterion two'],
+        constraints: const ['Stay in the workspace.'],
+        knownFacts: const [],
+        openQuestions: const [],
+        backlog: [_projectTask().copyWith(criterionIds: const [])],
+        criteria: [
+          ProjectCriterion(
+            id: 'criterion_one',
+            statement: 'Criterion one',
+            createdAt: now,
+            updatedAt: now,
+          ),
+          ProjectCriterion(
+            id: 'criterion_two',
+            statement: 'Criterion two',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        ],
+      );
+
+      final project = await service.createProject(
+        workspace: workspace,
+        userPrompt: 'Complete the project',
+        client: _QueueChatClient(const []),
+      );
+
+      expect(project.backlog, isEmpty);
+      expect(project.planHistory.single.addedTaskIds, isEmpty);
+    });
+
     test(
       'model revisions bind tasks to criteria introduced in the same revision',
       () async {

@@ -79,4 +79,8 @@ abstract final class PreferencesKeys {
   /// How aggressively structured tasks should ask the user before continuing.
   static const String taskSystemQuestionAutonomy =
       'task_system_question_autonomy';
+
+  /// When rolling project-plan revisions require user approval.
+  static const String taskSystemPlanApprovalPolicy =
+      'task_system_plan_approval_policy';
 }

@@ -1,5 +1,6 @@
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/project.dart';
+import 'package:hermes/core/services/project_system/project_criterion_evaluator.dart';
 import 'package:hermes/core/services/project_system/project_memory_service.dart';
 import 'package:hermes/core/services/project_system/project_plan_validator.dart';
 
@@ -32,6 +33,8 @@ class ProjectPlanRevisionService {
   }) : _validator = validator;
 
   final ProjectPlanValidator _validator;
+  static const ProjectCriterionEvaluator _criterionEvaluator =
+      ProjectCriterionEvaluator();
   static const ProjectMemoryService _memoryService = ProjectMemoryService();
 
   Future<ProjectPlanRevisionResult> prepareAndApply({
@@ -107,7 +110,7 @@ class ProjectPlanRevisionService {
       );
     }
 
-    final highRiskChanges = _highRiskChanges(candidate);
+    final highRiskChanges = _highRiskChanges(project, candidate);
     final requiresApproval = switch (approvalPolicy) {
       ProjectPlanApprovalPolicy.never => false,
       ProjectPlanApprovalPolicy.everyRevision => true,
@@ -223,6 +226,7 @@ class ProjectPlanRevisionService {
   }) {
     final now = DateTime.now();
     var evidence = [...project.evidence];
+    var repairedOrphanEvidence = false;
     final criterionById = {for (final item in project.criteria) item.id: item};
     for (final proposed in proposal.criterionUpserts) {
       final existing = criterionById[proposed.id];
@@ -253,6 +257,39 @@ class ProjectPlanRevisionService {
                   ...item.details,
                   'staleReason': 'criterion_contract_changed',
                   'staleRevision': proposal.revision,
+                },
+                evaluatedAt: now,
+              )
+            else
+              item,
+        ];
+      } else if (proposed.status == ProjectCriterionStatus.satisfied &&
+          proposed.evidenceIds.isNotEmpty) {
+        final proposedEvidenceIds = proposed.evidenceIds.toSet();
+        final completedTaskIds = project.completedTasks
+            .map((task) => task.id)
+            .toSet();
+        repairedOrphanEvidence =
+            repairedOrphanEvidence ||
+            evidence.any(
+              (item) =>
+                  proposedEvidenceIds.contains(item.id) &&
+                  item.criterionIds.isEmpty &&
+                  item.status == ProjectEvidenceStatus.accepted &&
+                  completedTaskIds.contains(item.projectTaskId),
+            );
+        evidence = [
+          for (final item in evidence)
+            if (proposedEvidenceIds.contains(item.id) &&
+                item.criterionIds.isEmpty &&
+                item.status == ProjectEvidenceStatus.accepted &&
+                completedTaskIds.contains(item.projectTaskId))
+              item.copyWith(
+                criterionIds: [existing.id],
+                details: {
+                  ...item.details,
+                  'linkedBy': 'plan_revision_orphan_repair',
+                  'linkedRevision': proposal.revision,
                 },
                 evaluatedAt: now,
               )
@@ -488,7 +525,7 @@ class ProjectPlanRevisionService {
       approvedBy: approver,
     );
 
-    return project.copyWith(
+    final updated = project.copyWith(
       criteria: criterionById.values.toList(),
       evidence: evidence,
       milestones: milestoneById.values.toList()
@@ -531,6 +568,12 @@ class ProjectPlanRevisionService {
           : project.decisions,
       updatedAt: now,
     );
+    return repairedOrphanEvidence
+        ? _criterionEvaluator.evaluateDeterministically(
+            updated,
+            evaluatedAt: now,
+          )
+        : updated;
   }
 
   static ProjectTask _mergeTask(
@@ -621,10 +664,22 @@ class ProjectPlanRevisionService {
       )
       .join('||');
 
-  static List<String> _highRiskChanges(ProjectPlanProposal proposal) {
+  static List<String> _highRiskChanges(
+    ProjectState project,
+    ProjectPlanProposal proposal,
+  ) {
     final changes = <String>[];
-    if (proposal.criterionUpserts.isNotEmpty ||
-        proposal.removedCriterionIds.isNotEmpty) {
+    final existingCriteria = {
+      for (final criterion in project.criteria) criterion.id: criterion,
+    };
+    final criterionContractChanged = proposal.criterionUpserts.any((proposed) {
+      final existing = existingCriteria[proposed.id];
+      return existing == null ||
+          existing.statement.trim() != proposed.statement.trim() ||
+          existing.required != proposed.required ||
+          existing.verificationMode != proposed.verificationMode;
+    });
+    if (criterionContractChanged || proposal.removedCriterionIds.isNotEmpty) {
       changes.add('Success criteria or their verification policy changes.');
     }
     if (proposal.removedMilestoneIds.isNotEmpty ||

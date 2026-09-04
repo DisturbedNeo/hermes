@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/helpers/preferences_keys.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/model_load_configuration.dart';
+import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -23,6 +24,10 @@ void main() {
       expect(settings.maxProjectTasksPerRun, 5);
       expect(settings.maxProjectIterations, 25);
       expect(settings.questionAutonomy, QuestionAutonomy.balanced);
+      expect(
+        settings.planApprovalPolicy,
+        ProjectPlanApprovalPolicy.highRiskOnly,
+      );
     });
 
     test('persists configurable task limits', () async {
@@ -36,6 +41,7 @@ void main() {
           maxProjectTasksPerRun: 99,
           maxProjectIterations: 0,
           questionAutonomy: QuestionAutonomy.autonomous,
+          planApprovalPolicy: ProjectPlanApprovalPolicy.never,
         ),
       );
 
@@ -47,6 +53,7 @@ void main() {
       expect(settings.maxProjectTasksPerRun, 99);
       expect(settings.maxProjectIterations, 0);
       expect(settings.questionAutonomy, QuestionAutonomy.autonomous);
+      expect(settings.planApprovalPolicy, ProjectPlanApprovalPolicy.never);
     });
   });
 

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:hermes/core/enums/diagnostics_visibility.dart';
 import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
+import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/ui/model_configuration/slider_control.dart';
@@ -357,6 +358,31 @@ class _SettingsContent extends StatelessWidget {
                 if (autonomy == null) return;
                 onTaskSystemChanged(
                   taskSystemSettings.copyWith(questionAutonomy: autonomy),
+                );
+              }
+            : null,
+      ),
+    ),
+    const SizedBox(height: 12),
+    AccessibleWidget(
+      label: 'Plan revision approvals',
+      child: DropdownButtonFormField<ProjectPlanApprovalPolicy>(
+        initialValue: taskSystemSettings.planApprovalPolicy,
+        decoration: const InputDecoration(
+          labelText: 'Plan revision approvals',
+          helperText:
+              'Choose Never for unattended planning. File-edit approvals are separate.',
+          prefixIcon: Icon(Icons.rule_outlined),
+          border: OutlineInputBorder(),
+        ),
+        items: ProjectPlanApprovalPolicy.values.map((policy) {
+          return DropdownMenuItem(value: policy, child: Text(policy.label));
+        }).toList(),
+        onChanged: taskSystemSettings.enabled
+            ? (policy) {
+                if (policy == null) return;
+                onTaskSystemChanged(
+                  taskSystemSettings.copyWith(planApprovalPolicy: policy),
                 );
               }
             : null,

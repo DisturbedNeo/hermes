@@ -163,6 +163,7 @@ $originalGoal
             '''
 Propose one coherent revision to the rolling project plan for all supplied triggers.
 Do not execute work. Preserve completed task history, accepted evidence, gate results, recovery incidents, and protected user memory.
+Criterion status and evidence are evaluator-owned progress state. Do not use criterionUpserts merely to mark an existing criterion satisfied, partial, or unsatisfied, or to attach evidence; only upsert a criterion when its statement, required flag, or verification mode must change.
 Return only small, bounded, independently verifiable near-term tasks. Use stable existing IDs for updates and new unique IDs for additions.
 Do not add openQuestions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; choose a reasonable next task/order and record the assumption in memoryAdditions.
 Add openQuestions only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.

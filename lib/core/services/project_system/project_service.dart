@@ -196,8 +196,17 @@ class ProjectService {
       init.openQuestions,
       autonomy: questionAutonomy,
     );
-    final initialBacklog = _normaliseBacklog(init.backlog);
     final initialCriteria = init.criteria.isEmpty ? null : init.criteria;
+    final initialCriterionIds =
+        initialCriteria?.map((item) => item.id).toList() ??
+        [
+          for (var index = 0; index < init.successCriteria.length; index++)
+            'criterion_${(index + 1).toString().padLeft(3, '0')}',
+        ];
+    final initialBacklog = _normaliseInitialBacklog(
+      init.backlog,
+      initialCriterionIds,
+    );
     final initialMilestones = _initialMilestones(
       init: init,
       criteria: initialCriteria,
@@ -529,6 +538,21 @@ class ProjectService {
     }
     if (project.isTerminal) {
       return ProjectRunResult(project: project, activeTask: activeTask);
+    }
+    final pendingProposal = project.pendingPlanApproval?.proposal;
+    if (pendingProposal != null) {
+      final reconsidered = await _planRevisionService.prepareAndApply(
+        project: project,
+        proposal: pendingProposal,
+        workspaceRoot: workspace.rootPath,
+        approvalPolicy: planApprovalPolicy,
+      );
+      if (reconsidered.changed || !reconsidered.validation.valid) {
+        project = await _persistProject(
+          workspace.rootPath,
+          reconsidered.project,
+        );
+      }
     }
     if (project.pendingPlanApproval != null) {
       return ProjectRunResult(project: project, activeTask: activeTask);
@@ -2929,6 +2953,37 @@ class ProjectService {
                 ? ProjectTaskStatus.queued
                 : task.status,
             updatedAt: DateTime.now(),
+          ),
+    ];
+  }
+
+  List<ProjectTask> _normaliseInitialBacklog(
+    List<ProjectTask> tasks,
+    List<String> criterionIds,
+  ) {
+    final knownCriterionIds = criterionIds.toSet();
+    return [
+      for (final task in _normaliseBacklog(tasks))
+        if (task.criterionIds.isNotEmpty &&
+            task.criterionIds.every(knownCriterionIds.contains))
+          task.copyWith(
+            expectedEvidence: [
+              for (final expectation in task.expectedEvidence)
+                ProjectEvidenceExpectation(
+                  id: expectation.id,
+                  type: expectation.type,
+                  criterionIds: expectation.criterionIds.isEmpty
+                      ? task.criterionIds
+                      : expectation.criterionIds
+                            .where(task.criterionIds.contains)
+                            .toSet()
+                            .toList(),
+                  description: expectation.description,
+                  required: expectation.required,
+                  sourceRef: expectation.sourceRef,
+                  details: expectation.details,
+                ),
+            ],
           ),
     ];
   }

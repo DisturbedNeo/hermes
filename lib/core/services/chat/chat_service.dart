@@ -1558,6 +1558,7 @@ class ChatService extends ChangeNotifier
         maxIterations: settings.maxProjectIterations,
         requirePhaseApproval: settings.requireApprovalBeforeFileEdits,
         questionAutonomy: settings.questionAutonomy,
+        planApprovalPolicy: settings.planApprovalPolicy,
         compactionSettings: compactionSettings,
         contextLimitTokens: _diagnosticsContextLimit,
         onCompactionStatus: (status) {
