@@ -32,6 +32,13 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
     'projectGoal',
     _$projectGoal,
   );
+  static String _$projectTaskTitle(TaskPlanningContext v) => v.projectTaskTitle;
+  static const Field<TaskPlanningContext, String> _f$projectTaskTitle = Field(
+    'projectTaskTitle',
+    _$projectTaskTitle,
+    opt: true,
+    def: '',
+  );
   static String _$projectTaskObjective(TaskPlanningContext v) =>
       v.projectTaskObjective;
   static const Field<TaskPlanningContext, String> _f$projectTaskObjective =
@@ -91,6 +98,27 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
     opt: true,
     def: const [],
   );
+  static List<String> _$readPaths(TaskPlanningContext v) => v.readPaths;
+  static const Field<TaskPlanningContext, List<String>> _f$readPaths = Field(
+    'readPaths',
+    _$readPaths,
+    opt: true,
+    def: const [],
+  );
+  static List<String> _$writePaths(TaskPlanningContext v) => v.writePaths;
+  static const Field<TaskPlanningContext, List<String>> _f$writePaths = Field(
+    'writePaths',
+    _$writePaths,
+    opt: true,
+    def: const [],
+  );
+  static bool _$legacyWriteAccess(TaskPlanningContext v) => v.legacyWriteAccess;
+  static const Field<TaskPlanningContext, bool> _f$legacyWriteAccess = Field(
+    'legacyWriteAccess',
+    _$legacyWriteAccess,
+    opt: true,
+    def: false,
+  );
   static int _$maxSteps(TaskPlanningContext v) => v.maxSteps;
   static const Field<TaskPlanningContext, int> _f$maxSteps = Field(
     'maxSteps',
@@ -102,6 +130,7 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
   @override
   final MappableFields<TaskPlanningContext> fields = const {
     #projectGoal: _f$projectGoal,
+    #projectTaskTitle: _f$projectTaskTitle,
     #projectTaskObjective: _f$projectTaskObjective,
     #knownFacts: _f$knownFacts,
     #doneCriteria: _f$doneCriteria,
@@ -111,12 +140,16 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
     #criterionIds: _f$criterionIds,
     #criteria: _f$criteria,
     #expectedEvidence: _f$expectedEvidence,
+    #readPaths: _f$readPaths,
+    #writePaths: _f$writePaths,
+    #legacyWriteAccess: _f$legacyWriteAccess,
     #maxSteps: _f$maxSteps,
   };
 
   static TaskPlanningContext _instantiate(DecodingData data) {
     return TaskPlanningContext(
       projectGoal: data.dec(_f$projectGoal),
+      projectTaskTitle: data.dec(_f$projectTaskTitle),
       projectTaskObjective: data.dec(_f$projectTaskObjective),
       knownFacts: data.dec(_f$knownFacts),
       doneCriteria: data.dec(_f$doneCriteria),
@@ -126,6 +159,9 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
       criterionIds: data.dec(_f$criterionIds),
       criteria: data.dec(_f$criteria),
       expectedEvidence: data.dec(_f$expectedEvidence),
+      readPaths: data.dec(_f$readPaths),
+      writePaths: data.dec(_f$writePaths),
+      legacyWriteAccess: data.dec(_f$legacyWriteAccess),
       maxSteps: data.dec(_f$maxSteps),
     );
   }
@@ -155,6 +191,7 @@ class WorkspaceMetadataMapper extends ClassMapperBase<WorkspaceMetadata> {
   static WorkspaceMetadataMapper ensureInitialized() {
     if (_instance == null) {
       MapperContainer.globals.use(_instance = WorkspaceMetadataMapper._());
+      WorkspaceDiscoveryProfileMapper.ensureInitialized();
     }
     return _instance!;
   }
@@ -195,6 +232,14 @@ class WorkspaceMetadataMapper extends ClassMapperBase<WorkspaceMetadata> {
       v.existingTaskIds;
   static const Field<WorkspaceMetadata, List<String>> _f$existingTaskIds =
       Field('existingTaskIds', _$existingTaskIds, opt: true, def: const []);
+  static WorkspaceDiscoveryProfile? _$workspaceProfile(WorkspaceMetadata v) =>
+      v.workspaceProfile;
+  static const Field<WorkspaceMetadata, WorkspaceDiscoveryProfile>
+  _f$workspaceProfile = Field(
+    'workspaceProfile',
+    _$workspaceProfile,
+    opt: true,
+  );
 
   @override
   final MappableFields<WorkspaceMetadata> fields = const {
@@ -203,6 +248,7 @@ class WorkspaceMetadataMapper extends ClassMapperBase<WorkspaceMetadata> {
     #gitAvailable: _f$gitAvailable,
     #commandExecutionApproved: _f$commandExecutionApproved,
     #existingTaskIds: _f$existingTaskIds,
+    #workspaceProfile: _f$workspaceProfile,
   };
   @override
   final bool ignoreNull = true;
@@ -214,6 +260,7 @@ class WorkspaceMetadataMapper extends ClassMapperBase<WorkspaceMetadata> {
       gitAvailable: data.dec(_f$gitAvailable),
       commandExecutionApproved: data.dec(_f$commandExecutionApproved),
       existingTaskIds: data.dec(_f$existingTaskIds),
+      workspaceProfile: data.dec(_f$workspaceProfile),
     );
   }
 

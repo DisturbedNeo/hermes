@@ -29,7 +29,7 @@ typedef ProjectTaskSnapshotSink = void Function(TaskDocument? task);
 typedef ProjectCompactionStatusSink = void Function(String status);
 
 int projectTaskStepLimit(ProjectTaskEffort effort) => switch (effort) {
-  ProjectTaskEffort.small => 2,
+  ProjectTaskEffort.small => 1,
   ProjectTaskEffort.medium => 4,
   ProjectTaskEffort.large => 6,
 };
@@ -638,12 +638,20 @@ class ProjectService {
       final initialSchedule = _scheduler.schedule(project);
       project = initialSchedule.project;
       var candidate = project.currentTask ?? initialSchedule.selectedTask;
-      final replanTriggers = [...project.pendingReplanTriggers];
+      final replanTriggers = _eligibleReplanTriggers(
+        project.pendingReplanTriggers,
+      );
+      if (replanTriggers.length != project.pendingReplanTriggers.length) {
+        project = project.copyWith(pendingReplanTriggers: replanTriggers);
+      }
       if (candidate == null && replanTriggers.isEmpty) {
         project = await _applyCompletionEvaluation(
           client: client,
           project: project,
           baseSystemPrompt: baseSystemPrompt,
+          reviewReason: project.backlog.isEmpty
+              ? ProjectCompletionReviewReason.backlogExhausted
+              : null,
           onModelOutput: onModelOutput,
           questionAutonomy: questionAutonomy,
           cancellationToken: cancellationToken,
@@ -657,7 +665,11 @@ class ProjectService {
         replanTriggers.add(ProjectPlanRevisionTrigger.noReadyTask);
       }
 
-      if (project.currentTask == null && replanTriggers.isNotEmpty) {
+      if (_shouldRevisePlan(
+        project: project,
+        candidate: candidate,
+        triggers: replanTriggers,
+      )) {
         project = await _revisePlan(
           client: client,
           workspace: workspace,
@@ -780,6 +792,11 @@ class ProjectService {
         for (final item in project.evidence)
           if (item.status == ProjectEvidenceStatus.accepted) item.id,
       };
+      final evidenceIdsBefore = project.evidence.map((item) => item.id).toSet();
+      final activeMilestoneIdBefore = project.milestones
+          .where((item) => item.status == ProjectMilestoneStatus.active)
+          .map((item) => item.id)
+          .firstOrNull;
       final invalidEvidenceIds = {
         for (final item in project.evidence)
           if (item.status == ProjectEvidenceStatus.rejected ||
@@ -803,19 +820,38 @@ class ProjectService {
         result: execution.result!,
         evaluatedAt: now,
       );
-      project = await _applyCompletionEvaluation(
-        client: client,
-        project: project,
-        baseSystemPrompt: baseSystemPrompt,
-        onModelOutput: onModelOutput,
-        questionAutonomy: questionAutonomy,
-        cancellationToken: cancellationToken,
-      );
       project = _recordTransitionReplanTriggers(
         project: project,
         evaluation: evaluation,
         invalidEvidenceIdsBefore: invalidEvidenceIds,
         now: now,
+      );
+      final endedMilestoneId =
+          activeMilestoneIdBefore != null &&
+              project.milestones.any(
+                (item) =>
+                    item.id == activeMilestoneIdBefore &&
+                    _isTerminalMilestoneStatus(item.status),
+              )
+          ? activeMilestoneIdBefore
+          : null;
+      final reviewReason = _completionReviewReason(
+        project: project,
+        newEvidenceIds: project.evidence
+            .where((item) => !evidenceIdsBefore.contains(item.id))
+            .map((item) => item.id)
+            .toSet(),
+        endedMilestoneId: endedMilestoneId,
+      );
+      project = await _applyCompletionEvaluation(
+        client: client,
+        project: project,
+        baseSystemPrompt: baseSystemPrompt,
+        reviewReason: reviewReason,
+        reviewMilestoneId: endedMilestoneId,
+        onModelOutput: onModelOutput,
+        questionAutonomy: questionAutonomy,
+        cancellationToken: cancellationToken,
       );
       project = _progressMonitor.recordTaskResult(
         project: project,
@@ -859,7 +895,7 @@ class ProjectService {
       blocker: null,
       pendingReplanTriggers: _appendTrigger(
         snapshot.pendingReplanTriggers,
-        ProjectPlanRevisionTrigger.newContext,
+        ProjectPlanRevisionTrigger.scopeChanged,
       ),
       updatedAt: DateTime.now(),
     );
@@ -888,10 +924,6 @@ class ProjectService {
       blocker: snapshot.blocker?.type == ProjectBlockerType.question
           ? null
           : snapshot.blocker,
-      pendingReplanTriggers: _appendTrigger(
-        snapshot.pendingReplanTriggers,
-        ProjectPlanRevisionTrigger.newContext,
-      ),
       updatedAt: DateTime.now(),
     );
     updated = _memoryService
@@ -907,14 +939,11 @@ class ProjectService {
     return _persistProject(workspace.rootPath, updated);
   }
 
-  /// Queues a user-requested rolling plan revision.
-  ///
-  /// The optional reason is retained as protected project memory so it is
-  /// available to the planner and survives later context compaction.
-  Future<ProjectDocument> requestManualReplan({
+  /// Records an explicit user scope change and queues one plan revision.
+  Future<ProjectDocument> requestScopeChange({
     required WorkspaceAttachment workspace,
     required ProjectDocument snapshot,
-    String reason = '',
+    required String context,
   }) async {
     if (snapshot.isTerminal || snapshot.pendingPlanApproval != null) {
       return snapshot;
@@ -929,7 +958,7 @@ class ProjectService {
           : snapshot.blocker,
       pendingReplanTriggers: _appendTrigger(
         snapshot.pendingReplanTriggers,
-        ProjectPlanRevisionTrigger.manual,
+        ProjectPlanRevisionTrigger.scopeChanged,
       ),
       updatedAt: now,
       diagnostics: snapshot.diagnostics.copyWith(
@@ -937,15 +966,15 @@ class ProjectService {
         recentNoProgressTaskIds: const [],
       ),
     );
-    final trimmedReason = reason.trim();
+    final trimmedReason = context.trim();
     if (trimmedReason.isNotEmpty) {
       updated = _memoryService
           .record(
             project: updated,
             kind: ProjectMemoryKind.requirement,
-            content: 'User requested replanning: $trimmedReason',
+            content: 'User changed project scope: $trimmedReason',
             sourceType: ProjectMemorySourceType.user,
-            sourceId: 'manual_replan_${now.microsecondsSinceEpoch}',
+            sourceId: 'scope_change_${now.microsecondsSinceEpoch}',
             confidence: ProjectMemoryConfidence.confirmed,
             protected: true,
             timestamp: now,
@@ -953,6 +982,21 @@ class ProjectService {
           .project;
     }
     return _persistProject(workspace.rootPath, updated);
+  }
+
+  @Deprecated('Use requestScopeChange for explicit scope changes.')
+  Future<ProjectDocument> requestManualReplan({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    String reason = '',
+  }) {
+    return requestScopeChange(
+      workspace: workspace,
+      snapshot: snapshot,
+      context: reason.trim().isEmpty
+          ? 'User explicitly requested a roadmap revision.'
+          : reason,
+    );
   }
 
   Future<ProjectDocument> compactMemory({
@@ -1444,24 +1488,36 @@ class ProjectService {
     final existingTask = workingProject.activeTaskId == null
         ? null
         : await _loadActiveTask(workspace, workingProject);
-    var activeTask =
-        existingTask ??
-        await _taskService.createTask(
-          client: client,
-          workspace: workspace,
-          userPrompt: _taskPrompt(workingProject, projectTask),
-          selectedMode: ExecutionMode.task,
-          baseSystemPrompt: _buildTaskSystemPrompt(
-            baseSystemPrompt,
-            workingProject,
-            null,
-          ),
-          chatSessionId: workingProject.chatSessionId,
-          projectId: workingProject.id,
-          planningContext: _planningContext(workingProject, projectTask),
-          onModelOutput: onModelOutput,
-          cancellationToken: cancellationToken,
-        );
+    final planningContext = _planningContext(workingProject, projectTask);
+    late TaskDocument activeTask;
+    if (existingTask != null) {
+      activeTask = existingTask;
+    } else {
+      activeTask = projectTask.effort == ProjectTaskEffort.small
+          ? await _taskService.createProjectTaskDocument(
+              workspace: workspace,
+              userPrompt: _taskPrompt(workingProject, projectTask),
+              chatSessionId: workingProject.chatSessionId,
+              projectId: workingProject.id,
+              planningContext: planningContext,
+            )
+          : await _taskService.createTask(
+              client: client,
+              workspace: workspace,
+              userPrompt: _taskPrompt(workingProject, projectTask),
+              selectedMode: ExecutionMode.task,
+              baseSystemPrompt: _buildTaskSystemPrompt(
+                baseSystemPrompt,
+                workingProject,
+                null,
+              ),
+              chatSessionId: workingProject.chatSessionId,
+              projectId: workingProject.id,
+              planningContext: planningContext,
+              onModelOutput: onModelOutput,
+              cancellationToken: cancellationToken,
+            );
+    }
     final taskDocumentId = activeTask.id;
     workingProject = workingProject.copyWith(
       activeTaskId: taskDocumentId,
@@ -1838,6 +1894,8 @@ class ProjectService {
     required ChatClient client,
     required ProjectDocument project,
     required String baseSystemPrompt,
+    ProjectCompletionReviewReason? reviewReason,
+    String? reviewMilestoneId,
     TaskModelOutputSink? onModelOutput,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
     CancellationToken? cancellationToken,
@@ -1862,7 +1920,21 @@ class ProjectService {
     if (remainingByState.isEmpty) {
       return _completeProjectFromEvidence(project, now);
     }
-    if (!_hasReviewableCriterionEvidence(project)) {
+    if (reviewReason == null || !_hasReviewableCriterionEvidence(project)) {
+      return project.copyWith(
+        status: ProjectStatus.active,
+        phase: project.backlog.isEmpty
+            ? ProjectPhase.planning
+            : ProjectPhase.execution,
+        updatedAt: now,
+      );
+    }
+
+    final evidenceFingerprint = _completionEvidenceFingerprint(project);
+    final checkpoint = project.completionReviewCheckpoint;
+    if (checkpoint?.reason == reviewReason &&
+        checkpoint?.evidenceFingerprint == evidenceFingerprint &&
+        checkpoint?.milestoneId == reviewMilestoneId) {
       return project.copyWith(
         status: ProjectStatus.active,
         phase: project.backlog.isEmpty
@@ -1880,6 +1952,12 @@ class ProjectService {
       cancellationToken: cancellationToken,
     );
     final assessedProject = project.copyWith(
+      completionReviewCheckpoint: ProjectCompletionReviewCheckpoint(
+        reason: reviewReason,
+        evidenceFingerprint: evidenceFingerprint,
+        milestoneId: reviewMilestoneId,
+        reviewedAt: now,
+      ),
       diagnostics: project.diagnostics.copyWith(
         projectModelCalls: project.diagnostics.projectModelCalls + 1,
       ),
@@ -1923,12 +2001,20 @@ class ProjectService {
         sourceId: 'completion_review',
       );
     }
-    final reviewed = _criterionEvaluator.applyModelReview(
+    var reviewed = _criterionEvaluator.applyModelReview(
       assessedProject,
       projectComplete: assessment.complete,
       remainingCriteria: assessment.remainingCriteria,
       rationale: assessment.finalSummary,
       evaluatedAt: now,
+    );
+    reviewed = reviewed.copyWith(
+      completionReviewCheckpoint: ProjectCompletionReviewCheckpoint(
+        reason: reviewReason,
+        evidenceFingerprint: _completionEvidenceFingerprint(reviewed),
+        milestoneId: reviewMilestoneId,
+        reviewedAt: now,
+      ),
     );
     if (_remainingCriteria(reviewed).isEmpty) {
       return _completeProjectFromEvidence(
@@ -1965,6 +2051,58 @@ class ProjectService {
       }
     }
     return false;
+  }
+
+  ProjectCompletionReviewReason? _completionReviewReason({
+    required ProjectDocument project,
+    required Set<String> newEvidenceIds,
+    required String? endedMilestoneId,
+  }) {
+    if (project.currentTask == null && project.backlog.isEmpty) {
+      return ProjectCompletionReviewReason.backlogExhausted;
+    }
+    if (endedMilestoneId != null) {
+      return ProjectCompletionReviewReason.milestoneEnded;
+    }
+    final unresolved = project.criteria.where((criterion) {
+      return criterion.required &&
+          criterion.status != ProjectCriterionStatus.satisfied &&
+          criterion.status != ProjectCriterionStatus.invalidated;
+    }).toList();
+    if (unresolved.length != 1) return null;
+    final criterion = unresolved.single;
+    if (criterion.verificationMode != ProjectVerificationMode.modelReview &&
+        criterion.verificationMode != ProjectVerificationMode.mixed) {
+      return null;
+    }
+    final hasNewRelevantEvidence = project.evidence.any(
+      (item) =>
+          newEvidenceIds.contains(item.id) &&
+          item.criterionIds.contains(criterion.id) &&
+          (item.status == ProjectEvidenceStatus.proposed ||
+              item.status == ProjectEvidenceStatus.accepted),
+    );
+    return hasNewRelevantEvidence
+        ? ProjectCompletionReviewReason.finalCriterionEvidence
+        : null;
+  }
+
+  String _completionEvidenceFingerprint(ProjectDocument project) {
+    final criteria = [
+      for (final criterion in project.criteria)
+        '${criterion.id}:${criterion.status.name}:${criterion.evidenceIds.toList()..sort()}',
+    ]..sort();
+    final evidence = [
+      for (final item in project.evidence)
+        '${item.id}:${item.status.name}:${item.strength.name}:${item.criterionIds.toList()..sort()}',
+    ]..sort();
+    return jsonEncode({'criteria': criteria, 'evidence': evidence});
+  }
+
+  bool _isTerminalMilestoneStatus(ProjectMilestoneStatus status) {
+    return status == ProjectMilestoneStatus.completed ||
+        status == ProjectMilestoneStatus.blocked ||
+        status == ProjectMilestoneStatus.cancelled;
   }
 
   ProjectDocument _completeProjectFromEvidence(
@@ -2099,6 +2237,14 @@ class ProjectService {
       expectedArtifacts: duplicateTask.expectedArtifacts.isEmpty
           ? failedTask.expectedArtifacts
           : duplicateTask.expectedArtifacts,
+      readPaths: duplicateTask.readPaths.isEmpty
+          ? failedTask.readPaths
+          : duplicateTask.readPaths,
+      writePaths: duplicateTask.writePaths.isEmpty
+          ? failedTask.writePaths
+          : duplicateTask.writePaths,
+      legacyWriteAccess:
+          duplicateTask.legacyWriteAccess || failedTask.legacyWriteAccess,
       status: ProjectTaskStatus.queued,
       taskDocumentId: null,
       recoveryIncidentId: null,
@@ -2131,6 +2277,7 @@ class ProjectService {
     );
     return TaskPlanningContext(
       projectGoal: project.refinedGoal,
+      projectTaskTitle: task.title,
       projectTaskObjective: task.objective,
       knownFacts: [...memoryContext.lines, ...task.context],
       doneCriteria: task.doneCriteria,
@@ -2167,32 +2314,11 @@ class ProjectService {
             details: expectation.details,
           ),
       ],
+      readPaths: task.readPaths,
+      writePaths: task.writePaths,
+      legacyWriteAccess: task.legacyWriteAccess,
       maxSteps: projectTaskStepLimit(task.effort),
     );
-  }
-
-  ProjectTask? _activeRecoveryTask(ProjectDocument project) {
-    final activeIncidents =
-        project.recoveryIncidents
-            .where(
-              (incident) =>
-                  incident.status == ProjectRecoveryIncidentStatus.active,
-            )
-            .toList()
-          ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-    for (final incident in activeIncidents) {
-      for (final taskId in incident.recoveryTaskIds.reversed) {
-        final task = project.backlog
-            .where((item) => item.id == taskId)
-            .firstOrNull;
-        if (task != null) return task;
-      }
-      final fallback = project.backlog
-          .where((task) => task.recoveryIncidentId == incident.id)
-          .firstOrNull;
-      if (fallback != null) return fallback;
-    }
-    return null;
   }
 
   _RecoveryUpdate _recoveryUpdateForFailedTask({
@@ -2500,6 +2626,9 @@ class ProjectService {
         'Failure summary:\n${failure.summary}',
         'Recovery attempt: $attemptNumber',
       ],
+      readPaths: sourceTask.readPaths,
+      writePaths: sourceTask.writePaths,
+      legacyWriteAccess: sourceTask.legacyWriteAccess,
       expectedArtifacts: const [],
       status: ProjectTaskStatus.queued,
       taskDocumentId: null,
@@ -3166,40 +3295,35 @@ class ProjectService {
       ];
     }
 
-    var triggers = [...project.pendingReplanTriggers];
-    if (milestoneCompleted) {
+    var triggers = _eligibleReplanTriggers(project.pendingReplanTriggers);
+    final activeMilestone = milestones
+        .where((item) => item.status == ProjectMilestoneStatus.active)
+        .firstOrNull;
+    final activeMilestoneHasPlannedWork =
+        activeMilestone != null &&
+        project.backlog.any(
+          (task) =>
+              task.milestoneId == activeMilestone.id &&
+              task.status != ProjectTaskStatus.completed &&
+              task.status != ProjectTaskStatus.failed &&
+              task.status != ProjectTaskStatus.rejected &&
+              task.status != ProjectTaskStatus.split &&
+              task.status != ProjectTaskStatus.deferred &&
+              task.status != ProjectTaskStatus.obsolete &&
+              task.status != ProjectTaskStatus.cancelled,
+        );
+    if (milestoneCompleted &&
+        activeMilestone != null &&
+        !activeMilestoneHasPlannedWork) {
       triggers = _appendTrigger(
         triggers,
-        ProjectPlanRevisionTrigger.milestoneCompleted,
+        ProjectPlanRevisionTrigger.milestoneRoadmapChanged,
       );
     }
-    final readyCount = project.backlog.where((task) {
-      return task.status == ProjectTaskStatus.queued &&
-          task.readiness == ProjectTaskReadiness.ready;
-    }).length;
-    final completedSinceRevision = project.completedTasks.where((task) {
-      return task.revisionUpdated >= project.currentRevision;
-    }).length;
-    if (evaluation.taskAccepted &&
-        (readyCount < 2 ||
-            completedSinceRevision >= 3 ||
-            evaluation.newKnownFacts.isNotEmpty ||
-            evaluation.artifacts.isNotEmpty)) {
-      triggers = _appendTrigger(
-        triggers,
-        ProjectPlanRevisionTrigger.taskCompleted,
-      );
-    }
-    if (!evaluation.taskAccepted && _activeRecoveryTask(project) == null) {
+    if (!evaluation.taskAccepted) {
       triggers = _appendTrigger(
         triggers,
         ProjectPlanRevisionTrigger.taskFailed,
-      );
-    }
-    if (evaluation.projectReplanRequested) {
-      triggers = _appendTrigger(
-        triggers,
-        ProjectPlanRevisionTrigger.taskReplanRequested,
       );
     }
     final hasNewRejectedEvidence = project.evidence.any((item) {
@@ -3246,6 +3370,36 @@ class ProjectService {
     ProjectPlanRevisionTrigger trigger,
   ) {
     return current.contains(trigger) ? current : [...current, trigger];
+  }
+
+  static const Set<ProjectPlanRevisionTrigger> _runtimeReplanTriggers = {
+    ProjectPlanRevisionTrigger.noReadyTask,
+    ProjectPlanRevisionTrigger.taskFailed,
+    ProjectPlanRevisionTrigger.evidenceRejected,
+    ProjectPlanRevisionTrigger.scopeChanged,
+    ProjectPlanRevisionTrigger.milestoneRoadmapChanged,
+  };
+
+  List<ProjectPlanRevisionTrigger> _eligibleReplanTriggers(
+    Iterable<ProjectPlanRevisionTrigger> triggers,
+  ) {
+    return {
+      for (final trigger in triggers)
+        if (_runtimeReplanTriggers.contains(trigger)) trigger,
+    }.toList();
+  }
+
+  bool _shouldRevisePlan({
+    required ProjectDocument project,
+    required ProjectTask? candidate,
+    required List<ProjectPlanRevisionTrigger> triggers,
+  }) {
+    if (project.currentTask != null || triggers.isEmpty) return false;
+    if (triggers.length == 1 &&
+        triggers.single == ProjectPlanRevisionTrigger.noReadyTask) {
+      return candidate == null;
+    }
+    return true;
   }
 
   ProjectInitialisation _fallbackInitialisation(String originalGoal) {

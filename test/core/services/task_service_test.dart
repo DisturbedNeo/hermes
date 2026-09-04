@@ -68,56 +68,43 @@ void main() {
       );
     });
 
-    test('planner can inspect files before finalising task creation', () async {
-      await File(
-        path.join(root.path, 'design.md'),
-      ).writeAsString('# Design\nBuild the analytics screen.\n');
-      final client = _QueueCompletionClient([
-        ChatCompletionResponse(
-          content: '',
-          toolCalls: [
-            ChatCompletionToolCall(
-              name: 'read_file',
-              arguments: jsonEncode({'path': 'design.md'}),
-            ),
-          ],
-        ),
-        ChatCompletionResponse(
-          content: '',
-          toolCalls: [
-            ChatCompletionToolCall(
-              name: 'finaliseTaskCreation',
-              arguments: jsonEncode(_planJson(title: 'Design-informed task')),
-            ),
-          ],
-        ),
-      ]);
+    test(
+      'planner receives deterministic profile without discovery tools',
+      () async {
+        await File(
+          path.join(root.path, 'README.md'),
+        ).writeAsString('# Design\nBuild the analytics screen.\n');
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'finaliseTaskCreation',
+                arguments: jsonEncode(_planJson(title: 'Design-informed task')),
+              ),
+            ],
+          ),
+        ]);
 
-      final task = await service.createTask(
-        client: client,
-        workspace: workspace,
-        userPrompt: 'Plan from the design document',
-        selectedMode: ExecutionMode.task,
-        baseSystemPrompt: 'system',
-        chatSessionId: 'chat_1',
-      );
+        final task = await service.createTask(
+          client: client,
+          workspace: workspace,
+          userPrompt: 'Plan from the design document',
+          selectedMode: ExecutionMode.task,
+          baseSystemPrompt: 'system',
+          chatSessionId: 'chat_1',
+        );
 
-      expect(task.title, 'Design-informed task');
-      expect(client.requestCount, 2);
-      expect(client.seenToolNames.first, contains('read_file'));
-      expect(client.seenToolNames.first, contains('search_files'));
-      expect(client.seenToolNames.first, contains('finaliseTaskCreation'));
-      expect(client.seenToolNames.first, isNot(contains('write_file')));
-      expect(client.seenToolNames.first, isNot(contains('patch_file')));
-      expect(client.seenToolNames.first, isNot(contains('run_command')));
-      expect(
-        client.seenMessages.last.any((message) {
-          return message.role == 'tool' &&
-              message.content.contains('Build the analytics screen');
-        }),
-        isTrue,
-      );
-    });
+        expect(task.title, 'Design-informed task');
+        expect(client.requestCount, 1);
+        expect(client.seenToolNames.first, contains('finaliseTaskCreation'));
+        expect(client.seenToolNames.first, hasLength(1));
+        expect(
+          client.seenMessages.single.last.content,
+          contains('Build the analytics screen'),
+        );
+      },
+    );
 
     test('task creation accepts planner-selected gates', () async {
       final plan = _planJson(title: 'Gated task')
@@ -267,6 +254,72 @@ void main() {
         );
         expect(task!.projectCriteria.single.id, 'criterion_accessibility');
         expect(task.projectEvidenceExpectations.single.id, 'keyboard_tests');
+      },
+    );
+
+    test('converts a small Project task directly into one step', () async {
+      final task = await service.createProjectTaskDocument(
+        workspace: workspace,
+        userPrompt: 'Implement the settings toggle',
+        chatSessionId: 'chat_1',
+        projectId: 'project_1',
+        planningContext: const TaskPlanningContext(
+          projectGoal: 'Build the whole app',
+          projectTaskTitle: 'Implement settings toggle',
+          projectTaskObjective: 'Implement the settings toggle',
+          knownFacts: ['The application uses Flutter.'],
+          doneCriteria: ['The settings toggle works.'],
+          outOfScope: ['Do not redesign settings.'],
+          readPaths: ['lib/settings/'],
+          writePaths: ['lib/settings/toggle.dart'],
+          criterionIds: ['criterion_settings'],
+          criteria: [
+            TaskProjectCriterion(
+              id: 'criterion_settings',
+              statement: 'Settings can be changed.',
+            ),
+          ],
+          expectedEvidence: [
+            TaskProjectEvidenceExpectation(
+              id: 'settings_tests',
+              type: 'command',
+              criterionIds: ['criterion_settings'],
+              description: 'Settings tests pass.',
+            ),
+          ],
+        ),
+      );
+
+      expect(task.title, 'Implement settings toggle');
+      expect(task.steps, hasLength(1));
+      expect(task.steps.single.id, 'execute_project_task');
+      expect(task.steps.single.mayEditFiles, isTrue);
+      expect(
+        task.steps.single.instructions.join('\n'),
+        contains('toggle.dart'),
+      );
+      expect(task.projectCriterionIds, ['criterion_settings']);
+      expect(task.projectEvidenceExpectations.single.id, 'settings_tests');
+    });
+
+    test(
+      'direct small Project task is read-only without write paths',
+      () async {
+        final task = await service.createProjectTaskDocument(
+          workspace: workspace,
+          userPrompt: 'Inspect settings',
+          chatSessionId: 'chat_1',
+          projectId: 'project_1',
+          planningContext: const TaskPlanningContext(
+            projectGoal: 'Build the whole app',
+            projectTaskObjective: 'Inspect settings',
+            doneCriteria: ['Document the current settings behavior.'],
+          ),
+        );
+
+        expect(task.steps, hasLength(1));
+        expect(task.steps.single.mayEditFiles, isFalse);
+        expect(task.steps.single.instructions, contains(contains('read-only')));
       },
     );
 

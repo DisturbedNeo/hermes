@@ -219,7 +219,7 @@ void main() {
             workspaceName: workspace.displayName,
             collectedAt: DateTime(2026, 1, 2),
           ),
-          triggers: const [ProjectPlanRevisionTrigger.newContext],
+          triggers: const [ProjectPlanRevisionTrigger.scopeChanged],
         );
 
         expect(proposal.criterionUpserts.single.id, 'criterion_accessibility');
@@ -262,9 +262,9 @@ void main() {
       );
       final pending = created.copyWith(
         pendingReplanTriggers: const [
-          ProjectPlanRevisionTrigger.taskCompleted,
-          ProjectPlanRevisionTrigger.milestoneCompleted,
-          ProjectPlanRevisionTrigger.taskCompleted,
+          ProjectPlanRevisionTrigger.scopeChanged,
+          ProjectPlanRevisionTrigger.evidenceRejected,
+          ProjectPlanRevisionTrigger.scopeChanged,
         ],
       );
 
@@ -279,8 +279,8 @@ void main() {
 
       expect(gateway.reviseCalls, 1);
       expect(gateway.lastTriggers, {
-        ProjectPlanRevisionTrigger.taskCompleted,
-        ProjectPlanRevisionTrigger.milestoneCompleted,
+        ProjectPlanRevisionTrigger.scopeChanged,
+        ProjectPlanRevisionTrigger.evidenceRejected,
       });
       expect(result.project.currentRevision, 2);
       expect(result.project.planHistory, hasLength(2));

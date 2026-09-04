@@ -136,6 +136,20 @@ enum ProjectPlanRevisionTrigger {
   evidenceRejected,
   @MappableValue('task_replan_requested')
   taskReplanRequested,
+  @MappableValue('scope_changed')
+  scopeChanged,
+  @MappableValue('milestone_roadmap_changed')
+  milestoneRoadmapChanged,
+}
+
+@MappableEnum(defaultValue: ProjectCompletionReviewReason.backlogExhausted)
+enum ProjectCompletionReviewReason {
+  @MappableValue('backlog_exhausted')
+  backlogExhausted,
+  @MappableValue('milestone_ended')
+  milestoneEnded,
+  @MappableValue('final_criterion_evidence')
+  finalCriterionEvidence,
 }
 
 @MappableEnum(defaultValue: ProjectPlanApprovalPolicy.highRiskOnly)
@@ -724,9 +738,28 @@ T _parseEnum<T extends Enum>(
   return fallback;
 }
 
+@MappableClass(ignoreNull: true)
+class ProjectCompletionReviewCheckpoint
+    with ProjectCompletionReviewCheckpointMappable {
+  final ProjectCompletionReviewReason reason;
+  @MappableField(hook: JsonStringHook())
+  final String evidenceFingerprint;
+  @MappableField(hook: JsonNullableStringHook())
+  final String? milestoneId;
+  @MappableField(hook: JsonDateHook())
+  final DateTime reviewedAt;
+
+  const ProjectCompletionReviewCheckpoint({
+    required this.reason,
+    required this.evidenceFingerprint,
+    this.milestoneId,
+    required this.reviewedAt,
+  });
+}
+
 @MappableClass(ignoreNull: true, hook: ProjectStateJsonHook())
 class ProjectState with ProjectStateMappable {
-  static const int currentSchemaVersion = 3;
+  static const int currentSchemaVersion = 4;
   static const int defaultMaxIterations = 25;
   static const int defaultMaxFailedTasks = 3;
 
@@ -767,6 +800,7 @@ class ProjectState with ProjectStateMappable {
   final List<ProjectPlanRevision> planHistory;
   final PendingProjectPlanApproval? pendingPlanApproval;
   final List<ProjectPlanRevisionTrigger> pendingReplanTriggers;
+  final ProjectCompletionReviewCheckpoint? completionReviewCheckpoint;
   @MappableField(hook: JsonObjectListHook())
   final List<PendingProjectQuestion> openQuestions;
   @MappableField(
@@ -836,6 +870,7 @@ class ProjectState with ProjectStateMappable {
     List<ProjectPlanRevision>? planHistory,
     this.pendingPlanApproval,
     this.pendingReplanTriggers = const [],
+    this.completionReviewCheckpoint,
     List<PendingProjectQuestion>? openQuestions,
     String? memorySummary,
     List<ProjectTaskRef>? tasks,
@@ -1118,6 +1153,7 @@ class ProjectState with ProjectStateMappable {
     List<ProjectPlanRevision>? planHistory,
     Object? pendingPlanApproval = kSentinel,
     List<ProjectPlanRevisionTrigger>? pendingReplanTriggers,
+    Object? completionReviewCheckpoint = kSentinel,
     List<PendingProjectQuestion>? openQuestions,
     Object? pendingQuestion = kSentinel,
     ProjectStatus? status,
@@ -1185,6 +1221,10 @@ class ProjectState with ProjectStateMappable {
       ),
       pendingReplanTriggers:
           pendingReplanTriggers ?? this.pendingReplanTriggers,
+      completionReviewCheckpoint: resolve(
+        completionReviewCheckpoint,
+        this.completionReviewCheckpoint,
+      ),
       openQuestions: nextOpenQuestions,
       status: status ?? this.status,
       phase: phase ?? this.phase,
@@ -1417,6 +1457,8 @@ class ProjectTask with ProjectTaskMappable {
   final List<String> readPaths;
   @MappableField(hook: JsonStringListHook())
   final List<String> writePaths;
+  @MappableField(hook: JsonBoolHook())
+  final bool legacyWriteAccess;
   @MappableField(hook: JsonStringListHook())
   final List<String> doneCriteria;
   @MappableField(hook: JsonStringListHook())
@@ -1461,6 +1503,7 @@ class ProjectTask with ProjectTaskMappable {
     this.expectedEvidence = const [],
     this.readPaths = const [],
     this.writePaths = const [],
+    this.legacyWriteAccess = false,
     required this.doneCriteria,
     required this.outOfScope,
     required this.context,
@@ -1497,6 +1540,7 @@ class ProjectTask with ProjectTaskMappable {
     List<ProjectEvidenceExpectation>? expectedEvidence,
     List<String>? readPaths,
     List<String>? writePaths,
+    bool? legacyWriteAccess,
     List<String>? doneCriteria,
     List<String>? outOfScope,
     List<String>? context,
@@ -1532,6 +1576,7 @@ class ProjectTask with ProjectTaskMappable {
       expectedEvidence: expectedEvidence ?? this.expectedEvidence,
       readPaths: readPaths ?? this.readPaths,
       writePaths: writePaths ?? this.writePaths,
+      legacyWriteAccess: legacyWriteAccess ?? this.legacyWriteAccess,
       doneCriteria: doneCriteria ?? this.doneCriteria,
       outOfScope: outOfScope ?? this.outOfScope,
       context: context ?? this.context,

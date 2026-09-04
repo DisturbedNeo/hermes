@@ -8,7 +8,7 @@ import 'package:hermes/core/services/project_system/project_repository.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
-  group('schema-v3 project migration', () {
+  group('current project migration', () {
     for (final fixtureName in const [
       'active_project.json',
       'completed_project.json',
@@ -23,7 +23,7 @@ void main() {
         final firstEncoding = ModelJson.encode(migrated);
         final loadedAgain = ModelJson.decode<ProjectDocument>(firstEncoding);
 
-        expect(migrated.schemaVersion, 3);
+        expect(migrated.schemaVersion, ProjectState.currentSchemaVersion);
         expect(migrated.criteria, isNotEmpty);
         expect(migrated.currentRevision, 1);
         expect(migrated.diagnostics.taskExecutions, 0);
@@ -114,7 +114,7 @@ void main() {
       },
     );
 
-    test('new projects serialize only schema-v3 project and task keys', () {
+    test('new projects serialize only current project and task keys', () {
       final timestamp = DateTime.utc(2026, 1, 1);
       final project = ProjectDocument(
         id: 'project_v3',
@@ -152,7 +152,7 @@ void main() {
       final task =
           (encoded['backlog'] as List<dynamic>).single as Map<String, dynamic>;
 
-      expect(encoded['schemaVersion'], 3);
+      expect(encoded['schemaVersion'], ProjectState.currentSchemaVersion);
       expect(encoded['criteria'], isA<List<dynamic>>());
       expect(encoded['memory'], isA<List<dynamic>>());
       expect(encoded['planHistory'], isA<List<dynamic>>());
@@ -165,9 +165,62 @@ void main() {
         encoded,
       );
     });
+
+    test('v3 migration normalizes triggers and preserves write access', () {
+      final timestamp = DateTime.utc(2026, 1, 1);
+      final raw = ModelJson.encode(
+        ProjectDocument(
+          id: 'project_v3',
+          title: 'V3 project',
+          originalGoal: 'Deliver the outcome',
+          refinedGoal: 'Deliver the outcome',
+          constraints: const [],
+          backlog: [
+            ProjectTask(
+              id: 'small_task',
+              title: 'Legacy small task',
+              objective: 'Perform legacy work.',
+              doneCriteria: const ['Work is complete.'],
+              outOfScope: const ['Do not expand scope.'],
+              context: const [],
+              expectedArtifacts: const [],
+              status: ProjectTaskStatus.queued,
+              taskDocumentId: null,
+              fingerprint: 'legacy-small-task',
+              rejectionReason: null,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            ),
+          ],
+          pendingReplanTriggers: const [
+            ProjectPlanRevisionTrigger.taskCompleted,
+            ProjectPlanRevisionTrigger.taskFailed,
+            ProjectPlanRevisionTrigger.newContext,
+          ],
+          status: ProjectStatus.active,
+          activeTaskId: null,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        ),
+      );
+      raw['schemaVersion'] = 3;
+      final task = (raw['backlog'] as List).single as Map<String, dynamic>;
+      task.remove('legacyWriteAccess');
+
+      final migrated = ModelJson.decode<ProjectDocument>(raw);
+
+      expect(migrated.backlog.single.legacyWriteAccess, isTrue);
+      expect(
+        migrated.pendingReplanTriggers,
+        unorderedEquals([
+          ProjectPlanRevisionTrigger.taskFailed,
+          ProjectPlanRevisionTrigger.scopeChanged,
+        ]),
+      );
+    });
   });
 
-  group('schema-v3 repository migration', () {
+  group('current repository migration', () {
     late Directory root;
     late ProjectRepository repository;
 
@@ -198,10 +251,10 @@ void main() {
         );
         final firstBackupContent = await backup.readAsString();
 
-        expect(first?.schemaVersion, 3);
+        expect(first?.schemaVersion, ProjectState.currentSchemaVersion);
         expect(
           jsonDecode(await projectFile.readAsString())['schemaVersion'],
-          3,
+          ProjectState.currentSchemaVersion,
         );
         expect(jsonDecode(firstBackupContent)['schemaVersion'], 2);
 
@@ -226,7 +279,7 @@ void main() {
         path.join(projectFile.parent.path, ProjectRepository.v2BackupFileName),
       );
 
-      expect(migrated?.schemaVersion, 3);
+      expect(migrated?.schemaVersion, ProjectState.currentSchemaVersion);
       expect(
         jsonDecode(await migrationBackup.readAsString())['schemaVersion'],
         2,

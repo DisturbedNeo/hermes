@@ -39,12 +39,15 @@ class ProjectStateJsonHook extends JsonModelHook {
         version < 2 ||
         (!json.containsKey('originalGoal') &&
             json.containsKey('originalPrompt'));
-    final v2 = isV1 ? ProjectJsonMigration.upgradeV1(json) : json;
-    if (jsonInt(v2['schemaVersion']) < ProjectState.currentSchemaVersion) {
-      return ProjectJsonMigration.upgradeV2(v2);
+    var migrated = isV1 ? ProjectJsonMigration.upgradeV1(json) : json;
+    if (jsonInt(migrated['schemaVersion']) < 3) {
+      migrated = ProjectJsonMigration.upgradeV2(migrated);
     }
-    json['schemaVersion'] = ProjectState.currentSchemaVersion;
-    return json;
+    if (jsonInt(migrated['schemaVersion']) < 4) {
+      migrated = ProjectJsonMigration.upgradeV3(migrated);
+    }
+    migrated['schemaVersion'] = ProjectState.currentSchemaVersion;
+    return migrated;
   }
 }
 
@@ -344,7 +347,7 @@ abstract final class ProjectJsonMigration {
 
     return {
         ...json,
-        'schemaVersion': ProjectState.currentSchemaVersion,
+        'schemaVersion': 3,
         'criteria': criteria,
         'evidence': evidence,
         'milestones': [
@@ -394,6 +397,53 @@ abstract final class ProjectJsonMigration {
       }
       ..remove('successCriteria')
       ..remove('knownFacts');
+  }
+
+  static Map<String, dynamic> upgradeV3(Map<String, dynamic> json) {
+    Map<String, dynamic> markLegacyTask(Map<String, dynamic> raw) {
+      final task = Map<String, dynamic>.from(raw);
+      final effort = jsonString(task['effort'], fallback: 'small');
+      if (effort == ProjectTaskEffort.small.name &&
+          jsonStringList(task['writePaths']).isEmpty) {
+        task['legacyWriteAccess'] = true;
+      }
+      return task;
+    }
+
+    List<Map<String, dynamic>> migrateTaskList(Object? value) => [
+      for (final task in jsonMapList(value)) markLegacyTask(task),
+    ];
+
+    final pending = <String>{};
+    for (final raw in jsonStringList(json['pendingReplanTriggers'])) {
+      switch (raw.replaceAll('-', '_')) {
+        case 'task_failed':
+          pending.add('task_failed');
+        case 'evidence_rejected':
+          pending.add('evidence_rejected');
+        case 'no_ready_task':
+          pending.add('no_ready_task');
+        case 'new_context':
+        case 'manual':
+          pending.add('scope_changed');
+        case 'milestone_completed':
+          pending.add('milestone_roadmap_changed');
+      }
+    }
+
+    return {
+      ...json,
+      'schemaVersion': 4,
+      'backlog': migrateTaskList(json['backlog']),
+      'completedTasks': migrateTaskList(json['completedTasks']),
+      'failedTasks': migrateTaskList(json['failedTasks']),
+      if (json['currentTask'] is Map)
+        'currentTask': markLegacyTask(
+          Map<String, dynamic>.from(json['currentTask'] as Map),
+        ),
+      'pendingReplanTriggers': pending.toList()..sort(),
+      'completionReviewCheckpoint': null,
+    };
   }
 
   static Map<String, dynamic> _migratedMemory(

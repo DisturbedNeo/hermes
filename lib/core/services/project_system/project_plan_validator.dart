@@ -452,6 +452,16 @@ class ProjectPlanValidator {
           );
         }
       }
+      if (task.effort == ProjectTaskEffort.small &&
+          task.expectedArtifacts.isNotEmpty &&
+          task.writePaths.isEmpty &&
+          !task.legacyWriteAccess) {
+        issue(
+          'missing_write_paths',
+          '$fieldPath.writePaths',
+          'Small tasks that produce workspace artifacts must declare write paths.',
+        );
+      }
 
       final existing = existingFingerprintOwners[task.fingerprint];
       if (existing != null && existing.id != task.id) {

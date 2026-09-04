@@ -32,6 +32,7 @@ import 'package:hermes/core/services/task_system/task_summary.dart';
 import 'package:hermes/core/services/terminal_command_parser.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
+import 'package:hermes/core/services/workspace_discovery_profile.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/tools/tool_error.dart';
 import 'package:path/path.dart' as path;
@@ -43,6 +44,7 @@ typedef TaskCompactionStatusSink = void Function(String status);
 @MappableClass(generateMethods: GenerateMethods.encode)
 class TaskPlanningContext with TaskPlanningContextMappable {
   final String projectGoal;
+  final String projectTaskTitle;
   final String projectTaskObjective;
   final List<String> knownFacts;
   final List<String> doneCriteria;
@@ -52,10 +54,14 @@ class TaskPlanningContext with TaskPlanningContextMappable {
   final List<String> criterionIds;
   final List<TaskProjectCriterion> criteria;
   final List<TaskProjectEvidenceExpectation> expectedEvidence;
+  final List<String> readPaths;
+  final List<String> writePaths;
+  final bool legacyWriteAccess;
   final int maxSteps;
 
   const TaskPlanningContext({
     required this.projectGoal,
+    this.projectTaskTitle = '',
     required this.projectTaskObjective,
     this.knownFacts = const [],
     this.doneCriteria = const [],
@@ -65,6 +71,9 @@ class TaskPlanningContext with TaskPlanningContextMappable {
     this.criterionIds = const [],
     this.criteria = const [],
     this.expectedEvidence = const [],
+    this.readPaths = const [],
+    this.writePaths = const [],
+    this.legacyWriteAccess = false,
     this.maxSteps = 3,
   });
 }
@@ -317,16 +326,20 @@ class TaskService {
     required ToolService toolService,
     required WorkspaceSandbox sandbox,
     TaskRepository? repository,
+    WorkspaceDiscoveryProfileService profileService =
+        const WorkspaceDiscoveryProfileService(),
   }) : _toolService = toolService,
        _creationRunner = FinalizerToolCallRunner(toolService: toolService),
        _repository = repository ?? TaskRepository(),
        _sandbox = sandbox,
+       _profileService = profileService,
        _gateEvaluator = TaskGateEvaluator(sandbox: sandbox);
 
   final ToolService _toolService;
   final FinalizerToolCallRunner _creationRunner;
   final TaskRepository _repository;
   final WorkspaceSandbox _sandbox;
+  final WorkspaceDiscoveryProfileService _profileService;
   final TaskGateEvaluator _gateEvaluator;
   final QuestionPolicyService _questionPolicy = const QuestionPolicyService();
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
@@ -605,6 +618,29 @@ $userPrompt
         projectEvidenceExpectations: planningContext.expectedEvidence,
       );
     }
+    await _repository.saveSnapshot(workspace.rootPath, task);
+    return task;
+  }
+
+  /// Converts an already-bounded Project task directly into one executable
+  /// task step without invoking the Task Planner model.
+  Future<TaskDocument> createProjectTaskDocument({
+    required WorkspaceAttachment workspace,
+    required String userPrompt,
+    required String? chatSessionId,
+    required String? projectId,
+    required TaskPlanningContext planningContext,
+  }) async {
+    final now = DateTime.now();
+    final taskId = _newTaskId(userPrompt);
+    final task = _fallbackProjectBoundedTask(
+      taskId: taskId,
+      userPrompt: userPrompt,
+      chatSessionId: chatSessionId,
+      projectId: projectId,
+      planningContext: planningContext,
+      now: now,
+    );
     await _repository.saveSnapshot(workspace.rootPath, task);
     return task;
   }
@@ -1014,24 +1050,22 @@ $userPrompt
     WorkspaceAttachment workspace, {
     String? chatSessionId,
   }) async {
-    final root = Directory(workspace.rootPath);
-    final rootFiles = <String>[];
-    if (await root.exists()) {
-      await for (final entity in root.list(followLinks: false)) {
-        rootFiles.add(path.basename(entity.path));
-        if (rootFiles.length >= 80) break;
-      }
-    }
-    rootFiles.sort();
+    final profile = await _profileService.collect(workspace: workspace);
     return WorkspaceMetadata(
       workspaceName: workspace.displayName,
-      rootFiles: rootFiles,
-      gitAvailable: rootFiles.contains('.git'),
+      rootFiles: profile.rootEntries,
+      gitAvailable:
+          await FileSystemEntity.type(
+            path.join(workspace.rootPath, '.git'),
+            followLinks: false,
+          ) !=
+          FileSystemEntityType.notFound,
       commandExecutionApproved: workspace.commandExecutionApproved,
       existingTaskIds: (await _repository.listTasks(
         workspace.rootPath,
         chatSessionId: chatSessionId,
       )).map((task) => task.id).toList(),
+      workspaceProfile: profile,
     );
   }
 
@@ -1132,7 +1166,7 @@ $userPrompt
     required String system,
     required String user,
     required String label,
-    bool allowReadOnlyTools = true,
+    bool allowReadOnlyTools = false,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) {
@@ -1144,8 +1178,8 @@ $userPrompt
           '''
 $system
 
-You may use read-only tools to inspect the workspace before creating the task plan.
-Do not edit files, run terminal commands, rename paths, delete paths, or create task artifacts during task creation.
+Use the supplied bounded workspace profile as the complete discovery input.
+Do not call tools or perform a second workspace exploration during task creation.
 When the task plan is ready, call the $_finaliseTaskCreationToolId tool with the complete structured task plan.
 '''
               .trim(),
@@ -3447,6 +3481,9 @@ $whitelist
     final successCriteria = planningContext.doneCriteria.isEmpty
         ? ['Complete the selected bounded Project task.']
         : planningContext.doneCriteria;
+    final mayEditFiles =
+        planningContext.writePaths.isNotEmpty ||
+        planningContext.legacyWriteAccess;
     final step = TaskStep(
       id: 'execute_project_task',
       title: 'Execute bounded project task',
@@ -3457,19 +3494,31 @@ $whitelist
           'Use the provided Project facts as context.',
         if (planningContext.outOfScope.isNotEmpty)
           'Do not perform any out-of-scope work.',
+        if (planningContext.readPaths.isNotEmpty)
+          'Prefer reads within: ${planningContext.readPaths.join(', ')}.',
+        if (planningContext.writePaths.isNotEmpty)
+          'Limit workspace writes to: ${planningContext.writePaths.join(', ')}.',
+        if (!mayEditFiles)
+          'This is a read-only task; do not modify workspace files.',
         'Report what was completed and what remains.',
       ],
-      mayEditFiles: true,
+      mayEditFiles: mayEditFiles,
       artifacts: artifactPaths,
       status: TaskStepStatus.pending,
     );
     return TaskDocument(
       id: taskId,
-      title: _titleFromPrompt(planningContext.projectTaskObjective),
+      title: planningContext.projectTaskTitle.trim().isEmpty
+          ? _titleFromPrompt(planningContext.projectTaskObjective)
+          : planningContext.projectTaskTitle.trim(),
       originalPrompt: userPrompt,
       goal: planningContext.projectTaskObjective,
       constraints: [
         'Stay within the attached workspace.',
+        if (planningContext.readPaths.isNotEmpty)
+          'Read paths: ${planningContext.readPaths.join(', ')}',
+        if (planningContext.writePaths.isNotEmpty)
+          'Write paths: ${planningContext.writePaths.join(', ')}',
         ...planningContext.outOfScope.map((item) => 'Out of scope: $item'),
       ],
       successCriteria: successCriteria,
@@ -3661,6 +3710,7 @@ class WorkspaceMetadata with WorkspaceMetadataMappable {
   final bool gitAvailable;
   final bool commandExecutionApproved;
   final List<String> existingTaskIds;
+  final WorkspaceDiscoveryProfile? workspaceProfile;
 
   const WorkspaceMetadata({
     this.workspaceName,
@@ -3668,6 +3718,7 @@ class WorkspaceMetadata with WorkspaceMetadataMappable {
     this.gitAvailable = false,
     this.commandExecutionApproved = false,
     this.existingTaskIds = const [],
+    this.workspaceProfile,
   });
 }
 

@@ -15,7 +15,7 @@ import 'package:hermes/core/services/workspace_sandbox.dart';
 
 void main() {
   test('project task effort determines the bounded task step limit', () {
-    expect(projectTaskStepLimit(ProjectTaskEffort.small), 2);
+    expect(projectTaskStepLimit(ProjectTaskEffort.small), 1);
     expect(projectTaskStepLimit(ProjectTaskEffort.medium), 4);
     expect(projectTaskStepLimit(ProjectTaskEffort.large), 6);
   });
@@ -104,7 +104,7 @@ void main() {
             .firstWhere(
               (content) => content.contains('Bounded Project task context'),
             );
-        expect(taskPlanPrompt, contains('"maxSteps": 2'));
+        expect(taskPlanPrompt, contains('"maxSteps": 4'));
         expect(taskPlanPrompt, contains('"statement"'));
         expect(taskPlanPrompt, contains('"expectedEvidence"'));
         expect(
@@ -118,6 +118,146 @@ void main() {
         );
       },
     );
+
+    test(
+      'ordinary successful small task neither replans nor reviews completion',
+      () async {
+        final now = DateTime(2026, 1, 1);
+        final created = await service.createProject(
+          workspace: workspace,
+          userPrompt: 'Build two reporting slices',
+          chatSessionId: 'chat_1',
+        );
+        final project = created.copyWith(
+          criteria: [
+            ProjectCriterion(
+              id: 'criterion_first',
+              statement: 'The first slice works.',
+              createdAt: now,
+              updatedAt: now,
+            ),
+            ProjectCriterion(
+              id: 'criterion_second',
+              statement: 'The second slice works.',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          ],
+          milestones: const [],
+          backlog: [
+            _projectTask(
+              id: 'first',
+              objective: 'Implement the first reporting slice',
+              effort: ProjectTaskEffort.small,
+            ).copyWith(
+              criterionIds: ['criterion_first'],
+              writePaths: ['lib/reporting/first.dart'],
+            ),
+            _projectTask(
+              id: 'second',
+              objective: 'Implement the second reporting slice',
+              effort: ProjectTaskEffort.small,
+            ).copyWith(
+              criterionIds: ['criterion_second'],
+              writePaths: ['lib/reporting/second.dart'],
+            ),
+          ],
+        );
+        final client = _QueueChatClient([
+          jsonEncode({
+            'status': 'completed',
+            'summary': 'Implemented the first slice.',
+            'memoryUpdate': 'The first slice is ready.',
+          }),
+        ]);
+
+        final result = await service.runProject(
+          client: client,
+          workspace: workspace,
+          snapshot: project,
+          baseSystemPrompt: 'system',
+          maxNewTasks: 1,
+        );
+
+        expect(result.project.status, ProjectStatus.paused);
+        expect(result.project.completedTasks.single.id, 'first');
+        expect(result.project.backlog.single.id, 'second');
+        expect(result.project.pendingReplanTriggers, isEmpty);
+        expect(result.project.currentRevision, 1);
+        expect(client.seenMessages, hasLength(1));
+        expect(result.activeTask?.steps, hasLength(1));
+        expect(result.activeTask?.steps.single.mayEditFiles, isTrue);
+      },
+    );
+
+    test('does not repeat completion review for unchanged evidence', () async {
+      final created = await service.createProject(
+        workspace: workspace,
+        userPrompt: 'Build the reporting screen',
+        chatSessionId: 'chat_1',
+      );
+      final project = created.copyWith(
+        evidence: [
+          ProjectEvidence(
+            id: 'evidence_1',
+            type: ProjectEvidenceType.taskClaim,
+            criterionIds: [created.criteria.single.id],
+            sourceRef: 'task_1',
+            summary: 'The work may now be complete.',
+            status: ProjectEvidenceStatus.proposed,
+            strength: ProjectEvidenceStrength.advisory,
+            createdAt: DateTime(2026, 1, 1),
+          ),
+        ],
+      );
+      final client = _QueueChatClient([
+        jsonEncode({
+          'complete': false,
+          'finalSummary': 'More evidence is required.',
+          'remainingCriteria': [created.criteria.single.statement],
+          'openQuestions': [],
+        }),
+        jsonEncode({
+          'summary': 'No safe tasks available.',
+          'rationale': 'Evidence is still insufficient.',
+          'taskAdditions': [],
+          'taskUpdates': [],
+          'deferredTaskIds': [],
+          'obsoleteTaskIds': [],
+        }),
+      ]);
+
+      final first = await service.runProject(
+        client: client,
+        workspace: workspace,
+        snapshot: project,
+        baseSystemPrompt: 'system',
+        maxNewTasks: 1,
+      );
+      final resumed = first.project.copyWith(
+        status: ProjectStatus.active,
+        blocker: null,
+      );
+      await service.runProject(
+        client: client,
+        workspace: workspace,
+        snapshot: resumed,
+        baseSystemPrompt: 'system',
+        maxNewTasks: 1,
+      );
+
+      expect(first.project.completionReviewCheckpoint, isNotNull);
+      expect(
+        first.project.completionReviewCheckpoint?.reason,
+        ProjectCompletionReviewReason.backlogExhausted,
+      );
+      expect(
+        client.diagnosticsLabels
+            .where((label) => label == 'Project Completion Evaluator')
+            .length,
+        1,
+      );
+    });
 
     test(
       'continues through successful intermediate steps without pausing',
@@ -541,7 +681,7 @@ void main() {
       expect(answered.knownFacts.join('\n'), contains('PostgreSQL'));
       expect(
         answered.pendingReplanTriggers,
-        contains(ProjectPlanRevisionTrigger.newContext),
+        contains(ProjectPlanRevisionTrigger.scopeChanged),
       );
     });
 
@@ -572,43 +712,41 @@ void main() {
     });
 
     test(
-      'initialization can inspect files before finalising project',
+      'initialization receives profile and exposes no discovery tools',
       () async {
         await File(
-          '${root.path}/design.md',
+          '${root.path}/README.md',
         ).writeAsString('# Design\nBuild a reporting dashboard.\n');
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'finaliseProjectCreation',
+                arguments: jsonEncode({
+                  'title': 'Reporting dashboard',
+                  'refinedGoal': 'Build a reporting dashboard',
+                  'successCriteria': ['Dashboard matches the design'],
+                  'constraints': ['Stay in workspace'],
+                  'knownFacts': ['Design requests a reporting dashboard.'],
+                  'openQuestions': [],
+                }),
+              ),
+            ],
+          ),
+        ]);
         final project = await service.createProject(
-          client: _QueueCompletionClient([
-            ChatCompletionResponse(
-              content: '',
-              toolCalls: [
-                ChatCompletionToolCall(
-                  name: 'read_file',
-                  arguments: jsonEncode({'path': 'design.md'}),
-                ),
-              ],
-            ),
-            ChatCompletionResponse(
-              content: '',
-              toolCalls: [
-                ChatCompletionToolCall(
-                  name: 'finaliseProjectCreation',
-                  arguments: jsonEncode({
-                    'title': 'Reporting dashboard',
-                    'refinedGoal': 'Build a reporting dashboard',
-                    'successCriteria': ['Dashboard matches the design'],
-                    'constraints': ['Stay in workspace'],
-                    'knownFacts': ['Design requests a reporting dashboard.'],
-                    'openQuestions': [],
-                  }),
-                ),
-              ],
-            ),
-          ]),
+          client: client,
           workspace: workspace,
           userPrompt: 'Build from the design doc',
           chatSessionId: 'chat_1',
           baseSystemPrompt: 'system',
+        );
+        expect(client.seenToolNames.single, {'finaliseProjectCreation'});
+        expect(client.seenMessages.single.last.content, contains('README.md'));
+        expect(
+          client.seenMessages.single.last.content,
+          contains('Build a reporting dashboard'),
         );
 
         expect(project.title, 'Reporting dashboard');
@@ -640,9 +778,10 @@ void main() {
       expect(contextMemory.kind, ProjectMemoryKind.requirement);
       expect(contextMemory.sourceType, ProjectMemorySourceType.user);
       expect(contextMemory.protected, isTrue);
+      expect(updated.pendingReplanTriggers, isEmpty);
     });
 
-    test('queues a manual replan and preserves its optional reason', () async {
+    test('queues a scope-change replan and preserves its reason', () async {
       final created = await service.createProject(
         workspace: workspace,
         userPrompt: 'Build the app',
@@ -661,15 +800,15 @@ void main() {
           recentNoProgressTaskIds: ['task_1', 'task_2', 'task_3'],
         ),
       );
-      final updated = await service.requestManualReplan(
+      final updated = await service.requestScopeChange(
         workspace: workspace,
         snapshot: stalled,
-        reason: 'Prioritise accessibility before visual polish.',
+        context: 'Prioritise accessibility before visual polish.',
       );
 
       expect(
         updated.pendingReplanTriggers,
-        contains(ProjectPlanRevisionTrigger.manual),
+        contains(ProjectPlanRevisionTrigger.scopeChanged),
       );
       final reason = updated.memory.last;
       expect(reason.content, contains('Prioritise accessibility'));
@@ -1606,6 +1745,7 @@ Map<String, dynamic> _projectTaskJson({
     'outOfScope': ['Do not implement unrelated project work.'],
     'context': ['Use the attached workspace.'],
     'expectedArtifacts': [],
+    'effort': 'medium',
   };
 }
 
@@ -1694,6 +1834,7 @@ ProjectTask _projectTask({
   ProjectTaskPriority priority = ProjectTaskPriority.normal,
   ProjectTaskReadiness readiness = ProjectTaskReadiness.ready,
   String? recoveryIncidentId,
+  ProjectTaskEffort effort = ProjectTaskEffort.medium,
 }) {
   final now = DateTime(2026, 1, 1);
   return ProjectTask(
@@ -1703,6 +1844,7 @@ ProjectTask _projectTask({
     relevantSuccessCriteria: const ['Complete the stated project goal.'],
     dependsOnTaskIds: dependsOnTaskIds,
     priority: priority,
+    effort: effort,
     readiness: readiness,
     doneCriteria: const ['The task is completed and summarized.'],
     outOfScope: const ['Do not implement unrelated project work.'],
@@ -1739,6 +1881,7 @@ class _QueueChatClient extends ChatClient {
   final List<String> _responses;
   var _index = 0;
   final List<List<ChatMessage>> _requests = [];
+  final List<String> diagnosticsLabels = [];
 
   List<List<ChatMessage>> get seenMessages => _requests;
 
@@ -1761,6 +1904,7 @@ class _QueueChatClient extends ChatClient {
     int? inputTokensHint,
   }) async {
     _requests.add(List<ChatMessage>.of(messages));
+    diagnosticsLabels.add(diagnosticsLabel);
     final index = _index >= _responses.length ? _responses.length - 1 : _index;
     _index++;
     return ChatCompletionResponse(content: _responses[index]);

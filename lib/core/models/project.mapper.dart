@@ -1131,6 +1131,10 @@ class ProjectPlanRevisionTriggerMapper
         return ProjectPlanRevisionTrigger.evidenceRejected;
       case 'task_replan_requested':
         return ProjectPlanRevisionTrigger.taskReplanRequested;
+      case 'scope_changed':
+        return ProjectPlanRevisionTrigger.scopeChanged;
+      case 'milestone_roadmap_changed':
+        return ProjectPlanRevisionTrigger.milestoneRoadmapChanged;
       default:
         return ProjectPlanRevisionTrigger.values[0];
     }
@@ -1161,6 +1165,10 @@ class ProjectPlanRevisionTriggerMapper
         return 'evidence_rejected';
       case ProjectPlanRevisionTrigger.taskReplanRequested:
         return 'task_replan_requested';
+      case ProjectPlanRevisionTrigger.scopeChanged:
+        return 'scope_changed';
+      case ProjectPlanRevisionTrigger.milestoneRoadmapChanged:
+        return 'milestone_roadmap_changed';
     }
   }
 }
@@ -1172,6 +1180,64 @@ extension ProjectPlanRevisionTriggerMapperExtension
   dynamic toValue() {
     ProjectPlanRevisionTriggerMapper.ensureInitialized();
     return MapperContainer.globals.toValue<ProjectPlanRevisionTrigger>(this);
+  }
+}
+
+/// @nodoc
+
+class ProjectCompletionReviewReasonMapper
+    extends EnumMapper<ProjectCompletionReviewReason> {
+  ProjectCompletionReviewReasonMapper._();
+
+  static ProjectCompletionReviewReasonMapper? _instance;
+  static ProjectCompletionReviewReasonMapper ensureInitialized() {
+    if (_instance == null) {
+      MapperContainer.globals.use(
+        _instance = ProjectCompletionReviewReasonMapper._(),
+      );
+    }
+    return _instance!;
+  }
+
+  static ProjectCompletionReviewReason fromValue(dynamic value) {
+    ensureInitialized();
+    return MapperContainer.globals.fromValue(value);
+  }
+
+  @override
+  ProjectCompletionReviewReason decode(dynamic value) {
+    switch (value) {
+      case 'backlog_exhausted':
+        return ProjectCompletionReviewReason.backlogExhausted;
+      case 'milestone_ended':
+        return ProjectCompletionReviewReason.milestoneEnded;
+      case 'final_criterion_evidence':
+        return ProjectCompletionReviewReason.finalCriterionEvidence;
+      default:
+        return ProjectCompletionReviewReason.values[0];
+    }
+  }
+
+  @override
+  dynamic encode(ProjectCompletionReviewReason self) {
+    switch (self) {
+      case ProjectCompletionReviewReason.backlogExhausted:
+        return 'backlog_exhausted';
+      case ProjectCompletionReviewReason.milestoneEnded:
+        return 'milestone_ended';
+      case ProjectCompletionReviewReason.finalCriterionEvidence:
+        return 'final_criterion_evidence';
+    }
+  }
+}
+
+/// @nodoc
+
+extension ProjectCompletionReviewReasonMapperExtension
+    on ProjectCompletionReviewReason {
+  dynamic toValue() {
+    ProjectCompletionReviewReasonMapper.ensureInitialized();
+    return MapperContainer.globals.toValue<ProjectCompletionReviewReason>(this);
   }
 }
 
@@ -2846,6 +2912,14 @@ class ProjectTaskMapper extends ClassMapperBase<ProjectTask> {
     def: const [],
     hook: JsonStringListHook(),
   );
+  static bool _$legacyWriteAccess(ProjectTask v) => v.legacyWriteAccess;
+  static const Field<ProjectTask, bool> _f$legacyWriteAccess = Field(
+    'legacyWriteAccess',
+    _$legacyWriteAccess,
+    opt: true,
+    def: false,
+    hook: JsonBoolHook(),
+  );
   static List<String> _$doneCriteria(ProjectTask v) => v.doneCriteria;
   static const Field<ProjectTask, List<String>> _f$doneCriteria = Field(
     'doneCriteria',
@@ -2943,6 +3017,7 @@ class ProjectTaskMapper extends ClassMapperBase<ProjectTask> {
     #expectedEvidence: _f$expectedEvidence,
     #readPaths: _f$readPaths,
     #writePaths: _f$writePaths,
+    #legacyWriteAccess: _f$legacyWriteAccess,
     #doneCriteria: _f$doneCriteria,
     #outOfScope: _f$outOfScope,
     #context: _f$context,
@@ -2982,6 +3057,7 @@ class ProjectTaskMapper extends ClassMapperBase<ProjectTask> {
       expectedEvidence: data.dec(_f$expectedEvidence),
       readPaths: data.dec(_f$readPaths),
       writePaths: data.dec(_f$writePaths),
+      legacyWriteAccess: data.dec(_f$legacyWriteAccess),
       doneCriteria: data.dec(_f$doneCriteria),
       outOfScope: data.dec(_f$outOfScope),
       context: data.dec(_f$context),
@@ -3608,6 +3684,107 @@ mixin PendingProjectPlanApprovalMappable {
 }
 
 /// @nodoc
+class ProjectCompletionReviewCheckpointMapper
+    extends ClassMapperBase<ProjectCompletionReviewCheckpoint> {
+  ProjectCompletionReviewCheckpointMapper._();
+
+  static ProjectCompletionReviewCheckpointMapper? _instance;
+  static ProjectCompletionReviewCheckpointMapper ensureInitialized() {
+    if (_instance == null) {
+      MapperContainer.globals.use(
+        _instance = ProjectCompletionReviewCheckpointMapper._(),
+      );
+      ProjectCompletionReviewReasonMapper.ensureInitialized();
+    }
+    return _instance!;
+  }
+
+  @override
+  final String id = 'ProjectCompletionReviewCheckpoint';
+
+  static ProjectCompletionReviewReason _$reason(
+    ProjectCompletionReviewCheckpoint v,
+  ) => v.reason;
+  static const Field<
+    ProjectCompletionReviewCheckpoint,
+    ProjectCompletionReviewReason
+  >
+  _f$reason = Field('reason', _$reason);
+  static String _$evidenceFingerprint(ProjectCompletionReviewCheckpoint v) =>
+      v.evidenceFingerprint;
+  static const Field<ProjectCompletionReviewCheckpoint, String>
+  _f$evidenceFingerprint = Field(
+    'evidenceFingerprint',
+    _$evidenceFingerprint,
+    hook: JsonStringHook(),
+  );
+  static String? _$milestoneId(ProjectCompletionReviewCheckpoint v) =>
+      v.milestoneId;
+  static const Field<ProjectCompletionReviewCheckpoint, String> _f$milestoneId =
+      Field(
+        'milestoneId',
+        _$milestoneId,
+        opt: true,
+        hook: JsonNullableStringHook(),
+      );
+  static DateTime _$reviewedAt(ProjectCompletionReviewCheckpoint v) =>
+      v.reviewedAt;
+  static const Field<ProjectCompletionReviewCheckpoint, DateTime>
+  _f$reviewedAt = Field('reviewedAt', _$reviewedAt, hook: JsonDateHook());
+
+  @override
+  final MappableFields<ProjectCompletionReviewCheckpoint> fields = const {
+    #reason: _f$reason,
+    #evidenceFingerprint: _f$evidenceFingerprint,
+    #milestoneId: _f$milestoneId,
+    #reviewedAt: _f$reviewedAt,
+  };
+  @override
+  final bool ignoreNull = true;
+
+  static ProjectCompletionReviewCheckpoint _instantiate(DecodingData data) {
+    return ProjectCompletionReviewCheckpoint(
+      reason: data.dec(_f$reason),
+      evidenceFingerprint: data.dec(_f$evidenceFingerprint),
+      milestoneId: data.dec(_f$milestoneId),
+      reviewedAt: data.dec(_f$reviewedAt),
+    );
+  }
+
+  @override
+  final Function instantiate = _instantiate;
+
+  static ProjectCompletionReviewCheckpoint fromMap(Map<String, dynamic> map) {
+    return ensureInitialized().decodeMap<ProjectCompletionReviewCheckpoint>(
+      map,
+    );
+  }
+
+  static ProjectCompletionReviewCheckpoint fromJson(String json) {
+    return ensureInitialized().decodeJson<ProjectCompletionReviewCheckpoint>(
+      json,
+    );
+  }
+}
+
+/// @nodoc
+mixin ProjectCompletionReviewCheckpointMappable {
+  String toJson() {
+    return ProjectCompletionReviewCheckpointMapper.ensureInitialized()
+        .encodeJson<ProjectCompletionReviewCheckpoint>(
+          this as ProjectCompletionReviewCheckpoint,
+        );
+  }
+
+  Map<String, dynamic> toMap() {
+    return ProjectCompletionReviewCheckpointMapper.ensureInitialized()
+        .encodeMap<ProjectCompletionReviewCheckpoint>(
+          this as ProjectCompletionReviewCheckpoint,
+        );
+  }
+}
+
+/// @nodoc
 class ProjectStateMapper extends ClassMapperBase<ProjectState> {
   ProjectStateMapper._();
 
@@ -3625,6 +3802,7 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
       ProjectPlanRevisionMapper.ensureInitialized();
       PendingProjectPlanApprovalMapper.ensureInitialized();
       ProjectPlanRevisionTriggerMapper.ensureInitialized();
+      ProjectCompletionReviewCheckpointMapper.ensureInitialized();
       PendingProjectQuestionMapper.ensureInitialized();
       ProjectTaskRefMapper.ensureInitialized();
       ProjectStatusMapper.ensureInitialized();
@@ -3804,6 +3982,15 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
     opt: true,
     def: const [],
   );
+  static ProjectCompletionReviewCheckpoint? _$completionReviewCheckpoint(
+    ProjectState v,
+  ) => v.completionReviewCheckpoint;
+  static const Field<ProjectState, ProjectCompletionReviewCheckpoint>
+  _f$completionReviewCheckpoint = Field(
+    'completionReviewCheckpoint',
+    _$completionReviewCheckpoint,
+    opt: true,
+  );
   static List<PendingProjectQuestion> _$openQuestions(ProjectState v) =>
       v.openQuestions;
   static const Field<ProjectState, List<PendingProjectQuestion>>
@@ -3963,6 +4150,7 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
     #planHistory: _f$planHistory,
     #pendingPlanApproval: _f$pendingPlanApproval,
     #pendingReplanTriggers: _f$pendingReplanTriggers,
+    #completionReviewCheckpoint: _f$completionReviewCheckpoint,
     #openQuestions: _f$openQuestions,
     #memorySummary: _f$memorySummary,
     #tasks: _f$tasks,
@@ -4013,6 +4201,7 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
       planHistory: data.dec(_f$planHistory),
       pendingPlanApproval: data.dec(_f$pendingPlanApproval),
       pendingReplanTriggers: data.dec(_f$pendingReplanTriggers),
+      completionReviewCheckpoint: data.dec(_f$completionReviewCheckpoint),
       openQuestions: data.dec(_f$openQuestions),
       memorySummary: data.dec(_f$memorySummary),
       tasks: data.dec(_f$tasks),

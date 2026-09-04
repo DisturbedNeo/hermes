@@ -3,6 +3,7 @@ import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
+import 'package:hermes/core/services/workspace_discovery_profile.dart';
 
 /// Pure result of creating the initial planning state for a project.
 class ProjectInitialisation {
@@ -34,6 +35,7 @@ class ProjectInitialisation {
 /// Bounded, read-only planning context collected before a plan model call.
 class ProjectEvidenceSnapshot {
   final String workspaceName;
+  final WorkspaceDiscoveryProfile workspaceProfile;
   final List<String> rootEntries;
   final bool gitAvailable;
   final List<String> changedFiles;
@@ -51,8 +53,9 @@ class ProjectEvidenceSnapshot {
   final List<String> verificationCommands;
   final DateTime collectedAt;
 
-  const ProjectEvidenceSnapshot({
+  ProjectEvidenceSnapshot({
     required this.workspaceName,
+    WorkspaceDiscoveryProfile? workspaceProfile,
     this.rootEntries = const [],
     this.gitAvailable = false,
     this.changedFiles = const [],
@@ -69,10 +72,13 @@ class ProjectEvidenceSnapshot {
     this.recentlyCompletedTasks = const [],
     this.verificationCommands = const [],
     required this.collectedAt,
-  });
+  }) : workspaceProfile =
+           workspaceProfile ??
+           WorkspaceDiscoveryProfile(workspaceName: workspaceName);
 
   Map<String, dynamic> toMap() => {
     'workspaceName': workspaceName,
+    'workspaceProfile': workspaceProfile.toMap(),
     'rootEntries': rootEntries,
     'gitAvailable': gitAvailable,
     'changedFiles': changedFiles,

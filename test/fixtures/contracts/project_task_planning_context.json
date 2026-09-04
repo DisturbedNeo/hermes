@@ -1,5 +1,6 @@
 {
   "projectGoal": "Ship an accessible reporting workflow.",
+  "projectTaskTitle": "",
   "projectTaskObjective": "Implement keyboard navigation for the report dialog.",
   "knownFacts": [
     "The application uses Flutter."
@@ -36,5 +37,8 @@
       "details": {}
     }
   ],
+  "readPaths": [],
+  "writePaths": [],
+  "legacyWriteAccess": false,
   "maxSteps": 4
 }

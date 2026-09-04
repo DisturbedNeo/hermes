@@ -13,7 +13,8 @@ import '../models/system_prompt.dart' as p5;
 import '../models/task.dart' as p6;
 import '../services/question_policy_service.dart' as p7;
 import '../services/task_system/task_service.dart' as p8;
-import '../tools/calculator_tool.dart' as p9;
+import '../services/workspace_discovery_profile.dart' as p9;
+import '../tools/calculator_tool.dart' as p10;
 
 /// @nodoc
 void initializeMappers() {
@@ -31,6 +32,7 @@ void initializeMappers() {
   p4.ProjectPlanProposalMapper.ensureInitialized();
   p4.ProjectPlanRevisionMapper.ensureInitialized();
   p4.PendingProjectPlanApprovalMapper.ensureInitialized();
+  p4.ProjectCompletionReviewCheckpointMapper.ensureInitialized();
   p4.ProjectStateMapper.ensureInitialized();
   p4.ProjectRecoveryIncidentMapper.ensureInitialized();
   p4.ProjectTaskMapper.ensureInitialized();
@@ -58,6 +60,7 @@ void initializeMappers() {
   p4.ProjectMemorySourceTypeMapper.ensureInitialized();
   p4.ProjectMemoryConfidenceMapper.ensureInitialized();
   p4.ProjectPlanRevisionTriggerMapper.ensureInitialized();
+  p4.ProjectCompletionReviewReasonMapper.ensureInitialized();
   p4.ProjectPlanApprovalPolicyMapper.ensureInitialized();
   p4.ProjectPlanRevisionApproverMapper.ensureInitialized();
   p4.ProjectBlockerTypeMapper.ensureInitialized();
@@ -93,6 +96,8 @@ void initializeMappers() {
   p7.QuestionKindMapper.ensureInitialized();
   p8.TaskPlanningContextMapper.ensureInitialized();
   p8.WorkspaceMetadataMapper.ensureInitialized();
-  p9.CalculatorOperationMapper.ensureInitialized();
+  p9.WorkspaceDiscoveryProfileMapper.ensureInitialized();
+  p9.WorkspaceFileExcerptMapper.ensureInitialized();
+  p10.CalculatorOperationMapper.ensureInitialized();
 }
 

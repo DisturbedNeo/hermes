@@ -7,6 +7,7 @@ import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/project_system/project_memory_service.dart';
 import 'package:hermes/core/services/project_system/project_planning_gateway.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
+import 'package:hermes/core/services/workspace_discovery_profile.dart';
 import 'package:path/path.dart' as path;
 
 /// Collects bounded, read-only context for initialization and replanning.
@@ -14,14 +15,18 @@ class ProjectDiscoveryService {
   const ProjectDiscoveryService({
     required TaskService taskService,
     ProjectMemoryService memoryService = const ProjectMemoryService(),
+    WorkspaceDiscoveryProfileService profileService =
+        const WorkspaceDiscoveryProfileService(),
   }) : _taskService = taskService,
-       _memoryService = memoryService;
+       _memoryService = memoryService,
+       _profileService = profileService;
 
   static const int _maxRootEntries = 80;
   static const int _maxRecentItems = 12;
 
   final TaskService _taskService;
   final ProjectMemoryService _memoryService;
+  final WorkspaceDiscoveryProfileService _profileService;
 
   Future<ProjectEvidenceSnapshot> collect({
     required WorkspaceAttachment workspace,
@@ -29,20 +34,13 @@ class ProjectDiscoveryService {
     CancellationToken? cancellationToken,
   }) async {
     cancellationToken?.throwIfCancelled();
-    final rootEntries = <String>[];
-    final root = Directory(workspace.rootPath);
-    try {
-      if (await root.exists()) {
-        await for (final entity in root.list(followLinks: false)) {
-          cancellationToken?.throwIfCancelled();
-          rootEntries.add(path.basename(entity.path));
-          if (rootEntries.length >= _maxRootEntries) break;
-        }
-      }
-    } on FileSystemException {
-      // A partial snapshot remains useful when a directory is unreadable.
-    }
-    rootEntries.sort();
+    final workspaceProfile = await _profileService.collect(
+      workspace: workspace,
+      cancellationToken: cancellationToken,
+    );
+    final rootEntries = workspaceProfile.rootEntries
+        .take(_maxRootEntries)
+        .toList();
     var gitAvailable = false;
     var changedFiles = const <String>[];
     try {
@@ -86,6 +84,7 @@ class ProjectDiscoveryService {
         : _memoryService.selectContext(project: project, maxCharacters: 6000);
     return ProjectEvidenceSnapshot(
       workspaceName: workspace.displayName,
+      workspaceProfile: workspaceProfile,
       rootEntries: rootEntries,
       gitAvailable: gitAvailable,
       changedFiles: changedFiles,

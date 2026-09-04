@@ -506,7 +506,8 @@ class ProjectPlanRevisionService {
     final revision = ProjectPlanRevision(
       revision: proposal.revision,
       trigger:
-          proposal.triggers.firstOrNull ?? ProjectPlanRevisionTrigger.manual,
+          proposal.triggers.firstOrNull ??
+          ProjectPlanRevisionTrigger.noReadyTask,
       summary: proposal.summary,
       rationale: proposal.triggers.length <= 1
           ? proposal.rationale

@@ -52,10 +52,11 @@ class FinalizerToolCallRunner {
       if (allowReadOnlyTools) ...kCreationReadOnlyToolIds,
     };
     final toolDefs = [
-      ..._toolService.getToolDefinitions(
-        ids: allowedToolIds.toList(),
-        includeWorkspaceTools: true,
-      ),
+      if (allowReadOnlyTools)
+        ..._toolService.getToolDefinitions(
+          ids: allowedToolIds.toList(),
+          includeWorkspaceTools: true,
+        ),
       finalizerTool,
     ];
     final messages = <ChatMessage>[

@@ -63,6 +63,7 @@ class ProjectModelCalls implements ProjectPlanningGateway {
 Initialize a persistent project state. Do not execute the project.
 Create a rolling roadmap with one to three milestones and approximately three to seven detailed near-term tasks. Keep distant work coarse in milestone objectives rather than expanding an unbounded backlog.
 Every task needs stable IDs, dependencies, criterion and milestone links, priority, risk, effort, boundaries, expected evidence, and a concise rationale in selectionRationale.
+For every small task that will modify workspace files, writePaths must contain the explicit files or directories it may change. Leave writePaths empty only for genuinely read-only work.
 Do not add openQuestions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; record a typed assumption in memory instead.
 Add openQuestions only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
 
@@ -165,6 +166,7 @@ Propose one coherent revision to the rolling project plan for all supplied trigg
 Do not execute work. Preserve completed task history, accepted evidence, gate results, recovery incidents, and protected user memory.
 Criterion status and evidence are evaluator-owned progress state. Do not use criterionUpserts merely to mark an existing criterion satisfied, partial, or unsatisfied, or to attach evidence; only upsert a criterion when its statement, required flag, or verification mode must change.
 Return only small, bounded, independently verifiable near-term tasks. Use stable existing IDs for updates and new unique IDs for additions.
+For every small task that will modify workspace files, writePaths must contain the explicit files or directories it may change. Leave writePaths empty only for genuinely read-only work.
 Do not add openQuestions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; choose a reasonable next task/order and record the assumption in memoryAdditions.
 Add openQuestions only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
 
@@ -287,6 +289,8 @@ Return only JSON:
       "doneCriteria": ["..."],
       "outOfScope": ["..."],
       "context": ["..."],
+      "readPaths": ["..."],
+      "writePaths": ["..."],
       "expectedArtifacts": [{"path": "...", "description": "...", "kind": "file"}]
     }
   ]
@@ -435,8 +439,8 @@ Return only the repaired JSON object.
           '''
 $system
 
-You may use read-only tools to inspect the workspace before creating or refreshing the project state.
-Do not edit files, run terminal commands, rename paths, delete paths, or create artifacts during project creation.
+Use the supplied bounded workspace profile as the complete discovery input.
+Do not call tools or perform a second workspace exploration during project creation.
 When the project creation data is ready, call the $_finaliseProjectCreationToolId tool with the complete structured payload.
 '''
               .trim(),
@@ -447,6 +451,7 @@ When the project creation data is ready, call the $_finaliseProjectCreationToolI
 You did not call $_finaliseProjectCreationToolId. Return only the JSON object that would be passed as that tool's arguments, matching this shape:
 $expectedShape
 ''',
+      allowReadOnlyTools: false,
       onModelOutput: onModelOutput,
       cancellationToken: cancellationToken,
     );

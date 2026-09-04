@@ -15,6 +15,19 @@ void main() {
       if (await root.exists()) await root.delete(recursive: true);
     });
     await Directory('${root.path}/.git').create();
+    await File('${root.path}/README.md').writeAsString('# Example workspace');
+    await File('${root.path}/pubspec.yaml').writeAsString('''
+name: discovery_example
+dependencies:
+  flutter:
+    sdk: flutter
+''');
+    await Directory('${root.path}/lib/src').create(recursive: true);
+    await File('${root.path}/lib/main.dart').writeAsString('void main() {}');
+    await Directory('${root.path}/node_modules/pkg').create(recursive: true);
+    await File(
+      '${root.path}/node_modules/pkg/index.js',
+    ).writeAsString('ignored');
     for (var index = 0; index < 90; index++) {
       await File('${root.path}/file_$index.txt').writeAsString('$index');
     }
@@ -41,6 +54,18 @@ void main() {
     expect(snapshot.workspaceName, 'Workspace');
     expect(snapshot.gitAvailable, isTrue);
     expect(snapshot.rootEntries.length, lessThanOrEqualTo(80));
+    expect(snapshot.workspaceProfile.treePaths.length, lessThanOrEqualTo(400));
+    expect(snapshot.workspaceProfile.packageName, 'discovery_example');
+    expect(snapshot.workspaceProfile.languages, contains('Dart'));
+    expect(snapshot.workspaceProfile.frameworks, contains('Flutter'));
+    expect(
+      snapshot.workspaceProfile.highSignalFiles.map((item) => item.path),
+      containsAll(['README.md', 'pubspec.yaml', 'lib/main.dart']),
+    );
+    expect(
+      snapshot.workspaceProfile.treePaths,
+      isNot(contains(contains('node_modules'))),
+    );
     expect(snapshot.criterionSummaries.single, contains('criterion_001'));
     expect(snapshot.activeMemory.single, contains('Keep the API stable'));
     expect(before, after);

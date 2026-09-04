@@ -1170,10 +1170,12 @@ class ChatService extends ChangeNotifier
         taskBusy) {
       return;
     }
-    activeProject = await _projectService.requestManualReplan(
+    activeProject = await _projectService.requestScopeChange(
       workspace: currentWorkspace,
       snapshot: snapshot,
-      reason: reason,
+      context: reason.trim().isEmpty
+          ? 'User explicitly requested a roadmap revision.'
+          : reason,
     );
     await reloadTasks();
     await _runProjectInternal();
