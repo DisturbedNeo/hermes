@@ -129,6 +129,19 @@ abstract interface class ProjectPlanningGateway {
     CancellationToken? cancellationToken,
   });
 
+  /// Performs the sole model repair pass allowed for an invalid initial plan.
+  Future<ProjectInitialisation?> repairInitialisation({
+    required ChatClient client,
+    required String baseSystemPrompt,
+    required WorkspaceAttachment workspace,
+    required String originalGoal,
+    required Map<String, dynamic> workspaceMetadata,
+    required ProjectInitialisation initialisation,
+    required List<Map<String, String>> validationIssues,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  });
+
   Future<ProjectPlanProposal> revisePlan({
     required ChatClient client,
     required String baseSystemPrompt,

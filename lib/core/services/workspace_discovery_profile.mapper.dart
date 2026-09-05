@@ -20,6 +20,7 @@ class WorkspaceDiscoveryProfileMapper
         _instance = WorkspaceDiscoveryProfileMapper._(),
       );
       WorkspaceFileExcerptMapper.ensureInitialized();
+      WorkspaceRequiredContextIssueMapper.ensureInitialized();
     }
     return _instance!;
   }
@@ -78,6 +79,19 @@ class WorkspaceDiscoveryProfileMapper
       v.omittedPathCount;
   static const Field<WorkspaceDiscoveryProfile, int> _f$omittedPathCount =
       Field('omittedPathCount', _$omittedPathCount, opt: true, def: 0);
+  static List<WorkspaceRequiredContextIssue> _$requiredContextIssues(
+    WorkspaceDiscoveryProfile v,
+  ) => v.requiredContextIssues;
+  static const Field<
+    WorkspaceDiscoveryProfile,
+    List<WorkspaceRequiredContextIssue>
+  >
+  _f$requiredContextIssues = Field(
+    'requiredContextIssues',
+    _$requiredContextIssues,
+    opt: true,
+    def: const [],
+  );
 
   @override
   final MappableFields<WorkspaceDiscoveryProfile> fields = const {
@@ -92,6 +106,7 @@ class WorkspaceDiscoveryProfileMapper
     #treeTruncated: _f$treeTruncated,
     #contentTruncated: _f$contentTruncated,
     #omittedPathCount: _f$omittedPathCount,
+    #requiredContextIssues: _f$requiredContextIssues,
   };
   @override
   final bool ignoreNull = true;
@@ -109,6 +124,7 @@ class WorkspaceDiscoveryProfileMapper
       treeTruncated: data.dec(_f$treeTruncated),
       contentTruncated: data.dec(_f$contentTruncated),
       omittedPathCount: data.dec(_f$omittedPathCount),
+      requiredContextIssues: data.dec(_f$requiredContextIssues),
     );
   }
 
@@ -211,6 +227,84 @@ mixin WorkspaceFileExcerptMappable {
   Map<String, dynamic> toMap() {
     return WorkspaceFileExcerptMapper.ensureInitialized()
         .encodeMap<WorkspaceFileExcerpt>(this as WorkspaceFileExcerpt);
+  }
+}
+
+/// @nodoc
+class WorkspaceRequiredContextIssueMapper
+    extends ClassMapperBase<WorkspaceRequiredContextIssue> {
+  WorkspaceRequiredContextIssueMapper._();
+
+  static WorkspaceRequiredContextIssueMapper? _instance;
+  static WorkspaceRequiredContextIssueMapper ensureInitialized() {
+    if (_instance == null) {
+      MapperContainer.globals.use(
+        _instance = WorkspaceRequiredContextIssueMapper._(),
+      );
+    }
+    return _instance!;
+  }
+
+  @override
+  final String id = 'WorkspaceRequiredContextIssue';
+
+  static String _$path(WorkspaceRequiredContextIssue v) => v.path;
+  static const Field<WorkspaceRequiredContextIssue, String> _f$path = Field(
+    'path',
+    _$path,
+  );
+  static String _$code(WorkspaceRequiredContextIssue v) => v.code;
+  static const Field<WorkspaceRequiredContextIssue, String> _f$code = Field(
+    'code',
+    _$code,
+  );
+  static String _$message(WorkspaceRequiredContextIssue v) => v.message;
+  static const Field<WorkspaceRequiredContextIssue, String> _f$message = Field(
+    'message',
+    _$message,
+  );
+
+  @override
+  final MappableFields<WorkspaceRequiredContextIssue> fields = const {
+    #path: _f$path,
+    #code: _f$code,
+    #message: _f$message,
+  };
+
+  static WorkspaceRequiredContextIssue _instantiate(DecodingData data) {
+    return WorkspaceRequiredContextIssue(
+      path: data.dec(_f$path),
+      code: data.dec(_f$code),
+      message: data.dec(_f$message),
+    );
+  }
+
+  @override
+  final Function instantiate = _instantiate;
+
+  static WorkspaceRequiredContextIssue fromMap(Map<String, dynamic> map) {
+    return ensureInitialized().decodeMap<WorkspaceRequiredContextIssue>(map);
+  }
+
+  static WorkspaceRequiredContextIssue fromJson(String json) {
+    return ensureInitialized().decodeJson<WorkspaceRequiredContextIssue>(json);
+  }
+}
+
+/// @nodoc
+mixin WorkspaceRequiredContextIssueMappable {
+  String toJson() {
+    return WorkspaceRequiredContextIssueMapper.ensureInitialized()
+        .encodeJson<WorkspaceRequiredContextIssue>(
+          this as WorkspaceRequiredContextIssue,
+        );
+  }
+
+  Map<String, dynamic> toMap() {
+    return WorkspaceRequiredContextIssueMapper.ensureInitialized()
+        .encodeMap<WorkspaceRequiredContextIssue>(
+          this as WorkspaceRequiredContextIssue,
+        );
   }
 }
 

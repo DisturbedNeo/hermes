@@ -23,6 +23,7 @@ class WorkspaceDiscoveryProfile with WorkspaceDiscoveryProfileMappable {
   final bool treeTruncated;
   final bool contentTruncated;
   final int omittedPathCount;
+  final List<WorkspaceRequiredContextIssue> requiredContextIssues;
 
   const WorkspaceDiscoveryProfile({
     required this.workspaceName,
@@ -36,6 +37,7 @@ class WorkspaceDiscoveryProfile with WorkspaceDiscoveryProfileMappable {
     this.treeTruncated = false,
     this.contentTruncated = false,
     this.omittedPathCount = 0,
+    this.requiredContextIssues = const [],
   });
 
   List<String> get rootEntries => treePaths
@@ -45,6 +47,22 @@ class WorkspaceDiscoveryProfile with WorkspaceDiscoveryProfileMappable {
       )
       .where((item) => path.split(item).length == 1)
       .toList();
+}
+
+/// A referenced workspace file that could not be supplied completely to the
+/// planner. Required-context issues are ephemeral planning input, not project
+/// state.
+@MappableClass()
+class WorkspaceRequiredContextIssue with WorkspaceRequiredContextIssueMappable {
+  final String path;
+  final String code;
+  final String message;
+
+  const WorkspaceRequiredContextIssue({
+    required this.path,
+    required this.code,
+    required this.message,
+  });
 }
 
 @MappableClass()
@@ -114,6 +132,14 @@ class WorkspaceDiscoveryProfileService {
     'tsconfig.json',
   };
 
+  static const Set<String> _commonPlanningNames = {
+    'design.md',
+    'spec.md',
+    'requirements.md',
+    'architecture.md',
+    'plan.md',
+  };
+
   static const Set<String> _entrypointNames = {
     'app.dart',
     'app.js',
@@ -130,6 +156,8 @@ class WorkspaceDiscoveryProfileService {
 
   Future<WorkspaceDiscoveryProfile> collect({
     required WorkspaceAttachment workspace,
+    Iterable<String> priorityPaths = const [],
+    String goalContext = '',
     CancellationToken? cancellationToken,
   }) async {
     cancellationToken?.throwIfCancelled();
@@ -187,15 +215,84 @@ class WorkspaceDiscoveryProfileService {
     }
 
     await walk(root, 1);
+    final prioritized = _prioritizedPaths(
+      treePaths: treePaths,
+      requestedPaths: priorityPaths,
+      goalContext: goalContext,
+    );
+    candidates.removeWhere(prioritized.contains);
     candidates.sort((a, b) {
       final score = _signalScore(a).compareTo(_signalScore(b));
       return score != 0 ? score : a.compareTo(b);
     });
 
     final excerpts = <WorkspaceFileExcerpt>[];
+    final requiredContextIssues = <WorkspaceRequiredContextIssue>[];
     var remainingBytes = maxTotalBytes;
     var contentTruncated = false;
-    for (final relative in candidates.take(maxFiles)) {
+    final prioritizedToRead = prioritized.take(maxFiles).toList();
+    for (final relative in prioritizedToRead) {
+      cancellationToken?.throwIfCancelled();
+      if (remainingBytes <= 0) {
+        contentTruncated = true;
+        requiredContextIssues.add(
+          WorkspaceRequiredContextIssue(
+            path: relative,
+            code: 'discovery_budget_exhausted',
+            message:
+                'The referenced file could not be included because the 64 KiB discovery budget was exhausted.',
+          ),
+        );
+        continue;
+      }
+      final excerpt = await _readExcerpt(
+        rootPath: root.path,
+        relativePath: relative,
+        limit: remainingBytes,
+      );
+      if (excerpt == null) {
+        omittedPathCount++;
+        requiredContextIssues.add(
+          WorkspaceRequiredContextIssue(
+            path: relative,
+            code: 'required_context_unreadable',
+            message:
+                'The referenced file could not be read completely as workspace text.',
+          ),
+        );
+        continue;
+      }
+      excerpts.add(excerpt);
+      remainingBytes -= utf8.encode(excerpt.content).length;
+      contentTruncated = contentTruncated || excerpt.truncated;
+      if (excerpt.truncated) {
+        requiredContextIssues.add(
+          WorkspaceRequiredContextIssue(
+            path: relative,
+            code: 'required_context_truncated',
+            message:
+                'The referenced file exceeds the remaining 64 KiB discovery budget and was not supplied completely.',
+          ),
+        );
+      }
+    }
+    for (final relative in prioritized.skip(maxFiles)) {
+      contentTruncated = true;
+      omittedPathCount++;
+      requiredContextIssues.add(
+        WorkspaceRequiredContextIssue(
+          path: relative,
+          code: 'required_context_file_limit',
+          message:
+              'The referenced file could not be included because the discovery file limit was reached.',
+        ),
+      );
+    }
+
+    final ordinaryLimit = maxFiles - prioritizedToRead.length;
+    for (final relative in candidates.take(
+      ordinaryLimit < 0 ? 0 : ordinaryLimit,
+    )) {
       cancellationToken?.throwIfCancelled();
       if (remainingBytes <= 0) {
         contentTruncated = true;
@@ -214,9 +311,10 @@ class WorkspaceDiscoveryProfileService {
       remainingBytes -= utf8.encode(excerpt.content).length;
       contentTruncated = contentTruncated || excerpt.truncated;
     }
-    if (candidates.length > maxFiles) {
+    if (candidates.length > (ordinaryLimit < 0 ? 0 : ordinaryLimit)) {
       contentTruncated = true;
-      omittedPathCount += candidates.length - maxFiles;
+      omittedPathCount +=
+          candidates.length - (ordinaryLimit < 0 ? 0 : ordinaryLimit);
     }
 
     final metadata = _parseMetadata(excerpts);
@@ -232,26 +330,63 @@ class WorkspaceDiscoveryProfileService {
       treeTruncated: treeTruncated,
       contentTruncated: contentTruncated,
       omittedPathCount: omittedPathCount,
+      requiredContextIssues: requiredContextIssues,
     );
   }
 
   bool _isHighSignal(String relative) {
     final basename = path.basename(relative);
-    return _highSignalNames.contains(basename) ||
-        _entrypointNames.contains(basename) ||
-        basename.startsWith('README') ||
-        basename.startsWith('tsconfig.') ||
-        basename.endsWith('.csproj');
+    final lower = basename.toLowerCase();
+    return _highSignalNames.any((item) => item.toLowerCase() == lower) ||
+        _commonPlanningNames.contains(lower) ||
+        _entrypointNames.any((item) => item.toLowerCase() == lower) ||
+        lower.startsWith('readme') ||
+        lower.startsWith('tsconfig.') ||
+        lower.endsWith('.csproj');
   }
 
   int _signalScore(String relative) {
     final basename = path.basename(relative);
+    final lower = basename.toLowerCase();
     final depth = path.split(relative).length;
-    if (basename == 'AGENTS.md') return depth;
-    if (basename.startsWith('README')) return 10 + depth;
-    if (_highSignalNames.contains(basename)) return 20 + depth;
+    if (lower == 'agents.md') return depth;
+    if (_commonPlanningNames.contains(lower)) return 5 + depth;
+    if (lower.startsWith('readme')) return 10 + depth;
+    if (_highSignalNames.any((item) => item.toLowerCase() == lower)) {
+      return 20 + depth;
+    }
     return 40 + depth;
   }
+
+  List<String> _prioritizedPaths({
+    required List<String> treePaths,
+    required Iterable<String> requestedPaths,
+    required String goalContext,
+  }) {
+    final files = treePaths.where((item) => !item.endsWith('/')).toList();
+    final requested = requestedPaths
+        .map(_normaliseRelativePath)
+        .where((item) => item.isNotEmpty)
+        .toSet();
+    final goal = goalContext.toLowerCase();
+    final result = <String>[];
+    for (final relative in files) {
+      final normalized = _normaliseRelativePath(relative);
+      final basename = path.basename(normalized).toLowerCase();
+      if (requested.contains(normalized.toLowerCase()) ||
+          goal.contains(normalized.toLowerCase()) ||
+          goal.contains(basename)) {
+        result.add(relative);
+      }
+    }
+    result.sort((a, b) => a.compareTo(b));
+    return result;
+  }
+
+  String _normaliseRelativePath(String value) => path
+      .normalize(value.trim().replaceAll('\\', '/'))
+      .replaceFirst(RegExp(r'^\./'), '')
+      .toLowerCase();
 
   Future<WorkspaceFileExcerpt?> _readExcerpt({
     required String rootPath,

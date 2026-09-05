@@ -49,7 +49,7 @@ class ProjectModelCalls implements ProjectPlanningGateway {
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
         expectedShape:
-            '{"title":"...","refinedGoal":"...","criteria":[{"id":"criterion_001","statement":"...","required":true,"verificationMode":"mixed"}],"constraints":["..."],"memory":[{"id":"memory_001","kind":"assumption","content":"..."}],"milestones":[{"id":"milestone_001","title":"...","objective":"...","criterionIds":["criterion_001"],"exitConditions":["..."],"order":1}],"openQuestions":[],"backlog":[{"id":"project_task_001","title":"...","objective":"...","criterionIds":["criterion_001"],"milestoneId":"milestone_001","doneCriteria":["..."],"outOfScope":["..."],"expectedEvidence":[{"id":"evidence_001","type":"task_claim","criterionIds":["criterion_001"],"description":"..."}]}]}',
+            '{"title":"...","refinedGoal":"...","criteria":[{"id":"criterion_001","statement":"...","required":true,"verificationMode":"mixed"}],"constraints":["..."],"memory":[{"id":"memory_001","kind":"assumption","content":"...","sourceId":"workspace:Design.md"}],"milestones":[{"id":"milestone_001","title":"...","objective":"...","criterionIds":["criterion_001"],"exitConditions":["..."],"order":1}],"openQuestions":[],"backlog":[{"id":"project_task_001","title":"...","objective":"...","criterionIds":["criterion_001"],"milestoneId":"milestone_001","doneCriteria":["..."],"outOfScope":["..."],"expectedEvidence":[{"id":"evidence_001","type":"task_claim","criterionIds":["criterion_001"],"description":"..."}]}]}',
         finalizerTool: _finaliseProjectCreationToolDefinition(
           requiredProperties: const [
             'title',
@@ -61,11 +61,13 @@ class ProjectModelCalls implements ProjectPlanningGateway {
         user:
             '''
 Initialize a persistent project state. Do not execute the project.
+The supplied workspace profile is authoritative. Treat repository components absent from its tree as absent, not as stale or incomplete discovery. Do not claim an absent path as an existing baseline.
 Create a rolling roadmap with one to three milestones and approximately three to seven detailed near-term tasks. Keep distant work coarse in milestone objectives rather than expanding an unbounded backlog.
 Every task needs stable IDs, dependencies, criterion and milestone links, priority, risk, effort, boundaries, expected evidence, and a concise rationale in selectionRationale.
 For every small task that will modify workspace files, writePaths must contain the explicit files or directories it may change. Leave writePaths empty only for genuinely read-only work.
 Do not add openQuestions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; record a typed assumption in memory instead.
 Add openQuestions only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
+Include sourceId such as workspace:Design.md on every memory claim derived from a supplied workspace file. Model-authored memory remains advisory regardless of its requested confidence.
 
 Return only JSON:
 {
@@ -73,7 +75,7 @@ Return only JSON:
   "refinedGoal": "...",
   "criteria": [{"id":"criterion_001","statement":"...","required":true,"verificationMode":"mixed"}],
   "constraints": ["..."],
-  "memory": [{"id":"memory_001","kind":"fact|assumption|requirement|decision|risk","content":"...","confidence":"confirmed|inferred|uncertain"}],
+  "memory": [{"id":"memory_001","kind":"fact|assumption|requirement|decision|risk","content":"...","confidence":"inferred|uncertain","sourceId":"workspace:relative/path"}],
   "milestones": [{"id":"milestone_001","title":"...","objective":"...","criterionIds":["criterion_001"],"exitConditions":["..."],"order":1}],
   "openQuestions": [{"question": "..."}],
   "backlog": [{"id":"project_task_001","title":"...","objective":"one bounded task","criterionIds":["criterion_001"],"milestoneId":"milestone_001","dependsOnTaskIds":[],"priority":"normal","risk":"low","riskReduction":"low","effort":"small","doneCriteria":["..."],"outOfScope":["..."],"expectedEvidence":[{"id":"expectation_001","type":"task_claim","criterionIds":["criterion_001"],"description":"...","required":true}],"readPaths":[],"writePaths":[],"selectionRationale":"..."}]
@@ -86,57 +88,73 @@ Original project goal:
 $originalGoal
 ''',
       );
-      final refinedGoal = jsonString(
-        json['refinedGoal'] ?? json['refined_goal'],
-        fallback: originalGoal,
-      );
-      final criteria = jsonStringList(
-        json['successCriteria'] ?? json['success_criteria'],
-      );
-      final structuredCriteria = _criteriaFromJson(json['criteria']);
-      final fallbackCriteria = structuredCriteria.isEmpty
-          ? [
-              for (var index = 0; index < criteria.length; index++)
-                ProjectCriterion(
-                  id: 'criterion_${(index + 1).toString().padLeft(3, '0')}',
-                  statement: criteria[index],
-                  createdAt: DateTime.now(),
-                  updatedAt: DateTime.now(),
-                ),
-            ]
-          : structuredCriteria;
-      return ProjectInitialisation(
-        title: jsonString(
-          json['title'],
-          fallback: _titleFromGoal(originalGoal),
-        ),
-        refinedGoal: refinedGoal,
-        successCriteria: structuredCriteria.isNotEmpty
-            ? structuredCriteria.map((item) => item.statement).toList()
-            : criteria.isEmpty
-            ? ['Complete the stated project goal.']
-            : criteria,
-        constraints: jsonStringList(json['constraints']).isEmpty
-            ? ['Stay within the attached workspace.']
-            : jsonStringList(json['constraints']),
-        knownFacts: jsonStringList(json['knownFacts'] ?? json['known_facts']),
-        openQuestions: _questionsFromJson(
-          json['openQuestions'] ?? json['open_questions'],
-        ),
-        backlog: _bindTasksToCriteria(
-          _tasksFromJson(json['backlog']),
-          fallbackCriteria,
-        ),
-        criteria: structuredCriteria,
-        milestones: _milestonesFromJson(json['milestones']),
-        memory: _memoryFromJson(json['memory']),
-      );
+      return _initialisationFromJson(json, originalGoal: originalGoal);
     } on OperationCancelledException {
       rethrow;
     } on ChatTransportException {
       rethrow;
     } catch (_) {
       return _fallbackInitialisation(originalGoal);
+    }
+  }
+
+  @override
+  Future<ProjectInitialisation?> repairInitialisation({
+    required ChatClient client,
+    required String baseSystemPrompt,
+    required WorkspaceAttachment workspace,
+    required String originalGoal,
+    required Map<String, dynamic> workspaceMetadata,
+    required ProjectInitialisation initialisation,
+    required List<Map<String, String>> validationIssues,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  }) async {
+    try {
+      final json = await _completeFinalizedJson(
+        client: client,
+        workspace: workspace,
+        label: 'Project Initializer Repair',
+        system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
+        onModelOutput: onModelOutput,
+        cancellationToken: cancellationToken,
+        expectedShape:
+            '{"title":"...","refinedGoal":"...","criteria":[],"constraints":[],"memory":[],"milestones":[],"openQuestions":[],"backlog":[]}',
+        finalizerTool: _finaliseProjectCreationToolDefinition(
+          requiredProperties: const [
+            'title',
+            'refinedGoal',
+            'criteria',
+            'constraints',
+          ],
+        ),
+        user:
+            '''
+Repair this initial project plan exactly once. Resolve every structured validation issue without inventing workspace state.
+The supplied workspace profile is authoritative: a component absent from its tree is absent, not undiscovered or stale. A readPath may name an absent path only when a declared dependency produces it through writePaths or expectedArtifacts.
+Preserve the user's original outcome separately from the refined planning interpretation. Do not execute work.
+Model-authored memory is advisory. Include sourceId such as workspace:Design.md for claims derived from supplied files.
+
+Validation issues:
+${_encoder.convert(validationIssues)}
+
+Invalid initial plan:
+${_encoder.convert(_initialisationToMap(initialisation))}
+
+Authoritative workspace metadata:
+${_encoder.convert(workspaceMetadata)}
+
+Original project goal:
+$originalGoal
+''',
+      );
+      return _initialisationFromJson(json, originalGoal: originalGoal);
+    } on OperationCancelledException {
+      rethrow;
+    } on ChatTransportException {
+      return null;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -164,11 +182,13 @@ $originalGoal
             '''
 Propose one coherent revision to the rolling project plan for all supplied triggers.
 Do not execute work. Preserve completed task history, accepted evidence, gate results, recovery incidents, and protected user memory.
+The original goal is the authoritative user request; the refined goal is a separate planning interpretation and must not overwrite it. Treat the supplied discovery snapshot as authoritative for current workspace state.
 Criterion status and evidence are evaluator-owned progress state. Do not use criterionUpserts merely to mark an existing criterion satisfied, partial, or unsatisfied, or to attach evidence; only upsert a criterion when its statement, required flag, or verification mode must change.
 Return only small, bounded, independently verifiable near-term tasks. Use stable existing IDs for updates and new unique IDs for additions.
 For every small task that will modify workspace files, writePaths must contain the explicit files or directories it may change. Leave writePaths empty only for genuinely read-only work.
 Do not add openQuestions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; choose a reasonable next task/order and record the assumption in memoryAdditions.
 Add openQuestions only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
+Include sourceId such as workspace:Design.md on memory derived from supplied files. If confirmed workspace evidence contradicts active inferred planner memory, supersede each conflicting entry through memorySupersessions.
 
 Return only JSON:
 {
@@ -274,7 +294,7 @@ ${_encoder.convert(ModelJson.encode(project))}
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
         expectedShape:
-            '{"tasks":[{"title":"...","objective":"...","relevantSuccessCriteria":["..."],"doneCriteria":["..."],"outOfScope":["..."],"context":["..."],"expectedArtifacts":[]}]}',
+            '{"tasks":[{"title":"...","objective":"...","criterionIds":["criterion_001"],"doneCriteria":["..."],"outOfScope":["..."],"context":["..."],"expectedArtifacts":[]}]}',
         user:
             '''
 Split this oversized or invalid project task into 2 to 5 smaller bounded tasks.
@@ -285,7 +305,7 @@ Return only JSON:
     {
       "title": "...",
       "objective": "one small bounded task",
-      "relevantSuccessCriteria": ["one or two criteria"],
+      "criterionIds": ["criterion_001"],
       "doneCriteria": ["..."],
       "outOfScope": ["..."],
       "context": ["..."],
@@ -298,6 +318,9 @@ Return only JSON:
 
 Validation violations:
 ${_encoder.convert(violations)}
+
+Allowed criterion IDs and exact statements:
+${_encoder.convert({for (final criterion in project.criteria) criterion.id: criterion.statement})}
 
 Invalid task:
 ${_encoder.convert(ModelJson.encode(oversizedTask))}
@@ -516,6 +539,63 @@ $expectedShape
     sink?.call(event);
   }
 
+  ProjectInitialisation _initialisationFromJson(
+    Map<String, dynamic> json, {
+    required String originalGoal,
+  }) {
+    final refinedGoal = jsonString(
+      json['refinedGoal'] ?? json['refined_goal'],
+      fallback: originalGoal,
+    );
+    final legacyCriteria = jsonStringList(
+      json['successCriteria'] ?? json['success_criteria'],
+    );
+    final structuredCriteria = _criteriaFromJson(json['criteria']);
+    final effectiveCriteria = structuredCriteria.isEmpty
+        ? [
+            for (var index = 0; index < legacyCriteria.length; index++)
+              ProjectCriterion(
+                id: 'criterion_${(index + 1).toString().padLeft(3, '0')}',
+                statement: legacyCriteria[index],
+                createdAt: DateTime.now(),
+                updatedAt: DateTime.now(),
+              ),
+          ]
+        : structuredCriteria;
+    return ProjectInitialisation(
+      title: jsonString(json['title'], fallback: _titleFromGoal(originalGoal)),
+      refinedGoal: refinedGoal,
+      successCriteria: structuredCriteria.isNotEmpty
+          ? structuredCriteria.map((item) => item.statement).toList()
+          : legacyCriteria,
+      constraints: jsonStringList(json['constraints']),
+      knownFacts: jsonStringList(json['knownFacts'] ?? json['known_facts']),
+      openQuestions: _questionsFromJson(
+        json['openQuestions'] ?? json['open_questions'],
+      ),
+      backlog: _bindTasksToCriteria(
+        _tasksFromJson(json['backlog']),
+        effectiveCriteria,
+      ),
+      criteria: structuredCriteria,
+      milestones: _milestonesFromJson(json['milestones']),
+      memory: _memoryFromJson(json['memory']),
+    );
+  }
+
+  Map<String, dynamic> _initialisationToMap(ProjectInitialisation value) => {
+    'title': value.title,
+    'refinedGoal': value.refinedGoal,
+    'successCriteria': value.successCriteria,
+    'constraints': value.constraints,
+    'knownFacts': value.knownFacts,
+    'openQuestions': value.openQuestions.map(ModelJson.encode).toList(),
+    'backlog': value.backlog.map(ModelJson.encode).toList(),
+    'criteria': value.criteria.map(ModelJson.encode).toList(),
+    'milestones': value.milestones.map(ModelJson.encode).toList(),
+    'memory': value.memory.map(ModelJson.encode).toList(),
+  };
+
   ProjectInitialisation _fallbackInitialisation(String originalGoal) {
     return ProjectInitialisation(
       title: _titleFromGoal(originalGoal),
@@ -658,7 +738,8 @@ $expectedShape
       for (final task in tasks)
         (() {
           final resolved = task.criterionIds
-              .map((value) => resolveCriterion(value) ?? value)
+              .map(resolveCriterion)
+              .whereType<String>()
               .toSet()
               .toList();
           final boundIds = resolved;
@@ -672,7 +753,8 @@ $expectedShape
                   criterionIds: expectation.criterionIds.isEmpty
                       ? boundIds
                       : expectation.criterionIds
-                            .map((value) => resolveCriterion(value) ?? value)
+                            .map(resolveCriterion)
+                            .whereType<String>()
                             .where(boundIds.contains)
                             .toSet()
                             .toList(),
@@ -745,8 +827,9 @@ $expectedShape
         fallback: 'memory_${(index + 1).toString().padLeft(3, '0')}',
       );
       map['content'] = jsonString(map['content']);
-      map['sourceType'] ??= ProjectMemorySourceType.planner.name;
-      map['confidence'] ??= ProjectMemoryConfidence.inferred.name;
+      map['sourceType'] = ProjectMemorySourceType.planner.name;
+      map['confidence'] = ProjectMemoryConfidence.inferred.name;
+      map['protected'] = false;
       map['createdAt'] ??= now.toIso8601String();
       map['updatedAt'] ??= now.toIso8601String();
       entries.add(ModelJson.decode<ProjectMemoryEntry>(map));

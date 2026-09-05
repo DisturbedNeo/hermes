@@ -290,11 +290,39 @@ void main() {
           _finaliseProjectResponse({
             'title': 'Build screen',
             'refinedGoal': 'Build the reporting screen',
-            'successCriteria': ['Screen is built.'],
+            'criteria': [
+              {'id': 'criterion_screen', 'statement': 'Screen is built.'},
+            ],
             'constraints': ['Stay in workspace.'],
             'knownFacts': [],
             'openQuestions': [],
-            'backlog': [_projectTaskJson()],
+            'milestones': [
+              {
+                'id': 'milestone_screen',
+                'title': 'Build screen',
+                'objective': 'Build and verify the reporting screen.',
+                'criterionIds': ['criterion_screen'],
+                'taskIds': ['task_screen'],
+                'exitConditions': ['Screen is built.'],
+                'order': 1,
+              },
+            ],
+            'backlog': [
+              {
+                ..._projectTaskJson(),
+                'id': 'task_screen',
+                'criterionIds': ['criterion_screen'],
+                'milestoneId': 'milestone_screen',
+                'expectedEvidence': [
+                  {
+                    'id': 'expect_screen',
+                    'type': 'task_claim',
+                    'criterionIds': ['criterion_screen'],
+                    'description': 'The reporting screen is checked.',
+                  },
+                ],
+              },
+            ],
           }),
           _finaliseTaskResponse(_projectPlanJson(title: 'Project task')),
           ChatCompletionResponse(

@@ -12,6 +12,7 @@ class ProjectProgressMonitor {
     required ProjectDocument project,
     required ProjectTask task,
     required bool taskAccepted,
+    bool excludeFromStagnation = false,
     required Map<String, ProjectCriterionStatus> criterionStatusesBefore,
     Set<String> acceptedEvidenceIdsBefore = const {},
     required DateTime evaluatedAt,
@@ -37,13 +38,17 @@ class ProjectProgressMonitor {
     }
 
     final diagnostics = project.diagnostics;
-    final noProgress = taskAccepted && !progressed;
-    final consecutive = taskAccepted
+    final noProgress = taskAccepted && !progressed && !excludeFromStagnation;
+    final consecutive = excludeFromStagnation
+        ? 0
+        : taskAccepted
         ? noProgress
               ? diagnostics.consecutiveNoProgressIterations + 1
               : 0
         : diagnostics.consecutiveNoProgressIterations;
-    final recentTaskIds = taskAccepted
+    final recentTaskIds = excludeFromStagnation
+        ? const <String>[]
+        : taskAccepted
         ? noProgress
               ? [
                   ...diagnostics.recentNoProgressTaskIds,

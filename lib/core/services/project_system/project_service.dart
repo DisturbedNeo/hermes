@@ -24,6 +24,8 @@ import 'package:hermes/core/services/question_policy_service.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
+import 'package:hermes/core/services/workspace_discovery_profile.dart';
+import 'package:path/path.dart' as path;
 
 typedef ProjectTaskSnapshotSink = void Function(TaskDocument? task);
 typedef ProjectCompactionStatusSink = void Function(String status);
@@ -174,13 +176,19 @@ class ProjectService {
     final now = DateTime.now();
     final discovery = await _discoveryService.collect(
       workspace: workspace,
+      goalContext: userPrompt,
       cancellationToken: cancellationToken,
     );
     final metadata = {
       ...discovery.toMap(),
       'commandExecutionApproved': workspace.commandExecutionApproved,
     };
-    final init = client == null
+    var modelCallCount = 0;
+    var planningIssues = <Map<String, String>>[
+      for (final issue in discovery.workspaceProfile.requiredContextIssues)
+        {'code': issue.code, 'path': issue.path, 'message': issue.message},
+    ];
+    var init = client == null || planningIssues.isNotEmpty
         ? _fallbackInitialisation(userPrompt)
         : await _modelCalls.initializeProject(
             client: client,
@@ -191,7 +199,36 @@ class ProjectService {
             onModelOutput: onModelOutput,
             cancellationToken: cancellationToken,
           );
+    if (client != null && planningIssues.isEmpty) {
+      modelCallCount++;
+      planningIssues = _validateInitialisation(
+        initialisation: init,
+        workspaceProfile: discovery.workspaceProfile,
+      );
+      if (planningIssues.isNotEmpty) {
+        final repaired = await _modelCalls.repairInitialisation(
+          client: client,
+          baseSystemPrompt: baseSystemPrompt,
+          workspace: workspace,
+          originalGoal: userPrompt,
+          workspaceMetadata: metadata,
+          initialisation: init,
+          validationIssues: planningIssues,
+          onModelOutput: onModelOutput,
+          cancellationToken: cancellationToken,
+        );
+        modelCallCount++;
+        if (repaired != null) {
+          init = repaired;
+          planningIssues = _validateInitialisation(
+            initialisation: init,
+            workspaceProfile: discovery.workspaceProfile,
+          );
+        }
+      }
+    }
     cancellationToken?.throwIfCancelled();
+    final planningBlocked = planningIssues.isNotEmpty;
     final filteredQuestions = _filterProjectQuestions(
       init.openQuestions,
       autonomy: questionAutonomy,
@@ -203,10 +240,9 @@ class ProjectService {
           for (var index = 0; index < init.successCriteria.length; index++)
             'criterion_${(index + 1).toString().padLeft(3, '0')}',
         ];
-    final initialBacklog = _normaliseInitialBacklog(
-      init.backlog,
-      initialCriterionIds,
-    );
+    final initialBacklog = planningBlocked
+        ? const <ProjectTask>[]
+        : _normaliseInitialBacklog(init.backlog, initialCriterionIds);
     final initialMilestones = _initialMilestones(
       init: init,
       criteria: initialCriteria,
@@ -246,9 +282,12 @@ class ProjectService {
         ProjectPlanRevision(
           revision: 1,
           trigger: ProjectPlanRevisionTrigger.initialization,
-          summary: 'Initial project roadmap.',
-          rationale:
-              'Created criteria, milestones, and the bounded near-term plan from discovery.',
+          summary: planningBlocked
+              ? 'Initial project planning blocked.'
+              : 'Initial project roadmap.',
+          rationale: planningBlocked
+              ? _initialPlanningBlockerMessage(planningIssues)
+              : 'Created criteria, milestones, and the bounded near-term plan from discovery.',
           addedTaskIds: initialBacklog.map((task) => task.id).toList(),
           criterionChanges: [
             for (final criterion
@@ -258,16 +297,24 @@ class ProjectService {
           milestoneChanges: [
             for (final milestone in initialMilestones) 'add:${milestone.id}',
           ],
+          validationWarnings: [
+            for (final issue in planningIssues)
+              '${issue['code']}: ${issue['message']}',
+          ],
           createdAt: now,
-          approvedAt: now,
-          approvedBy: ProjectPlanRevisionApprover.automatic,
+          approvedAt: planningBlocked ? null : now,
+          approvedBy: planningBlocked
+              ? null
+              : ProjectPlanRevisionApprover.automatic,
         ),
       ],
       openQuestions: filteredQuestions.blocking,
-      status: filteredQuestions.blocking.isEmpty
+      status: planningBlocked
+          ? ProjectStatus.blocked
+          : filteredQuestions.blocking.isEmpty
           ? ProjectStatus.active
           : ProjectStatus.waitingForUser,
-      phase: ProjectPhase.discovery,
+      phase: planningBlocked ? ProjectPhase.planning : ProjectPhase.discovery,
       iterationCount: 0,
       maxIterations: _normaliseOptionalLimit(
         maxIterations,
@@ -277,7 +324,13 @@ class ProjectService {
       activeTaskId: null,
       chatSessionId: chatSessionId,
       completionSummary: '',
-      blocker: filteredQuestions.blocking.isEmpty
+      blocker: planningBlocked
+          ? ProjectBlocker(
+              type: ProjectBlockerType.validation,
+              message: _initialPlanningBlockerMessage(planningIssues),
+              createdAt: now,
+            )
+          : filteredQuestions.blocking.isEmpty
           ? null
           : ProjectBlocker(
               type: ProjectBlockerType.question,
@@ -286,7 +339,7 @@ class ProjectService {
             ),
       decisions: const [],
       diagnostics: ProjectDiagnostics(
-        projectModelCalls: client == null ? 0 : 1,
+        projectModelCalls: modelCallCount,
         userQuestions: filteredQuestions.blocking.length,
       ),
       createdAt: now,
@@ -857,6 +910,7 @@ class ProjectService {
         project: project,
         task: evaluatedProjectTask,
         taskAccepted: evaluation.taskAccepted,
+        excludeFromStagnation: evaluation.projectReplanRequested,
         criterionStatusesBefore: criterionStatusesBefore,
         acceptedEvidenceIdsBefore: acceptedEvidenceIdsBefore,
         evaluatedAt: now,
@@ -1186,8 +1240,21 @@ class ProjectService {
     final snapshot = await _discoveryService.collect(
       workspace: workspace,
       project: project,
+      goalContext:
+          'Original goal:\n${project.originalGoal}\n\nRefined goal:\n${project.refinedGoal}',
       cancellationToken: cancellationToken,
     );
+    if (snapshot.workspaceProfile.requiredContextIssues.isNotEmpty) {
+      return _blockProject(
+        project,
+        ProjectBlockerType.validation,
+        _initialPlanningBlockerMessage([
+          for (final issue in snapshot.workspaceProfile.requiredContextIssues)
+            {'code': issue.code, 'path': issue.path, 'message': issue.message},
+        ]),
+        DateTime.now(),
+      );
+    }
     final planningProject = _projectForModel(project);
     final proposal = await _modelCalls.revisePlan(
       client: client,
@@ -1370,7 +1437,8 @@ class ProjectService {
       );
     }
 
-    final split = await _modelCalls.splitTask(
+    var splitModelCalls = 1;
+    var split = await _modelCalls.splitTask(
       client: client,
       baseSystemPrompt: baseSystemPrompt,
       project: _projectForModel(project, task: task),
@@ -1379,6 +1447,27 @@ class ProjectService {
       onModelOutput: onModelOutput,
       cancellationToken: cancellationToken,
     );
+    final splitLinkViolations = <String>{
+      for (final item in split)
+        for (final violation in _validateProjectTask(item, project).violations)
+          if (violation.toLowerCase().contains('criterion')) violation,
+    };
+    if (splitLinkViolations.isNotEmpty) {
+      split = await _modelCalls.splitTask(
+        client: client,
+        baseSystemPrompt: baseSystemPrompt,
+        project: _projectForModel(project, task: task),
+        oversizedTask: task,
+        violations: [
+          ...violations,
+          'Repair the previous split using only exact allowed criterion IDs.',
+          ...splitLinkViolations,
+        ],
+        onModelOutput: onModelOutput,
+        cancellationToken: cancellationToken,
+      );
+      splitModelCalls++;
+    }
     final known = _knownFingerprints(project)..add(task.fingerprint);
     final splitTasks = _normaliseBacklog(split)
         .where((item) => !known.contains(item.fingerprint))
@@ -1409,7 +1498,8 @@ class ProjectService {
             ),
           ],
           diagnostics: project.diagnostics.copyWith(
-            projectModelCalls: project.diagnostics.projectModelCalls + 1,
+            projectModelCalls:
+                project.diagnostics.projectModelCalls + splitModelCalls,
           ),
           updatedAt: now,
         ),
@@ -1437,7 +1527,8 @@ class ProjectService {
         ),
       ],
       diagnostics: project.diagnostics.copyWith(
-        projectModelCalls: project.diagnostics.projectModelCalls + 1,
+        projectModelCalls:
+            project.diagnostics.projectModelCalls + splitModelCalls,
       ),
       updatedAt: now,
     );
@@ -1460,6 +1551,21 @@ class ProjectService {
   }) async {
     cancellationToken?.throwIfCancelled();
     final now = DateTime.now();
+    final effectiveCriterionIds = projectTask.criterionIds
+        .where((id) => project.criteria.any((criterion) => criterion.id == id))
+        .toSet();
+    if (effectiveCriterionIds.isEmpty) {
+      final blocked = _blockProject(
+        project,
+        ProjectBlockerType.validation,
+        'Task ${projectTask.id} has no valid project criteria; no task document was created.',
+        now,
+        taskId: projectTask.id,
+      );
+      return _ProjectTaskExecution(
+        project: await _persistProject(workspace.rootPath, blocked),
+      );
+    }
     final runningProjectTask = projectTask.copyWith(
       status: ProjectTaskStatus.running,
       updatedAt: now,
@@ -1820,7 +1926,6 @@ class ProjectService {
       }
       return updated;
     }
-
     final completedTask = task.copyWith(
       status: ProjectTaskStatus.completed,
       updatedAt: now,
@@ -2135,6 +2240,33 @@ class ProjectService {
     }
     if (task.outOfScope.isEmpty) {
       violations.add('Task has no out-of-scope boundaries.');
+    }
+    final projectCriterionIds = project.criteria.map((item) => item.id).toSet();
+    if (task.criterionIds.isEmpty) {
+      violations.add('Task has no project criterion IDs.');
+    }
+    for (final criterionId in task.criterionIds) {
+      if (!projectCriterionIds.contains(criterionId)) {
+        violations.add('Task references unknown criterion $criterionId.');
+      }
+    }
+    for (final expectation in task.expectedEvidence) {
+      if (expectation.criterionIds.isEmpty) {
+        violations.add(
+          'Evidence expectation ${expectation.id} has no criterion IDs.',
+        );
+      }
+      for (final criterionId in expectation.criterionIds) {
+        if (!projectCriterionIds.contains(criterionId)) {
+          violations.add(
+            'Evidence expectation ${expectation.id} references unknown criterion $criterionId.',
+          );
+        } else if (!task.criterionIds.contains(criterionId)) {
+          violations.add(
+            'Evidence expectation ${expectation.id} references criterion $criterionId outside the task.',
+          );
+        }
+      }
     }
     if (task.recoveryIncidentId == null &&
         _knownFingerprints(
@@ -3117,6 +3249,286 @@ class ProjectService {
     ];
   }
 
+  List<Map<String, String>> _validateInitialisation({
+    required ProjectInitialisation initialisation,
+    required WorkspaceDiscoveryProfile workspaceProfile,
+  }) {
+    final issues = <Map<String, String>>[];
+    void add(String code, String message, {String? path}) {
+      final issue = <String, String>{'code': code, 'message': message};
+      if (path != null) issue['path'] = path;
+      issues.add(issue);
+    }
+
+    final criteria = initialisation.criteria.isNotEmpty
+        ? initialisation.criteria
+        : [
+            for (
+              var index = 0;
+              index < initialisation.successCriteria.length;
+              index++
+            )
+              ProjectCriterion(
+                id: 'criterion_${(index + 1).toString().padLeft(3, '0')}',
+                statement: initialisation.successCriteria[index],
+                createdAt: DateTime.now(),
+                updatedAt: DateTime.now(),
+              ),
+          ];
+    final criterionIds = <String>{};
+    for (final criterion in criteria) {
+      if (criterion.id.trim().isEmpty || criterion.statement.trim().isEmpty) {
+        add(
+          'invalid_criterion',
+          'Every success criterion needs a non-empty stable ID and statement.',
+        );
+      } else if (!criterionIds.add(criterion.id)) {
+        add(
+          'duplicate_criterion_id',
+          'Criterion ID ${criterion.id} is declared more than once.',
+        );
+      }
+      if (criterion.status != ProjectCriterionStatus.unsatisfied ||
+          criterion.evidenceIds.isNotEmpty ||
+          criterion.verifiedAt != null) {
+        add(
+          'unsupported_initial_criterion_progress',
+          'Criterion ${criterion.id} claims evaluator-owned progress during initialization.',
+        );
+      }
+    }
+    if (criterionIds.isEmpty) {
+      add(
+        'missing_criteria',
+        'The initial plan must define at least one success criterion.',
+      );
+    }
+
+    final taskById = <String, ProjectTask>{};
+    for (final task in initialisation.backlog) {
+      if (task.id.trim().isEmpty || taskById.containsKey(task.id)) {
+        add(
+          'invalid_task_id',
+          'Every initial task needs a unique, non-empty stable ID.',
+        );
+      } else {
+        taskById[task.id] = task;
+      }
+    }
+    if (taskById.isEmpty && initialisation.openQuestions.isEmpty) {
+      add(
+        'missing_executable_backlog',
+        'The initial plan must contain bounded executable work or a blocking question.',
+      );
+    }
+
+    final milestoneIds = <String>{};
+    for (final milestone in initialisation.milestones) {
+      if (milestone.id.trim().isEmpty || !milestoneIds.add(milestone.id)) {
+        add(
+          'invalid_milestone_id',
+          'Every milestone needs a unique, non-empty stable ID.',
+        );
+      }
+      for (final criterionId in milestone.criterionIds) {
+        if (!criterionIds.contains(criterionId)) {
+          add(
+            'unknown_milestone_criterion',
+            'Milestone ${milestone.id} references unknown criterion $criterionId.',
+          );
+        }
+      }
+      for (final taskId in milestone.taskIds) {
+        if (!taskById.containsKey(taskId)) {
+          add(
+            'unknown_milestone_task',
+            'Milestone ${milestone.id} references unknown task $taskId.',
+          );
+        }
+      }
+    }
+    if (taskById.isNotEmpty && milestoneIds.isEmpty) {
+      add(
+        'missing_milestones',
+        'The initial plan must place executable work in at least one milestone.',
+      );
+    }
+
+    final workspacePaths = {
+      for (final item in workspaceProfile.treePaths)
+        _normaliseWorkspacePath(
+          item.endsWith('/') ? item.substring(0, item.length - 1) : item,
+        ),
+    };
+    for (final task in taskById.values) {
+      if (task.objective.trim().isEmpty ||
+          task.doneCriteria.isEmpty ||
+          task.outOfScope.isEmpty) {
+        add(
+          'invalid_task_structure',
+          'Task ${task.id} needs an objective, done criteria, and out-of-scope boundaries.',
+        );
+      }
+      if (task.status != ProjectTaskStatus.queued &&
+          task.status != ProjectTaskStatus.deferred) {
+        add(
+          'invalid_initial_task_status',
+          'Task ${task.id} cannot claim execution progress during initialization.',
+        );
+      }
+      if (task.criterionIds.isEmpty) {
+        add(
+          'task_without_criteria',
+          'Task ${task.id} must reference at least one project criterion.',
+        );
+      }
+      for (final criterionId in task.criterionIds) {
+        if (!criterionIds.contains(criterionId)) {
+          add(
+            'unknown_task_criterion',
+            'Task ${task.id} references unknown criterion $criterionId.',
+          );
+        }
+      }
+      if (task.milestoneId == null ||
+          !milestoneIds.contains(task.milestoneId)) {
+        add(
+          'unknown_task_milestone',
+          'Task ${task.id} must reference a declared milestone.',
+        );
+      }
+      for (final dependencyId in task.dependsOnTaskIds) {
+        if (!taskById.containsKey(dependencyId) || dependencyId == task.id) {
+          add(
+            'invalid_task_dependency',
+            'Task ${task.id} has invalid dependency $dependencyId.',
+          );
+        }
+      }
+      if (task.expectedEvidence.isEmpty) {
+        add(
+          'missing_evidence_expectation',
+          'Task ${task.id} must declare expected evidence.',
+        );
+      }
+      for (final expectation in task.expectedEvidence) {
+        if (expectation.id.trim().isEmpty ||
+            expectation.description.trim().isEmpty) {
+          add(
+            'invalid_evidence_expectation',
+            'Every evidence expectation on task ${task.id} needs an ID and description.',
+          );
+        }
+        if (expectation.criterionIds.isEmpty) {
+          add(
+            'evidence_without_criteria',
+            'Evidence ${expectation.id} on task ${task.id} has no criterion link.',
+          );
+        }
+        for (final criterionId in expectation.criterionIds) {
+          if (!criterionIds.contains(criterionId) ||
+              !task.criterionIds.contains(criterionId)) {
+            add(
+              'invalid_evidence_criterion',
+              'Evidence ${expectation.id} references criterion $criterionId outside task ${task.id}.',
+            );
+          }
+        }
+      }
+      for (final readPath in task.readPaths) {
+        final normalized = _normaliseWorkspacePath(readPath);
+        if (!_isSafeRelativeWorkspacePath(normalized)) {
+          add(
+            'read_path_outside_workspace',
+            'Task ${task.id} readPath is outside the workspace.',
+            path: readPath,
+          );
+          continue;
+        }
+        final exists = workspacePaths.any(
+          (candidate) => _pathCovers(candidate, normalized),
+        );
+        final producedByDependency = task.dependsOnTaskIds.any((dependencyId) {
+          final dependency = taskById[dependencyId];
+          if (dependency == null) return false;
+          final outputs = <String>[
+            ...dependency.writePaths,
+            ...dependency.expectedArtifacts.map((item) => item.path),
+          ].map(_normaliseWorkspacePath);
+          return outputs.any((output) => _pathCovers(output, normalized));
+        });
+        if (!exists && !producedByDependency) {
+          add(
+            'ungrounded_read_path',
+            'Task ${task.id} treats a missing path as existing, and no declared dependency produces it.',
+            path: readPath,
+          );
+        }
+      }
+      for (final writePath in task.writePaths) {
+        final normalized = _normaliseWorkspacePath(writePath);
+        if (!_isSafeRelativeWorkspacePath(normalized)) {
+          add(
+            'write_path_outside_workspace',
+            'Task ${task.id} writePath is outside the workspace.',
+            path: writePath,
+          );
+        }
+      }
+      for (final artifact in task.expectedArtifacts) {
+        final normalized = _normaliseWorkspacePath(artifact.path);
+        if (artifact.path.trim().isEmpty ||
+            !_isSafeRelativeWorkspacePath(normalized)) {
+          add(
+            'artifact_path_outside_workspace',
+            'Task ${task.id} has an invalid expected artifact path.',
+            path: artifact.path,
+          );
+        }
+      }
+    }
+
+    final memoryIds = <String>{};
+    for (final entry in initialisation.memory) {
+      if (entry.id.trim().isEmpty || !memoryIds.add(entry.id)) {
+        add(
+          'invalid_memory_id',
+          'Planner memory entries need unique, non-empty IDs.',
+        );
+      }
+      if (entry.content.trim().isEmpty) {
+        add('empty_memory', 'Planner memory entries cannot be empty.');
+      }
+    }
+    return issues;
+  }
+
+  String _initialPlanningBlockerMessage(List<Map<String, String>> issues) {
+    final details = issues
+        .map((issue) {
+          final path = issue['path'];
+          return '${issue['code']}${path == null ? '' : ' ($path)'}: ${issue['message']}';
+        })
+        .join(' ');
+    return 'Initial planning was blocked because required context or plan structure was invalid. $details';
+  }
+
+  String _normaliseWorkspacePath(String value) => path
+      .normalize(value.trim().replaceAll('\\', '/'))
+      .replaceFirst(RegExp(r'^\./'), '');
+
+  bool _isSafeRelativeWorkspacePath(String value) =>
+      value.isNotEmpty &&
+      !path.isAbsolute(value) &&
+      value != '..' &&
+      !value.startsWith('../');
+
+  bool _pathCovers(String declaredPath, String candidatePath) {
+    if (declaredPath.isEmpty || candidatePath.isEmpty) return false;
+    return candidatePath == declaredPath ||
+        candidatePath.startsWith('$declaredPath/');
+  }
+
   List<ProjectMilestone> _initialMilestones({
     required ProjectInitialisation init,
     required List<ProjectCriterion>? criteria,
@@ -3198,11 +3610,8 @@ class ProjectService {
           content: content,
           sourceType: ProjectMemorySourceType.planner,
           sourceId: proposed.sourceId,
-          confidence: proposed.confidence,
-          protected:
-              proposed.kind == ProjectMemoryKind.requirement ||
-              proposed.kind == ProjectMemoryKind.decision ||
-              proposed.kind == ProjectMemoryKind.risk,
+          confidence: ProjectMemoryConfidence.inferred,
+          protected: false,
           createdAt: now,
           updatedAt: now,
         ),
@@ -3326,6 +3735,12 @@ class ProjectService {
         ProjectPlanRevisionTrigger.taskFailed,
       );
     }
+    if (evaluation.projectReplanRequested) {
+      triggers = _appendTrigger(
+        triggers,
+        ProjectPlanRevisionTrigger.taskReplanRequested,
+      );
+    }
     final hasNewRejectedEvidence = project.evidence.any((item) {
       return (item.status == ProjectEvidenceStatus.rejected ||
               item.status == ProjectEvidenceStatus.stale) &&
@@ -3376,6 +3791,7 @@ class ProjectService {
     ProjectPlanRevisionTrigger.noReadyTask,
     ProjectPlanRevisionTrigger.taskFailed,
     ProjectPlanRevisionTrigger.evidenceRejected,
+    ProjectPlanRevisionTrigger.taskReplanRequested,
     ProjectPlanRevisionTrigger.scopeChanged,
     ProjectPlanRevisionTrigger.milestoneRoadmapChanged,
   };

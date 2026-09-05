@@ -239,7 +239,75 @@ void main() {
         result.project.pendingPlanApproval?.highRiskChanges,
         contains('Success criteria or their verification policy changes.'),
       );
+      expect(
+        result.project.pendingPlanApproval?.highRiskReasonCodes,
+        contains('criterion_contract_changed'),
+      );
     });
+
+    test('replacing unstarted queued work does not require approval', () async {
+      final existing = _task(id: 'task_existing');
+      final withBacklog = project.copyWith(backlog: [existing]);
+      final proposal = ProjectPlanProposal(
+        revision: 2,
+        triggers: const [ProjectPlanRevisionTrigger.manual],
+        summary: 'Replace queued implementation detail.',
+        rationale: 'Use a better bounded task while preserving the outcome.',
+        taskAdditions: [_task(id: 'task_replacement')],
+        obsoleteTaskIds: const ['task_existing'],
+        createdAt: DateTime(2026, 1, 2),
+      );
+
+      final result = await service.prepareAndApply(
+        project: withBacklog,
+        proposal: proposal,
+        workspaceRoot: workspace.path,
+      );
+
+      expect(result.awaitingApproval, isFalse);
+      expect(result.changed, isTrue);
+      expect(
+        result.project.backlog
+            .singleWhere((item) => item.id == 'task_existing')
+            .status,
+        ProjectTaskStatus.obsolete,
+      );
+    });
+
+    test(
+      'restructuring an uncompleted milestone does not require approval',
+      () async {
+        final milestone = ProjectMilestone(
+          id: 'milestone_001',
+          title: 'Original milestone',
+          objective: 'Sequence bounded work.',
+          criterionIds: const ['criterion_001'],
+          status: ProjectMilestoneStatus.active,
+          exitConditions: const ['The bounded outcome is verified.'],
+          order: 1,
+          createdAt: DateTime(2026, 1, 1),
+          updatedAt: DateTime(2026, 1, 1),
+        );
+        final withMilestone = project.copyWith(milestones: [milestone]);
+        final proposal = ProjectPlanProposal(
+          revision: 2,
+          triggers: const [ProjectPlanRevisionTrigger.manual],
+          summary: 'Restructure the rolling roadmap.',
+          rationale: 'The criterion contract remains intact.',
+          removedMilestoneIds: const ['milestone_001'],
+          createdAt: DateTime(2026, 1, 2),
+        );
+
+        final result = await service.prepareAndApply(
+          project: withMilestone,
+          proposal: proposal,
+          workspaceRoot: workspace.path,
+        );
+
+        expect(result.awaitingApproval, isFalse);
+        expect(result.changed, isTrue);
+      },
+    );
 
     test(
       'criterion contract edits stale old evidence and reset verification',

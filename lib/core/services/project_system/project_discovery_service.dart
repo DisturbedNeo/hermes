@@ -31,11 +31,13 @@ class ProjectDiscoveryService {
   Future<ProjectEvidenceSnapshot> collect({
     required WorkspaceAttachment workspace,
     ProjectState? project,
+    String goalContext = '',
     CancellationToken? cancellationToken,
   }) async {
     cancellationToken?.throwIfCancelled();
     final workspaceProfile = await _profileService.collect(
       workspace: workspace,
+      goalContext: goalContext,
       cancellationToken: cancellationToken,
     );
     final rootEntries = workspaceProfile.rootEntries

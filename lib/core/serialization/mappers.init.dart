@@ -97,6 +97,7 @@ void initializeMappers() {
   p8.TaskPlanningContextMapper.ensureInitialized();
   p8.WorkspaceMetadataMapper.ensureInitialized();
   p9.WorkspaceDiscoveryProfileMapper.ensureInitialized();
+  p9.WorkspaceRequiredContextIssueMapper.ensureInitialized();
   p9.WorkspaceFileExcerptMapper.ensureInitialized();
   p10.CalculatorOperationMapper.ensureInitialized();
 }

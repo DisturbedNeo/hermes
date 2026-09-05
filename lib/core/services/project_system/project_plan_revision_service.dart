@@ -110,7 +110,10 @@ class ProjectPlanRevisionService {
       );
     }
 
-    final highRiskChanges = _highRiskChanges(project, candidate);
+    final highRiskReasons = _highRiskReasons(project, candidate);
+    final highRiskChanges = highRiskReasons
+        .map((item) => item.message)
+        .toList();
     final requiresApproval = switch (approvalPolicy) {
       ProjectPlanApprovalPolicy.never => false,
       ProjectPlanApprovalPolicy.everyRevision => true,
@@ -128,6 +131,7 @@ class ProjectPlanRevisionService {
         reason: reason,
         summary: candidate.summary,
         highRiskChanges: highRiskChanges,
+        highRiskReasonCodes: highRiskReasons.map((item) => item.code).toList(),
         createdAt: candidate.createdAt,
         proposal: candidate,
       );
@@ -429,12 +433,8 @@ class ProjectPlanRevisionService {
             content: proposed.content,
             sourceType: ProjectMemorySourceType.planner,
             sourceId: proposed.sourceId,
-            confidence: proposed.confidence,
-            protected:
-                proposed.protected ||
-                proposed.kind == ProjectMemoryKind.requirement ||
-                proposed.kind == ProjectMemoryKind.decision ||
-                proposed.kind == ProjectMemoryKind.risk,
+            confidence: ProjectMemoryConfidence.inferred,
+            protected: false,
             deduplicate: false,
             timestamp: now,
           )
@@ -477,7 +477,7 @@ class ProjectPlanRevisionService {
             kind: ProjectMemoryKind.decision,
             content:
                 'Applied plan revision ${proposal.revision}: ${proposal.summary}\nRationale: ${proposal.rationale}',
-            sourceType: ProjectMemorySourceType.planner,
+            sourceType: ProjectMemorySourceType.system,
             sourceId: 'revision_${proposal.revision}',
             confidence: ProjectMemoryConfidence.confirmed,
             protected: true,
@@ -665,11 +665,11 @@ class ProjectPlanRevisionService {
       )
       .join('||');
 
-  static List<String> _highRiskChanges(
+  static List<_ProjectPlanRiskReason> _highRiskReasons(
     ProjectState project,
     ProjectPlanProposal proposal,
   ) {
-    final changes = <String>[];
+    final changes = <_ProjectPlanRiskReason>[];
     final existingCriteria = {
       for (final criterion in project.criteria) criterion.id: criterion,
     };
@@ -681,15 +681,62 @@ class ProjectPlanRevisionService {
           existing.verificationMode != proposed.verificationMode;
     });
     if (criterionContractChanged || proposal.removedCriterionIds.isNotEmpty) {
-      changes.add('Success criteria or their verification policy changes.');
+      changes.add(
+        const _ProjectPlanRiskReason(
+          'criterion_contract_changed',
+          'Success criteria or their verification policy changes.',
+        ),
+      );
     }
-    if (proposal.removedMilestoneIds.isNotEmpty ||
-        proposal.obsoleteTaskIds.isNotEmpty) {
-      changes.add('Previously planned scope is removed or made obsolete.');
+    final completedMilestoneIds = project.milestones
+        .where((item) => item.status == ProjectMilestoneStatus.completed)
+        .map((item) => item.id)
+        .toSet();
+    if (proposal.removedMilestoneIds.any(completedMilestoneIds.contains)) {
+      changes.add(
+        const _ProjectPlanRiskReason(
+          'completed_work_invalidated',
+          'The revision restructures a completed milestone.',
+        ),
+      );
+    }
+    final acceptedEvidenceTaskIds = project.evidence
+        .where((item) => item.status == ProjectEvidenceStatus.accepted)
+        .map((item) => item.projectTaskId)
+        .whereType<String>()
+        .toSet();
+    final completedTaskIds = project.completedTasks
+        .map((item) => item.id)
+        .toSet();
+    if (proposal.obsoleteTaskIds.any(
+      (id) =>
+          completedTaskIds.contains(id) || acceptedEvidenceTaskIds.contains(id),
+    )) {
+      changes.add(
+        const _ProjectPlanRiskReason(
+          'accepted_evidence_invalidated',
+          'The revision invalidates completed work or accepted evidence.',
+        ),
+      );
+    }
+    if (proposal.requiresApproval) {
+      changes.add(
+        _ProjectPlanRiskReason(
+          'model_requested_approval',
+          proposal.approvalReason.trim().isEmpty
+              ? 'The planner explicitly requested approval.'
+              : proposal.approvalReason.trim(),
+        ),
+      );
     }
     for (final task in [...proposal.taskAdditions, ...proposal.taskUpdates]) {
       if (task.risk == ProjectTaskRisk.high) {
-        changes.add('High-risk task: ${task.title}.');
+        changes.add(
+          _ProjectPlanRiskReason(
+            'high_risk_task',
+            'High-risk task: ${task.title}.',
+          ),
+        );
       }
       final destructive =
           '${task.title} ${task.objective} ${task.writePaths.join(' ')}';
@@ -698,10 +745,24 @@ class ProjectPlanRevisionService {
         caseSensitive: false,
       ).hasMatch(destructive)) {
         changes.add(
-          'Potentially destructive or externally visible task: ${task.title}.',
+          _ProjectPlanRiskReason(
+            'destructive_or_external_task',
+            'Potentially destructive or externally visible task: ${task.title}.',
+          ),
         );
       }
     }
-    return changes.toSet().toList();
+    final seen = <String>{};
+    return [
+      for (final item in changes)
+        if (seen.add(item.code)) item,
+    ];
   }
+}
+
+class _ProjectPlanRiskReason {
+  final String code;
+  final String message;
+
+  const _ProjectPlanRiskReason(this.code, this.message);
 }

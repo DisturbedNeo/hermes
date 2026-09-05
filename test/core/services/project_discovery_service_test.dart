@@ -70,6 +70,125 @@ dependencies:
     expect(snapshot.activeMemory.single, contains('Keep the API stable'));
     expect(before, after);
   });
+
+  test(
+    'reads a referenced 16 KiB design completely before ordinary files',
+    () async {
+      final root = await Directory.systemTemp.createTemp(
+        'hermes_design_discovery_',
+      );
+      addTearDown(() async {
+        if (await root.exists()) await root.delete(recursive: true);
+      });
+      final design =
+          'Chronicle .NET observability design\n${List.filled(16 * 1024, 'x').join()}';
+      await File('${root.path}/Design.md').writeAsString(design);
+      await File('${root.path}/README.md').writeAsString('# Generic readme');
+      final workspace = WorkspaceAttachment(
+        rootPath: root.path,
+        displayName: 'Chronicle',
+        lastOpenedAt: DateTime(2026, 1, 1),
+      );
+      final sandbox = WorkspaceSandbox();
+      final service = ProjectDiscoveryService(
+        taskService: TaskService(
+          toolService: ToolService(workspaceSandbox: sandbox),
+          sandbox: sandbox,
+        ),
+      );
+
+      final snapshot = await service.collect(
+        workspace: workspace,
+        goalContext: 'Implement the system specified in `Design.md`.',
+      );
+
+      expect(snapshot.workspaceProfile.highSignalFiles.first.path, 'Design.md');
+      expect(snapshot.workspaceProfile.highSignalFiles.first.content, design);
+      expect(
+        snapshot.workspaceProfile.highSignalFiles.first.truncated,
+        isFalse,
+      );
+      expect(snapshot.workspaceProfile.requiredContextIssues, isEmpty);
+    },
+  );
+
+  test('prioritizes a nonstandard filename referenced by the goal', () async {
+    final root = await Directory.systemTemp.createTemp(
+      'hermes_priority_discovery_',
+    );
+    addTearDown(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+    await File(
+      '${root.path}/product-blueprint.txt',
+    ).writeAsString('authoritative');
+    await File('${root.path}/README.md').writeAsString('ordinary');
+    final workspace = WorkspaceAttachment(
+      rootPath: root.path,
+      displayName: 'Workspace',
+      lastOpenedAt: DateTime(2026, 1, 1),
+    );
+    final sandbox = WorkspaceSandbox();
+    final service = ProjectDiscoveryService(
+      taskService: TaskService(
+        toolService: ToolService(workspaceSandbox: sandbox),
+        sandbox: sandbox,
+      ),
+    );
+
+    final snapshot = await service.collect(
+      workspace: workspace,
+      goalContext: 'Follow "product-blueprint.txt" exactly.',
+    );
+
+    expect(
+      snapshot.workspaceProfile.highSignalFiles
+          .map((item) => item.path)
+          .take(2),
+      orderedEquals(['product-blueprint.txt', 'README.md']),
+    );
+  });
+
+  test(
+    'reports referenced context that cannot fit the discovery budget',
+    () async {
+      final root = await Directory.systemTemp.createTemp(
+        'hermes_budget_discovery_',
+      );
+      addTearDown(() async {
+        if (await root.exists()) await root.delete(recursive: true);
+      });
+      await File(
+        '${root.path}/ARCHITECTURE.MD',
+      ).writeAsString(List.filled(65 * 1024, 'a').join());
+      final workspace = WorkspaceAttachment(
+        rootPath: root.path,
+        displayName: 'Workspace',
+        lastOpenedAt: DateTime(2026, 1, 1),
+      );
+      final sandbox = WorkspaceSandbox();
+      final service = ProjectDiscoveryService(
+        taskService: TaskService(
+          toolService: ToolService(workspaceSandbox: sandbox),
+          sandbox: sandbox,
+        ),
+      );
+
+      final snapshot = await service.collect(
+        workspace: workspace,
+        goalContext: 'Implement `ARCHITECTURE.MD`.',
+      );
+
+      expect(
+        snapshot.workspaceProfile.highSignalFiles.single.truncated,
+        isTrue,
+      );
+      expect(
+        snapshot.workspaceProfile.requiredContextIssues.single.code,
+        'required_context_truncated',
+      );
+    },
+  );
 }
 
 ProjectState _project() {

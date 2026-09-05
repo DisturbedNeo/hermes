@@ -3621,6 +3621,15 @@ class PendingProjectPlanApprovalMapper
     opt: true,
     def: const [],
   );
+  static List<String> _$highRiskReasonCodes(PendingProjectPlanApproval v) =>
+      v.highRiskReasonCodes;
+  static const Field<PendingProjectPlanApproval, List<String>>
+  _f$highRiskReasonCodes = Field(
+    'highRiskReasonCodes',
+    _$highRiskReasonCodes,
+    opt: true,
+    def: const [],
+  );
   static DateTime _$createdAt(PendingProjectPlanApproval v) => v.createdAt;
   static const Field<PendingProjectPlanApproval, DateTime> _f$createdAt = Field(
     'createdAt',
@@ -3637,6 +3646,7 @@ class PendingProjectPlanApprovalMapper
     #reason: _f$reason,
     #summary: _f$summary,
     #highRiskChanges: _f$highRiskChanges,
+    #highRiskReasonCodes: _f$highRiskReasonCodes,
     #createdAt: _f$createdAt,
     #proposal: _f$proposal,
   };
@@ -3649,6 +3659,7 @@ class PendingProjectPlanApprovalMapper
       reason: data.dec(_f$reason),
       summary: data.dec(_f$summary),
       highRiskChanges: data.dec(_f$highRiskChanges),
+      highRiskReasonCodes: data.dec(_f$highRiskReasonCodes),
       createdAt: data.dec(_f$createdAt),
       proposal: data.dec(_f$proposal),
     );

@@ -82,6 +82,14 @@ void main() {
       final task = _projectTask().copyWith(
         criterionIds: const ['criterion_release'],
         milestoneId: 'milestone_release',
+        expectedEvidence: const [
+          ProjectEvidenceExpectation(
+            id: 'expect_release',
+            type: ProjectEvidenceType.taskClaim,
+            criterionIds: ['criterion_release'],
+            description: 'The release task is independently checked.',
+          ),
+        ],
       );
       gateway.initialisation = ProjectInitialisation(
         title: 'Release project',
@@ -112,6 +120,19 @@ void main() {
             updatedAt: now,
           ),
         ],
+        memory: [
+          ProjectMemoryEntry(
+            id: 'memory_planner_claim',
+            kind: ProjectMemoryKind.requirement,
+            content: 'The planner claims this is confirmed.',
+            sourceType: ProjectMemorySourceType.planner,
+            sourceId: 'workspace:Design.md',
+            confidence: ProjectMemoryConfidence.confirmed,
+            protected: true,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        ],
       );
 
       final project = await service.createProject(
@@ -128,6 +149,80 @@ void main() {
         project.planHistory.single.trigger,
         ProjectPlanRevisionTrigger.initialization,
       );
+      final plannerMemory = project.memory.singleWhere(
+        (item) => item.id == 'memory_planner_claim',
+      );
+      expect(plannerMemory.confidence, ProjectMemoryConfidence.inferred);
+      expect(plannerMemory.protected, isFalse);
+      expect(plannerMemory.sourceId, 'workspace:Design.md');
+    });
+
+    test('unreadable required context blocks before initialization', () async {
+      await File(
+        '${root.path}/Design.md',
+      ).writeAsString(List.filled(65 * 1024, 'x').join());
+
+      final project = await service.createProject(
+        workspace: workspace,
+        userPrompt: 'Implement `Design.md`.',
+        client: _QueueChatClient(const []),
+      );
+
+      expect(gateway.initializeCalls, 0);
+      expect(project.status, ProjectStatus.blocked);
+      expect(project.backlog, isEmpty);
+      expect(project.blocker?.message, contains('required_context_truncated'));
+    });
+
+    test('ungrounded initial read paths get one repair then block', () async {
+      final now = DateTime(2026, 1, 1);
+      final task = _projectTask().copyWith(
+        criterionIds: const ['criterion_release'],
+        milestoneId: 'milestone_release',
+        readPaths: const ['api/', 'worker/', 'Makefile'],
+      );
+      gateway.initialisation = ProjectInitialisation(
+        title: 'Invented baseline',
+        refinedGoal: 'Implement against an existing baseline.',
+        successCriteria: const ['The outcome is verified.'],
+        constraints: const ['Stay in the workspace.'],
+        knownFacts: const [],
+        openQuestions: const [],
+        backlog: [task],
+        criteria: [
+          ProjectCriterion(
+            id: 'criterion_release',
+            statement: 'The outcome is verified.',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        ],
+        milestones: [
+          ProjectMilestone(
+            id: 'milestone_release',
+            title: 'Implement',
+            objective: 'Implement bounded work.',
+            criterionIds: const ['criterion_release'],
+            taskIds: [task.id],
+            exitConditions: const ['The outcome is verified.'],
+            order: 1,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        ],
+      );
+
+      final project = await service.createProject(
+        workspace: workspace,
+        userPrompt: 'Implement the project.',
+        client: _QueueChatClient(const []),
+      );
+
+      expect(gateway.initializeCalls, 1);
+      expect(gateway.initialRepairCalls, 1);
+      expect(project.status, ProjectStatus.blocked);
+      expect(project.backlog, isEmpty);
+      expect(project.blocker?.message, contains('ungrounded_read_path'));
     });
 
     test('initialization does not queue work with no criterion link', () async {
@@ -233,6 +328,69 @@ void main() {
       },
     );
 
+    test(
+      'splitter keeps only exact criterion IDs or exact statements',
+      () async {
+        final project = await service.createProject(
+          workspace: workspace,
+          userPrompt: 'Build the app',
+        );
+        final modelCalls = ProjectModelCalls(
+          toolService: ToolService(workspaceSandbox: WorkspaceSandbox()),
+        );
+        final client = _QueueChatClient([
+          jsonEncode({
+            'tasks': [
+              {
+                'id': 'task_exact_id',
+                'title': 'Exact ID',
+                'objective': 'Implement bounded exact-ID work.',
+                'criterionIds': ['criterion_001'],
+                'doneCriteria': ['The bounded work is complete.'],
+                'outOfScope': ['Do not change unrelated work.'],
+                'expectedArtifacts': [],
+              },
+              {
+                'id': 'task_exact_statement',
+                'title': 'Exact statement',
+                'objective': 'Implement bounded compatibility work.',
+                'relevantSuccessCriteria': [
+                  'Complete the stated project goal.',
+                ],
+                'doneCriteria': ['The compatibility work is complete.'],
+                'outOfScope': ['Do not change unrelated work.'],
+                'expectedArtifacts': [],
+              },
+              {
+                'id': 'task_paraphrase',
+                'title': 'Paraphrase',
+                'objective': 'Implement bounded paraphrased work.',
+                'criterionIds': ['Complete project goal somehow'],
+                'doneCriteria': ['The paraphrased work is complete.'],
+                'outOfScope': ['Do not change unrelated work.'],
+                'expectedArtifacts': [],
+              },
+            ],
+          }),
+        ]);
+
+        final tasks = await modelCalls.splitTask(
+          client: client,
+          baseSystemPrompt: 'system',
+          project: project,
+          oversizedTask: _projectTask().copyWith(
+            criterionIds: const ['criterion_001'],
+          ),
+          violations: const ['Task is oversized.'],
+        );
+
+        expect(tasks[0].criterionIds, ['criterion_001']);
+        expect(tasks[1].criterionIds, ['criterion_001']);
+        expect(tasks[2].criterionIds, isEmpty);
+        expect(tasks[2].expectedEvidence.single.criterionIds, isEmpty);
+      },
+    );
+
     test('multiple pending triggers produce one debounced revision', () async {
       final created = await service.createProject(
         workspace: workspace,
@@ -286,6 +444,63 @@ void main() {
       expect(result.project.planHistory, hasLength(2));
       expect(result.project.pendingReplanTriggers, isEmpty);
     });
+
+    test(
+      'successful diagnostic task requests immediate project replanning without stagnation',
+      () async {
+        final created = await service.createProject(
+          workspace: workspace,
+          userPrompt: 'Build the app',
+        );
+        final queued = _projectTask().copyWith(
+          criterionIds: [created.criteria.single.id],
+        );
+        final project = created.copyWith(backlog: [queued]);
+        final client = _QueueChatClient([
+          jsonEncode({
+            'status': 'needs_replan',
+            'summary': 'The declared path is absent.',
+            'replanRequest':
+                'Replace the stale path with the discovered layout.',
+          }),
+          jsonEncode({
+            'steps': [
+              {
+                'id': 'verify_layout',
+                'title': 'Verify layout',
+                'objective': 'Verify the discovered layout.',
+                'instructions': ['Record the confirmed workspace layout.'],
+                'mayEditFiles': false,
+              },
+            ],
+          }),
+          jsonEncode({
+            'status': 'completed',
+            'summary': 'Confirmed the replacement layout.',
+            'memoryUpdate': 'The prior path assumption was contradicted.',
+          }),
+        ]);
+
+        final result = await service.runProject(
+          client: client,
+          workspace: workspace,
+          snapshot: project,
+          baseSystemPrompt: 'system',
+          maxNewTasks: 2,
+        );
+
+        expect(
+          gateway.lastTriggers,
+          contains(ProjectPlanRevisionTrigger.taskReplanRequested),
+        );
+        expect(result.project.failedTasks, isEmpty);
+        expect(
+          result.project.diagnostics.completedTasksWithoutCriterionProgress,
+          0,
+        );
+        expect(result.project.diagnostics.consecutiveNoProgressIterations, 0);
+      },
+    );
 
     test(
       'replanning receives bounded relevant memory without pruning history',
@@ -577,6 +792,8 @@ class _FakeProjectPlanningGateway implements ProjectPlanningGateway {
   int initializeCalls = 0;
   int reviseCalls = 0;
   int repairCalls = 0;
+  int initialRepairCalls = 0;
+  ProjectInitialisation? repairedInitialisation;
   ProjectPlanProposal Function(
     ProjectState project,
     List<ProjectPlanRevisionTrigger> triggers,
@@ -598,6 +815,22 @@ class _FakeProjectPlanningGateway implements ProjectPlanningGateway {
   }) async {
     initializeCalls++;
     return initialisation;
+  }
+
+  @override
+  Future<ProjectInitialisation?> repairInitialisation({
+    required ChatClient client,
+    required String baseSystemPrompt,
+    required WorkspaceAttachment workspace,
+    required String originalGoal,
+    required Map<String, dynamic> workspaceMetadata,
+    required ProjectInitialisation initialisation,
+    required List<Map<String, String>> validationIssues,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  }) async {
+    initialRepairCalls++;
+    return repairedInitialisation;
   }
 
   @override

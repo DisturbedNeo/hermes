@@ -698,6 +698,7 @@ class PendingProjectPlanApproval with PendingProjectPlanApprovalMappable {
   final String reason;
   final String summary;
   final List<String> highRiskChanges;
+  final List<String> highRiskReasonCodes;
   final DateTime createdAt;
   final ProjectPlanProposal? proposal;
 
@@ -706,6 +707,7 @@ class PendingProjectPlanApproval with PendingProjectPlanApprovalMappable {
     required this.reason,
     required this.summary,
     this.highRiskChanges = const [],
+    this.highRiskReasonCodes = const [],
     required this.createdAt,
     this.proposal,
   });

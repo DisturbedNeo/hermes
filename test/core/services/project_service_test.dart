@@ -726,10 +726,46 @@ void main() {
                 arguments: jsonEncode({
                   'title': 'Reporting dashboard',
                   'refinedGoal': 'Build a reporting dashboard',
-                  'successCriteria': ['Dashboard matches the design'],
+                  'criteria': [
+                    {
+                      'id': 'criterion_dashboard',
+                      'statement': 'Dashboard matches the design',
+                    },
+                  ],
                   'constraints': ['Stay in workspace'],
                   'knownFacts': ['Design requests a reporting dashboard.'],
                   'openQuestions': [],
+                  'milestones': [
+                    {
+                      'id': 'milestone_dashboard',
+                      'title': 'Build dashboard',
+                      'objective': 'Build and verify the reporting dashboard.',
+                      'criterionIds': ['criterion_dashboard'],
+                      'taskIds': ['task_dashboard'],
+                      'exitConditions': ['Dashboard matches the design'],
+                      'order': 1,
+                    },
+                  ],
+                  'backlog': [
+                    {
+                      'id': 'task_dashboard',
+                      'title': 'Build dashboard slice',
+                      'objective':
+                          'Implement the bounded reporting dashboard slice.',
+                      'criterionIds': ['criterion_dashboard'],
+                      'milestoneId': 'milestone_dashboard',
+                      'doneCriteria': ['The dashboard slice is implemented.'],
+                      'outOfScope': ['Do not implement unrelated screens.'],
+                      'expectedEvidence': [
+                        {
+                          'id': 'expect_dashboard',
+                          'type': 'task_claim',
+                          'criterionIds': ['criterion_dashboard'],
+                          'description': 'The dashboard slice is checked.',
+                        },
+                      ],
+                    },
+                  ],
                 }),
               ),
             ],
@@ -754,7 +790,7 @@ void main() {
           project.knownFacts,
           contains('Design requests a reporting dashboard.'),
         );
-        expect(project.backlog, isEmpty);
+        expect(project.backlog.single.id, 'task_dashboard');
       },
     );
 

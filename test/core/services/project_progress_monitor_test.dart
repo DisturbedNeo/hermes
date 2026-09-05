@@ -105,6 +105,36 @@ void main() {
   });
 
   test(
+    'successful diagnostic replanning does not consume stagnation budget',
+    () {
+      final initial = _project(now).copyWith(
+        diagnostics: const ProjectDiagnostics(
+          consecutiveNoProgressIterations: 2,
+          recentNoProgressTaskIds: ['task_old_1', 'task_old_2'],
+          completedTasksWithoutCriterionProgress: 2,
+        ),
+      );
+
+      final project = monitor.recordTaskResult(
+        project: initial,
+        task: _task('diagnostic_task', now),
+        taskAccepted: true,
+        excludeFromStagnation: true,
+        criterionStatusesBefore: const {
+          'criterion_1': ProjectCriterionStatus.unsatisfied,
+        },
+        evaluatedAt: now,
+      );
+
+      expect(project.status, ProjectStatus.active);
+      expect(project.diagnostics.completedTaskExecutions, 1);
+      expect(project.diagnostics.completedTasksWithoutCriterionProgress, 2);
+      expect(project.diagnostics.consecutiveNoProgressIterations, 0);
+      expect(project.diagnostics.recentNoProgressTaskIds, isEmpty);
+    },
+  );
+
+  test(
     'records criterion reversals without treating failed work as progress',
     () {
       final initial = _project(now).copyWith(
