@@ -21,6 +21,7 @@ import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/models/workspace.dart';
+import 'package:hermes/core/services/chat/chat_service.dart';
 
 import '../disposable.dart';
 
@@ -29,7 +30,7 @@ import '../disposable.dart';
 /// Handles all aspects of LLM interaction: streaming responses, tool execution,
 /// context compaction, token handling, and task model output rendering.
 /// Delegates business-logic callbacks (task/project updates, message insertion)
-/// back to [ChatService] via [ChatSessionCallbacks].
+/// directly to its owning [ChatService].
 class ChatSessionManager implements Disposable {
   final MessageStore _messageStore;
   final ChatStream<ChatToken> _chatStream;
@@ -38,24 +39,23 @@ class ChatSessionManager implements Disposable {
   final PreferencesService _preferencesService;
   late final BufferedTokenWriter _tokenWriter;
 
-  /// Callbacks into business logic that live in [ChatService].
-  final ChatSessionCallbacks _callbacks;
+  final ChatService _chatService;
   CancellationToken? _activeGenerationToken;
   int _generationSerial = 0;
 
-  // Session policy depends on mutable chat state. Read it through callbacks so
-  // workspace attachment, model changes, and saved-chat loading take effect on
-  // the next request without rebuilding the manager.
-  WorkspaceAttachment? get workspace => _callbacks.onGetWorkspace();
+  // Session policy depends on mutable chat state. Read it from the owning
+  // service so workspace attachment, model changes, and saved-chat loading
+  // take effect on the next request without rebuilding the manager.
+  WorkspaceAttachment? get workspace => _chatService.workspace;
 
   ModelConfigurationSnapshot? get currentModelSnapshot =>
-      _callbacks.onGetCurrentModelSnapshot();
+      _chatService.currentModelSnapshot;
 
-  int? get diagnosticsContextLimit => _callbacks.onGetDiagnosticsContextLimit();
+  int? get diagnosticsContextLimit => _chatService.sessionDiagnosticsContextLimit;
 
-  List<String> get defaultToolIds => _callbacks.onGetDefaultToolIds();
+  List<String> get defaultToolIds => _chatService.defaultToolIds;
 
-  bool get workspaceToolsEnabled => _callbacks.onGetWorkspaceToolsEnabled();
+  bool get workspaceToolsEnabled => _chatService.workspaceToolsEnabled;
 
   // ── Construction ────────────────────────────────────────────────────────
 
@@ -65,13 +65,13 @@ class ChatSessionManager implements Disposable {
     required LlamaServerManager serverManager,
     required ToolService toolService,
     required PreferencesService preferencesService,
-    required ChatSessionCallbacks callbacks,
+    required ChatService chatService,
   }) : _messageStore = messageStore,
        _chatStream = chatStream,
        _serverManager = serverManager,
        _toolService = toolService,
        _preferencesService = preferencesService,
-       _callbacks = callbacks {
+       _chatService = chatService {
     _tokenWriter = BufferedTokenWriter(
       messageStore: _messageStore,
       onFlush: requestContextEstimateUpdate,
@@ -302,7 +302,7 @@ class ChatSessionManager implements Disposable {
 
   /// Updates workspace state and marks the session as dirty (triggers autosave).
   void markWorkspaceChanged() {
-    _callbacks.onWorkspaceChanged();
+    _chatService.markWorkspaceChanged();
   }
 
   // ── Streaming internals ─────────────────────────────────────────────────
@@ -323,7 +323,7 @@ class ChatSessionManager implements Disposable {
       } else {
         _serverManager.diagnostics.recordCompactionStarted(message);
       }
-      _callbacks.onNotifyListeners();
+      _chatService.sessionNotifyListeners();
     }
 
     final result = await manager.compactIfNeeded(
@@ -617,7 +617,7 @@ class ChatSessionManager implements Disposable {
 
   /// Requests that the service layer update context estimation.
   void requestContextEstimateUpdate({bool immediate = false}) {
-    _callbacks.onRequestContextEstimateUpdate(immediate: immediate);
+    _chatService.requestContextEstimateUpdate(immediate: immediate);
   }
 
   // ── Message helpers ─────────────────────────────────────────────────────
@@ -644,7 +644,7 @@ class ChatSessionManager implements Disposable {
     List<Bubble> messages, {
     String? currentUserRequest,
   }) {
-    final promptText = _callbacks.onBuildSystemPrompt(
+    final promptText = _chatService.buildSystemPrompt(
       currentUserRequest: currentUserRequest,
     );
     if (messages.isEmpty) {
@@ -680,33 +680,32 @@ class ChatSessionManager implements Disposable {
   // ── Task model output helpers ───────────────────────────────────────────
 
   void ensureTaskModelTextSection(String label, String section) {
-    if (_callbacks.onGetTaskModelOutputLabel() != label) {
-      _callbacks.onSetTaskModelOutputLabel(label);
-      _callbacks.onSetTaskModelOutputTextSection(null);
-      _callbacks.onAppendTaskModelText('\n\n## $label\n');
+    if (_chatService.sessionTaskModelOutputLabel() != label) {
+      _chatService.setSessionTaskModelOutputLabel(label);
+      _chatService.setSessionTaskModelOutputTextSection(null);
+      _chatService.taskModelOutputText += '\n\n## $label\n';
     }
-    if (_callbacks.onGetTaskModelOutputTextSection() == section) return;
-    _callbacks.onSetTaskModelOutputTextSection(section);
+    if (_chatService.sessionTaskModelOutputTextSection() == section) return;
+    _chatService.setSessionTaskModelOutputTextSection(section);
     switch (section) {
       case 'output':
       case 'tool-call':
       case 'tool-result':
       case 'error':
-        _callbacks.onAppendTaskModelText('\n');
+        _chatService.taskModelOutputText += '\n';
     }
   }
 
   void ensureTaskModelReasoningSection(String label) {
-    if (_callbacks.onGetTaskModelOutputReasoningLabel() == label) return;
-    _callbacks.onSetTaskModelOutputReasoningLabel(label);
-    final current = _callbacks.onGetTaskModelOutputReasoning();
-    _callbacks.onSetTaskModelOutputReasoning(
-      '${current.trim().isEmpty ? '' : '\n\n'}## $label\n',
-    );
+    if (_chatService.sessionTaskModelOutputReasoningLabel() == label) return;
+    _chatService.setSessionTaskModelOutputReasoningLabel(label);
+    final current = _chatService.taskModelOutputReasoning;
+    _chatService.taskModelOutputReasoning =
+        '${current.trim().isEmpty ? '' : '\n\n'}## $label\n';
   }
 
   void appendTaskModelText(String text) {
-    _callbacks.onAppendTaskModelOutputText(text);
+    _chatService.taskModelOutputText += text;
   }
 
   void finishTaskModelOutputBubbleFromService({required bool clearCurrent}) {
@@ -739,35 +738,4 @@ class ChatSessionManager implements Disposable {
       await _chatStream.stop();
     } finally {}
   }
-}
-
-/// Callbacks from [ChatSessionManager] into business logic in [ChatService].
-///
-/// Keeps the streaming layer decoupled from task/project orchestration,
-/// message insertion, and other business concerns.
-abstract class ChatSessionCallbacks {
-  void onNotifyListeners();
-  bool onIsDisposed();
-  bool onIsTaskModelOutputActive();
-  int? onGetTaskModelOutputContextEstimate();
-  WorkspaceAttachment? onGetWorkspace();
-  ModelConfigurationSnapshot? onGetCurrentModelSnapshot();
-  int? onGetDiagnosticsContextLimit();
-  List<String> onGetDefaultToolIds();
-  bool onGetWorkspaceToolsEnabled();
-  String onBuildSystemPrompt({String? currentUserRequest});
-  void onWorkspaceChanged();
-  void onRequestContextEstimateUpdate({bool immediate = false});
-
-  // Task model output state accessors/mutators
-  String? onGetTaskModelOutputLabel();
-  void onSetTaskModelOutputLabel(String? label);
-  String? onGetTaskModelOutputTextSection();
-  void onSetTaskModelOutputTextSection(String? section);
-  String onGetTaskModelOutputReasoning();
-  void onSetTaskModelOutputReasoning(String reasoning);
-  String? onGetTaskModelOutputReasoningLabel();
-  void onSetTaskModelOutputReasoningLabel(String label);
-  void onAppendTaskModelText(String text);
-  void onAppendTaskModelOutputText(String text);
 }

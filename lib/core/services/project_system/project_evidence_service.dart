@@ -31,6 +31,11 @@ class ProjectEvidenceService {
     for (final gate in result.gateResults) {
       final type = _gateEvidenceType(gate);
       final sourceRef = _gateSourceRef(gate, type);
+      final matchedExpectations = _matchingExpectations(
+        task,
+        type,
+        sourceRefs: [sourceRef, gate.gateId],
+      );
       evidence.add(
         ProjectEvidence(
           id: _evidenceId(
@@ -43,8 +48,9 @@ class ProjectEvidenceService {
             project,
             task,
             type,
-            sourceRefs: [sourceRef, gate.gateId],
+            matchedExpectations: matchedExpectations,
           ),
+          expectationIds: _expectationIdsFor(matchedExpectations),
           projectTaskId: task.id,
           taskDocumentId: result.taskDocumentId,
           taskRunId: result.finalRunId,
@@ -56,6 +62,7 @@ class ProjectEvidenceService {
             'gateId': gate.gateId,
             'status': gate.status.wire,
             'summary': gate.summary,
+            'expectationIds': _expectationIdsFor(matchedExpectations),
             'details': gate.details,
           }),
           summary: gate.summary.trim().isEmpty
@@ -100,43 +107,52 @@ class ProjectEvidenceService {
   ) {
     return [
       for (final artifact in result.artifacts)
-        ProjectEvidence(
-          id: _evidenceId(
-            '${task.id}|${result.taskDocumentId}|artifact|'
-            '${artifact.taskRunId ?? ''}|${artifact.path}',
-          ),
-          type: ProjectEvidenceType.artifact,
-          criterionIds: _criterionIdsFor(
-            project,
+        (() {
+          final matchedExpectations = _matchingExpectations(
             task,
             ProjectEvidenceType.artifact,
             sourceRefs: [artifact.path],
-          ),
-          projectTaskId: task.id,
-          taskDocumentId: result.taskDocumentId,
-          taskRunId: artifact.taskRunId,
-          sourceRef: artifact.path,
-          sourceFingerprint: _fingerprint({
-            'projectTaskId': task.id,
-            'taskDocumentId': result.taskDocumentId,
-            'taskRunId': artifact.taskRunId,
-            'path': artifact.path,
-            'description': artifact.description,
-            'kind': artifact.kind,
-          }),
-          summary: artifact.description.trim().isEmpty
-              ? 'Task produced ${artifact.path}.'
-              : artifact.description.trim(),
-          status: ProjectEvidenceStatus.accepted,
-          strength: ProjectEvidenceStrength.supporting,
-          details: {
-            'kind': artifact.kind,
-            'artifactId': artifact.id,
-            if (artifact.taskRunId != null) 'runId': artifact.taskRunId,
-          },
-          createdAt: artifact.createdAt,
-          evaluatedAt: evaluatedAt,
-        ),
+          );
+          return ProjectEvidence(
+            id: _evidenceId(
+              '${task.id}|${result.taskDocumentId}|artifact|'
+              '${artifact.taskRunId ?? ''}|${artifact.path}',
+            ),
+            type: ProjectEvidenceType.artifact,
+            criterionIds: _criterionIdsFor(
+              project,
+              task,
+              ProjectEvidenceType.artifact,
+              matchedExpectations: matchedExpectations,
+            ),
+            expectationIds: _expectationIdsFor(matchedExpectations),
+            projectTaskId: task.id,
+            taskDocumentId: result.taskDocumentId,
+            taskRunId: artifact.taskRunId,
+            sourceRef: artifact.path,
+            sourceFingerprint: _fingerprint({
+              'projectTaskId': task.id,
+              'taskDocumentId': result.taskDocumentId,
+              'taskRunId': artifact.taskRunId,
+              'path': artifact.path,
+              'description': artifact.description,
+              'kind': artifact.kind,
+              'expectationIds': _expectationIdsFor(matchedExpectations),
+            }),
+            summary: artifact.description.trim().isEmpty
+                ? 'Task produced ${artifact.path}.'
+                : artifact.description.trim(),
+            status: ProjectEvidenceStatus.accepted,
+            strength: ProjectEvidenceStrength.supporting,
+            details: {
+              'kind': artifact.kind,
+              'artifactId': artifact.id,
+              if (artifact.taskRunId != null) 'runId': artifact.taskRunId,
+            },
+            createdAt: artifact.createdAt,
+            evaluatedAt: evaluatedAt,
+          );
+        })(),
     ];
   }
 
@@ -159,6 +175,12 @@ class ProjectEvidenceService {
               criterionId: criterionId,
               claim: result.summary.trim(),
               sourceRef: result.taskDocumentId,
+              expectationId: _uniqueClaimExpectationId(
+                task,
+                criterionId,
+                TaskEvidenceClaimType.taskClaim,
+                result.taskDocumentId,
+              ),
               runId: result.finalRunId,
             ),
     ];
@@ -168,14 +190,19 @@ class ProjectEvidenceService {
             task.criterionIds.contains(claim.criterionId))
           (() {
             final taskRunId = claim.runId ?? result.finalRunId;
+            final expectationId = _claimExpectationId(task, claim);
+            final expectationIds = expectationId == null
+                ? const <String>[]
+                : [expectationId];
             return ProjectEvidence(
               id: _evidenceId(
                 '${task.id}|${result.taskDocumentId}|claim|'
                 '${taskRunId ?? ''}|${claim.criterionId}|${claim.sourceRef}|'
-                '${claim.claim}',
+                '${claim.expectationId ?? ''}|${claim.claim}',
               ),
               type: _projectEvidenceType(claim.evidenceType),
               criterionIds: [claim.criterionId],
+              expectationIds: expectationIds,
               projectTaskId: task.id,
               taskDocumentId: result.taskDocumentId,
               taskRunId: taskRunId,
@@ -184,6 +211,7 @@ class ProjectEvidenceService {
                 'criterionId': claim.criterionId,
                 'claim': claim.claim,
                 'sourceRef': claim.sourceRef,
+                'expectationId': expectationId,
                 'runId': taskRunId,
               }),
               summary: claim.claim.trim(),
@@ -200,23 +228,16 @@ class ProjectEvidenceService {
     ProjectDocument project,
     ProjectTask task,
     ProjectEvidenceType type, {
-    List<String> sourceRefs = const [],
+    required List<ProjectEvidenceExpectation> matchedExpectations,
   }) {
-    final typedExpectations = task.expectedEvidence
-        .where((item) => item.type == type)
-        .toList();
-    final normalizedSources = sourceRefs.map(_normaliseSourceRef).toSet();
-    final expected = typedExpectations
-        .where(
-          (item) =>
-              item.sourceRef?.trim().isNotEmpty != true ||
-              normalizedSources.contains(_normaliseSourceRef(item.sourceRef!)),
-        )
+    final expected = matchedExpectations
         .expand((item) => item.criterionIds)
         .toSet()
         .toList();
     if (expected.isNotEmpty) return expected;
-    if (typedExpectations.isNotEmpty) return const [];
+    if (task.expectedEvidence.any((item) => item.type == type)) {
+      return const [];
+    }
     if (type == ProjectEvidenceType.artifact) return task.criterionIds;
     final criteriaById = {
       for (final criterion in project.criteria) criterion.id: criterion,
@@ -231,6 +252,71 @@ class ProjectEvidenceService {
         _ => true,
       };
     }).toList();
+  }
+
+  List<ProjectEvidenceExpectation> _matchingExpectations(
+    ProjectTask task,
+    ProjectEvidenceType type, {
+    required List<String> sourceRefs,
+  }) {
+    final normalizedSources = sourceRefs.map(_normaliseSourceRef).toSet();
+    return task.expectedEvidence
+        .where((item) => item.type == type)
+        .where(
+          (item) =>
+              item.sourceRef?.trim().isNotEmpty != true ||
+              normalizedSources.contains(_normaliseSourceRef(item.sourceRef!)),
+        )
+        .toList();
+  }
+
+  List<String> _expectationIdsFor(
+    List<ProjectEvidenceExpectation> expectations,
+  ) {
+    final ids = <String>[];
+    final seen = <String>{};
+    for (final expectation in expectations) {
+      if (seen.add(expectation.id)) ids.add(expectation.id);
+    }
+    return ids;
+  }
+
+  String? _claimExpectationId(ProjectTask task, TaskEvidenceClaim claim) {
+    final type = _projectEvidenceType(claim.evidenceType);
+    final explicit = claim.expectationId?.trim();
+    if (explicit != null && explicit.isNotEmpty) {
+      final matches = task.expectedEvidence.where(
+        (item) =>
+            item.id == explicit &&
+            item.type == type &&
+            item.criterionIds.contains(claim.criterionId),
+      );
+      return matches.length == 1 ? explicit : null;
+    }
+    return _uniqueClaimExpectationId(
+      task,
+      claim.criterionId,
+      claim.evidenceType,
+      claim.sourceRef,
+    );
+  }
+
+  String? _uniqueClaimExpectationId(
+    ProjectTask task,
+    String criterionId,
+    TaskEvidenceClaimType type,
+    String sourceRef,
+  ) {
+    final projectType = _projectEvidenceType(type);
+    final normalizedSource = _normaliseSourceRef(sourceRef);
+    final matches = task.expectedEvidence.where(
+      (item) =>
+          item.type == projectType &&
+          item.criterionIds.contains(criterionId) &&
+          (item.sourceRef?.trim().isNotEmpty != true ||
+              _normaliseSourceRef(item.sourceRef!) == normalizedSource),
+    );
+    return matches.length == 1 ? matches.single.id : null;
   }
 
   ProjectEvidenceType _gateEvidenceType(TaskGateResult gate) {
@@ -262,7 +348,9 @@ class ProjectEvidenceService {
     final merged = [...existing];
     final fingerprints = {
       for (final item in merged)
-        if (item.sourceFingerprint != null) item.sourceFingerprint!: item.id,
+        if (item.sourceFingerprint != null &&
+            item.status != ProjectEvidenceStatus.stale)
+          item.sourceFingerprint!: item.id,
     };
     for (final addition in additions) {
       if (addition.sourceFingerprint case final fingerprint?

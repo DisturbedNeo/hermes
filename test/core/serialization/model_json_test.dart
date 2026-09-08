@@ -167,7 +167,7 @@ void main() {
     expect(ModelJson.encode(brief)['successCriteria'], ['Works']);
   });
 
-  test('project DTOs preserve maps, aliases, defaults, and migration', () {
+  test('project DTOs preserve clean-slate maps and defaults', () {
     final artifact = ProjectArtifact(
       id: 'artifact_1',
       projectTaskId: 'project_task_1',
@@ -181,7 +181,7 @@ void main() {
       id: 'project_task_1',
       title: 'Task',
       objective: 'Work',
-      relevantSuccessCriteria: const ['Done'],
+      criterionIds: const ['criterion_1'],
       doneCriteria: const ['Done'],
       outOfScope: const [],
       context: const [],
@@ -231,14 +231,6 @@ void main() {
       question: 'Continue?',
       createdAt: now,
     );
-    final taskRef = ProjectTaskRef(
-      taskId: 'task_1',
-      title: 'Task',
-      status: TaskStatus.paused,
-      summary: '',
-      createdAt: now,
-      updatedAt: now,
-    );
 
     expect(ModelJson.encode(artifact), isNot(contains('taskDocumentId')));
     expect(ModelJson.encode(task)['expectedArtifacts'], hasLength(1));
@@ -257,38 +249,32 @@ void main() {
     expect(ModelJson.encode(decision)['decision'], 'create_task');
     expect(ModelJson.encode(blocker)['type'], 'task_failed');
     expect(ModelJson.encode(question)['question'], 'Continue?');
-    expect(ModelJson.encode(taskRef)['status'], 'paused');
 
-    final migrated = ModelJson.decode<ProjectDocument>({
-      'schema_version': 1,
-      'id': 'project_1',
-      'title': 'Legacy',
-      'original_prompt': 'Build',
-      'goal': 'Build it',
-      'status': 'running',
-      'active_task_id': 'task_1',
-      'tasks': [
-        {
-          'task_id': 'task_1',
-          'title': 'Legacy task',
-          'status': 'running',
-          'summary': 'Work',
-          'created_at': now.toIso8601String(),
-          'updated_at': now.toIso8601String(),
-        },
+    final project = ProjectDocument(
+      id: 'project_1',
+      title: 'Project',
+      originalGoal: 'Build',
+      refinedGoal: 'Build it',
+      criteria: [
+        ProjectCriterion(
+          id: 'criterion_1',
+          statement: 'Done',
+          createdAt: now,
+          updatedAt: now,
+        ),
       ],
-      'pending_question': null,
-      'created_at': now.toIso8601String(),
-      'updated_at': now.toIso8601String(),
-    });
-    expect(migrated.schemaVersion, ProjectDocument.currentSchemaVersion);
-    expect(migrated.currentRevision, 1);
-    expect(
-      migrated.planHistory.single.trigger,
-      ProjectPlanRevisionTrigger.migration,
+      constraints: const [],
+      tasks: [task],
+      status: ProjectStatus.active,
+      activeTaskId: null,
+      createdAt: now,
+      updatedAt: now,
     );
-    expect(migrated.currentTask?.taskDocumentId, 'task_1');
-    expect(ModelJson.encode(migrated), isNot(contains('tasks')));
+    final decodedProject = ModelJson.decode<ProjectDocument>(
+      ModelJson.encode(project),
+    );
+    expect(decodedProject.schemaVersion, 5);
+    expect(decodedProject.tasks.single.id, task.id);
   });
 
   test('prompt snapshots retain epoch dates and nullable keys', () {

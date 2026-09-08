@@ -152,8 +152,7 @@ void main() {
       );
 
       expect(migrated?.schemaVersion, TaskDocument.currentSchemaVersion);
-      expect(migrated?.projectCriteria, isEmpty);
-      expect(migrated?.projectEvidenceExpectations, isEmpty);
+      expect(migrated, isNotNull);
       expect(jsonDecode(await file.readAsString())['schemaVersion'], 3);
       expect(jsonDecode(await backup.readAsString())['schemaVersion'], 2);
     });

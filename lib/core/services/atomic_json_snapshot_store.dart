@@ -27,7 +27,7 @@ class UnsupportedSnapshotSchemaException implements Exception {
 
   @override
   String toString() =>
-      'Snapshot schema $foundVersion is newer than supported schema '
+      'Snapshot schema $foundVersion is not supported; expected schema '
       '$supportedVersion: $path';
 }
 

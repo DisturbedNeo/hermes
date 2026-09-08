@@ -64,7 +64,10 @@ void main() {
         expect(result.entry.protected, isTrue);
         expect(result.entry.supersedesId, 'assumption');
         expect(result.entry.coveredEntryIds, ['assumption']);
-        expect(result.project.knownFacts, [contains('PostgreSQL')]);
+        expect(
+          result.project.memory.map((item) => item.content),
+          contains(contains('PostgreSQL')),
+        );
       },
     );
 
@@ -194,7 +197,7 @@ void main() {
     test('uses stable relevance tiers and excludes superseded assumptions', () {
       final task = _task('selected', dependencies: const ['dependency']);
       final project = _project(
-        backlog: [task],
+        tasks: [task],
         memory: [
           _memory(
             'requirement',
@@ -302,7 +305,7 @@ void main() {
 final _now = DateTime.utc(2026, 1, 1);
 
 ProjectDocument _project({
-  List<ProjectTask> backlog = const [],
+  List<ProjectTask> tasks = const [],
   List<ProjectMemoryEntry> memory = const [],
   List<ProjectMilestone> milestones = const [],
 }) => ProjectDocument(
@@ -319,7 +322,7 @@ ProjectDocument _project({
     ),
   ],
   constraints: const [],
-  backlog: backlog,
+  tasks: tasks,
   memory: memory,
   milestones: milestones,
   status: ProjectStatus.active,

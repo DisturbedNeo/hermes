@@ -14,6 +14,9 @@ class ProjectOutcomeSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final currentTask = project.activeTaskId == null
+        ? null
+        : project.taskById(project.activeTaskId!);
     final activeRequired = project.criteria
         .where(
           (item) =>
@@ -73,14 +76,14 @@ class ProjectOutcomeSection extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          _LabelValue(label: 'Phase', value: _humanize(project.phase.name)),
+          _LabelValue(label: 'Status', value: _humanize(project.status.name)),
           _LabelValue(
             label: 'Active milestone',
             value: activeMilestone?.title ?? 'No active milestone',
           ),
           _LabelValue(
             label: 'Current task',
-            value: project.currentTask?.title ?? 'No task is currently running',
+            value: currentTask?.title ?? 'No task is currently running',
           ),
           if (project.pendingPlanApproval != null)
             _LabelValue(
@@ -117,7 +120,12 @@ class ProjectOutcomeSection extends StatelessWidget {
             const Text('No outcome criteria have been recorded yet.')
           else
             for (final criterion in project.criteria)
-              _CriterionTile(criterion: criterion),
+              _CriterionTile(
+                criterion: criterion,
+                evidenceCount: project.evidence
+                    .where((item) => item.criterionIds.contains(criterion.id))
+                    .length,
+              ),
         ],
       ),
     );
@@ -126,8 +134,9 @@ class ProjectOutcomeSection extends StatelessWidget {
 
 class _CriterionTile extends StatelessWidget {
   final ProjectCriterion criterion;
+  final int evidenceCount;
 
-  const _CriterionTile({required this.criterion});
+  const _CriterionTile({required this.criterion, required this.evidenceCount});
 
   @override
   Widget build(BuildContext context) {
@@ -135,7 +144,7 @@ class _CriterionTile extends StatelessWidget {
       label:
           'Criterion ${criterion.statement}, status '
           '${_humanize(criterion.status.name)}, '
-          '${criterion.evidenceIds.length} evidence items',
+          '$evidenceCount evidence items',
       child: ListTile(
         key: ValueKey('criterion-${criterion.id}'),
         dense: true,
@@ -146,7 +155,7 @@ class _CriterionTile extends StatelessWidget {
           [
             '${_humanize(criterion.status.name)} · '
                 '${criterion.required ? 'required' : 'optional'} · '
-                '${criterion.evidenceIds.length} evidence',
+                '$evidenceCount evidence',
             if (criterion.notes.trim().isNotEmpty) criterion.notes,
           ].join('\n'),
         ),
@@ -163,21 +172,39 @@ class ProjectRoadmapSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const scheduler = ProjectScheduler();
-    final refreshed = scheduler.refreshReadiness(project).project;
+    final refreshed = scheduler.refreshReadiness(project);
+    final currentTask = project.activeTaskId == null
+        ? null
+        : project.taskById(project.activeTaskId!);
     final ready = scheduler.orderedReadyTasks(project);
     final readyIds = ready.map((item) => item.id).toSet();
-    final waitingDependency = refreshed.backlog.where((item) {
-      return item.readiness == ProjectTaskReadiness.waitingDependency;
+    final waitingDependency = project.tasks.where((item) {
+      return refreshed.readinessFor(item.id) ==
+          ProjectTaskReadiness.waitingDependency;
     }).toList();
-    final waitingInput = refreshed.backlog.where((item) {
-      return item.readiness == ProjectTaskReadiness.waitingInput;
+    final waitingInput = project.tasks.where((item) {
+      return refreshed.readinessFor(item.id) ==
+          ProjectTaskReadiness.waitingInput;
     }).toList();
-    final deferred = refreshed.backlog.where((item) {
+    final deferred = project.tasks.where((item) {
       return item.status == ProjectTaskStatus.deferred ||
           item.status == ProjectTaskStatus.obsolete;
     }).toList();
-    final other = refreshed.backlog.where((item) {
-      return !readyIds.contains(item.id) &&
+    final terminalIds = project.tasks
+        .where(
+          (item) =>
+              item.status == ProjectTaskStatus.completed ||
+              item.status == ProjectTaskStatus.failed ||
+              item.status == ProjectTaskStatus.rejected ||
+              item.status == ProjectTaskStatus.split ||
+              item.status == ProjectTaskStatus.cancelled,
+        )
+        .map((item) => item.id)
+        .toSet();
+    final other = project.tasks.where((item) {
+      return item.id != currentTask?.id &&
+          !terminalIds.contains(item.id) &&
+          !readyIds.contains(item.id) &&
           !waitingDependency.contains(item) &&
           !waitingInput.contains(item) &&
           !deferred.contains(item);
@@ -199,32 +226,43 @@ class ProjectRoadmapSection extends StatelessWidget {
               ...project.milestones,
             ]..sort((a, b) => a.order.compareTo(b.order)))
               _MilestoneTile(project: project, milestone: milestone),
-          if (project.currentTask != null) ...[
+          if (currentTask != null) ...[
             const SizedBox(height: 10),
             _Subheading('Active Task'),
-            _RoadmapTaskTile(task: project.currentTask!, showRationale: true),
+            _RoadmapTaskTile(
+              task: currentTask,
+              showRationale: true,
+              schedule: refreshed,
+            ),
           ],
           const SizedBox(height: 10),
           _TaskGroup(
             title: 'Ready in Scheduler Order',
             tasks: ready,
+            schedule: refreshed,
             empty: 'No tasks are ready to run.',
           ),
           const SizedBox(height: 8),
           _TaskGroup(
             title: 'Waiting on Dependencies',
             tasks: waitingDependency,
+            schedule: refreshed,
             empty: 'No tasks are waiting on dependencies.',
           ),
           const SizedBox(height: 8),
           _TaskGroup(
             title: 'Waiting on Input',
             tasks: waitingInput,
+            schedule: refreshed,
             empty: 'No tasks are waiting on user input or approval.',
           ),
           if (other.isNotEmpty) ...[
             const SizedBox(height: 8),
-            _TaskGroup(title: 'Other Planned Work', tasks: other),
+            _TaskGroup(
+              title: 'Other Planned Work',
+              tasks: other,
+              schedule: refreshed,
+            ),
           ],
           const SizedBox(height: 4),
           ExpansionTile(
@@ -240,7 +278,8 @@ class ProjectRoadmapSection extends StatelessWidget {
                   child: Text('No deferred or obsolete tasks.'),
                 )
               else
-                for (final task in deferred) _RoadmapTaskTile(task: task),
+                for (final task in deferred)
+                  _RoadmapTaskTile(task: task, schedule: refreshed),
             ],
           ),
         ],
@@ -257,7 +296,12 @@ class _MilestoneTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final completedTaskIds = project.completedTasks
+    final milestoneTaskIds = project.tasks
+        .where((item) => item.milestoneId == milestone.id)
+        .map((item) => item.id)
+        .toSet();
+    final completedTaskIds = project.tasks
+        .where((item) => item.status == ProjectTaskStatus.completed)
         .map((item) => item.id)
         .toSet();
     final satisfiedCriterionIds = project.criteria
@@ -265,10 +309,9 @@ class _MilestoneTile extends StatelessWidget {
         .map((item) => item.id)
         .toSet();
     final completedChecks =
-        milestone.taskIds.where(completedTaskIds.contains).length +
+        milestoneTaskIds.where(completedTaskIds.contains).length +
         milestone.criterionIds.where(satisfiedCriterionIds.contains).length;
-    final totalChecks =
-        milestone.taskIds.length + milestone.criterionIds.length;
+    final totalChecks = milestoneTaskIds.length + milestone.criterionIds.length;
     final progress = totalChecks == 0 ? null : completedChecks / totalChecks;
 
     return ExpansionTile(
@@ -308,11 +351,13 @@ class _MilestoneTile extends StatelessWidget {
 class _TaskGroup extends StatelessWidget {
   final String title;
   final List<ProjectTask> tasks;
+  final ProjectScheduleResult schedule;
   final String empty;
 
   const _TaskGroup({
     required this.title,
     required this.tasks,
+    required this.schedule,
     this.empty = 'No tasks in this group.',
   });
 
@@ -325,7 +370,8 @@ class _TaskGroup extends StatelessWidget {
         if (tasks.isEmpty)
           Text(empty, style: Theme.of(context).textTheme.bodySmall)
         else
-          for (final task in tasks) _RoadmapTaskTile(task: task),
+          for (final task in tasks)
+            _RoadmapTaskTile(task: task, schedule: schedule),
       ],
     );
   }
@@ -334,27 +380,31 @@ class _TaskGroup extends StatelessWidget {
 class _RoadmapTaskTile extends StatelessWidget {
   final ProjectTask task;
   final bool showRationale;
+  final ProjectScheduleResult schedule;
 
-  const _RoadmapTaskTile({required this.task, this.showRationale = false});
+  const _RoadmapTaskTile({
+    required this.task,
+    required this.schedule,
+    this.showRationale = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final reasons = task.readinessReasons.isEmpty
-        ? const <String>[]
-        : task.readinessReasons;
+    final readiness = schedule.readinessFor(task.id);
+    final reasons = schedule.reasonsFor(task.id);
     return AccessibleWidget(
       label:
           'Project task ${task.title}, ${_humanize(task.status.name)}, '
-          '${_humanize(task.readiness.name)}',
+          '${_humanize(readiness.name)}',
       child: ListTile(
         key: ValueKey('roadmap-task-${task.id}'),
         dense: true,
         contentPadding: EdgeInsets.zero,
-        leading: Icon(_readinessIcon(task.readiness)),
+        leading: Icon(_readinessIcon(readiness)),
         title: Text(task.title),
         subtitle: Text(
           [
-            '${_humanize(task.readiness.name)} · '
+            '${_humanize(readiness.name)} · '
                 '${_humanize(task.priority.name)} priority · '
                 '${_humanize(task.effort.name)} effort',
             task.objective,
@@ -560,7 +610,14 @@ class _PendingRevision extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final proposal = pending.proposal;
+    final proposal = pending.desiredPlan;
+    final existingTaskIds = project.tasks.map((item) => item.id).toSet();
+    final existingCriterionIds = project.criteria
+        .map((item) => item.id)
+        .toSet();
+    final existingMilestoneIds = project.milestones
+        .map((item) => item.id)
+        .toSet();
     return Column(
       key: ValueKey('pending-revision-${pending.revision}'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -587,13 +644,15 @@ class _PendingRevision extends StatelessWidget {
           const SizedBox(height: 8),
           _DiffList(
             label: 'Added tasks',
-            values: proposal.taskAdditions
+            values: proposal.tasks
+                .where((item) => !existingTaskIds.contains(item.id))
                 .map((item) => '${item.title} (${item.id})')
                 .toList(),
           ),
           _DiffList(
             label: 'Changed tasks',
-            values: proposal.taskUpdates
+            values: proposal.tasks
+                .where((item) => existingTaskIds.contains(item.id))
                 .map((item) => '${item.title} (${item.id})')
                 .toList(),
           ),
@@ -602,19 +661,31 @@ class _PendingRevision extends StatelessWidget {
           _DiffList(
             label: 'Criterion changes',
             values: [
-              ...proposal.criterionUpserts.map(
-                (item) => '${item.statement} (${item.id})',
-              ),
-              ...proposal.removedCriterionIds.map((item) => 'Remove $item'),
+              ...proposal.criteria
+                  .where((item) => !existingCriterionIds.contains(item.id))
+                  .map((item) => '${item.statement} (${item.id})'),
+              ...project.criteria
+                  .where(
+                    (item) => !proposal.criteria.any(
+                      (desired) => desired.id == item.id,
+                    ),
+                  )
+                  .map((item) => 'Remove ${item.id}'),
             ],
           ),
           _DiffList(
             label: 'Milestone changes',
             values: [
-              ...proposal.milestoneUpserts.map(
-                (item) => '${item.title} (${item.id})',
-              ),
-              ...proposal.removedMilestoneIds.map((item) => 'Remove $item'),
+              ...proposal.milestones
+                  .where((item) => !existingMilestoneIds.contains(item.id))
+                  .map((item) => '${item.title} (${item.id})'),
+              ...project.milestones
+                  .where(
+                    (item) => !proposal.milestones.any(
+                      (desired) => desired.id == item.id,
+                    ),
+                  )
+                  .map((item) => 'Remove ${item.id}'),
             ],
           ),
         ],
@@ -899,5 +970,4 @@ IconData _evidenceIcon(ProjectEvidenceType type) => switch (type) {
   ProjectEvidenceType.artifact => Icons.insert_drive_file_outlined,
   ProjectEvidenceType.userApproval => Icons.verified_user_outlined,
   ProjectEvidenceType.taskClaim => Icons.task_alt_outlined,
-  ProjectEvidenceType.migrated => Icons.history_outlined,
 };

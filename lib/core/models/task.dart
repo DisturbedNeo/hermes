@@ -69,7 +69,7 @@ enum TaskEvidenceClaimType {
 @MappableEnum(defaultValue: TaskEvidenceClaimStrength.advisory)
 enum TaskEvidenceClaimStrength { advisory, supporting, conclusive }
 
-/// Project outcome context copied into a bounded task at creation time.
+/// Project outcome context supplied transiently while a bounded task runs.
 @MappableClass(ignoreNull: true)
 class TaskProjectCriterion with TaskProjectCriterionMappable {
   @MappableField(hook: JsonStringHook())
@@ -89,7 +89,7 @@ class TaskProjectCriterion with TaskProjectCriterionMappable {
   });
 }
 
-/// Evidence contract copied from the selected project task.
+/// Evidence contract supplied transiently from the selected project task.
 @MappableClass(ignoreNull: true)
 class TaskProjectEvidenceExpectation
     with TaskProjectEvidenceExpectationMappable {
@@ -254,12 +254,6 @@ class TaskDocument with TaskDocumentMappable {
   final String? chatSessionId;
   @MappableField(hook: JsonNullableStringHook())
   final String? projectId;
-  @MappableField(hook: JsonStringListHook())
-  final List<String> projectCriterionIds;
-  @MappableField(hook: JsonObjectListHook())
-  final List<TaskProjectCriterion> projectCriteria;
-  @MappableField(hook: JsonObjectListHook())
-  final List<TaskProjectEvidenceExpectation> projectEvidenceExpectations;
   @MappableField(hook: JsonDateHook())
   final DateTime createdAt;
   @MappableField(hook: JsonDateHook())
@@ -287,9 +281,6 @@ class TaskDocument with TaskDocumentMappable {
     this.pendingQuestion,
     this.chatSessionId,
     this.projectId,
-    this.projectCriterionIds = const [],
-    this.projectCriteria = const [],
-    this.projectEvidenceExpectations = const [],
     this.completedAt,
   });
 
@@ -311,9 +302,6 @@ class TaskDocument with TaskDocumentMappable {
     Object? pendingQuestion = kSentinel,
     Object? chatSessionId = kSentinel,
     Object? projectId = kSentinel,
-    List<String>? projectCriterionIds,
-    List<TaskProjectCriterion>? projectCriteria,
-    List<TaskProjectEvidenceExpectation>? projectEvidenceExpectations,
     DateTime? createdAt,
     DateTime? updatedAt,
     Object? completedAt = kSentinel,
@@ -336,10 +324,6 @@ class TaskDocument with TaskDocumentMappable {
       pendingQuestion: resolve(pendingQuestion, this.pendingQuestion),
       chatSessionId: resolve(chatSessionId, this.chatSessionId),
       projectId: resolve(projectId, this.projectId),
-      projectCriterionIds: projectCriterionIds ?? this.projectCriterionIds,
-      projectCriteria: projectCriteria ?? this.projectCriteria,
-      projectEvidenceExpectations:
-          projectEvidenceExpectations ?? this.projectEvidenceExpectations,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       completedAt: resolve(completedAt, this.completedAt),
@@ -378,7 +362,7 @@ class TaskDocumentJsonHook extends JsonModelHook {
         aliases: const {
           'goal': ['objective'],
         },
-        omitEmpty: const {'gates', 'projectCriterionIds'},
+        omitEmpty: const {'gates'},
         outputOverrides: const {
           'schemaVersion': TaskDocument.currentSchemaVersion,
         },
@@ -534,6 +518,8 @@ class TaskEvidenceClaim with TaskEvidenceClaimMappable {
   @MappableField(hook: EnumAliasHook({}))
   final TaskEvidenceClaimStrength suggestedStrength;
   @MappableField(hook: JsonNullableStringHook())
+  final String? expectationId;
+  @MappableField(hook: JsonNullableStringHook())
   final String? runId;
 
   const TaskEvidenceClaim({
@@ -542,6 +528,7 @@ class TaskEvidenceClaim with TaskEvidenceClaimMappable {
     this.evidenceType = TaskEvidenceClaimType.taskClaim,
     required this.sourceRef,
     this.suggestedStrength = TaskEvidenceClaimStrength.advisory,
+    this.expectationId,
     this.runId,
   });
 }

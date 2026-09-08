@@ -92,68 +92,6 @@ extension ProjectStatusMapperExtension on ProjectStatus {
 
 /// @nodoc
 
-class ProjectPhaseMapper extends EnumMapper<ProjectPhase> {
-  ProjectPhaseMapper._();
-
-  static ProjectPhaseMapper? _instance;
-  static ProjectPhaseMapper ensureInitialized() {
-    if (_instance == null) {
-      MapperContainer.globals.use(_instance = ProjectPhaseMapper._());
-    }
-    return _instance!;
-  }
-
-  static ProjectPhase fromValue(dynamic value) {
-    ensureInitialized();
-    return MapperContainer.globals.fromValue(value);
-  }
-
-  @override
-  ProjectPhase decode(dynamic value) {
-    switch (value) {
-      case r'discovery':
-        return ProjectPhase.discovery;
-      case r'planning':
-        return ProjectPhase.planning;
-      case r'execution':
-        return ProjectPhase.execution;
-      case r'verification':
-        return ProjectPhase.verification;
-      case r'finalization':
-        return ProjectPhase.finalization;
-      default:
-        return ProjectPhase.values[0];
-    }
-  }
-
-  @override
-  dynamic encode(ProjectPhase self) {
-    switch (self) {
-      case ProjectPhase.discovery:
-        return r'discovery';
-      case ProjectPhase.planning:
-        return r'planning';
-      case ProjectPhase.execution:
-        return r'execution';
-      case ProjectPhase.verification:
-        return r'verification';
-      case ProjectPhase.finalization:
-        return r'finalization';
-    }
-  }
-}
-
-/// @nodoc
-
-extension ProjectPhaseMapperExtension on ProjectPhase {
-  String toValue() {
-    ProjectPhaseMapper.ensureInitialized();
-    return MapperContainer.globals.toValue<ProjectPhase>(this) as String;
-  }
-}
-
-/// @nodoc
-
 class ProjectTaskStatusMapper extends EnumMapper<ProjectTaskStatus> {
   ProjectTaskStatusMapper._();
 
@@ -175,10 +113,6 @@ class ProjectTaskStatusMapper extends EnumMapper<ProjectTaskStatus> {
     switch (value) {
       case r'queued':
         return ProjectTaskStatus.queued;
-      case r'proposed':
-        return ProjectTaskStatus.proposed;
-      case r'approved':
-        return ProjectTaskStatus.approved;
       case r'running':
         return ProjectTaskStatus.running;
       case r'completed':
@@ -205,10 +139,6 @@ class ProjectTaskStatusMapper extends EnumMapper<ProjectTaskStatus> {
     switch (self) {
       case ProjectTaskStatus.queued:
         return r'queued';
-      case ProjectTaskStatus.proposed:
-        return r'proposed';
-      case ProjectTaskStatus.approved:
-        return r'approved';
       case ProjectTaskStatus.running:
         return r'running';
       case ProjectTaskStatus.completed:
@@ -389,8 +319,6 @@ class ProjectEvidenceTypeMapper extends EnumMapper<ProjectEvidenceType> {
         return ProjectEvidenceType.taskClaim;
       case 'user_approval':
         return ProjectEvidenceType.userApproval;
-      case r'migrated':
-        return ProjectEvidenceType.migrated;
       default:
         return ProjectEvidenceType.values[3];
     }
@@ -409,8 +337,6 @@ class ProjectEvidenceTypeMapper extends EnumMapper<ProjectEvidenceType> {
         return 'task_claim';
       case ProjectEvidenceType.userApproval:
         return 'user_approval';
-      case ProjectEvidenceType.migrated:
-        return r'migrated';
     }
   }
 }
@@ -989,12 +915,10 @@ class ProjectMemorySourceTypeMapper
         return ProjectMemorySourceType.task;
       case r'gate':
         return ProjectMemorySourceType.gate;
-      case r'migration':
-        return ProjectMemorySourceType.migration;
       case r'system':
         return ProjectMemorySourceType.system;
       default:
-        return ProjectMemorySourceType.values[5];
+        return ProjectMemorySourceType.values[4];
     }
   }
 
@@ -1009,8 +933,6 @@ class ProjectMemorySourceTypeMapper
         return r'task';
       case ProjectMemorySourceType.gate:
         return r'gate';
-      case ProjectMemorySourceType.migration:
-        return r'migration';
       case ProjectMemorySourceType.system:
         return r'system';
     }
@@ -1111,8 +1033,6 @@ class ProjectPlanRevisionTriggerMapper
     switch (value) {
       case r'initialization':
         return ProjectPlanRevisionTrigger.initialization;
-      case r'migration':
-        return ProjectPlanRevisionTrigger.migration;
       case 'task_completed':
         return ProjectPlanRevisionTrigger.taskCompleted;
       case 'task_failed':
@@ -1145,8 +1065,6 @@ class ProjectPlanRevisionTriggerMapper
     switch (self) {
       case ProjectPlanRevisionTrigger.initialization:
         return r'initialization';
-      case ProjectPlanRevisionTrigger.migration:
-        return r'migration';
       case ProjectPlanRevisionTrigger.taskCompleted:
         return 'task_completed';
       case ProjectPlanRevisionTrigger.taskFailed:
@@ -1207,8 +1125,8 @@ class ProjectCompletionReviewReasonMapper
   @override
   ProjectCompletionReviewReason decode(dynamic value) {
     switch (value) {
-      case 'backlog_exhausted':
-        return ProjectCompletionReviewReason.backlogExhausted;
+      case 'no_remaining_tasks':
+        return ProjectCompletionReviewReason.noRemainingTasks;
       case 'milestone_ended':
         return ProjectCompletionReviewReason.milestoneEnded;
       case 'final_criterion_evidence':
@@ -1221,8 +1139,8 @@ class ProjectCompletionReviewReasonMapper
   @override
   dynamic encode(ProjectCompletionReviewReason self) {
     switch (self) {
-      case ProjectCompletionReviewReason.backlogExhausted:
-        return 'backlog_exhausted';
+      case ProjectCompletionReviewReason.noRemainingTasks:
+        return 'no_remaining_tasks';
       case ProjectCompletionReviewReason.milestoneEnded:
         return 'milestone_ended';
       case ProjectCompletionReviewReason.finalCriterionEvidence:
@@ -1378,8 +1296,8 @@ class ProjectBlockerTypeMapper extends EnumMapper<ProjectBlockerType> {
     switch (value) {
       case r'question':
         return ProjectBlockerType.question;
-      case 'task_approval':
-        return ProjectBlockerType.taskApproval;
+      case 'task_edit_approval':
+        return ProjectBlockerType.taskEditApproval;
       case 'task_blocked':
         return ProjectBlockerType.taskBlocked;
       case 'task_failed':
@@ -1412,8 +1330,8 @@ class ProjectBlockerTypeMapper extends EnumMapper<ProjectBlockerType> {
     switch (self) {
       case ProjectBlockerType.question:
         return r'question';
-      case ProjectBlockerType.taskApproval:
-        return 'task_approval';
+      case ProjectBlockerType.taskEditApproval:
+        return 'task_edit_approval';
       case ProjectBlockerType.taskBlocked:
         return 'task_blocked';
       case ProjectBlockerType.taskFailed:
@@ -1484,8 +1402,6 @@ class ProjectDecisionTypeMapper extends EnumMapper<ProjectDecisionType> {
         return ProjectDecisionType.splitTask;
       case 'evaluate_task':
         return ProjectDecisionType.evaluateTask;
-      case 'refresh_backlog':
-        return ProjectDecisionType.refreshBacklog;
       case 'retry_recovery':
         return ProjectDecisionType.retryRecovery;
       case 'apply_plan_revision':
@@ -1516,8 +1432,6 @@ class ProjectDecisionTypeMapper extends EnumMapper<ProjectDecisionType> {
         return 'split_task';
       case ProjectDecisionType.evaluateTask:
         return 'evaluate_task';
-      case ProjectDecisionType.refreshBacklog:
-        return 'refresh_backlog';
       case ProjectDecisionType.retryRecovery:
         return 'retry_recovery';
       case ProjectDecisionType.applyPlanRevision:
@@ -1822,13 +1736,6 @@ class ProjectCriterionMapper extends ClassMapperBase<ProjectCriterion> {
     opt: true,
     def: ProjectVerificationMode.mixed,
   );
-  static List<String> _$evidenceIds(ProjectCriterion v) => v.evidenceIds;
-  static const Field<ProjectCriterion, List<String>> _f$evidenceIds = Field(
-    'evidenceIds',
-    _$evidenceIds,
-    opt: true,
-    def: const [],
-  );
   static String _$notes(ProjectCriterion v) => v.notes;
   static const Field<ProjectCriterion, String> _f$notes = Field(
     'notes',
@@ -1860,7 +1767,6 @@ class ProjectCriterionMapper extends ClassMapperBase<ProjectCriterion> {
     #required: _f$required,
     #status: _f$status,
     #verificationMode: _f$verificationMode,
-    #evidenceIds: _f$evidenceIds,
     #notes: _f$notes,
     #createdAt: _f$createdAt,
     #updatedAt: _f$updatedAt,
@@ -1876,7 +1782,6 @@ class ProjectCriterionMapper extends ClassMapperBase<ProjectCriterion> {
       required: data.dec(_f$required),
       status: data.dec(_f$status),
       verificationMode: data.dec(_f$verificationMode),
-      evidenceIds: data.dec(_f$evidenceIds),
       notes: data.dec(_f$notes),
       createdAt: data.dec(_f$createdAt),
       updatedAt: data.dec(_f$updatedAt),
@@ -1938,6 +1843,13 @@ class ProjectEvidenceMapper extends ClassMapperBase<ProjectEvidence> {
   static const Field<ProjectEvidence, List<String>> _f$criterionIds = Field(
     'criterionIds',
     _$criterionIds,
+    opt: true,
+    def: const [],
+  );
+  static List<String> _$expectationIds(ProjectEvidence v) => v.expectationIds;
+  static const Field<ProjectEvidence, List<String>> _f$expectationIds = Field(
+    'expectationIds',
+    _$expectationIds,
     opt: true,
     def: const [],
   );
@@ -2014,6 +1926,7 @@ class ProjectEvidenceMapper extends ClassMapperBase<ProjectEvidence> {
     #id: _f$id,
     #type: _f$type,
     #criterionIds: _f$criterionIds,
+    #expectationIds: _f$expectationIds,
     #projectTaskId: _f$projectTaskId,
     #taskDocumentId: _f$taskDocumentId,
     #taskRunId: _f$taskRunId,
@@ -2034,6 +1947,7 @@ class ProjectEvidenceMapper extends ClassMapperBase<ProjectEvidence> {
       id: data.dec(_f$id),
       type: data.dec(_f$type),
       criterionIds: data.dec(_f$criterionIds),
+      expectationIds: data.dec(_f$expectationIds),
       projectTaskId: data.dec(_f$projectTaskId),
       taskDocumentId: data.dec(_f$taskDocumentId),
       taskRunId: data.dec(_f$taskRunId),
@@ -2119,13 +2033,6 @@ class ProjectMilestoneMapper extends ClassMapperBase<ProjectMilestone> {
     opt: true,
     def: const [],
   );
-  static List<String> _$taskIds(ProjectMilestone v) => v.taskIds;
-  static const Field<ProjectMilestone, List<String>> _f$taskIds = Field(
-    'taskIds',
-    _$taskIds,
-    opt: true,
-    def: const [],
-  );
   static int _$order(ProjectMilestone v) => v.order;
   static const Field<ProjectMilestone, int> _f$order = Field('order', _$order);
   static DateTime _$createdAt(ProjectMilestone v) => v.createdAt;
@@ -2153,7 +2060,6 @@ class ProjectMilestoneMapper extends ClassMapperBase<ProjectMilestone> {
     #criterionIds: _f$criterionIds,
     #status: _f$status,
     #exitConditions: _f$exitConditions,
-    #taskIds: _f$taskIds,
     #order: _f$order,
     #createdAt: _f$createdAt,
     #updatedAt: _f$updatedAt,
@@ -2170,7 +2076,6 @@ class ProjectMilestoneMapper extends ClassMapperBase<ProjectMilestone> {
       criterionIds: data.dec(_f$criterionIds),
       status: data.dec(_f$status),
       exitConditions: data.dec(_f$exitConditions),
-      taskIds: data.dec(_f$taskIds),
       order: data.dec(_f$order),
       createdAt: data.dec(_f$createdAt),
       updatedAt: data.dec(_f$updatedAt),
@@ -2529,13 +2434,13 @@ mixin ProjectMemorySupersessionMappable {
 }
 
 /// @nodoc
-class ProjectPlanProposalMapper extends ClassMapperBase<ProjectPlanProposal> {
-  ProjectPlanProposalMapper._();
+class ProjectDesiredPlanMapper extends ClassMapperBase<ProjectDesiredPlan> {
+  ProjectDesiredPlanMapper._();
 
-  static ProjectPlanProposalMapper? _instance;
-  static ProjectPlanProposalMapper ensureInitialized() {
+  static ProjectDesiredPlanMapper? _instance;
+  static ProjectDesiredPlanMapper ensureInitialized() {
     if (_instance == null) {
-      MapperContainer.globals.use(_instance = ProjectPlanProposalMapper._());
+      MapperContainer.globals.use(_instance = ProjectDesiredPlanMapper._());
       ProjectPlanRevisionTriggerMapper.ensureInitialized();
       ProjectCriterionMapper.ensureInitialized();
       ProjectMilestoneMapper.ensureInitialized();
@@ -2548,89 +2453,59 @@ class ProjectPlanProposalMapper extends ClassMapperBase<ProjectPlanProposal> {
   }
 
   @override
-  final String id = 'ProjectPlanProposal';
+  final String id = 'ProjectDesiredPlan';
 
-  static int _$revision(ProjectPlanProposal v) => v.revision;
-  static const Field<ProjectPlanProposal, int> _f$revision = Field(
+  static int _$revision(ProjectDesiredPlan v) => v.revision;
+  static const Field<ProjectDesiredPlan, int> _f$revision = Field(
     'revision',
     _$revision,
   );
-  static List<ProjectPlanRevisionTrigger> _$triggers(ProjectPlanProposal v) =>
+  static List<ProjectPlanRevisionTrigger> _$triggers(ProjectDesiredPlan v) =>
       v.triggers;
-  static const Field<ProjectPlanProposal, List<ProjectPlanRevisionTrigger>>
+  static const Field<ProjectDesiredPlan, List<ProjectPlanRevisionTrigger>>
   _f$triggers = Field('triggers', _$triggers, opt: true, def: const []);
-  static String _$summary(ProjectPlanProposal v) => v.summary;
-  static const Field<ProjectPlanProposal, String> _f$summary = Field(
+  static String _$summary(ProjectDesiredPlan v) => v.summary;
+  static const Field<ProjectDesiredPlan, String> _f$summary = Field(
     'summary',
     _$summary,
   );
-  static String _$rationale(ProjectPlanProposal v) => v.rationale;
-  static const Field<ProjectPlanProposal, String> _f$rationale = Field(
+  static String _$rationale(ProjectDesiredPlan v) => v.rationale;
+  static const Field<ProjectDesiredPlan, String> _f$rationale = Field(
     'rationale',
     _$rationale,
   );
-  static List<String> _$assumptions(ProjectPlanProposal v) => v.assumptions;
-  static const Field<ProjectPlanProposal, List<String>> _f$assumptions = Field(
+  static List<String> _$assumptions(ProjectDesiredPlan v) => v.assumptions;
+  static const Field<ProjectDesiredPlan, List<String>> _f$assumptions = Field(
     'assumptions',
     _$assumptions,
     opt: true,
     def: const [],
   );
-  static List<ProjectCriterion> _$criterionUpserts(ProjectPlanProposal v) =>
-      v.criterionUpserts;
-  static const Field<ProjectPlanProposal, List<ProjectCriterion>>
-  _f$criterionUpserts = Field(
-    'criterionUpserts',
-    _$criterionUpserts,
+  static List<ProjectCriterion> _$criteria(ProjectDesiredPlan v) => v.criteria;
+  static const Field<ProjectDesiredPlan, List<ProjectCriterion>> _f$criteria =
+      Field('criteria', _$criteria, opt: true, def: const []);
+  static List<ProjectMilestone> _$milestones(ProjectDesiredPlan v) =>
+      v.milestones;
+  static const Field<ProjectDesiredPlan, List<ProjectMilestone>> _f$milestones =
+      Field('milestones', _$milestones, opt: true, def: const []);
+  static List<ProjectTask> _$tasks(ProjectDesiredPlan v) => v.tasks;
+  static const Field<ProjectDesiredPlan, List<ProjectTask>> _f$tasks = Field(
+    'tasks',
+    _$tasks,
     opt: true,
     def: const [],
   );
-  static List<String> _$removedCriterionIds(ProjectPlanProposal v) =>
-      v.removedCriterionIds;
-  static const Field<ProjectPlanProposal, List<String>> _f$removedCriterionIds =
-      Field(
-        'removedCriterionIds',
-        _$removedCriterionIds,
-        opt: true,
-        def: const [],
-      );
-  static List<ProjectMilestone> _$milestoneUpserts(ProjectPlanProposal v) =>
-      v.milestoneUpserts;
-  static const Field<ProjectPlanProposal, List<ProjectMilestone>>
-  _f$milestoneUpserts = Field(
-    'milestoneUpserts',
-    _$milestoneUpserts,
-    opt: true,
-    def: const [],
-  );
-  static List<String> _$removedMilestoneIds(ProjectPlanProposal v) =>
-      v.removedMilestoneIds;
-  static const Field<ProjectPlanProposal, List<String>> _f$removedMilestoneIds =
-      Field(
-        'removedMilestoneIds',
-        _$removedMilestoneIds,
-        opt: true,
-        def: const [],
-      );
-  static List<ProjectTask> _$taskAdditions(ProjectPlanProposal v) =>
-      v.taskAdditions;
-  static const Field<ProjectPlanProposal, List<ProjectTask>> _f$taskAdditions =
-      Field('taskAdditions', _$taskAdditions, opt: true, def: const []);
-  static List<ProjectTask> _$taskUpdates(ProjectPlanProposal v) =>
-      v.taskUpdates;
-  static const Field<ProjectPlanProposal, List<ProjectTask>> _f$taskUpdates =
-      Field('taskUpdates', _$taskUpdates, opt: true, def: const []);
-  static List<String> _$deferredTaskIds(ProjectPlanProposal v) =>
+  static List<String> _$deferredTaskIds(ProjectDesiredPlan v) =>
       v.deferredTaskIds;
-  static const Field<ProjectPlanProposal, List<String>> _f$deferredTaskIds =
+  static const Field<ProjectDesiredPlan, List<String>> _f$deferredTaskIds =
       Field('deferredTaskIds', _$deferredTaskIds, opt: true, def: const []);
-  static List<String> _$obsoleteTaskIds(ProjectPlanProposal v) =>
+  static List<String> _$obsoleteTaskIds(ProjectDesiredPlan v) =>
       v.obsoleteTaskIds;
-  static const Field<ProjectPlanProposal, List<String>> _f$obsoleteTaskIds =
+  static const Field<ProjectDesiredPlan, List<String>> _f$obsoleteTaskIds =
       Field('obsoleteTaskIds', _$obsoleteTaskIds, opt: true, def: const []);
-  static List<ProjectMemoryEntry> _$memoryAdditions(ProjectPlanProposal v) =>
+  static List<ProjectMemoryEntry> _$memoryAdditions(ProjectDesiredPlan v) =>
       v.memoryAdditions;
-  static const Field<ProjectPlanProposal, List<ProjectMemoryEntry>>
+  static const Field<ProjectDesiredPlan, List<ProjectMemoryEntry>>
   _f$memoryAdditions = Field(
     'memoryAdditions',
     _$memoryAdditions,
@@ -2638,57 +2513,54 @@ class ProjectPlanProposalMapper extends ClassMapperBase<ProjectPlanProposal> {
     def: const [],
   );
   static List<ProjectMemorySupersession> _$memorySupersessions(
-    ProjectPlanProposal v,
+    ProjectDesiredPlan v,
   ) => v.memorySupersessions;
-  static const Field<ProjectPlanProposal, List<ProjectMemorySupersession>>
+  static const Field<ProjectDesiredPlan, List<ProjectMemorySupersession>>
   _f$memorySupersessions = Field(
     'memorySupersessions',
     _$memorySupersessions,
     opt: true,
     def: const [],
   );
-  static List<PendingProjectQuestion> _$openQuestions(ProjectPlanProposal v) =>
+  static List<PendingProjectQuestion> _$openQuestions(ProjectDesiredPlan v) =>
       v.openQuestions;
-  static const Field<ProjectPlanProposal, List<PendingProjectQuestion>>
+  static const Field<ProjectDesiredPlan, List<PendingProjectQuestion>>
   _f$openQuestions = Field(
     'openQuestions',
     _$openQuestions,
     opt: true,
     def: const [],
   );
-  static bool _$requiresApproval(ProjectPlanProposal v) => v.requiresApproval;
-  static const Field<ProjectPlanProposal, bool> _f$requiresApproval = Field(
+  static bool _$requiresApproval(ProjectDesiredPlan v) => v.requiresApproval;
+  static const Field<ProjectDesiredPlan, bool> _f$requiresApproval = Field(
     'requiresApproval',
     _$requiresApproval,
     opt: true,
     def: false,
   );
-  static String _$approvalReason(ProjectPlanProposal v) => v.approvalReason;
-  static const Field<ProjectPlanProposal, String> _f$approvalReason = Field(
+  static String _$approvalReason(ProjectDesiredPlan v) => v.approvalReason;
+  static const Field<ProjectDesiredPlan, String> _f$approvalReason = Field(
     'approvalReason',
     _$approvalReason,
     opt: true,
     def: '',
   );
-  static DateTime _$createdAt(ProjectPlanProposal v) => v.createdAt;
-  static const Field<ProjectPlanProposal, DateTime> _f$createdAt = Field(
+  static DateTime _$createdAt(ProjectDesiredPlan v) => v.createdAt;
+  static const Field<ProjectDesiredPlan, DateTime> _f$createdAt = Field(
     'createdAt',
     _$createdAt,
   );
 
   @override
-  final MappableFields<ProjectPlanProposal> fields = const {
+  final MappableFields<ProjectDesiredPlan> fields = const {
     #revision: _f$revision,
     #triggers: _f$triggers,
     #summary: _f$summary,
     #rationale: _f$rationale,
     #assumptions: _f$assumptions,
-    #criterionUpserts: _f$criterionUpserts,
-    #removedCriterionIds: _f$removedCriterionIds,
-    #milestoneUpserts: _f$milestoneUpserts,
-    #removedMilestoneIds: _f$removedMilestoneIds,
-    #taskAdditions: _f$taskAdditions,
-    #taskUpdates: _f$taskUpdates,
+    #criteria: _f$criteria,
+    #milestones: _f$milestones,
+    #tasks: _f$tasks,
     #deferredTaskIds: _f$deferredTaskIds,
     #obsoleteTaskIds: _f$obsoleteTaskIds,
     #memoryAdditions: _f$memoryAdditions,
@@ -2701,19 +2573,16 @@ class ProjectPlanProposalMapper extends ClassMapperBase<ProjectPlanProposal> {
   @override
   final bool ignoreNull = true;
 
-  static ProjectPlanProposal _instantiate(DecodingData data) {
-    return ProjectPlanProposal(
+  static ProjectDesiredPlan _instantiate(DecodingData data) {
+    return ProjectDesiredPlan(
       revision: data.dec(_f$revision),
       triggers: data.dec(_f$triggers),
       summary: data.dec(_f$summary),
       rationale: data.dec(_f$rationale),
       assumptions: data.dec(_f$assumptions),
-      criterionUpserts: data.dec(_f$criterionUpserts),
-      removedCriterionIds: data.dec(_f$removedCriterionIds),
-      milestoneUpserts: data.dec(_f$milestoneUpserts),
-      removedMilestoneIds: data.dec(_f$removedMilestoneIds),
-      taskAdditions: data.dec(_f$taskAdditions),
-      taskUpdates: data.dec(_f$taskUpdates),
+      criteria: data.dec(_f$criteria),
+      milestones: data.dec(_f$milestones),
+      tasks: data.dec(_f$tasks),
       deferredTaskIds: data.dec(_f$deferredTaskIds),
       obsoleteTaskIds: data.dec(_f$obsoleteTaskIds),
       memoryAdditions: data.dec(_f$memoryAdditions),
@@ -2728,25 +2597,25 @@ class ProjectPlanProposalMapper extends ClassMapperBase<ProjectPlanProposal> {
   @override
   final Function instantiate = _instantiate;
 
-  static ProjectPlanProposal fromMap(Map<String, dynamic> map) {
-    return ensureInitialized().decodeMap<ProjectPlanProposal>(map);
+  static ProjectDesiredPlan fromMap(Map<String, dynamic> map) {
+    return ensureInitialized().decodeMap<ProjectDesiredPlan>(map);
   }
 
-  static ProjectPlanProposal fromJson(String json) {
-    return ensureInitialized().decodeJson<ProjectPlanProposal>(json);
+  static ProjectDesiredPlan fromJson(String json) {
+    return ensureInitialized().decodeJson<ProjectDesiredPlan>(json);
   }
 }
 
 /// @nodoc
-mixin ProjectPlanProposalMappable {
+mixin ProjectDesiredPlanMappable {
   String toJson() {
-    return ProjectPlanProposalMapper.ensureInitialized()
-        .encodeJson<ProjectPlanProposal>(this as ProjectPlanProposal);
+    return ProjectDesiredPlanMapper.ensureInitialized()
+        .encodeJson<ProjectDesiredPlan>(this as ProjectDesiredPlan);
   }
 
   Map<String, dynamic> toMap() {
-    return ProjectPlanProposalMapper.ensureInitialized()
-        .encodeMap<ProjectPlanProposal>(this as ProjectPlanProposal);
+    return ProjectDesiredPlanMapper.ensureInitialized()
+        .encodeMap<ProjectDesiredPlan>(this as ProjectDesiredPlan);
   }
 }
 
@@ -2762,7 +2631,6 @@ class ProjectTaskMapper extends ClassMapperBase<ProjectTask> {
       ProjectTaskRiskMapper.ensureInitialized();
       ProjectRiskReductionMapper.ensureInitialized();
       ProjectTaskEffortMapper.ensureInitialized();
-      ProjectTaskReadinessMapper.ensureInitialized();
       ProjectEvidenceExpectationMapper.ensureInitialized();
       ProjectArtifactMapper.ensureInitialized();
       ProjectTaskStatusMapper.ensureInitialized();
@@ -2797,12 +2665,9 @@ class ProjectTaskMapper extends ClassMapperBase<ProjectTask> {
     'criterionIds',
     _$criterionIds,
     opt: true,
+    def: const [],
     hook: JsonStringListHook(),
   );
-  static List<String> _$relevantSuccessCriteria(ProjectTask v) =>
-      v.relevantSuccessCriteria;
-  static const Field<ProjectTask, List<String>> _f$relevantSuccessCriteria =
-      Field('relevantSuccessCriteria', _$relevantSuccessCriteria, opt: true);
   static String? _$milestoneId(ProjectTask v) => v.milestoneId;
   static const Field<ProjectTask, String> _f$milestoneId = Field(
     'milestoneId',
@@ -2846,21 +2711,6 @@ class ProjectTaskMapper extends ClassMapperBase<ProjectTask> {
     _$effort,
     opt: true,
     def: ProjectTaskEffort.small,
-  );
-  static ProjectTaskReadiness _$readiness(ProjectTask v) => v.readiness;
-  static const Field<ProjectTask, ProjectTaskReadiness> _f$readiness = Field(
-    'readiness',
-    _$readiness,
-    opt: true,
-    def: ProjectTaskReadiness.ready,
-  );
-  static List<String> _$readinessReasons(ProjectTask v) => v.readinessReasons;
-  static const Field<ProjectTask, List<String>> _f$readinessReasons = Field(
-    'readinessReasons',
-    _$readinessReasons,
-    opt: true,
-    def: const [],
-    hook: JsonStringListHook(),
   );
   static String _$selectionRationale(ProjectTask v) => v.selectionRationale;
   static const Field<ProjectTask, String> _f$selectionRationale = Field(
@@ -3002,15 +2852,12 @@ class ProjectTaskMapper extends ClassMapperBase<ProjectTask> {
     #title: _f$title,
     #objective: _f$objective,
     #criterionIds: _f$criterionIds,
-    #relevantSuccessCriteria: _f$relevantSuccessCriteria,
     #milestoneId: _f$milestoneId,
     #dependsOnTaskIds: _f$dependsOnTaskIds,
     #priority: _f$priority,
     #risk: _f$risk,
     #riskReduction: _f$riskReduction,
     #effort: _f$effort,
-    #readiness: _f$readiness,
-    #readinessReasons: _f$readinessReasons,
     #selectionRationale: _f$selectionRationale,
     #revisionIntroduced: _f$revisionIntroduced,
     #revisionUpdated: _f$revisionUpdated,
@@ -3042,15 +2889,12 @@ class ProjectTaskMapper extends ClassMapperBase<ProjectTask> {
       title: data.dec(_f$title),
       objective: data.dec(_f$objective),
       criterionIds: data.dec(_f$criterionIds),
-      relevantSuccessCriteria: data.dec(_f$relevantSuccessCriteria),
       milestoneId: data.dec(_f$milestoneId),
       dependsOnTaskIds: data.dec(_f$dependsOnTaskIds),
       priority: data.dec(_f$priority),
       risk: data.dec(_f$risk),
       riskReduction: data.dec(_f$riskReduction),
       effort: data.dec(_f$effort),
-      readiness: data.dec(_f$readiness),
-      readinessReasons: data.dec(_f$readinessReasons),
       selectionRationale: data.dec(_f$selectionRationale),
       revisionIntroduced: data.dec(_f$revisionIntroduced),
       revisionUpdated: data.dec(_f$revisionUpdated),
@@ -3589,7 +3433,7 @@ class PendingProjectPlanApprovalMapper
       MapperContainer.globals.use(
         _instance = PendingProjectPlanApprovalMapper._(),
       );
-      ProjectPlanProposalMapper.ensureInitialized();
+      ProjectDesiredPlanMapper.ensureInitialized();
     }
     return _instance!;
   }
@@ -3635,10 +3479,10 @@ class PendingProjectPlanApprovalMapper
     'createdAt',
     _$createdAt,
   );
-  static ProjectPlanProposal? _$proposal(PendingProjectPlanApproval v) =>
-      v.proposal;
-  static const Field<PendingProjectPlanApproval, ProjectPlanProposal>
-  _f$proposal = Field('proposal', _$proposal, opt: true);
+  static ProjectDesiredPlan? _$desiredPlan(PendingProjectPlanApproval v) =>
+      v.desiredPlan;
+  static const Field<PendingProjectPlanApproval, ProjectDesiredPlan>
+  _f$desiredPlan = Field('desiredPlan', _$desiredPlan, opt: true);
 
   @override
   final MappableFields<PendingProjectPlanApproval> fields = const {
@@ -3648,7 +3492,7 @@ class PendingProjectPlanApprovalMapper
     #highRiskChanges: _f$highRiskChanges,
     #highRiskReasonCodes: _f$highRiskReasonCodes,
     #createdAt: _f$createdAt,
-    #proposal: _f$proposal,
+    #desiredPlan: _f$desiredPlan,
   };
   @override
   final bool ignoreNull = true;
@@ -3661,7 +3505,7 @@ class PendingProjectPlanApprovalMapper
       highRiskChanges: data.dec(_f$highRiskChanges),
       highRiskReasonCodes: data.dec(_f$highRiskReasonCodes),
       createdAt: data.dec(_f$createdAt),
-      proposal: data.dec(_f$proposal),
+      desiredPlan: data.dec(_f$desiredPlan),
     );
   }
 
@@ -3815,9 +3659,7 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
       ProjectPlanRevisionTriggerMapper.ensureInitialized();
       ProjectCompletionReviewCheckpointMapper.ensureInitialized();
       PendingProjectQuestionMapper.ensureInitialized();
-      ProjectTaskRefMapper.ensureInitialized();
       ProjectStatusMapper.ensureInitialized();
-      ProjectPhaseMapper.ensureInitialized();
       ProjectBlockerMapper.ensureInitialized();
       ProjectDecisionRecordMapper.ensureInitialized();
       ProjectDiagnosticsMapper.ensureInitialized();
@@ -3852,40 +3694,19 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
   static const Field<ProjectState, String> _f$originalGoal = Field(
     'originalGoal',
     _$originalGoal,
-    opt: true,
     hook: JsonStringHook(),
   );
   static String _$refinedGoal(ProjectState v) => v.refinedGoal;
   static const Field<ProjectState, String> _f$refinedGoal = Field(
     'refinedGoal',
     _$refinedGoal,
-    opt: true,
     hook: JsonStringHook(),
-  );
-  static String _$originalPrompt(ProjectState v) => v.originalPrompt;
-  static const Field<ProjectState, String> _f$originalPrompt = Field(
-    'originalPrompt',
-    _$originalPrompt,
-    opt: true,
-  );
-  static String _$goal(ProjectState v) => v.goal;
-  static const Field<ProjectState, String> _f$goal = Field(
-    'goal',
-    _$goal,
-    opt: true,
   );
   static List<ProjectCriterion> _$criteria(ProjectState v) => v.criteria;
   static const Field<ProjectState, List<ProjectCriterion>> _f$criteria = Field(
     'criteria',
     _$criteria,
-    opt: true,
     hook: JsonObjectListHook(),
-  );
-  static List<String> _$successCriteria(ProjectState v) => v.successCriteria;
-  static const Field<ProjectState, List<String>> _f$successCriteria = Field(
-    'successCriteria',
-    _$successCriteria,
-    opt: true,
   );
   static List<String> _$constraints(ProjectState v) => v.constraints;
   static const Field<ProjectState, List<String>> _f$constraints = Field(
@@ -3893,30 +3714,10 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
     _$constraints,
     hook: JsonStringListHook(),
   );
-  static List<ProjectTask> _$backlog(ProjectState v) => v.backlog;
-  static const Field<ProjectState, List<ProjectTask>> _f$backlog = Field(
-    'backlog',
-    _$backlog,
-    opt: true,
-    hook: JsonObjectListHook(),
-  );
-  static ProjectTask? _$currentTask(ProjectState v) => v.currentTask;
-  static const Field<ProjectState, ProjectTask> _f$currentTask = Field(
-    'currentTask',
-    _$currentTask,
-    opt: true,
-  );
-  static List<ProjectTask> _$completedTasks(ProjectState v) => v.completedTasks;
-  static const Field<ProjectState, List<ProjectTask>> _f$completedTasks = Field(
-    'completedTasks',
-    _$completedTasks,
-    opt: true,
-    hook: JsonObjectListHook(),
-  );
-  static List<ProjectTask> _$failedTasks(ProjectState v) => v.failedTasks;
-  static const Field<ProjectState, List<ProjectTask>> _f$failedTasks = Field(
-    'failedTasks',
-    _$failedTasks,
+  static List<ProjectTask> _$tasks(ProjectState v) => v.tasks;
+  static const Field<ProjectState, List<ProjectTask>> _f$tasks = Field(
+    'tasks',
+    _$tasks,
     opt: true,
     hook: JsonObjectListHook(),
   );
@@ -3952,19 +3753,6 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
     _$memory,
     opt: true,
     hook: JsonObjectListHook(),
-  );
-  static List<String> _$knownFacts(ProjectState v) => v.knownFacts;
-  static const Field<ProjectState, List<String>> _f$knownFacts = Field(
-    'knownFacts',
-    _$knownFacts,
-    opt: true,
-  );
-  static int _$currentRevision(ProjectState v) => v.currentRevision;
-  static const Field<ProjectState, int> _f$currentRevision = Field(
-    'currentRevision',
-    _$currentRevision,
-    opt: true,
-    hook: JsonIntHook(fallback: 1, min: 1),
   );
   static List<ProjectPlanRevision> _$planHistory(ProjectState v) =>
       v.planHistory;
@@ -4009,24 +3797,9 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
     'openQuestions',
     _$openQuestions,
     opt: true,
+    def: const [],
     hook: JsonObjectListHook(),
   );
-  static String _$memorySummary(ProjectState v) => v.memorySummary;
-  static const Field<ProjectState, String> _f$memorySummary = Field(
-    'memorySummary',
-    _$memorySummary,
-    opt: true,
-  );
-  static List<ProjectTaskRef> _$tasks(ProjectState v) => v.tasks;
-  static const Field<ProjectState, List<ProjectTaskRef>> _f$tasks = Field(
-    'tasks',
-    _$tasks,
-    opt: true,
-  );
-  static PendingProjectQuestion? _$pendingQuestion(ProjectState v) =>
-      v.pendingQuestion;
-  static const Field<ProjectState, PendingProjectQuestion> _f$pendingQuestion =
-      Field('pendingQuestion', _$pendingQuestion, opt: true);
   static ProjectStatus _$status(ProjectState v) => v.status;
   static const Field<ProjectState, ProjectStatus> _f$status = Field(
     'status',
@@ -4037,13 +3810,6 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
       'reviewingtask': 'reviewing_task',
       'waitingforuser': 'waiting_for_user',
     }),
-  );
-  static ProjectPhase _$phase(ProjectState v) => v.phase;
-  static const Field<ProjectState, ProjectPhase> _f$phase = Field(
-    'phase',
-    _$phase,
-    opt: true,
-    hook: EnumAliasHook({}),
   );
   static int _$iterationCount(ProjectState v) => v.iterationCount;
   static const Field<ProjectState, int> _f$iterationCount = Field(
@@ -4142,32 +3908,20 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
     #title: _f$title,
     #originalGoal: _f$originalGoal,
     #refinedGoal: _f$refinedGoal,
-    #originalPrompt: _f$originalPrompt,
-    #goal: _f$goal,
     #criteria: _f$criteria,
-    #successCriteria: _f$successCriteria,
     #constraints: _f$constraints,
-    #backlog: _f$backlog,
-    #currentTask: _f$currentTask,
-    #completedTasks: _f$completedTasks,
-    #failedTasks: _f$failedTasks,
+    #tasks: _f$tasks,
     #artifacts: _f$artifacts,
     #recoveryIncidents: _f$recoveryIncidents,
     #evidence: _f$evidence,
     #milestones: _f$milestones,
     #memory: _f$memory,
-    #knownFacts: _f$knownFacts,
-    #currentRevision: _f$currentRevision,
     #planHistory: _f$planHistory,
     #pendingPlanApproval: _f$pendingPlanApproval,
     #pendingReplanTriggers: _f$pendingReplanTriggers,
     #completionReviewCheckpoint: _f$completionReviewCheckpoint,
     #openQuestions: _f$openQuestions,
-    #memorySummary: _f$memorySummary,
-    #tasks: _f$tasks,
-    #pendingQuestion: _f$pendingQuestion,
     #status: _f$status,
-    #phase: _f$phase,
     #iterationCount: _f$iterationCount,
     #maxIterations: _f$maxIterations,
     #maxFailedTasks: _f$maxFailedTasks,
@@ -4193,32 +3947,20 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
       title: data.dec(_f$title),
       originalGoal: data.dec(_f$originalGoal),
       refinedGoal: data.dec(_f$refinedGoal),
-      originalPrompt: data.dec(_f$originalPrompt),
-      goal: data.dec(_f$goal),
       criteria: data.dec(_f$criteria),
-      successCriteria: data.dec(_f$successCriteria),
       constraints: data.dec(_f$constraints),
-      backlog: data.dec(_f$backlog),
-      currentTask: data.dec(_f$currentTask),
-      completedTasks: data.dec(_f$completedTasks),
-      failedTasks: data.dec(_f$failedTasks),
+      tasks: data.dec(_f$tasks),
       artifacts: data.dec(_f$artifacts),
       recoveryIncidents: data.dec(_f$recoveryIncidents),
       evidence: data.dec(_f$evidence),
       milestones: data.dec(_f$milestones),
       memory: data.dec(_f$memory),
-      knownFacts: data.dec(_f$knownFacts),
-      currentRevision: data.dec(_f$currentRevision),
       planHistory: data.dec(_f$planHistory),
       pendingPlanApproval: data.dec(_f$pendingPlanApproval),
       pendingReplanTriggers: data.dec(_f$pendingReplanTriggers),
       completionReviewCheckpoint: data.dec(_f$completionReviewCheckpoint),
       openQuestions: data.dec(_f$openQuestions),
-      memorySummary: data.dec(_f$memorySummary),
-      tasks: data.dec(_f$tasks),
-      pendingQuestion: data.dec(_f$pendingQuestion),
       status: data.dec(_f$status),
-      phase: data.dec(_f$phase),
       iterationCount: data.dec(_f$iterationCount),
       maxIterations: data.dec(_f$maxIterations),
       maxFailedTasks: data.dec(_f$maxFailedTasks),
@@ -4437,117 +4179,6 @@ mixin ProjectRecoveryIncidentMappable {
 }
 
 /// @nodoc
-class ProjectTaskRefMapper extends ClassMapperBase<ProjectTaskRef> {
-  ProjectTaskRefMapper._();
-
-  static ProjectTaskRefMapper? _instance;
-  static ProjectTaskRefMapper ensureInitialized() {
-    if (_instance == null) {
-      MapperContainer.globals.use(_instance = ProjectTaskRefMapper._());
-      TaskStatusMapper.ensureInitialized();
-    }
-    return _instance!;
-  }
-
-  @override
-  final String id = 'ProjectTaskRef';
-
-  static String _$taskId(ProjectTaskRef v) => v.taskId;
-  static const Field<ProjectTaskRef, String> _f$taskId = Field(
-    'taskId',
-    _$taskId,
-    hook: JsonStringHook(),
-  );
-  static String _$title(ProjectTaskRef v) => v.title;
-  static const Field<ProjectTaskRef, String> _f$title = Field(
-    'title',
-    _$title,
-    hook: JsonStringHook(fallback: 'Untitled task'),
-  );
-  static TaskStatus _$status(ProjectTaskRef v) => v.status;
-  static const Field<ProjectTaskRef, TaskStatus> _f$status = Field(
-    'status',
-    _$status,
-  );
-  static String _$summary(ProjectTaskRef v) => v.summary;
-  static const Field<ProjectTaskRef, String> _f$summary = Field(
-    'summary',
-    _$summary,
-    hook: JsonStringHook(),
-  );
-  static DateTime _$createdAt(ProjectTaskRef v) => v.createdAt;
-  static const Field<ProjectTaskRef, DateTime> _f$createdAt = Field(
-    'createdAt',
-    _$createdAt,
-    hook: JsonDateHook(),
-  );
-  static DateTime _$updatedAt(ProjectTaskRef v) => v.updatedAt;
-  static const Field<ProjectTaskRef, DateTime> _f$updatedAt = Field(
-    'updatedAt',
-    _$updatedAt,
-    hook: JsonDateHook(),
-  );
-  static DateTime? _$completedAt(ProjectTaskRef v) => v.completedAt;
-  static const Field<ProjectTaskRef, DateTime> _f$completedAt = Field(
-    'completedAt',
-    _$completedAt,
-    opt: true,
-    hook: JsonNullableDateHook(),
-  );
-
-  @override
-  final MappableFields<ProjectTaskRef> fields = const {
-    #taskId: _f$taskId,
-    #title: _f$title,
-    #status: _f$status,
-    #summary: _f$summary,
-    #createdAt: _f$createdAt,
-    #updatedAt: _f$updatedAt,
-    #completedAt: _f$completedAt,
-  };
-  @override
-  final bool ignoreNull = true;
-
-  static ProjectTaskRef _instantiate(DecodingData data) {
-    return ProjectTaskRef(
-      taskId: data.dec(_f$taskId),
-      title: data.dec(_f$title),
-      status: data.dec(_f$status),
-      summary: data.dec(_f$summary),
-      createdAt: data.dec(_f$createdAt),
-      updatedAt: data.dec(_f$updatedAt),
-      completedAt: data.dec(_f$completedAt),
-    );
-  }
-
-  @override
-  final Function instantiate = _instantiate;
-
-  static ProjectTaskRef fromMap(Map<String, dynamic> map) {
-    return ensureInitialized().decodeMap<ProjectTaskRef>(map);
-  }
-
-  static ProjectTaskRef fromJson(String json) {
-    return ensureInitialized().decodeJson<ProjectTaskRef>(json);
-  }
-}
-
-/// @nodoc
-mixin ProjectTaskRefMappable {
-  String toJson() {
-    return ProjectTaskRefMapper.ensureInitialized().encodeJson<ProjectTaskRef>(
-      this as ProjectTaskRef,
-    );
-  }
-
-  Map<String, dynamic> toMap() {
-    return ProjectTaskRefMapper.ensureInitialized().encodeMap<ProjectTaskRef>(
-      this as ProjectTaskRef,
-    );
-  }
-}
-
-/// @nodoc
 class ProjectBlockerMapper extends ClassMapperBase<ProjectBlocker> {
   ProjectBlockerMapper._();
 
@@ -4678,7 +4309,6 @@ class ProjectDecisionRecordMapper
           'rejecttask': 'reject_task',
           'splittask': 'split_task',
           'evaluatetask': 'evaluate_task',
-          'refreshbacklog': 'refresh_backlog',
           'retryrecovery': 'retry_recovery',
           'applyplanrevision': 'apply_plan_revision',
           'approveplanrevision': 'approve_plan_revision',

@@ -2,508 +2,519 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/project.dart';
-import 'package:hermes/core/serialization/model_json.dart';
+import 'package:hermes/core/services/project_system/project_criterion_evaluator.dart';
 import 'package:hermes/core/services/project_system/project_plan_revision_service.dart';
 
 void main() {
-  group('ProjectPlanRevisionService', () {
-    late Directory workspace;
-    late ProjectState project;
-    const service = ProjectPlanRevisionService();
+  late Directory workspace;
+  const service = ProjectPlanRevisionService();
 
-    setUp(() async {
-      workspace = await Directory.systemTemp.createTemp(
-        'hermes_plan_revision_',
-      );
-      project = _project();
-    });
+  setUp(() async {
+    workspace = await Directory.systemTemp.createTemp('hermes_plan_revision_');
+  });
 
-    tearDown(() async {
-      if (await workspace.exists()) await workspace.delete(recursive: true);
-    });
+  tearDown(() async {
+    if (await workspace.exists()) await workspace.delete(recursive: true);
+  });
 
-    test('invalid proposal cannot mutate authoritative plan', () async {
-      var repairCalls = 0;
-      final invalid = _proposal(
-        project,
-        taskAdditions: [
-          _task(id: 'task_invalid', dependsOnTaskIds: const ['missing_task']),
-        ],
-      );
+  test('invalid desired plans do not partially apply', () async {
+    final project = _project([_task('existing')]);
+    final invalid = _desired(project, [
+      _task('invalid', dependencies: const ['missing']),
+    ]);
+    final result = await service.prepareAndApply(
+      project: project,
+      proposal: invalid,
+      workspaceRoot: workspace.path,
+    );
 
-      final result = await service.prepareAndApply(
-        project: project,
-        proposal: invalid,
-        workspaceRoot: workspace.path,
-        repair: (proposal, validation) async {
-          repairCalls++;
-          return null;
-        },
-      );
+    expect(result.validation.valid, isFalse);
+    expect(result.project.tasks.map((task) => task.id), ['existing']);
+    expect(result.project.planHistory, hasLength(1));
+  });
 
-      expect(repairCalls, 1);
-      expect(result.repairAttempted, isTrue);
-      expect(result.validation.valid, isFalse);
-      expect(
-        result.validation.errors.map((item) => item.code),
-        contains('missing_dependency'),
-      );
-      expect(result.project.currentRevision, project.currentRevision);
-      expect(result.project.planHistory, project.planHistory);
-      expect(result.project.backlog, project.backlog);
-      expect(result.project.criteria, project.criteria);
-      expect(result.project.blocker?.type, ProjectBlockerType.validation);
-    });
-
-    test('one successful repair is applied as one revision', () async {
-      var repairCalls = 0;
-      final invalid = _proposal(
-        project,
-        taskAdditions: [
-          _task(id: 'task_repaired', dependsOnTaskIds: const ['missing_task']),
-        ],
-      );
-
-      final result = await service.prepareAndApply(
-        project: project,
-        proposal: invalid,
-        workspaceRoot: workspace.path,
-        repair: (proposal, validation) async {
-          repairCalls++;
-          return _proposal(
-            project,
-            taskAdditions: [_task(id: 'task_repaired')],
-          );
-        },
-      );
-
-      expect(repairCalls, 1);
-      expect(result.changed, isTrue);
-      expect(result.project.currentRevision, 2);
-      expect(result.project.planHistory, hasLength(2));
-      expect(result.project.backlog.single.id, 'task_repaired');
-      final decision = result.project.memory.singleWhere(
-        (entry) => entry.kind == ProjectMemoryKind.decision,
-      );
-      expect(decision.sourceId, 'revision_2');
-      expect(decision.protected, isTrue);
-    });
-
-    test('no-op proposal clears triggers without adding history', () async {
-      final pending = project.copyWith(
-        pendingReplanTriggers: const [ProjectPlanRevisionTrigger.taskCompleted],
-      );
-
-      final result = await service.prepareAndApply(
-        project: pending,
-        proposal: _proposal(pending),
-        workspaceRoot: workspace.path,
-      );
-
-      expect(result.changed, isFalse);
-      expect(result.project.currentRevision, 1);
-      expect(result.project.planHistory, hasLength(1));
-      expect(result.project.pendingReplanTriggers, isEmpty);
-    });
-
-    test('default policy waits for high-risk criterion edit', () async {
-      final editedCriterion = project.criteria.single.copyWith(
-        statement: 'The revised required outcome is verified.',
-      );
-      final proposal = _proposal(project, criterionUpserts: [editedCriterion]);
-
-      final pending = await service.prepareAndApply(
-        project: project,
-        proposal: proposal,
-        workspaceRoot: workspace.path,
-      );
-
-      expect(pending.awaitingApproval, isTrue);
-      expect(pending.project.pendingPlanApproval?.proposal, isNotNull);
-      expect(pending.project.blocker?.type, ProjectBlockerType.planApproval);
-      expect(pending.project.currentRevision, 1);
-      expect(
-        pending.project.criteria.single.statement,
-        project.criteria.single.statement,
-      );
-      final restored = ModelJson.decode<ProjectState>(
-        ModelJson.encode(pending.project),
-      );
-      expect(restored.pendingPlanApproval?.proposal?.revision, 2);
-
-      final approved = service.approvePending(
-        project: restored,
-        workspaceRoot: workspace.path,
-      );
-      expect(approved.changed, isTrue);
-      expect(approved.project.pendingPlanApproval, isNull);
-      expect(approved.project.currentRevision, 2);
-      expect(
-        approved.project.criteria.single.statement,
-        editedCriterion.statement,
-      );
-      expect(
-        approved.project.planHistory.last.approvedBy,
-        ProjectPlanRevisionApprover.user,
-      );
-    });
-
-    test('criterion progress upsert applies without approval', () async {
-      final completedTask = _task(
-        id: 'task_completed',
-      ).copyWith(status: ProjectTaskStatus.completed);
-      final orphanedEvidence = ProjectEvidence(
-        id: 'evidence_completed_command',
-        type: ProjectEvidenceType.command,
-        criterionIds: const [],
-        projectTaskId: completedTask.id,
+  test(
+    'reconciliation retains terminal history and makes new work queued',
+    () async {
+      final completed = _task('completed').copyWith(
+        status: ProjectTaskStatus.completed,
         taskDocumentId: 'document_completed',
-        taskRunId: 'run_completed',
-        sourceRef: 'flutter test',
-        summary: 'Verification passed.',
-        status: ProjectEvidenceStatus.accepted,
-        strength: ProjectEvidenceStrength.conclusive,
-        createdAt: DateTime(2026, 1, 2),
-        evaluatedAt: DateTime(2026, 1, 2),
       );
-      final withEvidence = project.copyWith(
-        completedTasks: [completedTask],
-        evidence: [orphanedEvidence],
+      final active = _task('active').copyWith(
+        status: ProjectTaskStatus.running,
+        taskDocumentId: 'document_active',
       );
-      final progress = withEvidence.criteria.single.copyWith(
-        status: ProjectCriterionStatus.satisfied,
-        evidenceIds: [orphanedEvidence.id],
-        notes: 'The completed task supplied accepted evidence.',
-      );
-      final proposal = _proposal(
-        withEvidence,
-        criterionUpserts: [progress],
-        taskAdditions: [_task(id: 'task_next')],
-      );
-      final previouslyPaused = withEvidence.copyWith(
-        status: ProjectStatus.paused,
-        pendingPlanApproval: PendingProjectPlanApproval(
-          revision: proposal.revision,
-          reason: 'The revision contains high-risk plan changes.',
-          summary: proposal.summary,
-          highRiskChanges: const [
-            'Success criteria or their verification policy changes.',
-          ],
-          createdAt: proposal.createdAt,
-          proposal: proposal,
-        ),
-        blocker: ProjectBlocker(
-          type: ProjectBlockerType.planApproval,
-          message: 'The revision contains high-risk plan changes.',
-          createdAt: proposal.createdAt,
-        ),
-      );
-
-      final result = await service.prepareAndApply(
-        project: previouslyPaused,
-        proposal: proposal,
-        workspaceRoot: workspace.path,
-      );
-
-      expect(result.awaitingApproval, isFalse);
-      expect(result.changed, isTrue);
-      expect(result.project.pendingPlanApproval, isNull);
-      expect(result.project.currentRevision, 2);
-      expect(
-        result.project.criteria.single.status,
-        ProjectCriterionStatus.satisfied,
-      );
-      expect(result.project.evidence.single.criterionIds, const [
-        'criterion_001',
-      ]);
-      expect(
-        result.project.evidence.single.details['linkedBy'],
-        'plan_revision_orphan_repair',
-      );
-    });
-
-    test('changing whether a criterion is required needs approval', () async {
-      final proposal = _proposal(
-        project,
-        criterionUpserts: [project.criteria.single.copyWith(required: false)],
-      );
-
+      final project = _project([
+        completed,
+        active,
+        _task('omitted'),
+      ], activeTaskId: 'active');
       final result = await service.prepareAndApply(
         project: project,
-        proposal: proposal,
-        workspaceRoot: workspace.path,
-      );
-
-      expect(result.awaitingApproval, isTrue);
-      expect(
-        result.project.pendingPlanApproval?.highRiskChanges,
-        contains('Success criteria or their verification policy changes.'),
-      );
-      expect(
-        result.project.pendingPlanApproval?.highRiskReasonCodes,
-        contains('criterion_contract_changed'),
-      );
-    });
-
-    test('replacing unstarted queued work does not require approval', () async {
-      final existing = _task(id: 'task_existing');
-      final withBacklog = project.copyWith(backlog: [existing]);
-      final proposal = ProjectPlanProposal(
-        revision: 2,
-        triggers: const [ProjectPlanRevisionTrigger.manual],
-        summary: 'Replace queued implementation detail.',
-        rationale: 'Use a better bounded task while preserving the outcome.',
-        taskAdditions: [_task(id: 'task_replacement')],
-        obsoleteTaskIds: const ['task_existing'],
-        createdAt: DateTime(2026, 1, 2),
-      );
-
-      final result = await service.prepareAndApply(
-        project: withBacklog,
-        proposal: proposal,
-        workspaceRoot: workspace.path,
-      );
-
-      expect(result.awaitingApproval, isFalse);
-      expect(result.changed, isTrue);
-      expect(
-        result.project.backlog
-            .singleWhere((item) => item.id == 'task_existing')
-            .status,
-        ProjectTaskStatus.obsolete,
-      );
-    });
-
-    test(
-      'restructuring an uncompleted milestone does not require approval',
-      () async {
-        final milestone = ProjectMilestone(
-          id: 'milestone_001',
-          title: 'Original milestone',
-          objective: 'Sequence bounded work.',
-          criterionIds: const ['criterion_001'],
-          status: ProjectMilestoneStatus.active,
-          exitConditions: const ['The bounded outcome is verified.'],
-          order: 1,
-          createdAt: DateTime(2026, 1, 1),
-          updatedAt: DateTime(2026, 1, 1),
-        );
-        final withMilestone = project.copyWith(milestones: [milestone]);
-        final proposal = ProjectPlanProposal(
-          revision: 2,
-          triggers: const [ProjectPlanRevisionTrigger.manual],
-          summary: 'Restructure the rolling roadmap.',
-          rationale: 'The criterion contract remains intact.',
-          removedMilestoneIds: const ['milestone_001'],
-          createdAt: DateTime(2026, 1, 2),
-        );
-
-        final result = await service.prepareAndApply(
-          project: withMilestone,
-          proposal: proposal,
-          workspaceRoot: workspace.path,
-        );
-
-        expect(result.awaitingApproval, isFalse);
-        expect(result.changed, isTrue);
-      },
-    );
-
-    test(
-      'criterion contract edits stale old evidence and reset verification',
-      () async {
-        final verifiedAt = DateTime(2026, 1, 1);
-        final existingEvidence = ProjectEvidence(
-          id: 'evidence_old_contract',
-          type: ProjectEvidenceType.command,
-          criterionIds: const ['criterion_001'],
-          projectTaskId: 'task_old',
-          taskDocumentId: 'document_old',
-          taskRunId: 'run_old',
-          sourceRef: 'flutter test',
-          summary: 'The old contract passed.',
-          status: ProjectEvidenceStatus.accepted,
-          strength: ProjectEvidenceStrength.conclusive,
-          createdAt: verifiedAt,
-          evaluatedAt: verifiedAt,
-        );
-        final verified = project.copyWith(
-          criteria: [
-            project.criteria.single.copyWith(
-              status: ProjectCriterionStatus.satisfied,
-              evidenceIds: [existingEvidence.id],
-              verifiedAt: verifiedAt,
-            ),
-          ],
-          evidence: [existingEvidence],
-        );
-        final proposal = _proposal(
-          verified,
-          criterionUpserts: [
-            verified.criteria.single.copyWith(
-              statement: 'The revised bounded outcome is verified.',
-            ),
-          ],
-        );
-
-        final result = await service.prepareAndApply(
-          project: verified,
-          proposal: proposal,
-          workspaceRoot: workspace.path,
-          approvalPolicy: ProjectPlanApprovalPolicy.never,
-        );
-
-        expect(result.changed, isTrue);
-        expect(
-          result.project.criteria.single.status,
-          ProjectCriterionStatus.unsatisfied,
-        );
-        expect(result.project.criteria.single.evidenceIds, isEmpty);
-        expect(result.project.criteria.single.verifiedAt, isNull);
-        expect(
-          result.project.evidence.single.status,
-          ProjectEvidenceStatus.stale,
-        );
-        expect(
-          result.project.evidence.single.details['staleReason'],
-          'criterion_contract_changed',
-        );
-      },
-    );
-
-    test('removed criteria remain as auditable invalidated history', () async {
-      final proposal = ProjectPlanProposal(
-        revision: project.currentRevision + 1,
-        triggers: const [ProjectPlanRevisionTrigger.manual],
-        summary: 'Remove an obsolete outcome.',
-        rationale: 'The user removed this outcome from scope.',
-        removedCriterionIds: const ['criterion_001'],
-        requiresApproval: true,
-        createdAt: DateTime(2026, 1, 2),
-      );
-
-      final result = await service.prepareAndApply(
-        project: project,
-        proposal: proposal,
+        proposal: _desired(project, [_task('new')]),
         workspaceRoot: workspace.path,
         approvalPolicy: ProjectPlanApprovalPolicy.never,
       );
 
       expect(result.changed, isTrue);
-      expect(result.project.criteria, hasLength(1));
+      expect(
+        result.project.taskById('completed')?.status,
+        ProjectTaskStatus.completed,
+      );
+      expect(
+        result.project.taskById('completed')?.taskDocumentId,
+        'document_completed',
+      );
+      expect(
+        result.project.taskById('active')?.status,
+        ProjectTaskStatus.running,
+      );
+      expect(
+        result.project.taskById('active')?.taskDocumentId,
+        'document_active',
+      );
+      expect(result.project.taskById('new')?.status, ProjectTaskStatus.queued);
+      expect(
+        result.project.taskById('omitted')?.status,
+        ProjectTaskStatus.obsolete,
+      );
+    },
+  );
+
+  test('preserves explicit task dispositions during reconciliation', () async {
+    final project = _project([_task('existing')]);
+    final result = await service.prepareAndApply(
+      project: project,
+      proposal: _desired(
+        project,
+        [
+          _task('existing', status: ProjectTaskStatus.deferred),
+          _task(
+            'new',
+            status: ProjectTaskStatus.obsolete,
+            expectedEvidence: const [
+              ProjectEvidenceExpectation(
+                id: 'expect_new',
+                type: ProjectEvidenceType.taskClaim,
+                criterionIds: ['criterion_001'],
+                description: 'The new task is independently checked.',
+              ),
+            ],
+          ),
+        ],
+        deferredTaskIds: const ['existing'],
+        obsoleteTaskIds: const ['new'],
+      ),
+      workspaceRoot: workspace.path,
+      approvalPolicy: ProjectPlanApprovalPolicy.never,
+    );
+
+    expect(result.validation.valid, isTrue);
+    expect(
+      result.project.taskById('existing')?.status,
+      ProjectTaskStatus.deferred,
+    );
+    expect(result.project.taskById('new')?.status, ProjectTaskStatus.obsolete);
+  });
+
+  test(
+    'explicit empty plans retire only mutable work and preserve history',
+    () async {
+      final completed = _task('completed', status: ProjectTaskStatus.completed);
+      final queued = _task('queued');
+      final project = _project([completed, queued]);
+      final result = await service.prepareAndApply(
+        project: project,
+        proposal: _desired(
+          project,
+          const [],
+          criteria: const [],
+          requiresApproval: true,
+        ),
+        workspaceRoot: workspace.path,
+        approvalPolicy: ProjectPlanApprovalPolicy.never,
+      );
+
+      expect(result.changed, isTrue);
       expect(
         result.project.criteria.single.status,
         ProjectCriterionStatus.invalidated,
       );
       expect(
-        result.project.planHistory.last.criterionChanges,
-        contains('invalidate:criterion_001'),
+        result.project.taskById('completed')?.status,
+        ProjectTaskStatus.completed,
       );
-    });
+      expect(
+        result.project.taskById('queued')?.status,
+        ProjectTaskStatus.obsolete,
+      );
+    },
+  );
 
-    test('removed milestones remain as auditable cancelled history', () async {
-      final milestone = ProjectMilestone(
-        id: 'milestone_001',
-        title: 'Original milestone',
-        objective: 'Deliver the original bounded outcome.',
-        criterionIds: const ['criterion_001'],
-        status: ProjectMilestoneStatus.active,
-        exitConditions: const ['The bounded outcome is verified.'],
-        order: 1,
-        createdAt: DateTime(2026, 1, 1),
-        updatedAt: DateTime(2026, 1, 1),
+  test('applies verification and safety-only task changes', () async {
+    final project = _project([_task('existing')]);
+    final revised = _task(
+      'existing',
+      writePaths: const ['lib/new_feature.dart'],
+      selectionRationale: 'The new path is the bounded implementation surface.',
+      expectedEvidence: const [
+        ProjectEvidenceExpectation(
+          id: 'expect_task',
+          type: ProjectEvidenceType.command,
+          criterionIds: ['criterion_001'],
+          description: 'The focused verification command passes.',
+        ),
+      ],
+      expectedArtifacts: [
+        ProjectArtifact(
+          id: 'artifact_existing',
+          projectTaskId: null,
+          taskDocumentId: null,
+          path: 'lib/new_feature.dart',
+          description: 'The bounded implementation file.',
+          kind: 'file',
+          createdAt: DateTime(2026, 1, 2),
+        ),
+      ],
+    );
+    final result = await service.prepareAndApply(
+      project: project,
+      proposal: _desired(project, [revised]),
+      workspaceRoot: workspace.path,
+      approvalPolicy: ProjectPlanApprovalPolicy.never,
+    );
+
+    expect(result.changed, isTrue);
+    expect(result.project.taskById('existing')?.writePaths, [
+      'lib/new_feature.dart',
+    ]);
+    expect(
+      result.project.taskById('existing')?.expectedEvidence.single.type,
+      ProjectEvidenceType.command,
+    );
+    expect(
+      result.project.taskById('existing')?.expectedArtifacts.single.path,
+      'lib/new_feature.dart',
+    );
+  });
+
+  test('detects edits to existing open-question content', () async {
+    final project = _project(
+      const [],
+      openQuestions: [
+        PendingProjectQuestion(
+          id: 'question_1',
+          question: 'Which platform should be first?',
+          createdAt: DateTime(2026, 1, 1),
+        ),
+      ],
+    );
+    final result = await service.prepareAndApply(
+      project: project,
+      proposal: _desired(
+        project,
+        const [],
+        openQuestions: [
+          PendingProjectQuestion(
+            id: 'question_1',
+            question: 'Which desktop platform should be first?',
+            createdAt: DateTime(2026, 1, 1),
+          ),
+        ],
+      ),
+      workspaceRoot: workspace.path,
+      approvalPolicy: ProjectPlanApprovalPolicy.never,
+    );
+
+    expect(result.changed, isTrue);
+    expect(
+      result.project.openQuestions.single.question,
+      'Which desktop platform should be first?',
+    );
+  });
+
+  test('preserves completed milestones when omitted or modified', () async {
+    final completed = _milestone(
+      'milestone_done',
+      status: ProjectMilestoneStatus.completed,
+      completedAt: DateTime(2026, 1, 3),
+    );
+    final project = _project(const [], milestones: [completed]);
+    final result = await service.prepareAndApply(
+      project: project,
+      proposal: _desired(
+        project,
+        [_task('new')],
+        milestones: [
+          ProjectMilestone(
+            id: completed.id,
+            title: 'Planner attempted to rewrite history',
+            objective: completed.objective,
+            criterionIds: completed.criterionIds,
+            status: ProjectMilestoneStatus.cancelled,
+            exitConditions: completed.exitConditions,
+            order: completed.order,
+            createdAt: completed.createdAt,
+            updatedAt: completed.updatedAt,
+            completedAt: completed.completedAt,
+          ),
+        ],
+      ),
+      workspaceRoot: workspace.path,
+      approvalPolicy: ProjectPlanApprovalPolicy.never,
+    );
+
+    final preserved = result.project.milestones.single;
+    expect(preserved.title, completed.title);
+    expect(preserved.status, ProjectMilestoneStatus.completed);
+    expect(preserved.completedAt, completed.completedAt);
+  });
+
+  test('normalizes new milestone lifecycle state', () async {
+    final project = _project(const []);
+    final first = _milestone(
+      'milestone_first',
+      status: ProjectMilestoneStatus.completed,
+      completedAt: DateTime(2026, 1, 2),
+      order: 1,
+    );
+    final second = _milestone(
+      'milestone_second',
+      status: ProjectMilestoneStatus.blocked,
+      order: 2,
+    );
+    final result = await service.prepareAndApply(
+      project: project,
+      proposal: _desired(project, const [], milestones: [second, first]),
+      workspaceRoot: workspace.path,
+      approvalPolicy: ProjectPlanApprovalPolicy.never,
+    );
+
+    expect(result.validation.valid, isTrue);
+    expect(result.project.milestones[0].id, 'milestone_first');
+    expect(result.project.milestones[0].status, ProjectMilestoneStatus.active);
+    expect(result.project.milestones[0].completedAt, isNull);
+    expect(result.project.milestones[1].status, ProjectMilestoneStatus.planned);
+  });
+
+  test('requires approval before removing a nonterminal milestone', () async {
+    final milestone = _milestone(
+      'milestone_active',
+      status: ProjectMilestoneStatus.active,
+    );
+    final project = _project(const [], milestones: [milestone]);
+    final pending = await service.prepareAndApply(
+      project: project,
+      proposal: _desired(project, [_task('new')], milestones: const []),
+      workspaceRoot: workspace.path,
+    );
+
+    expect(pending.awaitingApproval, isTrue);
+    expect(
+      pending.project.milestones.single.status,
+      ProjectMilestoneStatus.active,
+    );
+    expect(
+      pending.project.pendingPlanApproval?.highRiskReasonCodes,
+      contains('milestone_removed'),
+    );
+
+    final approved = service.approvePending(
+      project: pending.project,
+      workspaceRoot: workspace.path,
+    );
+    expect(
+      approved.project.milestones.single.status,
+      ProjectMilestoneStatus.cancelled,
+    );
+  });
+
+  test('blocks invalid memory edits without mutating memory', () async {
+    final existing = _memory('memory_existing');
+    final project = _project(const [], memory: [existing]);
+    final result = await service.prepareAndApply(
+      project: project,
+      proposal: _desired(
+        project,
+        const [],
+        memoryAdditions: [
+          ProjectMemoryEntry(
+            id: 'memory_existing',
+            kind: ProjectMemoryKind.fact,
+            content: '',
+            sourceType: ProjectMemorySourceType.planner,
+            confidence: ProjectMemoryConfidence.inferred,
+            createdAt: DateTime(2026, 1, 2),
+            updatedAt: DateTime(2026, 1, 2),
+          ),
+        ],
+      ),
+      workspaceRoot: workspace.path,
+    );
+
+    expect(result.changed, isFalse);
+    expect(result.project.status, ProjectStatus.blocked);
+    expect(result.project.memory, [existing]);
+    expect(
+      result.validation.errors.map((issue) => issue.code),
+      contains('memory_id_collision'),
+    );
+  });
+
+  test('applies a valid memory supersession', () async {
+    final source = _memory('memory_source');
+    final replacement = _memory('memory_replacement');
+    final project = _project(const [], memory: [source, replacement]);
+    final result = await service.prepareAndApply(
+      project: project,
+      proposal: _desired(
+        project,
+        const [],
+        memorySupersessions: const [
+          ProjectMemorySupersession(
+            entryId: 'memory_source',
+            supersededById: 'memory_replacement',
+          ),
+        ],
+      ),
+      workspaceRoot: workspace.path,
+      approvalPolicy: ProjectPlanApprovalPolicy.never,
+    );
+
+    expect(result.changed, isTrue);
+    expect(
+      result.project.memory.firstWhere((entry) => entry.id == source.id).active,
+      isFalse,
+    );
+    expect(
+      result.project.memory
+          .firstWhere((entry) => entry.id == replacement.id)
+          .coveredEntryIds,
+      contains(source.id),
+    );
+  });
+
+  test(
+    'high-risk desired changes store the desired plan for approval',
+    () async {
+      final project = _project(const []);
+      final criterion = project.criteria.single.copyWith(
+        statement: 'A materially different required outcome.',
       );
-      final withMilestone = project.copyWith(milestones: [milestone]);
-      final proposal = ProjectPlanProposal(
-        revision: withMilestone.currentRevision + 1,
-        triggers: const [ProjectPlanRevisionTrigger.manual],
-        summary: 'Retire an obsolete milestone.',
-        rationale: 'The roadmap changed.',
-        removedMilestoneIds: const ['milestone_001'],
+      final desired = ProjectDesiredPlan(
+        revision: project.nextRevision,
+        triggers: const [ProjectPlanRevisionTrigger.noReadyTask],
+        summary: 'Revise the plan.',
+        rationale: 'Keep bounded work actionable.',
+        criteria: [criterion],
+        milestones: project.milestones,
+        tasks: const [],
         createdAt: DateTime(2026, 1, 2),
       );
+      final pending = await service.prepareAndApply(
+        project: project,
+        proposal: desired,
+        workspaceRoot: workspace.path,
+      );
 
+      expect(pending.awaitingApproval, isTrue);
+      expect(
+        pending
+            .project
+            .pendingPlanApproval
+            ?.desiredPlan
+            ?.criteria
+            .single
+            .statement,
+        criterion.statement,
+      );
+      expect(
+        pending.project.criteria.single.statement,
+        project.criteria.single.statement,
+      );
+      final approved = service.approvePending(
+        project: pending.project,
+        workspaceRoot: workspace.path,
+      );
+      expect(approved.project.criteria.single.statement, criterion.statement);
+      expect(approved.project.pendingPlanApproval, isNull);
+      expect(approved.project.planHistory, hasLength(2));
+    },
+  );
+
+  test(
+    'stales accepted and proposed evidence when a criterion contract changes',
+    () async {
+      final task = _task('existing');
+      final project = _project([task]).copyWith(
+        evidence: [
+          ProjectEvidence(
+            id: 'evidence_accepted',
+            type: ProjectEvidenceType.taskClaim,
+            criterionIds: const ['criterion_001'],
+            expectationIds: const ['expect_task'],
+            projectTaskId: task.id,
+            sourceRef: 'run_1',
+            summary: 'The old contract was satisfied.',
+            status: ProjectEvidenceStatus.accepted,
+            createdAt: DateTime(2026, 1, 1),
+          ),
+          ProjectEvidence(
+            id: 'evidence_proposed',
+            type: ProjectEvidenceType.taskClaim,
+            criterionIds: const ['criterion_001'],
+            expectationIds: const ['expect_task'],
+            projectTaskId: task.id,
+            sourceRef: 'run_2',
+            summary: 'A second old-contract claim.',
+            status: ProjectEvidenceStatus.proposed,
+            createdAt: DateTime(2026, 1, 1),
+          ),
+        ],
+      );
+      final revisedCriterion = project.criteria.single.copyWith(
+        statement: 'The materially revised outcome is verified.',
+      );
       final result = await service.prepareAndApply(
-        project: withMilestone,
-        proposal: proposal,
+        project: project,
+        proposal: _desired(project, [task], criteria: [revisedCriterion]),
         workspaceRoot: workspace.path,
         approvalPolicy: ProjectPlanApprovalPolicy.never,
       );
 
       expect(result.changed, isTrue);
-      expect(result.project.milestones, hasLength(1));
       expect(
-        result.project.milestones.single.status,
-        ProjectMilestoneStatus.cancelled,
+        result.project.evidence.map((item) => item.status),
+        everyElement(ProjectEvidenceStatus.stale),
       );
       expect(
-        result.project.planHistory.last.milestoneChanges,
-        contains('cancel:milestone_001'),
+        result.project.evidence.map((item) => item.details['staleReason']),
+        everyElement('criterion_contract_changed'),
       );
-    });
-
-    test(
-      'verification-only task edits are retained as real revisions',
-      () async {
-        final existing = _task(id: 'task_existing');
-        final withBacklog = project.copyWith(backlog: [existing]);
-        final updatedTask = existing.copyWith(
-          expectedEvidence: const [
-            ProjectEvidenceExpectation(
-              id: 'expect_task',
-              type: ProjectEvidenceType.command,
-              criterionIds: ['criterion_001'],
-              description: 'The focused verification command passes.',
-              sourceRef: 'flutter test test/focused_test.dart',
-            ),
-          ],
-        );
-        final proposal = ProjectPlanProposal(
-          revision: withBacklog.currentRevision + 1,
-          triggers: const [ProjectPlanRevisionTrigger.manual],
-          summary: 'Tighten task verification.',
-          rationale: 'Use a deterministic focused command.',
-          taskUpdates: [updatedTask],
-          createdAt: DateTime(2026, 1, 2),
-        );
-
-        final result = await service.prepareAndApply(
-          project: withBacklog,
-          proposal: proposal,
-          workspaceRoot: workspace.path,
-          approvalPolicy: ProjectPlanApprovalPolicy.never,
-        );
-
-        expect(result.changed, isTrue);
-        expect(result.project.currentRevision, 2);
-        expect(
-          result.project.backlog.single.expectedEvidence.single.type,
-          ProjectEvidenceType.command,
-        );
-      },
-    );
-
-    test('never policy auto-applies a high-risk task', () async {
-      final proposal = _proposal(
-        project,
-        taskAdditions: [_task(id: 'task_release', risk: ProjectTaskRisk.high)],
+      expect(
+        result.project.evidence.map((item) => item.details['staleRevision']),
+        everyElement(2),
       );
-
-      final result = await service.prepareAndApply(
-        project: project,
-        proposal: proposal,
-        workspaceRoot: workspace.path,
-        approvalPolicy: ProjectPlanApprovalPolicy.never,
+      final evaluated = const ProjectCriterionEvaluator()
+          .evaluateDeterministically(
+            result.project,
+            evaluatedAt: DateTime(2026, 1, 3),
+          );
+      expect(
+        evaluated.criteria.single.status,
+        ProjectCriterionStatus.unsatisfied,
       );
-
-      expect(result.awaitingApproval, isFalse);
-      expect(result.project.currentRevision, 2);
-      expect(result.project.backlog.single.id, 'task_release');
-    });
-  });
+    },
+  );
 }
 
-ProjectState _project() {
+ProjectState _project(
+  List<ProjectTask> tasks, {
+  String? activeTaskId,
+  List<ProjectMilestone> milestones = const [],
+  List<ProjectMemoryEntry> memory = const [],
+  List<PendingProjectQuestion> openQuestions = const [],
+}) {
   final now = DateTime(2026, 1, 1);
   return ProjectState(
     id: 'project_1',
@@ -518,61 +529,119 @@ ProjectState _project() {
         updatedAt: now,
       ),
     ],
-    constraints: const ['Stay in the workspace.'],
-    backlog: const [],
+    constraints: const [],
+    tasks: tasks,
+    milestones: milestones,
+    memory: memory,
+    openQuestions: openQuestions,
     status: ProjectStatus.active,
-    activeTaskId: null,
+    activeTaskId: activeTaskId,
     createdAt: now,
     updatedAt: now,
   );
 }
 
-ProjectPlanProposal _proposal(
-  ProjectState project, {
-  List<ProjectCriterion> criterionUpserts = const [],
-  List<ProjectTask> taskAdditions = const [],
+ProjectDesiredPlan _desired(
+  ProjectState project,
+  List<ProjectTask> tasks, {
+  List<ProjectCriterion>? criteria,
+  List<ProjectMilestone>? milestones,
+  List<PendingProjectQuestion>? openQuestions,
+  List<ProjectMemoryEntry> memoryAdditions = const [],
+  List<ProjectMemorySupersession> memorySupersessions = const [],
+  List<String> deferredTaskIds = const [],
+  List<String> obsoleteTaskIds = const [],
+  bool requiresApproval = false,
 }) {
-  return ProjectPlanProposal(
-    revision: project.currentRevision + 1,
+  return ProjectDesiredPlan(
+    revision: project.nextRevision,
     triggers: const [ProjectPlanRevisionTrigger.noReadyTask],
-    summary: 'Revise the near-term plan.',
-    rationale: 'A bounded revision is needed.',
-    criterionUpserts: criterionUpserts,
-    taskAdditions: taskAdditions,
+    summary: 'Revise the plan.',
+    rationale: 'Keep bounded work actionable.',
+    criteria: criteria ?? project.criteria,
+    milestones: milestones ?? project.milestones,
+    tasks: tasks,
+    deferredTaskIds: deferredTaskIds,
+    obsoleteTaskIds: obsoleteTaskIds,
+    memoryAdditions: memoryAdditions,
+    memorySupersessions: memorySupersessions,
+    openQuestions: openQuestions ?? project.openQuestions,
+    requiresApproval: requiresApproval,
     createdAt: DateTime(2026, 1, 2),
   );
 }
 
-ProjectTask _task({
-  required String id,
-  List<String> dependsOnTaskIds = const [],
-  ProjectTaskRisk risk = ProjectTaskRisk.low,
+ProjectTask _task(
+  String id, {
+  List<String> dependencies = const [],
+  List<String> writePaths = const ['lib/feature.dart'],
+  List<ProjectEvidenceExpectation>? expectedEvidence,
+  List<ProjectArtifact> expectedArtifacts = const [],
+  String selectionRationale = '',
+  ProjectTaskStatus status = ProjectTaskStatus.queued,
 }) {
   final now = DateTime(2026, 1, 2);
-  final objective = 'Implement and verify bounded slice $id.';
+  final objective = 'Implement bounded slice $id.';
   return ProjectTask(
     id: id,
     title: 'Bounded slice $id',
     objective: objective,
     criterionIds: const ['criterion_001'],
-    dependsOnTaskIds: dependsOnTaskIds,
-    risk: risk,
-    expectedEvidence: const [
-      ProjectEvidenceExpectation(
-        id: 'expect_task',
-        type: ProjectEvidenceType.taskClaim,
-        criterionIds: ['criterion_001'],
-        description: 'The done criteria are independently checked.',
-      ),
-    ],
+    dependsOnTaskIds: dependencies,
+    selectionRationale: selectionRationale,
+    expectedEvidence:
+        expectedEvidence ??
+        const [
+          ProjectEvidenceExpectation(
+            id: 'expect_task',
+            type: ProjectEvidenceType.taskClaim,
+            criterionIds: ['criterion_001'],
+            description: 'The done criteria are independently checked.',
+          ),
+        ],
+    writePaths: writePaths,
     doneCriteria: const ['The bounded slice is implemented and checked.'],
     outOfScope: const ['Do not change unrelated project scope.'],
     context: const [],
-    expectedArtifacts: const [],
-    status: ProjectTaskStatus.queued,
+    expectedArtifacts: expectedArtifacts,
+    status: status,
     taskDocumentId: null,
     fingerprint: projectTaskFingerprint(objective, const ['criterion_001']),
     rejectionReason: null,
+    createdAt: now,
+    updatedAt: now,
+  );
+}
+
+ProjectMilestone _milestone(
+  String id, {
+  ProjectMilestoneStatus status = ProjectMilestoneStatus.planned,
+  DateTime? completedAt,
+  int order = 1,
+}) {
+  final now = DateTime(2026, 1, 1);
+  return ProjectMilestone(
+    id: id,
+    title: 'Milestone $id',
+    objective: 'Complete $id.',
+    criterionIds: const ['criterion_001'],
+    status: status,
+    exitConditions: const ['The milestone outcome is verified.'],
+    order: order,
+    createdAt: now,
+    updatedAt: now,
+    completedAt: completedAt,
+  );
+}
+
+ProjectMemoryEntry _memory(String id) {
+  final now = DateTime(2026, 1, 1);
+  return ProjectMemoryEntry(
+    id: id,
+    kind: ProjectMemoryKind.fact,
+    content: 'Memory content for $id.',
+    sourceType: ProjectMemorySourceType.planner,
+    confidence: ProjectMemoryConfidence.inferred,
     createdAt: now,
     updatedAt: now,
   );

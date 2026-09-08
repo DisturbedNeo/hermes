@@ -36,8 +36,7 @@ import 'package:hermes/core/services/workspace_service.dart';
 
 import '../disposable.dart';
 
-class ChatService extends ChangeNotifier
-    implements Disposable, ChatSessionCallbacks {
+class ChatService extends ChangeNotifier implements Disposable {
   static const String defaultSystemPromptName = 'Default';
   static const String defaultSystemPromptText = 'You are a helpful assistant.';
   static const Duration _contextEstimateThrottle = Duration(milliseconds: 500);
@@ -157,97 +156,41 @@ class ChatService extends ChangeNotifier
       serverManager: serverManager,
       toolService: _toolService,
       preferencesService: _preferencesService,
-      callbacks: this,
+      chatService: this,
     );
   }
 
-  // ── ChatSessionCallbacks implementation ─────────────────────────────────
+  // Session hooks used by the streaming implementation.
+  int? get sessionDiagnosticsContextLimit => _diagnosticsContextLimit;
 
-  @override
-  void onNotifyListeners() => notifyListeners();
+  String? sessionTaskModelOutputLabel() => _taskModelOutputLabel;
+  void setSessionTaskModelOutputLabel(String? value) {
+    _taskModelOutputLabel = value;
+  }
 
-  @override
-  bool onIsDisposed() => _disposed;
+  String? sessionTaskModelOutputTextSection() => _taskModelOutputTextSection;
+  void setSessionTaskModelOutputTextSection(String? value) {
+    _taskModelOutputTextSection = value;
+  }
 
-  @override
-  bool onIsTaskModelOutputActive() => taskModelOutputActive;
+  String? sessionTaskModelOutputReasoningLabel() =>
+      _taskModelOutputReasoningLabel;
+  void setSessionTaskModelOutputReasoningLabel(String? value) {
+    _taskModelOutputReasoningLabel = value;
+  }
 
-  @override
-  int? onGetTaskModelOutputContextEstimate() => _taskModelOutputContextEstimate;
-
-  @override
-  WorkspaceAttachment? onGetWorkspace() => workspace;
-
-  @override
-  ModelConfigurationSnapshot? onGetCurrentModelSnapshot() =>
-      currentModelSnapshot;
-
-  @override
-  int? onGetDiagnosticsContextLimit() => _diagnosticsContextLimit;
-
-  @override
-  List<String> onGetDefaultToolIds() => defaultToolIds;
-
-  @override
-  bool onGetWorkspaceToolsEnabled() => workspaceToolsEnabled;
-
-  @override
-  String onBuildSystemPrompt({String? currentUserRequest}) =>
+  String buildSystemPrompt({String? currentUserRequest}) =>
       _buildSystemPrompt(currentUserRequest: currentUserRequest);
 
-  @override
-  void onWorkspaceChanged() {
+  void markWorkspaceChanged() {
     _markPersistableChange();
     notifyListeners();
   }
 
-  // Task model output state accessors/mutators
-  @override
-  String? onGetTaskModelOutputLabel() => _taskModelOutputLabel;
+  void sessionNotifyListeners() => notifyListeners();
 
-  @override
-  void onSetTaskModelOutputLabel(String? label) {
-    _taskModelOutputLabel = label;
-  }
-
-  @override
-  String? onGetTaskModelOutputTextSection() => _taskModelOutputTextSection;
-
-  @override
-  void onSetTaskModelOutputTextSection(String? section) {
-    _taskModelOutputTextSection = section;
-  }
-
-  @override
-  String onGetTaskModelOutputReasoning() => taskModelOutputReasoning;
-
-  @override
-  void onSetTaskModelOutputReasoning(String reasoning) {
-    taskModelOutputReasoning = reasoning;
-  }
-
-  @override
-  void onAppendTaskModelText(String text) {
-    taskModelOutputText += text;
-  }
-
-  @override
-  void onAppendTaskModelOutputText(String text) {
-    taskModelOutputText += text;
-  }
-
-  @override
-  void onRequestContextEstimateUpdate({bool immediate = false}) {
+  void requestContextEstimateUpdate({bool immediate = false}) {
     _requestContextEstimateUpdate(immediate: immediate);
-  }
-
-  @override
-  String? onGetTaskModelOutputReasoningLabel() =>
-      _taskModelOutputReasoningLabel;
-
-  @override
-  void onSetTaskModelOutputReasoningLabel(String label) {
-    _taskModelOutputReasoningLabel = label;
   }
 
   // ── Public API (session management + orchestration) ─────────────────────
@@ -786,13 +729,13 @@ class ChatService extends ChangeNotifier
     WorkspaceAttachment current,
     ProjectSnapshot? project,
   ) async {
-    final taskId = project?.activeTaskId;
-    if (project == null || taskId == null) return null;
+    final taskDocumentId = project?.activeTaskDocumentId;
+    if (project == null || taskDocumentId == null) return null;
     return _recoverTaskSnapshot(
       current,
       await _taskService.loadTask(
         current,
-        taskId,
+        taskDocumentId,
         chatSessionId: project.chatSessionId,
         projectId: project.id,
       ),
@@ -1108,23 +1051,6 @@ class ChatService extends ChangeNotifier
     await reloadTasks();
   }
 
-  Future<void> approveNextProjectTask() async {
-    final currentWorkspace = workspace;
-    final snapshot = activeProject;
-    if (currentWorkspace == null ||
-        currentWorkspace.missing ||
-        snapshot == null ||
-        taskBusy) {
-      return;
-    }
-
-    activeProject = await _projectService.approveNextProjectTask(
-      workspace: currentWorkspace,
-      snapshot: snapshot,
-    );
-    await reloadTasks();
-  }
-
   Future<void> approveProjectPlanRevision() async {
     final currentWorkspace = workspace;
     final snapshot = activeProject;
@@ -1165,7 +1091,7 @@ class ChatService extends ChangeNotifier
     if (currentWorkspace == null ||
         currentWorkspace.missing ||
         snapshot == null ||
-        snapshot.currentTask != null ||
+        snapshot.activeTaskId != null ||
         snapshot.pendingPlanApproval != null ||
         taskBusy) {
       return;
@@ -1989,7 +1915,7 @@ class ChatService extends ChangeNotifier
       return;
     }
     final type = project.blocker?.type;
-    if (type != ProjectBlockerType.taskApproval &&
+    if (type != ProjectBlockerType.taskEditApproval &&
         type != ProjectBlockerType.taskBlocked &&
         type != ProjectBlockerType.taskFailed) {
       return;
@@ -2534,7 +2460,7 @@ Workspace rules:
   }
 
   String _buildProjectSystemPrompt(ProjectSnapshot snapshot) {
-    return _buildSystemPrompt(currentUserRequest: snapshot.originalPrompt);
+    return _buildSystemPrompt(currentUserRequest: snapshot.originalGoal);
   }
 
   List<Bubble> _withCurrentSystemPrompt(
@@ -2672,7 +2598,7 @@ Workspace rules:
       ..writeln('Status: `${snapshot.status.wire}`')
       ..writeln()
       ..writeln('Goal:')
-      ..writeln(snapshot.goal)
+      ..writeln(snapshot.refinedGoal)
       ..writeln()
       ..writeln(
         'Project state is stored under `.agent/projects/${snapshot.id}/`.',
@@ -2704,7 +2630,10 @@ Workspace rules:
       final latest = snapshot.tasks.last;
       buffer
         ..writeln()
-        ..writeln('Latest task: `${latest.taskId}` - ${latest.status.wire}');
+        ..writeln(
+          'Latest task: `${latest.taskDocumentId ?? latest.id}` - '
+          '${latest.status.wire}',
+        );
     }
     return buffer.toString().trim();
   }

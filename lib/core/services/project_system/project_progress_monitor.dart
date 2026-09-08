@@ -77,7 +77,6 @@ class ProjectProgressMonitor {
     }
     return project.copyWith(
       status: ProjectStatus.blocked,
-      phase: ProjectPhase.verification,
       blocker: ProjectBlocker(
         type: ProjectBlockerType.stagnation,
         message:

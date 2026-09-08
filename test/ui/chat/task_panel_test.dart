@@ -258,20 +258,38 @@ ProjectDocument _projectWithTask() {
   return ProjectDocument(
     id: 'project_test',
     title: 'Test project',
-    originalPrompt: 'Build project.',
-    goal: 'Build project.',
+    originalGoal: 'Build project.',
+    refinedGoal: 'Build project.',
     constraints: const [],
-    successCriteria: const [],
+    criteria: const [],
     status: ProjectStatus.paused,
     activeTaskId: null,
-    memorySummary: 'Project memory.',
+    memory: [
+      ProjectMemoryEntry(
+        id: 'memory_1',
+        kind: ProjectMemoryKind.fact,
+        content: 'Project memory.',
+        sourceType: ProjectMemorySourceType.user,
+        confidence: ProjectMemoryConfidence.confirmed,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    ],
     completionSummary: '',
     tasks: [
-      ProjectTaskRef(
-        taskId: 'task_test',
+      ProjectTask(
+        id: 'task_test',
         title: 'Project task',
-        status: TaskStatus.completed,
-        summary: 'Finished.',
+        objective: 'Do the project task.',
+        criterionIds: const [],
+        doneCriteria: const ['Finished.'],
+        outOfScope: const [],
+        context: const [],
+        expectedArtifacts: const [],
+        status: ProjectTaskStatus.completed,
+        taskDocumentId: 'task_test',
+        fingerprint: 'task_test',
+        rejectionReason: null,
         createdAt: now,
         updatedAt: now,
       ),
@@ -310,13 +328,20 @@ ProjectDocument _projectWithExhaustedRecovery() {
     originalGoal: 'Build project.',
     refinedGoal: 'Build project.',
     constraints: const [],
-    successCriteria: const ['Project works.'],
-    failedTasks: [
+    criteria: [
+      ProjectCriterion(
+        id: 'criterion_1',
+        statement: 'Project works.',
+        createdAt: now,
+        updatedAt: now,
+      ),
+    ],
+    tasks: [
       ProjectTask(
         id: 'failed_task',
         title: 'Failed task',
         objective: 'Build the project.',
-        relevantSuccessCriteria: const ['Project works.'],
+        criterionIds: const ['criterion_1'],
         doneCriteria: const ['Project works.'],
         outOfScope: const [],
         context: const [],
@@ -347,7 +372,6 @@ ProjectDocument _projectWithExhaustedRecovery() {
       ),
     ],
     status: ProjectStatus.blocked,
-    phase: ProjectPhase.execution,
     activeTaskId: null,
     blocker: ProjectBlocker(
       type: ProjectBlockerType.recoveryFailed,
@@ -365,7 +389,6 @@ ProjectDocument _projectWithPlanReview() {
     id: 'accessible',
     statement: 'The workflow is keyboard accessible.',
     status: ProjectCriterionStatus.partial,
-    evidenceIds: const ['report'],
     notes: 'The primary path is covered; dialogs remain.',
     createdAt: now,
     updatedAt: now,
@@ -419,7 +442,7 @@ ProjectDocument _projectWithPlanReview() {
     refinedGoal: 'Ship an accessible project workflow.',
     criteria: [criterion],
     constraints: const ['Preserve existing task execution.'],
-    backlog: [ready, waiting],
+    tasks: [ready, waiting],
     milestones: [
       ProjectMilestone(
         id: 'foundation',
@@ -428,7 +451,6 @@ ProjectDocument _projectWithPlanReview() {
         criterionIds: const ['accessible'],
         status: ProjectMilestoneStatus.active,
         exitConditions: const ['All keyboard tests pass.'],
-        taskIds: const ['ready_task', 'waiting_task'],
         order: 1,
         createdAt: now,
         updatedAt: now,
@@ -451,12 +473,14 @@ ProjectDocument _projectWithPlanReview() {
       reason: 'This changes a material API boundary.',
       summary: 'Revise the reporting integration.',
       highRiskChanges: const ['Replace the reporting API.'],
-      proposal: ProjectPlanProposal(
+      desiredPlan: ProjectDesiredPlan(
         revision: 2,
         triggers: const [ProjectPlanRevisionTrigger.manual],
         summary: 'Revise the reporting integration.',
         rationale: 'The current API cannot meet the accessibility requirement.',
-        taskAdditions: [proposed],
+        criteria: [criterion],
+        milestones: const [],
+        tasks: [proposed],
         deferredTaskIds: const ['waiting_task'],
         requiresApproval: true,
         approvalReason: 'Material API change.',
@@ -465,7 +489,6 @@ ProjectDocument _projectWithPlanReview() {
       createdAt: now,
     ),
     status: ProjectStatus.waitingForUser,
-    phase: ProjectPhase.planning,
     activeTaskId: null,
     blocker: ProjectBlocker(
       type: ProjectBlockerType.planApproval,

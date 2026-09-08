@@ -10,7 +10,7 @@ class ProjectCriterionEvaluator {
   }) {
     final criteria = [
       for (final criterion in project.criteria)
-        _evaluateCriterion(criterion, project.evidence, evaluatedAt),
+        _evaluateCriterion(project, criterion, project.evidence, evaluatedAt),
     ];
     return project.copyWith(criteria: criteria, updatedAt: evaluatedAt);
   }
@@ -55,15 +55,23 @@ class ProjectCriterionEvaluator {
         continue;
       }
 
-      final satisfied =
+      final reviewSaysSatisfied =
           projectComplete ||
           (hasRecognizedRemaining &&
               !remaining.contains(_normalise(criterion.statement)));
+      final reviewedEvidence = [
+        for (final index in relatedIndexes)
+          if (evidence[index].status == ProjectEvidenceStatus.accepted ||
+              (reviewSaysSatisfied && proposedClaims.contains(index)))
+            evidence[index],
+      ];
+      final satisfied =
+          reviewSaysSatisfied &&
+          _hasAllRequiredExpectations(project, criterion, reviewedEvidence);
       if (satisfied) {
         final reviewedIndexes = proposedClaims.isNotEmpty
             ? proposedClaims
             : acceptedSupporting.take(1);
-        final acceptedIds = <String>[];
         for (final index in reviewedIndexes) {
           final item = evidence[index];
           evidence[index] = item.copyWith(
@@ -71,12 +79,10 @@ class ProjectCriterionEvaluator {
             details: {...item.details, 'acceptedBy': 'model_review'},
             evaluatedAt: evaluatedAt,
           );
-          acceptedIds.add(item.id);
         }
         criteria.add(
           criterion.copyWith(
             status: ProjectCriterionStatus.satisfied,
-            evidenceIds: {...criterion.evidenceIds, ...acceptedIds}.toList(),
             notes: rationale.trim().isEmpty
                 ? 'Satisfied by bounded model review of persisted evidence.'
                 : rationale.trim(),
@@ -85,15 +91,28 @@ class ProjectCriterionEvaluator {
           ),
         );
       } else {
-        for (final index in proposedClaims) {
-          final item = evidence[index];
-          evidence[index] = item.copyWith(
-            status: ProjectEvidenceStatus.rejected,
-            details: {...item.details, 'rejectedBy': 'model_review'},
-            evaluatedAt: evaluatedAt,
-          );
+        if (reviewSaysSatisfied) {
+          for (final index in proposedClaims) {
+            final item = evidence[index];
+            evidence[index] = item.copyWith(
+              status: ProjectEvidenceStatus.accepted,
+              details: {...item.details, 'acceptedBy': 'model_review'},
+              evaluatedAt: evaluatedAt,
+            );
+          }
+        } else {
+          for (final index in proposedClaims) {
+            final item = evidence[index];
+            evidence[index] = item.copyWith(
+              status: ProjectEvidenceStatus.rejected,
+              details: {...item.details, 'rejectedBy': 'model_review'},
+              evaluatedAt: evaluatedAt,
+            );
+          }
         }
-        final hasAccepted = acceptedSupporting.isNotEmpty;
+        final hasAccepted =
+            acceptedSupporting.isNotEmpty ||
+            (reviewSaysSatisfied && proposedClaims.isNotEmpty);
         criteria.add(
           criterion.copyWith(
             status: hasAccepted
@@ -115,6 +134,7 @@ class ProjectCriterionEvaluator {
   }
 
   ProjectCriterion _evaluateCriterion(
+    ProjectDocument project,
     ProjectCriterion criterion,
     List<ProjectEvidence> evidence,
     DateTime evaluatedAt,
@@ -129,9 +149,6 @@ class ProjectCriterionEvaluator {
               item.criterionIds.contains(criterion.id),
         )
         .toList();
-    final migrated = accepted.where(
-      (item) => item.type == ProjectEvidenceType.migrated,
-    );
     final modelAccepted = accepted.where(
       (item) => item.details['acceptedBy'] == 'model_review',
     );
@@ -146,21 +163,20 @@ class ProjectCriterionEvaluator {
     );
 
     final satisfied =
-        migrated.isNotEmpty ||
-        modelAccepted.isNotEmpty ||
-        (criterion.verificationMode == ProjectVerificationMode.deterministic &&
-            deterministic.isNotEmpty) ||
-        (criterion.verificationMode == ProjectVerificationMode.mixed &&
-            deterministic.isNotEmpty) ||
-        (criterion.verificationMode == ProjectVerificationMode.humanApproval &&
-            approvals.isNotEmpty);
+        _hasAllRequiredExpectations(project, criterion, accepted) &&
+        (modelAccepted.isNotEmpty ||
+            (criterion.verificationMode ==
+                    ProjectVerificationMode.deterministic &&
+                deterministic.isNotEmpty) ||
+            (criterion.verificationMode == ProjectVerificationMode.mixed &&
+                deterministic.isNotEmpty) ||
+            (criterion.verificationMode ==
+                    ProjectVerificationMode.humanApproval &&
+                approvals.isNotEmpty));
     if (satisfied) {
       return criterion.copyWith(
         status: ProjectCriterionStatus.satisfied,
-        evidenceIds: accepted.map((item) => item.id).toSet().toList(),
-        notes: migrated.isNotEmpty
-            ? 'Satisfied by migrated legacy evidence.'
-            : modelAccepted.isNotEmpty
+        notes: modelAccepted.isNotEmpty
             ? 'Satisfied by bounded model review of accepted evidence.'
             : approvals.isNotEmpty
             ? 'Satisfied by accepted user approval.'
@@ -173,12 +189,42 @@ class ProjectCriterionEvaluator {
       status: accepted.isEmpty
           ? ProjectCriterionStatus.unsatisfied
           : ProjectCriterionStatus.partial,
-      evidenceIds: accepted.map((item) => item.id).toSet().toList(),
       notes: accepted.isEmpty
           ? 'No accepted evidence currently satisfies this criterion.'
           : 'Accepted evidence is supporting but not yet conclusive.',
       updatedAt: evaluatedAt,
       verifiedAt: null,
+    );
+  }
+
+  bool _hasAllRequiredExpectations(
+    ProjectDocument project,
+    ProjectCriterion criterion,
+    Iterable<ProjectEvidence> accepted,
+  ) {
+    final required = <String, String>{};
+    for (final task in project.tasks) {
+      if (task.status == ProjectTaskStatus.deferred ||
+          task.status == ProjectTaskStatus.obsolete ||
+          task.status == ProjectTaskStatus.failed ||
+          task.status == ProjectTaskStatus.rejected ||
+          task.status == ProjectTaskStatus.split ||
+          task.status == ProjectTaskStatus.cancelled) {
+        continue;
+      }
+      for (final expectation in task.expectedEvidence) {
+        if (expectation.required &&
+            expectation.criterionIds.contains(criterion.id)) {
+          required[expectation.id] = task.id;
+        }
+      }
+    }
+    return required.entries.every(
+      (entry) => accepted.any(
+        (item) =>
+            item.projectTaskId == entry.value &&
+            item.expectationIds.contains(entry.key),
+      ),
     );
   }
 

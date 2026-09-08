@@ -919,8 +919,6 @@ class TaskDocumentMapper extends ClassMapperBase<TaskDocument> {
       TaskRunMapper.ensureInitialized();
       PendingTaskApprovalMapper.ensureInitialized();
       PendingTaskQuestionMapper.ensureInitialized();
-      TaskProjectCriterionMapper.ensureInitialized();
-      TaskProjectEvidenceExpectationMapper.ensureInitialized();
     }
     return _instance!;
   }
@@ -1044,36 +1042,6 @@ class TaskDocumentMapper extends ClassMapperBase<TaskDocument> {
     opt: true,
     hook: JsonNullableStringHook(),
   );
-  static List<String> _$projectCriterionIds(TaskDocument v) =>
-      v.projectCriterionIds;
-  static const Field<TaskDocument, List<String>> _f$projectCriterionIds = Field(
-    'projectCriterionIds',
-    _$projectCriterionIds,
-    opt: true,
-    def: const [],
-    hook: JsonStringListHook(),
-  );
-  static List<TaskProjectCriterion> _$projectCriteria(TaskDocument v) =>
-      v.projectCriteria;
-  static const Field<TaskDocument, List<TaskProjectCriterion>>
-  _f$projectCriteria = Field(
-    'projectCriteria',
-    _$projectCriteria,
-    opt: true,
-    def: const [],
-    hook: JsonObjectListHook(),
-  );
-  static List<TaskProjectEvidenceExpectation> _$projectEvidenceExpectations(
-    TaskDocument v,
-  ) => v.projectEvidenceExpectations;
-  static const Field<TaskDocument, List<TaskProjectEvidenceExpectation>>
-  _f$projectEvidenceExpectations = Field(
-    'projectEvidenceExpectations',
-    _$projectEvidenceExpectations,
-    opt: true,
-    def: const [],
-    hook: JsonObjectListHook(),
-  );
   static DateTime? _$completedAt(TaskDocument v) => v.completedAt;
   static const Field<TaskDocument, DateTime> _f$completedAt = Field(
     'completedAt',
@@ -1103,9 +1071,6 @@ class TaskDocumentMapper extends ClassMapperBase<TaskDocument> {
     #pendingQuestion: _f$pendingQuestion,
     #chatSessionId: _f$chatSessionId,
     #projectId: _f$projectId,
-    #projectCriterionIds: _f$projectCriterionIds,
-    #projectCriteria: _f$projectCriteria,
-    #projectEvidenceExpectations: _f$projectEvidenceExpectations,
     #completedAt: _f$completedAt,
   };
   @override
@@ -1134,9 +1099,6 @@ class TaskDocumentMapper extends ClassMapperBase<TaskDocument> {
       pendingQuestion: data.dec(_f$pendingQuestion),
       chatSessionId: data.dec(_f$chatSessionId),
       projectId: data.dec(_f$projectId),
-      projectCriterionIds: data.dec(_f$projectCriterionIds),
-      projectCriteria: data.dec(_f$projectCriteria),
-      projectEvidenceExpectations: data.dec(_f$projectEvidenceExpectations),
       completedAt: data.dec(_f$completedAt),
     );
   }
@@ -2060,6 +2022,13 @@ class TaskEvidenceClaimMapper extends ClassMapperBase<TaskEvidenceClaim> {
     def: TaskEvidenceClaimStrength.advisory,
     hook: EnumAliasHook({}),
   );
+  static String? _$expectationId(TaskEvidenceClaim v) => v.expectationId;
+  static const Field<TaskEvidenceClaim, String> _f$expectationId = Field(
+    'expectationId',
+    _$expectationId,
+    opt: true,
+    hook: JsonNullableStringHook(),
+  );
   static String? _$runId(TaskEvidenceClaim v) => v.runId;
   static const Field<TaskEvidenceClaim, String> _f$runId = Field(
     'runId',
@@ -2075,6 +2044,7 @@ class TaskEvidenceClaimMapper extends ClassMapperBase<TaskEvidenceClaim> {
     #evidenceType: _f$evidenceType,
     #sourceRef: _f$sourceRef,
     #suggestedStrength: _f$suggestedStrength,
+    #expectationId: _f$expectationId,
     #runId: _f$runId,
   };
   @override
@@ -2087,6 +2057,7 @@ class TaskEvidenceClaimMapper extends ClassMapperBase<TaskEvidenceClaim> {
       evidenceType: data.dec(_f$evidenceType),
       sourceRef: data.dec(_f$sourceRef),
       suggestedStrength: data.dec(_f$suggestedStrength),
+      expectationId: data.dec(_f$expectationId),
       runId: data.dec(_f$runId),
     );
   }

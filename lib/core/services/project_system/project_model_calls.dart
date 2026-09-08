@@ -49,7 +49,7 @@ class ProjectModelCalls implements ProjectPlanningGateway {
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
         expectedShape:
-            '{"title":"...","refinedGoal":"...","criteria":[{"id":"criterion_001","statement":"...","required":true,"verificationMode":"mixed"}],"constraints":["..."],"memory":[{"id":"memory_001","kind":"assumption","content":"...","sourceId":"workspace:Design.md"}],"milestones":[{"id":"milestone_001","title":"...","objective":"...","criterionIds":["criterion_001"],"exitConditions":["..."],"order":1}],"openQuestions":[],"backlog":[{"id":"project_task_001","title":"...","objective":"...","criterionIds":["criterion_001"],"milestoneId":"milestone_001","doneCriteria":["..."],"outOfScope":["..."],"expectedEvidence":[{"id":"evidence_001","type":"task_claim","criterionIds":["criterion_001"],"description":"..."}]}]}',
+            '{"title":"...","refinedGoal":"...","criteria":[{"id":"criterion_001","statement":"...","required":true,"verificationMode":"mixed"}],"constraints":["..."],"memory":[{"id":"memory_001","kind":"assumption","content":"...","sourceId":"workspace:Design.md"}],"milestones":[{"id":"milestone_001","title":"...","objective":"...","criterionIds":["criterion_001"],"exitConditions":["..."],"order":1}],"openQuestions":[],"tasks":[{"id":"project_task_001","title":"...","objective":"...","criterionIds":["criterion_001"],"milestoneId":"milestone_001","doneCriteria":["..."],"outOfScope":["..."],"expectedEvidence":[{"id":"evidence_001","type":"task_claim","criterionIds":["criterion_001"],"description":"..."}]}]}',
         finalizerTool: _finaliseProjectCreationToolDefinition(
           requiredProperties: const [
             'title',
@@ -62,7 +62,7 @@ class ProjectModelCalls implements ProjectPlanningGateway {
             '''
 Initialize a persistent project state. Do not execute the project.
 The supplied workspace profile is authoritative. Treat repository components absent from its tree as absent, not as stale or incomplete discovery. Do not claim an absent path as an existing baseline.
-Create a rolling roadmap with one to three milestones and approximately three to seven detailed near-term tasks. Keep distant work coarse in milestone objectives rather than expanding an unbounded backlog.
+Create a rolling roadmap with one to three milestones and approximately three to seven detailed near-term tasks. Keep distant work coarse in milestone objectives rather than expanding an unbounded task list.
 Every task needs stable IDs, dependencies, criterion and milestone links, priority, risk, effort, boundaries, expected evidence, and a concise rationale in selectionRationale.
 For every small task that will modify workspace files, writePaths must contain the explicit files or directories it may change. Leave writePaths empty only for genuinely read-only work.
 Do not add openQuestions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; record a typed assumption in memory instead.
@@ -78,7 +78,7 @@ Return only JSON:
   "memory": [{"id":"memory_001","kind":"fact|assumption|requirement|decision|risk","content":"...","confidence":"inferred|uncertain","sourceId":"workspace:relative/path"}],
   "milestones": [{"id":"milestone_001","title":"...","objective":"...","criterionIds":["criterion_001"],"exitConditions":["..."],"order":1}],
   "openQuestions": [{"question": "..."}],
-  "backlog": [{"id":"project_task_001","title":"...","objective":"one bounded task","criterionIds":["criterion_001"],"milestoneId":"milestone_001","dependsOnTaskIds":[],"priority":"normal","risk":"low","riskReduction":"low","effort":"small","doneCriteria":["..."],"outOfScope":["..."],"expectedEvidence":[{"id":"expectation_001","type":"task_claim","criterionIds":["criterion_001"],"description":"...","required":true}],"readPaths":[],"writePaths":[],"selectionRationale":"..."}]
+  "tasks": [{"id":"project_task_001","title":"...","objective":"one bounded task","criterionIds":["criterion_001"],"milestoneId":"milestone_001","dependsOnTaskIds":[],"priority":"normal","risk":"low","riskReduction":"low","effort":"small","doneCriteria":["..."],"outOfScope":["..."],"expectedEvidence":[{"id":"expectation_001","type":"task_claim","criterionIds":["criterion_001"],"description":"...","required":true}],"readPaths":[],"writePaths":[],"selectionRationale":"..."}]
 }
 
 Workspace metadata:
@@ -119,7 +119,7 @@ $originalGoal
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
         expectedShape:
-            '{"title":"...","refinedGoal":"...","criteria":[],"constraints":[],"memory":[],"milestones":[],"openQuestions":[],"backlog":[]}',
+            '{"title":"...","refinedGoal":"...","criteria":[],"constraints":[],"memory":[],"milestones":[],"openQuestions":[],"tasks":[]}',
         finalizerTool: _finaliseProjectCreationToolDefinition(
           requiredProperties: const [
             'title',
@@ -159,7 +159,7 @@ $originalGoal
   }
 
   @override
-  Future<ProjectPlanProposal> revisePlan({
+  Future<ProjectDesiredPlan> revisePlan({
     required ChatClient client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
@@ -177,25 +177,24 @@ $originalGoal
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
         expectedShape:
-            '{"summary":"...","rationale":"...","assumptions":[],"criterionUpserts":[],"removedCriterionIds":[],"milestoneUpserts":[],"removedMilestoneIds":[],"taskAdditions":[],"taskUpdates":[],"deferredTaskIds":[],"obsoleteTaskIds":[],"memoryAdditions":[],"memorySupersessions":[],"openQuestions":[],"requiresApproval":false,"approvalReason":""}',
+            '{"summary":"...","rationale":"...","assumptions":[],"criteria":[],"milestones":[],"tasks":[],"deferredTaskIds":[],"obsoleteTaskIds":[],"memoryAdditions":[],"memorySupersessions":[],"openQuestions":[],"requiresApproval":false,"approvalReason":""}',
         user:
             '''
 Propose one coherent revision to the rolling project plan for all supplied triggers.
 Do not execute work. Preserve completed task history, accepted evidence, gate results, recovery incidents, and protected user memory.
 The original goal is the authoritative user request; the refined goal is a separate planning interpretation and must not overwrite it. Treat the supplied discovery snapshot as authoritative for current workspace state.
-Criterion status and evidence are evaluator-owned progress state. Do not use criterionUpserts merely to mark an existing criterion satisfied, partial, or unsatisfied, or to attach evidence; only upsert a criterion when its statement, required flag, or verification mode must change.
-Return only small, bounded, independently verifiable near-term tasks. Use stable existing IDs for updates and new unique IDs for additions.
+    Criterion status and evidence are evaluator-owned progress state. Return the complete desired criterion definitions without changing evaluator-owned status.
+    Return the complete desired set of active and non-terminal bounded tasks. Use stable existing IDs for updates and new unique IDs for additions. Completed, failed, running, and recovery history is preserved by the reconciler.
+    Criteria, milestones, and tasks are complete collections: always include each field, including an explicit empty array when that collection should be cleared. Omitted or malformed collection fields are treated as unavailable and preserve the current planner-visible state.
 For every small task that will modify workspace files, writePaths must contain the explicit files or directories it may change. Leave writePaths empty only for genuinely read-only work.
 Do not add openQuestions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; choose a reasonable next task/order and record the assumption in memoryAdditions.
 Add openQuestions only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
-Include sourceId such as workspace:Design.md on memory derived from supplied files. If confirmed workspace evidence contradicts active inferred planner memory, supersede each conflicting entry through memorySupersessions.
+    Include sourceId such as workspace:Design.md on memory derived from supplied files. If confirmed workspace evidence contradicts active inferred planner memory, supersede each conflicting entry through memorySupersessions.
 
 Return only JSON:
 {
-  "summary": "...", "rationale": "...", "assumptions": [],
-  "criterionUpserts": [], "removedCriterionIds": [],
-  "milestoneUpserts": [], "removedMilestoneIds": [],
-  "taskAdditions": [], "taskUpdates": [],
+      "summary": "...", "rationale": "...", "assumptions": [],
+      "criteria": [], "milestones": [], "tasks": [],
   "deferredTaskIds": [], "obsoleteTaskIds": [],
   "memoryAdditions": [], "memorySupersessions": [],
   "openQuestions": [], "requiresApproval": false, "approvalReason": ""
@@ -217,8 +216,8 @@ ${_encoder.convert(ModelJson.encode(project))}
     } on ChatTransportException {
       rethrow;
     } catch (_) {
-      return ProjectPlanProposal(
-        revision: project.currentRevision + 1,
+      return ProjectDesiredPlan(
+        revision: project.nextRevision,
         triggers: triggers,
         summary: 'No safe plan revision was produced.',
         rationale: 'The planning call failed without a valid proposal.',
@@ -228,12 +227,12 @@ ${_encoder.convert(ModelJson.encode(project))}
   }
 
   @override
-  Future<ProjectPlanProposal?> repairPlanProposal({
+  Future<ProjectDesiredPlan?> repairPlanProposal({
     required ChatClient client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required ProjectState project,
-    required ProjectPlanProposal proposal,
+    required ProjectDesiredPlan proposal,
     required List<Map<String, String>> validationIssues,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
@@ -246,7 +245,7 @@ ${_encoder.convert(ModelJson.encode(project))}
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
         expectedShape:
-            '{"summary":"...","rationale":"...","taskAdditions":[],"taskUpdates":[],"deferredTaskIds":[],"obsoleteTaskIds":[]}',
+            '{"summary":"...","rationale":"...","criteria":[],"milestones":[],"tasks":[],"deferredTaskIds":[],"obsoleteTaskIds":[],"openQuestions":[]}',
         user:
             '''
 Repair the proposed plan exactly once so every structured validation issue is resolved.
@@ -397,7 +396,9 @@ ${_encoder.convert(ModelJson.encode(project))}
       return ProjectCompletionAssessment(
         complete: false,
         finalSummary: '',
-        remainingCriteria: project.successCriteria,
+        remainingCriteria: project.criteria
+            .map((item) => item.statement)
+            .toList(),
         openQuestions: const [],
       );
     }
@@ -547,37 +548,19 @@ $expectedShape
       json['refinedGoal'] ?? json['refined_goal'],
       fallback: originalGoal,
     );
-    final legacyCriteria = jsonStringList(
-      json['successCriteria'] ?? json['success_criteria'],
-    );
     final structuredCriteria = _criteriaFromJson(json['criteria']);
-    final effectiveCriteria = structuredCriteria.isEmpty
-        ? [
-            for (var index = 0; index < legacyCriteria.length; index++)
-              ProjectCriterion(
-                id: 'criterion_${(index + 1).toString().padLeft(3, '0')}',
-                statement: legacyCriteria[index],
-                createdAt: DateTime.now(),
-                updatedAt: DateTime.now(),
-              ),
-          ]
-        : structuredCriteria;
     return ProjectInitialisation(
       title: jsonString(json['title'], fallback: _titleFromGoal(originalGoal)),
       refinedGoal: refinedGoal,
-      successCriteria: structuredCriteria.isNotEmpty
-          ? structuredCriteria.map((item) => item.statement).toList()
-          : legacyCriteria,
+      criteria: structuredCriteria,
       constraints: jsonStringList(json['constraints']),
-      knownFacts: jsonStringList(json['knownFacts'] ?? json['known_facts']),
       openQuestions: _questionsFromJson(
         json['openQuestions'] ?? json['open_questions'],
       ),
-      backlog: _bindTasksToCriteria(
-        _tasksFromJson(json['backlog']),
-        effectiveCriteria,
+      tasks: _bindTasksToCriteria(
+        _tasksFromJson(json['tasks']),
+        structuredCriteria,
       ),
-      criteria: structuredCriteria,
       milestones: _milestonesFromJson(json['milestones']),
       memory: _memoryFromJson(json['memory']),
     );
@@ -586,12 +569,10 @@ $expectedShape
   Map<String, dynamic> _initialisationToMap(ProjectInitialisation value) => {
     'title': value.title,
     'refinedGoal': value.refinedGoal,
-    'successCriteria': value.successCriteria,
-    'constraints': value.constraints,
-    'knownFacts': value.knownFacts,
-    'openQuestions': value.openQuestions.map(ModelJson.encode).toList(),
-    'backlog': value.backlog.map(ModelJson.encode).toList(),
     'criteria': value.criteria.map(ModelJson.encode).toList(),
+    'constraints': value.constraints,
+    'openQuestions': value.openQuestions.map(ModelJson.encode).toList(),
+    'tasks': value.tasks.map(ModelJson.encode).toList(),
     'milestones': value.milestones.map(ModelJson.encode).toList(),
     'memory': value.memory.map(ModelJson.encode).toList(),
   };
@@ -600,11 +581,17 @@ $expectedShape
     return ProjectInitialisation(
       title: _titleFromGoal(originalGoal),
       refinedGoal: originalGoal,
-      successCriteria: const ['Complete the stated project goal.'],
+      criteria: [
+        ProjectCriterion(
+          id: 'criterion_001',
+          statement: 'Complete the stated project goal.',
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        ),
+      ],
       constraints: const ['Stay within the attached workspace.'],
-      knownFacts: const [],
       openQuestions: const [],
-      backlog: const [],
+      tasks: const [],
     );
   }
 
@@ -640,34 +627,48 @@ $expectedShape
         : task.expectedEvidence;
     return task.copyWith(
       expectedEvidence: expectedEvidence,
-      fingerprint: projectTaskFingerprint(
-        task.objective,
-        task.relevantSuccessCriteria,
-      ),
+      fingerprint: projectTaskFingerprint(task.objective, task.criterionIds),
     );
   }
 
-  ProjectPlanProposal _proposalFromJson(
+  ProjectDesiredPlan _proposalFromJson(
     Map<String, dynamic> json, {
     required ProjectState project,
     required List<ProjectPlanRevisionTrigger> triggers,
   }) {
-    final rawTaskAdditions =
-        json['taskAdditions'] ??
-        json['task_additions'] ??
-        (json['task'] is Map ? [json['task']] : null);
-    final criterionUpserts = _criteriaFromJson(
-      json['criterionUpserts'] ?? json['criterion_upserts'],
-    );
-    final removedCriterionIds = jsonStringList(
-      json['removedCriterionIds'] ?? json['removed_criterion_ids'],
-    );
-    final availableCriteria = <String, ProjectCriterion>{
-      for (final criterion in project.criteria) criterion.id: criterion,
-      for (final criterion in criterionUpserts) criterion.id: criterion,
-    }..removeWhere((id, _) => removedCriterionIds.contains(id));
-    return ProjectPlanProposal(
-      revision: project.currentRevision + 1,
+    final criteriaValue = json['criteria'];
+    final criteria =
+        criteriaValue is List && criteriaValue.every((item) => item is Map)
+        ? _criteriaFromJson(json['criteria'])
+        : project.criteria;
+    final tasksValue = json['tasks'];
+    final desiredTasks =
+        tasksValue is List && tasksValue.every((item) => item is Map)
+        ? _tasksFromJson(json['tasks'])
+        : project.tasks
+              .where(
+                (task) =>
+                    task.status != ProjectTaskStatus.completed &&
+                    task.status != ProjectTaskStatus.failed &&
+                    task.status != ProjectTaskStatus.rejected &&
+                    task.status != ProjectTaskStatus.split &&
+                    task.status != ProjectTaskStatus.cancelled,
+              )
+              .toList();
+    final tasks = _bindTasksToCriteria(desiredTasks, criteria);
+    final milestonesValue = json['milestones'];
+    final desiredMilestones =
+        milestonesValue is List && milestonesValue.every((item) => item is Map)
+        ? _milestonesFromJson(json['milestones'])
+        : project.milestones;
+    final openQuestionsValue = json['openQuestions'] ?? json['open_questions'];
+    final openQuestions =
+        openQuestionsValue is List &&
+            openQuestionsValue.every((item) => item is Map)
+        ? _questionsFromJson(openQuestionsValue)
+        : project.openQuestions;
+    return ProjectDesiredPlan(
+      revision: project.nextRevision,
       triggers: triggers.toSet().toList(),
       summary: jsonString(
         json['summary'],
@@ -678,22 +679,9 @@ $expectedShape
         fallback: 'Respond to the collected replanning triggers.',
       ),
       assumptions: jsonStringList(json['assumptions']),
-      criterionUpserts: criterionUpserts,
-      removedCriterionIds: removedCriterionIds,
-      milestoneUpserts: _milestonesFromJson(
-        json['milestoneUpserts'] ?? json['milestone_upserts'],
-      ),
-      removedMilestoneIds: jsonStringList(
-        json['removedMilestoneIds'] ?? json['removed_milestone_ids'],
-      ),
-      taskAdditions: _bindTasksToCriteria(
-        _tasksFromJson(rawTaskAdditions),
-        availableCriteria.values,
-      ),
-      taskUpdates: _bindTasksToCriteria(
-        _tasksFromJson(json['taskUpdates'] ?? json['task_updates']),
-        availableCriteria.values,
-      ),
+      criteria: criteria,
+      milestones: desiredMilestones,
+      tasks: tasks,
       deferredTaskIds: jsonStringList(
         json['deferredTaskIds'] ?? json['deferred_task_ids'],
       ),
@@ -706,9 +694,7 @@ $expectedShape
       memorySupersessions: _memorySupersessionsFromJson(
         json['memorySupersessions'] ?? json['memory_supersessions'],
       ),
-      openQuestions: _questionsFromJson(
-        json['openQuestions'] ?? json['open_questions'],
-      ),
+      openQuestions: openQuestions,
       requiresApproval: jsonBool(
         json['requiresApproval'] ?? json['requires_approval'],
       ),
@@ -888,7 +874,7 @@ ToolDefinition _finaliseProjectCreationToolDefinition({
     id: _finaliseProjectCreationToolId,
     name: 'Finalise project creation',
     description:
-        'Finalize project creation or backlog refresh with the complete structured project payload. Call this exactly once after any needed read-only workspace discovery.',
+        'Finalize the complete structured project payload. Call this exactly once after any needed read-only workspace discovery.',
     schema: {
       'type': 'object',
       'properties': {
@@ -912,27 +898,7 @@ ToolDefinition _finaliseProjectCreationToolDefinition({
           'type': 'array',
           'items': {'type': 'string'},
         },
-        'criterionUpserts': {
-          'type': 'array',
-          'items': {'type': 'object'},
-        },
-        'removedCriterionIds': {
-          'type': 'array',
-          'items': {'type': 'string'},
-        },
-        'milestoneUpserts': {
-          'type': 'array',
-          'items': {'type': 'object'},
-        },
-        'removedMilestoneIds': {
-          'type': 'array',
-          'items': {'type': 'string'},
-        },
-        'taskAdditions': {
-          'type': 'array',
-          'items': {'type': 'object'},
-        },
-        'taskUpdates': {
+        'tasks': {
           'type': 'array',
           'items': {'type': 'object'},
         },
@@ -954,15 +920,7 @@ ToolDefinition _finaliseProjectCreationToolDefinition({
         },
         'requiresApproval': {'type': 'boolean'},
         'approvalReason': {'type': 'string'},
-        'successCriteria': {
-          'type': 'array',
-          'items': {'type': 'string'},
-        },
         'constraints': {
-          'type': 'array',
-          'items': {'type': 'string'},
-        },
-        'knownFacts': {
           'type': 'array',
           'items': {'type': 'string'},
         },
@@ -983,44 +941,6 @@ ToolDefinition _finaliseProjectCreationToolDefinition({
             'required': ['question'],
           },
         },
-        'backlog': {
-          'type': 'array',
-          'items': {
-            'type': 'object',
-            'properties': {
-              'title': {'type': 'string'},
-              'objective': {'type': 'string'},
-              'relevantSuccessCriteria': {
-                'type': 'array',
-                'items': {'type': 'string'},
-              },
-              'doneCriteria': {
-                'type': 'array',
-                'items': {'type': 'string'},
-              },
-              'outOfScope': {
-                'type': 'array',
-                'items': {'type': 'string'},
-              },
-              'context': {
-                'type': 'array',
-                'items': {'type': 'string'},
-              },
-              'expectedArtifacts': {
-                'type': 'array',
-                'items': {
-                  'type': 'object',
-                  'properties': {
-                    'path': {'type': 'string'},
-                    'description': {'type': 'string'},
-                    'kind': {'type': 'string'},
-                  },
-                },
-              },
-            },
-            'required': ['title', 'objective', 'doneCriteria', 'outOfScope'],
-          },
-        },
       },
       'required': requiredProperties,
     },
@@ -1035,5 +955,6 @@ Do not execute workspace changes directly.
 Project mode controls a loop outside the model.
 Every proposed task must be small, bounded, independently verifiable, and narrower than the whole project.
 Every proposed task must include doneCriteria and outOfScope.
+When revising a plan, return complete criteria, milestone, and task collections; include an explicit empty array when a collection should be cleared.
 Never propose one task that completes the entire project unless the project has exactly one remaining narrow criterion.
 ''';

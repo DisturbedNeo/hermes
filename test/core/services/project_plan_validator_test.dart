@@ -3,284 +3,402 @@ import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/services/project_system/project_plan_validator.dart';
 
 void main() {
-  group('ProjectPlanValidator', () {
-    const validator = ProjectPlanValidator(planningHorizon: 2);
-    late ProjectState project;
+  const validator = ProjectPlanValidator(planningHorizon: 2);
 
-    setUp(() {
-      project = _project();
-    });
+  test('accepts a complete bounded desired plan', () {
+    final project = _project();
+    final validation = validator.validate(
+      project: project,
+      proposal: _desired(project, [_task('task_new')]),
+      workspaceRoot: '/workspace',
+    );
 
-    test('accepts a bounded task with stable references', () {
-      final proposal = _proposal(project, [_task(id: 'task_new')]);
+    expect(validation.valid, isTrue);
+    expect(validation.issues, isEmpty);
+  });
 
-      final validation = validator.validate(
-        project: project,
-        proposal: proposal,
-        workspaceRoot: '/workspace',
-      );
+  test('rejects dependency cycles and invalid paths before reconciliation', () {
+    final project = _project();
+    final invalid = _task(
+      'task_invalid',
+      dependencies: const ['task_invalid', 'missing'],
+      writePaths: const ['../outside.txt'],
+    );
+    final validation = validator.validate(
+      project: project,
+      proposal: _desired(project, [invalid]),
+      workspaceRoot: '/workspace',
+    );
 
-      expect(validation.valid, isTrue);
-      expect(validation.issues, isEmpty);
-    });
+    expect(validation.valid, isFalse);
+    expect(
+      validation.errors.map((issue) => issue.code),
+      containsAll([
+        'self_dependency',
+        'missing_dependency',
+        'cyclic_dependencies',
+        'path_outside_workspace',
+      ]),
+    );
+  });
 
-    test('returns structured dependency, boundary, and path errors', () {
-      final invalid = _task(
-        id: 'task_invalid',
-        dependsOnTaskIds: const ['task_invalid', 'missing'],
-        doneCriteria: const [],
-        outOfScope: const [],
-        writePaths: const ['../outside.txt'],
-      ).copyWith(expectedEvidence: const [], expectedArtifacts: const []);
+  test('requires approval before removing a required criterion', () {
+    final project = _project();
+    final desired = _desired(project, const [], includeCriteria: false);
+    final validation = validator.validate(
+      project: project,
+      proposal: desired,
+      workspaceRoot: '/workspace',
+    );
 
-      final validation = validator.validate(
-        project: project,
-        proposal: _proposal(project, [invalid]),
-        workspaceRoot: '/workspace',
-      );
-      final byCode = {for (final issue in validation.errors) issue.code: issue};
+    expect(validation.valid, isFalse);
+    expect(
+      validation.errors.map((issue) => issue.code),
+      contains('required_criterion_removal'),
+    );
+  });
 
-      expect(validation.valid, isFalse);
-      expect(
-        byCode.keys,
-        containsAll(<String>{
-          'self_dependency',
-          'missing_dependency',
-          'missing_done_criteria',
-          'missing_boundary',
-          'missing_expected_verification',
-          'path_outside_workspace',
-        }),
-      );
-      expect(byCode['missing_dependency']!.path, contains('dependsOnTaskIds'));
-    });
+  test('rejects malformed memory additions and supersessions', () {
+    final project = _project(
+      memory: [
+        _memory('memory_active'),
+        _memory('memory_inactive', active: false),
+        _memory('memory_protected', protected: true),
+        _memory('memory_replacement'),
+      ],
+    );
+    final invalid = _desired(
+      project,
+      const [],
+      memoryAdditions: [
+        ProjectMemoryEntry(
+          id: 'memory_active',
+          kind: ProjectMemoryKind.fact,
+          content: '',
+          sourceType: ProjectMemorySourceType.planner,
+          confidence: ProjectMemoryConfidence.inferred,
+          createdAt: DateTime(2026, 1, 1),
+          updatedAt: DateTime(2026, 1, 1),
+        ),
+      ],
+      memorySupersessions: const [
+        ProjectMemorySupersession(
+          entryId: 'memory_inactive',
+          supersededById: 'missing_replacement',
+        ),
+        ProjectMemorySupersession(
+          entryId: 'memory_protected',
+          supersededById: 'memory_replacement',
+        ),
+        ProjectMemorySupersession(
+          entryId: 'memory_active',
+          supersededById: 'memory_active',
+        ),
+      ],
+    );
 
-    test('rejects missing and inconsistent evidence criterion links', () {
-      final unboundTask = _task(id: 'task_unbound').copyWith(
-        criterionIds: const [],
-        expectedEvidence: const [
-          ProjectEvidenceExpectation(
-            id: 'expect_unbound',
-            type: ProjectEvidenceType.taskClaim,
-            criterionIds: [],
-            description: 'Verify the result.',
-          ),
-        ],
-      );
-      final unknownEvidenceTask = _task(id: 'task_unknown').copyWith(
-        expectedEvidence: const [
-          ProjectEvidenceExpectation(
-            id: 'expect_unknown',
-            type: ProjectEvidenceType.command,
-            criterionIds: ['criterion_missing'],
-            description: 'Run verification.',
-          ),
-        ],
-      );
+    final validation = validator.validate(
+      project: project,
+      proposal: invalid,
+      workspaceRoot: '/workspace',
+    );
 
-      final validation = validator.validate(
-        project: project,
-        proposal: _proposal(project, [unboundTask, unknownEvidenceTask]),
-        workspaceRoot: '/workspace',
-      );
+    expect(validation.valid, isFalse);
+    expect(
+      validation.errors.map((issue) => issue.code),
+      containsAll([
+        'empty_memory_addition',
+        'memory_id_collision',
+        'inactive_memory_source',
+        'missing_memory_replacement',
+        'protected_memory_source',
+        'self_memory_supersession',
+      ]),
+    );
+  });
 
-      expect(
-        validation.errors.map((item) => item.code),
-        containsAll([
-          'missing_criterion_link',
-          'missing_evidence_criterion',
-          'unknown_evidence_criterion',
-        ]),
-      );
-    });
-
-    test('requires queued tasks to release criteria removed by a revision', () {
-      final queued = _task(id: 'task_existing');
-      final withQueuedWork = project.copyWith(backlog: [queued]);
-      final proposal = ProjectPlanProposal(
-        revision: withQueuedWork.currentRevision + 1,
-        triggers: const [ProjectPlanRevisionTrigger.manual],
-        summary: 'Remove an outcome.',
-        rationale: 'The outcome is no longer in scope.',
-        removedCriterionIds: const ['criterion_001'],
-        requiresApproval: true,
-        createdAt: DateTime(2026, 1, 2),
-      );
-
-      final validation = validator.validate(
-        project: withQueuedWork,
-        proposal: proposal,
-        workspaceRoot: '/workspace',
-      );
-
-      expect(
-        validation.errors.map((item) => item.code),
-        contains('removed_criterion_still_in_use'),
-      );
-    });
-
-    test('rejects cycles and work equivalent to the whole project', () {
-      final first = _task(id: 'task_a', dependsOnTaskIds: const ['task_b']);
-      final second = _task(
-        id: 'task_b',
-        objective: 'Complete the entire project end-to-end',
-        dependsOnTaskIds: const ['task_a'],
-      );
-
-      final validation = validator.validate(
-        project: project,
-        proposal: _proposal(project, [first, second]),
-        workspaceRoot: '/workspace',
-      );
-
-      expect(
-        validation.errors.map((item) => item.code),
-        containsAll(['cyclic_dependencies', 'task_equals_project_goal']),
-      );
-    });
-
-    test('rejects protected memory and required criterion mutation', () {
-      final proposal = ProjectPlanProposal(
-        revision: 2,
-        triggers: const [ProjectPlanRevisionTrigger.newContext],
-        summary: 'Unsafe scope edit',
-        rationale: 'Attempt an unsafe edit.',
-        removedCriterionIds: const ['criterion_001'],
-        memoryAdditions: [
-          ProjectMemoryEntry(
-            id: 'memory_replacement',
-            kind: ProjectMemoryKind.fact,
-            content: 'Replacement',
-            sourceType: ProjectMemorySourceType.planner,
-            confidence: ProjectMemoryConfidence.inferred,
-            createdAt: DateTime(2026, 1, 2),
-            updatedAt: DateTime(2026, 1, 2),
-          ),
-        ],
+  test('accepts a valid planner memory supersession', () {
+    final project = _project(
+      memory: [_memory('memory_active'), _memory('memory_replacement')],
+    );
+    final validation = validator.validate(
+      project: project,
+      proposal: _desired(
+        project,
+        const [],
         memorySupersessions: const [
           ProjectMemorySupersession(
-            entryId: 'memory_user',
+            entryId: 'memory_active',
             supersededById: 'memory_replacement',
           ),
         ],
-        createdAt: DateTime(2026, 1, 2),
-      );
+      ),
+      workspaceRoot: '/workspace',
+    );
 
-      final validation = validator.validate(
-        project: project,
-        proposal: proposal,
-        workspaceRoot: '/workspace',
-      );
+    expect(validation.valid, isTrue);
+  });
 
-      expect(
-        validation.errors.map((item) => item.code),
-        containsAll([
-          'required_criterion_removal',
-          'protected_memory_mutation',
-        ]),
-      );
-    });
+  test('rejects duplicate desired work and desired-vs-existing work', () {
+    final project = _project();
+    final first = _task('first');
+    final duplicateDesired = _task('second').copyWith(
+      fingerprint: first.fingerprint,
+      expectedEvidence: const [
+        ProjectEvidenceExpectation(
+          id: 'expect_second',
+          type: ProjectEvidenceType.taskClaim,
+          criterionIds: ['criterion_001'],
+          description: 'The second task is checked.',
+        ),
+      ],
+    );
+    final desiredValidation = validator.validate(
+      project: project,
+      proposal: _desired(project, [first, duplicateDesired]),
+      workspaceRoot: '/workspace',
+    );
+    expect(
+      desiredValidation.errors.map((issue) => issue.code),
+      contains('duplicate_work'),
+    );
 
-    test('enforces the ready planning horizon without justification', () {
-      final proposal = _proposal(project, [
-        _task(id: 'task_1'),
-        _task(id: 'task_2'),
-        _task(id: 'task_3'),
-      ]);
+    final existing = _task('existing');
+    final existingValidation = validator.validate(
+      project: _projectWithTasks([existing]),
+      proposal: _desired(_projectWithTasks([existing]), [
+        _task('replacement').copyWith(
+          fingerprint: existing.fingerprint,
+          expectedEvidence: const [
+            ProjectEvidenceExpectation(
+              id: 'expect_replacement',
+              type: ProjectEvidenceType.taskClaim,
+              criterionIds: ['criterion_001'],
+              description: 'The replacement is checked.',
+            ),
+          ],
+        ),
+      ]),
+      workspaceRoot: '/workspace',
+    );
+    expect(
+      existingValidation.errors.map((issue) => issue.code),
+      contains('duplicate_work'),
+    );
+  });
 
-      final validation = validator.validate(
-        project: project,
-        proposal: proposal,
-        workspaceRoot: '/workspace',
-      );
+  test('rejects ambiguous evidence expectations', () {
+    final project = _project();
+    final task = _task(
+      'ambiguous',
+      expectedEvidence: const [
+        ProjectEvidenceExpectation(
+          id: 'expect_a',
+          type: ProjectEvidenceType.artifact,
+          criterionIds: ['criterion_001'],
+          description: 'The report exists.',
+          sourceRef: 'report.md',
+        ),
+        ProjectEvidenceExpectation(
+          id: 'expect_b',
+          type: ProjectEvidenceType.artifact,
+          criterionIds: ['criterion_001'],
+          description: 'The report is present.',
+          sourceRef: 'report.md',
+        ),
+      ],
+    );
+    final validation = validator.validate(
+      project: project,
+      proposal: _desired(project, [task]),
+      workspaceRoot: '/workspace',
+    );
 
-      expect(
-        validation.errors.map((item) => item.code),
-        contains('planning_horizon_exceeded'),
-      );
-    });
+    expect(
+      validation.errors.map((issue) => issue.code),
+      contains('ambiguous_evidence_expectation'),
+    );
+  });
+
+  test('rejects dependencies on omitted tasks', () {
+    final project = _projectWithTasks([_task('unfinished')]);
+    final validation = validator.validate(
+      project: project,
+      proposal: _desired(project, [
+        _task('dependent', dependencies: const ['unfinished']),
+      ]),
+      workspaceRoot: '/workspace',
+    );
+
+    expect(
+      validation.errors.map((issue) => issue.code),
+      contains('dead_dependency'),
+    );
+  });
+
+  test('rejects unknown and conflicting task dispositions', () {
+    final project = _projectWithTasks([_task('existing')]);
+    final validation = validator.validate(
+      project: project,
+      proposal: _desired(
+        project,
+        [_task('existing')],
+        deferredTaskIds: const ['existing', 'missing'],
+        obsoleteTaskIds: const ['existing'],
+      ),
+      workspaceRoot: '/workspace',
+    );
+
+    expect(
+      validation.errors.map((issue) => issue.code),
+      containsAll(['unknown_task_disposition', 'conflicting_task_disposition']),
+    );
+  });
+
+  test('rejects deterministic criteria with artifact-only verification', () {
+    final base = _project();
+    final project = base.copyWith(
+      criteria: [
+        base.criteria.single.copyWith(
+          verificationMode: ProjectVerificationMode.deterministic,
+        ),
+      ],
+    );
+    final task = _task(
+      'artifact_only',
+      expectedEvidence: const [],
+      expectedArtifacts: [
+        ProjectArtifact(
+          id: 'artifact_expected',
+          projectTaskId: null,
+          taskDocumentId: null,
+          path: 'lib/feature.dart',
+          description: 'The implementation file.',
+          kind: 'file',
+          createdAt: DateTime(2026, 1, 2),
+        ),
+      ],
+    );
+    final validation = validator.validate(
+      project: project,
+      proposal: _desired(project, [task]),
+      workspaceRoot: '/workspace',
+    );
+
+    expect(
+      validation.errors.map((issue) => issue.code),
+      contains('impossible_deterministic_verification'),
+    );
   });
 }
 
-ProjectState _project() {
+ProjectState _project({List<ProjectMemoryEntry> memory = const []}) {
   final now = DateTime(2026, 1, 1);
   return ProjectState(
     id: 'project_1',
     title: 'Project',
-    originalGoal: 'Deliver the product',
-    refinedGoal: 'Deliver the product',
+    originalGoal: 'Deliver a bounded outcome',
+    refinedGoal: 'Deliver a bounded outcome',
     criteria: [
       ProjectCriterion(
         id: 'criterion_001',
-        statement: 'The product is verified.',
+        statement: 'The bounded outcome is verified.',
         createdAt: now,
         updatedAt: now,
       ),
     ],
-    constraints: const [],
-    backlog: const [],
-    memory: [
-      ProjectMemoryEntry(
-        id: 'memory_user',
-        kind: ProjectMemoryKind.requirement,
-        content: 'Do not change the public contract.',
-        sourceType: ProjectMemorySourceType.user,
-        confidence: ProjectMemoryConfidence.confirmed,
-        protected: true,
-        createdAt: now,
-        updatedAt: now,
-      ),
-    ],
+    constraints: const ['Stay in the workspace.'],
+    tasks: const [],
     status: ProjectStatus.active,
     activeTaskId: null,
+    memory: memory,
     createdAt: now,
     updatedAt: now,
   );
 }
 
-ProjectPlanProposal _proposal(ProjectState project, List<ProjectTask> tasks) {
-  return ProjectPlanProposal(
-    revision: project.currentRevision + 1,
+ProjectState _projectWithTasks(List<ProjectTask> tasks) {
+  final project = _project();
+  return project.copyWith(tasks: tasks);
+}
+
+ProjectDesiredPlan _desired(
+  ProjectState project,
+  List<ProjectTask> tasks, {
+  bool includeCriteria = true,
+  List<ProjectMemoryEntry> memoryAdditions = const [],
+  List<ProjectMemorySupersession> memorySupersessions = const [],
+  List<String> deferredTaskIds = const [],
+  List<String> obsoleteTaskIds = const [],
+}) {
+  return ProjectDesiredPlan(
+    revision: project.nextRevision,
     triggers: const [ProjectPlanRevisionTrigger.noReadyTask],
-    summary: 'Add bounded work.',
-    rationale: 'Keep the near-term plan actionable.',
-    taskAdditions: tasks,
+    summary: 'Revise the near-term plan.',
+    rationale: 'A bounded revision is needed.',
+    criteria: includeCriteria ? project.criteria : const [],
+    milestones: project.milestones,
+    tasks: tasks,
+    deferredTaskIds: deferredTaskIds,
+    obsoleteTaskIds: obsoleteTaskIds,
+    memoryAdditions: memoryAdditions,
+    memorySupersessions: memorySupersessions,
     createdAt: DateTime(2026, 1, 2),
   );
 }
 
-ProjectTask _task({
-  required String id,
-  String? objective,
-  List<String> dependsOnTaskIds = const [],
-  List<String> doneCriteria = const ['The bounded work is verified.'],
-  List<String> outOfScope = const ['Do not change unrelated work.'],
+ProjectMemoryEntry _memory(
+  String id, {
+  bool active = true,
+  bool protected = false,
+}) {
+  final now = DateTime(2026, 1, 1);
+  return ProjectMemoryEntry(
+    id: id,
+    kind: ProjectMemoryKind.fact,
+    content: 'Memory content for $id.',
+    sourceType: ProjectMemorySourceType.planner,
+    confidence: ProjectMemoryConfidence.inferred,
+    active: active,
+    protected: protected,
+    createdAt: now,
+    updatedAt: now,
+  );
+}
+
+ProjectTask _task(
+  String id, {
+  List<String> dependencies = const [],
   List<String> writePaths = const ['lib/feature.dart'],
+  List<ProjectEvidenceExpectation>? expectedEvidence,
+  List<ProjectArtifact> expectedArtifacts = const [],
 }) {
   final now = DateTime(2026, 1, 2);
-  final taskObjective = objective ?? 'Implement bounded work for $id.';
+  final objective = 'Implement bounded slice $id.';
   return ProjectTask(
     id: id,
-    title: 'Task $id',
-    objective: taskObjective,
+    title: 'Bounded slice $id',
+    objective: objective,
     criterionIds: const ['criterion_001'],
-    dependsOnTaskIds: dependsOnTaskIds,
-    expectedEvidence: const [
-      ProjectEvidenceExpectation(
-        id: 'expected_verification',
-        type: ProjectEvidenceType.taskClaim,
-        criterionIds: ['criterion_001'],
-        description: 'Verify the task done criteria.',
-      ),
-    ],
+    dependsOnTaskIds: dependencies,
+    expectedEvidence:
+        expectedEvidence ??
+        const [
+          ProjectEvidenceExpectation(
+            id: 'expect_task',
+            type: ProjectEvidenceType.taskClaim,
+            criterionIds: ['criterion_001'],
+            description: 'The done criteria are independently checked.',
+          ),
+        ],
     writePaths: writePaths,
-    doneCriteria: doneCriteria,
-    outOfScope: outOfScope,
+    doneCriteria: const ['The bounded slice is implemented and checked.'],
+    outOfScope: const ['Do not change unrelated project scope.'],
     context: const [],
-    expectedArtifacts: const [],
+    expectedArtifacts: expectedArtifacts,
     status: ProjectTaskStatus.queued,
     taskDocumentId: null,
-    fingerprint: projectTaskFingerprint(taskObjective, const ['criterion_001']),
+    fingerprint: projectTaskFingerprint(objective, const ['criterion_001']),
     rejectionReason: null,
     createdAt: now,
     updatedAt: now,

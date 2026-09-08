@@ -15,7 +15,7 @@ void main() {
 
       final evidence = evidenceService.normalizeTaskResult(
         project: project,
-        task: project.backlog.single,
+        task: project.tasks.single,
         result: _result(timestamp, summary: 'The task completed.'),
         evaluatedAt: timestamp,
       );
@@ -56,7 +56,7 @@ void main() {
 
         final evidence = evidenceService.normalizeTaskResult(
           project: project,
-          task: project.backlog.single,
+          task: project.tasks.single,
           result: result,
           evaluatedAt: timestamp,
         );
@@ -81,7 +81,7 @@ void main() {
       final project = _project(timestamp);
       final evidence = evidenceService.normalizeTaskResult(
         project: project,
-        task: project.backlog.single,
+        task: project.tasks.single,
         result: _result(
           timestamp,
           summary: '',
@@ -111,12 +111,311 @@ void main() {
     });
 
     test(
+      'requires every required expectation before satisfying a criterion',
+      () {
+        final project = _project(
+          timestamp,
+          verificationMode: ProjectVerificationMode.deterministic,
+          expectedEvidence: const [
+            ProjectEvidenceExpectation(
+              id: 'expect_command',
+              type: ProjectEvidenceType.command,
+              criterionIds: ['criterion_001'],
+              description: 'The focused tests pass.',
+              sourceRef: 'flutter test',
+            ),
+            ProjectEvidenceExpectation(
+              id: 'expect_artifact',
+              type: ProjectEvidenceType.artifact,
+              criterionIds: ['criterion_001'],
+              description: 'The report exists.',
+              sourceRef: 'report.md',
+            ),
+          ],
+        );
+        final commandOnly = evidenceService.normalizeTaskResult(
+          project: project,
+          task: project.tasks.single,
+          result: _result(
+            timestamp,
+            summary: '',
+            gates: [
+              TaskGateResult(
+                gateId: 'command_passes',
+                status: TaskGateStatus.passed,
+                summary: 'Tests passed.',
+                details: const {'required': true, 'command': 'flutter test'},
+                evaluatedAt: timestamp,
+              ),
+            ],
+          ),
+          evaluatedAt: timestamp,
+        );
+        final partial = criterionEvaluator.evaluateDeterministically(
+          project.copyWith(evidence: commandOnly),
+          evaluatedAt: timestamp,
+        );
+
+        expect(commandOnly.single.expectationIds, ['expect_command']);
+        expect(partial.criteria.single.status, ProjectCriterionStatus.partial);
+
+        final completeEvidence = evidenceService.normalizeTaskResult(
+          project: project.copyWith(evidence: commandOnly),
+          task: project.tasks.single,
+          result: _result(
+            timestamp,
+            summary: '',
+            artifacts: [
+              ProjectArtifact(
+                id: 'artifact_report',
+                projectTaskId: 'task_1',
+                taskDocumentId: 'document_1',
+                taskRunId: 'run_artifact',
+                path: 'report.md',
+                description: 'Generated report.',
+                kind: 'file',
+                createdAt: timestamp,
+              ),
+            ],
+          ),
+          evaluatedAt: timestamp,
+        );
+        final complete = criterionEvaluator.evaluateDeterministically(
+          project.copyWith(evidence: completeEvidence),
+          evaluatedAt: timestamp,
+        );
+
+        expect(completeEvidence.last.expectationIds, ['expect_artifact']);
+        expect(
+          complete.criteria.single.status,
+          ProjectCriterionStatus.satisfied,
+        );
+      },
+    );
+
+    test('records every expectation matched by one command output', () {
+      final project = _project(
+        timestamp,
+        verificationMode: ProjectVerificationMode.deterministic,
+      );
+      final secondCriterion = ProjectCriterion(
+        id: 'criterion_002',
+        statement: 'The report remains formatted.',
+        verificationMode: ProjectVerificationMode.deterministic,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      );
+      final task = project.tasks.single.copyWith(
+        criterionIds: const ['criterion_001', 'criterion_002'],
+        expectedEvidence: const [
+          ProjectEvidenceExpectation(
+            id: 'expect_tests',
+            type: ProjectEvidenceType.command,
+            criterionIds: ['criterion_001'],
+            description: 'The tests pass.',
+            sourceRef: 'flutter test',
+          ),
+          ProjectEvidenceExpectation(
+            id: 'expect_format',
+            type: ProjectEvidenceType.command,
+            criterionIds: ['criterion_002'],
+            description: 'The formatter passes.',
+            sourceRef: 'flutter test',
+          ),
+        ],
+      );
+      final twoCriterionProject = project.copyWith(
+        criteria: [project.criteria.single, secondCriterion],
+        tasks: [task],
+      );
+      final evidence = evidenceService.normalizeTaskResult(
+        project: twoCriterionProject,
+        task: task,
+        result: _result(
+          timestamp,
+          summary: '',
+          gates: [
+            TaskGateResult(
+              gateId: 'command_passes',
+              status: TaskGateStatus.passed,
+              summary: 'The shared verification command passed.',
+              details: const {'required': true, 'command': 'flutter test'},
+              evaluatedAt: timestamp,
+            ),
+          ],
+        ),
+        evaluatedAt: timestamp,
+      );
+
+      expect(evidence.single.expectationIds, ['expect_tests', 'expect_format']);
+      expect(evidence.single.criterionIds, ['criterion_001', 'criterion_002']);
+      final evaluated = criterionEvaluator.evaluateDeterministically(
+        twoCriterionProject.copyWith(evidence: evidence),
+        evaluatedAt: timestamp,
+      );
+      expect(
+        evaluated.criteria.map((criterion) => criterion.status),
+        everyElement(ProjectCriterionStatus.satisfied),
+      );
+    });
+
+    test(
+      'replacement evidence satisfies a criterion after failed task history',
+      () {
+        final project = _project(
+          timestamp,
+          verificationMode: ProjectVerificationMode.deterministic,
+          expectedEvidence: const [
+            ProjectEvidenceExpectation(
+              id: 'old_expectation',
+              type: ProjectEvidenceType.command,
+              criterionIds: ['criterion_001'],
+              description: 'The verification command passes.',
+              sourceRef: 'flutter test',
+            ),
+          ],
+        );
+        final failedTask = project.tasks.single.copyWith(
+          status: ProjectTaskStatus.failed,
+        );
+        final replacementTask = project.tasks.single.copyWith(
+          id: 'replacement_task',
+          expectedEvidence: const [
+            ProjectEvidenceExpectation(
+              id: 'new_expectation',
+              type: ProjectEvidenceType.command,
+              criterionIds: ['criterion_001'],
+              description: 'The replacement verification command passes.',
+              sourceRef: 'flutter test',
+            ),
+          ],
+        );
+        final replacementProject = project.copyWith(
+          tasks: [failedTask, replacementTask],
+        );
+        final evidence = evidenceService.normalizeTaskResult(
+          project: replacementProject,
+          task: replacementTask,
+          result: _result(
+            timestamp,
+            summary: '',
+            gates: [
+              TaskGateResult(
+                gateId: 'command_passes',
+                status: TaskGateStatus.passed,
+                summary: 'The replacement verification passed.',
+                details: const {'required': true, 'command': 'flutter test'},
+                evaluatedAt: timestamp,
+              ),
+            ],
+          ),
+          evaluatedAt: timestamp,
+        );
+
+        final evaluated = criterionEvaluator.evaluateDeterministically(
+          replacementProject.copyWith(evidence: evidence),
+          evaluatedAt: timestamp,
+        );
+
+        expect(evidence.single.projectTaskId, 'replacement_task');
+        expect(evidence.single.expectationIds, ['new_expectation']);
+        expect(
+          evaluated.criteria.single.status,
+          ProjectCriterionStatus.satisfied,
+        );
+      },
+    );
+
+    test('associates an explicit claim with its evidence expectation', () {
+      final project = _project(
+        timestamp,
+        expectedEvidence: const [
+          ProjectEvidenceExpectation(
+            id: 'expect_claim',
+            type: ProjectEvidenceType.taskClaim,
+            criterionIds: ['criterion_001'],
+            description: 'The task outcome is confirmed.',
+          ),
+        ],
+      );
+      final evidence = evidenceService.normalizeTaskResult(
+        project: project,
+        task: project.tasks.single,
+        result: _result(
+          timestamp,
+          summary: '',
+          claims: const [
+            TaskEvidenceClaim(
+              criterionId: 'criterion_001',
+              expectationId: 'expect_claim',
+              claim: 'The outcome is confirmed.',
+              sourceRef: 'run_1',
+            ),
+          ],
+        ),
+        evaluatedAt: timestamp,
+      );
+
+      expect(evidence.single.expectationIds, ['expect_claim']);
+    });
+
+    test(
+      'model review does not satisfy a criterion with partial expectations',
+      () {
+        final project = _project(
+          timestamp,
+          expectedEvidence: const [
+            ProjectEvidenceExpectation(
+              id: 'expect_first',
+              type: ProjectEvidenceType.taskClaim,
+              criterionIds: ['criterion_001'],
+              description: 'The first outcome is confirmed.',
+            ),
+            ProjectEvidenceExpectation(
+              id: 'expect_second',
+              type: ProjectEvidenceType.taskClaim,
+              criterionIds: ['criterion_001'],
+              description: 'The second outcome is confirmed.',
+            ),
+          ],
+        );
+        final evidence = evidenceService.normalizeTaskResult(
+          project: project,
+          task: project.tasks.single,
+          result: _result(
+            timestamp,
+            summary: '',
+            claims: const [
+              TaskEvidenceClaim(
+                criterionId: 'criterion_001',
+                expectationId: 'expect_first',
+                claim: 'The first outcome is confirmed.',
+                sourceRef: 'run_1',
+              ),
+            ],
+          ),
+          evaluatedAt: timestamp,
+        );
+        final reviewed = criterionEvaluator.applyModelReview(
+          project.copyWith(evidence: evidence),
+          projectComplete: true,
+          remainingCriteria: const [],
+          rationale: 'The first item was reviewed.',
+          evaluatedAt: timestamp,
+        );
+
+        expect(reviewed.evidence.single.status, ProjectEvidenceStatus.accepted);
+        expect(reviewed.criteria.single.status, ProjectCriterionStatus.partial);
+      },
+    );
+
+    test(
       'attributes final evidence claims to their task run and criterion',
       () {
         final project = _project(timestamp);
         final evidence = evidenceService.normalizeTaskResult(
           project: project,
-          task: project.backlog.single,
+          task: project.tasks.single,
           result: _result(
             timestamp,
             summary: '',
@@ -161,13 +460,13 @@ void main() {
 
         final first = evidenceService.normalizeTaskResult(
           project: project,
-          task: project.backlog.single,
+          task: project.tasks.single,
           result: resultFor('run_1'),
           evaluatedAt: timestamp,
         );
         final second = evidenceService.normalizeTaskResult(
           project: project.copyWith(evidence: first),
-          task: project.backlog.single,
+          task: project.tasks.single,
           result: resultFor('run_2'),
           evaluatedAt: timestamp.add(const Duration(minutes: 1)),
         );
@@ -192,7 +491,7 @@ void main() {
           createdAt: timestamp,
           updatedAt: timestamp,
         );
-        final task = base.backlog.single.copyWith(
+        final task = base.tasks.single.copyWith(
           criterionIds: const ['criterion_001', 'criterion_002'],
           expectedEvidence: const [
             ProjectEvidenceExpectation(
@@ -213,7 +512,7 @@ void main() {
         );
         final project = base.copyWith(
           criteria: [base.criteria.single, secondCriterion],
-          backlog: [task],
+          tasks: [task],
         );
 
         final evidence = evidenceService.normalizeTaskResult(
@@ -248,7 +547,7 @@ void main() {
       );
       final passed = evidenceService.normalizeTaskResult(
         project: project,
-        task: project.backlog.single,
+        task: project.tasks.single,
         result: _result(
           timestamp,
           summary: '',
@@ -268,7 +567,7 @@ void main() {
 
       final combined = evidenceService.normalizeTaskResult(
         project: project.copyWith(evidence: passed),
-        task: project.backlog.single,
+        task: project.tasks.single,
         result: _result(
           failedAt,
           summary: '',
@@ -314,20 +613,20 @@ void main() {
       );
       final first = evidenceService.normalizeTaskResult(
         project: project,
-        task: project.backlog.single,
+        task: project.tasks.single,
         result: passed,
         evaluatedAt: timestamp,
       );
       final duplicate = evidenceService.normalizeTaskResult(
         project: project.copyWith(evidence: first),
-        task: project.backlog.single,
+        task: project.tasks.single,
         result: passed,
         evaluatedAt: timestamp,
       );
       final failedAt = timestamp.add(const Duration(minutes: 1));
       final contradicted = evidenceService.normalizeTaskResult(
         project: project.copyWith(evidence: duplicate),
-        task: project.backlog.single,
+        task: project.tasks.single,
         result: _result(
           failedAt,
           summary: '',
@@ -348,6 +647,19 @@ void main() {
       expect(contradicted, hasLength(2));
       expect(contradicted.first.status, ProjectEvidenceStatus.stale);
       expect(contradicted.last.status, ProjectEvidenceStatus.rejected);
+
+      final revalidated = evidenceService.normalizeTaskResult(
+        project: project.copyWith(
+          evidence: [
+            first.single.copyWith(status: ProjectEvidenceStatus.stale),
+          ],
+        ),
+        task: project.tasks.single,
+        result: passed,
+        evaluatedAt: failedAt.add(const Duration(minutes: 1)),
+      );
+      expect(revalidated, hasLength(2));
+      expect(revalidated.last.status, ProjectEvidenceStatus.accepted);
     });
   });
 
@@ -374,7 +686,7 @@ void main() {
       final project = _project(timestamp);
       final evidence = evidenceService.normalizeTaskResult(
         project: project,
-        task: project.backlog.single,
+        task: project.tasks.single,
         result: _result(timestamp, summary: 'The report is usable.'),
         evaluatedAt: timestamp,
       );
@@ -399,7 +711,7 @@ void main() {
         final project = _project(timestamp);
         final evidence = evidenceService.normalizeTaskResult(
           project: project,
-          task: project.backlog.single,
+          task: project.tasks.single,
           result: _result(timestamp, summary: 'Work was attempted.'),
           evaluatedAt: timestamp,
         );
@@ -425,6 +737,7 @@ void main() {
 ProjectDocument _project(
   DateTime timestamp, {
   ProjectVerificationMode verificationMode = ProjectVerificationMode.mixed,
+  List<ProjectEvidenceExpectation> expectedEvidence = const [],
 }) {
   final criterion = ProjectCriterion(
     id: 'criterion_001',
@@ -438,6 +751,7 @@ ProjectDocument _project(
     title: 'Create report',
     objective: 'Create the bounded report.',
     criterionIds: const ['criterion_001'],
+    expectedEvidence: expectedEvidence,
     doneCriteria: const ['Create the report.'],
     outOfScope: const ['Do not change unrelated files.'],
     context: const [],
@@ -456,7 +770,7 @@ ProjectDocument _project(
     refinedGoal: 'Create a correct report',
     criteria: [criterion],
     constraints: const [],
-    backlog: [task],
+    tasks: [task],
     status: ProjectStatus.active,
     activeTaskId: null,
     createdAt: timestamp,

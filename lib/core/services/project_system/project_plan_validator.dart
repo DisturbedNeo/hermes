@@ -42,7 +42,7 @@ class ProjectPlanValidationResult {
       .toList();
 }
 
-/// Validates a proposal without changing either the proposal or project.
+/// Validates a complete desired plan without changing either input.
 class ProjectPlanValidator {
   const ProjectPlanValidator({this.planningHorizon = 7});
 
@@ -50,10 +50,11 @@ class ProjectPlanValidator {
 
   ProjectPlanValidationResult validate({
     required ProjectState project,
-    required ProjectPlanProposal proposal,
+    required ProjectDesiredPlan proposal,
     required String workspaceRoot,
   }) {
     final issues = <ProjectPlanValidationIssue>[];
+
     void issue(String code, String fieldPath, String message) {
       issues.add(
         ProjectPlanValidationIssue(
@@ -64,106 +65,144 @@ class ProjectPlanValidator {
       );
     }
 
-    if (proposal.revision != project.currentRevision + 1) {
+    if (proposal.revision != project.nextRevision) {
       issue(
         'revision_mismatch',
         'revision',
-        'Expected revision ${project.currentRevision + 1}.',
+        'Expected revision ${project.nextRevision}.',
       );
     }
 
     _validateUniqueIds(
-      proposal.criterionUpserts.map((item) => item.id),
-      'criterionUpserts',
+      proposal.criteria.map((item) => item.id),
+      'criteria',
       issues,
     );
     _validateUniqueIds(
-      proposal.milestoneUpserts.map((item) => item.id),
-      'milestoneUpserts',
+      proposal.milestones.map((item) => item.id),
+      'milestones',
       issues,
     );
-    _validateUniqueIds(
-      proposal.taskAdditions.map((item) => item.id),
-      'taskAdditions',
-      issues,
-    );
-    _validateUniqueIds(
-      proposal.taskUpdates.map((item) => item.id),
-      'taskUpdates',
-      issues,
-    );
+    _validateUniqueIds(proposal.tasks.map((item) => item.id), 'tasks', issues);
     _validateUniqueIds(
       proposal.memoryAdditions.map((item) => item.id),
       'memoryAdditions',
       issues,
     );
-    _validateUniqueIds(
-      proposal.removedCriterionIds,
-      'removedCriterionIds',
-      issues,
-    );
-    _validateUniqueIds(
-      proposal.removedMilestoneIds,
-      'removedMilestoneIds',
-      issues,
-    );
 
-    final upsertedCriterionIds = proposal.criterionUpserts
-        .map((item) => item.id)
-        .toSet();
-    for (var index = 0; index < proposal.criterionUpserts.length; index++) {
-      final criterion = proposal.criterionUpserts[index];
-      if (criterion.statement.trim().isEmpty) {
+    final existingMemory = {
+      for (final entry in project.memory) entry.id: entry,
+    };
+    final additionIds = proposal.memoryAdditions.map((item) => item.id).toSet();
+    for (var index = 0; index < proposal.memoryAdditions.length; index++) {
+      final entry = proposal.memoryAdditions[index];
+      final fieldPath = 'memoryAdditions[$index]';
+      if (entry.content.trim().isEmpty) {
+        issue(
+          'empty_memory_addition',
+          '$fieldPath.content',
+          'Memory additions must contain non-empty content.',
+        );
+      }
+      if (existingMemory.containsKey(entry.id)) {
+        issue(
+          'memory_id_collision',
+          '$fieldPath.id',
+          'Memory ID ${entry.id} already exists in the project.',
+        );
+      }
+    }
+
+    final supersededSources = <String>{};
+    for (var index = 0; index < proposal.memorySupersessions.length; index++) {
+      final edit = proposal.memorySupersessions[index];
+      final fieldPath = 'memorySupersessions[$index]';
+      if (edit.entryId.trim().isEmpty) {
+        issue(
+          'missing_memory_source',
+          '$fieldPath.entryId',
+          'A memory supersession needs a source entry ID.',
+        );
+      }
+      if (edit.supersededById.trim().isEmpty) {
+        issue(
+          'missing_memory_replacement',
+          '$fieldPath.supersededById',
+          'A memory supersession needs a replacement entry ID.',
+        );
+      }
+      if (edit.entryId == edit.supersededById) {
+        issue(
+          'self_memory_supersession',
+          fieldPath,
+          'A memory entry cannot supersede itself.',
+        );
+      }
+      if (!supersededSources.add(edit.entryId)) {
+        issue(
+          'duplicate_memory_supersession',
+          '$fieldPath.entryId',
+          'Memory entry ${edit.entryId} is superseded more than once.',
+        );
+      }
+      final source = existingMemory[edit.entryId];
+      if (source == null) {
+        issue(
+          'missing_memory_source',
+          '$fieldPath.entryId',
+          'Memory source ${edit.entryId} does not exist in the project.',
+        );
+      } else {
+        if (!source.active) {
+          issue(
+            'inactive_memory_source',
+            '$fieldPath.entryId',
+            'Memory source ${edit.entryId} is already inactive.',
+          );
+        }
+        if (source.protected) {
+          issue(
+            'protected_memory_source',
+            '$fieldPath.entryId',
+            'Protected memory ${edit.entryId} cannot be superseded by the planner.',
+          );
+        }
+      }
+      if (!existingMemory.containsKey(edit.supersededById) &&
+          !additionIds.contains(edit.supersededById)) {
+        issue(
+          'missing_memory_replacement',
+          '$fieldPath.supersededById',
+          'Replacement memory ${edit.supersededById} does not exist in the project or additions.',
+        );
+      }
+    }
+
+    final criterionIds = proposal.criteria.map((item) => item.id).toSet();
+    for (var index = 0; index < proposal.criteria.length; index++) {
+      if (proposal.criteria[index].statement.trim().isEmpty) {
         issue(
           'missing_criterion_statement',
-          'criterionUpserts[$index].statement',
-          'Criterion ${criterion.id} needs a non-empty statement.',
+          'criteria[$index].statement',
+          'Criterion ${proposal.criteria[index].id} needs a non-empty statement.',
         );
       }
     }
-    for (var index = 0; index < proposal.removedCriterionIds.length; index++) {
-      final id = proposal.removedCriterionIds[index];
-      if (upsertedCriterionIds.contains(id)) {
-        issue(
-          'conflicting_criterion_edit',
-          'removedCriterionIds[$index]',
-          'Criterion $id cannot be updated and removed in one revision.',
-        );
-      }
-    }
-
-    final existingCriterionIds = project.criteria
-        .map((item) => item.id)
-        .toSet();
-    final proposedCriterionIds = {
-      ...existingCriterionIds,
-      ...proposal.criterionUpserts.map((item) => item.id),
-    }..removeAll(proposal.removedCriterionIds);
-    for (var index = 0; index < proposal.removedCriterionIds.length; index++) {
-      final id = proposal.removedCriterionIds[index];
-      final criterion = project.criteria
-          .where((item) => item.id == id)
-          .firstOrNull;
-      if (criterion == null) {
-        issue(
-          'unknown_criterion',
-          'removedCriterionIds[$index]',
-          'Criterion $id does not exist.',
-        );
-      } else if (criterion.required) {
+    for (final existing in project.criteria) {
+      if (!criterionIds.contains(existing.id) && existing.required) {
         if (!proposal.requiresApproval) {
           issue(
             'required_criterion_removal',
-            'removedCriterionIds[$index]',
-            'Required criterion $id needs an approved scope decision.',
+            'criteria',
+            'Required criterion ${existing.id} cannot be removed without approval.',
           );
         } else {
           issues.add(
             ProjectPlanValidationIssue(
               code: 'scope_decision_requires_approval',
-              path: 'removedCriterionIds[$index]',
+              path: 'criteria',
               message:
-                  'Removing required criterion $id must remain pending until user approval.',
+                  'Removing required criterion ${existing.id} remains pending until approval.',
               severity: ProjectPlanValidationSeverity.warning,
             ),
           );
@@ -171,131 +210,115 @@ class ProjectPlanValidator {
       }
     }
 
-    final existingMilestoneIds = project.milestones
-        .map((item) => item.id)
-        .toSet();
-    final proposedMilestoneIds = {
-      ...existingMilestoneIds,
-      ...proposal.milestoneUpserts.map((item) => item.id),
-    }..removeAll(proposal.removedMilestoneIds);
-    for (var index = 0; index < proposal.removedMilestoneIds.length; index++) {
-      final id = proposal.removedMilestoneIds[index];
-      if (!existingMilestoneIds.contains(id)) {
-        issue(
-          'unknown_milestone',
-          'removedMilestoneIds[$index]',
-          'Milestone $id does not exist.',
-        );
-      }
-      if (proposal.milestoneUpserts.any((item) => item.id == id)) {
-        issue(
-          'conflicting_milestone_edit',
-          'removedMilestoneIds[$index]',
-          'Milestone $id cannot be updated and removed in one revision.',
-        );
-      }
-    }
+    final milestoneIds = proposal.milestones.map((item) => item.id).toSet();
     for (
       var milestoneIndex = 0;
-      milestoneIndex < proposal.milestoneUpserts.length;
+      milestoneIndex < proposal.milestones.length;
       milestoneIndex++
     ) {
-      final milestone = proposal.milestoneUpserts[milestoneIndex];
+      final milestone = proposal.milestones[milestoneIndex];
       for (
         var criterionIndex = 0;
         criterionIndex < milestone.criterionIds.length;
         criterionIndex++
       ) {
         final criterionId = milestone.criterionIds[criterionIndex];
-        if (!proposedCriterionIds.contains(criterionId)) {
+        if (!criterionIds.contains(criterionId)) {
           issue(
             'unknown_criterion',
-            'milestoneUpserts[$milestoneIndex].criterionIds[$criterionIndex]',
-            'Criterion $criterionId does not exist in the proposed plan.',
+            'milestones[$milestoneIndex].criterionIds[$criterionIndex]',
+            'Criterion $criterionId does not exist in the desired plan.',
           );
         }
       }
     }
 
-    final existingBacklogById = {
-      for (final task in project.backlog) task.id: task,
+    final existingTasks = {for (final task in project.tasks) task.id: task};
+    final desiredTasks = {for (final task in proposal.tasks) task.id: task};
+    final mutableTaskIds = {
+      for (final task in project.tasks)
+        if (task.status == ProjectTaskStatus.queued ||
+            task.status == ProjectTaskStatus.deferred ||
+            task.status == ProjectTaskStatus.obsolete)
+          task.id,
     };
-    for (var index = 0; index < proposal.taskUpdates.length; index++) {
-      final task = proposal.taskUpdates[index];
-      if (!existingBacklogById.containsKey(task.id)) {
-        issue(
-          'immutable_or_unknown_task',
-          'taskUpdates[$index].id',
-          'Only an existing backlog task may be updated.',
-        );
-      }
-    }
-    final existingTaskIds = {
-      ...project.backlog.map((item) => item.id),
-      ...project.completedTasks.map((item) => item.id),
-      ...project.failedTasks.map((item) => item.id),
-      if (project.currentTask != null) project.currentTask!.id,
-    };
-    for (var index = 0; index < proposal.taskAdditions.length; index++) {
-      final task = proposal.taskAdditions[index];
-      if (existingTaskIds.contains(task.id)) {
-        issue(
-          'duplicate_task_id',
-          'taskAdditions[$index].id',
-          'Task ID ${task.id} already exists.',
-        );
-      }
-    }
-    final additionIds = proposal.taskAdditions.map((item) => item.id).toSet();
-    for (var index = 0; index < proposal.taskUpdates.length; index++) {
-      if (additionIds.contains(proposal.taskUpdates[index].id)) {
-        issue(
-          'duplicate_id',
-          'taskUpdates[$index].id',
-          'A task cannot be both added and updated in one revision.',
-        );
-      }
-    }
     for (final entry in <(String, List<String>)>[
       ('deferredTaskIds', proposal.deferredTaskIds),
       ('obsoleteTaskIds', proposal.obsoleteTaskIds),
     ]) {
+      final seen = <String>{};
       for (var index = 0; index < entry.$2.length; index++) {
-        if (!existingBacklogById.containsKey(entry.$2[index])) {
+        final taskId = entry.$2[index];
+        final fieldPath = '${entry.$1}[$index]';
+        if (!seen.add(taskId)) {
           issue(
-            'immutable_or_unknown_task',
-            '${entry.$1}[$index]',
-            'Only an existing backlog task may be ${entry.$1 == 'deferredTaskIds' ? 'deferred' : 'made obsolete'}.',
+            'duplicate_task_disposition',
+            fieldPath,
+            'Task $taskId appears more than once in ${entry.$1}.',
+          );
+        }
+        if (!existingTasks.containsKey(taskId) &&
+            !desiredTasks.containsKey(taskId)) {
+          issue(
+            'unknown_task_disposition',
+            fieldPath,
+            'Task $taskId does not exist in the current or desired plan.',
+          );
+        } else if (existingTasks.containsKey(taskId) &&
+            !mutableTaskIds.contains(taskId)) {
+          issue(
+            'immutable_task_disposition',
+            fieldPath,
+            'Task $taskId cannot be deferred or made obsolete from its current runtime status.',
           );
         }
       }
     }
-
-    final changedTasks = [...proposal.taskAdditions, ...proposal.taskUpdates];
-    final changedTaskPaths = <String>[
-      for (var i = 0; i < proposal.taskAdditions.length; i++)
-        'taskAdditions[$i]',
-      for (var i = 0; i < proposal.taskUpdates.length; i++) 'taskUpdates[$i]',
-    ];
-    final knownTaskIds = {
-      ...existingTaskIds,
-      ...proposal.taskAdditions.map((item) => item.id),
+    final conflictingDispositions = proposal.deferredTaskIds
+        .toSet()
+        .intersection(proposal.obsoleteTaskIds.toSet());
+    for (final taskId in conflictingDispositions) {
+      issue(
+        'conflicting_task_disposition',
+        'deferredTaskIds',
+        'Task $taskId cannot be both deferred and made obsolete.',
+      );
+    }
+    final existingFingerprints = <String, String>{
+      for (final task in project.tasks)
+        if (task.recoveryIncidentId == null) task.fingerprint: task.id,
+      for (final decision in project.decisions)
+        if (decision.taskPrompt?.trim().isNotEmpty == true)
+          projectTaskFingerprint(decision.taskPrompt!, const []):
+              'previous_decision',
     };
-    final existingFingerprintOwners = <String, ProjectTask>{
-      for (final task in [
-        ...project.backlog,
-        ...project.completedTasks,
-        ...project.failedTasks,
-        ?project.currentTask,
-      ])
-        task.fingerprint: task,
-    };
-    final proposalFingerprints = <String, String>{};
-    for (var index = 0; index < changedTasks.length; index++) {
-      final task = changedTasks[index];
-      final fieldPath = changedTaskPaths[index];
-      if (task.id.trim().isEmpty) {
-        issue('missing_id', '$fieldPath.id', 'Task ID is required.');
+    final desiredFingerprints = <String, String>{};
+    final allExpectationIds = <String>{};
+    final expectationSignatures = <String, String>{};
+    for (var index = 0; index < proposal.tasks.length; index++) {
+      final task = proposal.tasks[index];
+      final fieldPath = 'tasks[$index]';
+      final existing = existingTasks[task.id];
+      if (existing != null &&
+          (existing.status == ProjectTaskStatus.completed ||
+              existing.status == ProjectTaskStatus.failed ||
+              existing.status == ProjectTaskStatus.rejected ||
+              existing.status == ProjectTaskStatus.split ||
+              existing.status == ProjectTaskStatus.cancelled)) {
+        issue(
+          'immutable_runtime_task',
+          '$fieldPath.id',
+          'Terminal task ${task.id} cannot be replaced by a plan.',
+        );
+      }
+      if (task.status != ProjectTaskStatus.queued &&
+          task.status != ProjectTaskStatus.deferred &&
+          task.status != ProjectTaskStatus.obsolete) {
+        issue(
+          'invalid_desired_task_status',
+          '$fieldPath.status',
+          'Desired tasks may only be queued, deferred, or obsolete.',
+        );
       }
       if (task.objective.trim().isEmpty) {
         issue(
@@ -304,17 +327,11 @@ class ProjectPlanValidator {
           'Objective is required.',
         );
       }
-      if (_normalise(task.objective) == _normalise(project.refinedGoal)) {
-        issue(
-          'task_equals_project_goal',
-          '$fieldPath.objective',
-          'A task cannot be equivalent to the entire project goal.',
-        );
-      }
-      if (RegExp(
-        r'\b(entire project|whole project|complete the project|finish the project|implement all|end[ -]to[ -]end)\b',
-        caseSensitive: false,
-      ).hasMatch(task.objective)) {
+      if (_normalise(task.objective) == _normalise(project.refinedGoal) ||
+          RegExp(
+            r'\b(entire project|whole project|complete the project|finish the project|implement all|end[ -]to[ -]end)\b',
+            caseSensitive: false,
+          ).hasMatch(task.objective)) {
         issue(
           'task_equals_project_goal',
           '$fieldPath.objective',
@@ -346,15 +363,28 @@ class ProjectPlanValidator {
         issue(
           'missing_criterion_link',
           '$fieldPath.criterionIds',
-          'A project task must link to at least one project criterion.',
+          'A task must link to at least one project criterion.',
         );
       }
-      if (task.dependsOnTaskIds.contains(task.id)) {
-        issue(
-          'self_dependency',
-          '$fieldPath.dependsOnTaskIds',
-          'Task ${task.id} cannot depend on itself.',
-        );
+      if (task.recoveryIncidentId == null) {
+        final previousOwner = existingFingerprints[task.fingerprint];
+        if (previousOwner != null && previousOwner != task.id) {
+          issue(
+            'duplicate_work',
+            '$fieldPath.fingerprint',
+            'Task ${task.id} duplicates existing ordinary work${previousOwner == 'previous_decision' ? '' : ' ($previousOwner)'}.',
+          );
+        }
+        final desiredOwner = desiredFingerprints[task.fingerprint];
+        if (desiredOwner != null) {
+          issue(
+            'duplicate_work',
+            '$fieldPath.fingerprint',
+            'Task ${task.id} duplicates desired task $desiredOwner.',
+          );
+        } else {
+          desiredFingerprints[task.fingerprint] = task.id;
+        }
       }
       for (
         var dependencyIndex = 0;
@@ -362,7 +392,32 @@ class ProjectPlanValidator {
         dependencyIndex++
       ) {
         final dependencyId = task.dependsOnTaskIds[dependencyIndex];
-        if (!knownTaskIds.contains(dependencyId)) {
+        if (dependencyId == task.id) {
+          issue(
+            'self_dependency',
+            '$fieldPath.dependsOnTaskIds[$dependencyIndex]',
+            'Task ${task.id} cannot depend on itself.',
+          );
+        } else if (desiredTasks.containsKey(dependencyId)) {
+          if (proposal.deferredTaskIds.contains(dependencyId) ||
+              proposal.obsoleteTaskIds.contains(dependencyId)) {
+            issue(
+              'dead_dependency',
+              '$fieldPath.dependsOnTaskIds[$dependencyIndex]',
+              'Dependency $dependencyId is deferred or obsolete in the effective plan.',
+            );
+          }
+        } else if (existingTasks[dependencyId]?.status ==
+            ProjectTaskStatus.completed) {
+          // Completed historical work is a valid dependency without being
+          // repeated in the desired plan.
+        } else if (existingTasks.containsKey(dependencyId)) {
+          issue(
+            'dead_dependency',
+            '$fieldPath.dependsOnTaskIds[$dependencyIndex]',
+            'Dependency $dependencyId will not be completed by the effective plan.',
+          );
+        } else {
           issue(
             'missing_dependency',
             '$fieldPath.dependsOnTaskIds[$dependencyIndex]',
@@ -376,15 +431,23 @@ class ProjectPlanValidator {
         criterionIndex++
       ) {
         final criterionId = task.criterionIds[criterionIndex];
-        if (!proposedCriterionIds.contains(criterionId)) {
+        if (!criterionIds.contains(criterionId)) {
           issue(
             'unknown_criterion',
             '$fieldPath.criterionIds[$criterionIndex]',
-            'Criterion $criterionId does not exist in the proposed plan.',
+            'Criterion $criterionId does not exist in the desired plan.',
           );
         }
       }
-      final expectationIds = <String>{};
+      if (task.milestoneId != null &&
+          !milestoneIds.contains(task.milestoneId)) {
+        issue(
+          'unknown_milestone',
+          '$fieldPath.milestoneId',
+          'Milestone ${task.milestoneId} does not exist in the desired plan.',
+        );
+      }
+      final taskExpectationIds = <String>{};
       for (
         var expectationIndex = 0;
         expectationIndex < task.expectedEvidence.length;
@@ -393,55 +456,45 @@ class ProjectPlanValidator {
         final expectation = task.expectedEvidence[expectationIndex];
         final expectationPath =
             '$fieldPath.expectedEvidence[$expectationIndex]';
-        if (!expectationIds.add(expectation.id)) {
+        if (!taskExpectationIds.add(expectation.id) ||
+            !allExpectationIds.add(expectation.id)) {
           issue(
             'duplicate_evidence_expectation',
             '$expectationPath.id',
-            'Evidence expectation ID ${expectation.id} is duplicated in task ${task.id}.',
+            'Evidence expectation ${expectation.id} is duplicated.',
           );
         }
-        if (expectation.description.trim().isEmpty) {
+        final expectationSignature =
+            '${task.id}|${expectation.type.name}|${_normalise(expectation.sourceRef ?? '')}|'
+            '${([...expectation.criterionIds]..sort()).join(',')}';
+        final previousExpectation = expectationSignatures[expectationSignature];
+        if (previousExpectation != null) {
           issue(
-            'missing_evidence_description',
-            '$expectationPath.description',
-            'Evidence expectation ${expectation.id} needs a description.',
+            'ambiguous_evidence_expectation',
+            expectationPath,
+            'Evidence expectation duplicates the matching signature of $previousExpectation.',
           );
+        } else {
+          expectationSignatures[expectationSignature] = expectation.id;
         }
-        if (expectation.criterionIds.isEmpty) {
+        if (expectation.description.trim().isEmpty ||
+            expectation.criterionIds.isEmpty) {
           issue(
-            'missing_evidence_criterion',
-            '$expectationPath.criterionIds',
-            'Evidence expectation ${expectation.id} must link to a task criterion.',
+            'invalid_evidence_expectation',
+            expectationPath,
+            'Evidence expectations need a description and criterion link.',
           );
         }
-        for (
-          var criterionIndex = 0;
-          criterionIndex < expectation.criterionIds.length;
-          criterionIndex++
-        ) {
-          final criterionId = expectation.criterionIds[criterionIndex];
-          if (!proposedCriterionIds.contains(criterionId)) {
-            issue(
-              'unknown_evidence_criterion',
-              '$expectationPath.criterionIds[$criterionIndex]',
-              'Evidence expectation ${expectation.id} references unknown criterion $criterionId.',
-            );
-          } else if (!task.criterionIds.contains(criterionId)) {
+        for (final criterionId in expectation.criterionIds) {
+          if (!criterionIds.contains(criterionId) ||
+              !task.criterionIds.contains(criterionId)) {
             issue(
               'unlinked_evidence_criterion',
-              '$expectationPath.criterionIds[$criterionIndex]',
-              'Evidence expectation ${expectation.id} references criterion $criterionId outside task ${task.id}.',
+              expectationPath,
+              'Evidence expectation $criterionId is not linked to task ${task.id}.',
             );
           }
         }
-      }
-      if (task.milestoneId != null &&
-          !proposedMilestoneIds.contains(task.milestoneId)) {
-        issue(
-          'unknown_milestone',
-          '$fieldPath.milestoneId',
-          'Milestone ${task.milestoneId} does not exist in the proposed plan.',
-        );
       }
       for (final entry in [...task.readPaths, ...task.writePaths]) {
         if (!_isInsideWorkspace(workspaceRoot, entry)) {
@@ -459,135 +512,67 @@ class ProjectPlanValidator {
         issue(
           'missing_write_paths',
           '$fieldPath.writePaths',
-          'Small tasks that produce workspace artifacts must declare write paths.',
-        );
-      }
-
-      final existing = existingFingerprintOwners[task.fingerprint];
-      if (existing != null && existing.id != task.id) {
-        final retryContext = task.context.any(
-          (item) => RegExp(
-            r'\b(retry|recovery|follow-up)\b',
-            caseSensitive: false,
-          ).hasMatch(item),
-        );
-        if (existing.status != ProjectTaskStatus.failed || !retryContext) {
-          issue(
-            'duplicate_work',
-            '$fieldPath.fingerprint',
-            'Equivalent work already exists as ${existing.id}.',
-          );
-        }
-      }
-      final proposalOwner = proposalFingerprints[task.fingerprint];
-      if (proposalOwner != null && proposalOwner != task.id) {
-        issue(
-          'duplicate_work',
-          '$fieldPath.fingerprint',
-          'Equivalent work is already proposed as $proposalOwner.',
-        );
-      }
-      proposalFingerprints[task.fingerprint] = task.id;
-    }
-
-    final updatedTasksById = {
-      for (final task in proposal.taskUpdates) task.id: task,
-    };
-    for (final existing in project.backlog) {
-      if (proposal.obsoleteTaskIds.contains(existing.id)) continue;
-      final effective = updatedTasksById[existing.id] ?? existing;
-      for (final removedId in proposal.removedCriterionIds) {
-        if (effective.criterionIds.contains(removedId)) {
-          issue(
-            'removed_criterion_still_in_use',
-            'removedCriterionIds',
-            'Criterion $removedId is still linked by queued task ${existing.id}; update or obsolete that task in the same revision.',
-          );
-        }
-      }
-      final removedMilestoneId = effective.milestoneId;
-      if (removedMilestoneId != null &&
-          proposal.removedMilestoneIds.contains(removedMilestoneId)) {
-        issue(
-          'removed_milestone_still_in_use',
-          'removedMilestoneIds',
-          'Milestone $removedMilestoneId is still linked by queued task ${existing.id}; update or obsolete that task in the same revision.',
+          'Small artifact-producing tasks must declare write paths.',
         );
       }
     }
 
-    final taskGraph = <String, List<String>>{
-      for (final task in project.backlog) task.id: task.dependsOnTaskIds,
-      for (final task in proposal.taskUpdates) task.id: task.dependsOnTaskIds,
-      for (final task in proposal.taskAdditions) task.id: task.dependsOnTaskIds,
+    for (var index = 0; index < proposal.criteria.length; index++) {
+      final criterion = proposal.criteria[index];
+      if (criterion.status == ProjectCriterionStatus.satisfied ||
+          criterion.verificationMode != ProjectVerificationMode.deterministic) {
+        continue;
+      }
+      final hasConclusiveExpectation = proposal.tasks.any(
+        (task) =>
+            !proposal.deferredTaskIds.contains(task.id) &&
+            !proposal.obsoleteTaskIds.contains(task.id) &&
+            task.expectedEvidence.any(
+              (expectation) =>
+                  expectation.required &&
+                  expectation.criterionIds.contains(criterion.id) &&
+                  (expectation.type == ProjectEvidenceType.gate ||
+                      expectation.type == ProjectEvidenceType.command),
+            ),
+      );
+      if (!hasConclusiveExpectation) {
+        issue(
+          'impossible_deterministic_verification',
+          'criteria[$index]',
+          'Deterministic criterion ${criterion.id} needs a required gate or command evidence expectation.',
+        );
+      }
+    }
+
+    final graph = <String, List<String>>{
+      for (final entry in existingTasks.entries)
+        entry.key:
+            desiredTasks[entry.key]?.dependsOnTaskIds ??
+            entry.value.dependsOnTaskIds,
+      for (final task in proposal.tasks) task.id: task.dependsOnTaskIds,
     };
-    if (_hasCycle(taskGraph)) {
+    if (_hasCycle(graph)) {
       issue(
         'cyclic_dependencies',
-        'taskAdditions',
-        'The proposed task dependency graph contains a cycle.',
+        'tasks',
+        'The desired task dependency graph contains a cycle.',
       );
     }
 
-    final existingMemoryIds = project.memory.map((item) => item.id).toSet();
-    final additionMemoryIds = proposal.memoryAdditions
-        .map((item) => item.id)
-        .toSet();
-    for (var index = 0; index < proposal.memoryAdditions.length; index++) {
-      if (existingMemoryIds.contains(proposal.memoryAdditions[index].id)) {
-        issue(
-          'duplicate_id',
-          'memoryAdditions[$index].id',
-          'Memory ID ${proposal.memoryAdditions[index].id} already exists.',
-        );
-      }
-    }
-    for (var index = 0; index < proposal.memorySupersessions.length; index++) {
-      final edit = proposal.memorySupersessions[index];
-      final target = project.memory
-          .where((item) => item.id == edit.entryId)
-          .firstOrNull;
-      if (target == null) {
-        issue(
-          'unknown_memory',
-          'memorySupersessions[$index].entryId',
-          'Memory ${edit.entryId} does not exist.',
-        );
-      } else if (target.protected) {
-        issue(
-          'protected_memory_mutation',
-          'memorySupersessions[$index].entryId',
-          'Protected user memory ${edit.entryId} cannot be superseded by the planner.',
-        );
-      }
-      if (!existingMemoryIds.contains(edit.supersededById) &&
-          !additionMemoryIds.contains(edit.supersededById)) {
-        issue(
-          'unknown_memory',
-          'memorySupersessions[$index].supersededById',
-          'Replacement memory ${edit.supersededById} does not exist.',
-        );
-      }
-    }
-
-    final readyAfterProposal =
-        [
-          ...project.backlog.where(
-            (task) =>
-                !proposal.deferredTaskIds.contains(task.id) &&
-                !proposal.obsoleteTaskIds.contains(task.id),
-          ),
-          ...proposal.taskAdditions,
-        ].where((task) {
-          return task.status == ProjectTaskStatus.queued &&
-              task.readiness == ProjectTaskReadiness.ready;
-        }).length;
-    if (readyAfterProposal > planningHorizon &&
+    final readyCount = proposal.tasks
+        .where(
+          (task) =>
+              task.status == ProjectTaskStatus.queued &&
+              !proposal.deferredTaskIds.contains(task.id) &&
+              !proposal.obsoleteTaskIds.contains(task.id),
+        )
+        .length;
+    if (readyCount > planningHorizon &&
         !proposal.rationale.toLowerCase().contains('horizon')) {
       issue(
         'planning_horizon_exceeded',
-        'taskAdditions',
-        '$readyAfterProposal ready tasks exceed the horizon of $planningHorizon without justification.',
+        'tasks',
+        '$readyCount queued tasks exceed the horizon of $planningHorizon without justification.',
       );
     }
 
@@ -623,33 +608,32 @@ class ProjectPlanValidator {
     }
   }
 
-  static bool _isInsideWorkspace(String workspaceRoot, String candidate) {
-    final trimmed = candidate.trim();
-    if (trimmed.isEmpty) return true;
+  static bool _isInsideWorkspace(String workspaceRoot, String value) {
+    final candidate = path.normalize(path.absolute(workspaceRoot, value));
     final root = path.normalize(path.absolute(workspaceRoot));
-    final resolved = path.normalize(
-      path.isAbsolute(trimmed) ? trimmed : path.join(root, trimmed),
-    );
-    return resolved == root || path.isWithin(root, resolved);
+    return candidate == root || path.isWithin(root, candidate);
   }
 
   static bool _hasCycle(Map<String, List<String>> graph) {
-    final visiting = <String>{};
-    final visited = <String>{};
+    final states = <String, int>{};
     bool visit(String id) {
-      if (visiting.contains(id)) return true;
-      if (!visited.add(id)) return false;
-      visiting.add(id);
+      final state = states[id] ?? 0;
+      if (state == 1) return true;
+      if (state == 2) return false;
+      states[id] = 1;
       for (final dependency in graph[id] ?? const <String>[]) {
         if (graph.containsKey(dependency) && visit(dependency)) return true;
       }
-      visiting.remove(id);
+      states[id] = 2;
       return false;
     }
 
-    return graph.keys.any(visit);
+    for (final id in graph.keys) {
+      if (visit(id)) return true;
+    }
+    return false;
   }
 
   static String _normalise(String value) =>
-      value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+      value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 }

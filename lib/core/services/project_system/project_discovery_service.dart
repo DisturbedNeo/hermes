@@ -6,6 +6,7 @@ import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/project_system/project_memory_service.dart';
 import 'package:hermes/core/services/project_system/project_planning_gateway.dart';
+import 'package:hermes/core/services/project_system/project_scheduler.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/workspace_discovery_profile.dart';
 import 'package:path/path.dart' as path;
@@ -27,6 +28,7 @@ class ProjectDiscoveryService {
   final TaskService _taskService;
   final ProjectMemoryService _memoryService;
   final WorkspaceDiscoveryProfileService _profileService;
+  static const ProjectScheduler _scheduler = ProjectScheduler();
 
   Future<ProjectEvidenceSnapshot> collect({
     required WorkspaceAttachment workspace,
@@ -84,6 +86,9 @@ class ProjectDiscoveryService {
     final memoryContext = project == null
         ? null
         : _memoryService.selectContext(project: project, maxCharacters: 6000);
+    final schedule = project == null
+        ? null
+        : _scheduler.refreshReadiness(project);
     return ProjectEvidenceSnapshot(
       workspaceName: workspace.displayName,
       workspaceProfile: workspaceProfile,
@@ -99,10 +104,15 @@ class ProjectDiscoveryService {
           .map((item) => item.id)
           .toList(),
       recentTaskResults: [
-        for (final task in [
-          ...?project?.completedTasks.reversed,
-          ...?project?.failedTasks.reversed,
-        ].take(_maxRecentItems))
+        for (final task in (project?.tasks ?? const <ProjectTask>[])
+            .where(
+              (task) =>
+                  task.status == ProjectTaskStatus.completed ||
+                  task.status == ProjectTaskStatus.failed,
+            )
+            .toList()
+            .reversed
+            .take(_maxRecentItems))
           '${task.status.wire}: ${task.title}',
       ],
       recentGateFailures: [
@@ -132,21 +142,24 @@ class ProjectDiscoveryService {
           '${question.id}: ${question.question}',
       ],
       readyTasks: [
-        for (final task in project?.backlog ?? const <ProjectTask>[])
+        for (final task in project?.tasks ?? const <ProjectTask>[])
           if (task.status == ProjectTaskStatus.queued &&
-              task.readiness == ProjectTaskReadiness.ready)
+              schedule?.readinessFor(task.id) == ProjectTaskReadiness.ready)
             '${task.id}: ${task.title}',
       ],
       blockedTasks: [
-        for (final task in project?.backlog ?? const <ProjectTask>[])
-          if (task.readiness != ProjectTaskReadiness.ready)
-            '${task.id}: ${task.readinessReasons.join('; ')}',
+        for (final task in project?.tasks ?? const <ProjectTask>[])
+          if (task.status == ProjectTaskStatus.queued &&
+              schedule?.readinessFor(task.id) != ProjectTaskReadiness.ready)
+            '${task.id}: ${schedule?.reasonsFor(task.id).join('; ')}',
       ],
       recentlyCompletedTasks: [
         for (final task
-            in (project?.completedTasks ?? const <ProjectTask>[]).reversed.take(
-              _maxRecentItems,
-            ))
+            in (project?.tasks ?? const <ProjectTask>[])
+                .where((task) => task.status == ProjectTaskStatus.completed)
+                .toList()
+                .reversed
+                .take(_maxRecentItems))
           '${task.id}: ${task.title}',
       ],
       verificationCommands: verificationCommands.toList()..sort(),

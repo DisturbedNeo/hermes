@@ -294,7 +294,6 @@ void main() {
               {'id': 'criterion_screen', 'statement': 'Screen is built.'},
             ],
             'constraints': ['Stay in workspace.'],
-            'knownFacts': [],
             'openQuestions': [],
             'milestones': [
               {
@@ -302,12 +301,11 @@ void main() {
                 'title': 'Build screen',
                 'objective': 'Build and verify the reporting screen.',
                 'criterionIds': ['criterion_screen'],
-                'taskIds': ['task_screen'],
                 'exitConditions': ['Screen is built.'],
                 'order': 1,
               },
             ],
-            'backlog': [
+            'tasks': [
               {
                 ..._projectTaskJson(),
                 'id': 'task_screen',
@@ -346,7 +344,10 @@ void main() {
         await chat.send('/project Build the reporting screen');
 
         expect(chat.activeProject?.status, ProjectStatus.completed);
-        expect(chat.activeProject?.tasks.single.status, TaskStatus.completed);
+        expect(
+          chat.activeProject?.tasks.single.status,
+          ProjectTaskStatus.completed,
+        );
         expect(chat.activeTask, isNull);
         expect(chat.activeProject?.completionSummary, contains('complete'));
       },
@@ -355,10 +356,9 @@ void main() {
     test('supports /continue-project for the active project', () async {
       serverManager.chatClient = _QueueCompletionClient([
         _finaliseProjectResponse({
-          'backlog': [
+          'tasks': [
             _projectTaskJson(relevantSuccessCriteria: const ['Finish']),
           ],
-          'knownFacts': [],
           'openQuestions': [],
         }),
         ChatCompletionResponse(
@@ -689,7 +689,7 @@ void main() {
 
         expect(chat.activeProject?.id, projectId);
         expect(
-          chat.activeProject?.knownFacts.join('\n'),
+          chat.activeProject?.memory.map((item) => item.content).join('\n'),
           contains('SvelteKit'),
         );
         expect(
@@ -993,13 +993,12 @@ ProjectDocument _projectDocument({
   return ProjectDocument(
     id: id,
     title: 'Test project',
-    originalPrompt: 'Run the project',
-    goal: 'Run the project',
+    originalGoal: 'Run the project',
+    refinedGoal: 'Run the project',
     constraints: const [],
-    successCriteria: const ['Finish'],
+    criteria: const [],
     status: ProjectStatus.paused,
     activeTaskId: null,
-    memorySummary: '',
     completionSummary: '',
     tasks: const [],
     decisions: const [],

@@ -9,24 +9,20 @@ import 'package:hermes/core/services/workspace_discovery_profile.dart';
 class ProjectInitialisation {
   final String title;
   final String refinedGoal;
-  final List<String> successCriteria;
-  final List<String> constraints;
-  final List<String> knownFacts;
-  final List<PendingProjectQuestion> openQuestions;
-  final List<ProjectTask> backlog;
   final List<ProjectCriterion> criteria;
+  final List<String> constraints;
+  final List<PendingProjectQuestion> openQuestions;
+  final List<ProjectTask> tasks;
   final List<ProjectMilestone> milestones;
   final List<ProjectMemoryEntry> memory;
 
   const ProjectInitialisation({
     required this.title,
     required this.refinedGoal,
-    required this.successCriteria,
+    required this.criteria,
     required this.constraints,
-    required this.knownFacts,
     required this.openQuestions,
-    required this.backlog,
-    this.criteria = const [],
+    required this.tasks,
     this.milestones = const [],
     this.memory = const [],
   });
@@ -142,7 +138,7 @@ abstract interface class ProjectPlanningGateway {
     CancellationToken? cancellationToken,
   });
 
-  Future<ProjectPlanProposal> revisePlan({
+  Future<ProjectDesiredPlan> revisePlan({
     required ChatClient client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
@@ -153,13 +149,13 @@ abstract interface class ProjectPlanningGateway {
     CancellationToken? cancellationToken,
   });
 
-  /// Performs the sole model repair pass allowed for an invalid proposal.
-  Future<ProjectPlanProposal?> repairPlanProposal({
+  /// Performs the sole model repair pass allowed for an invalid desired plan.
+  Future<ProjectDesiredPlan?> repairPlanProposal({
     required ChatClient client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required ProjectState project,
-    required ProjectPlanProposal proposal,
+    required ProjectDesiredPlan proposal,
     required List<Map<String, String>> validationIssues,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,

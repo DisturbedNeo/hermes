@@ -252,8 +252,22 @@ void main() {
           workspace,
           chatSessionId: 'chat_1',
         );
-        expect(task!.projectCriteria.single.id, 'criterion_accessibility');
-        expect(task.projectEvidenceExpectations.single.id, 'keyboard_tests');
+        final persisted =
+            jsonDecode(
+                  await File(
+                    path.join(
+                      root.path,
+                      '.agent',
+                      'tasks',
+                      task!.id,
+                      'task.json',
+                    ),
+                  ).readAsString(),
+                )
+                as Map<String, dynamic>;
+        expect(persisted.containsKey('projectCriterionIds'), isFalse);
+        expect(persisted.containsKey('projectCriteria'), isFalse);
+        expect(persisted.containsKey('projectEvidenceExpectations'), isFalse);
       },
     );
 
@@ -298,8 +312,6 @@ void main() {
         task.steps.single.instructions.join('\n'),
         contains('toggle.dart'),
       );
-      expect(task.projectCriterionIds, ['criterion_settings']);
-      expect(task.projectEvidenceExpectations.single.id, 'settings_tests');
     });
 
     test(
@@ -533,25 +545,7 @@ void main() {
     test(
       'persists validated project evidence claims from a finished step',
       () async {
-        final task = _task(
-          projectCriterionIds: const ['criterion_001'],
-          projectCriteria: const [
-            TaskProjectCriterion(
-              id: 'criterion_001',
-              statement: 'The report passes verification.',
-              verificationMode: 'deterministic',
-            ),
-          ],
-          projectEvidenceExpectations: const [
-            TaskProjectEvidenceExpectation(
-              id: 'report_tests',
-              type: 'command',
-              criterionIds: ['criterion_001'],
-              description: 'The report verification command passes.',
-              sourceRef: 'dart test',
-            ),
-          ],
-        );
+        final task = _task();
         final client = _QueueCompletionClient([
           ChatCompletionResponse(
             content: '',
@@ -564,6 +558,7 @@ void main() {
                   'evidenceClaims': [
                     {
                       'criterionId': 'criterion_001',
+                      'expectationId': 'report_tests',
                       'claim': 'The report passed its verification command.',
                       'evidenceType': 'command',
                       'sourceRef': 'dart test',
@@ -588,12 +583,35 @@ void main() {
           workspace: workspace,
           snapshot: task,
           baseSystemPrompt: 'system',
+          executionRequest: const TaskExecutionRequest(
+            criterionIds: ['criterion_001'],
+            criteria: [
+              TaskProjectCriterion(
+                id: 'criterion_001',
+                statement: 'The report passes verification.',
+                verificationMode: 'deterministic',
+              ),
+            ],
+            expectedEvidence: [
+              TaskProjectEvidenceExpectation(
+                id: 'report_tests',
+                type: 'command',
+                criterionIds: ['criterion_001'],
+                description: 'The report verification command passes.',
+                sourceRef: 'dart test',
+              ),
+            ],
+          ),
         );
 
         expect(updated.runs.single.evidenceClaims, hasLength(1));
         expect(
           updated.runs.single.evidenceClaims.single.evidenceType,
           TaskEvidenceClaimType.command,
+        );
+        expect(
+          updated.runs.single.evidenceClaims.single.expectationId,
+          'report_tests',
         );
         expect(
           updated.runs.single.evidenceClaims.single.suggestedStrength,
@@ -2127,9 +2145,6 @@ TaskDocument _task({
   List<TaskStep>? steps,
   String? currentStepId,
   List<TaskGate> gates = const [],
-  List<String> projectCriterionIds = const [],
-  List<TaskProjectCriterion> projectCriteria = const [],
-  List<TaskProjectEvidenceExpectation> projectEvidenceExpectations = const [],
 }) {
   final now = DateTime(2026, 1, 1);
   final resolvedSteps = steps ?? [step ?? _step()];
@@ -2146,9 +2161,6 @@ TaskDocument _task({
     currentStepId: currentStepId ?? resolvedSteps.first.id,
     memorySummary: '',
     runs: const [],
-    projectCriterionIds: projectCriterionIds,
-    projectCriteria: projectCriteria,
-    projectEvidenceExpectations: projectEvidenceExpectations,
     createdAt: now,
     updatedAt: now,
   );

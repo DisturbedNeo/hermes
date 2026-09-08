@@ -29,7 +29,7 @@ void initializeMappers() {
   p4.ProjectEvidenceExpectationMapper.ensureInitialized();
   p4.ProjectMemoryEntryMapper.ensureInitialized();
   p4.ProjectMemorySupersessionMapper.ensureInitialized();
-  p4.ProjectPlanProposalMapper.ensureInitialized();
+  p4.ProjectDesiredPlanMapper.ensureInitialized();
   p4.ProjectPlanRevisionMapper.ensureInitialized();
   p4.PendingProjectPlanApprovalMapper.ensureInitialized();
   p4.ProjectCompletionReviewCheckpointMapper.ensureInitialized();
@@ -38,12 +38,10 @@ void initializeMappers() {
   p4.ProjectTaskMapper.ensureInitialized();
   p4.ProjectTaskFailureMapper.ensureInitialized();
   p4.ProjectArtifactMapper.ensureInitialized();
-  p4.ProjectTaskRefMapper.ensureInitialized();
   p4.ProjectDecisionRecordMapper.ensureInitialized();
   p4.ProjectBlockerMapper.ensureInitialized();
   p4.PendingProjectQuestionMapper.ensureInitialized();
   p4.ProjectStatusMapper.ensureInitialized();
-  p4.ProjectPhaseMapper.ensureInitialized();
   p4.ProjectTaskStatusMapper.ensureInitialized();
   p4.ProjectCriterionStatusMapper.ensureInitialized();
   p4.ProjectVerificationModeMapper.ensureInitialized();

@@ -139,13 +139,15 @@ void main() {
       expect(decoded['memory'], isA<List>());
       expect(decoded.containsKey('successCriteria'), isFalse);
       expect(decoded.containsKey('knownFacts'), isFalse);
-      expect(decoded['backlog'], isA<List>());
-      expect(decoded['completedTasks'], isA<List>());
+      expect(decoded['tasks'], isA<List>());
+      expect(decoded.containsKey('backlog'), isFalse);
+      expect(decoded.containsKey('completedTasks'), isFalse);
+      expect(decoded.containsKey('failedTasks'), isFalse);
       expect(decoded['decisions'], isA<List>());
     });
 
     test(
-      'refuses a newer project schema without restoring or rewriting it',
+      'refuses unsupported project schemas without restoring or rewriting them',
       () async {
         await repository.saveSnapshot(
           root.path,
@@ -192,6 +194,34 @@ void main() {
         expect(await file.readAsString(), futureContent);
       },
     );
+
+    test('rejects an old project schema without migration', () async {
+      final file = File(
+        path.join(
+          root.path,
+          '.agent',
+          'projects',
+          'project_old',
+          'project.json',
+        ),
+      )..parent.createSync(recursive: true);
+      const oldContent = '{"schemaVersion": 4, "id": "project_old"}';
+      await file.writeAsString(oldContent);
+
+      await expectLater(
+        repository.loadProject(root.path, 'project_old'),
+        throwsA(
+          isA<UnsupportedSnapshotSchemaException>()
+              .having((error) => error.foundVersion, 'foundVersion', 4)
+              .having(
+                (error) => error.supportedVersion,
+                'supportedVersion',
+                ProjectDocument.currentSchemaVersion,
+              ),
+        ),
+      );
+      expect(await file.readAsString(), oldContent);
+    });
 
     test('rejects delete paths outside project root', () async {
       expect(
@@ -284,13 +314,12 @@ ProjectDocument _project({
   return ProjectDocument(
     id: id,
     title: 'Test project',
-    originalPrompt: 'Build the app',
-    goal: 'Build the app',
+    originalGoal: 'Build the app',
+    refinedGoal: 'Build the app',
     constraints: const ['Stay in workspace'],
-    successCriteria: const ['Finish'],
+    criteria: const [],
     status: ProjectStatus.paused,
     activeTaskId: null,
-    memorySummary: '',
     completionSummary: '',
     tasks: const [],
     decisions: const [],

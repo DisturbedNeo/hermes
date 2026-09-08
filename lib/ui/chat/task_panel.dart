@@ -226,11 +226,10 @@ class _ProjectBody extends StatelessWidget {
     final activeTask = chat.activeTask?.projectId == project.id
         ? chat.activeTask
         : null;
-    final totalProjectTasks =
-        project.backlog.length +
-        project.completedTasks.length +
-        project.failedTasks.length +
-        (project.currentTask == null ? 0 : 1);
+    final totalProjectTasks = project.tasks.length;
+    final completedProjectTasks = project.tasks
+        .where((task) => task.status == ProjectTaskStatus.completed)
+        .length;
     final iterationLabel = project.maxIterations == 0
         ? '${project.iterationCount} iterations'
         : '${project.iterationCount}/${project.maxIterations} iterations';
@@ -251,15 +250,11 @@ class _ProjectBody extends StatelessWidget {
               child: _StatusChip(label: project.status.wire),
             ),
             AccessibleWidget(
-              label: 'Project phase: ${project.phase.wire}',
-              child: _StatusChip(label: project.phase.wire),
-            ),
-            AccessibleWidget(
               label:
-                  '${project.completedTasks.length} of $totalProjectTasks tasks completed',
+                  '$completedProjectTasks of $totalProjectTasks tasks completed',
               child: _StatusChip(
                 label:
-                    '${project.completedTasks.length}/$totalProjectTasks tasks',
+                    '$completedProjectTasks/$totalProjectTasks tasks',
               ),
             ),
             AccessibleWidget(
@@ -278,7 +273,7 @@ class _ProjectBody extends StatelessWidget {
         ],
         const SizedBox(height: 10),
         _ProjectActions(chat: chat, project: project),
-        if (project.pendingQuestion != null) ...[
+        if (project.openQuestions.isNotEmpty) ...[
           const SizedBox(height: 10),
           _ProjectQuestionCard(chat: chat, project: project),
         ],
@@ -329,7 +324,11 @@ class _ProjectBody extends StatelessWidget {
         _Section(
           title: 'Completed Tasks',
           child: _ProjectTaskBoardList(
-            tasks: project.completedTasks.reversed.toList(),
+            tasks: project.tasks
+                .where((task) => task.status == ProjectTaskStatus.completed)
+                .toList()
+                .reversed
+                .toList(),
             empty: 'No completed project tasks yet.',
           ),
         ),
@@ -337,7 +336,15 @@ class _ProjectBody extends StatelessWidget {
         _Section(
           title: 'Failed or Rejected Tasks',
           child: _ProjectTaskBoardList(
-            tasks: project.failedTasks.reversed.toList(),
+            tasks: project.tasks
+                .where(
+                  (task) =>
+                      task.status == ProjectTaskStatus.failed ||
+                      task.status == ProjectTaskStatus.rejected,
+                )
+                .toList()
+                .reversed
+                .toList(),
             empty: 'No failed project tasks.',
           ),
         ),
@@ -353,11 +360,17 @@ class _ProjectBody extends StatelessWidget {
             child: _ProjectArtifactBoardList(project: project),
           ),
         ],
-        if (project.knownFacts.isNotEmpty) ...[
+        if (project.memory.where((entry) => entry.active).isNotEmpty) ...[
           const SizedBox(height: 10),
           _Section(
             title: 'Known Facts',
-            child: _StringList(items: project.knownFacts.take(12).toList()),
+            child: _StringList(
+              items: project.memory
+                  .where((entry) => entry.active)
+                  .map((entry) => entry.content)
+                  .take(12)
+                  .toList(),
+            ),
           ),
         ],
         const SizedBox(height: 10),
@@ -379,6 +392,7 @@ class _ProjectActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasActiveTask = project.activeTaskId != null;
     final canRun =
         !chat.taskBusy &&
         !project.isTerminal &&
@@ -386,7 +400,7 @@ class _ProjectActions extends StatelessWidget {
     final canReplan =
         !chat.taskBusy &&
         !project.isTerminal &&
-        project.currentTask == null &&
+        !hasActiveTask &&
         project.pendingPlanApproval == null;
     final exhaustedRecovery = project.recoveryIncidents
         .where(
@@ -467,19 +481,6 @@ class _ProjectActions extends StatelessWidget {
                 : null,
           ),
         ),
-        if (project.currentTask?.status == ProjectTaskStatus.proposed)
-          AccessibleWidget(
-            label: 'Approve next project task',
-            isButton: true,
-            enabled: !chat.taskBusy,
-            child: OutlinedButton.icon(
-              icon: const Icon(Icons.check_circle_outline),
-              label: const Text('Approve Next Task'),
-              onPressed: chat.taskBusy
-                  ? null
-                  : () => unawaited(chat.approveNextProjectTask()),
-            ),
-          ),
         if (exhaustedRecovery != null)
           AccessibleWidget(
             label: 'Retry project recovery',
@@ -558,7 +559,7 @@ class _ProjectQuestionCardState extends State<_ProjectQuestionCard> {
 
   @override
   Widget build(BuildContext context) {
-    final question = widget.project.pendingQuestion!;
+    final question = widget.project.openQuestions.first;
     return _Panel(
       icon: Icons.help_outline,
       title: 'Project Input Required',
@@ -624,28 +625,23 @@ class _CurrentProjectTask extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final project = chat.activeProject;
-    final projectTask = project?.currentTask?.taskDocumentId == task.id
-        ? project!.currentTask
-        : project?.taskById(task.id);
-    final criterionIds = task.projectCriterionIds.isNotEmpty
-        ? task.projectCriterionIds
-        : projectTask?.criterionIds ?? const <String>[];
-    final criterionStatements = task.projectCriteria.isNotEmpty
-        ? task.projectCriteria.map((item) => item.statement).toList()
-        : [
-            for (final criterionId in criterionIds)
-              project?.criterionStatement(criterionId) ?? criterionId,
-          ];
-    final evidenceExpectations = task.projectEvidenceExpectations.isNotEmpty
-        ? task.projectEvidenceExpectations
-              .map((item) => '${item.type}: ${item.description}')
-              .toList()
-        : [
-            for (final expectation
-                in projectTask?.expectedEvidence ??
-                    const <ProjectEvidenceExpectation>[])
-              '${expectation.type.name}: ${expectation.description}',
-          ];
+    final projectTask = project?.tasks
+            .where((item) => item.taskDocumentId == task.id)
+            .firstOrNull ??
+        (project?.activeTaskId == null
+            ? null
+            : project?.taskById(project.activeTaskId!));
+    final criterionIds = projectTask?.criterionIds ?? const <String>[];
+    final criterionStatements = [
+      for (final criterionId in criterionIds)
+        project?.criterionStatement(criterionId) ?? criterionId,
+    ];
+    final evidenceExpectations = [
+      for (final expectation
+          in projectTask?.expectedEvidence ??
+              const <ProjectEvidenceExpectation>[])
+        '${expectation.type.name}: ${expectation.description}',
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1583,8 +1579,6 @@ IconData _runIcon(TaskRunStatus status) => switch (status) {
 
 IconData _projectTaskStatusIcon(ProjectTaskStatus status) => switch (status) {
   ProjectTaskStatus.queued => Icons.radio_button_unchecked,
-  ProjectTaskStatus.proposed => Icons.pending_actions_outlined,
-  ProjectTaskStatus.approved => Icons.verified_user_outlined,
   ProjectTaskStatus.running => Icons.sync,
   ProjectTaskStatus.completed => Icons.check_circle_outline,
   ProjectTaskStatus.failed => Icons.error_outline,
@@ -1604,7 +1598,6 @@ IconData _projectDecisionIcon(ProjectDecisionType decision) =>
       ProjectDecisionType.rejectTask => Icons.cancel_outlined,
       ProjectDecisionType.splitTask => Icons.call_split_outlined,
       ProjectDecisionType.evaluateTask => Icons.fact_check_outlined,
-      ProjectDecisionType.refreshBacklog => Icons.playlist_add_check_outlined,
       ProjectDecisionType.retryRecovery => Icons.replay,
       ProjectDecisionType.applyPlanRevision => Icons.alt_route_outlined,
       ProjectDecisionType.approvePlanRevision => Icons.approval_outlined,

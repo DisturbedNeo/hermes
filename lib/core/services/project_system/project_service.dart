@@ -82,6 +82,43 @@ class ProjectService {
 
   ProjectRepository get repository => _repository;
 
+  ProjectTask? _activeProjectTask(ProjectDocument project) {
+    final id = project.activeTaskId;
+    return id == null ? null : project.taskById(id);
+  }
+
+  bool _isTerminalTask(ProjectTask task) => switch (task.status) {
+    ProjectTaskStatus.completed ||
+    ProjectTaskStatus.failed ||
+    ProjectTaskStatus.rejected ||
+    ProjectTaskStatus.split ||
+    ProjectTaskStatus.cancelled => true,
+    _ => false,
+  };
+
+  List<ProjectTask> _nonTerminalTasks(ProjectDocument project) =>
+      project.tasks.where((task) => !_isTerminalTask(task)).toList();
+
+  List<ProjectTask> _upsertTask(
+    ProjectDocument project,
+    ProjectTask replacement, {
+    String? removeId,
+  }) {
+    final replaced = <ProjectTask>[];
+    var found = false;
+    for (final task in project.tasks) {
+      if (task.id == removeId) continue;
+      if (task.id == replacement.id) {
+        replaced.add(replacement);
+        found = true;
+      } else {
+        replaced.add(task);
+      }
+    }
+    if (!found) replaced.add(replacement);
+    return replaced;
+  }
+
   Future<ProjectDocument> _persistProject(
     String workspaceRoot,
     ProjectDocument project,
@@ -233,20 +270,14 @@ class ProjectService {
       init.openQuestions,
       autonomy: questionAutonomy,
     );
-    final initialCriteria = init.criteria.isEmpty ? null : init.criteria;
-    final initialCriterionIds =
-        initialCriteria?.map((item) => item.id).toList() ??
-        [
-          for (var index = 0; index < init.successCriteria.length; index++)
-            'criterion_${(index + 1).toString().padLeft(3, '0')}',
-        ];
+    final initialCriteria = init.criteria;
+    final initialCriterionIds = initialCriteria.map((item) => item.id).toList();
     final initialBacklog = planningBlocked
         ? const <ProjectTask>[]
-        : _normaliseInitialBacklog(init.backlog, initialCriterionIds);
+        : _normaliseInitialBacklog(init.tasks, initialCriterionIds);
     final initialMilestones = _initialMilestones(
       init: init,
       criteria: initialCriteria,
-      backlog: initialBacklog,
       now: now,
     );
     final initialMemory = _initialMemory(
@@ -266,18 +297,11 @@ class ProjectService {
       constraints: init.constraints.isEmpty
           ? const ['Stay within the attached workspace.']
           : init.constraints,
-      successCriteria: init.successCriteria.isEmpty
-          ? const ['Complete the stated project goal.']
-          : init.successCriteria,
       criteria: initialCriteria,
-      backlog: initialBacklog,
-      currentTask: null,
-      completedTasks: const [],
-      failedTasks: const [],
+      tasks: initialBacklog,
       artifacts: const [],
       memory: initialMemory,
       milestones: initialMilestones,
-      currentRevision: 1,
       planHistory: [
         ProjectPlanRevision(
           revision: 1,
@@ -290,9 +314,7 @@ class ProjectService {
               : 'Created criteria, milestones, and the bounded near-term plan from discovery.',
           addedTaskIds: initialBacklog.map((task) => task.id).toList(),
           criterionChanges: [
-            for (final criterion
-                in initialCriteria ?? const <ProjectCriterion>[])
-              'add:${criterion.id}',
+            for (final criterion in initialCriteria) 'add:${criterion.id}',
           ],
           milestoneChanges: [
             for (final milestone in initialMilestones) 'add:${milestone.id}',
@@ -314,7 +336,6 @@ class ProjectService {
           : filteredQuestions.blocking.isEmpty
           ? ProjectStatus.active
           : ProjectStatus.waitingForUser,
-      phase: planningBlocked ? ProjectPhase.planning : ProjectPhase.discovery,
       iterationCount: 0,
       maxIterations: _normaliseOptionalLimit(
         maxIterations,
@@ -389,7 +410,6 @@ class ProjectService {
         status: snapshot.openQuestions.isEmpty
             ? ProjectStatus.active
             : ProjectStatus.waitingForUser,
-        phase: ProjectPhase.planning,
         updatedAt: now,
       );
       final persisted = await _persistProject(workspace.rootPath, recovered);
@@ -441,7 +461,10 @@ class ProjectService {
         )
         .firstOrNull;
     if (incident == null) return snapshot;
-    final sourceTask = snapshot.failedTasks.reversed
+    final sourceTask = snapshot.tasks
+        .where((task) => task.status == ProjectTaskStatus.failed)
+        .toList()
+        .reversed
         .where((task) => task.recoveryIncidentId == incidentId)
         .firstOrNull;
     if (sourceTask == null) return snapshot;
@@ -483,14 +506,8 @@ class ProjectService {
     );
     var updated = snapshot.copyWith(
       status: ProjectStatus.active,
-      phase: ProjectPhase.execution,
       blocker: null,
-      backlog: [
-        recoveryTask,
-        ...snapshot.backlog.where(
-          (task) => task.recoveryIncidentId != incident.id,
-        ),
-      ],
+      tasks: [recoveryTask, ...snapshot.tasks],
       recoveryIncidents: _upsertRecoveryIncident(
         snapshot.recoveryIncidents,
         reactivated,
@@ -592,7 +609,7 @@ class ProjectService {
     if (project.isTerminal) {
       return ProjectRunResult(project: project, activeTask: activeTask);
     }
-    final pendingProposal = project.pendingPlanApproval?.proposal;
+    final pendingProposal = project.pendingPlanApproval?.desiredPlan;
     if (pendingProposal != null) {
       final reconsidered = await _planRevisionService.prepareAndApply(
         project: project,
@@ -690,7 +707,8 @@ class ProjectService {
 
       final initialSchedule = _scheduler.schedule(project);
       project = initialSchedule.project;
-      var candidate = project.currentTask ?? initialSchedule.selectedTask;
+      var candidate =
+          _activeProjectTask(project) ?? initialSchedule.selectedTask;
       final replanTriggers = _eligibleReplanTriggers(
         project.pendingReplanTriggers,
       );
@@ -702,8 +720,8 @@ class ProjectService {
           client: client,
           project: project,
           baseSystemPrompt: baseSystemPrompt,
-          reviewReason: project.backlog.isEmpty
-              ? ProjectCompletionReviewReason.backlogExhausted
+          reviewReason: _nonTerminalTasks(project).isEmpty
+              ? ProjectCompletionReviewReason.noRemainingTasks
               : null,
           onModelOutput: onModelOutput,
           questionAutonomy: questionAutonomy,
@@ -760,10 +778,11 @@ class ProjectService {
         return ProjectRunResult(project: project, activeTask: activeTask);
       }
 
+      final activeProjectTask = _activeProjectTask(project);
       final resumingActiveTask =
-          project.currentTask?.id == candidate.id &&
-          project.activeTaskId != null &&
-          activeTask?.id == project.activeTaskId;
+          activeProjectTask?.id == candidate.id &&
+          activeTask != null &&
+          activeTask.id == activeProjectTask?.taskDocumentId;
       final validation = resumingActiveTask
           ? const _ProjectTaskValidation(true, [])
           : _validateProjectTask(candidate, project);
@@ -831,12 +850,11 @@ class ProjectService {
       final now = DateTime.now();
       project = project.copyWith(
         status: ProjectStatus.reviewingTask,
-        phase: ProjectPhase.verification,
         updatedAt: now,
       );
       project = await _persistProject(workspace.rootPath, project);
 
-      final evaluatedProjectTask = project.currentTask ?? candidate;
+      final evaluatedProjectTask = _activeProjectTask(project) ?? candidate;
       final criterionStatusesBefore = {
         for (final criterion in project.criteria)
           criterion.id: criterion.status,
@@ -937,7 +955,7 @@ class ProjectService {
     required ProjectDocument snapshot,
     required String answer,
   }) async {
-    final question = snapshot.pendingQuestion;
+    final question = snapshot.openQuestions.firstOrNull;
     final trimmed = answer.trim();
     if (question == null || trimmed.isEmpty) return snapshot;
     final remainingQuestions = snapshot.openQuestions
@@ -966,7 +984,7 @@ class ProjectService {
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return snapshot;
-    if (snapshot.pendingQuestion != null) {
+    if (snapshot.openQuestions.isNotEmpty) {
       return answerOpenQuestion(
         workspace: workspace,
         snapshot: snapshot,
@@ -1078,33 +1096,12 @@ class ProjectService {
     return _persistProject(workspace.rootPath, updated);
   }
 
-  Future<ProjectDocument> approveNextProjectTask({
-    required WorkspaceAttachment workspace,
-    required ProjectDocument snapshot,
-  }) async {
-    final task = snapshot.currentTask;
-    if (task == null) return snapshot;
-    final updated = snapshot.copyWith(
-      currentTask: task.copyWith(
-        status: ProjectTaskStatus.approved,
-        updatedAt: DateTime.now(),
-      ),
-      status: ProjectStatus.active,
-      blocker: null,
-      updatedAt: DateTime.now(),
-      diagnostics: snapshot.diagnostics.copyWith(
-        userApprovals: snapshot.diagnostics.userApprovals + 1,
-      ),
-    );
-    return _persistProject(workspace.rootPath, updated);
-  }
-
   Future<ProjectDocument> clearTaskBlocker({
     required WorkspaceAttachment workspace,
     required ProjectDocument snapshot,
   }) async {
     final type = snapshot.blocker?.type;
-    if (type != ProjectBlockerType.taskApproval &&
+    if (type != ProjectBlockerType.taskEditApproval &&
         type != ProjectBlockerType.taskBlocked &&
         type != ProjectBlockerType.taskFailed) {
       return snapshot;
@@ -1189,13 +1186,19 @@ class ProjectService {
     required ProjectDocument snapshot,
   }) async {
     final now = DateTime.now();
+    final activeTask = _activeProjectTask(snapshot);
     final updated = snapshot.copyWith(
       status: ProjectStatus.cancelled,
       activeTaskId: null,
-      currentTask: snapshot.currentTask?.copyWith(
-        status: ProjectTaskStatus.cancelled,
-        updatedAt: now,
-      ),
+      tasks: [
+        for (final task in snapshot.tasks)
+          task.id == activeTask?.id
+              ? task.copyWith(
+                  status: ProjectTaskStatus.cancelled,
+                  updatedAt: now,
+                )
+              : task,
+      ],
       openQuestions: const [],
       blocker: null,
       completedAt: now,
@@ -1215,11 +1218,11 @@ class ProjectService {
     WorkspaceAttachment workspace,
     ProjectDocument project,
   ) {
-    final activeTaskId = project.activeTaskId;
-    if (activeTaskId == null) return Future.value();
+    final taskDocumentId = project.activeTaskDocumentId;
+    if (taskDocumentId == null) return Future.value();
     return _taskService.loadTask(
       workspace,
-      activeTaskId,
+      taskDocumentId,
       chatSessionId: project.chatSessionId,
       projectId: project.id,
     );
@@ -1317,7 +1320,7 @@ class ProjectService {
       revised = _recordAssumptions(
         revised,
         filtered.assumptions,
-        sourceId: 'revision_${revised.currentRevision}',
+        sourceId: 'revision_${revised.nextRevision - 1}',
       );
     }
     return revised;
@@ -1327,33 +1330,30 @@ class ProjectService {
     required ProjectDocument before,
     required ProjectDocument after,
   }) {
-    final currentTask = after.currentTask;
+    final currentTask = _activeProjectTask(after);
     if (currentTask != null && _validateProjectTask(currentTask, after).valid) {
       return true;
     }
 
-    final previousBacklogIds = before.backlog.map((task) => task.id).toSet();
+    final previousTaskIds = before.tasks.map((task) => task.id).toSet();
     final refreshed = _scheduler.refreshReadiness(after).project;
-    return refreshed.backlog.any(
+    return refreshed.tasks.any(
       (task) =>
-          !previousBacklogIds.contains(task.id) &&
+          !previousTaskIds.contains(task.id) &&
           _isSelectableTask(task) &&
           _validateProjectTask(task, refreshed).valid,
     );
   }
 
   bool _hasExecutableProjectTask(ProjectDocument project) {
-    final currentTask = project.currentTask;
+    final currentTask = _activeProjectTask(project);
     return (currentTask != null &&
             _validateProjectTask(currentTask, project).valid) ||
         _scheduler.schedule(project).selectedTask != null;
   }
 
   bool _isSelectableTask(ProjectTask task) {
-    return (task.status == ProjectTaskStatus.queued ||
-            task.status == ProjectTaskStatus.proposed ||
-            task.status == ProjectTaskStatus.approved) &&
-        task.readiness == ProjectTaskReadiness.ready;
+    return task.status == ProjectTaskStatus.queued;
   }
 
   Future<ProjectDocument> _handleInvalidProjectTask({
@@ -1376,9 +1376,8 @@ class ProjectService {
       final duplicate = _duplicateMatchForTask(project, task);
       if (duplicate is _QueuedDuplicateProjectTask) {
         return project.copyWith(
-          currentTask: duplicate.task,
+          tasks: _upsertTask(project, duplicate.task, removeId: task.id),
           status: ProjectStatus.active,
-          phase: ProjectPhase.execution,
           blocker: null,
           updatedAt: now,
         );
@@ -1396,10 +1395,11 @@ class ProjectService {
           updatedAt: now,
         );
         return project.copyWith(
-          currentTask: retryTask,
-          failedTasks: [...project.failedTasks, rejected],
+          tasks: _upsertTask(
+            project.copyWith(tasks: _upsertTask(project, rejected)),
+            retryTask,
+          ),
           status: ProjectStatus.active,
-          phase: ProjectPhase.execution,
           blocker: null,
           decisions: [
             ...project.decisions,
@@ -1419,10 +1419,8 @@ class ProjectService {
         updatedAt: now,
       );
       return project.copyWith(
-        failedTasks: [...project.failedTasks, rejected],
-        backlog: project.backlog.where((item) => item.id != task.id).toList(),
+        tasks: _upsertTask(project, rejected),
         status: ProjectStatus.active,
-        phase: ProjectPhase.planning,
         blocker: null,
         decisions: [
           ...project.decisions,
@@ -1486,8 +1484,7 @@ class ProjectService {
     if (splitTasks.isEmpty) {
       return _blockProject(
         project.copyWith(
-          failedTasks: [...project.failedTasks, rejected],
-          backlog: project.backlog.where((item) => item.id != task.id).toList(),
+          tasks: _upsertTask(project, rejected),
           decisions: [
             ...project.decisions,
             _decision(
@@ -1510,13 +1507,12 @@ class ProjectService {
     }
 
     return project.copyWith(
-      backlog: [
+      tasks: [
         ...splitTasks,
-        ...project.backlog.where((item) => item.id != task.id),
+        ...project.tasks.where((item) => item.id != task.id),
+        rejected,
       ],
-      failedTasks: [...project.failedTasks, rejected],
       status: ProjectStatus.active,
-      phase: ProjectPhase.planning,
       decisions: [
         ...project.decisions,
         _decision(
@@ -1572,11 +1568,8 @@ class ProjectService {
     );
     var workingProject = project.copyWith(
       status: ProjectStatus.runningTask,
-      phase: ProjectPhase.execution,
-      currentTask: runningProjectTask,
-      backlog: project.backlog
-          .where((task) => task.id != projectTask.id)
-          .toList(),
+      activeTaskId: projectTask.id,
+      tasks: _upsertTask(project, runningProjectTask),
       blocker: null,
       decisions: [
         ...project.decisions,
@@ -1625,11 +1618,17 @@ class ProjectService {
             );
     }
     final taskDocumentId = activeTask.id;
+    final executionRequest = TaskExecutionRequest.fromPlanningContext(
+      planningContext,
+    );
     workingProject = workingProject.copyWith(
-      activeTaskId: taskDocumentId,
-      currentTask: runningProjectTask.copyWith(
-        taskDocumentId: taskDocumentId,
-        updatedAt: DateTime.now(),
+      activeTaskId: projectTask.id,
+      tasks: _upsertTask(
+        workingProject,
+        runningProjectTask.copyWith(
+          taskDocumentId: taskDocumentId,
+          updatedAt: DateTime.now(),
+        ),
       ),
       updatedAt: DateTime.now(),
     );
@@ -1654,6 +1653,7 @@ class ProjectService {
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
         questionAutonomy: questionAutonomy,
+        executionRequest: executionRequest,
       );
       onTaskUpdated?.call(activeTask);
       workingProject = _syncCurrentTaskFromTask(
@@ -1729,11 +1729,15 @@ class ProjectService {
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
         questionAutonomy: questionAutonomy,
+        executionRequest: executionRequest,
       );
       onTaskUpdated?.call(activeTask);
     }
 
-    final result = _taskResultFromTask(workingProject.currentTask!, activeTask);
+    final result = _taskResultFromTask(
+      _activeProjectTask(workingProject)!,
+      activeTask,
+    );
     return _ProjectTaskExecution(
       project: _syncCurrentTaskFromTask(
         workingProject,
@@ -1764,7 +1768,7 @@ class ProjectService {
       ],
       artifacts: result.artifacts,
       gateResults: result.gateResults,
-      backlogAdditions: const [],
+      taskAdditions: const [],
       openQuestions: result.userQuestion?.trim().isNotEmpty == true
           ? [
               PendingProjectQuestion(
@@ -1803,7 +1807,7 @@ class ProjectService {
     DateTime now, {
     required QuestionAutonomy questionAutonomy,
   }) {
-    final task = project.currentTask;
+    final task = _activeProjectTask(project);
     if (task == null) return project;
     final filteredQuestions = _filterProjectQuestions(
       evaluation.openQuestions,
@@ -1824,10 +1828,10 @@ class ProjectService {
         now: now,
       );
       failedTask = recoveryUpdate.failedTask;
-      final failedTasks = [...project.failedTasks, failedTask];
+      final tasks = _upsertTask(project, failedTask);
       final recoveryIncidents = recoveryUpdate.recoveryIncidents;
       final failedBudgetCount = _projectFailureBudgetCount(
-        failedTasks,
+        tasks.where((item) => item.status == ProjectTaskStatus.failed).toList(),
         recoveryIncidents,
       );
       final reachedFailureLimit = failedBudgetCount >= project.maxFailedTasks;
@@ -1836,14 +1840,10 @@ class ProjectService {
           failure.disposition == TaskGateFailureDisposition.blocking &&
           recoveryUpdate.incident == null;
       var updated = project.copyWith(
-        currentTask: null,
         activeTaskId: null,
-        failedTasks: failedTasks,
-        backlog: [
+        tasks: [
           if (recoveryUpdate.recoveryTask != null) recoveryUpdate.recoveryTask!,
-          ...project.backlog.where(
-            (item) => item.id != recoveryUpdate.recoveryTask?.id,
-          ),
+          ...tasks.where((item) => item.id != recoveryUpdate.recoveryTask?.id),
         ],
         recoveryIncidents: recoveryIncidents,
         openQuestions: filteredQuestions.blocking,
@@ -1852,7 +1852,6 @@ class ProjectService {
             : reachedFailureLimit
             ? ProjectStatus.blocked
             : ProjectStatus.active,
-        phase: ProjectPhase.execution,
         blocker: exhaustedIncident != null
             ? ProjectBlocker(
                 type: ProjectBlockerType.recoveryFailed,
@@ -1936,17 +1935,17 @@ class ProjectService {
       now,
     );
     var updated = project.copyWith(
-      currentTask: null,
       activeTaskId: null,
-      completedTasks: [...project.completedTasks, completedTask],
+      tasks: [
+        ...evaluation.taskAdditions,
+        ..._upsertTask(project, completedTask),
+      ],
       artifacts: _mergeArtifacts(project.artifacts, evaluation.artifacts),
       recoveryIncidents: recoveryIncidents,
       openQuestions: filteredQuestions.blocking,
-      backlog: [...evaluation.backlogAdditions, ...project.backlog],
       status: filteredQuestions.blocking.isEmpty
           ? ProjectStatus.active
           : ProjectStatus.waitingForUser,
-      phase: ProjectPhase.execution,
       blocker: filteredQuestions.blocking.isEmpty
           ? null
           : ProjectBlocker(
@@ -2014,7 +2013,9 @@ class ProjectService {
               incident.status == ProjectRecoveryIncidentStatus.exhausted,
         ) ||
         _projectFailureBudgetCount(
-              project.failedTasks,
+              project.tasks
+                  .where((task) => task.status == ProjectTaskStatus.failed)
+                  .toList(),
               project.recoveryIncidents,
             ) >=
             project.maxFailedTasks) {
@@ -2026,13 +2027,7 @@ class ProjectService {
       return _completeProjectFromEvidence(project, now);
     }
     if (reviewReason == null || !_hasReviewableCriterionEvidence(project)) {
-      return project.copyWith(
-        status: ProjectStatus.active,
-        phase: project.backlog.isEmpty
-            ? ProjectPhase.planning
-            : ProjectPhase.execution,
-        updatedAt: now,
-      );
+      return project.copyWith(status: ProjectStatus.active, updatedAt: now);
     }
 
     final evidenceFingerprint = _completionEvidenceFingerprint(project);
@@ -2040,13 +2035,7 @@ class ProjectService {
     if (checkpoint?.reason == reviewReason &&
         checkpoint?.evidenceFingerprint == evidenceFingerprint &&
         checkpoint?.milestoneId == reviewMilestoneId) {
-      return project.copyWith(
-        status: ProjectStatus.active,
-        phase: project.backlog.isEmpty
-            ? ProjectPhase.planning
-            : ProjectPhase.execution,
-        updatedAt: now,
-      );
+      return project.copyWith(status: ProjectStatus.active, updatedAt: now);
     }
 
     final assessment = await _modelCalls.evaluateCompletion(
@@ -2076,9 +2065,6 @@ class ProjectService {
         return _recordAssumptions(
           assessedProject.copyWith(
             status: ProjectStatus.active,
-            phase: project.backlog.isEmpty
-                ? ProjectPhase.planning
-                : ProjectPhase.execution,
             blocker: null,
             updatedAt: now,
           ),
@@ -2128,13 +2114,7 @@ class ProjectService {
         summary: assessment.finalSummary,
       );
     }
-    return reviewed.copyWith(
-      status: ProjectStatus.active,
-      phase: reviewed.backlog.isEmpty
-          ? ProjectPhase.planning
-          : ProjectPhase.execution,
-      updatedAt: now,
-    );
+    return reviewed.copyWith(status: ProjectStatus.active, updatedAt: now);
   }
 
   bool _hasReviewableCriterionEvidence(ProjectDocument project) {
@@ -2163,8 +2143,9 @@ class ProjectService {
     required Set<String> newEvidenceIds,
     required String? endedMilestoneId,
   }) {
-    if (project.currentTask == null && project.backlog.isEmpty) {
-      return ProjectCompletionReviewReason.backlogExhausted;
+    if (_activeProjectTask(project) == null &&
+        _nonTerminalTasks(project).isEmpty) {
+      return ProjectCompletionReviewReason.noRemainingTasks;
     }
     if (endedMilestoneId != null) {
       return ProjectCompletionReviewReason.milestoneEnded;
@@ -2195,7 +2176,7 @@ class ProjectService {
   String _completionEvidenceFingerprint(ProjectDocument project) {
     final criteria = [
       for (final criterion in project.criteria)
-        '${criterion.id}:${criterion.status.name}:${criterion.evidenceIds.toList()..sort()}',
+        '${criterion.id}:${criterion.status.name}:${criterion.notes}',
     ]..sort();
     final evidence = [
       for (final item in project.evidence)
@@ -2217,7 +2198,6 @@ class ProjectService {
   }) {
     return project.copyWith(
       status: ProjectStatus.completed,
-      phase: ProjectPhase.finalization,
       completionSummary: summary.trim().isEmpty
           ? 'All required project criteria are satisfied by accepted evidence.'
           : summary.trim(),
@@ -2292,11 +2272,11 @@ class ProjectService {
     if (_looksOversized(task.objective)) {
       violations.add('Task objective is too broad for a project task.');
     }
-    if (task.relevantSuccessCriteria.length > 3) {
+    if (task.criterionIds.length > 3) {
       violations.add('Task covers too many success criteria.');
     }
-    if (project.successCriteria.length > 1 &&
-        task.relevantSuccessCriteria.length >= project.successCriteria.length) {
+    if (project.criteria.length > 1 &&
+        task.criterionIds.length >= project.criteria.length) {
       violations.add('Task covers the entire project success criteria set.');
     }
     if (task.doneCriteria.length > 5) {
@@ -2314,18 +2294,22 @@ class ProjectService {
   ) {
     if (task.recoveryIncidentId != null) return null;
     final fingerprint = task.fingerprint;
-    for (final queued in project.backlog) {
-      if (queued.id != task.id && queued.fingerprint == fingerprint) {
+    for (final queued in project.tasks) {
+      if (queued.id != task.id &&
+          queued.status == ProjectTaskStatus.queued &&
+          queued.fingerprint == fingerprint) {
         return _QueuedDuplicateProjectTask(queued);
       }
     }
-    final current = project.currentTask;
+    final current = _activeProjectTask(project);
     if (current != null &&
         current.id != task.id &&
         current.fingerprint == fingerprint) {
       return _QueuedDuplicateProjectTask(current);
     }
-    for (final failed in project.failedTasks) {
+    for (final failed in project.tasks.where(
+      (item) => item.status == ProjectTaskStatus.failed,
+    )) {
       if (failed.id != task.id &&
           failed.status == ProjectTaskStatus.failed &&
           failed.recoveryIncidentId == null &&
@@ -2342,16 +2326,17 @@ class ProjectService {
     required List<String> violations,
     required DateTime now,
   }) {
-    final criteria = duplicateTask.relevantSuccessCriteria.isEmpty
-        ? failedTask.relevantSuccessCriteria
-        : duplicateTask.relevantSuccessCriteria;
+    final criteria = <String>{
+      ...failedTask.criterionIds,
+      ...duplicateTask.criterionIds,
+    }.toList();
     final objective =
         'Retry failed project task after addressing the previous failure: ${failedTask.objective}';
     return ProjectTask(
       id: 'project_retry_${uuid.v7()}',
       title: 'Retry ${failedTask.title}',
       objective: objective,
-      relevantSuccessCriteria: criteria,
+      criterionIds: criteria,
       doneCriteria: duplicateTask.doneCriteria.isEmpty
           ? failedTask.doneCriteria
           : duplicateTask.doneCriteria,
@@ -2366,6 +2351,12 @@ class ProjectService {
         'Duplicate proposal was converted into a retry instead of halting the project.',
         ...violations,
       ],
+      expectedEvidence: _replacementExpectedEvidence(
+        source: failedTask.expectedEvidence,
+        additions: duplicateTask.expectedEvidence,
+        criterionIds: criteria,
+        idPrefix: 'retry_expectation',
+      ),
       expectedArtifacts: duplicateTask.expectedArtifacts.isEmpty
           ? failedTask.expectedArtifacts
           : duplicateTask.expectedArtifacts,
@@ -2718,6 +2709,66 @@ class ProjectService {
     ].join('|');
   }
 
+  List<ProjectEvidenceExpectation> _replacementExpectedEvidence({
+    required Iterable<ProjectEvidenceExpectation> source,
+    required Iterable<ProjectEvidenceExpectation> additions,
+    required Iterable<String> criterionIds,
+    required String idPrefix,
+  }) {
+    final validCriteria = criterionIds.toSet();
+    final merged = <String, ProjectEvidenceExpectation>{};
+    for (final expectation in [...source, ...additions]) {
+      final linkedCriteria = expectation.criterionIds
+          .where(validCriteria.contains)
+          .toSet()
+          .toList();
+      if (linkedCriteria.isEmpty) continue;
+      final normalized = ProjectEvidenceExpectation(
+        id: expectation.id,
+        type: expectation.type,
+        criterionIds: linkedCriteria,
+        description: expectation.description,
+        required: expectation.required,
+        sourceRef: expectation.sourceRef,
+        details: expectation.details,
+      );
+      final signature = _evidenceExpectationSignature(normalized);
+      final existing = merged[signature];
+      merged[signature] = existing == null
+          ? normalized
+          : ProjectEvidenceExpectation(
+              id: normalized.id,
+              type: normalized.type,
+              criterionIds: normalized.criterionIds,
+              description: normalized.description,
+              required: existing.required || normalized.required,
+              sourceRef: normalized.sourceRef,
+              details: normalized.details,
+            );
+    }
+    return [
+      for (final expectation in merged.values)
+        ProjectEvidenceExpectation(
+          id: '${idPrefix}_${uuid.v7()}',
+          type: expectation.type,
+          criterionIds: expectation.criterionIds,
+          description: expectation.description,
+          required: expectation.required,
+          sourceRef: expectation.sourceRef,
+          details: expectation.details,
+        ),
+    ];
+  }
+
+  String _evidenceExpectationSignature(ProjectEvidenceExpectation expectation) {
+    final criteria = [...expectation.criterionIds]..sort();
+    return [
+      expectation.type.name,
+      _normalise(expectation.sourceRef ?? ''),
+      criteria.join(','),
+    ].join('|');
+  }
+
   ProjectTask _recoveryTaskForIncident({
     required String incidentId,
     required ProjectTask sourceTask,
@@ -2730,11 +2781,30 @@ class ProjectService {
         ? '${failure.gateResult.gateId}: $command'
         : failure.gateResult.gateId;
     final objective = 'Restore required project health gate: $gateTarget';
+    final gateType =
+        command?.isNotEmpty == true ||
+            failure.gateResult.gateId == 'command_passes'
+        ? ProjectEvidenceType.command
+        : failure.gateResult.gateId == 'human_approval'
+        ? ProjectEvidenceType.userApproval
+        : ProjectEvidenceType.gate;
+    final gateSourceRef = command?.isNotEmpty == true
+        ? command
+        : failure.gateResult.gateId;
+    final recoveryGateExpectation = ProjectEvidenceExpectation(
+      id: 'recovery_gate_expectation',
+      type: gateType,
+      criterionIds: sourceTask.criterionIds,
+      description: 'The required recovery gate passes: $gateTarget.',
+      required: true,
+      sourceRef: gateSourceRef,
+      details: failure.gateResult.details,
+    );
     return ProjectTask(
       id: 'project_recovery_${uuid.v7()}',
       title: 'Recover project health',
       objective: objective,
-      relevantSuccessCriteria: sourceTask.relevantSuccessCriteria,
+      criterionIds: sourceTask.criterionIds,
       doneCriteria: [
         'Diagnose why the required gate is failing.',
         'Make the smallest safe repair needed to restore the gate.',
@@ -2761,6 +2831,12 @@ class ProjectService {
       readPaths: sourceTask.readPaths,
       writePaths: sourceTask.writePaths,
       legacyWriteAccess: sourceTask.legacyWriteAccess,
+      expectedEvidence: _replacementExpectedEvidence(
+        source: sourceTask.expectedEvidence,
+        additions: [recoveryGateExpectation],
+        criterionIds: sourceTask.criterionIds,
+        idPrefix: 'recovery_expectation',
+      ),
       expectedArtifacts: const [],
       status: ProjectTaskStatus.queued,
       taskDocumentId: null,
@@ -2953,7 +3029,10 @@ class ProjectService {
 
   (ProjectBlockerType, String)? _taskBlocker(TaskDocument task) {
     if (task.pendingApproval != null) {
-      return (ProjectBlockerType.taskApproval, task.pendingApproval!.reason);
+      return (
+        ProjectBlockerType.taskEditApproval,
+        task.pendingApproval!.reason,
+      );
     }
     if (task.pendingQuestion != null) {
       return (ProjectBlockerType.taskBlocked, task.pendingQuestion!.question);
@@ -2972,20 +3051,23 @@ class ProjectService {
     TaskDocument task,
     DateTime now,
   ) {
-    final current = project.currentTask;
+    final current = _activeProjectTask(project);
     if (current == null) return project;
     return project.copyWith(
-      currentTask: current.copyWith(
-        taskDocumentId: task.id,
-        status: switch (task.status) {
-          TaskStatus.completed => ProjectTaskStatus.completed,
-          TaskStatus.failed => ProjectTaskStatus.failed,
-          TaskStatus.cancelled => ProjectTaskStatus.cancelled,
-          _ => ProjectTaskStatus.running,
-        },
-        updatedAt: now,
+      tasks: _upsertTask(
+        project,
+        current.copyWith(
+          taskDocumentId: task.id,
+          status: switch (task.status) {
+            TaskStatus.completed => ProjectTaskStatus.completed,
+            TaskStatus.failed => ProjectTaskStatus.failed,
+            TaskStatus.cancelled => ProjectTaskStatus.cancelled,
+            _ => ProjectTaskStatus.running,
+          },
+          updatedAt: now,
+        ),
       ),
-      activeTaskId: task.id,
+      activeTaskId: current.id,
       updatedAt: now,
     );
   }
@@ -3188,14 +3270,7 @@ class ProjectService {
     String? excludingTaskId,
   }) {
     return {
-      for (final task in project.backlog)
-        if (task.id != excludingTaskId) task.fingerprint,
-      if (project.currentTask != null &&
-          project.currentTask!.id != excludingTaskId)
-        project.currentTask!.fingerprint,
-      for (final task in project.completedTasks)
-        if (task.id != excludingTaskId) task.fingerprint,
-      for (final task in project.failedTasks)
+      for (final task in project.tasks)
         if (task.id != excludingTaskId && task.recoveryIncidentId == null)
           task.fingerprint,
       for (final decision in project.decisions)
@@ -3260,21 +3335,7 @@ class ProjectService {
       issues.add(issue);
     }
 
-    final criteria = initialisation.criteria.isNotEmpty
-        ? initialisation.criteria
-        : [
-            for (
-              var index = 0;
-              index < initialisation.successCriteria.length;
-              index++
-            )
-              ProjectCriterion(
-                id: 'criterion_${(index + 1).toString().padLeft(3, '0')}',
-                statement: initialisation.successCriteria[index],
-                createdAt: DateTime.now(),
-                updatedAt: DateTime.now(),
-              ),
-          ];
+    final criteria = initialisation.criteria;
     final criterionIds = <String>{};
     for (final criterion in criteria) {
       if (criterion.id.trim().isEmpty || criterion.statement.trim().isEmpty) {
@@ -3289,7 +3350,6 @@ class ProjectService {
         );
       }
       if (criterion.status != ProjectCriterionStatus.unsatisfied ||
-          criterion.evidenceIds.isNotEmpty ||
           criterion.verifiedAt != null) {
         add(
           'unsupported_initial_criterion_progress',
@@ -3305,7 +3365,7 @@ class ProjectService {
     }
 
     final taskById = <String, ProjectTask>{};
-    for (final task in initialisation.backlog) {
+    for (final task in initialisation.tasks) {
       if (task.id.trim().isEmpty || taskById.containsKey(task.id)) {
         add(
           'invalid_task_id',
@@ -3317,7 +3377,7 @@ class ProjectService {
     }
     if (taskById.isEmpty && initialisation.openQuestions.isEmpty) {
       add(
-        'missing_executable_backlog',
+        'missing_executable_tasks',
         'The initial plan must contain bounded executable work or a blocking question.',
       );
     }
@@ -3335,14 +3395,6 @@ class ProjectService {
           add(
             'unknown_milestone_criterion',
             'Milestone ${milestone.id} references unknown criterion $criterionId.',
-          );
-        }
-      }
-      for (final taskId in milestone.taskIds) {
-        if (!taskById.containsKey(taskId)) {
-          add(
-            'unknown_milestone_task',
-            'Milestone ${milestone.id} references unknown task $taskId.',
           );
         }
       }
@@ -3486,6 +3538,47 @@ class ProjectService {
           );
         }
       }
+      if (task.effort == ProjectTaskEffort.small &&
+          task.expectedArtifacts.isNotEmpty &&
+          task.writePaths.isEmpty &&
+          !task.legacyWriteAccess) {
+        add(
+          'missing_write_paths',
+          'Small artifact-producing tasks must declare write paths.',
+        );
+      }
+    }
+
+    for (final criterion in criteria) {
+      if (criterion.status == ProjectCriterionStatus.satisfied ||
+          criterion.verificationMode != ProjectVerificationMode.deterministic) {
+        continue;
+      }
+      final hasConclusiveExpectation = initialisation.tasks.any(
+        (task) => task.expectedEvidence.any(
+          (expectation) =>
+              expectation.required &&
+              expectation.criterionIds.contains(criterion.id) &&
+              (expectation.type == ProjectEvidenceType.gate ||
+                  expectation.type == ProjectEvidenceType.command),
+        ),
+      );
+      if (!hasConclusiveExpectation) {
+        add(
+          'impossible_deterministic_verification',
+          'Deterministic criterion ${criterion.id} needs a required gate or command evidence expectation.',
+        );
+      }
+    }
+
+    final dependencyGraph = <String, List<String>>{
+      for (final task in taskById.values) task.id: task.dependsOnTaskIds,
+    };
+    if (_hasDependencyCycle(dependencyGraph)) {
+      add(
+        'cyclic_dependencies',
+        'The initial task dependency graph contains a cycle.',
+      );
     }
 
     final memoryIds = <String>{};
@@ -3529,18 +3622,35 @@ class ProjectService {
         candidatePath.startsWith('$declaredPath/');
   }
 
+  bool _hasDependencyCycle(Map<String, List<String>> graph) {
+    final states = <String, int>{};
+
+    bool visit(String id) {
+      final state = states[id] ?? 0;
+      if (state == 1) return true;
+      if (state == 2) return false;
+      states[id] = 1;
+      for (final dependency in graph[id] ?? const <String>[]) {
+        if (graph.containsKey(dependency) && visit(dependency)) return true;
+      }
+      states[id] = 2;
+      return false;
+    }
+
+    for (final id in graph.keys) {
+      if (visit(id)) return true;
+    }
+    return false;
+  }
+
   List<ProjectMilestone> _initialMilestones({
     required ProjectInitialisation init,
     required List<ProjectCriterion>? criteria,
-    required List<ProjectTask> backlog,
     required DateTime now,
   }) {
-    final criterionIds =
-        criteria?.map((item) => item.id).toList() ??
-        [
-          for (var index = 0; index < init.successCriteria.length; index++)
-            'criterion_${(index + 1).toString().padLeft(3, '0')}',
-        ];
+    final criterionIds = criteria?.map((item) => item.id).toList() ?? const [];
+    final criterionStatements =
+        criteria?.map((item) => item.statement).toList() ?? const [];
     final proposed = init.milestones.isEmpty
         ? [
             ProjectMilestone(
@@ -3549,8 +3659,7 @@ class ProjectService {
               objective: init.refinedGoal,
               criterionIds: criterionIds,
               status: ProjectMilestoneStatus.active,
-              exitConditions: init.successCriteria,
-              taskIds: backlog.map((item) => item.id).toList(),
+              exitConditions: criterionStatements,
               order: 1,
               createdAt: now,
               updatedAt: now,
@@ -3566,18 +3675,12 @@ class ProjectService {
           criterionIds: proposed[index].criterionIds,
           status: index == 0
               ? ProjectMilestoneStatus.active
-              : proposed[index].status,
+              : ProjectMilestoneStatus.planned,
           exitConditions: proposed[index].exitConditions,
-          taskIds: {
-            ...proposed[index].taskIds,
-            ...backlog
-                .where((task) => task.milestoneId == proposed[index].id)
-                .map((task) => task.id),
-          }.toList(),
           order: proposed[index].order,
           createdAt: proposed[index].createdAt,
           updatedAt: now,
-          completedAt: proposed[index].completedAt,
+          completedAt: null,
         ),
     ];
   }
@@ -3641,9 +3744,6 @@ class ProjectService {
       index++;
     }
 
-    for (final content in init.knownFacts) {
-      add(content, ProjectMemoryKind.fact);
-    }
     for (final content in policyAssumptions) {
       add(content, ProjectMemoryKind.assumption);
     }
@@ -3662,9 +3762,6 @@ class ProjectService {
       for (final criterion in project.criteria)
         if (criterion.status == ProjectCriterionStatus.satisfied) criterion.id,
     };
-    final completedTaskIds = project.completedTasks
-        .map((item) => item.id)
-        .toSet();
     milestones = [
       for (final milestone in milestones)
         if (milestone.status != ProjectMilestoneStatus.completed &&
@@ -3672,8 +3769,18 @@ class ProjectService {
                     milestone.criterionIds.every(
                       satisfiedCriterionIds.contains,
                     )) ||
-                (milestone.taskIds.isNotEmpty &&
-                    milestone.taskIds.every(completedTaskIds.contains))))
+                (() {
+                  final taskIds = project.tasks
+                      .where((task) => task.milestoneId == milestone.id)
+                      .map((task) => task.id)
+                      .toSet();
+                  return taskIds.isNotEmpty &&
+                      taskIds.every(
+                        (taskId) =>
+                            project.taskById(taskId)?.status ==
+                            ProjectTaskStatus.completed,
+                      );
+                })()))
           _completedMilestone(milestone, now, () => milestoneCompleted = true)
         else
           milestone,
@@ -3693,7 +3800,6 @@ class ProjectService {
                 criterionIds: milestone.criterionIds,
                 status: ProjectMilestoneStatus.active,
                 exitConditions: milestone.exitConditions,
-                taskIds: milestone.taskIds,
                 order: milestone.order,
                 createdAt: milestone.createdAt,
                 updatedAt: now,
@@ -3710,7 +3816,7 @@ class ProjectService {
         .firstOrNull;
     final activeMilestoneHasPlannedWork =
         activeMilestone != null &&
-        project.backlog.any(
+        project.tasks.any(
           (task) =>
               task.milestoneId == activeMilestone.id &&
               task.status != ProjectTaskStatus.completed &&
@@ -3772,7 +3878,6 @@ class ProjectService {
       criterionIds: milestone.criterionIds,
       status: ProjectMilestoneStatus.completed,
       exitConditions: milestone.exitConditions,
-      taskIds: milestone.taskIds,
       order: milestone.order,
       createdAt: milestone.createdAt,
       updatedAt: now,
@@ -3810,7 +3915,7 @@ class ProjectService {
     required ProjectTask? candidate,
     required List<ProjectPlanRevisionTrigger> triggers,
   }) {
-    if (project.currentTask != null || triggers.isEmpty) return false;
+    if (_activeProjectTask(project) != null || triggers.isEmpty) return false;
     if (triggers.length == 1 &&
         triggers.single == ProjectPlanRevisionTrigger.noReadyTask) {
       return candidate == null;
@@ -3822,11 +3927,17 @@ class ProjectService {
     return ProjectInitialisation(
       title: _titleFromPrompt(originalGoal),
       refinedGoal: originalGoal,
-      successCriteria: const ['Complete the stated project goal.'],
+      criteria: [
+        ProjectCriterion(
+          id: 'criterion_001',
+          statement: 'Complete the stated project goal.',
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        ),
+      ],
       constraints: const ['Stay within the attached workspace.'],
-      knownFacts: const [],
       openQuestions: const [],
-      backlog: const [],
+      tasks: const [],
     );
   }
 

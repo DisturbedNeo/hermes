@@ -78,6 +78,27 @@ class TaskPlanningContext with TaskPlanningContextMappable {
   });
 }
 
+/// Transient project context used only while executing one task document.
+class TaskExecutionRequest {
+  final List<String> criterionIds;
+  final List<TaskProjectCriterion> criteria;
+  final List<TaskProjectEvidenceExpectation> expectedEvidence;
+
+  const TaskExecutionRequest({
+    this.criterionIds = const [],
+    this.criteria = const [],
+    this.expectedEvidence = const [],
+  });
+
+  factory TaskExecutionRequest.fromPlanningContext(
+    TaskPlanningContext context,
+  ) => TaskExecutionRequest(
+    criterionIds: context.criterionIds,
+    criteria: context.criteria,
+    expectedEvidence: context.expectedEvidence,
+  );
+}
+
 class _StreamingTaskToolCall {
   String? id;
   String? name;
@@ -174,6 +195,11 @@ const ToolDefinition _finishTaskStepToolDefinition = ToolDefinition(
           'type': 'object',
           'properties': {
             'criterionId': {'type': 'string'},
+            'expectationId': {
+              'type': 'string',
+              'description':
+                  'Optional ID of the expected Project evidence item this claim satisfies.',
+            },
             'claim': {'type': 'string'},
             'evidenceType': {
               'type': 'string',
@@ -611,13 +637,6 @@ $userPrompt
             );
     }
 
-    if (planningContext != null) {
-      task = task.copyWith(
-        projectCriterionIds: planningContext.criterionIds,
-        projectCriteria: planningContext.criteria,
-        projectEvidenceExpectations: planningContext.expectedEvidence,
-      );
-    }
     await _repository.saveSnapshot(workspace.rootPath, task);
     return task;
   }
@@ -659,9 +678,6 @@ $userPrompt
         id: snapshot.id,
         chatSessionId: snapshot.chatSessionId,
         projectId: snapshot.projectId,
-        projectCriterionIds: snapshot.projectCriterionIds,
-        projectCriteria: snapshot.projectCriteria,
-        projectEvidenceExpectations: snapshot.projectEvidenceExpectations,
       ),
       snapshot,
       now,
@@ -682,6 +698,7 @@ $userPrompt
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
+    TaskExecutionRequest executionRequest = const TaskExecutionRequest(),
   }) async {
     cancellationToken?.throwIfCancelled();
     var working = await recoverTask(workspace: workspace, snapshot: snapshot);
@@ -757,6 +774,7 @@ $userPrompt
         onCompactionStatus: onCompactionStatus,
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
+        executionRequest: executionRequest,
       );
 
       final finishedAt = DateTime.now();
@@ -789,6 +807,7 @@ $userPrompt
               evidenceType: claim.evidenceType,
               sourceRef: claim.sourceRef,
               suggestedStrength: claim.suggestedStrength,
+              expectationId: claim.expectationId,
               runId: run.runId,
             ),
         ],
@@ -1349,6 +1368,7 @@ ${_encoder.convert(ModelJson.encode(task))}
     TaskCompactionStatusSink? onCompactionStatus,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
+    required TaskExecutionRequest executionRequest,
   }) async {
     final allowedCommands = _allowedCommandsForStep(task, step);
     final allowedToolIds = _allowedToolIdsForStep(step, allowedCommands);
@@ -1366,7 +1386,7 @@ ${_encoder.convert(ModelJson.encode(task))}
       ),
       ChatMessage(
         role: 'user',
-        content: _buildStepPrompt(task, step, workspace),
+        content: _buildStepPrompt(task, step, workspace, executionRequest),
       ),
     ];
     final context = WorkspaceToolContext(
@@ -1419,6 +1439,7 @@ ${_encoder.convert(ModelJson.encode(task))}
           task: task,
           step: step,
           existingToolCalls: toolCalls,
+          executionRequest: executionRequest,
         );
         final resultJson = finish.resultJson;
         final result = _structuredToolResult(finishCall.name, resultJson);
@@ -1587,7 +1608,13 @@ ${_encoder.convert(ModelJson.encode(task))}
           if (finalContent.isNotEmpty) finalContent,
         ].join('\n\n').trim();
         if (_isStepResultJson(finalContent)) {
-          forcedOutput = _parseStepOutput(finalContent, task, step, toolCalls);
+          forcedOutput = _parseStepOutput(
+            finalContent,
+            task,
+            step,
+            toolCalls,
+            executionRequest,
+          );
         } else {
           forcedOutput = _StepExecutionOutput(
             status: _StepExecutionStatus.failed,
@@ -1617,6 +1644,7 @@ ${_encoder.convert(ModelJson.encode(task))}
           task,
           step,
           toolCalls,
+          executionRequest,
         );
   }
 
@@ -1787,6 +1815,7 @@ ${_encoder.convert(ModelJson.encode(task))}
     required TaskDocument task,
     required TaskStep step,
     required List<TaskToolCallRecord> existingToolCalls,
+    required TaskExecutionRequest executionRequest,
   }) {
     if (args is! Map) {
       const error = 'finish_task_step arguments must be a JSON object.';
@@ -1817,7 +1846,13 @@ ${_encoder.convert(ModelJson.encode(task))}
     return _FinishToolCallResult(
       resultJson: jsonEncode({'finished': true, 'status': status}),
       finalContent: finalContent,
-      output: _parseStepOutput(finalContent, task, step, existingToolCalls),
+      output: _parseStepOutput(
+        finalContent,
+        task,
+        step,
+        existingToolCalls,
+        executionRequest,
+      ),
     );
   }
 
@@ -2180,7 +2215,7 @@ Do not call any more tools. Based only on the work already completed and the too
   "summary": "...",
   "memoryUpdate": "...",
   "artifacts": [{"path": "...", "description": "..."}],
-  "evidenceClaims": [{"criterionId":"project criterion ID","claim":"what this step demonstrates","evidenceType":"gate|artifact|command|task_claim|user_approval","sourceRef":"gate ID, artifact path, command, or run reference","suggestedStrength":"advisory|supporting|conclusive"}],
+  "evidenceClaims": [{"criterionId":"project criterion ID","expectationId":"expected evidence ID when applicable","claim":"what this step demonstrates","evidenceType":"gate|artifact|command|task_claim|user_approval","sourceRef":"gate ID, artifact path, command, or run reference","suggestedStrength":"advisory|supporting|conclusive"}],
   "userQuestion": {"question":"only when blocked","reason":"why this blocks","defaultIfUnanswered":"reasonable default if any","riskOfAssuming":"risk if the default is wrong","kind":"blocking|preference|advisory"},
   "replanRequest": "only when needs_replan",
   "error": "only when failed"
@@ -2323,6 +2358,7 @@ ${_encoder.convert(ModelJson.encode(snapshot))}
     TaskDocument task,
     TaskStep step,
     List<TaskToolCallRecord> toolCalls,
+    TaskExecutionRequest executionRequest,
   ) {
     final json = TaskJson.tryParseObject(raw);
     if (json == null) {
@@ -2363,7 +2399,8 @@ ${_encoder.convert(ModelJson.encode(snapshot))}
       artifacts: artifacts,
       evidenceClaims: _evidenceClaimsFromJson(
         json['evidenceClaims'] ?? json['evidence_claims'],
-        task.projectCriterionIds,
+        executionRequest.criterionIds,
+        expectedEvidence: executionRequest.expectedEvidence,
       ),
       userQuestion: agentQuestion?.displayText,
       agentQuestion: agentQuestion,
@@ -2512,6 +2549,7 @@ ${_encoder.convert(ModelJson.encode(snapshot))}
     TaskDocument task,
     TaskStep step,
     WorkspaceAttachment workspace,
+    TaskExecutionRequest executionRequest,
   ) {
     final previousRuns = task.runs
         .where((run) => run.status != TaskRunStatus.running)
@@ -2542,10 +2580,10 @@ Success criteria:
 ${task.successCriteria.map((item) => '- $item').join('\n')}
 
 Linked Project criteria:
-${task.projectCriteria.isEmpty ? _encoder.convert(task.projectCriterionIds) : _encoder.convert(task.projectCriteria.map(ModelJson.encode).toList())}
+${executionRequest.criteria.isEmpty ? _encoder.convert(executionRequest.criterionIds) : _encoder.convert(executionRequest.criteria.map(ModelJson.encode).toList())}
 
 Expected Project evidence:
-${task.projectEvidenceExpectations.isEmpty ? 'None specified.' : _encoder.convert(task.projectEvidenceExpectations.map(ModelJson.encode).toList())}
+${executionRequest.expectedEvidence.isEmpty ? 'None specified.' : _encoder.convert(executionRequest.expectedEvidence.map(ModelJson.encode).toList())}
 
 Current memory:
 ${task.memorySummary.trim().isEmpty ? 'None yet.' : task.memorySummary}
@@ -2566,7 +2604,7 @@ Previous run summaries:
 ${previousRuns.trim().isEmpty ? 'None yet.' : previousRuns}
 
 This ${isFinalPlannedStep ? 'is' : 'is not'} the final planned task step.
-${isFinalPlannedStep && task.projectCriterionIds.isNotEmpty ? 'For every linked criterion this task actually supports, include a final evidence claim tied to a real gate, command, artifact, user approval, or this task run. Do not claim unsupported outcomes.' : 'Evidence claims are optional at this stage; do not claim work that has not been verified.'}
+${isFinalPlannedStep && executionRequest.criterionIds.isNotEmpty ? 'For every linked criterion this task actually supports, include a final evidence claim tied to a real gate, command, artifact, user approval, or this task run. When a claim satisfies an Expected Project evidence item, include its expectationId. Do not claim unsupported outcomes.' : 'Evidence claims are optional at this stage; do not claim work that has not been verified.'}
 
 When finished, call finish_task_step with this result object. If finish_task_step is unavailable, return only JSON:
 {
@@ -2574,7 +2612,7 @@ When finished, call finish_task_step with this result object. If finish_task_ste
   "summary": "...",
   "memoryUpdate": "...",
   "artifacts": [{"path": "...", "description": "..."}],
-  "evidenceClaims": [{"criterionId":"project criterion ID","claim":"what this step demonstrates","evidenceType":"gate|artifact|command|task_claim|user_approval","sourceRef":"gate ID, artifact path, command, or run reference","suggestedStrength":"advisory|supporting|conclusive"}],
+  "evidenceClaims": [{"criterionId":"project criterion ID","expectationId":"expected evidence ID when applicable","claim":"what this step demonstrates","evidenceType":"gate|artifact|command|task_claim|user_approval","sourceRef":"gate ID, artifact path, command, or run reference","suggestedStrength":"advisory|supporting|conclusive"}],
   "userQuestion": {"question":"only when blocked","reason":"why this blocks","defaultIfUnanswered":"reasonable default if any","riskOfAssuming":"risk if the default is wrong","kind":"blocking|preference|advisory"},
   "replanRequest": "only when needs_replan",
   "error": "only when failed"
@@ -3216,15 +3254,28 @@ $whitelist
 
   List<TaskEvidenceClaim> _evidenceClaimsFromJson(
     Object? value,
-    List<String> allowedCriterionIds,
-  ) {
+    List<String> allowedCriterionIds, {
+    List<TaskProjectEvidenceExpectation> expectedEvidence = const [],
+  }) {
     if (value is! List || allowedCriterionIds.isEmpty) return const [];
     final allowed = allowedCriterionIds.toSet();
+    final allowedExpectationIds = {
+      for (final expectation in expectedEvidence)
+        if (allowed.containsAll(expectation.criterionIds)) expectation.id,
+    };
     final seen = <String>{};
     final claims = <TaskEvidenceClaim>[];
     for (final raw in value.whereType<Map>()) {
       final map = Map<String, dynamic>.from(raw);
       final criterionId = jsonString(map['criterionId'] ?? map['criterion_id']);
+      final rawExpectationId = jsonNullableString(
+        map['expectationId'] ?? map['expectation_id'],
+      );
+      final expectationId =
+          rawExpectationId != null &&
+              allowedExpectationIds.contains(rawExpectationId)
+          ? rawExpectationId
+          : null;
       final claim = jsonString(map['claim']);
       final sourceRef = jsonString(map['sourceRef'] ?? map['source_ref']);
       if (!allowed.contains(criterionId) ||
@@ -3257,6 +3308,7 @@ $whitelist
           evidenceType: evidenceType,
           sourceRef: sourceRef,
           suggestedStrength: strength,
+          expectationId: expectationId,
         ),
       );
     }
@@ -3533,9 +3585,6 @@ $whitelist
       runs: const [],
       chatSessionId: chatSessionId,
       projectId: projectId,
-      projectCriterionIds: planningContext.criterionIds,
-      projectCriteria: planningContext.criteria,
-      projectEvidenceExpectations: planningContext.expectedEvidence,
       createdAt: now,
       updatedAt: now,
     );

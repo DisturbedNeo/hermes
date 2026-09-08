@@ -10,7 +10,6 @@ import 'package:path/path.dart' as path;
 class ProjectRepository {
   static const String projectsRoot = '.agent/projects';
   static const String documentFileName = 'project.json';
-  static const String v2BackupFileName = 'project.v2.json';
 
   final AtomicJsonSnapshotStore _snapshots = const AtomicJsonSnapshotStore();
 
@@ -33,8 +32,12 @@ class ProjectRepository {
       if (!await file.exists()) continue;
 
       try {
-        final raw = await _snapshots.readMap(file, isValid: _isProjectMap);
+        final raw = await _snapshots.readMap(
+          file,
+          isValid: _isProjectSnapshotCandidate,
+        );
         if (raw == null) continue;
+        _checkSchemaVersion(file, raw);
         final project = ModelJson.decode<ProjectDocument>(raw);
         if (chatSessionId != null && project.chatSessionId != chatSessionId) {
           continue;
@@ -49,7 +52,8 @@ class ProjectRepository {
             chatSessionId: project.chatSessionId,
           ),
         );
-      } catch (_) {
+      } catch (error) {
+        if (error is UnsupportedSnapshotSchemaException) rethrow;
         continue;
       }
     }
@@ -81,8 +85,8 @@ class ProjectRepository {
 
   /// Loads a single project by [projectId] from the given workspace root.
   /// Returns `null` when the project does not exist or its
-  /// [chatSessionId] does not match (when provided). Performs an
-  /// in-place schema migration if the stored version is stale.
+  /// [chatSessionId] does not match (when provided). Older snapshots are
+  /// rejected because this project model intentionally has no migration path.
   Future<ProjectDocument?> loadProject(
     String workspaceRoot,
     String projectId, {
@@ -90,25 +94,15 @@ class ProjectRepository {
   }) async {
     final dir = _validatedProjectDirectory(workspaceRoot, projectId);
     final file = File(path.join(dir.path, documentFileName));
-    final raw = await _snapshots.readMap(file, isValid: _isProjectMap);
+    final raw = await _snapshots.readMap(
+      file,
+      isValid: _isProjectSnapshotCandidate,
+    );
     if (raw == null) return null;
-    final rawVersion = _rawSchemaVersion(raw);
-    if (rawVersion > ProjectDocument.currentSchemaVersion) {
-      throw UnsupportedSnapshotSchemaException(
-        path: file.path,
-        foundVersion: rawVersion,
-        supportedVersion: ProjectDocument.currentSchemaVersion,
-      );
-    }
+    _checkSchemaVersion(file, raw);
     final project = ModelJson.decode<ProjectDocument>(raw);
     if (chatSessionId != null && project.chatSessionId != chatSessionId) {
       return null;
-    }
-    if (rawVersion != ProjectDocument.currentSchemaVersion) {
-      if (rawVersion == 2) {
-        await _writeV2MigrationBackup(dir, raw);
-      }
-      await saveSnapshot(workspaceRoot, project);
     }
     return project;
   }
@@ -206,15 +200,6 @@ class ProjectRepository {
 
   // ── Private helpers ──────────────────────────────────────────────────
 
-  Future<void> _writeV2MigrationBackup(
-    Directory projectDirectory,
-    Map<String, dynamic> raw,
-  ) async {
-    final backup = File(path.join(projectDirectory.path, v2BackupFileName));
-    if (await backup.exists()) return;
-    await _snapshots.writeMap(backup, raw, isValid: _isProjectMap);
-  }
-
   Directory _projectDirectory(String workspaceRoot, String projectId) {
     return Directory(path.join(workspaceRoot, projectsRoot, projectId));
   }
@@ -254,7 +239,7 @@ class ProjectRepository {
   }
 
   int _rawSchemaVersion(Map<String, dynamic> map) {
-    final value = map['schemaVersion'] ?? map['schema_version'];
+    final value = map['schemaVersion'];
     if (value is int) return value;
     if (value is num) return value.toInt();
     if (value is String) return int.tryParse(value) ?? 0;
@@ -267,8 +252,8 @@ class ProjectRepository {
   }
 
   bool _isProjectMap(Map<String, dynamic> map) {
-    if (_rawSchemaVersion(map) > ProjectDocument.currentSchemaVersion) {
-      return (map['id'] ?? '').toString().trim().isNotEmpty;
+    if (_rawSchemaVersion(map) != ProjectDocument.currentSchemaVersion) {
+      return false;
     }
     try {
       final project = ModelJson.decode<ProjectDocument>(map);
@@ -276,5 +261,18 @@ class ProjectRepository {
     } catch (_) {
       return false;
     }
+  }
+
+  bool _isProjectSnapshotCandidate(Map<String, dynamic> map) =>
+      map.containsKey('schemaVersion');
+
+  void _checkSchemaVersion(File file, Map<String, dynamic> raw) {
+    final foundVersion = _rawSchemaVersion(raw);
+    if (foundVersion == ProjectDocument.currentSchemaVersion) return;
+    throw UnsupportedSnapshotSchemaException(
+      path: file.path,
+      foundVersion: foundVersion,
+      supportedVersion: ProjectDocument.currentSchemaVersion,
+    );
   }
 }

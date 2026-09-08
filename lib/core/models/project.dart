@@ -5,7 +5,7 @@ import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/serialization/json_hooks.dart';
 
 part 'project.mapper.dart';
-part 'project_json_migration.dart';
+part 'project_json_hooks.dart';
 
 @MappableEnum(defaultValue: ProjectStatus.active)
 enum ProjectStatus {
@@ -24,14 +24,9 @@ enum ProjectStatus {
   cancelled,
 }
 
-@MappableEnum(defaultValue: ProjectPhase.discovery)
-enum ProjectPhase { discovery, planning, execution, verification, finalization }
-
 @MappableEnum(defaultValue: ProjectTaskStatus.queued)
 enum ProjectTaskStatus {
   queued,
-  proposed,
-  approved,
   running,
   completed,
   failed,
@@ -64,7 +59,6 @@ enum ProjectEvidenceType {
   taskClaim,
   @MappableValue('user_approval')
   userApproval,
-  migrated,
 }
 
 @MappableEnum(defaultValue: ProjectEvidenceStatus.proposed)
@@ -110,7 +104,7 @@ enum ProjectMemoryKind {
 }
 
 @MappableEnum(defaultValue: ProjectMemorySourceType.system)
-enum ProjectMemorySourceType { user, planner, task, gate, migration, system }
+enum ProjectMemorySourceType { user, planner, task, gate, system }
 
 @MappableEnum(defaultValue: ProjectMemoryConfidence.inferred)
 enum ProjectMemoryConfidence { confirmed, inferred, uncertain }
@@ -118,7 +112,6 @@ enum ProjectMemoryConfidence { confirmed, inferred, uncertain }
 @MappableEnum(defaultValue: ProjectPlanRevisionTrigger.initialization)
 enum ProjectPlanRevisionTrigger {
   initialization,
-  migration,
   @MappableValue('task_completed')
   taskCompleted,
   @MappableValue('task_failed')
@@ -142,10 +135,10 @@ enum ProjectPlanRevisionTrigger {
   milestoneRoadmapChanged,
 }
 
-@MappableEnum(defaultValue: ProjectCompletionReviewReason.backlogExhausted)
+@MappableEnum(defaultValue: ProjectCompletionReviewReason.noRemainingTasks)
 enum ProjectCompletionReviewReason {
-  @MappableValue('backlog_exhausted')
-  backlogExhausted,
+  @MappableValue('no_remaining_tasks')
+  noRemainingTasks,
   @MappableValue('milestone_ended')
   milestoneEnded,
   @MappableValue('final_criterion_evidence')
@@ -183,8 +176,8 @@ enum ProjectPlanRevisionApprover { automatic, user }
 @MappableEnum(defaultValue: ProjectBlockerType.error)
 enum ProjectBlockerType {
   question,
-  @MappableValue('task_approval')
-  taskApproval,
+  @MappableValue('task_edit_approval')
+  taskEditApproval,
   @MappableValue('task_blocked')
   taskBlocked,
   @MappableValue('task_failed')
@@ -219,8 +212,6 @@ enum ProjectDecisionType {
   splitTask,
   @MappableValue('evaluate_task')
   evaluateTask,
-  @MappableValue('refresh_backlog')
-  refreshBacklog,
   @MappableValue('retry_recovery')
   retryRecovery,
   @MappableValue('apply_plan_revision')
@@ -240,17 +231,13 @@ extension ProjectStatusWire on ProjectStatus {
   };
 }
 
-extension ProjectPhaseWire on ProjectPhase {
-  String get wire => name;
-}
-
 extension ProjectTaskStatusWire on ProjectTaskStatus {
   String get wire => name;
 }
 
 extension ProjectBlockerTypeWire on ProjectBlockerType {
   String get wire => switch (this) {
-    ProjectBlockerType.taskApproval => 'task_approval',
+    ProjectBlockerType.taskEditApproval => 'task_edit_approval',
     ProjectBlockerType.taskBlocked => 'task_blocked',
     ProjectBlockerType.taskFailed => 'task_failed',
     ProjectBlockerType.recoveryFailed => 'recovery_failed',
@@ -341,7 +328,6 @@ extension ProjectDecisionTypeWire on ProjectDecisionType {
     ProjectDecisionType.rejectTask => 'reject_task',
     ProjectDecisionType.splitTask => 'split_task',
     ProjectDecisionType.evaluateTask => 'evaluate_task',
-    ProjectDecisionType.refreshBacklog => 'refresh_backlog',
     ProjectDecisionType.retryRecovery => 'retry_recovery',
     ProjectDecisionType.applyPlanRevision => 'apply_plan_revision',
     ProjectDecisionType.approvePlanRevision => 'approve_plan_revision',
@@ -372,7 +358,6 @@ class ProjectCriterion with ProjectCriterionMappable {
   final bool required;
   final ProjectCriterionStatus status;
   final ProjectVerificationMode verificationMode;
-  final List<String> evidenceIds;
   final String notes;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -384,7 +369,6 @@ class ProjectCriterion with ProjectCriterionMappable {
     this.required = true,
     this.status = ProjectCriterionStatus.unsatisfied,
     this.verificationMode = ProjectVerificationMode.mixed,
-    this.evidenceIds = const [],
     this.notes = '',
     required this.createdAt,
     required this.updatedAt,
@@ -397,7 +381,6 @@ class ProjectCriterion with ProjectCriterionMappable {
     bool? required,
     ProjectCriterionStatus? status,
     ProjectVerificationMode? verificationMode,
-    List<String>? evidenceIds,
     String? notes,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -409,7 +392,6 @@ class ProjectCriterion with ProjectCriterionMappable {
       required: required ?? this.required,
       status: status ?? this.status,
       verificationMode: verificationMode ?? this.verificationMode,
-      evidenceIds: evidenceIds ?? this.evidenceIds,
       notes: notes ?? this.notes,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -423,6 +405,7 @@ class ProjectEvidence with ProjectEvidenceMappable {
   final String id;
   final ProjectEvidenceType type;
   final List<String> criterionIds;
+  final List<String> expectationIds;
   final String? projectTaskId;
   final String? taskDocumentId;
   final String? taskRunId;
@@ -439,6 +422,7 @@ class ProjectEvidence with ProjectEvidenceMappable {
     required this.id,
     required this.type,
     this.criterionIds = const [],
+    this.expectationIds = const [],
     this.projectTaskId,
     this.taskDocumentId,
     this.taskRunId,
@@ -456,6 +440,7 @@ class ProjectEvidence with ProjectEvidenceMappable {
     String? id,
     ProjectEvidenceType? type,
     List<String>? criterionIds,
+    List<String>? expectationIds,
     Object? projectTaskId = kSentinel,
     Object? taskDocumentId = kSentinel,
     Object? taskRunId = kSentinel,
@@ -472,6 +457,7 @@ class ProjectEvidence with ProjectEvidenceMappable {
       id: id ?? this.id,
       type: type ?? this.type,
       criterionIds: criterionIds ?? this.criterionIds,
+      expectationIds: expectationIds ?? this.expectationIds,
       projectTaskId: resolve(projectTaskId, this.projectTaskId),
       taskDocumentId: resolve(taskDocumentId, this.taskDocumentId),
       taskRunId: resolve(taskRunId, this.taskRunId),
@@ -495,7 +481,6 @@ class ProjectMilestone with ProjectMilestoneMappable {
   final List<String> criterionIds;
   final ProjectMilestoneStatus status;
   final List<String> exitConditions;
-  final List<String> taskIds;
   final int order;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -508,7 +493,6 @@ class ProjectMilestone with ProjectMilestoneMappable {
     this.criterionIds = const [],
     this.status = ProjectMilestoneStatus.planned,
     this.exitConditions = const [],
-    this.taskIds = const [],
     required this.order,
     required this.createdAt,
     required this.updatedAt,
@@ -610,23 +594,21 @@ class ProjectMemorySupersession with ProjectMemorySupersessionMappable {
   });
 }
 
-/// A proposed, non-authoritative edit to the rolling project plan.
+/// The complete desired planning state returned by the planner.
 ///
-/// Completed task history, evidence, gate results, and recovery incidents are
-/// deliberately absent: a planner cannot propose mutations to those records.
+/// Runtime task state, evidence, gate results, recovery incidents, and
+/// protected memory are reconciled by code and are never accepted from this
+/// model response as authoritative state.
 @MappableClass(ignoreNull: true)
-class ProjectPlanProposal with ProjectPlanProposalMappable {
+class ProjectDesiredPlan with ProjectDesiredPlanMappable {
   final int revision;
   final List<ProjectPlanRevisionTrigger> triggers;
   final String summary;
   final String rationale;
   final List<String> assumptions;
-  final List<ProjectCriterion> criterionUpserts;
-  final List<String> removedCriterionIds;
-  final List<ProjectMilestone> milestoneUpserts;
-  final List<String> removedMilestoneIds;
-  final List<ProjectTask> taskAdditions;
-  final List<ProjectTask> taskUpdates;
+  final List<ProjectCriterion> criteria;
+  final List<ProjectMilestone> milestones;
+  final List<ProjectTask> tasks;
   final List<String> deferredTaskIds;
   final List<String> obsoleteTaskIds;
   final List<ProjectMemoryEntry> memoryAdditions;
@@ -636,18 +618,15 @@ class ProjectPlanProposal with ProjectPlanProposalMappable {
   final String approvalReason;
   final DateTime createdAt;
 
-  const ProjectPlanProposal({
+  const ProjectDesiredPlan({
     required this.revision,
     this.triggers = const [],
     required this.summary,
     required this.rationale,
     this.assumptions = const [],
-    this.criterionUpserts = const [],
-    this.removedCriterionIds = const [],
-    this.milestoneUpserts = const [],
-    this.removedMilestoneIds = const [],
-    this.taskAdditions = const [],
-    this.taskUpdates = const [],
+    this.criteria = const [],
+    this.milestones = const [],
+    this.tasks = const [],
     this.deferredTaskIds = const [],
     this.obsoleteTaskIds = const [],
     this.memoryAdditions = const [],
@@ -700,7 +679,7 @@ class PendingProjectPlanApproval with PendingProjectPlanApprovalMappable {
   final List<String> highRiskChanges;
   final List<String> highRiskReasonCodes;
   final DateTime createdAt;
-  final ProjectPlanProposal? proposal;
+  final ProjectDesiredPlan? desiredPlan;
 
   const PendingProjectPlanApproval({
     required this.revision,
@@ -709,7 +688,7 @@ class PendingProjectPlanApproval with PendingProjectPlanApprovalMappable {
     this.highRiskChanges = const [],
     this.highRiskReasonCodes = const [],
     required this.createdAt,
-    this.proposal,
+    this.desiredPlan,
   });
 }
 
@@ -761,7 +740,7 @@ class ProjectCompletionReviewCheckpoint
 
 @MappableClass(ignoreNull: true, hook: ProjectStateJsonHook())
 class ProjectState with ProjectStateMappable {
-  static const int currentSchemaVersion = 4;
+  static const int currentSchemaVersion = 5;
   static const int defaultMaxIterations = 25;
   static const int defaultMaxFailedTasks = 3;
 
@@ -780,12 +759,7 @@ class ProjectState with ProjectStateMappable {
   @MappableField(hook: JsonStringListHook())
   final List<String> constraints;
   @MappableField(hook: JsonObjectListHook())
-  final List<ProjectTask> backlog;
-  final ProjectTask? currentTask;
-  @MappableField(hook: JsonObjectListHook())
-  final List<ProjectTask> completedTasks;
-  @MappableField(hook: JsonObjectListHook())
-  final List<ProjectTask> failedTasks;
+  final List<ProjectTask> tasks;
   @MappableField(hook: JsonObjectListHook())
   final List<ProjectArtifact> artifacts;
   @MappableField(hook: JsonObjectListHook())
@@ -796,8 +770,6 @@ class ProjectState with ProjectStateMappable {
   final List<ProjectMilestone> milestones;
   @MappableField(hook: JsonObjectListHook())
   final List<ProjectMemoryEntry> memory;
-  @MappableField(hook: JsonIntHook(fallback: 1, min: 1))
-  final int currentRevision;
   @MappableField(hook: JsonObjectListHook())
   final List<ProjectPlanRevision> planHistory;
   final PendingProjectPlanApproval? pendingPlanApproval;
@@ -814,8 +786,6 @@ class ProjectState with ProjectStateMappable {
     }),
   )
   final ProjectStatus status;
-  @MappableField(hook: EnumAliasHook({}))
-  final ProjectPhase phase;
   @MappableField(hook: JsonIntHook())
   final int iterationCount;
   @MappableField(
@@ -851,34 +821,22 @@ class ProjectState with ProjectStateMappable {
     this.schemaVersion = currentSchemaVersion,
     required this.id,
     required this.title,
-    String? originalGoal,
-    String? refinedGoal,
-    String? originalPrompt,
-    String? goal,
-    List<ProjectCriterion>? criteria,
-    List<String>? successCriteria,
+    required this.originalGoal,
+    required this.refinedGoal,
+    required this.criteria,
     required this.constraints,
-    List<ProjectTask>? backlog,
-    ProjectTask? currentTask,
-    List<ProjectTask>? completedTasks,
-    List<ProjectTask>? failedTasks,
+    List<ProjectTask>? tasks,
     List<ProjectArtifact>? artifacts,
     List<ProjectRecoveryIncident>? recoveryIncidents,
     List<ProjectEvidence>? evidence,
     List<ProjectMilestone>? milestones,
     List<ProjectMemoryEntry>? memory,
-    List<String>? knownFacts,
-    int? currentRevision,
     List<ProjectPlanRevision>? planHistory,
     this.pendingPlanApproval,
     this.pendingReplanTriggers = const [],
     this.completionReviewCheckpoint,
-    List<PendingProjectQuestion>? openQuestions,
-    String? memorySummary,
-    List<ProjectTaskRef>? tasks,
-    PendingProjectQuestion? pendingQuestion,
+    this.openQuestions = const [],
     required this.status,
-    ProjectPhase? phase,
     int? iterationCount,
     this.maxIterations = defaultMaxIterations,
     this.maxFailedTasks = defaultMaxFailedTasks,
@@ -891,52 +849,17 @@ class ProjectState with ProjectStateMappable {
     required this.createdAt,
     required this.updatedAt,
     this.completedAt,
-  }) : originalGoal = originalGoal ?? originalPrompt ?? '',
-       refinedGoal =
-           refinedGoal ?? goal ?? originalGoal ?? originalPrompt ?? '',
-       backlog = _bindTaskCriteria(
-         backlog ?? _legacyBacklog(tasks, activeTaskId),
-         criteria,
-         successCriteria,
-       ),
-       currentTask = _bindSingleTaskCriteria(
-         currentTask ?? _legacyCurrentTask(tasks, activeTaskId),
-         criteria,
-         successCriteria,
-       ),
-       completedTasks = _bindTaskCriteria(
-         completedTasks ?? _legacyCompletedTasks(tasks),
-         criteria,
-         successCriteria,
-       ),
-       failedTasks = _bindTaskCriteria(
-         failedTasks ?? _legacyFailedTasks(tasks),
-         criteria,
-         successCriteria,
-       ),
+  }) : tasks = tasks ?? const [],
        artifacts = artifacts ?? const [],
        recoveryIncidents = recoveryIncidents ?? const [],
-       criteria =
-           criteria ??
-           _criteriaFromStatements(successCriteria ?? const [], createdAt),
        evidence = evidence ?? const [],
        milestones = milestones ?? const [],
-       memory =
-           memory ??
-           _memoryFromFacts(
-             knownFacts ??
-                 [
-                   if (memorySummary?.trim().isNotEmpty == true)
-                     memorySummary!.trim(),
-                 ],
-             createdAt,
-           ),
-       currentRevision = currentRevision ?? 1,
+       memory = memory ?? const [],
        planHistory =
            planHistory ??
            [
              ProjectPlanRevision(
-               revision: currentRevision ?? 1,
+               revision: 1,
                trigger: ProjectPlanRevisionTrigger.initialization,
                summary: 'Initial project plan.',
                rationale: 'Created from the initial project definition.',
@@ -945,19 +868,10 @@ class ProjectState with ProjectStateMappable {
                approvedBy: ProjectPlanRevisionApprover.automatic,
              ),
            ],
-       openQuestions = openQuestions ?? [?pendingQuestion],
-       phase =
-           phase ??
-           (status == ProjectStatus.completed
-               ? ProjectPhase.finalization
-               : currentTask != null || activeTaskId != null
-               ? ProjectPhase.execution
-               : ProjectPhase.planning),
        iterationCount =
            iterationCount ??
-           (completedTasks?.length ??
-               tasks
-                   ?.where((task) => task.status == TaskStatus.completed)
+           (tasks
+                   ?.where((task) => task.status == ProjectTaskStatus.completed)
                    .length ??
                0);
 
@@ -966,20 +880,13 @@ class ProjectState with ProjectStateMappable {
       status == ProjectStatus.cancelled ||
       status == ProjectStatus.failed;
 
-  String get originalPrompt => originalGoal;
-
-  String get goal => refinedGoal;
-
-  List<String> get successCriteria => [
-    for (final criterion in criteria) criterion.statement,
-  ];
-
-  List<String> get knownFacts => [
-    for (final entry in memory)
-      if (entry.active) entry.content,
-  ];
-
-  String get memorySummary => knownFacts.join('\n\n');
+  int get nextRevision {
+    var highest = 0;
+    for (final revision in planHistory) {
+      if (revision.revision > highest) highest = revision.revision;
+    }
+    return highest + 1;
+  }
 
   String criterionStatement(String criterionId) {
     for (final criterion in criteria) {
@@ -993,143 +900,22 @@ class ProjectState with ProjectStateMappable {
       criterionStatement(criterionId),
   ];
 
-  PendingProjectQuestion? get pendingQuestion =>
-      openQuestions.isEmpty ? null : openQuestions.first;
-
-  List<ProjectTaskRef> get tasks {
-    final refs = <ProjectTaskRef>[
-      ...completedTasks.map(ProjectTaskRef.fromProjectTask),
-      ...failedTasks.map(ProjectTaskRef.fromProjectTask),
-      if (currentTask != null) ProjectTaskRef.fromProjectTask(currentTask!),
-      ...backlog.map(ProjectTaskRef.fromProjectTask),
-    ];
-    final seen = <String>{};
-    return [
-      for (final ref in refs)
-        if (seen.add(ref.taskId)) ref,
-    ];
-  }
-
   ProjectTask? taskById(String id) {
-    if (currentTask?.id == id || currentTask?.taskDocumentId == id) {
-      return currentTask;
-    }
-    for (final task in [...backlog, ...completedTasks, ...failedTasks]) {
-      if (task.id == id || task.taskDocumentId == id) return task;
-    }
-    return null;
-  }
-
-  ProjectTaskRef? taskRef(String taskId) {
     for (final task in tasks) {
-      if (task.taskId == taskId) return task;
+      if (task.id == id) return task;
     }
     return null;
   }
 
-  static List<ProjectTask> _legacyBacklog(
-    List<ProjectTaskRef>? tasks,
-    String? activeTaskId,
-  ) {
-    if (tasks == null) return const [];
-    return [
-      for (final task in tasks)
-        if (task.taskId != activeTaskId &&
-            task.status != TaskStatus.completed &&
-            task.status != TaskStatus.failed &&
-            task.status != TaskStatus.cancelled &&
-            task.status != TaskStatus.blocked)
-          ProjectTask.fromLegacyRef(
-            task,
-          ).copyWith(status: ProjectTaskStatus.queued),
-    ];
-  }
-
-  static ProjectTask? _legacyCurrentTask(
-    List<ProjectTaskRef>? tasks,
-    String? activeTaskId,
-  ) {
-    if (tasks == null || activeTaskId == null) return null;
-    for (final task in tasks) {
-      if (task.taskId == activeTaskId) {
-        return ProjectTask.fromLegacyRef(
-          task,
-        ).copyWith(status: ProjectTaskStatus.running);
-      }
-    }
-    return null;
-  }
-
-  static List<ProjectTask> _legacyCompletedTasks(List<ProjectTaskRef>? tasks) {
-    if (tasks == null) return const [];
-    return [
-      for (final task in tasks)
-        if (task.status == TaskStatus.completed)
-          ProjectTask.fromLegacyRef(
-            task,
-          ).copyWith(status: ProjectTaskStatus.completed),
-    ];
-  }
-
-  static List<ProjectTask> _legacyFailedTasks(List<ProjectTaskRef>? tasks) {
-    if (tasks == null) return const [];
-    return [
-      for (final task in tasks)
-        if (task.status == TaskStatus.failed ||
-            task.status == TaskStatus.cancelled ||
-            task.status == TaskStatus.blocked)
-          ProjectTask.fromLegacyRef(
-            task,
-          ).copyWith(status: ProjectTaskStatus.failed),
-    ];
-  }
-
-  static List<ProjectTask> _bindTaskCriteria(
-    List<ProjectTask> tasks,
-    List<ProjectCriterion>? structuredCriteria,
-    List<String>? legacyCriteria,
-  ) {
-    return [
-      for (final task in tasks)
-        _bindSingleTaskCriteria(task, structuredCriteria, legacyCriteria)!,
-    ];
-  }
-
-  static ProjectTask? _bindSingleTaskCriteria(
-    ProjectTask? task,
-    List<ProjectCriterion>? structuredCriteria,
-    List<String>? legacyCriteria,
-  ) {
-    if (task == null) return null;
-    final available =
-        structuredCriteria ??
-        _criteriaFromStatements(legacyCriteria ?? const [], task.createdAt);
-    final byId = {
-      for (final criterion in available) criterion.id: criterion.id,
-    };
-    final byStatement = {
-      for (final criterion in available)
-        _normaliseFingerprintPart(criterion.statement): criterion.id,
-    };
-    final ids = <String>[];
-    final unmatched = <String>[];
-    for (final value in task.criterionIds) {
-      final id = byId[value] ?? byStatement[_normaliseFingerprintPart(value)];
-      if (id == null) {
-        unmatched.add(value);
-      } else if (!ids.contains(id)) {
-        ids.add(id);
-      }
-    }
-    return task.copyWith(
-      criterionIds: ids,
-      context: [
-        ...task.context,
-        for (final value in unmatched)
-          if (!task.context.contains('Unmatched project criterion: $value'))
-            'Unmatched project criterion: $value',
-      ],
-    );
+  /// Resolves the task-document identifier for the active project task.
+  ///
+  /// Project task IDs and task-document IDs intentionally occupy separate
+  /// namespaces. Older in-memory states may not have a mapping yet, so the
+  /// project-task ID remains the narrow fallback.
+  String? get activeTaskDocumentId {
+    final id = activeTaskId;
+    if (id == null) return null;
+    return taskById(id)?.taskDocumentId ?? id;
   }
 
   ProjectState copyWith({
@@ -1139,27 +925,19 @@ class ProjectState with ProjectStateMappable {
     String? originalGoal,
     String? refinedGoal,
     List<ProjectCriterion>? criteria,
-    List<String>? successCriteria,
     List<String>? constraints,
-    List<ProjectTask>? backlog,
-    Object? currentTask = kSentinel,
-    List<ProjectTask>? completedTasks,
-    List<ProjectTask>? failedTasks,
+    List<ProjectTask>? tasks,
     List<ProjectArtifact>? artifacts,
     List<ProjectRecoveryIncident>? recoveryIncidents,
     List<ProjectEvidence>? evidence,
     List<ProjectMilestone>? milestones,
     List<ProjectMemoryEntry>? memory,
-    List<String>? knownFacts,
-    int? currentRevision,
     List<ProjectPlanRevision>? planHistory,
     Object? pendingPlanApproval = kSentinel,
     List<ProjectPlanRevisionTrigger>? pendingReplanTriggers,
     Object? completionReviewCheckpoint = kSentinel,
     List<PendingProjectQuestion>? openQuestions,
-    Object? pendingQuestion = kSentinel,
     ProjectStatus? status,
-    ProjectPhase? phase,
     int? iterationCount,
     int? maxIterations,
     int? maxFailedTasks,
@@ -1173,49 +951,20 @@ class ProjectState with ProjectStateMappable {
     DateTime? updatedAt,
     Object? completedAt = kSentinel,
   }) {
-    final Object? resolvedPendingQuestion = resolve<Object?>(
-      pendingQuestion,
-      kSentinel,
-    );
-    final nextOpenQuestions = resolvedPendingQuestion == kSentinel
-        ? openQuestions ?? this.openQuestions
-        : resolvedPendingQuestion == null
-        ? const <PendingProjectQuestion>[]
-        : [resolvedPendingQuestion as PendingProjectQuestion];
-
     return ProjectState(
       schemaVersion: schemaVersion ?? this.schemaVersion,
       id: id ?? this.id,
       title: title ?? this.title,
       originalGoal: originalGoal ?? this.originalGoal,
       refinedGoal: refinedGoal ?? this.refinedGoal,
-      criteria:
-          criteria ??
-          (successCriteria == null
-              ? this.criteria
-              : _criteriaFromStatements(
-                  successCriteria,
-                  updatedAt ?? this.updatedAt,
-                )),
+      criteria: criteria ?? this.criteria,
       constraints: constraints ?? this.constraints,
-      backlog: backlog ?? this.backlog,
-      currentTask: resolve(currentTask, this.currentTask),
-      completedTasks: completedTasks ?? this.completedTasks,
-      failedTasks: failedTasks ?? this.failedTasks,
+      tasks: tasks ?? this.tasks,
       artifacts: artifacts ?? this.artifacts,
       recoveryIncidents: recoveryIncidents ?? this.recoveryIncidents,
       evidence: evidence ?? this.evidence,
       milestones: milestones ?? this.milestones,
-      memory:
-          memory ??
-          (knownFacts == null
-              ? this.memory
-              : _mergeMemoryFacts(
-                  this.memory,
-                  knownFacts,
-                  updatedAt ?? this.updatedAt,
-                )),
-      currentRevision: currentRevision ?? this.currentRevision,
+      memory: memory ?? this.memory,
       planHistory: planHistory ?? this.planHistory,
       pendingPlanApproval: resolve(
         pendingPlanApproval,
@@ -1227,9 +976,8 @@ class ProjectState with ProjectStateMappable {
         completionReviewCheckpoint,
         this.completionReviewCheckpoint,
       ),
-      openQuestions: nextOpenQuestions,
+      openQuestions: openQuestions ?? this.openQuestions,
       status: status ?? this.status,
-      phase: phase ?? this.phase,
       iterationCount: iterationCount ?? this.iterationCount,
       maxIterations: maxIterations ?? this.maxIterations,
       maxFailedTasks: maxFailedTasks ?? this.maxFailedTasks,
@@ -1244,92 +992,6 @@ class ProjectState with ProjectStateMappable {
       completedAt: resolve(completedAt, this.completedAt),
     );
   }
-}
-
-List<ProjectCriterion> _criteriaFromStatements(
-  List<String> statements,
-  DateTime timestamp,
-) {
-  return [
-    for (var index = 0; index < statements.length; index++)
-      ProjectCriterion(
-        id: 'criterion_${(index + 1).toString().padLeft(3, '0')}',
-        statement: statements[index],
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      ),
-  ];
-}
-
-List<ProjectMemoryEntry> _memoryFromFacts(
-  List<String> facts,
-  DateTime timestamp,
-) {
-  return [
-    for (var index = 0; index < facts.length; index++)
-      ProjectMemoryEntry(
-        id: 'memory_${(index + 1).toString().padLeft(3, '0')}',
-        kind: ProjectMemoryKind.fact,
-        content: facts[index],
-        sourceType: ProjectMemorySourceType.planner,
-        confidence: ProjectMemoryConfidence.inferred,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      ),
-  ];
-}
-
-List<ProjectMemoryEntry> _mergeMemoryFacts(
-  List<ProjectMemoryEntry> existing,
-  List<String> facts,
-  DateTime timestamp,
-) {
-  final activeByContent = <String, ProjectMemoryEntry>{
-    for (final entry in existing)
-      if (entry.active) _normaliseFingerprintPart(entry.content): entry,
-  };
-  final retainedIds = <String>{};
-  final usedIds = {for (final entry in existing) entry.id};
-  var nextIndex = existing.length + 1;
-  final merged = <ProjectMemoryEntry>[
-    for (final entry in existing)
-      if (!entry.active) entry,
-  ];
-  for (final fact in facts) {
-    final key = _normaliseFingerprintPart(fact);
-    final retained = activeByContent[key];
-    if (retained != null) {
-      if (retainedIds.add(retained.id)) merged.add(retained);
-      continue;
-    }
-    final fromUser =
-        fact.startsWith('User answered:') ||
-        fact.startsWith('User added project context:');
-    var id = 'memory_${nextIndex.toString().padLeft(3, '0')}';
-    while (usedIds.contains(id)) {
-      nextIndex++;
-      id = 'memory_${nextIndex.toString().padLeft(3, '0')}';
-    }
-    usedIds.add(id);
-    merged.add(
-      ProjectMemoryEntry(
-        id: id,
-        kind: fromUser ? ProjectMemoryKind.requirement : ProjectMemoryKind.fact,
-        content: fact,
-        sourceType: fromUser
-            ? ProjectMemorySourceType.user
-            : ProjectMemorySourceType.planner,
-        confidence: fromUser
-            ? ProjectMemoryConfidence.confirmed
-            : ProjectMemoryConfidence.inferred,
-        protected: fromUser,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      ),
-    );
-    nextIndex++;
-  }
-  return merged;
 }
 
 typedef ProjectDocument = ProjectState;
@@ -1444,9 +1106,6 @@ class ProjectTask with ProjectTaskMappable {
   final ProjectTaskRisk risk;
   final ProjectRiskReduction riskReduction;
   final ProjectTaskEffort effort;
-  final ProjectTaskReadiness readiness;
-  @MappableField(hook: JsonStringListHook())
-  final List<String> readinessReasons;
   @MappableField(hook: JsonStringHook())
   final String selectionRationale;
   @MappableField(hook: JsonIntHook(fallback: 1, min: 1))
@@ -1489,16 +1148,13 @@ class ProjectTask with ProjectTaskMappable {
     required this.id,
     required this.title,
     required this.objective,
-    List<String>? criterionIds,
-    List<String>? relevantSuccessCriteria,
+    this.criterionIds = const [],
     this.milestoneId,
     this.dependsOnTaskIds = const [],
     this.priority = ProjectTaskPriority.normal,
     this.risk = ProjectTaskRisk.unknown,
     this.riskReduction = ProjectRiskReduction.none,
     this.effort = ProjectTaskEffort.small,
-    this.readiness = ProjectTaskReadiness.ready,
-    this.readinessReasons = const [],
     this.selectionRationale = '',
     this.revisionIntroduced = 1,
     this.revisionUpdated = 1,
@@ -1518,24 +1174,19 @@ class ProjectTask with ProjectTaskMappable {
     this.failure,
     required this.createdAt,
     required this.updatedAt,
-  }) : criterionIds = criterionIds ?? relevantSuccessCriteria ?? const [];
-
-  List<String> get relevantSuccessCriteria => criterionIds;
+  });
 
   ProjectTask copyWith({
     String? id,
     String? title,
     String? objective,
     List<String>? criterionIds,
-    List<String>? relevantSuccessCriteria,
     Object? milestoneId = kSentinel,
     List<String>? dependsOnTaskIds,
     ProjectTaskPriority? priority,
     ProjectTaskRisk? risk,
     ProjectRiskReduction? riskReduction,
     ProjectTaskEffort? effort,
-    ProjectTaskReadiness? readiness,
-    List<String>? readinessReasons,
     String? selectionRationale,
     int? revisionIntroduced,
     int? revisionUpdated,
@@ -1557,8 +1208,7 @@ class ProjectTask with ProjectTaskMappable {
     DateTime? updatedAt,
   }) {
     final nextObjective = objective ?? this.objective;
-    final nextCriteria =
-        criterionIds ?? relevantSuccessCriteria ?? this.criterionIds;
+    final nextCriteria = criterionIds ?? this.criterionIds;
     return ProjectTask(
       id: id ?? this.id,
       title: title ?? this.title,
@@ -1570,8 +1220,6 @@ class ProjectTask with ProjectTaskMappable {
       risk: risk ?? this.risk,
       riskReduction: riskReduction ?? this.riskReduction,
       effort: effort ?? this.effort,
-      readiness: readiness ?? this.readiness,
-      readinessReasons: readinessReasons ?? this.readinessReasons,
       selectionRationale: selectionRationale ?? this.selectionRationale,
       revisionIntroduced: revisionIntroduced ?? this.revisionIntroduced,
       revisionUpdated: revisionUpdated ?? this.revisionUpdated,
@@ -1595,33 +1243,6 @@ class ProjectTask with ProjectTaskMappable {
       failure: resolve(failure, this.failure),
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
-    );
-  }
-
-  factory ProjectTask.fromLegacyRef(ProjectTaskRef ref) {
-    final objective = ref.summary.trim().isEmpty ? ref.title : ref.summary;
-    final criteria = ref.summary.trim().isEmpty ? <String>[] : [ref.summary];
-    return ProjectTask(
-      id: 'project_task_${ref.taskId}',
-      title: ref.title,
-      objective: objective,
-      relevantSuccessCriteria: criteria,
-      doneCriteria: criteria.isEmpty ? ['Finish ${ref.title}.'] : criteria,
-      outOfScope: const ['Do not expand this task into the full project.'],
-      context: const [],
-      expectedArtifacts: const [],
-      status: switch (ref.status) {
-        TaskStatus.completed => ProjectTaskStatus.completed,
-        TaskStatus.failed || TaskStatus.cancelled => ProjectTaskStatus.failed,
-        _ => ProjectTaskStatus.queued,
-      },
-      taskDocumentId: ref.taskId,
-      recoveryIncidentId: null,
-      fingerprint: projectTaskFingerprint(objective, criteria),
-      rejectionReason: null,
-      failure: null,
-      createdAt: ref.createdAt,
-      updatedAt: ref.updatedAt,
     );
   }
 }
@@ -1754,7 +1375,7 @@ class ProjectEvaluation {
   final List<String> newKnownFacts;
   final List<ProjectArtifact> artifacts;
   final List<TaskGateResult> gateResults;
-  final List<ProjectTask> backlogAdditions;
+  final List<ProjectTask> taskAdditions;
   final List<PendingProjectQuestion> openQuestions;
   final String? failureReason;
   final bool projectReplanRequested;
@@ -1769,72 +1390,11 @@ class ProjectEvaluation {
     required this.newKnownFacts,
     required this.artifacts,
     this.gateResults = const [],
-    required this.backlogAdditions,
+    required this.taskAdditions,
     required this.openQuestions,
     this.failureReason,
     this.projectReplanRequested = false,
   });
-}
-
-@MappableClass(ignoreNull: true)
-class ProjectTaskRef with ProjectTaskRefMappable {
-  @MappableField(hook: JsonStringHook())
-  final String taskId;
-  @MappableField(hook: JsonStringHook(fallback: 'Untitled task'))
-  final String title;
-  final TaskStatus status;
-  @MappableField(hook: JsonStringHook())
-  final String summary;
-  @MappableField(hook: JsonDateHook())
-  final DateTime createdAt;
-  @MappableField(hook: JsonDateHook())
-  final DateTime updatedAt;
-  @MappableField(hook: JsonNullableDateHook())
-  final DateTime? completedAt;
-
-  const ProjectTaskRef({
-    required this.taskId,
-    required this.title,
-    required this.status,
-    required this.summary,
-    required this.createdAt,
-    required this.updatedAt,
-    this.completedAt,
-  });
-
-  factory ProjectTaskRef.fromProjectTask(ProjectTask task) {
-    return ProjectTaskRef(
-      taskId: task.taskDocumentId ?? task.id,
-      title: task.title,
-      status: switch (task.status) {
-        ProjectTaskStatus.completed => TaskStatus.completed,
-        ProjectTaskStatus.failed => TaskStatus.failed,
-        ProjectTaskStatus.cancelled => TaskStatus.cancelled,
-        ProjectTaskStatus.running => TaskStatus.running,
-        ProjectTaskStatus.rejected ||
-        ProjectTaskStatus.split => TaskStatus.blocked,
-        _ => TaskStatus.paused,
-      },
-      summary: task.rejectionReason ?? task.objective,
-      createdAt: task.createdAt,
-      updatedAt: task.updatedAt,
-      completedAt: task.status == ProjectTaskStatus.completed
-          ? task.updatedAt
-          : null,
-    );
-  }
-
-  factory ProjectTaskRef.fromTask(TaskDocument task, {String summary = ''}) {
-    return ProjectTaskRef(
-      taskId: task.id,
-      title: task.title,
-      status: task.status,
-      summary: summary,
-      createdAt: task.createdAt,
-      updatedAt: task.updatedAt,
-      completedAt: task.completedAt,
-    );
-  }
 }
 
 @MappableClass(ignoreNull: true)
@@ -1848,7 +1408,6 @@ class ProjectDecisionRecord with ProjectDecisionRecordMappable {
       'rejecttask': 'reject_task',
       'splittask': 'split_task',
       'evaluatetask': 'evaluate_task',
-      'refreshbacklog': 'refresh_backlog',
       'retryrecovery': 'retry_recovery',
       'applyplanrevision': 'apply_plan_revision',
       'approveplanrevision': 'approve_plan_revision',
@@ -1990,11 +1549,4 @@ String _normaliseFingerprintPart(String value) {
 
 extension on String {
   String ifEmpty(String fallback) => isEmpty ? fallback : this;
-}
-
-extension on TaskStatus {
-  bool get isTerminal =>
-      this == TaskStatus.completed ||
-      this == TaskStatus.cancelled ||
-      this == TaskStatus.failed;
 }
