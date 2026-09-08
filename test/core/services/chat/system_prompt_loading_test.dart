@@ -11,6 +11,7 @@ import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
+import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/core/serialization/model_json.dart';
@@ -283,10 +284,58 @@ void main() {
       expect(chat.activeTask?.runs.single.summary, 'Step complete.');
     });
 
+    test('run task continues across successful paused checkpoints', () async {
+      serverManager.chatClient = _QueueCompletionClient([
+        _finaliseTaskResponse({
+          ..._planJson(title: 'Multi-step task'),
+          'steps': [
+            {
+              'id': 'inspect',
+              'title': 'Inspect',
+              'objective': 'Inspect the workspace.',
+              'instructions': ['Read the relevant files.'],
+              'mayEditFiles': false,
+            },
+            {
+              'id': 'report',
+              'title': 'Report',
+              'objective': 'Write the report.',
+              'instructions': ['Summarise the findings.'],
+              'mayEditFiles': false,
+            },
+          ],
+        }),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Inspection complete.',
+            'memoryUpdate': 'The workspace was inspected.',
+          }),
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Report complete.',
+            'memoryUpdate': 'The report was written.',
+          }),
+        ),
+      ]);
+      await chat.attachWorkspace(tempDir.path);
+
+      await chat.send('/task Inspect and report');
+
+      expect(chat.activeTask?.status, TaskStatus.completed);
+      expect(chat.activeTask?.runs, hasLength(2));
+      expect(chat.activeTask?.runs.map((run) => run.summary), [
+        'Inspection complete.',
+        'Report complete.',
+      ]);
+    });
+
     test(
       'supports /project command by creating tasks until complete',
       () async {
-        serverManager.chatClient = _QueueCompletionClient([
+        final projectClient = _QueueCompletionClient([
           _finaliseProjectResponse({
             'title': 'Build screen',
             'refinedGoal': 'Build the reporting screen',
@@ -317,6 +366,23 @@ void main() {
                     'type': 'task_claim',
                     'criterionIds': ['criterion_screen'],
                     'description': 'The reporting screen is checked.',
+                    'required': false,
+                  },
+                ],
+              },
+              {
+                ..._projectTaskJson(),
+                'id': 'task_report',
+                'title': 'Report findings',
+                'objective': 'Report the checked reporting screen.',
+                'criterionIds': ['criterion_screen'],
+                'milestoneId': 'milestone_screen',
+                'expectedEvidence': [
+                  {
+                    'id': 'expect_report',
+                    'type': 'task_claim',
+                    'criterionIds': ['criterion_screen'],
+                    'description': 'The findings are reported.',
                   },
                 ],
               },
@@ -332,6 +398,22 @@ void main() {
           ),
           ChatCompletionResponse(
             content: jsonEncode({
+              'complete': false,
+              'finalSummary': 'The first project task is complete.',
+              'remainingCriteria': ['Screen is built.'],
+              'openQuestions': [],
+            }),
+          ),
+          _finaliseTaskResponse(_projectPlanJson(title: 'Reporting task')),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Reporting task complete.',
+              'memoryUpdate': 'The findings were reported.',
+            }),
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
               'complete': true,
               'finalSummary': 'Reporting screen is complete.',
               'remainingCriteria': [],
@@ -339,14 +421,27 @@ void main() {
             }),
           ),
         ]);
+        serverManager.chatClient = projectClient;
+        await preferences.setTaskSystemSettings(
+          const TaskSystemSettings(
+            maxProjectTasksPerRun: 1,
+            planApprovalPolicy: ProjectPlanApprovalPolicy.never,
+          ),
+        );
         await chat.attachWorkspace(tempDir.path);
 
         await chat.send('/project Build the reporting screen');
 
         expect(chat.activeProject?.status, ProjectStatus.completed);
         expect(
-          chat.activeProject?.tasks.single.status,
-          ProjectTaskStatus.completed,
+          chat.activeProject?.tasks,
+          everyElement(
+            isA<ProjectTask>().having(
+              (task) => task.status,
+              'status',
+              ProjectTaskStatus.completed,
+            ),
+          ),
         );
         expect(chat.activeTask, isNull);
         expect(chat.activeProject?.completionSummary, contains('complete'));
@@ -446,6 +541,8 @@ void main() {
 
       final stepMessage = chat.messageStore.messages.last.text;
       expect(stepMessage, contains('Task step finished'));
+      expect(stepMessage, contains('Inspection complete.'));
+      expect(stepMessage, isNot(contains('Model transport was interrupted')));
       expect(stepMessage, isNot(contains('final_report.md')));
       expect(stepMessage, isNot(contains('Artifacts:')));
       expect(chat.activeTask?.status, TaskStatus.paused);

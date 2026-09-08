@@ -582,7 +582,7 @@ void main() {
       expect(events.single.willRetry, isTrue);
     });
 
-    test('exposes a typed failure after the second socket error', () async {
+    test('exposes a typed failure after bounded socket retries', () async {
       final events = <ChatTransportEvent>[];
       final client = ChatClient(
         baseUrl: 'http://localhost',
@@ -597,11 +597,11 @@ void main() {
         ),
         throwsA(
           isA<ChatTransportException>()
-              .having((error) => error.attempts, 'attempts', 2)
+              .having((error) => error.attempts, 'attempts', 4)
               .having((error) => error.outputStarted, 'outputStarted', isFalse),
         ),
       );
-      expect(events.map((event) => event.willRetry), [true, false]);
+      expect(events.map((event) => event.willRetry), [true, true, true, false]);
     });
 
     test('does not retry a stream failure after the first token', () async {

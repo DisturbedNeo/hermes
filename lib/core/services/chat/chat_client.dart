@@ -697,8 +697,7 @@ class ChatRequestTimeoutException implements Exception {
 }
 
 class ChatClient {
-  static const Duration _retryDelay = Duration(milliseconds: 100);
-  static const int _maxAttempts = 2;
+  static const int _maxAttempts = 4;
   static const Duration defaultInactivityTimeout = Duration(minutes: 10);
   static const Duration defaultTokenCountTimeout = Duration(seconds: 5);
 
@@ -1070,7 +1069,7 @@ class ChatClient {
             causeStackTrace: stackTrace,
           );
         }
-        await Future<void>.delayed(_retryDelay);
+        await Future<void>.delayed(_retryDelayForAttempt(attempt));
         cancellationToken?.throwIfCancelled();
       }
     }
@@ -1330,11 +1329,16 @@ class ChatClient {
             causeStackTrace: stackTrace,
           );
         }
-        await Future<void>.delayed(_retryDelay);
+        await Future<void>.delayed(_retryDelayForAttempt(attempt));
         cancellationToken?.throwIfCancelled();
       }
     }
     throw StateError('Unreachable retry state');
+  }
+
+  static Duration _retryDelayForAttempt(int attempt) {
+    final backoffMultiplier = 1 << (attempt - 1);
+    return Duration(milliseconds: 100 * backoffMultiplier);
   }
 
   Future<T> _withClient<T>(

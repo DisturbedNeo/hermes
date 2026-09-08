@@ -859,10 +859,10 @@ class ChatService extends ChangeNotifier implements Disposable {
         final updated = activeTask;
         if (updated == null ||
             updated.status == TaskStatus.completed ||
-            updated.status == TaskStatus.paused ||
             updated.status == TaskStatus.blocked ||
             updated.status == TaskStatus.failed ||
-            updated.status == TaskStatus.cancelled) {
+            updated.status == TaskStatus.cancelled ||
+            _taskNeedsInterventionBeforeContinuing(updated)) {
           break;
         }
       }
@@ -1477,33 +1477,45 @@ class ChatService extends ChangeNotifier implements Disposable {
     try {
       final compactionSettings = await _preferencesService
           .getCompactionSettings();
-      final result = await _projectService.runProject(
-        client: client,
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-        baseSystemPrompt: _buildProjectSystemPrompt(snapshot),
-        maxNewTasks: maxNewTasks ?? settings.maxProjectTasksPerRun,
-        maxIterations: settings.maxProjectIterations,
-        requirePhaseApproval: settings.requireApprovalBeforeFileEdits,
-        questionAutonomy: settings.questionAutonomy,
-        planApprovalPolicy: settings.planApprovalPolicy,
-        compactionSettings: compactionSettings,
-        contextLimitTokens: _diagnosticsContextLimit,
-        onCompactionStatus: (status) {
-          taskStatusMessage = status;
-          notifyListeners();
-        },
-        onModelOutput: _handleTaskModelOutput,
-        onTaskUpdated: (task) {
-          activeTask = task;
-          notifyListeners();
-        },
-        cancellationToken: token,
-      );
-      activeProject = result.project;
-      activeTask = result.activeTask;
+      var projectSnapshot = snapshot;
+      while (true) {
+        final result = await _projectService.runProject(
+          client: client,
+          workspace: currentWorkspace,
+          snapshot: projectSnapshot,
+          baseSystemPrompt: _buildProjectSystemPrompt(projectSnapshot),
+          maxNewTasks: maxNewTasks ?? settings.maxProjectTasksPerRun,
+          maxIterations: settings.maxProjectIterations,
+          requirePhaseApproval: settings.requireApprovalBeforeFileEdits,
+          questionAutonomy: settings.questionAutonomy,
+          planApprovalPolicy: settings.planApprovalPolicy,
+          compactionSettings: compactionSettings,
+          contextLimitTokens: _diagnosticsContextLimit,
+          onCompactionStatus: (status) {
+            taskStatusMessage = status;
+            notifyListeners();
+          },
+          onModelOutput: _handleTaskModelOutput,
+          onTaskUpdated: (task) {
+            activeTask = task;
+            notifyListeners();
+          },
+          cancellationToken: token,
+        );
+        activeProject = result.project;
+        activeTask = result.activeTask;
+        notifyListeners();
+
+        if (!_shouldContinueProjectAutomatically(
+          result,
+          boundedRun: maxNewTasks != null,
+        )) {
+          break;
+        }
+        projectSnapshot = result.project;
+      }
       await reloadTasks();
-      _insertTaskAssistantMessage(_projectStatusMessage(result.project));
+      _insertTaskAssistantMessage(_projectStatusMessage(activeProject!));
     } on OperationCancelledException {
       _insertTaskAssistantMessage('Project run cancelled.');
     } catch (e) {
@@ -2611,8 +2623,7 @@ Workspace rules:
       ..writeln('Project status: **${snapshot.title}**')
       ..writeln()
       ..writeln('Status: `${snapshot.status.wire}`');
-    if (snapshot.status == ProjectStatus.paused &&
-        snapshot.activeTaskId != null) {
+    if (_projectHasTransportFailure(snapshot)) {
       buffer
         ..writeln()
         ..writeln(
@@ -2644,7 +2655,7 @@ Workspace rules:
       ..writeln('Task step finished: **${latestRun?.stepId ?? 'step'}**')
       ..writeln()
       ..writeln('Task status: `${snapshot.status.wire}`');
-    if (snapshot.status == TaskStatus.paused) {
+    if (_taskHasTransportFailure(snapshot)) {
       buffer
         ..writeln()
         ..writeln(
@@ -2653,7 +2664,11 @@ Workspace rules:
     } else if (latestRun != null) {
       buffer
         ..writeln()
-        ..writeln(latestRun.summary);
+        ..writeln(
+          latestRun.summary.trim().isEmpty
+              ? 'The task is paused. Resume it when ready.'
+              : latestRun.summary,
+        );
     }
     final artifacts = latestRun?.artifacts ?? const [];
     if (artifacts.isNotEmpty) {
@@ -2676,6 +2691,56 @@ Workspace rules:
       }
     }
     return buffer.toString().trim();
+  }
+
+  bool _taskHasTransportFailure(TaskSnapshot? snapshot) {
+    if (snapshot == null ||
+        snapshot.status != TaskStatus.paused ||
+        snapshot.runs.isEmpty) {
+      return false;
+    }
+    final latestRun = snapshot.runs.last;
+    return latestRun.status == TaskRunStatus.failed &&
+        latestRun.error?.contains('Model transport failed') == true;
+  }
+
+  bool _projectHasTransportFailure(ProjectSnapshot snapshot) {
+    if (snapshot.status != ProjectStatus.paused ||
+        snapshot.activeTaskId == null) {
+      return false;
+    }
+    final task = activeTask;
+    if (task == null ||
+        task.id != snapshot.activeTaskDocumentId ||
+        task.projectId != snapshot.id) {
+      return false;
+    }
+    return _taskHasTransportFailure(task);
+  }
+
+  bool _shouldContinueProjectAutomatically(
+    ProjectRunResult result, {
+    required bool boundedRun,
+  }) {
+    if (boundedRun) return false;
+    final project = result.project;
+    return project.status == ProjectStatus.paused &&
+        project.activeTaskId == null &&
+        project.pendingPlanApproval == null &&
+        project.openQuestions.isEmpty &&
+        project.blocker == null;
+  }
+
+  bool _taskNeedsInterventionBeforeContinuing(TaskSnapshot snapshot) {
+    if (snapshot.status != TaskStatus.paused) return false;
+    if (snapshot.pendingApproval != null || snapshot.pendingQuestion != null) {
+      return true;
+    }
+    final latestRun = snapshot.runs.isEmpty ? null : snapshot.runs.last;
+    if (latestRun == null) return true;
+    return latestRun.status != TaskRunStatus.completed &&
+        latestRun.status != TaskRunStatus.replanned &&
+        latestRun.status != TaskRunStatus.skipped;
   }
 
   // ── Disposable ──────────────────────────────────────────────────────────
