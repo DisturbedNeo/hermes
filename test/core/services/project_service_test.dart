@@ -597,13 +597,11 @@ class _InitialisationGateway implements ProjectPlanningGateway {
     this.initialisation, {
     this.repairedInitialisations = const [],
     this.revisedPlan,
-    this.completionAssessment,
   });
 
   final ProjectInitialisation initialisation;
   final List<ProjectInitialisation> repairedInitialisations;
   final ProjectDesiredPlan? revisedPlan;
-  final ProjectCompletionAssessment? completionAssessment;
   List<Map<String, String>>? validationIssues;
   var repairCalls = 0;
   var revisePlanCalls = 0;
@@ -687,16 +685,15 @@ class _InitialisationGateway implements ProjectPlanningGateway {
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
-    return completionAssessment ??
-        ProjectCompletionAssessment(
-          complete: false,
-          finalSummary: 'The project still needs review.',
-          remainingCriteria: project.criteria
-              .where((criterion) => criterion.required)
-              .map((criterion) => criterion.statement)
-              .toList(),
-          openQuestions: const [],
-        );
+    return ProjectCompletionAssessment(
+      complete: false,
+      finalSummary: 'The project still needs review.',
+      remainingCriteria: project.criteria
+          .where((criterion) => criterion.required)
+          .map((criterion) => criterion.statement)
+          .toList(),
+      openQuestions: const [],
+    );
   }
 }
 
