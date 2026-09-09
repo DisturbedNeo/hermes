@@ -33,6 +33,31 @@ void main() {
     expect(result.project.planHistory, hasLength(1));
   });
 
+  test('automatically retries invalid desired plans before blocking', () async {
+    final project = _project([_task('existing')]);
+    final invalid = _desired(project, [
+      _task('invalid', dependencies: const ['missing']),
+    ]);
+    var repairCalls = 0;
+    final result = await service.prepareAndApply(
+      project: project,
+      proposal: invalid,
+      workspaceRoot: workspace.path,
+      approvalPolicy: ProjectPlanApprovalPolicy.never,
+      repair: (candidate, _) async {
+        repairCalls++;
+        return repairCalls == 1
+            ? candidate
+            : _desired(project, [_task('fixed')]);
+      },
+    );
+
+    expect(repairCalls, 2);
+    expect(result.changed, isTrue);
+    expect(result.project.taskById('fixed'), isNotNull);
+    expect(result.project.status, ProjectStatus.active);
+  });
+
   test(
     'reconciliation retains terminal history and makes new work queued',
     () async {

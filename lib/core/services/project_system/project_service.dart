@@ -80,6 +80,11 @@ class ProjectService {
       const ProjectPlanRevisionService();
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
 
+  // A malformed model plan is a recoverable planning failure. Keep the
+  // retry bounded so a persistently invalid model response still becomes a
+  // durable, actionable blocker rather than an unbounded model-call loop.
+  static const _maxAutomaticInitialPlanRepairs = 2;
+
   ProjectRepository get repository => _repository;
 
   ProjectTask? _activeProjectTask(ProjectDocument project) {
@@ -242,7 +247,10 @@ class ProjectService {
         initialisation: init,
         workspaceProfile: discovery.workspaceProfile,
       );
-      if (planningIssues.isNotEmpty) {
+      var repairAttempts = 0;
+      while (planningIssues.isNotEmpty &&
+          repairAttempts < _maxAutomaticInitialPlanRepairs) {
+        repairAttempts++;
         final repaired = await _modelCalls.repairInitialisation(
           client: client,
           baseSystemPrompt: baseSystemPrompt,
@@ -626,6 +634,21 @@ class ProjectService {
     }
     if (project.pendingPlanApproval != null) {
       return ProjectRunResult(project: project, activeTask: activeTask);
+    }
+    final canAutomaticallyReplanValidationBlocker =
+        project.blocker?.type == ProjectBlockerType.validation &&
+        project.activeTaskId == null;
+    if (canAutomaticallyReplanValidationBlocker) {
+      project = project.copyWith(
+        status: ProjectStatus.active,
+        blocker: null,
+        pendingReplanTriggers: _appendTrigger(
+          project.pendingReplanTriggers,
+          ProjectPlanRevisionTrigger.noReadyTask,
+        ),
+        updatedAt: DateTime.now(),
+      );
+      project = await _persistProject(workspace.rootPath, project);
     }
     final canResumeValidationBlocker =
         project.blocker?.type == ProjectBlockerType.validation &&

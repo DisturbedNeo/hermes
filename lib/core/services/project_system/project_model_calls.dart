@@ -130,7 +130,7 @@ $originalGoal
         ),
         user:
             '''
-Repair this initial project plan exactly once. Resolve every structured validation issue without inventing workspace state.
+Repair or replan this initial project plan. Resolve every structured validation issue without inventing workspace state. This may be retried automatically when the repaired plan still fails validation, so return a complete replacement plan rather than a partial patch.
 The supplied workspace profile is authoritative: a component absent from its tree is absent, not undiscovered or stale. A readPath may name an absent path only when a declared dependency produces it through writePaths or expectedArtifacts.
 Preserve the user's original outcome separately from the refined planning interpretation. Do not execute work.
 Model-authored memory is advisory. Include sourceId such as workspace:Design.md for claims derived from supplied files.
@@ -248,7 +248,7 @@ ${_encoder.convert(ModelJson.encode(project))}
             '{"summary":"...","rationale":"...","criteria":[],"milestones":[],"tasks":[],"deferredTaskIds":[],"obsoleteTaskIds":[],"openQuestions":[]}',
         user:
             '''
-Repair the proposed plan exactly once so every structured validation issue is resolved.
+Repair or replan the proposed plan so every structured validation issue is resolved. This may be retried automatically when the repaired plan still fails validation, so return a complete replacement plan rather than a partial patch.
 Preserve its intent and revision number. Do not execute work or mutate immutable history.
 
 Validation issues:

@@ -80,6 +80,111 @@ void main() {
     },
   );
 
+  test(
+    'automatically retries an invalid initial plan before blocking',
+    () async {
+      final gateway = _InitialisationGateway(
+        _invalidInitialisation(),
+        repairedInitialisations: [
+          _invalidInitialisation(),
+          _validInitialisation(),
+        ],
+      );
+      final planningService = ProjectService(
+        taskService: taskService,
+        modelCalls: gateway,
+      );
+
+      final project = await planningService.createProject(
+        workspace: workspace,
+        userPrompt: 'Build the reporting screen',
+        client: _QueueChatClient(const ['unused']),
+      );
+
+      expect(project.status, ProjectStatus.active);
+      expect(project.tasks, hasLength(1));
+      expect(gateway.repairCalls, 2);
+    },
+  );
+
+  test(
+    'automatically replans a persisted validation blocker when resumed',
+    () async {
+      final now = DateTime(2026, 1, 1);
+      final blocked = _project(
+        status: ProjectStatus.blocked,
+        blocker: ProjectBlocker(
+          type: ProjectBlockerType.validation,
+          message: 'The persisted plan failed validation.',
+          createdAt: now,
+        ),
+      );
+      final milestone = ProjectMilestone(
+        id: 'milestone_1',
+        title: 'Bounded implementation',
+        objective: 'Implement the bounded project slice.',
+        criterionIds: const ['criterion_1'],
+        order: 1,
+        createdAt: now,
+        updatedAt: now,
+      );
+      final revisedTask = _task().copyWith(
+        milestoneId: milestone.id,
+        writePaths: const ['lib/project_slice.dart'],
+        selectionRationale: 'The task is the smallest executable next step.',
+        expectedEvidence: const [
+          ProjectEvidenceExpectation(
+            id: 'expectation_gate',
+            type: ProjectEvidenceType.gate,
+            criterionIds: ['criterion_1'],
+            description: 'The bounded implementation gate passes.',
+          ),
+        ],
+      );
+      final revisedPlan = _desiredPlan(
+        blocked,
+        [revisedTask],
+        milestones: [milestone],
+      );
+      final gateway = _InitialisationGateway(
+        _validInitialisation(),
+        revisedPlan: revisedPlan,
+      );
+      final planningService = ProjectService(
+        taskService: taskService,
+        modelCalls: gateway,
+      );
+
+      final result = await planningService.runProject(
+        client: _QueueChatClient([
+          jsonEncode({
+            'status': 'completed',
+            'summary': 'The bounded task is complete.',
+            'memoryUpdate': '',
+          }),
+          jsonEncode({
+            'complete': false,
+            'finalSummary': 'The project still needs review.',
+            'remainingCriteria': ['The bounded task is complete.'],
+            'openQuestions': [],
+          }),
+        ]),
+        workspace: workspace,
+        snapshot: blocked,
+        baseSystemPrompt: 'system',
+        maxNewTasks: 1,
+        planApprovalPolicy: ProjectPlanApprovalPolicy.never,
+      );
+
+      expect(gateway.revisePlanCalls, 1);
+      expect(
+        result.project.taskById(revisedTask.id)?.status,
+        ProjectTaskStatus.completed,
+      );
+      expect(result.project.blocker, isNull);
+    },
+  );
+
   test('runs a queued bounded task and retains terminal history', () async {
     final project = _project(tasks: [_task()]);
     final result = await service.runProject(
@@ -415,6 +520,24 @@ ProjectDocument _project({
   );
 }
 
+ProjectDesiredPlan _desiredPlan(
+  ProjectDocument project,
+  List<ProjectTask> tasks, {
+  List<ProjectMilestone>? milestones,
+}) {
+  return ProjectDesiredPlan(
+    revision: project.nextRevision,
+    triggers: const [ProjectPlanRevisionTrigger.noReadyTask],
+    summary: 'Recover the blocked project plan.',
+    rationale: 'Restore bounded executable work after validation failure.',
+    criteria: project.criteria,
+    milestones: milestones ?? project.milestones,
+    tasks: tasks,
+    openQuestions: project.openQuestions,
+    createdAt: DateTime(2026, 1, 2),
+  );
+}
+
 ProjectTask _task() {
   final now = DateTime(2026, 1, 1);
   return ProjectTask(
@@ -470,10 +593,20 @@ class _QueueChatClient extends ChatClient {
 }
 
 class _InitialisationGateway implements ProjectPlanningGateway {
-  _InitialisationGateway(this.initialisation);
+  _InitialisationGateway(
+    this.initialisation, {
+    this.repairedInitialisations = const [],
+    this.revisedPlan,
+    this.completionAssessment,
+  });
 
   final ProjectInitialisation initialisation;
+  final List<ProjectInitialisation> repairedInitialisations;
+  final ProjectDesiredPlan? revisedPlan;
+  final ProjectCompletionAssessment? completionAssessment;
   List<Map<String, String>>? validationIssues;
+  var repairCalls = 0;
+  var revisePlanCalls = 0;
 
   @override
   Future<ProjectInitialisation> initializeProject({
@@ -498,7 +631,11 @@ class _InitialisationGateway implements ProjectPlanningGateway {
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
+    repairCalls++;
     this.validationIssues = validationIssues;
+    if (repairCalls <= repairedInitialisations.length) {
+      return repairedInitialisations[repairCalls - 1];
+    }
     return null;
   }
 
@@ -512,7 +649,12 @@ class _InitialisationGateway implements ProjectPlanningGateway {
     required List<ProjectPlanRevisionTrigger> triggers,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
-  }) => throw UnimplementedError();
+  }) async {
+    revisePlanCalls++;
+    final plan = revisedPlan;
+    if (plan == null) throw UnimplementedError();
+    return plan;
+  }
 
   @override
   Future<ProjectDesiredPlan?> repairPlanProposal({
@@ -524,7 +666,7 @@ class _InitialisationGateway implements ProjectPlanningGateway {
     required List<Map<String, String>> validationIssues,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
-  }) => throw UnimplementedError();
+  }) async => revisedPlan;
 
   @override
   Future<List<ProjectTask>> splitTask({
@@ -544,7 +686,18 @@ class _InitialisationGateway implements ProjectPlanningGateway {
     required ProjectState project,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
-  }) => throw UnimplementedError();
+  }) async {
+    return completionAssessment ??
+        ProjectCompletionAssessment(
+          complete: false,
+          finalSummary: 'The project still needs review.',
+          remainingCriteria: project.criteria
+              .where((criterion) => criterion.required)
+              .map((criterion) => criterion.statement)
+              .toList(),
+          openQuestions: const [],
+        );
+  }
 }
 
 ProjectInitialisation _invalidInitialisation() {
@@ -610,6 +763,61 @@ ProjectInitialisation _invalidInitialisation() {
     constraints: const [],
     openQuestions: const [],
     tasks: [task('task_a', 'task_b'), task('task_b', 'task_a')],
+    milestones: [milestone],
+  );
+}
+
+ProjectInitialisation _validInitialisation() {
+  final now = DateTime(2026, 1, 1);
+  final criterion = ProjectCriterion(
+    id: 'criterion_1',
+    statement: 'The reporting screen is verified.',
+    verificationMode: ProjectVerificationMode.deterministic,
+    createdAt: now,
+    updatedAt: now,
+  );
+  final milestone = ProjectMilestone(
+    id: 'milestone_1',
+    title: 'Reporting screen',
+    objective: 'Deliver the reporting screen.',
+    criterionIds: const ['criterion_1'],
+    order: 1,
+    createdAt: now,
+    updatedAt: now,
+  );
+  final task = ProjectTask(
+    id: 'task_1',
+    title: 'Implement reporting screen',
+    objective: 'Implement the reporting screen.',
+    criterionIds: const ['criterion_1'],
+    milestoneId: milestone.id,
+    expectedEvidence: const [
+      ProjectEvidenceExpectation(
+        id: 'expectation_gate',
+        type: ProjectEvidenceType.gate,
+        criterionIds: ['criterion_1'],
+        description: 'The reporting screen verification gate passes.',
+      ),
+    ],
+    writePaths: const ['lib/reporting.dart'],
+    doneCriteria: const ['The reporting screen is implemented.'],
+    outOfScope: const ['Unrelated screens.'],
+    context: const [],
+    expectedArtifacts: const [],
+    status: ProjectTaskStatus.queued,
+    taskDocumentId: null,
+    fingerprint: 'task_1',
+    rejectionReason: null,
+    createdAt: now,
+    updatedAt: now,
+  );
+  return ProjectInitialisation(
+    title: 'Reporting screen',
+    refinedGoal: 'Deliver the reporting screen.',
+    criteria: [criterion],
+    constraints: const [],
+    openQuestions: const [],
+    tasks: [task],
     milestones: [milestone],
   );
 }

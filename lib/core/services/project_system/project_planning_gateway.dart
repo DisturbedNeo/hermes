@@ -125,7 +125,8 @@ abstract interface class ProjectPlanningGateway {
     CancellationToken? cancellationToken,
   });
 
-  /// Performs the sole model repair pass allowed for an invalid initial plan.
+  /// Repairs an invalid initial plan. The orchestrator may call this a small,
+  /// bounded number of times before surfacing a validation blocker.
   Future<ProjectInitialisation?> repairInitialisation({
     required ChatClient client,
     required String baseSystemPrompt,
@@ -149,7 +150,8 @@ abstract interface class ProjectPlanningGateway {
     CancellationToken? cancellationToken,
   });
 
-  /// Performs the sole model repair pass allowed for an invalid desired plan.
+  /// Repairs an invalid desired plan. The orchestrator may call this a small,
+  /// bounded number of times before surfacing a validation blocker.
   Future<ProjectDesiredPlan?> repairPlanProposal({
     required ChatClient client,
     required String baseSystemPrompt,

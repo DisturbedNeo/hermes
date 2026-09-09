@@ -35,6 +35,7 @@ class ProjectPlanRevisionService {
 
   final ProjectPlanValidator _validator;
   static const ProjectMemoryService _memoryService = ProjectMemoryService();
+  static const _maxAutomaticRepairAttempts = 2;
 
   Future<ProjectPlanRevisionResult> prepareAndApply({
     required ProjectState project,
@@ -51,7 +52,11 @@ class ProjectPlanRevisionService {
       workspaceRoot: workspaceRoot,
     );
     var repairAttempted = false;
-    if (!validation.valid && repair != null) {
+    var repairAttempts = 0;
+    while (!validation.valid &&
+        repair != null &&
+        repairAttempts < _maxAutomaticRepairAttempts) {
+      repairAttempts++;
       repairAttempted = true;
       final repaired = await repair(candidate, validation);
       if (repaired != null) {
@@ -75,7 +80,7 @@ class ProjectPlanRevisionService {
           blocker: ProjectBlocker(
             type: ProjectBlockerType.validation,
             message:
-                'Plan revision ${candidate.revision} was rejected after validation${repairAttempted ? ' and one repair pass' : ''}. Resolve: $codes.',
+                'Plan revision ${candidate.revision} was rejected after validation${repairAttempted ? ' and $repairAttempts automatic repair attempt${repairAttempts == 1 ? '' : 's'}' : ''}. Resolve: $codes.',
             createdAt: DateTime.now(),
           ),
           updatedAt: DateTime.now(),
