@@ -88,7 +88,7 @@ class TaskGateEvaluator {
 
   Future<TaskGateEvaluation> evaluate({
     required WorkspaceAttachment workspace,
-    required TaskDocument task,
+    required Task task,
     required TaskStep step,
     required List<TaskGate> gates,
     List<TaskToolCallRecord> toolCalls = const [],
@@ -129,7 +129,7 @@ class TaskGateEvaluator {
 
   Future<TaskGateResult> _evaluateGate({
     required WorkspaceAttachment workspace,
-    required TaskDocument task,
+    required Task task,
     required TaskStep step,
     required TaskGate gate,
     required List<TaskToolCallRecord> toolCalls,
@@ -493,7 +493,7 @@ class TaskGateEvaluator {
   }
 
   TaskGateResult _noFailedCommands(
-    TaskDocument task,
+    Task task,
     TaskStep step,
     TaskGate gate,
     List<TaskToolCallRecord> toolCalls,
@@ -547,7 +547,7 @@ class TaskGateEvaluator {
   }
 
   Set<String> _advisoryCommandKeys(
-    TaskDocument task,
+    Task task,
     TaskStep step,
     TaskGate noFailedGate,
   ) {
@@ -863,7 +863,7 @@ class TaskGateEvaluator {
   }
 
   Future<TaskGateResult> _modelReview(
-    TaskDocument task,
+    Task task,
     TaskStep step,
     TaskGate gate,
     ChatClient? client,
@@ -895,8 +895,8 @@ class TaskGateEvaluator {
           role: 'user',
           content:
               '''
-Task goal:
-${task.goal}
+Task objective:
+${task.objective}
 
 Step:
 ${jsonEncode(ModelJson.encode(step))}

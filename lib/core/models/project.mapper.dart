@@ -92,84 +92,6 @@ extension ProjectStatusMapperExtension on ProjectStatus {
 
 /// @nodoc
 
-class ProjectTaskStatusMapper extends EnumMapper<ProjectTaskStatus> {
-  ProjectTaskStatusMapper._();
-
-  static ProjectTaskStatusMapper? _instance;
-  static ProjectTaskStatusMapper ensureInitialized() {
-    if (_instance == null) {
-      MapperContainer.globals.use(_instance = ProjectTaskStatusMapper._());
-    }
-    return _instance!;
-  }
-
-  static ProjectTaskStatus fromValue(dynamic value) {
-    ensureInitialized();
-    return MapperContainer.globals.fromValue(value);
-  }
-
-  @override
-  ProjectTaskStatus decode(dynamic value) {
-    switch (value) {
-      case r'queued':
-        return ProjectTaskStatus.queued;
-      case r'running':
-        return ProjectTaskStatus.running;
-      case r'completed':
-        return ProjectTaskStatus.completed;
-      case r'failed':
-        return ProjectTaskStatus.failed;
-      case r'rejected':
-        return ProjectTaskStatus.rejected;
-      case r'split':
-        return ProjectTaskStatus.split;
-      case r'deferred':
-        return ProjectTaskStatus.deferred;
-      case r'obsolete':
-        return ProjectTaskStatus.obsolete;
-      case r'cancelled':
-        return ProjectTaskStatus.cancelled;
-      default:
-        return ProjectTaskStatus.values[0];
-    }
-  }
-
-  @override
-  dynamic encode(ProjectTaskStatus self) {
-    switch (self) {
-      case ProjectTaskStatus.queued:
-        return r'queued';
-      case ProjectTaskStatus.running:
-        return r'running';
-      case ProjectTaskStatus.completed:
-        return r'completed';
-      case ProjectTaskStatus.failed:
-        return r'failed';
-      case ProjectTaskStatus.rejected:
-        return r'rejected';
-      case ProjectTaskStatus.split:
-        return r'split';
-      case ProjectTaskStatus.deferred:
-        return r'deferred';
-      case ProjectTaskStatus.obsolete:
-        return r'obsolete';
-      case ProjectTaskStatus.cancelled:
-        return r'cancelled';
-    }
-  }
-}
-
-/// @nodoc
-
-extension ProjectTaskStatusMapperExtension on ProjectTaskStatus {
-  String toValue() {
-    ProjectTaskStatusMapper.ensureInitialized();
-    return MapperContainer.globals.toValue<ProjectTaskStatus>(this) as String;
-  }
-}
-
-/// @nodoc
-
 class ProjectCriterionStatusMapper extends EnumMapper<ProjectCriterionStatus> {
   ProjectCriterionStatusMapper._();
 
@@ -285,68 +207,6 @@ extension ProjectVerificationModeMapperExtension on ProjectVerificationMode {
   dynamic toValue() {
     ProjectVerificationModeMapper.ensureInitialized();
     return MapperContainer.globals.toValue<ProjectVerificationMode>(this);
-  }
-}
-
-/// @nodoc
-
-class ProjectEvidenceTypeMapper extends EnumMapper<ProjectEvidenceType> {
-  ProjectEvidenceTypeMapper._();
-
-  static ProjectEvidenceTypeMapper? _instance;
-  static ProjectEvidenceTypeMapper ensureInitialized() {
-    if (_instance == null) {
-      MapperContainer.globals.use(_instance = ProjectEvidenceTypeMapper._());
-    }
-    return _instance!;
-  }
-
-  static ProjectEvidenceType fromValue(dynamic value) {
-    ensureInitialized();
-    return MapperContainer.globals.fromValue(value);
-  }
-
-  @override
-  ProjectEvidenceType decode(dynamic value) {
-    switch (value) {
-      case r'gate':
-        return ProjectEvidenceType.gate;
-      case r'artifact':
-        return ProjectEvidenceType.artifact;
-      case r'command':
-        return ProjectEvidenceType.command;
-      case 'task_claim':
-        return ProjectEvidenceType.taskClaim;
-      case 'user_approval':
-        return ProjectEvidenceType.userApproval;
-      default:
-        return ProjectEvidenceType.values[3];
-    }
-  }
-
-  @override
-  dynamic encode(ProjectEvidenceType self) {
-    switch (self) {
-      case ProjectEvidenceType.gate:
-        return r'gate';
-      case ProjectEvidenceType.artifact:
-        return r'artifact';
-      case ProjectEvidenceType.command:
-        return r'command';
-      case ProjectEvidenceType.taskClaim:
-        return 'task_claim';
-      case ProjectEvidenceType.userApproval:
-        return 'user_approval';
-    }
-  }
-}
-
-/// @nodoc
-
-extension ProjectEvidenceTypeMapperExtension on ProjectEvidenceType {
-  dynamic toValue() {
-    ProjectEvidenceTypeMapper.ensureInitialized();
-    return MapperContainer.globals.toValue<ProjectEvidenceType>(this);
   }
 }
 
@@ -532,277 +392,48 @@ extension ProjectMilestoneStatusMapperExtension on ProjectMilestoneStatus {
 
 /// @nodoc
 
-class ProjectTaskPriorityMapper extends EnumMapper<ProjectTaskPriority> {
-  ProjectTaskPriorityMapper._();
+class TaskReadinessMapper extends EnumMapper<TaskReadiness> {
+  TaskReadinessMapper._();
 
-  static ProjectTaskPriorityMapper? _instance;
-  static ProjectTaskPriorityMapper ensureInitialized() {
+  static TaskReadinessMapper? _instance;
+  static TaskReadinessMapper ensureInitialized() {
     if (_instance == null) {
-      MapperContainer.globals.use(_instance = ProjectTaskPriorityMapper._());
+      MapperContainer.globals.use(_instance = TaskReadinessMapper._());
     }
     return _instance!;
   }
 
-  static ProjectTaskPriority fromValue(dynamic value) {
+  static TaskReadiness fromValue(dynamic value) {
     ensureInitialized();
     return MapperContainer.globals.fromValue(value);
   }
 
   @override
-  ProjectTaskPriority decode(dynamic value) {
-    switch (value) {
-      case r'critical':
-        return ProjectTaskPriority.critical;
-      case r'high':
-        return ProjectTaskPriority.high;
-      case r'normal':
-        return ProjectTaskPriority.normal;
-      case r'low':
-        return ProjectTaskPriority.low;
-      default:
-        return ProjectTaskPriority.values[2];
-    }
-  }
-
-  @override
-  dynamic encode(ProjectTaskPriority self) {
-    switch (self) {
-      case ProjectTaskPriority.critical:
-        return r'critical';
-      case ProjectTaskPriority.high:
-        return r'high';
-      case ProjectTaskPriority.normal:
-        return r'normal';
-      case ProjectTaskPriority.low:
-        return r'low';
-    }
-  }
-}
-
-/// @nodoc
-
-extension ProjectTaskPriorityMapperExtension on ProjectTaskPriority {
-  String toValue() {
-    ProjectTaskPriorityMapper.ensureInitialized();
-    return MapperContainer.globals.toValue<ProjectTaskPriority>(this) as String;
-  }
-}
-
-/// @nodoc
-
-class ProjectTaskRiskMapper extends EnumMapper<ProjectTaskRisk> {
-  ProjectTaskRiskMapper._();
-
-  static ProjectTaskRiskMapper? _instance;
-  static ProjectTaskRiskMapper ensureInitialized() {
-    if (_instance == null) {
-      MapperContainer.globals.use(_instance = ProjectTaskRiskMapper._());
-    }
-    return _instance!;
-  }
-
-  static ProjectTaskRisk fromValue(dynamic value) {
-    ensureInitialized();
-    return MapperContainer.globals.fromValue(value);
-  }
-
-  @override
-  ProjectTaskRisk decode(dynamic value) {
-    switch (value) {
-      case r'high':
-        return ProjectTaskRisk.high;
-      case r'medium':
-        return ProjectTaskRisk.medium;
-      case r'low':
-        return ProjectTaskRisk.low;
-      case r'unknown':
-        return ProjectTaskRisk.unknown;
-      default:
-        return ProjectTaskRisk.values[3];
-    }
-  }
-
-  @override
-  dynamic encode(ProjectTaskRisk self) {
-    switch (self) {
-      case ProjectTaskRisk.high:
-        return r'high';
-      case ProjectTaskRisk.medium:
-        return r'medium';
-      case ProjectTaskRisk.low:
-        return r'low';
-      case ProjectTaskRisk.unknown:
-        return r'unknown';
-    }
-  }
-}
-
-/// @nodoc
-
-extension ProjectTaskRiskMapperExtension on ProjectTaskRisk {
-  String toValue() {
-    ProjectTaskRiskMapper.ensureInitialized();
-    return MapperContainer.globals.toValue<ProjectTaskRisk>(this) as String;
-  }
-}
-
-/// @nodoc
-
-class ProjectRiskReductionMapper extends EnumMapper<ProjectRiskReduction> {
-  ProjectRiskReductionMapper._();
-
-  static ProjectRiskReductionMapper? _instance;
-  static ProjectRiskReductionMapper ensureInitialized() {
-    if (_instance == null) {
-      MapperContainer.globals.use(_instance = ProjectRiskReductionMapper._());
-    }
-    return _instance!;
-  }
-
-  static ProjectRiskReduction fromValue(dynamic value) {
-    ensureInitialized();
-    return MapperContainer.globals.fromValue(value);
-  }
-
-  @override
-  ProjectRiskReduction decode(dynamic value) {
-    switch (value) {
-      case r'high':
-        return ProjectRiskReduction.high;
-      case r'medium':
-        return ProjectRiskReduction.medium;
-      case r'low':
-        return ProjectRiskReduction.low;
-      case r'none':
-        return ProjectRiskReduction.none;
-      default:
-        return ProjectRiskReduction.values[3];
-    }
-  }
-
-  @override
-  dynamic encode(ProjectRiskReduction self) {
-    switch (self) {
-      case ProjectRiskReduction.high:
-        return r'high';
-      case ProjectRiskReduction.medium:
-        return r'medium';
-      case ProjectRiskReduction.low:
-        return r'low';
-      case ProjectRiskReduction.none:
-        return r'none';
-    }
-  }
-}
-
-/// @nodoc
-
-extension ProjectRiskReductionMapperExtension on ProjectRiskReduction {
-  String toValue() {
-    ProjectRiskReductionMapper.ensureInitialized();
-    return MapperContainer.globals.toValue<ProjectRiskReduction>(this)
-        as String;
-  }
-}
-
-/// @nodoc
-
-class ProjectTaskEffortMapper extends EnumMapper<ProjectTaskEffort> {
-  ProjectTaskEffortMapper._();
-
-  static ProjectTaskEffortMapper? _instance;
-  static ProjectTaskEffortMapper ensureInitialized() {
-    if (_instance == null) {
-      MapperContainer.globals.use(_instance = ProjectTaskEffortMapper._());
-    }
-    return _instance!;
-  }
-
-  static ProjectTaskEffort fromValue(dynamic value) {
-    ensureInitialized();
-    return MapperContainer.globals.fromValue(value);
-  }
-
-  @override
-  ProjectTaskEffort decode(dynamic value) {
-    switch (value) {
-      case r'small':
-        return ProjectTaskEffort.small;
-      case r'medium':
-        return ProjectTaskEffort.medium;
-      case r'large':
-        return ProjectTaskEffort.large;
-      default:
-        return ProjectTaskEffort.values[0];
-    }
-  }
-
-  @override
-  dynamic encode(ProjectTaskEffort self) {
-    switch (self) {
-      case ProjectTaskEffort.small:
-        return r'small';
-      case ProjectTaskEffort.medium:
-        return r'medium';
-      case ProjectTaskEffort.large:
-        return r'large';
-    }
-  }
-}
-
-/// @nodoc
-
-extension ProjectTaskEffortMapperExtension on ProjectTaskEffort {
-  String toValue() {
-    ProjectTaskEffortMapper.ensureInitialized();
-    return MapperContainer.globals.toValue<ProjectTaskEffort>(this) as String;
-  }
-}
-
-/// @nodoc
-
-class ProjectTaskReadinessMapper extends EnumMapper<ProjectTaskReadiness> {
-  ProjectTaskReadinessMapper._();
-
-  static ProjectTaskReadinessMapper? _instance;
-  static ProjectTaskReadinessMapper ensureInitialized() {
-    if (_instance == null) {
-      MapperContainer.globals.use(_instance = ProjectTaskReadinessMapper._());
-    }
-    return _instance!;
-  }
-
-  static ProjectTaskReadiness fromValue(dynamic value) {
-    ensureInitialized();
-    return MapperContainer.globals.fromValue(value);
-  }
-
-  @override
-  ProjectTaskReadiness decode(dynamic value) {
+  TaskReadiness decode(dynamic value) {
     switch (value) {
       case r'ready':
-        return ProjectTaskReadiness.ready;
+        return TaskReadiness.ready;
       case 'waiting_dependency':
-        return ProjectTaskReadiness.waitingDependency;
+        return TaskReadiness.waitingDependency;
       case 'waiting_input':
-        return ProjectTaskReadiness.waitingInput;
+        return TaskReadiness.waitingInput;
       case 'not_eligible':
-        return ProjectTaskReadiness.notEligible;
+        return TaskReadiness.notEligible;
       default:
-        return ProjectTaskReadiness.values[0];
+        return TaskReadiness.values[0];
     }
   }
 
   @override
-  dynamic encode(ProjectTaskReadiness self) {
+  dynamic encode(TaskReadiness self) {
     switch (self) {
-      case ProjectTaskReadiness.ready:
+      case TaskReadiness.ready:
         return r'ready';
-      case ProjectTaskReadiness.waitingDependency:
+      case TaskReadiness.waitingDependency:
         return 'waiting_dependency';
-      case ProjectTaskReadiness.waitingInput:
+      case TaskReadiness.waitingInput:
         return 'waiting_input';
-      case ProjectTaskReadiness.notEligible:
+      case TaskReadiness.notEligible:
         return 'not_eligible';
     }
   }
@@ -810,10 +441,10 @@ class ProjectTaskReadinessMapper extends EnumMapper<ProjectTaskReadiness> {
 
 /// @nodoc
 
-extension ProjectTaskReadinessMapperExtension on ProjectTaskReadiness {
+extension TaskReadinessMapperExtension on TaskReadiness {
   dynamic toValue() {
-    ProjectTaskReadinessMapper.ensureInitialized();
-    return MapperContainer.globals.toValue<ProjectTaskReadiness>(this);
+    TaskReadinessMapper.ensureInitialized();
+    return MapperContainer.globals.toValue<TaskReadiness>(this);
   }
 }
 
@@ -1051,6 +682,8 @@ class ProjectPlanRevisionTriggerMapper
         return ProjectPlanRevisionTrigger.evidenceRejected;
       case 'task_replan_requested':
         return ProjectPlanRevisionTrigger.taskReplanRequested;
+      case 'batch_complete':
+        return ProjectPlanRevisionTrigger.batchComplete;
       case 'scope_changed':
         return ProjectPlanRevisionTrigger.scopeChanged;
       case 'milestone_roadmap_changed':
@@ -1083,6 +716,8 @@ class ProjectPlanRevisionTriggerMapper
         return 'evidence_rejected';
       case ProjectPlanRevisionTrigger.taskReplanRequested:
         return 'task_replan_requested';
+      case ProjectPlanRevisionTrigger.batchComplete:
+        return 'batch_complete';
       case ProjectPlanRevisionTrigger.scopeChanged:
         return 'scope_changed';
       case ProjectPlanRevisionTrigger.milestoneRoadmapChanged:
@@ -1853,22 +1488,16 @@ class ProjectEvidenceMapper extends ClassMapperBase<ProjectEvidence> {
     opt: true,
     def: const [],
   );
-  static String? _$projectTaskId(ProjectEvidence v) => v.projectTaskId;
-  static const Field<ProjectEvidence, String> _f$projectTaskId = Field(
-    'projectTaskId',
-    _$projectTaskId,
+  static String? _$taskId(ProjectEvidence v) => v.taskId;
+  static const Field<ProjectEvidence, String> _f$taskId = Field(
+    'taskId',
+    _$taskId,
     opt: true,
   );
-  static String? _$taskDocumentId(ProjectEvidence v) => v.taskDocumentId;
-  static const Field<ProjectEvidence, String> _f$taskDocumentId = Field(
-    'taskDocumentId',
-    _$taskDocumentId,
-    opt: true,
-  );
-  static String? _$taskRunId(ProjectEvidence v) => v.taskRunId;
-  static const Field<ProjectEvidence, String> _f$taskRunId = Field(
-    'taskRunId',
-    _$taskRunId,
+  static String? _$runId(ProjectEvidence v) => v.runId;
+  static const Field<ProjectEvidence, String> _f$runId = Field(
+    'runId',
+    _$runId,
     opt: true,
   );
   static String _$sourceRef(ProjectEvidence v) => v.sourceRef;
@@ -1927,9 +1556,8 @@ class ProjectEvidenceMapper extends ClassMapperBase<ProjectEvidence> {
     #type: _f$type,
     #criterionIds: _f$criterionIds,
     #expectationIds: _f$expectationIds,
-    #projectTaskId: _f$projectTaskId,
-    #taskDocumentId: _f$taskDocumentId,
-    #taskRunId: _f$taskRunId,
+    #taskId: _f$taskId,
+    #runId: _f$runId,
     #sourceRef: _f$sourceRef,
     #sourceFingerprint: _f$sourceFingerprint,
     #summary: _f$summary,
@@ -1942,15 +1570,21 @@ class ProjectEvidenceMapper extends ClassMapperBase<ProjectEvidence> {
   @override
   final bool ignoreNull = true;
 
+  @override
+  final MappingHook hook = const JsonModelHook(
+    aliases: {
+      'taskId': ['taskDocumentId', 'projectTaskId'],
+      'runId': ['taskRunId'],
+    },
+  );
   static ProjectEvidence _instantiate(DecodingData data) {
     return ProjectEvidence(
       id: data.dec(_f$id),
       type: data.dec(_f$type),
       criterionIds: data.dec(_f$criterionIds),
       expectationIds: data.dec(_f$expectationIds),
-      projectTaskId: data.dec(_f$projectTaskId),
-      taskDocumentId: data.dec(_f$taskDocumentId),
-      taskRunId: data.dec(_f$taskRunId),
+      taskId: data.dec(_f$taskId),
+      runId: data.dec(_f$runId),
       sourceRef: data.dec(_f$sourceRef),
       sourceFingerprint: data.dec(_f$sourceFingerprint),
       summary: data.dec(_f$summary),
@@ -2105,114 +1739,6 @@ mixin ProjectMilestoneMappable {
   Map<String, dynamic> toMap() {
     return ProjectMilestoneMapper.ensureInitialized()
         .encodeMap<ProjectMilestone>(this as ProjectMilestone);
-  }
-}
-
-/// @nodoc
-class ProjectEvidenceExpectationMapper
-    extends ClassMapperBase<ProjectEvidenceExpectation> {
-  ProjectEvidenceExpectationMapper._();
-
-  static ProjectEvidenceExpectationMapper? _instance;
-  static ProjectEvidenceExpectationMapper ensureInitialized() {
-    if (_instance == null) {
-      MapperContainer.globals.use(
-        _instance = ProjectEvidenceExpectationMapper._(),
-      );
-      ProjectEvidenceTypeMapper.ensureInitialized();
-    }
-    return _instance!;
-  }
-
-  @override
-  final String id = 'ProjectEvidenceExpectation';
-
-  static String _$id(ProjectEvidenceExpectation v) => v.id;
-  static const Field<ProjectEvidenceExpectation, String> _f$id = Field(
-    'id',
-    _$id,
-  );
-  static ProjectEvidenceType _$type(ProjectEvidenceExpectation v) => v.type;
-  static const Field<ProjectEvidenceExpectation, ProjectEvidenceType> _f$type =
-      Field('type', _$type);
-  static List<String> _$criterionIds(ProjectEvidenceExpectation v) =>
-      v.criterionIds;
-  static const Field<ProjectEvidenceExpectation, List<String>> _f$criterionIds =
-      Field('criterionIds', _$criterionIds, opt: true, def: const []);
-  static String _$description(ProjectEvidenceExpectation v) => v.description;
-  static const Field<ProjectEvidenceExpectation, String> _f$description = Field(
-    'description',
-    _$description,
-  );
-  static bool _$required(ProjectEvidenceExpectation v) => v.required;
-  static const Field<ProjectEvidenceExpectation, bool> _f$required = Field(
-    'required',
-    _$required,
-    opt: true,
-    def: true,
-  );
-  static String? _$sourceRef(ProjectEvidenceExpectation v) => v.sourceRef;
-  static const Field<ProjectEvidenceExpectation, String> _f$sourceRef = Field(
-    'sourceRef',
-    _$sourceRef,
-    opt: true,
-  );
-  static Map<String, dynamic> _$details(ProjectEvidenceExpectation v) =>
-      v.details;
-  static const Field<ProjectEvidenceExpectation, Map<String, dynamic>>
-  _f$details = Field('details', _$details, opt: true, def: const {});
-
-  @override
-  final MappableFields<ProjectEvidenceExpectation> fields = const {
-    #id: _f$id,
-    #type: _f$type,
-    #criterionIds: _f$criterionIds,
-    #description: _f$description,
-    #required: _f$required,
-    #sourceRef: _f$sourceRef,
-    #details: _f$details,
-  };
-  @override
-  final bool ignoreNull = true;
-
-  static ProjectEvidenceExpectation _instantiate(DecodingData data) {
-    return ProjectEvidenceExpectation(
-      id: data.dec(_f$id),
-      type: data.dec(_f$type),
-      criterionIds: data.dec(_f$criterionIds),
-      description: data.dec(_f$description),
-      required: data.dec(_f$required),
-      sourceRef: data.dec(_f$sourceRef),
-      details: data.dec(_f$details),
-    );
-  }
-
-  @override
-  final Function instantiate = _instantiate;
-
-  static ProjectEvidenceExpectation fromMap(Map<String, dynamic> map) {
-    return ensureInitialized().decodeMap<ProjectEvidenceExpectation>(map);
-  }
-
-  static ProjectEvidenceExpectation fromJson(String json) {
-    return ensureInitialized().decodeJson<ProjectEvidenceExpectation>(json);
-  }
-}
-
-/// @nodoc
-mixin ProjectEvidenceExpectationMappable {
-  String toJson() {
-    return ProjectEvidenceExpectationMapper.ensureInitialized()
-        .encodeJson<ProjectEvidenceExpectation>(
-          this as ProjectEvidenceExpectation,
-        );
-  }
-
-  Map<String, dynamic> toMap() {
-    return ProjectEvidenceExpectationMapper.ensureInitialized()
-        .encodeMap<ProjectEvidenceExpectation>(
-          this as ProjectEvidenceExpectation,
-        );
   }
 }
 
@@ -2444,7 +1970,7 @@ class ProjectDesiredPlanMapper extends ClassMapperBase<ProjectDesiredPlan> {
       ProjectPlanRevisionTriggerMapper.ensureInitialized();
       ProjectCriterionMapper.ensureInitialized();
       ProjectMilestoneMapper.ensureInitialized();
-      ProjectTaskMapper.ensureInitialized();
+      TaskMapper.ensureInitialized();
       ProjectMemoryEntryMapper.ensureInitialized();
       ProjectMemorySupersessionMapper.ensureInitialized();
       PendingProjectQuestionMapper.ensureInitialized();
@@ -2474,6 +2000,15 @@ class ProjectDesiredPlanMapper extends ClassMapperBase<ProjectDesiredPlan> {
     'rationale',
     _$rationale,
   );
+  static bool _$hasCompleteCollections(ProjectDesiredPlan v) =>
+      v.hasCompleteCollections;
+  static const Field<ProjectDesiredPlan, bool> _f$hasCompleteCollections =
+      Field(
+        'hasCompleteCollections',
+        _$hasCompleteCollections,
+        opt: true,
+        def: true,
+      );
   static List<String> _$assumptions(ProjectDesiredPlan v) => v.assumptions;
   static const Field<ProjectDesiredPlan, List<String>> _f$assumptions = Field(
     'assumptions',
@@ -2488,8 +2023,8 @@ class ProjectDesiredPlanMapper extends ClassMapperBase<ProjectDesiredPlan> {
       v.milestones;
   static const Field<ProjectDesiredPlan, List<ProjectMilestone>> _f$milestones =
       Field('milestones', _$milestones, opt: true, def: const []);
-  static List<ProjectTask> _$tasks(ProjectDesiredPlan v) => v.tasks;
-  static const Field<ProjectDesiredPlan, List<ProjectTask>> _f$tasks = Field(
+  static List<Task> _$tasks(ProjectDesiredPlan v) => v.tasks;
+  static const Field<ProjectDesiredPlan, List<Task>> _f$tasks = Field(
     'tasks',
     _$tasks,
     opt: true,
@@ -2557,6 +2092,7 @@ class ProjectDesiredPlanMapper extends ClassMapperBase<ProjectDesiredPlan> {
     #triggers: _f$triggers,
     #summary: _f$summary,
     #rationale: _f$rationale,
+    #hasCompleteCollections: _f$hasCompleteCollections,
     #assumptions: _f$assumptions,
     #criteria: _f$criteria,
     #milestones: _f$milestones,
@@ -2579,6 +2115,7 @@ class ProjectDesiredPlanMapper extends ClassMapperBase<ProjectDesiredPlan> {
       triggers: data.dec(_f$triggers),
       summary: data.dec(_f$summary),
       rationale: data.dec(_f$rationale),
+      hasCompleteCollections: data.dec(_f$hasCompleteCollections),
       assumptions: data.dec(_f$assumptions),
       criteria: data.dec(_f$criteria),
       milestones: data.dec(_f$milestones),
@@ -2616,586 +2153,6 @@ mixin ProjectDesiredPlanMappable {
   Map<String, dynamic> toMap() {
     return ProjectDesiredPlanMapper.ensureInitialized()
         .encodeMap<ProjectDesiredPlan>(this as ProjectDesiredPlan);
-  }
-}
-
-/// @nodoc
-class ProjectTaskMapper extends ClassMapperBase<ProjectTask> {
-  ProjectTaskMapper._();
-
-  static ProjectTaskMapper? _instance;
-  static ProjectTaskMapper ensureInitialized() {
-    if (_instance == null) {
-      MapperContainer.globals.use(_instance = ProjectTaskMapper._());
-      ProjectTaskPriorityMapper.ensureInitialized();
-      ProjectTaskRiskMapper.ensureInitialized();
-      ProjectRiskReductionMapper.ensureInitialized();
-      ProjectTaskEffortMapper.ensureInitialized();
-      ProjectEvidenceExpectationMapper.ensureInitialized();
-      ProjectArtifactMapper.ensureInitialized();
-      ProjectTaskStatusMapper.ensureInitialized();
-      ProjectTaskFailureMapper.ensureInitialized();
-    }
-    return _instance!;
-  }
-
-  @override
-  final String id = 'ProjectTask';
-
-  static String _$id(ProjectTask v) => v.id;
-  static const Field<ProjectTask, String> _f$id = Field(
-    'id',
-    _$id,
-    hook: JsonStringHook(fallback: 'project_task'),
-  );
-  static String _$title(ProjectTask v) => v.title;
-  static const Field<ProjectTask, String> _f$title = Field(
-    'title',
-    _$title,
-    hook: JsonStringHook(fallback: 'Untitled task'),
-  );
-  static String _$objective(ProjectTask v) => v.objective;
-  static const Field<ProjectTask, String> _f$objective = Field(
-    'objective',
-    _$objective,
-    hook: JsonStringHook(),
-  );
-  static List<String> _$criterionIds(ProjectTask v) => v.criterionIds;
-  static const Field<ProjectTask, List<String>> _f$criterionIds = Field(
-    'criterionIds',
-    _$criterionIds,
-    opt: true,
-    def: const [],
-    hook: JsonStringListHook(),
-  );
-  static String? _$milestoneId(ProjectTask v) => v.milestoneId;
-  static const Field<ProjectTask, String> _f$milestoneId = Field(
-    'milestoneId',
-    _$milestoneId,
-    opt: true,
-    hook: JsonNullableStringHook(),
-  );
-  static List<String> _$dependsOnTaskIds(ProjectTask v) => v.dependsOnTaskIds;
-  static const Field<ProjectTask, List<String>> _f$dependsOnTaskIds = Field(
-    'dependsOnTaskIds',
-    _$dependsOnTaskIds,
-    opt: true,
-    def: const [],
-    hook: JsonStringListHook(),
-  );
-  static ProjectTaskPriority _$priority(ProjectTask v) => v.priority;
-  static const Field<ProjectTask, ProjectTaskPriority> _f$priority = Field(
-    'priority',
-    _$priority,
-    opt: true,
-    def: ProjectTaskPriority.normal,
-  );
-  static ProjectTaskRisk _$risk(ProjectTask v) => v.risk;
-  static const Field<ProjectTask, ProjectTaskRisk> _f$risk = Field(
-    'risk',
-    _$risk,
-    opt: true,
-    def: ProjectTaskRisk.unknown,
-  );
-  static ProjectRiskReduction _$riskReduction(ProjectTask v) => v.riskReduction;
-  static const Field<ProjectTask, ProjectRiskReduction> _f$riskReduction =
-      Field(
-        'riskReduction',
-        _$riskReduction,
-        opt: true,
-        def: ProjectRiskReduction.none,
-      );
-  static ProjectTaskEffort _$effort(ProjectTask v) => v.effort;
-  static const Field<ProjectTask, ProjectTaskEffort> _f$effort = Field(
-    'effort',
-    _$effort,
-    opt: true,
-    def: ProjectTaskEffort.small,
-  );
-  static String _$selectionRationale(ProjectTask v) => v.selectionRationale;
-  static const Field<ProjectTask, String> _f$selectionRationale = Field(
-    'selectionRationale',
-    _$selectionRationale,
-    opt: true,
-    def: '',
-    hook: JsonStringHook(),
-  );
-  static int _$revisionIntroduced(ProjectTask v) => v.revisionIntroduced;
-  static const Field<ProjectTask, int> _f$revisionIntroduced = Field(
-    'revisionIntroduced',
-    _$revisionIntroduced,
-    opt: true,
-    def: 1,
-    hook: JsonIntHook(fallback: 1, min: 1),
-  );
-  static int _$revisionUpdated(ProjectTask v) => v.revisionUpdated;
-  static const Field<ProjectTask, int> _f$revisionUpdated = Field(
-    'revisionUpdated',
-    _$revisionUpdated,
-    opt: true,
-    def: 1,
-    hook: JsonIntHook(fallback: 1, min: 1),
-  );
-  static List<ProjectEvidenceExpectation> _$expectedEvidence(ProjectTask v) =>
-      v.expectedEvidence;
-  static const Field<ProjectTask, List<ProjectEvidenceExpectation>>
-  _f$expectedEvidence = Field(
-    'expectedEvidence',
-    _$expectedEvidence,
-    opt: true,
-    def: const [],
-    hook: JsonObjectListHook(),
-  );
-  static List<String> _$readPaths(ProjectTask v) => v.readPaths;
-  static const Field<ProjectTask, List<String>> _f$readPaths = Field(
-    'readPaths',
-    _$readPaths,
-    opt: true,
-    def: const [],
-    hook: JsonStringListHook(),
-  );
-  static List<String> _$writePaths(ProjectTask v) => v.writePaths;
-  static const Field<ProjectTask, List<String>> _f$writePaths = Field(
-    'writePaths',
-    _$writePaths,
-    opt: true,
-    def: const [],
-    hook: JsonStringListHook(),
-  );
-  static bool _$legacyWriteAccess(ProjectTask v) => v.legacyWriteAccess;
-  static const Field<ProjectTask, bool> _f$legacyWriteAccess = Field(
-    'legacyWriteAccess',
-    _$legacyWriteAccess,
-    opt: true,
-    def: false,
-    hook: JsonBoolHook(),
-  );
-  static List<String> _$doneCriteria(ProjectTask v) => v.doneCriteria;
-  static const Field<ProjectTask, List<String>> _f$doneCriteria = Field(
-    'doneCriteria',
-    _$doneCriteria,
-    hook: JsonStringListHook(),
-  );
-  static List<String> _$outOfScope(ProjectTask v) => v.outOfScope;
-  static const Field<ProjectTask, List<String>> _f$outOfScope = Field(
-    'outOfScope',
-    _$outOfScope,
-    hook: JsonStringListHook(),
-  );
-  static List<String> _$context(ProjectTask v) => v.context;
-  static const Field<ProjectTask, List<String>> _f$context = Field(
-    'context',
-    _$context,
-    hook: JsonStringListHook(),
-  );
-  static List<ProjectArtifact> _$expectedArtifacts(ProjectTask v) =>
-      v.expectedArtifacts;
-  static const Field<ProjectTask, List<ProjectArtifact>> _f$expectedArtifacts =
-      Field(
-        'expectedArtifacts',
-        _$expectedArtifacts,
-        hook: JsonObjectListHook(),
-      );
-  static ProjectTaskStatus _$status(ProjectTask v) => v.status;
-  static const Field<ProjectTask, ProjectTaskStatus> _f$status = Field(
-    'status',
-    _$status,
-    hook: EnumAliasHook({}),
-  );
-  static String? _$taskDocumentId(ProjectTask v) => v.taskDocumentId;
-  static const Field<ProjectTask, String> _f$taskDocumentId = Field(
-    'taskDocumentId',
-    _$taskDocumentId,
-    hook: JsonNullableStringHook(),
-  );
-  static String? _$recoveryIncidentId(ProjectTask v) => v.recoveryIncidentId;
-  static const Field<ProjectTask, String> _f$recoveryIncidentId = Field(
-    'recoveryIncidentId',
-    _$recoveryIncidentId,
-    opt: true,
-    hook: JsonNullableStringHook(),
-  );
-  static String _$fingerprint(ProjectTask v) => v.fingerprint;
-  static const Field<ProjectTask, String> _f$fingerprint = Field(
-    'fingerprint',
-    _$fingerprint,
-    hook: JsonStringHook(),
-  );
-  static String? _$rejectionReason(ProjectTask v) => v.rejectionReason;
-  static const Field<ProjectTask, String> _f$rejectionReason = Field(
-    'rejectionReason',
-    _$rejectionReason,
-    hook: JsonNullableStringHook(),
-  );
-  static ProjectTaskFailure? _$failure(ProjectTask v) => v.failure;
-  static const Field<ProjectTask, ProjectTaskFailure> _f$failure = Field(
-    'failure',
-    _$failure,
-    opt: true,
-  );
-  static DateTime _$createdAt(ProjectTask v) => v.createdAt;
-  static const Field<ProjectTask, DateTime> _f$createdAt = Field(
-    'createdAt',
-    _$createdAt,
-    hook: JsonDateHook(),
-  );
-  static DateTime _$updatedAt(ProjectTask v) => v.updatedAt;
-  static const Field<ProjectTask, DateTime> _f$updatedAt = Field(
-    'updatedAt',
-    _$updatedAt,
-    hook: JsonDateHook(),
-  );
-
-  @override
-  final MappableFields<ProjectTask> fields = const {
-    #id: _f$id,
-    #title: _f$title,
-    #objective: _f$objective,
-    #criterionIds: _f$criterionIds,
-    #milestoneId: _f$milestoneId,
-    #dependsOnTaskIds: _f$dependsOnTaskIds,
-    #priority: _f$priority,
-    #risk: _f$risk,
-    #riskReduction: _f$riskReduction,
-    #effort: _f$effort,
-    #selectionRationale: _f$selectionRationale,
-    #revisionIntroduced: _f$revisionIntroduced,
-    #revisionUpdated: _f$revisionUpdated,
-    #expectedEvidence: _f$expectedEvidence,
-    #readPaths: _f$readPaths,
-    #writePaths: _f$writePaths,
-    #legacyWriteAccess: _f$legacyWriteAccess,
-    #doneCriteria: _f$doneCriteria,
-    #outOfScope: _f$outOfScope,
-    #context: _f$context,
-    #expectedArtifacts: _f$expectedArtifacts,
-    #status: _f$status,
-    #taskDocumentId: _f$taskDocumentId,
-    #recoveryIncidentId: _f$recoveryIncidentId,
-    #fingerprint: _f$fingerprint,
-    #rejectionReason: _f$rejectionReason,
-    #failure: _f$failure,
-    #createdAt: _f$createdAt,
-    #updatedAt: _f$updatedAt,
-  };
-  @override
-  final bool ignoreNull = true;
-
-  @override
-  final MappingHook hook = const ProjectTaskJsonHook();
-  static ProjectTask _instantiate(DecodingData data) {
-    return ProjectTask(
-      id: data.dec(_f$id),
-      title: data.dec(_f$title),
-      objective: data.dec(_f$objective),
-      criterionIds: data.dec(_f$criterionIds),
-      milestoneId: data.dec(_f$milestoneId),
-      dependsOnTaskIds: data.dec(_f$dependsOnTaskIds),
-      priority: data.dec(_f$priority),
-      risk: data.dec(_f$risk),
-      riskReduction: data.dec(_f$riskReduction),
-      effort: data.dec(_f$effort),
-      selectionRationale: data.dec(_f$selectionRationale),
-      revisionIntroduced: data.dec(_f$revisionIntroduced),
-      revisionUpdated: data.dec(_f$revisionUpdated),
-      expectedEvidence: data.dec(_f$expectedEvidence),
-      readPaths: data.dec(_f$readPaths),
-      writePaths: data.dec(_f$writePaths),
-      legacyWriteAccess: data.dec(_f$legacyWriteAccess),
-      doneCriteria: data.dec(_f$doneCriteria),
-      outOfScope: data.dec(_f$outOfScope),
-      context: data.dec(_f$context),
-      expectedArtifacts: data.dec(_f$expectedArtifacts),
-      status: data.dec(_f$status),
-      taskDocumentId: data.dec(_f$taskDocumentId),
-      recoveryIncidentId: data.dec(_f$recoveryIncidentId),
-      fingerprint: data.dec(_f$fingerprint),
-      rejectionReason: data.dec(_f$rejectionReason),
-      failure: data.dec(_f$failure),
-      createdAt: data.dec(_f$createdAt),
-      updatedAt: data.dec(_f$updatedAt),
-    );
-  }
-
-  @override
-  final Function instantiate = _instantiate;
-
-  static ProjectTask fromMap(Map<String, dynamic> map) {
-    return ensureInitialized().decodeMap<ProjectTask>(map);
-  }
-
-  static ProjectTask fromJson(String json) {
-    return ensureInitialized().decodeJson<ProjectTask>(json);
-  }
-}
-
-/// @nodoc
-mixin ProjectTaskMappable {
-  String toJson() {
-    return ProjectTaskMapper.ensureInitialized().encodeJson<ProjectTask>(
-      this as ProjectTask,
-    );
-  }
-
-  Map<String, dynamic> toMap() {
-    return ProjectTaskMapper.ensureInitialized().encodeMap<ProjectTask>(
-      this as ProjectTask,
-    );
-  }
-}
-
-/// @nodoc
-class ProjectArtifactMapper extends ClassMapperBase<ProjectArtifact> {
-  ProjectArtifactMapper._();
-
-  static ProjectArtifactMapper? _instance;
-  static ProjectArtifactMapper ensureInitialized() {
-    if (_instance == null) {
-      MapperContainer.globals.use(_instance = ProjectArtifactMapper._());
-    }
-    return _instance!;
-  }
-
-  @override
-  final String id = 'ProjectArtifact';
-
-  static String _$id(ProjectArtifact v) => v.id;
-  static const Field<ProjectArtifact, String> _f$id = Field(
-    'id',
-    _$id,
-    hook: JsonStringHook(),
-  );
-  static String? _$projectTaskId(ProjectArtifact v) => v.projectTaskId;
-  static const Field<ProjectArtifact, String> _f$projectTaskId = Field(
-    'projectTaskId',
-    _$projectTaskId,
-    hook: JsonNullableStringHook(),
-  );
-  static String? _$taskDocumentId(ProjectArtifact v) => v.taskDocumentId;
-  static const Field<ProjectArtifact, String> _f$taskDocumentId = Field(
-    'taskDocumentId',
-    _$taskDocumentId,
-    hook: JsonNullableStringHook(),
-  );
-  static String? _$taskRunId(ProjectArtifact v) => v.taskRunId;
-  static const Field<ProjectArtifact, String> _f$taskRunId = Field(
-    'taskRunId',
-    _$taskRunId,
-    opt: true,
-    hook: JsonNullableStringHook(),
-  );
-  static String _$path(ProjectArtifact v) => v.path;
-  static const Field<ProjectArtifact, String> _f$path = Field(
-    'path',
-    _$path,
-    hook: JsonStringHook(),
-  );
-  static String _$description(ProjectArtifact v) => v.description;
-  static const Field<ProjectArtifact, String> _f$description = Field(
-    'description',
-    _$description,
-    hook: JsonStringHook(),
-  );
-  static String _$kind(ProjectArtifact v) => v.kind;
-  static const Field<ProjectArtifact, String> _f$kind = Field(
-    'kind',
-    _$kind,
-    hook: JsonStringHook(fallback: 'file'),
-  );
-  static DateTime _$createdAt(ProjectArtifact v) => v.createdAt;
-  static const Field<ProjectArtifact, DateTime> _f$createdAt = Field(
-    'createdAt',
-    _$createdAt,
-    hook: JsonDateHook(),
-  );
-
-  @override
-  final MappableFields<ProjectArtifact> fields = const {
-    #id: _f$id,
-    #projectTaskId: _f$projectTaskId,
-    #taskDocumentId: _f$taskDocumentId,
-    #taskRunId: _f$taskRunId,
-    #path: _f$path,
-    #description: _f$description,
-    #kind: _f$kind,
-    #createdAt: _f$createdAt,
-  };
-  @override
-  final bool ignoreNull = true;
-
-  @override
-  final MappingHook hook = const ProjectArtifactJsonHook();
-  static ProjectArtifact _instantiate(DecodingData data) {
-    return ProjectArtifact(
-      id: data.dec(_f$id),
-      projectTaskId: data.dec(_f$projectTaskId),
-      taskDocumentId: data.dec(_f$taskDocumentId),
-      taskRunId: data.dec(_f$taskRunId),
-      path: data.dec(_f$path),
-      description: data.dec(_f$description),
-      kind: data.dec(_f$kind),
-      createdAt: data.dec(_f$createdAt),
-    );
-  }
-
-  @override
-  final Function instantiate = _instantiate;
-
-  static ProjectArtifact fromMap(Map<String, dynamic> map) {
-    return ensureInitialized().decodeMap<ProjectArtifact>(map);
-  }
-
-  static ProjectArtifact fromJson(String json) {
-    return ensureInitialized().decodeJson<ProjectArtifact>(json);
-  }
-}
-
-/// @nodoc
-mixin ProjectArtifactMappable {
-  String toJson() {
-    return ProjectArtifactMapper.ensureInitialized()
-        .encodeJson<ProjectArtifact>(this as ProjectArtifact);
-  }
-
-  Map<String, dynamic> toMap() {
-    return ProjectArtifactMapper.ensureInitialized().encodeMap<ProjectArtifact>(
-      this as ProjectArtifact,
-    );
-  }
-}
-
-/// @nodoc
-class ProjectTaskFailureMapper extends ClassMapperBase<ProjectTaskFailure> {
-  ProjectTaskFailureMapper._();
-
-  static ProjectTaskFailureMapper? _instance;
-  static ProjectTaskFailureMapper ensureInitialized() {
-    if (_instance == null) {
-      MapperContainer.globals.use(_instance = ProjectTaskFailureMapper._());
-      TaskGateFailureDispositionMapper.ensureInitialized();
-    }
-    return _instance!;
-  }
-
-  @override
-  final String id = 'ProjectTaskFailure';
-
-  static String? _$gateId(ProjectTaskFailure v) => v.gateId;
-  static const Field<ProjectTaskFailure, String> _f$gateId = Field(
-    'gateId',
-    _$gateId,
-    opt: true,
-    hook: JsonNullableStringHook(),
-  );
-  static TaskGateFailureDisposition _$disposition(ProjectTaskFailure v) =>
-      v.disposition;
-  static const Field<ProjectTaskFailure, TaskGateFailureDisposition>
-  _f$disposition = Field('disposition', _$disposition, hook: EnumAliasHook({}));
-  static String _$failureKey(ProjectTaskFailure v) => v.failureKey;
-  static const Field<ProjectTaskFailure, String> _f$failureKey = Field(
-    'failureKey',
-    _$failureKey,
-    hook: JsonStringHook(),
-  );
-  static String _$summary(ProjectTaskFailure v) => v.summary;
-  static const Field<ProjectTaskFailure, String> _f$summary = Field(
-    'summary',
-    _$summary,
-    hook: JsonStringHook(),
-  );
-  static List<String> _$errorCodes(ProjectTaskFailure v) => v.errorCodes;
-  static const Field<ProjectTaskFailure, List<String>> _f$errorCodes = Field(
-    'errorCodes',
-    _$errorCodes,
-    opt: true,
-    def: const [],
-    hook: JsonStringListHook(),
-  );
-  static List<String> _$toolCallIds(ProjectTaskFailure v) => v.toolCallIds;
-  static const Field<ProjectTaskFailure, List<String>> _f$toolCallIds = Field(
-    'toolCallIds',
-    _$toolCallIds,
-    opt: true,
-    def: const [],
-    hook: JsonStringListHook(),
-  );
-  static int _$advisoryErrorCount(ProjectTaskFailure v) => v.advisoryErrorCount;
-  static const Field<ProjectTaskFailure, int> _f$advisoryErrorCount = Field(
-    'advisoryErrorCount',
-    _$advisoryErrorCount,
-    opt: true,
-    def: 0,
-    hook: JsonIntHook(),
-  );
-  static int _$resolvedErrorCount(ProjectTaskFailure v) => v.resolvedErrorCount;
-  static const Field<ProjectTaskFailure, int> _f$resolvedErrorCount = Field(
-    'resolvedErrorCount',
-    _$resolvedErrorCount,
-    opt: true,
-    def: 0,
-    hook: JsonIntHook(),
-  );
-  static int _$unresolvedErrorCount(ProjectTaskFailure v) =>
-      v.unresolvedErrorCount;
-  static const Field<ProjectTaskFailure, int> _f$unresolvedErrorCount = Field(
-    'unresolvedErrorCount',
-    _$unresolvedErrorCount,
-    opt: true,
-    def: 0,
-    hook: JsonIntHook(),
-  );
-
-  @override
-  final MappableFields<ProjectTaskFailure> fields = const {
-    #gateId: _f$gateId,
-    #disposition: _f$disposition,
-    #failureKey: _f$failureKey,
-    #summary: _f$summary,
-    #errorCodes: _f$errorCodes,
-    #toolCallIds: _f$toolCallIds,
-    #advisoryErrorCount: _f$advisoryErrorCount,
-    #resolvedErrorCount: _f$resolvedErrorCount,
-    #unresolvedErrorCount: _f$unresolvedErrorCount,
-  };
-  @override
-  final bool ignoreNull = true;
-
-  static ProjectTaskFailure _instantiate(DecodingData data) {
-    return ProjectTaskFailure(
-      gateId: data.dec(_f$gateId),
-      disposition: data.dec(_f$disposition),
-      failureKey: data.dec(_f$failureKey),
-      summary: data.dec(_f$summary),
-      errorCodes: data.dec(_f$errorCodes),
-      toolCallIds: data.dec(_f$toolCallIds),
-      advisoryErrorCount: data.dec(_f$advisoryErrorCount),
-      resolvedErrorCount: data.dec(_f$resolvedErrorCount),
-      unresolvedErrorCount: data.dec(_f$unresolvedErrorCount),
-    );
-  }
-
-  @override
-  final Function instantiate = _instantiate;
-
-  static ProjectTaskFailure fromMap(Map<String, dynamic> map) {
-    return ensureInitialized().decodeMap<ProjectTaskFailure>(map);
-  }
-
-  static ProjectTaskFailure fromJson(String json) {
-    return ensureInitialized().decodeJson<ProjectTaskFailure>(json);
-  }
-}
-
-/// @nodoc
-mixin ProjectTaskFailureMappable {
-  String toJson() {
-    return ProjectTaskFailureMapper.ensureInitialized()
-        .encodeJson<ProjectTaskFailure>(this as ProjectTaskFailure);
-  }
-
-  Map<String, dynamic> toMap() {
-    return ProjectTaskFailureMapper.ensureInitialized()
-        .encodeMap<ProjectTaskFailure>(this as ProjectTaskFailure);
   }
 }
 
@@ -3648,8 +2605,8 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
     if (_instance == null) {
       MapperContainer.globals.use(_instance = ProjectStateMapper._());
       ProjectCriterionMapper.ensureInitialized();
-      ProjectTaskMapper.ensureInitialized();
-      ProjectArtifactMapper.ensureInitialized();
+      TaskMapper.ensureInitialized();
+      TaskArtifactMapper.ensureInitialized();
       ProjectRecoveryIncidentMapper.ensureInitialized();
       ProjectEvidenceMapper.ensureInitialized();
       ProjectMilestoneMapper.ensureInitialized();
@@ -3714,15 +2671,55 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
     _$constraints,
     hook: JsonStringListHook(),
   );
-  static List<ProjectTask> _$tasks(ProjectState v) => v.tasks;
-  static const Field<ProjectState, List<ProjectTask>> _f$tasks = Field(
+  static List<Task> _$tasks(ProjectState v) => v.tasks;
+  static const Field<ProjectState, List<Task>> _f$tasks = Field(
     'tasks',
     _$tasks,
     opt: true,
     hook: JsonObjectListHook(),
   );
-  static List<ProjectArtifact> _$artifacts(ProjectState v) => v.artifacts;
-  static const Field<ProjectState, List<ProjectArtifact>> _f$artifacts = Field(
+  static List<String> _$taskIds(ProjectState v) => v.taskIds;
+  static const Field<ProjectState, List<String>> _f$taskIds = Field(
+    'taskIds',
+    _$taskIds,
+    opt: true,
+    hook: JsonStringListHook(),
+  );
+  static List<String> _$currentBatchTaskIds(ProjectState v) =>
+      v.currentBatchTaskIds;
+  static const Field<ProjectState, List<String>> _f$currentBatchTaskIds = Field(
+    'currentBatchTaskIds',
+    _$currentBatchTaskIds,
+    opt: true,
+    def: const [],
+    hook: JsonStringListHook(),
+  );
+  static int _$currentBatchIndex(ProjectState v) => v.currentBatchIndex;
+  static const Field<ProjectState, int> _f$currentBatchIndex = Field(
+    'currentBatchIndex',
+    _$currentBatchIndex,
+    opt: true,
+    def: 0,
+    hook: JsonIntHook(min: 0),
+  );
+  static int _$currentBatchPlanRevision(ProjectState v) =>
+      v.currentBatchPlanRevision;
+  static const Field<ProjectState, int> _f$currentBatchPlanRevision = Field(
+    'currentBatchPlanRevision',
+    _$currentBatchPlanRevision,
+    opt: true,
+    def: 0,
+    hook: JsonIntHook(min: 0),
+  );
+  static String? _$pendingReplanReason(ProjectState v) => v.pendingReplanReason;
+  static const Field<ProjectState, String> _f$pendingReplanReason = Field(
+    'pendingReplanReason',
+    _$pendingReplanReason,
+    opt: true,
+    hook: JsonNullableStringHook(),
+  );
+  static List<TaskArtifact> _$artifacts(ProjectState v) => v.artifacts;
+  static const Field<ProjectState, List<TaskArtifact>> _f$artifacts = Field(
     'artifacts',
     _$artifacts,
     opt: true,
@@ -3911,6 +2908,11 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
     #criteria: _f$criteria,
     #constraints: _f$constraints,
     #tasks: _f$tasks,
+    #taskIds: _f$taskIds,
+    #currentBatchTaskIds: _f$currentBatchTaskIds,
+    #currentBatchIndex: _f$currentBatchIndex,
+    #currentBatchPlanRevision: _f$currentBatchPlanRevision,
+    #pendingReplanReason: _f$pendingReplanReason,
     #artifacts: _f$artifacts,
     #recoveryIncidents: _f$recoveryIncidents,
     #evidence: _f$evidence,
@@ -3950,6 +2952,11 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
       criteria: data.dec(_f$criteria),
       constraints: data.dec(_f$constraints),
       tasks: data.dec(_f$tasks),
+      taskIds: data.dec(_f$taskIds),
+      currentBatchTaskIds: data.dec(_f$currentBatchTaskIds),
+      currentBatchIndex: data.dec(_f$currentBatchIndex),
+      currentBatchPlanRevision: data.dec(_f$currentBatchPlanRevision),
+      pendingReplanReason: data.dec(_f$pendingReplanReason),
       artifacts: data.dec(_f$artifacts),
       recoveryIncidents: data.dec(_f$recoveryIncidents),
       evidence: data.dec(_f$evidence),

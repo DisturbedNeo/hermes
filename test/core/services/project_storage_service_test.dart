@@ -139,7 +139,8 @@ void main() {
       expect(decoded['memory'], isA<List>());
       expect(decoded.containsKey('successCriteria'), isFalse);
       expect(decoded.containsKey('knownFacts'), isFalse);
-      expect(decoded['tasks'], isA<List>());
+      expect(decoded['taskIds'], isA<List>());
+      expect(decoded.containsKey('tasks'), isFalse);
       expect(decoded.containsKey('backlog'), isFalse);
       expect(decoded.containsKey('completedTasks'), isFalse);
       expect(decoded.containsKey('failedTasks'), isFalse);

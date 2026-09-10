@@ -76,9 +76,8 @@ void main() {
       id: 'evidence_task_2',
       type: ProjectEvidenceType.artifact,
       criterionIds: const ['criterion_1'],
-      projectTaskId: 'task_2',
-      taskDocumentId: 'document_task_2',
-      taskRunId: 'run_task_2',
+      taskId: 'task_2',
+      runId: 'run_task_2',
       sourceRef: 'report.md',
       summary: 'The report artifact was produced.',
       status: ProjectEvidenceStatus.accepted,
@@ -185,8 +184,8 @@ ProjectDocument _project(DateTime now) {
   );
 }
 
-ProjectTask _task(String id, DateTime now) {
-  return ProjectTask(
+Task _task(String id, DateTime now) {
+  return Task(
     id: id,
     title: id,
     objective: 'Complete $id.',
@@ -195,8 +194,7 @@ ProjectTask _task(String id, DateTime now) {
     outOfScope: const [],
     context: const [],
     expectedArtifacts: const [],
-    status: ProjectTaskStatus.completed,
-    taskDocumentId: 'document_$id',
+    status: TaskStatus.completed,
     fingerprint: id,
     rejectionReason: null,
     createdAt: now,

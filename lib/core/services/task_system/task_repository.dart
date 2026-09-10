@@ -30,8 +30,8 @@ class TaskRepository {
       try {
         final raw = await _snapshots.readMap(file, isValid: _isTaskMap);
         if (raw == null) continue;
-        final task = ModelJson.decode<TaskDocument>(raw);
-        if (task.schemaVersion != TaskDocument.currentSchemaVersion) continue;
+        final task = ModelJson.decode<Task>(raw);
+        if (task.schemaVersion != Task.currentSchemaVersion) continue;
         if (chatSessionId != null && task.chatSessionId != chatSessionId) {
           continue;
         }
@@ -56,7 +56,7 @@ class TaskRepository {
     return summaries;
   }
 
-  Future<TaskDocument?> loadLatestTask(
+  Future<Task?> loadLatestTask(
     String workspaceRoot, {
     String? chatSessionId,
     String? projectId,
@@ -74,7 +74,7 @@ class TaskRepository {
     );
   }
 
-  Future<TaskDocument?> loadTask(
+  Future<Task?> loadTask(
     String workspaceRoot,
     String taskId, {
     String? chatSessionId,
@@ -85,19 +85,19 @@ class TaskRepository {
     final raw = await _snapshots.readMap(file, isValid: _isTaskMap);
     if (raw == null) return null;
     final rawVersion = _rawSchemaVersion(raw);
-    if (rawVersion > TaskDocument.currentSchemaVersion) {
+    if (rawVersion > Task.currentSchemaVersion) {
       throw UnsupportedSnapshotSchemaException(
         path: file.path,
         foundVersion: rawVersion,
-        supportedVersion: TaskDocument.currentSchemaVersion,
+        supportedVersion: Task.currentSchemaVersion,
       );
     }
-    final task = ModelJson.decode<TaskDocument>(raw);
+    final task = ModelJson.decode<Task>(raw);
     if (chatSessionId != null && task.chatSessionId != chatSessionId) {
       return null;
     }
     if (projectId != null && task.projectId != projectId) return null;
-    if (rawVersion != TaskDocument.currentSchemaVersion) {
+    if (rawVersion != Task.currentSchemaVersion) {
       if (rawVersion == 2) {
         await _writeV2MigrationBackup(dir, raw);
       }
@@ -106,7 +106,7 @@ class TaskRepository {
     return task;
   }
 
-  Future<void> saveSnapshot(String workspaceRoot, TaskDocument task) async {
+  Future<void> saveSnapshot(String workspaceRoot, Task task) async {
     final dir = _validatedTaskDirectory(workspaceRoot, task.id);
     await dir.create(recursive: true);
     await _snapshots.writeMap(
@@ -116,6 +116,28 @@ class TaskRepository {
     );
   }
 
+  /// Writes a task under its canonical ID while retaining auxiliary files
+  /// (for example task logs) from a legacy task directory. The legacy
+  /// directory is removed only after the canonical snapshot has been saved.
+  Future<void> migrateSnapshot(
+    String workspaceRoot, {
+    required String sourceTaskId,
+    required Task task,
+  }) async {
+    final sourceDir = _validatedTaskDirectory(workspaceRoot, sourceTaskId);
+    final targetDir = _validatedTaskDirectory(workspaceRoot, task.id);
+    if (sourceTaskId != task.id && await sourceDir.exists()) {
+      await targetDir.create(recursive: true);
+      await _copyMissingFiles(sourceDir, targetDir);
+    }
+
+    await saveSnapshot(workspaceRoot, task);
+
+    if (sourceTaskId != task.id && await sourceDir.exists()) {
+      await sourceDir.delete(recursive: true);
+    }
+  }
+
   Future<void> _writeV2MigrationBackup(
     Directory taskDirectory,
     Map<String, dynamic> raw,
@@ -123,6 +145,26 @@ class TaskRepository {
     final backup = File(path.join(taskDirectory.path, v2BackupFileName));
     if (await backup.exists()) return;
     await _snapshots.writeMap(backup, raw, isValid: _isTaskMap);
+  }
+
+  Future<void> _copyMissingFiles(Directory source, Directory target) async {
+    await for (final entity in source.list(followLinks: false)) {
+      if (entity is Directory) {
+        final destination = Directory(
+          path.join(target.path, path.basename(entity.path)),
+        );
+        await destination.create(recursive: true);
+        await _copyMissingFiles(entity, destination);
+      } else if (entity is File &&
+          path.basename(entity.path) != documentFileName) {
+        final destination = File(
+          path.join(target.path, path.basename(entity.path)),
+        );
+        if (!await destination.exists()) {
+          await entity.copy(destination.path);
+        }
+      }
+    }
   }
 
   int _rawSchemaVersion(Map<String, dynamic> map) {
@@ -228,11 +270,11 @@ class TaskRepository {
   }
 
   bool _isTaskMap(Map<String, dynamic> map) {
-    if (_rawSchemaVersion(map) > TaskDocument.currentSchemaVersion) {
+    if (_rawSchemaVersion(map) > Task.currentSchemaVersion) {
       return (map['id'] ?? '').toString().trim().isNotEmpty;
     }
     try {
-      final task = ModelJson.decode<TaskDocument>(map);
+      final task = ModelJson.decode<Task>(map);
       return task.id.trim().isNotEmpty;
     } catch (_) {
       return false;

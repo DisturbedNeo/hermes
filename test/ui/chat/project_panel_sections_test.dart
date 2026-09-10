@@ -11,8 +11,7 @@ void main() {
     final active = _task(
       id: 'active',
       title: 'Active bounded task',
-      status: ProjectTaskStatus.running,
-      taskDocumentId: 'document_active',
+      status: TaskStatus.running,
     );
     final project = ProjectState(
       id: 'project_1',
@@ -52,8 +51,7 @@ void main() {
     final completed = _task(
       id: 'completed',
       title: 'Completed bounded task',
-      status: ProjectTaskStatus.completed,
-      taskDocumentId: 'document_completed',
+      status: TaskStatus.completed,
     );
     final now = DateTime(2026, 1, 1);
     final project = ProjectState(
@@ -88,14 +86,13 @@ void main() {
   });
 }
 
-ProjectTask _task({
+Task _task({
   required String id,
   required String title,
-  required ProjectTaskStatus status,
-  required String taskDocumentId,
+  required TaskStatus status,
 }) {
   final now = DateTime(2026, 1, 1);
-  return ProjectTask(
+  return Task(
     id: id,
     title: title,
     objective: 'Complete the bounded task.',
@@ -105,7 +102,6 @@ ProjectTask _task({
     context: const [],
     expectedArtifacts: const [],
     status: status,
-    taskDocumentId: taskDocumentId,
     fingerprint: id,
     rejectionReason: null,
     createdAt: now,

@@ -6,32 +6,39 @@ void main() {
   group('clean-slate project lifecycle', () {
     test('keeps every task in one canonical collection', () {
       final project = _project([
-        _task('queued', ProjectTaskStatus.queued),
-        _task('active', ProjectTaskStatus.running, taskDocumentId: 'doc_1'),
-        _task('done', ProjectTaskStatus.completed),
-        _task('failed', ProjectTaskStatus.failed),
-        _task('deferred', ProjectTaskStatus.deferred),
-        _task('obsolete', ProjectTaskStatus.obsolete),
-        _task('cancelled', ProjectTaskStatus.cancelled),
+        _task('queued', TaskStatus.queued),
+        _task('active', TaskStatus.running),
+        _task('done', TaskStatus.completed),
+        _task('failed', TaskStatus.failed),
+        _task('deferred', TaskStatus.deferred),
+        _task('obsolete', TaskStatus.obsolete),
+        _task('cancelled', TaskStatus.cancelled),
       ], activeTaskId: 'active');
 
       expect(project.tasks.map((task) => task.id).toSet(), hasLength(7));
       expect(project.taskById(project.activeTaskId!), same(project.tasks[1]));
-      expect(project.tasks.where((task) => task.status == ProjectTaskStatus.completed), hasLength(1));
-      expect(project.tasks.where((task) => task.status == ProjectTaskStatus.failed), hasLength(1));
-      expect(project.tasks.singleWhere((task) => task.status == ProjectTaskStatus.running).taskDocumentId, 'doc_1');
+      expect(
+        project.tasks.where((task) => task.status == TaskStatus.completed),
+        hasLength(1),
+      );
+      expect(
+        project.tasks.where((task) => task.status == TaskStatus.failed),
+        hasLength(1),
+      );
     });
 
     test('round-trips terminal history and active task identity', () {
       final project = _project([
-        _task('done', ProjectTaskStatus.completed),
-        _task('active', ProjectTaskStatus.running, taskDocumentId: 'doc_1'),
+        _task('done', TaskStatus.completed),
+        _task('active', TaskStatus.running),
       ], activeTaskId: 'active');
-      final decoded = ModelJson.decode<ProjectDocument>(ModelJson.encode(project));
+      final decoded = ModelJson.decode<ProjectDocument>(
+        ModelJson.encode(project),
+      );
 
-      expect(decoded.tasks.map((task) => task.id), ['done', 'active']);
+      expect(decoded.taskIds, ['done', 'active']);
+      expect(decoded.tasks, isEmpty);
       expect(decoded.activeTaskId, 'active');
-      expect(decoded.taskById('active')?.taskDocumentId, 'doc_1');
     });
 
     test('waiting and blocked states retain a durable explanation', () {
@@ -58,7 +65,7 @@ void main() {
 }
 
 ProjectDocument _project(
-  List<ProjectTask> tasks, {
+  List<Task> tasks, {
   String? activeTaskId,
   ProjectStatus status = ProjectStatus.active,
   List<PendingProjectQuestion> openQuestions = const [],
@@ -89,13 +96,9 @@ ProjectDocument _project(
   );
 }
 
-ProjectTask _task(
-  String id,
-  ProjectTaskStatus status, {
-  String? taskDocumentId,
-}) {
+Task _task(String id, TaskStatus status) {
   final now = DateTime(2026, 1, 1);
-  return ProjectTask(
+  return Task(
     id: id,
     title: id,
     objective: 'Do $id',
@@ -105,7 +108,6 @@ ProjectTask _task(
     context: const [],
     expectedArtifacts: const [],
     status: status,
-    taskDocumentId: taskDocumentId,
     fingerprint: id,
     rejectionReason: null,
     createdAt: now,

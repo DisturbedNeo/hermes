@@ -85,8 +85,8 @@ class ProjectRepository {
 
   /// Loads a single project by [projectId] from the given workspace root.
   /// Returns `null` when the project does not exist or its
-  /// [chatSessionId] does not match (when provided). Older snapshots are
-  /// rejected because this project model intentionally has no migration path.
+  /// [chatSessionId] does not match (when provided). The previous Phase 2
+  /// schema is upgraded on load because Phase 4 adds only optional batch state.
   Future<ProjectDocument?> loadProject(
     String workspaceRoot,
     String projectId, {
@@ -103,6 +103,9 @@ class ProjectRepository {
     final project = ModelJson.decode<ProjectDocument>(raw);
     if (chatSessionId != null && project.chatSessionId != chatSessionId) {
       return null;
+    }
+    if (_rawSchemaVersion(raw) != ProjectDocument.currentSchemaVersion) {
+      await saveSnapshot(workspaceRoot, project);
     }
     return project;
   }
@@ -268,7 +271,10 @@ class ProjectRepository {
 
   void _checkSchemaVersion(File file, Map<String, dynamic> raw) {
     final foundVersion = _rawSchemaVersion(raw);
-    if (foundVersion == ProjectDocument.currentSchemaVersion) return;
+    if (foundVersion >= ProjectDocument.minimumSupportedSchemaVersion &&
+        foundVersion <= ProjectDocument.currentSchemaVersion) {
+      return;
+    }
     throw UnsupportedSnapshotSchemaException(
       path: file.path,
       foundVersion: foundVersion,

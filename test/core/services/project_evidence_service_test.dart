@@ -66,7 +66,7 @@ void main() {
         );
 
         expect(evidence.single.type, ProjectEvidenceType.command);
-        expect(evidence.single.taskRunId, 'run_command');
+        expect(evidence.single.runId, 'run_command');
         expect(evidence.single.details['runId'], 'run_command');
         expect(evidence.single.status, ProjectEvidenceStatus.accepted);
         expect(evidence.single.strength, ProjectEvidenceStrength.conclusive);
@@ -86,11 +86,10 @@ void main() {
           timestamp,
           summary: '',
           artifacts: [
-            ProjectArtifact(
+            TaskArtifact(
               id: 'artifact_1',
-              projectTaskId: 'task_1',
-              taskDocumentId: 'document_1',
-              taskRunId: 'run_artifact',
+              taskId: 'document_1',
+              runId: 'run_artifact',
               path: 'report.md',
               description: 'Generated report',
               kind: 'file',
@@ -106,7 +105,7 @@ void main() {
       );
 
       expect(evidence.single.strength, ProjectEvidenceStrength.supporting);
-      expect(evidence.single.taskRunId, 'run_artifact');
+      expect(evidence.single.runId, 'run_artifact');
       expect(evaluated.criteria.single.status, ProjectCriterionStatus.partial);
     });
 
@@ -117,14 +116,14 @@ void main() {
           timestamp,
           verificationMode: ProjectVerificationMode.deterministic,
           expectedEvidence: const [
-            ProjectEvidenceExpectation(
+            TaskEvidenceExpectation(
               id: 'expect_command',
               type: ProjectEvidenceType.command,
               criterionIds: ['criterion_001'],
               description: 'The focused tests pass.',
               sourceRef: 'flutter test',
             ),
-            ProjectEvidenceExpectation(
+            TaskEvidenceExpectation(
               id: 'expect_artifact',
               type: ProjectEvidenceType.artifact,
               criterionIds: ['criterion_001'],
@@ -166,11 +165,10 @@ void main() {
             timestamp,
             summary: '',
             artifacts: [
-              ProjectArtifact(
+              TaskArtifact(
                 id: 'artifact_report',
-                projectTaskId: 'task_1',
-                taskDocumentId: 'document_1',
-                taskRunId: 'run_artifact',
+                taskId: 'document_1',
+                runId: 'run_artifact',
                 path: 'report.md',
                 description: 'Generated report.',
                 kind: 'file',
@@ -208,14 +206,14 @@ void main() {
       final task = project.tasks.single.copyWith(
         criterionIds: const ['criterion_001', 'criterion_002'],
         expectedEvidence: const [
-          ProjectEvidenceExpectation(
+          TaskEvidenceExpectation(
             id: 'expect_tests',
             type: ProjectEvidenceType.command,
             criterionIds: ['criterion_001'],
             description: 'The tests pass.',
             sourceRef: 'flutter test',
           ),
-          ProjectEvidenceExpectation(
+          TaskEvidenceExpectation(
             id: 'expect_format',
             type: ProjectEvidenceType.command,
             criterionIds: ['criterion_002'],
@@ -266,7 +264,7 @@ void main() {
           timestamp,
           verificationMode: ProjectVerificationMode.deterministic,
           expectedEvidence: const [
-            ProjectEvidenceExpectation(
+            TaskEvidenceExpectation(
               id: 'old_expectation',
               type: ProjectEvidenceType.command,
               criterionIds: ['criterion_001'],
@@ -276,12 +274,12 @@ void main() {
           ],
         );
         final failedTask = project.tasks.single.copyWith(
-          status: ProjectTaskStatus.failed,
+          status: TaskStatus.failed,
         );
         final replacementTask = project.tasks.single.copyWith(
           id: 'replacement_task',
           expectedEvidence: const [
-            ProjectEvidenceExpectation(
+            TaskEvidenceExpectation(
               id: 'new_expectation',
               type: ProjectEvidenceType.command,
               criterionIds: ['criterion_001'],
@@ -317,7 +315,7 @@ void main() {
           evaluatedAt: timestamp,
         );
 
-        expect(evidence.single.projectTaskId, 'replacement_task');
+        expect(evidence.single.taskId, 'replacement_task');
         expect(evidence.single.expectationIds, ['new_expectation']);
         expect(
           evaluated.criteria.single.status,
@@ -330,7 +328,7 @@ void main() {
       final project = _project(
         timestamp,
         expectedEvidence: const [
-          ProjectEvidenceExpectation(
+          TaskEvidenceExpectation(
             id: 'expect_claim',
             type: ProjectEvidenceType.taskClaim,
             criterionIds: ['criterion_001'],
@@ -365,13 +363,13 @@ void main() {
         final project = _project(
           timestamp,
           expectedEvidence: const [
-            ProjectEvidenceExpectation(
+            TaskEvidenceExpectation(
               id: 'expect_first',
               type: ProjectEvidenceType.taskClaim,
               criterionIds: ['criterion_001'],
               description: 'The first outcome is confirmed.',
             ),
-            ProjectEvidenceExpectation(
+            TaskEvidenceExpectation(
               id: 'expect_second',
               type: ProjectEvidenceType.taskClaim,
               criterionIds: ['criterion_001'],
@@ -432,9 +430,8 @@ void main() {
           evaluatedAt: timestamp,
         );
 
-        expect(evidence.single.projectTaskId, 'task_1');
-        expect(evidence.single.taskDocumentId, 'document_1');
-        expect(evidence.single.taskRunId, 'run_final');
+        expect(evidence.single.taskId, 'task_1');
+        expect(evidence.single.runId, 'run_final');
         expect(evidence.single.criterionIds, ['criterion_001']);
         expect(evidence.single.details['runId'], 'run_final');
       },
@@ -473,7 +470,7 @@ void main() {
 
         expect(second, hasLength(2));
         expect(second.map((item) => item.id).toSet(), hasLength(2));
-        expect(second.map((item) => item.taskRunId), {'run_1', 'run_2'});
+        expect(second.map((item) => item.runId), {'run_1', 'run_2'});
       },
     );
 
@@ -494,14 +491,14 @@ void main() {
         final task = base.tasks.single.copyWith(
           criterionIds: const ['criterion_001', 'criterion_002'],
           expectedEvidence: const [
-            ProjectEvidenceExpectation(
+            TaskEvidenceExpectation(
               id: 'expect_tests',
               type: ProjectEvidenceType.command,
               criterionIds: ['criterion_001'],
               description: 'Tests pass.',
               sourceRef: 'flutter test',
             ),
-            ProjectEvidenceExpectation(
+            TaskEvidenceExpectation(
               id: 'expect_format',
               type: ProjectEvidenceType.command,
               criterionIds: ['criterion_002'],
@@ -737,7 +734,7 @@ void main() {
 ProjectDocument _project(
   DateTime timestamp, {
   ProjectVerificationMode verificationMode = ProjectVerificationMode.mixed,
-  List<ProjectEvidenceExpectation> expectedEvidence = const [],
+  List<TaskEvidenceExpectation> expectedEvidence = const [],
 }) {
   final criterion = ProjectCriterion(
     id: 'criterion_001',
@@ -746,7 +743,7 @@ ProjectDocument _project(
     createdAt: timestamp,
     updatedAt: timestamp,
   );
-  final task = ProjectTask(
+  final task = Task(
     id: 'task_1',
     title: 'Create report',
     objective: 'Create the bounded report.',
@@ -756,7 +753,7 @@ ProjectDocument _project(
     outOfScope: const ['Do not change unrelated files.'],
     context: const [],
     expectedArtifacts: const [],
-    status: ProjectTaskStatus.queued,
+    status: TaskStatus.queued,
     taskDocumentId: null,
     fingerprint: 'create-report',
     rejectionReason: null,
@@ -781,13 +778,13 @@ ProjectDocument _project(
 TaskResult _result(
   DateTime timestamp, {
   required String summary,
-  List<ProjectArtifact> artifacts = const [],
+  List<TaskArtifact> artifacts = const [],
   List<TaskGateResult> gates = const [],
   List<TaskEvidenceClaim> claims = const [],
   String? finalRunId,
 }) {
   return TaskResult(
-    taskDocumentId: 'document_1',
+    taskId: 'document_1',
     status: TaskStatus.completed,
     summary: summary,
     memoryUpdate: '',

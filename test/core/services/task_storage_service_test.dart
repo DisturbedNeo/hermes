@@ -126,7 +126,7 @@ void main() {
       );
       final decoded = jsonDecode(await file.readAsString());
 
-      expect(decoded['schemaVersion'], TaskDocument.currentSchemaVersion);
+      expect(decoded['schemaVersion'], Task.currentSchemaVersion);
       expect(decoded['steps'], isA<List>());
       expect(decoded['runs'], isA<List>());
       expect(decoded['projectId'], isNull);
@@ -151,7 +151,7 @@ void main() {
         path.join(directory.path, TaskRepository.v2BackupFileName),
       );
 
-      expect(migrated?.schemaVersion, TaskDocument.currentSchemaVersion);
+      expect(migrated?.schemaVersion, Task.currentSchemaVersion);
       expect(migrated, isNotNull);
       expect(jsonDecode(await file.readAsString())['schemaVersion'], 3);
       expect(jsonDecode(await backup.readAsString())['schemaVersion'], 2);
@@ -169,7 +169,7 @@ void main() {
             Map<String, dynamic>.from(
                 jsonDecode(await file.readAsString()) as Map,
               )
-              ..['schemaVersion'] = TaskDocument.currentSchemaVersion + 1
+              ..['schemaVersion'] = Task.currentSchemaVersion + 1
               ..['futureOnly'] = {'preserve': true};
         final futureContent = jsonEncode(raw);
         await file.writeAsString(futureContent);
@@ -181,12 +181,12 @@ void main() {
                 .having(
                   (error) => error.foundVersion,
                   'foundVersion',
-                  TaskDocument.currentSchemaVersion + 1,
+                  Task.currentSchemaVersion + 1,
                 )
                 .having(
                   (error) => error.supportedVersion,
                   'supportedVersion',
-                  TaskDocument.currentSchemaVersion,
+                  Task.currentSchemaVersion,
                 ),
           ),
         );
@@ -262,18 +262,18 @@ void main() {
   });
 }
 
-TaskDocument _task({
+Task _task({
   required String id,
   DateTime? updatedAt,
   String? chatSessionId,
   String? projectId,
 }) {
   final now = DateTime(2026, 1, 1);
-  return TaskDocument(
+  return Task(
     id: id,
     title: 'Test task',
     originalPrompt: 'Run the task',
-    goal: 'Run the task',
+    objective: 'Run the task',
     constraints: const ['Stay in workspace'],
     successCriteria: const ['Finish'],
     steps: const [

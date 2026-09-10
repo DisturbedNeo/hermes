@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:hermes/core/models/project.dart';
-import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/workspace_service.dart';
@@ -376,13 +375,17 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
 }
 
 IconData _iconForTaskStatus(TaskStatus status) => switch (status) {
+  TaskStatus.draft || TaskStatus.planned => Icons.account_tree_outlined,
+  TaskStatus.queued => Icons.radio_button_unchecked,
   TaskStatus.completed => Icons.check_circle_outline,
   TaskStatus.running => Icons.sync,
   TaskStatus.paused => Icons.pause_circle_outline,
   TaskStatus.blocked => Icons.block,
   TaskStatus.failed => Icons.error_outline,
+  TaskStatus.rejected || TaskStatus.split => Icons.cancel_outlined,
+  TaskStatus.deferred => Icons.pause_circle_outline,
+  TaskStatus.obsolete => Icons.archive_outlined,
   TaskStatus.cancelled => Icons.cancel_outlined,
-  TaskStatus.draft || TaskStatus.planned => Icons.account_tree_outlined,
 };
 
 class _SectionHeader extends StatelessWidget {

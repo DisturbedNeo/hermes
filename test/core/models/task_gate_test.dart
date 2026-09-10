@@ -4,7 +4,7 @@ import 'package:hermes/core/serialization/model_json.dart';
 
 void main() {
   test('task JSON remains backward compatible without gates', () {
-    final task = ModelJson.decode<TaskDocument>({
+    final task = ModelJson.decode<Task>({
       'id': 'task_1',
       'title': 'Old task',
       'originalPrompt': 'Do work',
@@ -36,11 +36,11 @@ void main() {
 
   test('serializes task, step, and run gate metadata', () {
     final now = DateTime(2026, 1, 1);
-    final task = TaskDocument(
+    final task = Task(
       id: 'task_1',
       title: 'Task',
       originalPrompt: 'Do work',
-      goal: 'Do work',
+      objective: 'Do work',
       constraints: const [],
       successCriteria: const ['Done'],
       gates: const [TaskGate(id: 'no_tool_errors', scope: 'task')],
@@ -101,7 +101,7 @@ void main() {
       updatedAt: now,
     );
 
-    final decoded = ModelJson.decode<TaskDocument>(ModelJson.encode(task));
+    final decoded = ModelJson.decode<Task>(ModelJson.encode(task));
 
     expect(decoded.gates.single.id, 'no_tool_errors');
     expect(decoded.steps.single.gates.single.id, 'artifact_exists');

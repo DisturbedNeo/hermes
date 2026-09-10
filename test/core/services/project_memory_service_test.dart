@@ -305,7 +305,7 @@ void main() {
 final _now = DateTime.utc(2026, 1, 1);
 
 ProjectDocument _project({
-  List<ProjectTask> tasks = const [],
+  List<Task> tasks = const [],
   List<ProjectMemoryEntry> memory = const [],
   List<ProjectMilestone> milestones = const [],
 }) => ProjectDocument(
@@ -352,25 +352,23 @@ ProjectMemoryEntry _memory(
   updatedAt: _now,
 );
 
-ProjectTask _task(String id, {List<String> dependencies = const []}) =>
-    ProjectTask(
-      id: id,
-      title: 'Reporting task',
-      objective: 'Implement reporting.',
-      criterionIds: const ['criterion_1'],
-      milestoneId: 'milestone_1',
-      dependsOnTaskIds: dependencies,
-      doneCriteria: const ['Reporting is verified.'],
-      outOfScope: const ['Unrelated work.'],
-      context: const [],
-      expectedArtifacts: const [],
-      status: ProjectTaskStatus.queued,
-      taskDocumentId: null,
-      fingerprint: 'fingerprint_$id',
-      rejectionReason: null,
-      createdAt: _now,
-      updatedAt: _now,
-    );
+Task _task(String id, {List<String> dependencies = const []}) => Task(
+  id: id,
+  title: 'Reporting task',
+  objective: 'Implement reporting.',
+  criterionIds: const ['criterion_1'],
+  milestoneId: 'milestone_1',
+  dependsOnTaskIds: dependencies,
+  doneCriteria: const ['Reporting is verified.'],
+  outOfScope: const ['Unrelated work.'],
+  context: const [],
+  expectedArtifacts: const [],
+  status: TaskStatus.queued,
+  fingerprint: 'fingerprint_$id',
+  rejectionReason: null,
+  createdAt: _now,
+  updatedAt: _now,
+);
 
 ProjectMilestone _milestone() => ProjectMilestone(
   id: 'milestone_1',

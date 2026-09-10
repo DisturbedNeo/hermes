@@ -25,7 +25,7 @@ void main() {
       updatedAt: now,
     );
 
-    expect(project.schemaVersion, 5);
+    expect(project.schemaVersion, ProjectDocument.currentSchemaVersion);
     expect(project.tasks, isEmpty);
     expect(project.nextRevision, 2);
     expect(project.taskById('missing'), isNull);
@@ -33,7 +33,7 @@ void main() {
 
   test('task lifecycle status is the authority for task state', () {
     final now = DateTime(2026, 1, 1);
-    final task = ProjectTask(
+    final task = Task(
       id: 'task_1',
       title: 'Task',
       objective: 'Do one thing',
@@ -42,65 +42,54 @@ void main() {
       outOfScope: const ['Everything else'],
       context: const [],
       expectedArtifacts: const [],
-      status: ProjectTaskStatus.completed,
-      taskDocumentId: 'document_1',
+      status: TaskStatus.completed,
       fingerprint: 'task',
       rejectionReason: null,
       createdAt: now,
       updatedAt: now,
     );
-    expect(task.status, ProjectTaskStatus.completed);
-    expect(task.taskDocumentId, 'document_1');
+    expect(task.status, TaskStatus.completed);
   });
 
-  test(
-    'resolves the active task document through the project-task mapping',
-    () {
-      final now = DateTime(2026, 1, 1);
-      final task = ProjectTask(
-        id: 'project_task_1',
-        title: 'Task',
-        objective: 'Do one bounded thing',
-        criterionIds: const ['criterion_1'],
-        doneCriteria: const ['Done'],
-        outOfScope: const ['Everything else'],
-        context: const [],
-        expectedArtifacts: const [],
-        status: ProjectTaskStatus.running,
-        taskDocumentId: 'task_document_1',
-        fingerprint: 'task',
-        rejectionReason: null,
-        createdAt: now,
-        updatedAt: now,
-      );
-      final project = ProjectDocument(
-        id: 'project_1',
-        title: 'Project',
-        originalGoal: 'Build the app',
-        refinedGoal: 'Build the app safely',
-        criteria: [
-          ProjectCriterion(
-            id: 'criterion_1',
-            statement: 'The app works',
-            createdAt: now,
-            updatedAt: now,
-          ),
-        ],
-        constraints: const [],
-        tasks: [task],
-        status: ProjectStatus.runningTask,
-        activeTaskId: task.id,
-        createdAt: now,
-        updatedAt: now,
-      );
+  test('addresses the active task through its canonical ID', () {
+    final now = DateTime(2026, 1, 1);
+    final task = Task(
+      id: 'project_task_1',
+      title: 'Task',
+      objective: 'Do one bounded thing',
+      criterionIds: const ['criterion_1'],
+      doneCriteria: const ['Done'],
+      outOfScope: const ['Everything else'],
+      context: const [],
+      expectedArtifacts: const [],
+      status: TaskStatus.running,
+      fingerprint: 'task',
+      rejectionReason: null,
+      createdAt: now,
+      updatedAt: now,
+    );
+    final project = ProjectDocument(
+      id: 'project_1',
+      title: 'Project',
+      originalGoal: 'Build the app',
+      refinedGoal: 'Build the app safely',
+      criteria: [
+        ProjectCriterion(
+          id: 'criterion_1',
+          statement: 'The app works',
+          createdAt: now,
+          updatedAt: now,
+        ),
+      ],
+      constraints: const [],
+      tasks: [task],
+      status: ProjectStatus.runningTask,
+      activeTaskId: task.id,
+      createdAt: now,
+      updatedAt: now,
+    );
 
-      expect(project.activeTaskDocumentId, 'task_document_1');
-      expect(
-        project
-            .copyWith(tasks: [task.copyWith(taskDocumentId: null)])
-            .activeTaskDocumentId,
-        task.id,
-      );
-    },
-  );
+    expect(project.activeTaskId, task.id);
+    expect(project.taskById(project.activeTaskId!), same(task));
+  });
 }

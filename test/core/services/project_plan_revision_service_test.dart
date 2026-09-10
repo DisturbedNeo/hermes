@@ -33,6 +33,63 @@ void main() {
     expect(result.project.planHistory, hasLength(1));
   });
 
+  test(
+    'rejects incomplete plans without changing the current backlog',
+    () async {
+      final existing = _task('existing');
+      final project = _project([existing]);
+      final result = await service.prepareAndApply(
+        project: project,
+        proposal: _desired(project, const [], hasCompleteCollections: false),
+        workspaceRoot: workspace.path,
+        approvalPolicy: ProjectPlanApprovalPolicy.never,
+      );
+
+      expect(result.changed, isFalse);
+      expect(result.project.tasks, [existing]);
+      expect(result.project.planHistory, hasLength(1));
+      expect(
+        result.validation.errors.map((issue) => issue.code),
+        contains('incomplete_plan'),
+      );
+    },
+  );
+
+  test(
+    'leaves omitted mutable tasks unchanged unless explicitly disposed',
+    () async {
+      final existing = _task('existing');
+      final project = _project([existing]);
+      final unchanged = await service.prepareAndApply(
+        project: project,
+        proposal: _desired(project, const []),
+        workspaceRoot: workspace.path,
+        approvalPolicy: ProjectPlanApprovalPolicy.never,
+      );
+
+      expect(unchanged.changed, isFalse);
+      expect(unchanged.project.taskById('existing'), existing);
+
+      final disposed = await service.prepareAndApply(
+        project: project,
+        proposal: _desired(
+          project,
+          const [],
+          obsoleteTaskIds: const ['existing'],
+        ),
+        workspaceRoot: workspace.path,
+        approvalPolicy: ProjectPlanApprovalPolicy.never,
+      );
+
+      expect(disposed.changed, isTrue);
+      expect(
+        disposed.project.taskById('existing')?.status,
+        TaskStatus.obsolete,
+      );
+      expect(disposed.project.planHistory.last.removedTaskIds, ['existing']);
+    },
+  );
+
   test('automatically retries invalid desired plans before blocking', () async {
     final project = _project([_task('existing')]);
     final invalid = _desired(project, [
@@ -61,14 +118,10 @@ void main() {
   test(
     'reconciliation retains terminal history and makes new work queued',
     () async {
-      final completed = _task('completed').copyWith(
-        status: ProjectTaskStatus.completed,
-        taskDocumentId: 'document_completed',
-      );
-      final active = _task('active').copyWith(
-        status: ProjectTaskStatus.running,
-        taskDocumentId: 'document_active',
-      );
+      final completed = _task(
+        'completed',
+      ).copyWith(status: TaskStatus.completed);
+      final active = _task('active').copyWith(status: TaskStatus.running);
       final project = _project([
         completed,
         active,
@@ -84,25 +137,11 @@ void main() {
       expect(result.changed, isTrue);
       expect(
         result.project.taskById('completed')?.status,
-        ProjectTaskStatus.completed,
+        TaskStatus.completed,
       );
-      expect(
-        result.project.taskById('completed')?.taskDocumentId,
-        'document_completed',
-      );
-      expect(
-        result.project.taskById('active')?.status,
-        ProjectTaskStatus.running,
-      );
-      expect(
-        result.project.taskById('active')?.taskDocumentId,
-        'document_active',
-      );
-      expect(result.project.taskById('new')?.status, ProjectTaskStatus.queued);
-      expect(
-        result.project.taskById('omitted')?.status,
-        ProjectTaskStatus.obsolete,
-      );
+      expect(result.project.taskById('active')?.status, TaskStatus.running);
+      expect(result.project.taskById('new')?.status, TaskStatus.queued);
+      expect(result.project.taskById('omitted')?.status, TaskStatus.queued);
     },
   );
 
@@ -113,12 +152,12 @@ void main() {
       proposal: _desired(
         project,
         [
-          _task('existing', status: ProjectTaskStatus.deferred),
+          _task('existing', status: TaskStatus.deferred),
           _task(
             'new',
-            status: ProjectTaskStatus.obsolete,
+            status: TaskStatus.obsolete,
             expectedEvidence: const [
-              ProjectEvidenceExpectation(
+              TaskEvidenceExpectation(
                 id: 'expect_new',
                 type: ProjectEvidenceType.taskClaim,
                 criterionIds: ['criterion_001'],
@@ -135,17 +174,14 @@ void main() {
     );
 
     expect(result.validation.valid, isTrue);
-    expect(
-      result.project.taskById('existing')?.status,
-      ProjectTaskStatus.deferred,
-    );
-    expect(result.project.taskById('new')?.status, ProjectTaskStatus.obsolete);
+    expect(result.project.taskById('existing')?.status, TaskStatus.deferred);
+    expect(result.project.taskById('new')?.status, TaskStatus.obsolete);
   });
 
   test(
     'explicit empty plans retire only mutable work and preserve history',
     () async {
-      final completed = _task('completed', status: ProjectTaskStatus.completed);
+      final completed = _task('completed', status: TaskStatus.completed);
       final queued = _task('queued');
       final project = _project([completed, queued]);
       final result = await service.prepareAndApply(
@@ -154,6 +190,7 @@ void main() {
           project,
           const [],
           criteria: const [],
+          obsoleteTaskIds: const ['queued'],
           requiresApproval: true,
         ),
         workspaceRoot: workspace.path,
@@ -167,12 +204,9 @@ void main() {
       );
       expect(
         result.project.taskById('completed')?.status,
-        ProjectTaskStatus.completed,
+        TaskStatus.completed,
       );
-      expect(
-        result.project.taskById('queued')?.status,
-        ProjectTaskStatus.obsolete,
-      );
+      expect(result.project.taskById('queued')?.status, TaskStatus.obsolete);
     },
   );
 
@@ -183,7 +217,7 @@ void main() {
       writePaths: const ['lib/new_feature.dart'],
       selectionRationale: 'The new path is the bounded implementation surface.',
       expectedEvidence: const [
-        ProjectEvidenceExpectation(
+        TaskEvidenceExpectation(
           id: 'expect_task',
           type: ProjectEvidenceType.command,
           criterionIds: ['criterion_001'],
@@ -191,10 +225,8 @@ void main() {
         ),
       ],
       expectedArtifacts: [
-        ProjectArtifact(
+        TaskArtifact(
           id: 'artifact_existing',
-          projectTaskId: null,
-          taskDocumentId: null,
           path: 'lib/new_feature.dart',
           description: 'The bounded implementation file.',
           kind: 'file',
@@ -478,7 +510,7 @@ void main() {
             type: ProjectEvidenceType.taskClaim,
             criterionIds: const ['criterion_001'],
             expectationIds: const ['expect_task'],
-            projectTaskId: task.id,
+            taskId: task.id,
             sourceRef: 'run_1',
             summary: 'The old contract was satisfied.',
             status: ProjectEvidenceStatus.accepted,
@@ -489,7 +521,7 @@ void main() {
             type: ProjectEvidenceType.taskClaim,
             criterionIds: const ['criterion_001'],
             expectationIds: const ['expect_task'],
-            projectTaskId: task.id,
+            taskId: task.id,
             sourceRef: 'run_2',
             summary: 'A second old-contract claim.',
             status: ProjectEvidenceStatus.proposed,
@@ -534,7 +566,7 @@ void main() {
 }
 
 ProjectState _project(
-  List<ProjectTask> tasks, {
+  List<Task> tasks, {
   String? activeTaskId,
   List<ProjectMilestone> milestones = const [],
   List<ProjectMemoryEntry> memory = const [],
@@ -568,7 +600,7 @@ ProjectState _project(
 
 ProjectDesiredPlan _desired(
   ProjectState project,
-  List<ProjectTask> tasks, {
+  List<Task> tasks, {
   List<ProjectCriterion>? criteria,
   List<ProjectMilestone>? milestones,
   List<PendingProjectQuestion>? openQuestions,
@@ -577,12 +609,14 @@ ProjectDesiredPlan _desired(
   List<String> deferredTaskIds = const [],
   List<String> obsoleteTaskIds = const [],
   bool requiresApproval = false,
+  bool hasCompleteCollections = true,
 }) {
   return ProjectDesiredPlan(
     revision: project.nextRevision,
     triggers: const [ProjectPlanRevisionTrigger.noReadyTask],
     summary: 'Revise the plan.',
     rationale: 'Keep bounded work actionable.',
+    hasCompleteCollections: hasCompleteCollections,
     criteria: criteria ?? project.criteria,
     milestones: milestones ?? project.milestones,
     tasks: tasks,
@@ -596,18 +630,18 @@ ProjectDesiredPlan _desired(
   );
 }
 
-ProjectTask _task(
+Task _task(
   String id, {
   List<String> dependencies = const [],
   List<String> writePaths = const ['lib/feature.dart'],
-  List<ProjectEvidenceExpectation>? expectedEvidence,
-  List<ProjectArtifact> expectedArtifacts = const [],
+  List<TaskEvidenceExpectation>? expectedEvidence,
+  List<TaskArtifact> expectedArtifacts = const [],
   String selectionRationale = '',
-  ProjectTaskStatus status = ProjectTaskStatus.queued,
+  TaskStatus status = TaskStatus.queued,
 }) {
   final now = DateTime(2026, 1, 2);
   final objective = 'Implement bounded slice $id.';
-  return ProjectTask(
+  return Task(
     id: id,
     title: 'Bounded slice $id',
     objective: objective,
@@ -617,7 +651,7 @@ ProjectTask _task(
     expectedEvidence:
         expectedEvidence ??
         const [
-          ProjectEvidenceExpectation(
+          TaskEvidenceExpectation(
             id: 'expect_task',
             type: ProjectEvidenceType.taskClaim,
             criterionIds: ['criterion_001'],
@@ -630,7 +664,6 @@ ProjectTask _task(
     context: const [],
     expectedArtifacts: expectedArtifacts,
     status: status,
-    taskDocumentId: null,
     fingerprint: projectTaskFingerprint(objective, const ['criterion_001']),
     rejectionReason: null,
     createdAt: now,

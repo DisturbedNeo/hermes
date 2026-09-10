@@ -90,7 +90,7 @@ class ChatService extends ChangeNotifier implements Disposable {
   ExecutionMode executionMode = ExecutionMode.chat;
   ProjectSnapshot? activeProject;
   List<ProjectSummary> availableProjects = const [];
-  TaskSnapshot? activeTask;
+  Task? activeTask;
   List<TaskSummary> availableTasks = const [];
   TaskSystemSettings taskSystemSettings = const TaskSystemSettings();
   bool taskBusy = false;
@@ -705,9 +705,9 @@ class ChatService extends ChangeNotifier implements Disposable {
     notifyListeners();
   }
 
-  Future<TaskSnapshot?> _recoverTaskSnapshot(
+  Future<Task?> _recoverTaskSnapshot(
     WorkspaceAttachment current,
-    TaskSnapshot? snapshot,
+    Task? snapshot,
   ) {
     if (snapshot == null) return Future.value();
     return _taskService.recoverTask(workspace: current, snapshot: snapshot);
@@ -725,17 +725,17 @@ class ChatService extends ChangeNotifier implements Disposable {
     );
   }
 
-  Future<TaskSnapshot?> _taskForActiveProject(
+  Future<Task?> _taskForActiveProject(
     WorkspaceAttachment current,
     ProjectSnapshot? project,
   ) async {
-    final taskDocumentId = project?.activeTaskDocumentId;
-    if (project == null || taskDocumentId == null) return null;
+    final taskId = project?.activeTaskId;
+    if (project == null || taskId == null) return null;
     return _recoverTaskSnapshot(
       current,
       await _taskService.loadTask(
         current,
-        taskDocumentId,
+        taskId,
         chatSessionId: project.chatSessionId,
         projectId: project.id,
       ),
@@ -2467,7 +2467,7 @@ Workspace rules:
         .trim();
   }
 
-  String _buildTaskSystemPrompt(TaskSnapshot snapshot) {
+  String _buildTaskSystemPrompt(Task snapshot) {
     return _buildSystemPrompt(currentUserRequest: snapshot.originalPrompt);
   }
 
@@ -2586,7 +2586,7 @@ Workspace rules:
     return buffer.toString().trim();
   }
 
-  String _taskCreatedMessage(TaskSnapshot snapshot) {
+  String _taskCreatedMessage(Task snapshot) {
     final buffer = StringBuffer()
       ..writeln('Task created: **${snapshot.title}**')
       ..writeln()
@@ -2642,14 +2642,14 @@ Workspace rules:
       buffer
         ..writeln()
         ..writeln(
-          'Latest task: `${latest.taskDocumentId ?? latest.id}` - '
+          'Latest task: `${latest.id}` - '
           '${latest.status.wire}',
         );
     }
     return buffer.toString().trim();
   }
 
-  String _stepFinishedMessage(TaskSnapshot snapshot) {
+  String _stepFinishedMessage(Task snapshot) {
     final latestRun = snapshot.runs.isEmpty ? null : snapshot.runs.last;
     final buffer = StringBuffer()
       ..writeln('Task step finished: **${latestRun?.stepId ?? 'step'}**')
@@ -2693,7 +2693,7 @@ Workspace rules:
     return buffer.toString().trim();
   }
 
-  bool _taskHasTransportFailure(TaskSnapshot? snapshot) {
+  bool _taskHasTransportFailure(Task? snapshot) {
     if (snapshot == null ||
         snapshot.status != TaskStatus.paused ||
         snapshot.runs.isEmpty) {
@@ -2711,7 +2711,7 @@ Workspace rules:
     }
     final task = activeTask;
     if (task == null ||
-        task.id != snapshot.activeTaskDocumentId ||
+        task.id != snapshot.activeTaskId ||
         task.projectId != snapshot.id) {
       return false;
     }
@@ -2731,7 +2731,7 @@ Workspace rules:
         project.blocker == null;
   }
 
-  bool _taskNeedsInterventionBeforeContinuing(TaskSnapshot snapshot) {
+  bool _taskNeedsInterventionBeforeContinuing(Task snapshot) {
     if (snapshot.status != TaskStatus.paused) return false;
     if (snapshot.pendingApproval != null || snapshot.pendingQuestion != null) {
       return true;

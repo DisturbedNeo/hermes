@@ -10,7 +10,7 @@ class ProjectProgressMonitor {
 
   ProjectDocument recordTaskResult({
     required ProjectDocument project,
-    required ProjectTask task,
+    required Task task,
     required bool taskAccepted,
     bool excludeFromStagnation = false,
     required Map<String, ProjectCriterionStatus> criterionStatusesBefore,
@@ -32,7 +32,7 @@ class ProjectProgressMonitor {
         (item) =>
             item.status == ProjectEvidenceStatus.accepted &&
             !acceptedEvidenceIdsBefore.contains(item.id) &&
-            item.projectTaskId == task.id &&
+            item.taskId == task.id &&
             item.criterionIds.any(task.criterionIds.contains),
       );
     }

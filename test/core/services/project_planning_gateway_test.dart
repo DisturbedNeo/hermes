@@ -105,13 +105,13 @@ void main() {
       createdAt: now,
       updatedAt: now,
     );
-    final task = ProjectTask(
+    final task = Task(
       id: 'task_1',
       title: 'Verify outcome',
       objective: 'Verify one bounded outcome.',
       criterionIds: const ['criterion_1'],
       expectedEvidence: const [
-        ProjectEvidenceExpectation(
+        TaskEvidenceExpectation(
           id: 'expect_1',
           type: ProjectEvidenceType.taskClaim,
           criterionIds: ['criterion_1'],
@@ -122,8 +122,7 @@ void main() {
       outOfScope: const ['Unrelated work.'],
       context: const [],
       expectedArtifacts: const [],
-      status: ProjectTaskStatus.queued,
-      taskDocumentId: null,
+      status: TaskStatus.queued,
       fingerprint: 'task_1',
       rejectionReason: null,
       createdAt: now,
@@ -133,7 +132,7 @@ void main() {
       id: 'task_deferred',
       title: 'Deferred verification',
       fingerprint: 'task_deferred',
-      status: ProjectTaskStatus.deferred,
+      status: TaskStatus.deferred,
     );
     final question = PendingProjectQuestion(
       id: 'question_1',
@@ -196,8 +195,9 @@ void main() {
       'rationale': 'The model did not return collection fields.',
     });
     expect(omitted.criteria.map((item) => item.id), ['criterion_1']);
+    expect(omitted.hasCompleteCollections, isFalse);
     expect(omitted.tasks.map((item) => item.id), ['task_1', 'task_deferred']);
-    expect(omitted.tasks.last.status, ProjectTaskStatus.deferred);
+    expect(omitted.tasks.last.status, TaskStatus.deferred);
     expect(omitted.milestones.map((item) => item.id), ['milestone_1']);
     expect(omitted.openQuestions, [question]);
 
@@ -209,6 +209,7 @@ void main() {
       'tasks': [42],
     });
     expect(malformed.criteria.map((item) => item.id), ['criterion_1']);
+    expect(malformed.hasCompleteCollections, isFalse);
     expect(malformed.tasks.map((item) => item.id), ['task_1', 'task_deferred']);
     expect(malformed.milestones.map((item) => item.id), ['milestone_1']);
     expect(malformed.openQuestions, [question]);
@@ -222,6 +223,7 @@ void main() {
       'openQuestions': [],
     });
     expect(cleared.criteria, isEmpty);
+    expect(cleared.hasCompleteCollections, isTrue);
     expect(cleared.tasks, isEmpty);
     expect(cleared.milestones, isEmpty);
     expect(cleared.openQuestions, isEmpty);

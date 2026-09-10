@@ -179,25 +179,23 @@ class ProjectRoadmapSection extends StatelessWidget {
     final ready = scheduler.orderedReadyTasks(project);
     final readyIds = ready.map((item) => item.id).toSet();
     final waitingDependency = project.tasks.where((item) {
-      return refreshed.readinessFor(item.id) ==
-          ProjectTaskReadiness.waitingDependency;
+      return refreshed.readinessFor(item.id) == TaskReadiness.waitingDependency;
     }).toList();
     final waitingInput = project.tasks.where((item) {
-      return refreshed.readinessFor(item.id) ==
-          ProjectTaskReadiness.waitingInput;
+      return refreshed.readinessFor(item.id) == TaskReadiness.waitingInput;
     }).toList();
     final deferred = project.tasks.where((item) {
-      return item.status == ProjectTaskStatus.deferred ||
-          item.status == ProjectTaskStatus.obsolete;
+      return item.status == TaskStatus.deferred ||
+          item.status == TaskStatus.obsolete;
     }).toList();
     final terminalIds = project.tasks
         .where(
           (item) =>
-              item.status == ProjectTaskStatus.completed ||
-              item.status == ProjectTaskStatus.failed ||
-              item.status == ProjectTaskStatus.rejected ||
-              item.status == ProjectTaskStatus.split ||
-              item.status == ProjectTaskStatus.cancelled,
+              item.status == TaskStatus.completed ||
+              item.status == TaskStatus.failed ||
+              item.status == TaskStatus.rejected ||
+              item.status == TaskStatus.split ||
+              item.status == TaskStatus.cancelled,
         )
         .map((item) => item.id)
         .toSet();
@@ -301,7 +299,7 @@ class _MilestoneTile extends StatelessWidget {
         .map((item) => item.id)
         .toSet();
     final completedTaskIds = project.tasks
-        .where((item) => item.status == ProjectTaskStatus.completed)
+        .where((item) => item.status == TaskStatus.completed)
         .map((item) => item.id)
         .toSet();
     final satisfiedCriterionIds = project.criteria
@@ -350,7 +348,7 @@ class _MilestoneTile extends StatelessWidget {
 
 class _TaskGroup extends StatelessWidget {
   final String title;
-  final List<ProjectTask> tasks;
+  final List<Task> tasks;
   final ProjectScheduleResult schedule;
   final String empty;
 
@@ -378,7 +376,7 @@ class _TaskGroup extends StatelessWidget {
 }
 
 class _RoadmapTaskTile extends StatelessWidget {
-  final ProjectTask task;
+  final Task task;
   final bool showRationale;
   final ProjectScheduleResult schedule;
 
@@ -957,11 +955,11 @@ IconData _milestoneIcon(ProjectMilestoneStatus status) => switch (status) {
   ProjectMilestoneStatus.planned => Icons.outlined_flag,
 };
 
-IconData _readinessIcon(ProjectTaskReadiness readiness) => switch (readiness) {
-  ProjectTaskReadiness.ready => Icons.play_circle_outline,
-  ProjectTaskReadiness.waitingDependency => Icons.account_tree_outlined,
-  ProjectTaskReadiness.waitingInput => Icons.person_outline,
-  ProjectTaskReadiness.notEligible => Icons.pause_circle_outline,
+IconData _readinessIcon(TaskReadiness readiness) => switch (readiness) {
+  TaskReadiness.ready => Icons.play_circle_outline,
+  TaskReadiness.waitingDependency => Icons.account_tree_outlined,
+  TaskReadiness.waitingInput => Icons.person_outline,
+  TaskReadiness.notEligible => Icons.pause_circle_outline,
 };
 
 IconData _evidenceIcon(ProjectEvidenceType type) => switch (type) {

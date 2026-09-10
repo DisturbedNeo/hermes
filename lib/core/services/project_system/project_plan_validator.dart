@@ -73,6 +73,14 @@ class ProjectPlanValidator {
       );
     }
 
+    if (!proposal.hasCompleteCollections) {
+      issue(
+        'incomplete_plan',
+        'plan',
+        'The planner response did not provide complete criteria, milestone, and task collections.',
+      );
+    }
+
     _validateUniqueIds(
       proposal.criteria.map((item) => item.id),
       'criteria',
@@ -237,9 +245,9 @@ class ProjectPlanValidator {
     final desiredTasks = {for (final task in proposal.tasks) task.id: task};
     final mutableTaskIds = {
       for (final task in project.tasks)
-        if (task.status == ProjectTaskStatus.queued ||
-            task.status == ProjectTaskStatus.deferred ||
-            task.status == ProjectTaskStatus.obsolete)
+        if (task.status == TaskStatus.queued ||
+            task.status == TaskStatus.deferred ||
+            task.status == TaskStatus.obsolete)
           task.id,
     };
     for (final entry in <(String, List<String>)>[
@@ -300,20 +308,20 @@ class ProjectPlanValidator {
       final fieldPath = 'tasks[$index]';
       final existing = existingTasks[task.id];
       if (existing != null &&
-          (existing.status == ProjectTaskStatus.completed ||
-              existing.status == ProjectTaskStatus.failed ||
-              existing.status == ProjectTaskStatus.rejected ||
-              existing.status == ProjectTaskStatus.split ||
-              existing.status == ProjectTaskStatus.cancelled)) {
+          (existing.status == TaskStatus.completed ||
+              existing.status == TaskStatus.failed ||
+              existing.status == TaskStatus.rejected ||
+              existing.status == TaskStatus.split ||
+              existing.status == TaskStatus.cancelled)) {
         issue(
           'immutable_runtime_task',
           '$fieldPath.id',
           'Terminal task ${task.id} cannot be replaced by a plan.',
         );
       }
-      if (task.status != ProjectTaskStatus.queued &&
-          task.status != ProjectTaskStatus.deferred &&
-          task.status != ProjectTaskStatus.obsolete) {
+      if (task.status != TaskStatus.queued &&
+          task.status != TaskStatus.deferred &&
+          task.status != TaskStatus.obsolete) {
         issue(
           'invalid_desired_task_status',
           '$fieldPath.status',
@@ -408,7 +416,7 @@ class ProjectPlanValidator {
             );
           }
         } else if (existingTasks[dependencyId]?.status ==
-            ProjectTaskStatus.completed) {
+            TaskStatus.completed) {
           // Completed historical work is a valid dependency without being
           // repeated in the desired plan.
         } else if (existingTasks.containsKey(dependencyId)) {
@@ -505,7 +513,7 @@ class ProjectPlanValidator {
           );
         }
       }
-      if (task.effort == ProjectTaskEffort.small &&
+      if (task.effort == TaskEffort.small &&
           task.expectedArtifacts.isNotEmpty &&
           task.writePaths.isEmpty &&
           !task.legacyWriteAccess) {
@@ -562,7 +570,7 @@ class ProjectPlanValidator {
     final readyCount = proposal.tasks
         .where(
           (task) =>
-              task.status == ProjectTaskStatus.queued &&
+              task.status == TaskStatus.queued &&
               !proposal.deferredTaskIds.contains(task.id) &&
               !proposal.obsoleteTaskIds.contains(task.id),
         )

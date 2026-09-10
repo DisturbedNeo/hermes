@@ -16,7 +16,7 @@ void main() {
     late Directory root;
     late WorkspaceAttachment workspace;
     late TaskGateEvaluator evaluator;
-    late TaskDocument task;
+    late Task task;
     late TaskStep step;
 
     setUp(() async {
@@ -36,11 +36,11 @@ void main() {
         artifacts: [TaskArtifact(path: 'out.md')],
         status: TaskStepStatus.pending,
       );
-      task = TaskDocument(
+      task = Task(
         id: 'task_1',
         title: 'Task',
         originalPrompt: 'Do work',
-        goal: 'Do work',
+        objective: 'Do work',
         constraints: const [],
         successCriteria: const ['Done'],
         steps: [step],

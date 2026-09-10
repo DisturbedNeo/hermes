@@ -77,7 +77,7 @@ class TaskPanel extends StatelessWidget {
 class _CollapsedTaskPanel extends StatelessWidget {
   final ChatService chat;
   final ProjectDocument? project;
-  final TaskDocument? task;
+  final Task? task;
   final VoidCallback onToggleExpanded;
 
   const _CollapsedTaskPanel({
@@ -145,7 +145,7 @@ class _CollapsedTaskPanel extends StatelessWidget {
 class _Header extends StatelessWidget {
   final ChatService chat;
   final ProjectDocument? project;
-  final TaskDocument? task;
+  final Task? task;
   final VoidCallback onToggleExpanded;
 
   const _Header({
@@ -228,7 +228,7 @@ class _ProjectBody extends StatelessWidget {
         : null;
     final totalProjectTasks = project.tasks.length;
     final completedProjectTasks = project.tasks
-        .where((task) => task.status == ProjectTaskStatus.completed)
+        .where((task) => task.status == TaskStatus.completed)
         .length;
     final iterationLabel = project.maxIterations == 0
         ? '${project.iterationCount} iterations'
@@ -253,8 +253,7 @@ class _ProjectBody extends StatelessWidget {
               label:
                   '$completedProjectTasks of $totalProjectTasks tasks completed',
               child: _StatusChip(
-                label:
-                    '$completedProjectTasks/$totalProjectTasks tasks',
+                label: '$completedProjectTasks/$totalProjectTasks tasks',
               ),
             ),
             AccessibleWidget(
@@ -325,7 +324,7 @@ class _ProjectBody extends StatelessWidget {
           title: 'Completed Tasks',
           child: _ProjectTaskBoardList(
             tasks: project.tasks
-                .where((task) => task.status == ProjectTaskStatus.completed)
+                .where((task) => task.status == TaskStatus.completed)
                 .toList()
                 .reversed
                 .toList(),
@@ -339,8 +338,8 @@ class _ProjectBody extends StatelessWidget {
             tasks: project.tasks
                 .where(
                   (task) =>
-                      task.status == ProjectTaskStatus.failed ||
-                      task.status == ProjectTaskStatus.rejected,
+                      task.status == TaskStatus.failed ||
+                      task.status == TaskStatus.rejected,
                 )
                 .toList()
                 .reversed
@@ -617,7 +616,7 @@ class _ProjectBlockerCard extends StatelessWidget {
 
 class _CurrentProjectTask extends StatelessWidget {
   final ChatService chat;
-  final TaskDocument task;
+  final Task task;
 
   const _CurrentProjectTask({required this.chat, required this.task});
 
@@ -625,9 +624,8 @@ class _CurrentProjectTask extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final project = chat.activeProject;
-    final projectTask = project?.tasks
-            .where((item) => item.taskDocumentId == task.id)
-            .firstOrNull ??
+    final projectTask =
+        project?.tasks.where((item) => item.id == task.id).firstOrNull ??
         (project?.activeTaskId == null
             ? null
             : project?.taskById(project.activeTaskId!));
@@ -639,7 +637,7 @@ class _CurrentProjectTask extends StatelessWidget {
     final evidenceExpectations = [
       for (final expectation
           in projectTask?.expectedEvidence ??
-              const <ProjectEvidenceExpectation>[])
+              const <TaskEvidenceExpectation>[])
         '${expectation.type.name}: ${expectation.description}',
     ];
     return Column(
@@ -690,7 +688,7 @@ class _CurrentProjectTask extends StatelessWidget {
 
 class _TaskBody extends StatelessWidget {
   final ChatService chat;
-  final TaskDocument task;
+  final Task task;
 
   const _TaskBody({required this.chat, required this.task});
 
@@ -747,7 +745,7 @@ class _TaskBody extends StatelessWidget {
         const SizedBox(height: 12),
         _Section(
           title: 'Goal',
-          child: Text(task.goal, style: theme.textTheme.bodyMedium),
+          child: Text(task.objective, style: theme.textTheme.bodyMedium),
         ),
         if (task.memorySummary.trim().isNotEmpty) ...[
           const SizedBox(height: 10),
@@ -779,7 +777,7 @@ class _TaskBody extends StatelessWidget {
 
 class _Actions extends StatelessWidget {
   final ChatService chat;
-  final TaskDocument task;
+  final Task task;
   final TaskStep? next;
 
   const _Actions({required this.chat, required this.task, required this.next});
@@ -925,7 +923,7 @@ class _Actions extends StatelessWidget {
 
 class _ApprovalCard extends StatelessWidget {
   final ChatService chat;
-  final TaskDocument task;
+  final Task task;
 
   const _ApprovalCard({required this.chat, required this.task});
 
@@ -963,7 +961,7 @@ class _ApprovalCard extends StatelessWidget {
 
 class _QuestionCard extends StatefulWidget {
   final ChatService chat;
-  final TaskDocument task;
+  final Task task;
 
   const _QuestionCard({required this.chat, required this.task});
 
@@ -1020,7 +1018,7 @@ class _QuestionCardState extends State<_QuestionCard> {
 }
 
 class _StepList extends StatelessWidget {
-  final TaskDocument task;
+  final Task task;
 
   const _StepList({required this.task});
 
@@ -1101,7 +1099,7 @@ class _StepTile extends StatelessWidget {
 
 class _ArtifactList extends StatelessWidget {
   final ChatService chat;
-  final TaskDocument task;
+  final Task task;
 
   const _ArtifactList({required this.chat, required this.task});
 
@@ -1159,7 +1157,7 @@ class _ArtifactList extends StatelessWidget {
 }
 
 class _RunList extends StatelessWidget {
-  final TaskDocument task;
+  final Task task;
 
   const _RunList({required this.task});
 
@@ -1207,7 +1205,7 @@ class _RunList extends StatelessWidget {
 }
 
 class _ProjectTaskBoardList extends StatelessWidget {
-  final List<ProjectTask> tasks;
+  final List<Task> tasks;
   final String empty;
 
   const _ProjectTaskBoardList({required this.tasks, required this.empty});
@@ -1257,7 +1255,7 @@ class _ProjectTaskBoardList extends StatelessWidget {
 }
 
 class _ProjectFailureDetails extends StatelessWidget {
-  final ProjectTaskFailure failure;
+  final TaskFailure failure;
 
   const _ProjectFailureDetails({required this.failure});
 
@@ -1350,9 +1348,9 @@ class _ProjectArtifactBoardList extends StatelessWidget {
             subtitle: Text(
               [
                 artifact.kind,
-                if (artifact.description.trim().isNotEmpty)
-                  artifact.description,
-                if (artifact.taskDocumentId != null) artifact.taskDocumentId!,
+                if (artifact.description?.trim().isNotEmpty == true)
+                  artifact.description!,
+                if (artifact.taskId != null) artifact.taskId!,
               ].join(' - '),
             ),
           ),
@@ -1577,16 +1575,19 @@ IconData _runIcon(TaskRunStatus status) => switch (status) {
   TaskRunStatus.needsReplan || TaskRunStatus.replanned => Icons.route_outlined,
 };
 
-IconData _projectTaskStatusIcon(ProjectTaskStatus status) => switch (status) {
-  ProjectTaskStatus.queued => Icons.radio_button_unchecked,
-  ProjectTaskStatus.running => Icons.sync,
-  ProjectTaskStatus.completed => Icons.check_circle_outline,
-  ProjectTaskStatus.failed => Icons.error_outline,
-  ProjectTaskStatus.rejected => Icons.cancel_outlined,
-  ProjectTaskStatus.split => Icons.call_split_outlined,
-  ProjectTaskStatus.deferred => Icons.pause_circle_outline,
-  ProjectTaskStatus.obsolete => Icons.archive_outlined,
-  ProjectTaskStatus.cancelled => Icons.stop_circle_outlined,
+IconData _projectTaskStatusIcon(TaskStatus status) => switch (status) {
+  TaskStatus.draft || TaskStatus.planned => Icons.account_tree_outlined,
+  TaskStatus.queued => Icons.radio_button_unchecked,
+  TaskStatus.running => Icons.sync,
+  TaskStatus.paused => Icons.pause_circle_outline,
+  TaskStatus.blocked => Icons.block,
+  TaskStatus.completed => Icons.check_circle_outline,
+  TaskStatus.failed => Icons.error_outline,
+  TaskStatus.rejected => Icons.cancel_outlined,
+  TaskStatus.split => Icons.call_split_outlined,
+  TaskStatus.deferred => Icons.pause_circle_outline,
+  TaskStatus.obsolete => Icons.archive_outlined,
+  TaskStatus.cancelled => Icons.stop_circle_outlined,
 };
 
 IconData _projectDecisionIcon(ProjectDecisionType decision) =>

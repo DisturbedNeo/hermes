@@ -38,7 +38,7 @@ class ProjectDependencyGraphValidator {
   const ProjectDependencyGraphValidator();
 
   ProjectDependencyValidationResult validate(ProjectDocument project) {
-    final taskById = <String, ProjectTask>{
+    final taskById = <String, Task>{
       for (final task in project.tasks) task.id: task,
     };
     final issues = <ProjectDependencyIssue>[];
@@ -132,16 +132,20 @@ class ProjectDependencyGraphValidator {
     return ProjectDependencyValidationResult(List.unmodifiable(issues));
   }
 
-  static bool _isDead(ProjectTaskStatus status) => switch (status) {
-    ProjectTaskStatus.failed ||
-    ProjectTaskStatus.rejected ||
-    ProjectTaskStatus.split ||
-    ProjectTaskStatus.deferred ||
-    ProjectTaskStatus.obsolete ||
-    ProjectTaskStatus.cancelled => true,
-    ProjectTaskStatus.queued ||
-    ProjectTaskStatus.running ||
-    ProjectTaskStatus.completed => false,
+  static bool _isDead(TaskStatus status) => switch (status) {
+    TaskStatus.failed ||
+    TaskStatus.rejected ||
+    TaskStatus.split ||
+    TaskStatus.deferred ||
+    TaskStatus.obsolete ||
+    TaskStatus.cancelled => true,
+    TaskStatus.draft ||
+    TaskStatus.planned ||
+    TaskStatus.paused ||
+    TaskStatus.queued ||
+    TaskStatus.running ||
+    TaskStatus.blocked ||
+    TaskStatus.completed => false,
   };
 }
 
@@ -150,10 +154,10 @@ class ProjectScheduleResult {
   /// the selected task's derived rationale persisted; readiness refreshes
   /// continue to return the original project unchanged.
   final ProjectDocument project;
-  final ProjectTask? selectedTask;
+  final Task? selectedTask;
   final String? selectionRationale;
   final ProjectDependencyValidationResult dependencyValidation;
-  final Map<String, ProjectTaskReadiness> readiness;
+  final Map<String, TaskReadiness> readiness;
   final Map<String, List<String>> readinessReasons;
 
   const ProjectScheduleResult({
@@ -165,8 +169,8 @@ class ProjectScheduleResult {
     this.selectionRationale,
   });
 
-  ProjectTaskReadiness readinessFor(String taskId) =>
-      readiness[taskId] ?? ProjectTaskReadiness.notEligible;
+  TaskReadiness readinessFor(String taskId) =>
+      readiness[taskId] ?? TaskReadiness.notEligible;
 
   List<String> reasonsFor(String taskId) =>
       readinessReasons[taskId] ?? const [];
@@ -224,7 +228,7 @@ class ProjectScheduler {
     );
   }
 
-  List<ProjectTask> orderedReadyTasks(ProjectDocument project) {
+  List<Task> orderedReadyTasks(ProjectDocument project) {
     final refreshed = refreshReadiness(project);
     final ready = _orderedNormalTasks(refreshed);
     final recovery = _selectRecoveryTask(refreshed)?.task;
@@ -238,14 +242,12 @@ class ProjectScheduler {
 
   _ComputedReadiness _computeReadiness(
     ProjectDocument project,
-    ProjectTask task,
+    Task task,
     ProjectDependencyValidationResult validation,
   ) {
     final ineligibleReason = _ineligibleReason(task.status);
     if (ineligibleReason != null) {
-      return _ComputedReadiness(ProjectTaskReadiness.notEligible, [
-        ineligibleReason,
-      ]);
+      return _ComputedReadiness(TaskReadiness.notEligible, [ineligibleReason]);
     }
 
     final dependencyReasons = <String>[
@@ -257,14 +259,13 @@ class ProjectScheduler {
           (issue) => issue.code == ProjectDependencyIssueCode.deadDependency,
         )) {
       return _ComputedReadiness(
-        ProjectTaskReadiness.notEligible,
+        TaskReadiness.notEligible,
         _unique(dependencyReasons),
       );
     }
     for (final dependencyId in task.dependsOnTaskIds) {
       final dependency = project.taskById(dependencyId);
-      if (dependency != null &&
-          dependency.status != ProjectTaskStatus.completed) {
+      if (dependency != null && dependency.status != TaskStatus.completed) {
         dependencyReasons.add(
           'Waiting for dependency $dependencyId '
           '(status: ${dependency.status.name}).',
@@ -273,25 +274,22 @@ class ProjectScheduler {
     }
     if (dependencyReasons.isNotEmpty) {
       return _ComputedReadiness(
-        ProjectTaskReadiness.waitingDependency,
+        TaskReadiness.waitingDependency,
         _unique(dependencyReasons),
       );
     }
 
     final inputReasons = _inputReasons(project, task);
     if (inputReasons.isNotEmpty) {
-      return _ComputedReadiness(
-        ProjectTaskReadiness.waitingInput,
-        inputReasons,
-      );
+      return _ComputedReadiness(TaskReadiness.waitingInput, inputReasons);
     }
 
-    return const _ComputedReadiness(ProjectTaskReadiness.ready, [
+    return const _ComputedReadiness(TaskReadiness.ready, [
       'All dependencies are complete and no blocking input is pending.',
     ]);
   }
 
-  List<String> _inputReasons(ProjectDocument project, ProjectTask task) {
+  List<String> _inputReasons(ProjectDocument project, Task task) {
     final reasons = <String>[];
     final approval = project.pendingPlanApproval;
     if (approval != null) {
@@ -308,9 +306,7 @@ class ProjectScheduler {
     final blocker = project.blocker;
     if (blocker != null &&
         _isInputBlocker(blocker.type) &&
-        (blocker.taskId == null ||
-            blocker.taskId == task.id ||
-            blocker.taskId == task.taskDocumentId)) {
+        (blocker.taskId == null || blocker.taskId == task.id)) {
       reasons.add(
         'Waiting for ${_blockerLabel(blocker.type)}: ${blocker.message}',
       );
@@ -398,7 +394,7 @@ class ProjectScheduler {
     );
   }
 
-  List<ProjectTask> _orderedNormalTasks(ProjectScheduleResult result) {
+  List<Task> _orderedNormalTasks(ProjectScheduleResult result) {
     final tasks = result.project.tasks;
     final ready = tasks.where((task) => _isReady(result, task)).toList();
     if (ready.isEmpty) return ready;
@@ -425,7 +421,7 @@ class ProjectScheduler {
     return ready;
   }
 
-  static int _downstreamCount(List<ProjectTask> tasks, String taskId) {
+  static int _downstreamCount(List<Task> tasks, String taskId) {
     final dependents = <String, Set<String>>{};
     for (final task in tasks) {
       for (final dependencyId in task.dependsOnTaskIds) {
@@ -443,7 +439,7 @@ class ProjectScheduler {
     return seen.length;
   }
 
-  static int _milestoneRank(ProjectDocument project, ProjectTask task) {
+  static int _milestoneRank(ProjectDocument project, Task task) {
     if (task.milestoneId == null) return 1000000;
     final milestone = project.milestones
         .where((item) => item.id == task.milestoneId)
@@ -467,28 +463,32 @@ class ProjectScheduler {
         '(order ${milestone.order})';
   }
 
-  static ProjectTask? _readyTaskById(ProjectScheduleResult result, String id) {
+  static Task? _readyTaskById(ProjectScheduleResult result, String id) {
     for (final task in result.project.tasks) {
       if (task.id == id && _isReady(result, task)) return task;
     }
     return null;
   }
 
-  static bool _isReady(ProjectScheduleResult result, ProjectTask task) =>
-      task.status == ProjectTaskStatus.queued &&
-      result.readinessFor(task.id) == ProjectTaskReadiness.ready;
+  static bool _isReady(ProjectScheduleResult result, Task task) =>
+      task.status == TaskStatus.queued &&
+      result.readinessFor(task.id) == TaskReadiness.ready;
 
-  static String? _ineligibleReason(ProjectTaskStatus status) {
+  static String? _ineligibleReason(TaskStatus status) {
     return switch (status) {
-      ProjectTaskStatus.queued => null,
-      ProjectTaskStatus.running => 'Task is already running.',
-      ProjectTaskStatus.completed => 'Task is already complete.',
-      ProjectTaskStatus.failed => 'Task is terminal with failed status.',
-      ProjectTaskStatus.rejected => 'Task was rejected.',
-      ProjectTaskStatus.split => 'Task was replaced by split tasks.',
-      ProjectTaskStatus.deferred => 'Task is deferred.',
-      ProjectTaskStatus.obsolete => 'Task is obsolete.',
-      ProjectTaskStatus.cancelled => 'Task is terminal with cancelled status.',
+      TaskStatus.draft => 'Task is still a draft.',
+      TaskStatus.planned => 'Task is planned but not queued.',
+      TaskStatus.queued => null,
+      TaskStatus.running => 'Task is already running.',
+      TaskStatus.paused => 'Task is paused.',
+      TaskStatus.blocked => 'Task is blocked.',
+      TaskStatus.completed => 'Task is already complete.',
+      TaskStatus.failed => 'Task is terminal with failed status.',
+      TaskStatus.rejected => 'Task was rejected.',
+      TaskStatus.split => 'Task was replaced by split tasks.',
+      TaskStatus.deferred => 'Task is deferred.',
+      TaskStatus.obsolete => 'Task is obsolete.',
+      TaskStatus.cancelled => 'Task is terminal with cancelled status.',
     };
   }
 
@@ -516,21 +516,21 @@ class ProjectScheduler {
     ];
   }
 
-  static int _compareStableAgeAndId(ProjectTask a, ProjectTask b) {
+  static int _compareStableAgeAndId(Task a, Task b) {
     final created = a.createdAt.compareTo(b.createdAt);
     return created != 0 ? created : a.id.compareTo(b.id);
   }
 }
 
 class _ComputedReadiness {
-  final ProjectTaskReadiness readiness;
+  final TaskReadiness readiness;
   final List<String> reasons;
 
   const _ComputedReadiness(this.readiness, this.reasons);
 }
 
 class _TaskSelection {
-  final ProjectTask task;
+  final Task task;
   final String rationale;
 
   const _TaskSelection(this.task, this.rationale);

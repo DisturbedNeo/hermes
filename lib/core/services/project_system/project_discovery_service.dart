@@ -96,7 +96,7 @@ class ProjectDiscoveryService {
       gitAvailable: gitAvailable,
       changedFiles: changedFiles,
       projectArtifactPaths: [
-        for (final artifact in project?.artifacts ?? const <ProjectArtifact>[])
+        for (final artifact in project?.artifacts ?? const <TaskArtifact>[])
           artifact.path,
       ].take(_maxRecentItems).toList(),
       taskArtifactIds: taskSummaries
@@ -104,15 +104,16 @@ class ProjectDiscoveryService {
           .map((item) => item.id)
           .toList(),
       recentTaskResults: [
-        for (final task in (project?.tasks ?? const <ProjectTask>[])
-            .where(
-              (task) =>
-                  task.status == ProjectTaskStatus.completed ||
-                  task.status == ProjectTaskStatus.failed,
-            )
-            .toList()
-            .reversed
-            .take(_maxRecentItems))
+        for (final task
+            in (project?.tasks ?? const <Task>[])
+                .where(
+                  (task) =>
+                      task.status == TaskStatus.completed ||
+                      task.status == TaskStatus.failed,
+                )
+                .toList()
+                .reversed
+                .take(_maxRecentItems))
           '${task.status.wire}: ${task.title}',
       ],
       recentGateFailures: [
@@ -142,21 +143,21 @@ class ProjectDiscoveryService {
           '${question.id}: ${question.question}',
       ],
       readyTasks: [
-        for (final task in project?.tasks ?? const <ProjectTask>[])
-          if (task.status == ProjectTaskStatus.queued &&
-              schedule?.readinessFor(task.id) == ProjectTaskReadiness.ready)
+        for (final task in project?.tasks ?? const <Task>[])
+          if (task.status == TaskStatus.queued &&
+              schedule?.readinessFor(task.id) == TaskReadiness.ready)
             '${task.id}: ${task.title}',
       ],
       blockedTasks: [
-        for (final task in project?.tasks ?? const <ProjectTask>[])
-          if (task.status == ProjectTaskStatus.queued &&
-              schedule?.readinessFor(task.id) != ProjectTaskReadiness.ready)
+        for (final task in project?.tasks ?? const <Task>[])
+          if (task.status == TaskStatus.queued &&
+              schedule?.readinessFor(task.id) != TaskReadiness.ready)
             '${task.id}: ${schedule?.reasonsFor(task.id).join('; ')}',
       ],
       recentlyCompletedTasks: [
         for (final task
-            in (project?.tasks ?? const <ProjectTask>[])
-                .where((task) => task.status == ProjectTaskStatus.completed)
+            in (project?.tasks ?? const <Task>[])
+                .where((task) => task.status == TaskStatus.completed)
                 .toList()
                 .reversed
                 .take(_maxRecentItems))

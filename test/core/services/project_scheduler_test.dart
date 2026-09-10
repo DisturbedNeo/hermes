@@ -7,7 +7,7 @@ void main() {
 
   test('derives readiness without mutating persisted tasks', () {
     final project = _project([
-      _task('done', status: ProjectTaskStatus.completed),
+      _task('done', status: TaskStatus.completed),
       _task('ready', dependencies: const ['done']),
       _task('waiting', dependencies: const ['unfinished']),
       _task('unfinished'),
@@ -17,11 +17,8 @@ void main() {
     final result = scheduler.refreshReadiness(project);
 
     expect(result.project, same(project));
-    expect(result.readinessFor('ready'), ProjectTaskReadiness.ready);
-    expect(
-      result.readinessFor('waiting'),
-      ProjectTaskReadiness.waitingDependency,
-    );
+    expect(result.readinessFor('ready'), TaskReadiness.ready);
+    expect(result.readinessFor('waiting'), TaskReadiness.waitingDependency);
     expect(result.reasonsFor('waiting'), [
       'Waiting for dependency unfinished (status: queued).',
     ]);
@@ -42,14 +39,14 @@ void main() {
     expect(result.dependencyValidation.valid, isFalse);
     expect(
       result.readiness.values,
-      everyElement(ProjectTaskReadiness.waitingDependency),
+      everyElement(TaskReadiness.waitingDependency),
     );
   });
 
   test('selects deterministically and exposes the derived rationale', () {
     final project = _project([
-      _task('low', priority: ProjectTaskPriority.low),
-      _task('critical', priority: ProjectTaskPriority.critical),
+      _task('low', priority: TaskPriority.low),
+      _task('critical', priority: TaskPriority.critical),
     ]);
     final result = scheduler.schedule(project);
 
@@ -72,17 +69,14 @@ void main() {
   test('marks deferred, obsolete, running, and terminal tasks ineligible', () {
     final result = scheduler.refreshReadiness(
       _project([
-        _task('deferred', status: ProjectTaskStatus.deferred),
-        _task('obsolete', status: ProjectTaskStatus.obsolete),
-        _task('running', status: ProjectTaskStatus.running),
-        _task('failed', status: ProjectTaskStatus.failed),
+        _task('deferred', status: TaskStatus.deferred),
+        _task('obsolete', status: TaskStatus.obsolete),
+        _task('running', status: TaskStatus.running),
+        _task('failed', status: TaskStatus.failed),
       ]),
     );
 
-    expect(
-      result.readiness.values,
-      everyElement(ProjectTaskReadiness.notEligible),
-    );
+    expect(result.readiness.values, everyElement(TaskReadiness.notEligible));
     expect(result.reasonsFor('deferred'), ['Task is deferred.']);
   });
 
@@ -91,7 +85,7 @@ void main() {
     () {
       final result = scheduler.refreshReadiness(
         _project([
-          _task('obsolete', status: ProjectTaskStatus.obsolete),
+          _task('obsolete', status: TaskStatus.obsolete),
           _task('dependent', dependencies: const ['obsolete']),
         ]),
       );
@@ -100,10 +94,7 @@ void main() {
         result.dependencyValidation.issues.map((issue) => issue.code),
         contains(ProjectDependencyIssueCode.deadDependency),
       );
-      expect(
-        result.readinessFor('dependent'),
-        ProjectTaskReadiness.notEligible,
-      );
+      expect(result.readinessFor('dependent'), TaskReadiness.notEligible);
       expect(
         result.reasonsFor('dependent'),
         contains(contains('non-completable')),
@@ -112,7 +103,7 @@ void main() {
   );
 }
 
-ProjectDocument _project(List<ProjectTask> tasks) {
+ProjectDocument _project(List<Task> tasks) {
   final now = DateTime.utc(2026, 1, 1);
   return ProjectDocument(
     id: 'project',
@@ -136,14 +127,14 @@ ProjectDocument _project(List<ProjectTask> tasks) {
   );
 }
 
-ProjectTask _task(
+Task _task(
   String id, {
   List<String> dependencies = const [],
-  ProjectTaskPriority priority = ProjectTaskPriority.normal,
-  ProjectTaskStatus status = ProjectTaskStatus.queued,
+  TaskPriority priority = TaskPriority.normal,
+  TaskStatus status = TaskStatus.queued,
 }) {
   final now = DateTime.utc(2026, 1, 1);
-  return ProjectTask(
+  return Task(
     id: id,
     title: 'Task $id',
     objective: 'Complete bounded work for $id.',
@@ -155,7 +146,6 @@ ProjectTask _task(
     context: const [],
     expectedArtifacts: const [],
     status: status,
-    taskDocumentId: null,
     rejectionReason: null,
     fingerprint: 'fingerprint_$id',
     createdAt: now,

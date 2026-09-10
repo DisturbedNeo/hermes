@@ -204,12 +204,12 @@ class ProjectCriterionEvaluator {
   ) {
     final required = <String, String>{};
     for (final task in project.tasks) {
-      if (task.status == ProjectTaskStatus.deferred ||
-          task.status == ProjectTaskStatus.obsolete ||
-          task.status == ProjectTaskStatus.failed ||
-          task.status == ProjectTaskStatus.rejected ||
-          task.status == ProjectTaskStatus.split ||
-          task.status == ProjectTaskStatus.cancelled) {
+      if (task.status == TaskStatus.deferred ||
+          task.status == TaskStatus.obsolete ||
+          task.status == TaskStatus.failed ||
+          task.status == TaskStatus.rejected ||
+          task.status == TaskStatus.split ||
+          task.status == TaskStatus.cancelled) {
         continue;
       }
       for (final expectation in task.expectedEvidence) {
@@ -222,7 +222,7 @@ class ProjectCriterionEvaluator {
     return required.entries.every(
       (entry) => accepted.any(
         (item) =>
-            item.projectTaskId == entry.value &&
+            item.taskId == entry.value &&
             item.expectationIds.contains(entry.key),
       ),
     );

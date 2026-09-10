@@ -17,6 +17,21 @@ void main() {
     expect(validation.issues, isEmpty);
   });
 
+  test('rejects an incomplete planner response', () {
+    final project = _projectWithTasks([_task('existing')]);
+    final validation = validator.validate(
+      project: project,
+      proposal: _desired(project, const [], hasCompleteCollections: false),
+      workspaceRoot: '/workspace',
+    );
+
+    expect(validation.valid, isFalse);
+    expect(
+      validation.errors.map((issue) => issue.code),
+      contains('incomplete_plan'),
+    );
+  });
+
   test('rejects dependency cycles and invalid paths before reconciliation', () {
     final project = _project();
     final invalid = _task(
@@ -145,7 +160,7 @@ void main() {
     final duplicateDesired = _task('second').copyWith(
       fingerprint: first.fingerprint,
       expectedEvidence: const [
-        ProjectEvidenceExpectation(
+        TaskEvidenceExpectation(
           id: 'expect_second',
           type: ProjectEvidenceType.taskClaim,
           criterionIds: ['criterion_001'],
@@ -170,7 +185,7 @@ void main() {
         _task('replacement').copyWith(
           fingerprint: existing.fingerprint,
           expectedEvidence: const [
-            ProjectEvidenceExpectation(
+            TaskEvidenceExpectation(
               id: 'expect_replacement',
               type: ProjectEvidenceType.taskClaim,
               criterionIds: ['criterion_001'],
@@ -192,14 +207,14 @@ void main() {
     final task = _task(
       'ambiguous',
       expectedEvidence: const [
-        ProjectEvidenceExpectation(
+        TaskEvidenceExpectation(
           id: 'expect_a',
           type: ProjectEvidenceType.artifact,
           criterionIds: ['criterion_001'],
           description: 'The report exists.',
           sourceRef: 'report.md',
         ),
-        ProjectEvidenceExpectation(
+        TaskEvidenceExpectation(
           id: 'expect_b',
           type: ProjectEvidenceType.artifact,
           criterionIds: ['criterion_001'],
@@ -268,10 +283,8 @@ void main() {
       'artifact_only',
       expectedEvidence: const [],
       expectedArtifacts: [
-        ProjectArtifact(
+        TaskArtifact(
           id: 'artifact_expected',
-          projectTaskId: null,
-          taskDocumentId: null,
           path: 'lib/feature.dart',
           description: 'The implementation file.',
           kind: 'file',
@@ -317,25 +330,27 @@ ProjectState _project({List<ProjectMemoryEntry> memory = const []}) {
   );
 }
 
-ProjectState _projectWithTasks(List<ProjectTask> tasks) {
+ProjectState _projectWithTasks(List<Task> tasks) {
   final project = _project();
   return project.copyWith(tasks: tasks);
 }
 
 ProjectDesiredPlan _desired(
   ProjectState project,
-  List<ProjectTask> tasks, {
+  List<Task> tasks, {
   bool includeCriteria = true,
   List<ProjectMemoryEntry> memoryAdditions = const [],
   List<ProjectMemorySupersession> memorySupersessions = const [],
   List<String> deferredTaskIds = const [],
   List<String> obsoleteTaskIds = const [],
+  bool hasCompleteCollections = true,
 }) {
   return ProjectDesiredPlan(
     revision: project.nextRevision,
     triggers: const [ProjectPlanRevisionTrigger.noReadyTask],
     summary: 'Revise the near-term plan.',
     rationale: 'A bounded revision is needed.',
+    hasCompleteCollections: hasCompleteCollections,
     criteria: includeCriteria ? project.criteria : const [],
     milestones: project.milestones,
     tasks: tasks,
@@ -366,16 +381,16 @@ ProjectMemoryEntry _memory(
   );
 }
 
-ProjectTask _task(
+Task _task(
   String id, {
   List<String> dependencies = const [],
   List<String> writePaths = const ['lib/feature.dart'],
-  List<ProjectEvidenceExpectation>? expectedEvidence,
-  List<ProjectArtifact> expectedArtifacts = const [],
+  List<TaskEvidenceExpectation>? expectedEvidence,
+  List<TaskArtifact> expectedArtifacts = const [],
 }) {
   final now = DateTime(2026, 1, 2);
   final objective = 'Implement bounded slice $id.';
-  return ProjectTask(
+  return Task(
     id: id,
     title: 'Bounded slice $id',
     objective: objective,
@@ -384,7 +399,7 @@ ProjectTask _task(
     expectedEvidence:
         expectedEvidence ??
         const [
-          ProjectEvidenceExpectation(
+          TaskEvidenceExpectation(
             id: 'expect_task',
             type: ProjectEvidenceType.taskClaim,
             criterionIds: ['criterion_001'],
@@ -396,8 +411,7 @@ ProjectTask _task(
     outOfScope: const ['Do not change unrelated project scope.'],
     context: const [],
     expectedArtifacts: expectedArtifacts,
-    status: ProjectTaskStatus.queued,
-    taskDocumentId: null,
+    status: TaskStatus.queued,
     fingerprint: projectTaskFingerprint(objective, const ['criterion_001']),
     rejectionReason: null,
     createdAt: now,

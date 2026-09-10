@@ -4,11 +4,11 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/project.dart';
-import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/project_system/project_planning_gateway.dart';
+import 'package:hermes/core/services/project_system/project_scheduler.dart';
 import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
@@ -46,11 +46,39 @@ void main() {
       userPrompt: 'Build the reporting screen',
     );
 
-    expect(project.schemaVersion, 5);
+    expect(project.schemaVersion, ProjectDocument.currentSchemaVersion);
     expect(project.originalGoal, 'Build the reporting screen');
     expect(project.tasks, isEmpty);
     expect(project.planHistory.single.revision, 1);
     expect(project.nextRevision, 2);
+  });
+
+  test('persists task IDs and hydrates canonical task records', () async {
+    final project = _project(
+      tasks: [_task().copyWith(status: TaskStatus.running)],
+      activeTaskId: 'task_1',
+      status: ProjectStatus.runningTask,
+    );
+
+    await service.cancelProject(workspace: workspace, snapshot: project);
+
+    final projectFile = File(
+      '${root.path}/.agent/projects/${project.id}/project.json',
+    );
+    final rawProject = jsonDecode(await projectFile.readAsString());
+    expect(rawProject['taskIds'], [project.tasks.single.id]);
+    expect(rawProject, isNot(contains('tasks')));
+
+    final loaded = await service.loadProject(workspace, project.id);
+    expect(loaded?.tasks.single.id, project.tasks.single.id);
+    expect(loaded?.tasks.single.status, TaskStatus.cancelled);
+    expect(
+      (await taskService.loadTask(
+        workspace,
+        project.tasks.single.id,
+      ))?.projectId,
+      project.id,
+    );
   });
 
   test(
@@ -133,7 +161,7 @@ void main() {
         writePaths: const ['lib/project_slice.dart'],
         selectionRationale: 'The task is the smallest executable next step.',
         expectedEvidence: const [
-          ProjectEvidenceExpectation(
+          TaskEvidenceExpectation(
             id: 'expectation_gate',
             type: ProjectEvidenceType.gate,
             criterionIds: ['criterion_1'],
@@ -179,7 +207,7 @@ void main() {
       expect(gateway.revisePlanCalls, 1);
       expect(
         result.project.taskById(revisedTask.id)?.status,
-        ProjectTaskStatus.completed,
+        TaskStatus.completed,
       );
       expect(result.project.blocker, isNull);
     },
@@ -208,10 +236,189 @@ void main() {
     );
 
     expect(result.project.tasks, hasLength(1));
-    expect(result.project.tasks.single.status, ProjectTaskStatus.completed);
+    expect(result.project.tasks.single.status, TaskStatus.completed);
     expect(result.project.activeTaskId, isNull);
     expect(result.project.status, ProjectStatus.paused);
     expect(result.activeTask?.status, TaskStatus.completed);
+  });
+
+  test(
+    'does not replan immediately after a successful task in the same batch',
+    () async {
+      final gateway = _InitialisationGateway(_validInitialisation());
+      final planningService = ProjectService(
+        taskService: taskService,
+        modelCalls: gateway,
+      );
+      final secondTask = _task().copyWith(
+        id: 'task_2',
+        title: 'Second bounded task',
+        objective: 'Complete a second bounded project slice.',
+        fingerprint: 'task_2',
+      );
+
+      final result = await planningService.runProject(
+        client: _QueueChatClient([
+          jsonEncode({
+            'status': 'completed',
+            'summary': 'The first bounded task is complete.',
+            'memoryUpdate': '',
+          }),
+          jsonEncode({
+            'status': 'completed',
+            'summary': 'The second bounded task is complete.',
+            'memoryUpdate': '',
+          }),
+        ]),
+        workspace: workspace,
+        snapshot: _project(tasks: [_task(), secondTask]),
+        baseSystemPrompt: 'system',
+        maxNewTasks: 2,
+        planApprovalPolicy: ProjectPlanApprovalPolicy.never,
+      );
+
+      expect(gateway.revisePlanCalls, 0);
+      expect(
+        result.project.tasks.map((task) => task.status),
+        everyElement(TaskStatus.completed),
+      );
+      expect(result.project.diagnostics.planRevisionAttempts, 0);
+      expect(result.project.pendingReplanTriggers, isEmpty);
+    },
+  );
+
+  test(
+    'persists a fixed batch cursor and queues its boundary replan',
+    () async {
+      final scheduler = _CountingScheduler();
+      final batchService = ProjectService(
+        taskService: taskService,
+        scheduler: scheduler,
+      );
+      final task2 = _task().copyWith(
+        id: 'task_2',
+        title: 'Second bounded task',
+        objective: 'Complete the second bounded project slice.',
+        fingerprint: 'task_2',
+      );
+      final task3 = _task().copyWith(
+        id: 'task_3',
+        title: 'Third bounded task',
+        objective: 'Complete the third bounded project slice.',
+        fingerprint: 'task_3',
+      );
+
+      final result = await batchService.runProject(
+        client: _QueueChatClient([
+          jsonEncode({
+            'status': 'completed',
+            'summary': 'The first bounded task is complete.',
+            'memoryUpdate': '',
+          }),
+          jsonEncode({
+            'status': 'completed',
+            'summary': 'The second bounded task is complete.',
+            'memoryUpdate': '',
+          }),
+        ]),
+        workspace: workspace,
+        snapshot: _project(tasks: [_task(), task2, task3]),
+        baseSystemPrompt: 'system',
+        maxNewTasks: 2,
+      );
+
+      expect(scheduler.scheduleCalls, 1);
+      expect(result.project.tasks[0].status, TaskStatus.completed);
+      expect(result.project.tasks[1].status, TaskStatus.completed);
+      expect(result.project.tasks[2].status, TaskStatus.queued);
+      expect(result.project.currentBatchTaskIds, ['task_1', 'task_2']);
+      expect(result.project.currentBatchIndex, 2);
+      expect(
+        result.project.pendingReplanTriggers,
+        contains(ProjectPlanRevisionTrigger.batchComplete),
+      );
+      expect(result.project.pendingReplanReason, contains('batch'));
+
+      final loaded = await batchService.loadProject(
+        workspace,
+        result.project.id,
+      );
+      expect(loaded?.currentBatchTaskIds, ['task_1', 'task_2']);
+      expect(loaded?.currentBatchIndex, 2);
+      expect(
+        loaded?.pendingReplanTriggers,
+        contains(ProjectPlanRevisionTrigger.batchComplete),
+      );
+    },
+  );
+
+  test('resumes the persisted batch cursor without reselection', () async {
+    final scheduler = _CountingScheduler();
+    final batchService = ProjectService(
+      taskService: taskService,
+      scheduler: scheduler,
+    );
+    final now = DateTime(2026, 1, 1);
+    final task1 = _task().copyWith(
+      status: TaskStatus.completed,
+      completedAt: now,
+    );
+    final task2 = _task().copyWith(
+      id: 'task_2',
+      title: 'Second bounded task',
+      objective: 'Complete the second bounded project slice.',
+      fingerprint: 'task_2',
+    );
+    final task3 = _task().copyWith(
+      id: 'task_3',
+      title: 'Third bounded task',
+      objective: 'Complete the third bounded project slice.',
+      fingerprint: 'task_3',
+    );
+    final snapshot =
+        _project(
+          tasks: [task1, task2, task3],
+          status: ProjectStatus.paused,
+        ).copyWith(
+          currentBatchTaskIds: const ['task_1', 'task_2', 'task_3'],
+          currentBatchIndex: 1,
+          currentBatchPlanRevision: 1,
+        );
+
+    final first = await batchService.runProject(
+      client: _QueueChatClient([
+        jsonEncode({
+          'status': 'completed',
+          'summary': 'The second bounded task is complete.',
+          'memoryUpdate': '',
+        }),
+      ]),
+      workspace: workspace,
+      snapshot: snapshot,
+      baseSystemPrompt: 'system',
+      maxNewTasks: 1,
+    );
+    expect(first.project.tasks[1].status, TaskStatus.completed);
+    expect(first.project.currentBatchIndex, 2);
+    expect(first.project.status, ProjectStatus.paused);
+
+    final second = await batchService.runProject(
+      client: _QueueChatClient([
+        jsonEncode({
+          'status': 'completed',
+          'summary': 'The third bounded task is complete.',
+          'memoryUpdate': '',
+        }),
+      ]),
+      workspace: workspace,
+      snapshot: first.project,
+      baseSystemPrompt: 'system',
+      maxNewTasks: 1,
+    );
+    expect(second.project.tasks[2].status, TaskStatus.completed);
+    expect(second.project.currentBatchIndex, 3);
+    expect(second.project.pendingReplanTriggers, isEmpty);
+    expect(scheduler.scheduleCalls, 0);
   });
 
   test(
@@ -252,12 +459,7 @@ void main() {
     'cancelling an active project task updates its lifecycle status in place',
     () async {
       final project = _project(
-        tasks: [
-          _task().copyWith(
-            status: ProjectTaskStatus.running,
-            taskDocumentId: 'document_1',
-          ),
-        ],
+        tasks: [_task().copyWith(status: TaskStatus.running)],
         activeTaskId: 'task_1',
         status: ProjectStatus.runningTask,
       );
@@ -268,7 +470,7 @@ void main() {
       );
 
       expect(cancelled.status, ProjectStatus.cancelled);
-      expect(cancelled.tasks.single.status, ProjectTaskStatus.cancelled);
+      expect(cancelled.tasks.single.status, TaskStatus.cancelled);
       expect(cancelled.activeTaskId, isNull);
     },
   );
@@ -293,66 +495,58 @@ void main() {
     expect(cleared.blocker, isNull);
   });
 
-  test(
-    'resumes using the project-task ID and task-document ID namespaces separately',
-    () async {
-      final taskDocument = await taskService.createProjectTaskDocument(
-        workspace: workspace,
-        userPrompt: 'Complete the bounded task',
-        chatSessionId: null,
-        projectId: 'project_1',
-        planningContext: const TaskPlanningContext(
-          projectGoal: 'Build the project safely.',
-          projectTaskObjective: 'Complete the bounded task.',
-          doneCriteria: ['The bounded task is complete.'],
-          outOfScope: ['Unrelated work.'],
-        ),
-      );
-      final terminalTask = taskDocument.copyWith(
-        status: TaskStatus.completed,
-        completedAt: DateTime(2026, 1, 2),
-      );
-      await taskService.repository.saveSnapshot(root.path, terminalTask);
+  test('resumes a task using its canonical ID', () async {
+    final task = await taskService.createProjectTask(
+      workspace: workspace,
+      userPrompt: 'Complete the bounded task',
+      chatSessionId: null,
+      projectId: 'project_1',
+      planningContext: const TaskPlanningContext(
+        projectGoal: 'Build the project safely.',
+        projectTaskObjective: 'Complete the bounded task.',
+        doneCriteria: ['The bounded task is complete.'],
+        outOfScope: ['Unrelated work.'],
+      ),
+    );
+    final terminalTask = task.copyWith(
+      status: TaskStatus.completed,
+      completedAt: DateTime(2026, 1, 2),
+    );
+    await taskService.repository.saveSnapshot(root.path, terminalTask);
 
-      final project = _project(
-        tasks: [
-          _task().copyWith(
-            status: ProjectTaskStatus.running,
-            taskDocumentId: terminalTask.id,
-          ),
-        ],
-        activeTaskId: 'task_1',
-        status: ProjectStatus.reviewingTask,
-      );
-      final result = await service.runProject(
-        client: _QueueChatClient(const []),
-        workspace: workspace,
-        snapshot: project,
-        baseSystemPrompt: 'system',
-        maxNewTasks: 1,
-      );
+    final project = _project(
+      tasks: [terminalTask.copyWith(status: TaskStatus.running)],
+      activeTaskId: terminalTask.id,
+      status: ProjectStatus.reviewingTask,
+    );
+    final result = await service.runProject(
+      client: _QueueChatClient(const []),
+      workspace: workspace,
+      snapshot: project,
+      baseSystemPrompt: 'system',
+      maxNewTasks: 1,
+    );
 
-      expect(result.project.tasks.single.status, ProjectTaskStatus.completed);
-      expect(result.project.activeTaskId, isNull);
-    },
-  );
+    expect(result.project.tasks.single.status, TaskStatus.completed);
+    expect(result.project.activeTaskId, isNull);
+  });
 
   test('recovery retries retain the complete incident task history', () async {
     final now = DateTime(2026, 1, 1);
     final source = _task().copyWith(
-      status: ProjectTaskStatus.failed,
+      status: TaskStatus.failed,
       recoveryIncidentId: 'incident_1',
     );
     final previousRecovery = _task().copyWith(
       id: 'recovery_old',
       title: 'Previous recovery attempt',
-      status: ProjectTaskStatus.failed,
+      status: TaskStatus.failed,
       recoveryIncidentId: 'incident_1',
     );
     final incident = ProjectRecoveryIncident(
       id: 'incident_1',
       status: ProjectRecoveryIncidentStatus.exhausted,
-      sourceTaskIds: [source.taskDocumentId ?? source.id],
+      sourceTaskIds: [source.id],
       sourceTaskTitles: [source.title],
       failedGateId: 'gate_1',
       failureSummary: 'The required check failed.',
@@ -375,7 +569,7 @@ void main() {
     );
 
     expect(retried.tasks, hasLength(3));
-    expect(retried.taskById(source.id)?.status, ProjectTaskStatus.failed);
+    expect(retried.taskById(source.id)?.status, TaskStatus.failed);
     expect(retried.taskById(previousRecovery.id), isNotNull);
     expect(
       retried.tasks.where((task) => task.recoveryIncidentId == incident.id),
@@ -392,7 +586,7 @@ void main() {
     expect(
       recoveryTask.expectedEvidence,
       contains(
-        isA<ProjectEvidenceExpectation>()
+        isA<TaskEvidenceExpectation>()
             .having((item) => item.type, 'type', ProjectEvidenceType.gate)
             .having((item) => item.sourceRef, 'sourceRef', 'gate_1')
             .having((item) => item.required, 'required', isTrue),
@@ -407,7 +601,7 @@ void main() {
     () async {
       final failed = _task().copyWith(
         id: 'failed_task',
-        status: ProjectTaskStatus.failed,
+        status: TaskStatus.failed,
         fingerprint: 'duplicate_work',
       );
       final duplicate = _task().copyWith(
@@ -437,16 +631,13 @@ void main() {
       final retry = result.project.tasks.firstWhere(
         (task) => task.title == 'Retry Bounded task',
       );
-      expect(retry.status, ProjectTaskStatus.completed);
+      expect(retry.status, TaskStatus.completed);
       expect(retry.expectedEvidence, hasLength(1));
       expect(retry.expectedEvidence.single.id, isNot('expectation_1'));
-      expect(
-        result.project.taskById('failed_task')?.status,
-        ProjectTaskStatus.failed,
-      );
+      expect(result.project.taskById('failed_task')?.status, TaskStatus.failed);
       expect(
         result.project.taskById('duplicate_task')?.status,
-        ProjectTaskStatus.rejected,
+        TaskStatus.rejected,
       );
     },
   );
@@ -479,14 +670,14 @@ void main() {
       expect(result.project.taskById(candidate.id), isNull);
       expect(
         result.project.taskById(existing.id)?.status,
-        ProjectTaskStatus.completed,
+        TaskStatus.completed,
       );
     },
   );
 }
 
 ProjectDocument _project({
-  List<ProjectTask> tasks = const [],
+  List<Task> tasks = const [],
   String? activeTaskId,
   ProjectStatus status = ProjectStatus.active,
   List<PendingProjectQuestion> openQuestions = const [],
@@ -522,7 +713,7 @@ ProjectDocument _project({
 
 ProjectDesiredPlan _desiredPlan(
   ProjectDocument project,
-  List<ProjectTask> tasks, {
+  List<Task> tasks, {
   List<ProjectMilestone>? milestones,
 }) {
   return ProjectDesiredPlan(
@@ -538,15 +729,15 @@ ProjectDesiredPlan _desiredPlan(
   );
 }
 
-ProjectTask _task() {
+Task _task() {
   final now = DateTime(2026, 1, 1);
-  return ProjectTask(
+  return Task(
     id: 'task_1',
     title: 'Bounded task',
     objective: 'Complete one bounded project slice.',
     criterionIds: const ['criterion_1'],
     expectedEvidence: const [
-      ProjectEvidenceExpectation(
+      TaskEvidenceExpectation(
         id: 'expectation_1',
         type: ProjectEvidenceType.taskClaim,
         criterionIds: ['criterion_1'],
@@ -557,8 +748,7 @@ ProjectTask _task() {
     outOfScope: const ['Unrelated work.'],
     context: const [],
     expectedArtifacts: const [],
-    status: ProjectTaskStatus.queued,
-    taskDocumentId: null,
+    status: TaskStatus.queued,
     fingerprint: 'task_1',
     rejectionReason: null,
     createdAt: now,
@@ -667,11 +857,11 @@ class _InitialisationGateway implements ProjectPlanningGateway {
   }) async => revisedPlan;
 
   @override
-  Future<List<ProjectTask>> splitTask({
+  Future<List<Task>> splitTask({
     required ChatClient client,
     required String baseSystemPrompt,
     required ProjectState project,
-    required ProjectTask oversizedTask,
+    required Task oversizedTask,
     required List<String> violations,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
@@ -697,6 +887,16 @@ class _InitialisationGateway implements ProjectPlanningGateway {
   }
 }
 
+class _CountingScheduler extends ProjectScheduler {
+  var scheduleCalls = 0;
+
+  @override
+  ProjectScheduleResult schedule(ProjectDocument project) {
+    scheduleCalls++;
+    return super.schedule(project);
+  }
+}
+
 ProjectInitialisation _invalidInitialisation() {
   final now = DateTime(2026, 1, 1);
   final criterion = ProjectCriterion(
@@ -716,7 +916,7 @@ ProjectInitialisation _invalidInitialisation() {
     updatedAt: now,
   );
 
-  ProjectTask task(String id, String dependencyId) => ProjectTask(
+  Task task(String id, String dependencyId) => Task(
     id: id,
     title: id,
     objective: 'Implement $id.',
@@ -724,7 +924,7 @@ ProjectInitialisation _invalidInitialisation() {
     milestoneId: milestone.id,
     dependsOnTaskIds: [dependencyId],
     expectedEvidence: const [
-      ProjectEvidenceExpectation(
+      TaskEvidenceExpectation(
         id: 'expectation_task_claim',
         type: ProjectEvidenceType.taskClaim,
         criterionIds: ['criterion_1'],
@@ -732,10 +932,8 @@ ProjectInitialisation _invalidInitialisation() {
       ),
     ],
     expectedArtifacts: [
-      ProjectArtifact(
+      TaskArtifact(
         id: 'artifact',
-        projectTaskId: null,
-        taskDocumentId: null,
         path: 'lib/reporting.dart',
         description: 'The reporting implementation.',
         kind: 'file',
@@ -745,7 +943,7 @@ ProjectInitialisation _invalidInitialisation() {
     context: const [],
     doneCriteria: const ['The task is complete.'],
     outOfScope: const ['Unrelated work.'],
-    status: ProjectTaskStatus.queued,
+    status: TaskStatus.queued,
     taskDocumentId: null,
     fingerprint: id,
     rejectionReason: null,
@@ -782,14 +980,14 @@ ProjectInitialisation _validInitialisation() {
     createdAt: now,
     updatedAt: now,
   );
-  final task = ProjectTask(
+  final task = Task(
     id: 'task_1',
     title: 'Implement reporting screen',
     objective: 'Implement the reporting screen.',
     criterionIds: const ['criterion_1'],
     milestoneId: milestone.id,
     expectedEvidence: const [
-      ProjectEvidenceExpectation(
+      TaskEvidenceExpectation(
         id: 'expectation_gate',
         type: ProjectEvidenceType.gate,
         criterionIds: ['criterion_1'],
@@ -801,7 +999,7 @@ ProjectInitialisation _validInitialisation() {
     outOfScope: const ['Unrelated screens.'],
     context: const [],
     expectedArtifacts: const [],
-    status: ProjectTaskStatus.queued,
+    status: TaskStatus.queued,
     taskDocumentId: null,
     fingerprint: 'task_1',
     rejectionReason: null,

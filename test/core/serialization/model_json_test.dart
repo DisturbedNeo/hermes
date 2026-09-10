@@ -92,11 +92,11 @@ void main() {
       question: 'Continue?',
       createdAt: now,
     );
-    final document = TaskDocument(
+    final document = Task(
       id: 'task_1',
       title: 'Task',
       originalPrompt: 'Work',
-      goal: 'Finish',
+      objective: 'Finish',
       constraints: const [],
       successCriteria: const ['Done'],
       gates: [gate],
@@ -139,7 +139,7 @@ void main() {
     expect(ModelJson.encode(question)['question'], 'Continue?');
     expect(
       ModelJson.encode(document),
-      containsPair('schemaVersion', TaskDocument.currentSchemaVersion),
+      containsPair('schemaVersion', Task.currentSchemaVersion),
     );
 
     final legacyCall = ModelJson.decode<TaskToolCallRecord>({
@@ -168,16 +168,15 @@ void main() {
   });
 
   test('project DTOs preserve clean-slate maps and defaults', () {
-    final artifact = ProjectArtifact(
+    final artifact = TaskArtifact(
       id: 'artifact_1',
-      projectTaskId: 'project_task_1',
-      taskDocumentId: null,
+      taskId: 'project_task_1',
       path: 'out.md',
       description: 'Output',
       kind: 'file',
       createdAt: now,
     );
-    final task = ProjectTask(
+    final task = Task(
       id: 'project_task_1',
       title: 'Task',
       objective: 'Work',
@@ -186,11 +185,10 @@ void main() {
       outOfScope: const [],
       context: const [],
       expectedArtifacts: [artifact],
-      status: ProjectTaskStatus.queued,
-      taskDocumentId: null,
+      status: TaskStatus.queued,
       fingerprint: 'fingerprint',
       rejectionReason: null,
-      failure: const ProjectTaskFailure(
+      failure: const TaskFailure(
         gateId: 'no_tool_errors',
         disposition: TaskGateFailureDisposition.repairable,
         failureKey: 'no_tool_errors|workspace_io_failure',
@@ -233,6 +231,39 @@ void main() {
     );
 
     expect(ModelJson.encode(artifact), isNot(contains('taskDocumentId')));
+    final legacyArtifact = ModelJson.decode<TaskArtifact>({
+      'path': '.agent/tasks/document_1/report.md',
+      'projectTaskId': 'task_1',
+      'taskDocumentId': 'document_1',
+      'taskRunId': 'run_1',
+    });
+    expect(legacyArtifact.taskId, 'document_1');
+    expect(legacyArtifact.runId, 'run_1');
+    expect(
+      ModelJson.encode(legacyArtifact),
+      containsPair('taskId', 'document_1'),
+    );
+    expect(ModelJson.encode(legacyArtifact), containsPair('runId', 'run_1'));
+    expect(ModelJson.encode(legacyArtifact), isNot(contains('taskDocumentId')));
+
+    final legacyEvidence = ModelJson.decode<ProjectEvidence>({
+      'id': 'evidence_legacy',
+      'type': 'artifact',
+      'projectTaskId': 'task_1',
+      'taskDocumentId': 'document_1',
+      'taskRunId': 'run_1',
+      'sourceRef': 'report.md',
+      'summary': 'Legacy report.',
+      'createdAt': now.toIso8601String(),
+    });
+    expect(legacyEvidence.taskId, 'document_1');
+    expect(legacyEvidence.runId, 'run_1');
+    expect(
+      ModelJson.encode(legacyEvidence),
+      containsPair('taskId', 'document_1'),
+    );
+    expect(ModelJson.encode(legacyEvidence), containsPair('runId', 'run_1'));
+
     expect(ModelJson.encode(task)['expectedArtifacts'], hasLength(1));
     expect(ModelJson.encode(task)['failure'], {
       'gateId': 'no_tool_errors',
@@ -273,8 +304,10 @@ void main() {
     final decodedProject = ModelJson.decode<ProjectDocument>(
       ModelJson.encode(project),
     );
-    expect(decodedProject.schemaVersion, 5);
-    expect(decodedProject.tasks.single.id, task.id);
+    expect(decodedProject.schemaVersion, ProjectDocument.currentSchemaVersion);
+    expect(decodedProject.taskIds, [task.id]);
+    expect(decodedProject.tasks, isEmpty);
+    expect(ModelJson.encode(project), isNot(contains('tasks')));
   });
 
   test('prompt snapshots retain epoch dates and nullable keys', () {

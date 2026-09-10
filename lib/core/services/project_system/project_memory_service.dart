@@ -290,7 +290,7 @@ class ProjectMemoryService {
 
   ProjectMemoryContextSelection selectContext({
     required ProjectDocument project,
-    ProjectTask? task,
+    Task? task,
     int maxCharacters = defaultContextCharacters,
   }) {
     if (maxCharacters < 0) {
@@ -417,10 +417,7 @@ class ProjectMemoryService {
     );
   }
 
-  static Set<String> _relevanceTerms(
-    ProjectDocument project,
-    ProjectTask? task,
-  ) {
+  static Set<String> _relevanceTerms(ProjectDocument project, Task? task) {
     final text = [
       project.refinedGoal,
       if (task != null) ...[

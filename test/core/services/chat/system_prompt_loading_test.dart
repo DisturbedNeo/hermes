@@ -332,18 +332,84 @@ void main() {
       ]);
     });
 
-    test(
-      'supports /project command by creating tasks until complete',
-      () async {
-        final projectClient = _QueueCompletionClient([
-          _finaliseProjectResponse({
-            'title': 'Build screen',
-            'refinedGoal': 'Build the reporting screen',
+    test('supports /project command by creating tasks until complete', () async {
+      final projectClient = _QueueCompletionClient([
+        _finaliseProjectResponse({
+          'title': 'Build screen',
+          'refinedGoal': 'Build the reporting screen',
+          'criteria': [
+            {'id': 'criterion_screen', 'statement': 'Screen is built.'},
+          ],
+          'constraints': ['Stay in workspace.'],
+          'openQuestions': [],
+          'milestones': [
+            {
+              'id': 'milestone_screen',
+              'title': 'Build screen',
+              'objective': 'Build and verify the reporting screen.',
+              'criterionIds': ['criterion_screen'],
+              'exitConditions': ['Screen is built.'],
+              'order': 1,
+            },
+          ],
+          'tasks': [
+            {
+              ..._projectTaskJson(),
+              'id': 'task_screen',
+              'criterionIds': ['criterion_screen'],
+              'milestoneId': 'milestone_screen',
+              'expectedEvidence': [
+                {
+                  'id': 'expect_screen',
+                  'type': 'task_claim',
+                  'criterionIds': ['criterion_screen'],
+                  'description': 'The reporting screen is checked.',
+                  'required': false,
+                },
+              ],
+            },
+            {
+              ..._projectTaskJson(),
+              'id': 'task_report',
+              'title': 'Report findings',
+              'objective': 'Report the checked reporting screen.',
+              'criterionIds': ['criterion_screen'],
+              'milestoneId': 'milestone_screen',
+              'expectedEvidence': [
+                {
+                  'id': 'expect_report',
+                  'type': 'task_claim',
+                  'criterionIds': ['criterion_screen'],
+                  'description': 'The findings are reported.',
+                },
+              ],
+            },
+          ],
+        }),
+        _finaliseTaskResponse(_projectPlanJson(title: 'Project task')),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Project task complete.',
+            'memoryUpdate': 'Screen built.',
+          }),
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'complete': false,
+            'finalSummary': 'The first project task is complete.',
+            'remainingCriteria': ['Screen is built.'],
+            'openQuestions': [],
+          }),
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'summary': 'Continue with the reporting task.',
+            'rationale':
+                'The screen task is complete and the remaining bounded task is still required.',
             'criteria': [
               {'id': 'criterion_screen', 'statement': 'Screen is built.'},
             ],
-            'constraints': ['Stay in workspace.'],
-            'openQuestions': [],
             'milestones': [
               {
                 'id': 'milestone_screen',
@@ -357,21 +423,6 @@ void main() {
             'tasks': [
               {
                 ..._projectTaskJson(),
-                'id': 'task_screen',
-                'criterionIds': ['criterion_screen'],
-                'milestoneId': 'milestone_screen',
-                'expectedEvidence': [
-                  {
-                    'id': 'expect_screen',
-                    'type': 'task_claim',
-                    'criterionIds': ['criterion_screen'],
-                    'description': 'The reporting screen is checked.',
-                    'required': false,
-                  },
-                ],
-              },
-              {
-                ..._projectTaskJson(),
                 'id': 'task_report',
                 'title': 'Report findings',
                 'objective': 'Report the checked reporting screen.',
@@ -379,7 +430,7 @@ void main() {
                 'milestoneId': 'milestone_screen',
                 'expectedEvidence': [
                   {
-                    'id': 'expect_report',
+                    'id': 'expect_report_revision',
                     'type': 'task_claim',
                     'criterionIds': ['criterion_screen'],
                     'description': 'The findings are reported.',
@@ -387,66 +438,57 @@ void main() {
                 ],
               },
             ],
+            'deferredTaskIds': [],
+            'obsoleteTaskIds': [],
+            'memoryAdditions': [],
+            'memorySupersessions': [],
+            'openQuestions': [],
+            'requiresApproval': false,
+            'approvalReason': '',
           }),
-          _finaliseTaskResponse(_projectPlanJson(title: 'Project task')),
-          ChatCompletionResponse(
-            content: jsonEncode({
-              'status': 'completed',
-              'summary': 'Project task complete.',
-              'memoryUpdate': 'Screen built.',
-            }),
-          ),
-          ChatCompletionResponse(
-            content: jsonEncode({
-              'complete': false,
-              'finalSummary': 'The first project task is complete.',
-              'remainingCriteria': ['Screen is built.'],
-              'openQuestions': [],
-            }),
-          ),
-          _finaliseTaskResponse(_projectPlanJson(title: 'Reporting task')),
-          ChatCompletionResponse(
-            content: jsonEncode({
-              'status': 'completed',
-              'summary': 'Reporting task complete.',
-              'memoryUpdate': 'The findings were reported.',
-            }),
-          ),
-          ChatCompletionResponse(
-            content: jsonEncode({
-              'complete': true,
-              'finalSummary': 'Reporting screen is complete.',
-              'remainingCriteria': [],
-              'openQuestions': [],
-            }),
-          ),
-        ]);
-        serverManager.chatClient = projectClient;
-        await preferences.setTaskSystemSettings(
-          const TaskSystemSettings(
-            maxProjectTasksPerRun: 1,
-            planApprovalPolicy: ProjectPlanApprovalPolicy.never,
-          ),
-        );
-        await chat.attachWorkspace(tempDir.path);
+        ),
+        _finaliseTaskResponse(_projectPlanJson(title: 'Reporting task')),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Reporting task complete.',
+            'memoryUpdate': 'The findings were reported.',
+          }),
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'complete': true,
+            'finalSummary': 'Reporting screen is complete.',
+            'remainingCriteria': [],
+            'openQuestions': [],
+          }),
+        ),
+      ]);
+      serverManager.chatClient = projectClient;
+      await preferences.setTaskSystemSettings(
+        const TaskSystemSettings(
+          maxProjectTasksPerRun: 1,
+          planApprovalPolicy: ProjectPlanApprovalPolicy.never,
+        ),
+      );
+      await chat.attachWorkspace(tempDir.path);
 
-        await chat.send('/project Build the reporting screen');
+      await chat.send('/project Build the reporting screen');
 
-        expect(chat.activeProject?.status, ProjectStatus.completed);
-        expect(
-          chat.activeProject?.tasks,
-          everyElement(
-            isA<ProjectTask>().having(
-              (task) => task.status,
-              'status',
-              ProjectTaskStatus.completed,
-            ),
+      expect(chat.activeProject?.status, ProjectStatus.completed);
+      expect(
+        chat.activeProject?.tasks,
+        everyElement(
+          isA<Task>().having(
+            (task) => task.status,
+            'status',
+            TaskStatus.completed,
           ),
-        );
-        expect(chat.activeTask, isNull);
-        expect(chat.activeProject?.completionSummary, contains('complete'));
-      },
-    );
+        ),
+      );
+      expect(chat.activeTask, isNull);
+      expect(chat.activeProject?.completionSummary, contains('complete'));
+    });
 
     test('supports /continue-project for the active project', () async {
       serverManager.chatClient = _QueueCompletionClient([
@@ -1052,13 +1094,13 @@ Map<String, dynamic> _projectTaskJson({
   };
 }
 
-TaskDocument _taskDocument({String id = 'task_test', String? chatSessionId}) {
+Task _taskDocument({String id = 'task_test', String? chatSessionId}) {
   final now = DateTime(2026, 1, 1);
-  return TaskDocument(
+  return Task(
     id: id,
     title: 'Test task',
     originalPrompt: 'Run the task',
-    goal: 'Run the task',
+    objective: 'Run the task',
     constraints: const [],
     successCriteria: const ['Finish'],
     steps: const [

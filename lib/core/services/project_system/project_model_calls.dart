@@ -221,6 +221,7 @@ ${_encoder.convert(ModelJson.encode(project))}
         triggers: triggers,
         summary: 'No safe plan revision was produced.',
         rationale: 'The planning call failed without a valid proposal.',
+        hasCompleteCollections: false,
         createdAt: DateTime.now(),
       );
     }
@@ -276,11 +277,11 @@ ${_encoder.convert(ModelJson.encode(project))}
   }
 
   @override
-  Future<List<ProjectTask>> splitTask({
+  Future<List<Task>> splitTask({
     required ChatClient client,
     required String baseSystemPrompt,
     required ProjectState project,
-    required ProjectTask oversizedTask,
+    required Task oversizedTask,
     required List<String> violations,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
@@ -595,9 +596,9 @@ $expectedShape
     );
   }
 
-  List<ProjectTask> _tasksFromJson(Object? value) {
+  List<Task> _tasksFromJson(Object? value) {
     if (value is! List) return const [];
-    final tasks = <ProjectTask>[];
+    final tasks = <Task>[];
     for (var i = 0; i < value.length; i++) {
       final raw = value[i];
       if (raw is! Map) continue;
@@ -606,16 +607,16 @@ $expectedShape
     return tasks;
   }
 
-  ProjectTask _taskFromMap(Map<String, dynamic> map, int index) {
+  Task _taskFromMap(Map<String, dynamic> map, int index) {
     map['id'] = jsonString(
       map['id'],
       fallback: 'project_task_${index + 1}_${uuid.v7()}',
     );
-    map['status'] ??= ProjectTaskStatus.queued.wire;
-    final task = ModelJson.decode<ProjectTask>(map);
+    map['status'] ??= TaskStatus.queued.wire;
+    final task = ModelJson.decode<Task>(map);
     final expectedEvidence = task.expectedEvidence.isEmpty
         ? [
-            ProjectEvidenceExpectation(
+            TaskEvidenceExpectation(
               id: 'expect_${task.id}',
               type: ProjectEvidenceType.taskClaim,
               criterionIds: task.criterionIds,
@@ -637,28 +638,31 @@ $expectedShape
     required List<ProjectPlanRevisionTrigger> triggers,
   }) {
     final criteriaValue = json['criteria'];
-    final criteria =
-        criteriaValue is List && criteriaValue.every((item) => item is Map)
+    final criteriaComplete =
+        criteriaValue is List && criteriaValue.every((item) => item is Map);
+    final criteria = criteriaComplete
         ? _criteriaFromJson(json['criteria'])
         : project.criteria;
     final tasksValue = json['tasks'];
-    final desiredTasks =
-        tasksValue is List && tasksValue.every((item) => item is Map)
+    final tasksComplete =
+        tasksValue is List && tasksValue.every((item) => item is Map);
+    final desiredTasks = tasksComplete
         ? _tasksFromJson(json['tasks'])
         : project.tasks
               .where(
                 (task) =>
-                    task.status != ProjectTaskStatus.completed &&
-                    task.status != ProjectTaskStatus.failed &&
-                    task.status != ProjectTaskStatus.rejected &&
-                    task.status != ProjectTaskStatus.split &&
-                    task.status != ProjectTaskStatus.cancelled,
+                    task.status != TaskStatus.completed &&
+                    task.status != TaskStatus.failed &&
+                    task.status != TaskStatus.rejected &&
+                    task.status != TaskStatus.split &&
+                    task.status != TaskStatus.cancelled,
               )
               .toList();
     final tasks = _bindTasksToCriteria(desiredTasks, criteria);
     final milestonesValue = json['milestones'];
-    final desiredMilestones =
-        milestonesValue is List && milestonesValue.every((item) => item is Map)
+    final milestonesComplete =
+        milestonesValue is List && milestonesValue.every((item) => item is Map);
+    final desiredMilestones = milestonesComplete
         ? _milestonesFromJson(json['milestones'])
         : project.milestones;
     final openQuestionsValue = json['openQuestions'] ?? json['open_questions'];
@@ -678,6 +682,8 @@ $expectedShape
         json['rationale'],
         fallback: 'Respond to the collected replanning triggers.',
       ),
+      hasCompleteCollections:
+          criteriaComplete && milestonesComplete && tasksComplete,
       assumptions: jsonStringList(json['assumptions']),
       criteria: criteria,
       milestones: desiredMilestones,
@@ -705,8 +711,8 @@ $expectedShape
     );
   }
 
-  List<ProjectTask> _bindTasksToCriteria(
-    List<ProjectTask> tasks,
+  List<Task> _bindTasksToCriteria(
+    List<Task> tasks,
     Iterable<ProjectCriterion> criteria,
   ) {
     final available = criteria.toList();
@@ -733,7 +739,7 @@ $expectedShape
             criterionIds: boundIds,
             expectedEvidence: [
               for (final expectation in task.expectedEvidence)
-                ProjectEvidenceExpectation(
+                TaskEvidenceExpectation(
                   id: expectation.id,
                   type: expectation.type,
                   criterionIds: expectation.criterionIds.isEmpty

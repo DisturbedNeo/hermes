@@ -208,13 +208,13 @@ void main() {
   });
 }
 
-TaskDocument _taskWithArtifact() {
+Task _taskWithArtifact() {
   final now = DateTime(2024, 1, 1);
-  return TaskDocument(
+  return Task(
     id: 'task_test',
     title: 'Test task',
     originalPrompt: 'Create an artifact.',
-    goal: 'Create an artifact.',
+    objective: 'Create an artifact.',
     constraints: const [],
     successCriteria: const [],
     steps: const [
@@ -277,7 +277,7 @@ ProjectDocument _projectWithTask() {
     ],
     completionSummary: '',
     tasks: [
-      ProjectTask(
+      Task(
         id: 'task_test',
         title: 'Project task',
         objective: 'Do the project task.',
@@ -286,8 +286,7 @@ ProjectDocument _projectWithTask() {
         outOfScope: const [],
         context: const [],
         expectedArtifacts: const [],
-        status: ProjectTaskStatus.completed,
-        taskDocumentId: 'task_test',
+        status: TaskStatus.completed,
         fingerprint: 'task_test',
         rejectionReason: null,
         createdAt: now,
@@ -313,7 +312,7 @@ ProjectDocument _projectWithTask() {
 
 ProjectDocument _projectWithExhaustedRecovery() {
   final now = DateTime(2024, 1, 1);
-  final failure = const ProjectTaskFailure(
+  final failure = const TaskFailure(
     gateId: 'no_tool_errors',
     disposition: TaskGateFailureDisposition.repairable,
     failureKey: 'no_tool_errors|workspace_io_failure',
@@ -337,7 +336,7 @@ ProjectDocument _projectWithExhaustedRecovery() {
       ),
     ],
     tasks: [
-      ProjectTask(
+      Task(
         id: 'failed_task',
         title: 'Failed task',
         objective: 'Build the project.',
@@ -346,8 +345,7 @@ ProjectDocument _projectWithExhaustedRecovery() {
         outOfScope: const [],
         context: const [],
         expectedArtifacts: const [],
-        status: ProjectTaskStatus.failed,
-        taskDocumentId: 'task_failed',
+        status: TaskStatus.failed,
         recoveryIncidentId: 'recovery_1',
         fingerprint: 'failed_task',
         rejectionReason: failure.summary,
@@ -393,25 +391,24 @@ ProjectDocument _projectWithPlanReview() {
     createdAt: now,
     updatedAt: now,
   );
-  final ready = ProjectTask(
+  final ready = Task(
     id: 'ready_task',
     title: 'Finish keyboard flow',
     objective: 'Complete the remaining keyboard interactions.',
     criterionIds: const ['accessible'],
     milestoneId: 'foundation',
-    priority: ProjectTaskPriority.high,
+    priority: TaskPriority.high,
     doneCriteria: const ['Keyboard tests pass.'],
     outOfScope: const ['Visual redesign.'],
     context: const [],
     expectedArtifacts: const [],
-    status: ProjectTaskStatus.queued,
-    taskDocumentId: null,
+    status: TaskStatus.queued,
     fingerprint: 'ready',
     rejectionReason: null,
     createdAt: now,
     updatedAt: now,
   );
-  final waiting = ProjectTask(
+  final waiting = Task(
     id: 'waiting_task',
     title: 'Polish the dialog',
     objective: 'Polish the completed keyboard dialog.',
@@ -422,8 +419,7 @@ ProjectDocument _projectWithPlanReview() {
     outOfScope: const [],
     context: const [],
     expectedArtifacts: const [],
-    status: ProjectTaskStatus.queued,
-    taskDocumentId: null,
+    status: TaskStatus.queued,
     fingerprint: 'waiting',
     rejectionReason: null,
     createdAt: now.add(const Duration(minutes: 1)),

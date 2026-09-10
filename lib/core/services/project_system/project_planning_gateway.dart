@@ -12,7 +12,7 @@ class ProjectInitialisation {
   final List<ProjectCriterion> criteria;
   final List<String> constraints;
   final List<PendingProjectQuestion> openQuestions;
-  final List<ProjectTask> tasks;
+  final List<Task> tasks;
   final List<ProjectMilestone> milestones;
   final List<ProjectMemoryEntry> memory;
 
@@ -163,11 +163,11 @@ abstract interface class ProjectPlanningGateway {
     CancellationToken? cancellationToken,
   });
 
-  Future<List<ProjectTask>> splitTask({
+  Future<List<Task>> splitTask({
     required ChatClient client,
     required String baseSystemPrompt,
     required ProjectState project,
-    required ProjectTask oversizedTask,
+    required Task oversizedTask,
     required List<String> violations,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,

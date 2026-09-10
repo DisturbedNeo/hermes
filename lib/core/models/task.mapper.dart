@@ -31,6 +31,8 @@ class TaskStatusMapper extends EnumMapper<TaskStatus> {
     switch (value) {
       case r'draft':
         return TaskStatus.draft;
+      case r'queued':
+        return TaskStatus.queued;
       case r'planned':
         return TaskStatus.planned;
       case r'running':
@@ -43,10 +45,18 @@ class TaskStatusMapper extends EnumMapper<TaskStatus> {
         return TaskStatus.completed;
       case r'failed':
         return TaskStatus.failed;
+      case r'rejected':
+        return TaskStatus.rejected;
+      case r'split':
+        return TaskStatus.split;
+      case r'deferred':
+        return TaskStatus.deferred;
+      case r'obsolete':
+        return TaskStatus.obsolete;
       case r'cancelled':
         return TaskStatus.cancelled;
       default:
-        return TaskStatus.values[3];
+        return TaskStatus.values[4];
     }
   }
 
@@ -55,6 +65,8 @@ class TaskStatusMapper extends EnumMapper<TaskStatus> {
     switch (self) {
       case TaskStatus.draft:
         return r'draft';
+      case TaskStatus.queued:
+        return r'queued';
       case TaskStatus.planned:
         return r'planned';
       case TaskStatus.running:
@@ -67,6 +79,14 @@ class TaskStatusMapper extends EnumMapper<TaskStatus> {
         return r'completed';
       case TaskStatus.failed:
         return r'failed';
+      case TaskStatus.rejected:
+        return r'rejected';
+      case TaskStatus.split:
+        return r'split';
+      case TaskStatus.deferred:
+        return r'deferred';
+      case TaskStatus.obsolete:
+        return r'obsolete';
       case TaskStatus.cancelled:
         return r'cancelled';
     }
@@ -79,6 +99,297 @@ extension TaskStatusMapperExtension on TaskStatus {
   String toValue() {
     TaskStatusMapper.ensureInitialized();
     return MapperContainer.globals.toValue<TaskStatus>(this) as String;
+  }
+}
+
+/// @nodoc
+
+class TaskPriorityMapper extends EnumMapper<TaskPriority> {
+  TaskPriorityMapper._();
+
+  static TaskPriorityMapper? _instance;
+  static TaskPriorityMapper ensureInitialized() {
+    if (_instance == null) {
+      MapperContainer.globals.use(_instance = TaskPriorityMapper._());
+    }
+    return _instance!;
+  }
+
+  static TaskPriority fromValue(dynamic value) {
+    ensureInitialized();
+    return MapperContainer.globals.fromValue(value);
+  }
+
+  @override
+  TaskPriority decode(dynamic value) {
+    switch (value) {
+      case r'critical':
+        return TaskPriority.critical;
+      case r'high':
+        return TaskPriority.high;
+      case r'normal':
+        return TaskPriority.normal;
+      case r'low':
+        return TaskPriority.low;
+      default:
+        return TaskPriority.values[2];
+    }
+  }
+
+  @override
+  dynamic encode(TaskPriority self) {
+    switch (self) {
+      case TaskPriority.critical:
+        return r'critical';
+      case TaskPriority.high:
+        return r'high';
+      case TaskPriority.normal:
+        return r'normal';
+      case TaskPriority.low:
+        return r'low';
+    }
+  }
+}
+
+/// @nodoc
+
+extension TaskPriorityMapperExtension on TaskPriority {
+  String toValue() {
+    TaskPriorityMapper.ensureInitialized();
+    return MapperContainer.globals.toValue<TaskPriority>(this) as String;
+  }
+}
+
+/// @nodoc
+
+class TaskRiskMapper extends EnumMapper<TaskRisk> {
+  TaskRiskMapper._();
+
+  static TaskRiskMapper? _instance;
+  static TaskRiskMapper ensureInitialized() {
+    if (_instance == null) {
+      MapperContainer.globals.use(_instance = TaskRiskMapper._());
+    }
+    return _instance!;
+  }
+
+  static TaskRisk fromValue(dynamic value) {
+    ensureInitialized();
+    return MapperContainer.globals.fromValue(value);
+  }
+
+  @override
+  TaskRisk decode(dynamic value) {
+    switch (value) {
+      case r'high':
+        return TaskRisk.high;
+      case r'medium':
+        return TaskRisk.medium;
+      case r'low':
+        return TaskRisk.low;
+      case r'unknown':
+        return TaskRisk.unknown;
+      default:
+        return TaskRisk.values[3];
+    }
+  }
+
+  @override
+  dynamic encode(TaskRisk self) {
+    switch (self) {
+      case TaskRisk.high:
+        return r'high';
+      case TaskRisk.medium:
+        return r'medium';
+      case TaskRisk.low:
+        return r'low';
+      case TaskRisk.unknown:
+        return r'unknown';
+    }
+  }
+}
+
+/// @nodoc
+
+extension TaskRiskMapperExtension on TaskRisk {
+  String toValue() {
+    TaskRiskMapper.ensureInitialized();
+    return MapperContainer.globals.toValue<TaskRisk>(this) as String;
+  }
+}
+
+/// @nodoc
+
+class ProjectRiskReductionMapper extends EnumMapper<ProjectRiskReduction> {
+  ProjectRiskReductionMapper._();
+
+  static ProjectRiskReductionMapper? _instance;
+  static ProjectRiskReductionMapper ensureInitialized() {
+    if (_instance == null) {
+      MapperContainer.globals.use(_instance = ProjectRiskReductionMapper._());
+    }
+    return _instance!;
+  }
+
+  static ProjectRiskReduction fromValue(dynamic value) {
+    ensureInitialized();
+    return MapperContainer.globals.fromValue(value);
+  }
+
+  @override
+  ProjectRiskReduction decode(dynamic value) {
+    switch (value) {
+      case r'high':
+        return ProjectRiskReduction.high;
+      case r'medium':
+        return ProjectRiskReduction.medium;
+      case r'low':
+        return ProjectRiskReduction.low;
+      case r'none':
+        return ProjectRiskReduction.none;
+      default:
+        return ProjectRiskReduction.values[3];
+    }
+  }
+
+  @override
+  dynamic encode(ProjectRiskReduction self) {
+    switch (self) {
+      case ProjectRiskReduction.high:
+        return r'high';
+      case ProjectRiskReduction.medium:
+        return r'medium';
+      case ProjectRiskReduction.low:
+        return r'low';
+      case ProjectRiskReduction.none:
+        return r'none';
+    }
+  }
+}
+
+/// @nodoc
+
+extension ProjectRiskReductionMapperExtension on ProjectRiskReduction {
+  String toValue() {
+    ProjectRiskReductionMapper.ensureInitialized();
+    return MapperContainer.globals.toValue<ProjectRiskReduction>(this)
+        as String;
+  }
+}
+
+/// @nodoc
+
+class TaskEffortMapper extends EnumMapper<TaskEffort> {
+  TaskEffortMapper._();
+
+  static TaskEffortMapper? _instance;
+  static TaskEffortMapper ensureInitialized() {
+    if (_instance == null) {
+      MapperContainer.globals.use(_instance = TaskEffortMapper._());
+    }
+    return _instance!;
+  }
+
+  static TaskEffort fromValue(dynamic value) {
+    ensureInitialized();
+    return MapperContainer.globals.fromValue(value);
+  }
+
+  @override
+  TaskEffort decode(dynamic value) {
+    switch (value) {
+      case r'small':
+        return TaskEffort.small;
+      case r'medium':
+        return TaskEffort.medium;
+      case r'large':
+        return TaskEffort.large;
+      default:
+        return TaskEffort.values[0];
+    }
+  }
+
+  @override
+  dynamic encode(TaskEffort self) {
+    switch (self) {
+      case TaskEffort.small:
+        return r'small';
+      case TaskEffort.medium:
+        return r'medium';
+      case TaskEffort.large:
+        return r'large';
+    }
+  }
+}
+
+/// @nodoc
+
+extension TaskEffortMapperExtension on TaskEffort {
+  String toValue() {
+    TaskEffortMapper.ensureInitialized();
+    return MapperContainer.globals.toValue<TaskEffort>(this) as String;
+  }
+}
+
+/// @nodoc
+
+class ProjectEvidenceTypeMapper extends EnumMapper<ProjectEvidenceType> {
+  ProjectEvidenceTypeMapper._();
+
+  static ProjectEvidenceTypeMapper? _instance;
+  static ProjectEvidenceTypeMapper ensureInitialized() {
+    if (_instance == null) {
+      MapperContainer.globals.use(_instance = ProjectEvidenceTypeMapper._());
+    }
+    return _instance!;
+  }
+
+  static ProjectEvidenceType fromValue(dynamic value) {
+    ensureInitialized();
+    return MapperContainer.globals.fromValue(value);
+  }
+
+  @override
+  ProjectEvidenceType decode(dynamic value) {
+    switch (value) {
+      case r'gate':
+        return ProjectEvidenceType.gate;
+      case r'artifact':
+        return ProjectEvidenceType.artifact;
+      case r'command':
+        return ProjectEvidenceType.command;
+      case 'task_claim':
+        return ProjectEvidenceType.taskClaim;
+      case 'user_approval':
+        return ProjectEvidenceType.userApproval;
+      default:
+        return ProjectEvidenceType.values[3];
+    }
+  }
+
+  @override
+  dynamic encode(ProjectEvidenceType self) {
+    switch (self) {
+      case ProjectEvidenceType.gate:
+        return r'gate';
+      case ProjectEvidenceType.artifact:
+        return r'artifact';
+      case ProjectEvidenceType.command:
+        return r'command';
+      case ProjectEvidenceType.taskClaim:
+        return 'task_claim';
+      case ProjectEvidenceType.userApproval:
+        return 'user_approval';
+    }
+  }
+}
+
+/// @nodoc
+
+extension ProjectEvidenceTypeMapperExtension on ProjectEvidenceType {
+  dynamic toValue() {
+    ProjectEvidenceTypeMapper.ensureInitialized();
+    return MapperContainer.globals.toValue<ProjectEvidenceType>(this);
   }
 }
 
@@ -666,6 +977,134 @@ mixin TaskProjectCriterionMappable {
 }
 
 /// @nodoc
+class TaskEvidenceExpectationMapper
+    extends ClassMapperBase<TaskEvidenceExpectation> {
+  TaskEvidenceExpectationMapper._();
+
+  static TaskEvidenceExpectationMapper? _instance;
+  static TaskEvidenceExpectationMapper ensureInitialized() {
+    if (_instance == null) {
+      MapperContainer.globals.use(
+        _instance = TaskEvidenceExpectationMapper._(),
+      );
+      ProjectEvidenceTypeMapper.ensureInitialized();
+    }
+    return _instance!;
+  }
+
+  @override
+  final String id = 'TaskEvidenceExpectation';
+
+  static String _$id(TaskEvidenceExpectation v) => v.id;
+  static const Field<TaskEvidenceExpectation, String> _f$id = Field(
+    'id',
+    _$id,
+    hook: JsonStringHook(),
+  );
+  static ProjectEvidenceType _$type(TaskEvidenceExpectation v) => v.type;
+  static const Field<TaskEvidenceExpectation, ProjectEvidenceType> _f$type =
+      Field(
+        'type',
+        _$type,
+        opt: true,
+        def: ProjectEvidenceType.taskClaim,
+        hook: EnumAliasHook({
+          'taskclaim': 'task_claim',
+          'userapproval': 'user_approval',
+        }),
+      );
+  static List<String> _$criterionIds(TaskEvidenceExpectation v) =>
+      v.criterionIds;
+  static const Field<TaskEvidenceExpectation, List<String>> _f$criterionIds =
+      Field(
+        'criterionIds',
+        _$criterionIds,
+        opt: true,
+        def: const [],
+        hook: JsonStringListHook(),
+      );
+  static String _$description(TaskEvidenceExpectation v) => v.description;
+  static const Field<TaskEvidenceExpectation, String> _f$description = Field(
+    'description',
+    _$description,
+    hook: JsonStringHook(),
+  );
+  static bool _$required(TaskEvidenceExpectation v) => v.required;
+  static const Field<TaskEvidenceExpectation, bool> _f$required = Field(
+    'required',
+    _$required,
+    opt: true,
+    def: true,
+    hook: JsonBoolHook(fallback: true),
+  );
+  static String? _$sourceRef(TaskEvidenceExpectation v) => v.sourceRef;
+  static const Field<TaskEvidenceExpectation, String> _f$sourceRef = Field(
+    'sourceRef',
+    _$sourceRef,
+    opt: true,
+    hook: JsonNullableStringHook(),
+  );
+  static Map<String, dynamic> _$details(TaskEvidenceExpectation v) => v.details;
+  static const Field<TaskEvidenceExpectation, Map<String, dynamic>> _f$details =
+      Field(
+        'details',
+        _$details,
+        opt: true,
+        def: const {},
+        hook: JsonMapValueHook(),
+      );
+
+  @override
+  final MappableFields<TaskEvidenceExpectation> fields = const {
+    #id: _f$id,
+    #type: _f$type,
+    #criterionIds: _f$criterionIds,
+    #description: _f$description,
+    #required: _f$required,
+    #sourceRef: _f$sourceRef,
+    #details: _f$details,
+  };
+  @override
+  final bool ignoreNull = true;
+
+  static TaskEvidenceExpectation _instantiate(DecodingData data) {
+    return TaskEvidenceExpectation(
+      id: data.dec(_f$id),
+      type: data.dec(_f$type),
+      criterionIds: data.dec(_f$criterionIds),
+      description: data.dec(_f$description),
+      required: data.dec(_f$required),
+      sourceRef: data.dec(_f$sourceRef),
+      details: data.dec(_f$details),
+    );
+  }
+
+  @override
+  final Function instantiate = _instantiate;
+
+  static TaskEvidenceExpectation fromMap(Map<String, dynamic> map) {
+    return ensureInitialized().decodeMap<TaskEvidenceExpectation>(map);
+  }
+
+  static TaskEvidenceExpectation fromJson(String json) {
+    return ensureInitialized().decodeJson<TaskEvidenceExpectation>(json);
+  }
+}
+
+/// @nodoc
+mixin TaskEvidenceExpectationMappable {
+  String toJson() {
+    return TaskEvidenceExpectationMapper.ensureInitialized()
+        .encodeJson<TaskEvidenceExpectation>(this as TaskEvidenceExpectation);
+  }
+
+  Map<String, dynamic> toMap() {
+    return TaskEvidenceExpectationMapper.ensureInitialized()
+        .encodeMap<TaskEvidenceExpectation>(this as TaskEvidenceExpectation);
+  }
+}
+
+/// @nodoc
 class TaskProjectEvidenceExpectationMapper
     extends ClassMapperBase<TaskProjectEvidenceExpectation> {
   TaskProjectEvidenceExpectationMapper._();
@@ -693,6 +1132,8 @@ class TaskProjectEvidenceExpectationMapper
   static const Field<TaskProjectEvidenceExpectation, String> _f$type = Field(
     'type',
     _$type,
+    opt: true,
+    def: 'task_claim',
     hook: JsonStringHook(fallback: 'task_claim'),
   );
   static List<String> _$criterionIds(TaskProjectEvidenceExpectation v) =>
@@ -906,16 +1347,23 @@ mixin RefinedTaskBriefMappable {
 }
 
 /// @nodoc
-class TaskDocumentMapper extends ClassMapperBase<TaskDocument> {
-  TaskDocumentMapper._();
+class TaskMapper extends ClassMapperBase<Task> {
+  TaskMapper._();
 
-  static TaskDocumentMapper? _instance;
-  static TaskDocumentMapper ensureInitialized() {
+  static TaskMapper? _instance;
+  static TaskMapper ensureInitialized() {
     if (_instance == null) {
-      MapperContainer.globals.use(_instance = TaskDocumentMapper._());
+      MapperContainer.globals.use(_instance = TaskMapper._());
       TaskGateMapper.ensureInitialized();
       TaskStepMapper.ensureInitialized();
       TaskStatusMapper.ensureInitialized();
+      TaskPriorityMapper.ensureInitialized();
+      TaskRiskMapper.ensureInitialized();
+      ProjectRiskReductionMapper.ensureInitialized();
+      TaskEffortMapper.ensureInitialized();
+      TaskEvidenceExpectationMapper.ensureInitialized();
+      TaskArtifactMapper.ensureInitialized();
+      TaskFailureMapper.ensureInitialized();
       TaskRunMapper.ensureInitialized();
       PendingTaskApprovalMapper.ensureInitialized();
       PendingTaskQuestionMapper.ensureInitialized();
@@ -924,126 +1372,321 @@ class TaskDocumentMapper extends ClassMapperBase<TaskDocument> {
   }
 
   @override
-  final String id = 'TaskDocument';
+  final String id = 'Task';
 
-  static int _$schemaVersion(TaskDocument v) => v.schemaVersion;
-  static const Field<TaskDocument, int> _f$schemaVersion = Field(
+  static int _$schemaVersion(Task v) => v.schemaVersion;
+  static const Field<Task, int> _f$schemaVersion = Field(
     'schemaVersion',
     _$schemaVersion,
     opt: true,
-    def: TaskDocument.currentSchemaVersion,
+    def: Task.currentSchemaVersion,
     hook: JsonIntHook(),
   );
-  static String _$id(TaskDocument v) => v.id;
-  static const Field<TaskDocument, String> _f$id = Field(
+  static String _$id(Task v) => v.id;
+  static const Field<Task, String> _f$id = Field(
     'id',
     _$id,
     hook: JsonStringHook(),
   );
-  static String _$title(TaskDocument v) => v.title;
-  static const Field<TaskDocument, String> _f$title = Field(
+  static String _$title(Task v) => v.title;
+  static const Field<Task, String> _f$title = Field(
     'title',
     _$title,
     hook: JsonStringHook(fallback: 'Untitled task'),
   );
-  static String _$originalPrompt(TaskDocument v) => v.originalPrompt;
-  static const Field<TaskDocument, String> _f$originalPrompt = Field(
+  static String _$originalPrompt(Task v) => v.originalPrompt;
+  static const Field<Task, String> _f$originalPrompt = Field(
     'originalPrompt',
     _$originalPrompt,
+    opt: true,
     hook: JsonStringHook(),
   );
-  static String _$goal(TaskDocument v) => v.goal;
-  static const Field<TaskDocument, String> _f$goal = Field(
-    'goal',
-    _$goal,
+  static String _$objective(Task v) => v.objective;
+  static const Field<Task, String> _f$objective = Field(
+    'objective',
+    _$objective,
+    opt: true,
     hook: JsonStringHook(),
   );
-  static List<String> _$constraints(TaskDocument v) => v.constraints;
-  static const Field<TaskDocument, List<String>> _f$constraints = Field(
+  static List<String> _$constraints(Task v) => v.constraints;
+  static const Field<Task, List<String>> _f$constraints = Field(
     'constraints',
     _$constraints,
+    opt: true,
+    def: const [],
     hook: JsonStringListHook(),
   );
-  static List<String> _$successCriteria(TaskDocument v) => v.successCriteria;
-  static const Field<TaskDocument, List<String>> _f$successCriteria = Field(
+  static List<String> _$successCriteria(Task v) => v.successCriteria;
+  static const Field<Task, List<String>> _f$successCriteria = Field(
     'successCriteria',
     _$successCriteria,
+    opt: true,
+    def: const [],
     hook: JsonStringListHook(),
   );
-  static List<TaskGate> _$gates(TaskDocument v) => v.gates;
-  static const Field<TaskDocument, List<TaskGate>> _f$gates = Field(
+  static List<TaskGate> _$gates(Task v) => v.gates;
+  static const Field<Task, List<TaskGate>> _f$gates = Field(
     'gates',
     _$gates,
     opt: true,
     def: const [],
     hook: JsonObjectListHook(),
   );
-  static List<TaskStep> _$steps(TaskDocument v) => v.steps;
-  static const Field<TaskDocument, List<TaskStep>> _f$steps = Field(
+  static List<TaskStep> _$steps(Task v) => v.steps;
+  static const Field<Task, List<TaskStep>> _f$steps = Field(
     'steps',
     _$steps,
+    opt: true,
+    def: const [],
     hook: JsonObjectListHook(),
   );
-  static TaskStatus _$status(TaskDocument v) => v.status;
-  static const Field<TaskDocument, TaskStatus> _f$status = Field(
+  static TaskStatus _$status(Task v) => v.status;
+  static const Field<Task, TaskStatus> _f$status = Field(
     'status',
     _$status,
+    opt: true,
+    def: TaskStatus.paused,
     hook: EnumAliasHook({}),
   );
-  static String? _$currentStepId(TaskDocument v) => v.currentStepId;
-  static const Field<TaskDocument, String> _f$currentStepId = Field(
-    'currentStepId',
-    _$currentStepId,
+  static List<String> _$criterionIds(Task v) => v.criterionIds;
+  static const Field<Task, List<String>> _f$criterionIds = Field(
+    'criterionIds',
+    _$criterionIds,
+    opt: true,
+    def: const [],
+    hook: JsonStringListHook(),
+  );
+  static String? _$milestoneId(Task v) => v.milestoneId;
+  static const Field<Task, String> _f$milestoneId = Field(
+    'milestoneId',
+    _$milestoneId,
+    opt: true,
     hook: JsonNullableStringHook(),
   );
-  static String _$memorySummary(TaskDocument v) => v.memorySummary;
-  static const Field<TaskDocument, String> _f$memorySummary = Field(
-    'memorySummary',
-    _$memorySummary,
+  static List<String> _$dependsOnTaskIds(Task v) => v.dependsOnTaskIds;
+  static const Field<Task, List<String>> _f$dependsOnTaskIds = Field(
+    'dependsOnTaskIds',
+    _$dependsOnTaskIds,
+    opt: true,
+    def: const [],
+    hook: JsonStringListHook(),
+  );
+  static TaskPriority _$priority(Task v) => v.priority;
+  static const Field<Task, TaskPriority> _f$priority = Field(
+    'priority',
+    _$priority,
+    opt: true,
+    def: TaskPriority.normal,
+  );
+  static TaskRisk _$risk(Task v) => v.risk;
+  static const Field<Task, TaskRisk> _f$risk = Field(
+    'risk',
+    _$risk,
+    opt: true,
+    def: TaskRisk.unknown,
+  );
+  static ProjectRiskReduction _$riskReduction(Task v) => v.riskReduction;
+  static const Field<Task, ProjectRiskReduction> _f$riskReduction = Field(
+    'riskReduction',
+    _$riskReduction,
+    opt: true,
+    def: ProjectRiskReduction.none,
+  );
+  static TaskEffort _$effort(Task v) => v.effort;
+  static const Field<Task, TaskEffort> _f$effort = Field(
+    'effort',
+    _$effort,
+    opt: true,
+    def: TaskEffort.small,
+  );
+  static String _$selectionRationale(Task v) => v.selectionRationale;
+  static const Field<Task, String> _f$selectionRationale = Field(
+    'selectionRationale',
+    _$selectionRationale,
+    opt: true,
+    def: '',
     hook: JsonStringHook(),
   );
-  static List<TaskRun> _$runs(TaskDocument v) => v.runs;
-  static const Field<TaskDocument, List<TaskRun>> _f$runs = Field(
-    'runs',
-    _$runs,
+  static int _$revisionIntroduced(Task v) => v.revisionIntroduced;
+  static const Field<Task, int> _f$revisionIntroduced = Field(
+    'revisionIntroduced',
+    _$revisionIntroduced,
+    opt: true,
+    def: 1,
+    hook: JsonIntHook(fallback: 1, min: 1),
+  );
+  static int _$revisionUpdated(Task v) => v.revisionUpdated;
+  static const Field<Task, int> _f$revisionUpdated = Field(
+    'revisionUpdated',
+    _$revisionUpdated,
+    opt: true,
+    def: 1,
+    hook: JsonIntHook(fallback: 1, min: 1),
+  );
+  static List<TaskEvidenceExpectation> _$expectedEvidence(Task v) =>
+      v.expectedEvidence;
+  static const Field<Task, List<TaskEvidenceExpectation>> _f$expectedEvidence =
+      Field(
+        'expectedEvidence',
+        _$expectedEvidence,
+        opt: true,
+        def: const [],
+        hook: JsonObjectListHook(),
+      );
+  static List<String> _$readPaths(Task v) => v.readPaths;
+  static const Field<Task, List<String>> _f$readPaths = Field(
+    'readPaths',
+    _$readPaths,
+    opt: true,
+    def: const [],
+    hook: JsonStringListHook(),
+  );
+  static List<String> _$writePaths(Task v) => v.writePaths;
+  static const Field<Task, List<String>> _f$writePaths = Field(
+    'writePaths',
+    _$writePaths,
+    opt: true,
+    def: const [],
+    hook: JsonStringListHook(),
+  );
+  static bool _$legacyWriteAccess(Task v) => v.legacyWriteAccess;
+  static const Field<Task, bool> _f$legacyWriteAccess = Field(
+    'legacyWriteAccess',
+    _$legacyWriteAccess,
+    opt: true,
+    def: false,
+    hook: JsonBoolHook(),
+  );
+  static List<String> _$doneCriteria(Task v) => v.doneCriteria;
+  static const Field<Task, List<String>> _f$doneCriteria = Field(
+    'doneCriteria',
+    _$doneCriteria,
+    opt: true,
+    def: const [],
+    hook: JsonStringListHook(),
+  );
+  static List<String> _$outOfScope(Task v) => v.outOfScope;
+  static const Field<Task, List<String>> _f$outOfScope = Field(
+    'outOfScope',
+    _$outOfScope,
+    opt: true,
+    def: const [],
+    hook: JsonStringListHook(),
+  );
+  static List<String> _$context(Task v) => v.context;
+  static const Field<Task, List<String>> _f$context = Field(
+    'context',
+    _$context,
+    opt: true,
+    def: const [],
+    hook: JsonStringListHook(),
+  );
+  static List<TaskArtifact> _$expectedArtifacts(Task v) => v.expectedArtifacts;
+  static const Field<Task, List<TaskArtifact>> _f$expectedArtifacts = Field(
+    'expectedArtifacts',
+    _$expectedArtifacts,
+    opt: true,
+    def: const [],
     hook: JsonObjectListHook(),
   );
-  static DateTime _$createdAt(TaskDocument v) => v.createdAt;
-  static const Field<TaskDocument, DateTime> _f$createdAt = Field(
+  static String? _$recoveryIncidentId(Task v) => v.recoveryIncidentId;
+  static const Field<Task, String> _f$recoveryIncidentId = Field(
+    'recoveryIncidentId',
+    _$recoveryIncidentId,
+    opt: true,
+    hook: JsonNullableStringHook(),
+  );
+  static String _$fingerprint(Task v) => v.fingerprint;
+  static const Field<Task, String> _f$fingerprint = Field(
+    'fingerprint',
+    _$fingerprint,
+    opt: true,
+    def: '',
+    hook: JsonStringHook(),
+  );
+  static String? _$rejectionReason(Task v) => v.rejectionReason;
+  static const Field<Task, String> _f$rejectionReason = Field(
+    'rejectionReason',
+    _$rejectionReason,
+    opt: true,
+    hook: JsonNullableStringHook(),
+  );
+  static TaskFailure? _$failure(Task v) => v.failure;
+  static const Field<Task, TaskFailure> _f$failure = Field(
+    'failure',
+    _$failure,
+    opt: true,
+  );
+  static String? _$currentStepId(Task v) => v.currentStepId;
+  static const Field<Task, String> _f$currentStepId = Field(
+    'currentStepId',
+    _$currentStepId,
+    opt: true,
+    hook: JsonNullableStringHook(),
+  );
+  static String _$memorySummary(Task v) => v.memorySummary;
+  static const Field<Task, String> _f$memorySummary = Field(
+    'memorySummary',
+    _$memorySummary,
+    opt: true,
+    def: '',
+    hook: JsonStringHook(),
+  );
+  static List<TaskRun> _$runs(Task v) => v.runs;
+  static const Field<Task, List<TaskRun>> _f$runs = Field(
+    'runs',
+    _$runs,
+    opt: true,
+    def: const [],
+    hook: JsonObjectListHook(),
+  );
+  static DateTime _$createdAt(Task v) => v.createdAt;
+  static const Field<Task, DateTime> _f$createdAt = Field(
     'createdAt',
     _$createdAt,
     hook: JsonDateHook(),
   );
-  static DateTime _$updatedAt(TaskDocument v) => v.updatedAt;
-  static const Field<TaskDocument, DateTime> _f$updatedAt = Field(
+  static DateTime _$updatedAt(Task v) => v.updatedAt;
+  static const Field<Task, DateTime> _f$updatedAt = Field(
     'updatedAt',
     _$updatedAt,
     hook: JsonDateHook(),
   );
-  static PendingTaskApproval? _$pendingApproval(TaskDocument v) =>
-      v.pendingApproval;
-  static const Field<TaskDocument, PendingTaskApproval> _f$pendingApproval =
-      Field('pendingApproval', _$pendingApproval, opt: true);
-  static PendingTaskQuestion? _$pendingQuestion(TaskDocument v) =>
-      v.pendingQuestion;
-  static const Field<TaskDocument, PendingTaskQuestion> _f$pendingQuestion =
-      Field('pendingQuestion', _$pendingQuestion, opt: true);
-  static String? _$chatSessionId(TaskDocument v) => v.chatSessionId;
-  static const Field<TaskDocument, String> _f$chatSessionId = Field(
+  static PendingTaskApproval? _$pendingApproval(Task v) => v.pendingApproval;
+  static const Field<Task, PendingTaskApproval> _f$pendingApproval = Field(
+    'pendingApproval',
+    _$pendingApproval,
+    opt: true,
+  );
+  static PendingTaskQuestion? _$pendingQuestion(Task v) => v.pendingQuestion;
+  static const Field<Task, PendingTaskQuestion> _f$pendingQuestion = Field(
+    'pendingQuestion',
+    _$pendingQuestion,
+    opt: true,
+  );
+  static String? _$chatSessionId(Task v) => v.chatSessionId;
+  static const Field<Task, String> _f$chatSessionId = Field(
     'chatSessionId',
     _$chatSessionId,
     opt: true,
     hook: JsonNullableStringHook(),
   );
-  static String? _$projectId(TaskDocument v) => v.projectId;
-  static const Field<TaskDocument, String> _f$projectId = Field(
+  static String? _$projectId(Task v) => v.projectId;
+  static const Field<Task, String> _f$projectId = Field(
     'projectId',
     _$projectId,
     opt: true,
     hook: JsonNullableStringHook(),
   );
-  static DateTime? _$completedAt(TaskDocument v) => v.completedAt;
-  static const Field<TaskDocument, DateTime> _f$completedAt = Field(
+  static String? _$taskDocumentId(Task v) => v.taskDocumentId;
+  static const Field<Task, String> _f$taskDocumentId = Field(
+    'taskDocumentId',
+    _$taskDocumentId,
+    opt: true,
+    hook: JsonNullableStringHook(),
+  );
+  static DateTime? _$completedAt(Task v) => v.completedAt;
+  static const Field<Task, DateTime> _f$completedAt = Field(
     'completedAt',
     _$completedAt,
     opt: true,
@@ -1051,17 +1694,39 @@ class TaskDocumentMapper extends ClassMapperBase<TaskDocument> {
   );
 
   @override
-  final MappableFields<TaskDocument> fields = const {
+  final MappableFields<Task> fields = const {
     #schemaVersion: _f$schemaVersion,
     #id: _f$id,
     #title: _f$title,
     #originalPrompt: _f$originalPrompt,
-    #goal: _f$goal,
+    #objective: _f$objective,
     #constraints: _f$constraints,
     #successCriteria: _f$successCriteria,
     #gates: _f$gates,
     #steps: _f$steps,
     #status: _f$status,
+    #criterionIds: _f$criterionIds,
+    #milestoneId: _f$milestoneId,
+    #dependsOnTaskIds: _f$dependsOnTaskIds,
+    #priority: _f$priority,
+    #risk: _f$risk,
+    #riskReduction: _f$riskReduction,
+    #effort: _f$effort,
+    #selectionRationale: _f$selectionRationale,
+    #revisionIntroduced: _f$revisionIntroduced,
+    #revisionUpdated: _f$revisionUpdated,
+    #expectedEvidence: _f$expectedEvidence,
+    #readPaths: _f$readPaths,
+    #writePaths: _f$writePaths,
+    #legacyWriteAccess: _f$legacyWriteAccess,
+    #doneCriteria: _f$doneCriteria,
+    #outOfScope: _f$outOfScope,
+    #context: _f$context,
+    #expectedArtifacts: _f$expectedArtifacts,
+    #recoveryIncidentId: _f$recoveryIncidentId,
+    #fingerprint: _f$fingerprint,
+    #rejectionReason: _f$rejectionReason,
+    #failure: _f$failure,
     #currentStepId: _f$currentStepId,
     #memorySummary: _f$memorySummary,
     #runs: _f$runs,
@@ -1071,25 +1736,48 @@ class TaskDocumentMapper extends ClassMapperBase<TaskDocument> {
     #pendingQuestion: _f$pendingQuestion,
     #chatSessionId: _f$chatSessionId,
     #projectId: _f$projectId,
+    #taskDocumentId: _f$taskDocumentId,
     #completedAt: _f$completedAt,
   };
   @override
   final bool ignoreNull = true;
 
   @override
-  final MappingHook hook = const TaskDocumentJsonHook();
-  static TaskDocument _instantiate(DecodingData data) {
-    return TaskDocument(
+  final MappingHook hook = const TaskJsonHook();
+  static Task _instantiate(DecodingData data) {
+    return Task(
       schemaVersion: data.dec(_f$schemaVersion),
       id: data.dec(_f$id),
       title: data.dec(_f$title),
       originalPrompt: data.dec(_f$originalPrompt),
-      goal: data.dec(_f$goal),
+      objective: data.dec(_f$objective),
       constraints: data.dec(_f$constraints),
       successCriteria: data.dec(_f$successCriteria),
       gates: data.dec(_f$gates),
       steps: data.dec(_f$steps),
       status: data.dec(_f$status),
+      criterionIds: data.dec(_f$criterionIds),
+      milestoneId: data.dec(_f$milestoneId),
+      dependsOnTaskIds: data.dec(_f$dependsOnTaskIds),
+      priority: data.dec(_f$priority),
+      risk: data.dec(_f$risk),
+      riskReduction: data.dec(_f$riskReduction),
+      effort: data.dec(_f$effort),
+      selectionRationale: data.dec(_f$selectionRationale),
+      revisionIntroduced: data.dec(_f$revisionIntroduced),
+      revisionUpdated: data.dec(_f$revisionUpdated),
+      expectedEvidence: data.dec(_f$expectedEvidence),
+      readPaths: data.dec(_f$readPaths),
+      writePaths: data.dec(_f$writePaths),
+      legacyWriteAccess: data.dec(_f$legacyWriteAccess),
+      doneCriteria: data.dec(_f$doneCriteria),
+      outOfScope: data.dec(_f$outOfScope),
+      context: data.dec(_f$context),
+      expectedArtifacts: data.dec(_f$expectedArtifacts),
+      recoveryIncidentId: data.dec(_f$recoveryIncidentId),
+      fingerprint: data.dec(_f$fingerprint),
+      rejectionReason: data.dec(_f$rejectionReason),
+      failure: data.dec(_f$failure),
       currentStepId: data.dec(_f$currentStepId),
       memorySummary: data.dec(_f$memorySummary),
       runs: data.dec(_f$runs),
@@ -1099,6 +1787,7 @@ class TaskDocumentMapper extends ClassMapperBase<TaskDocument> {
       pendingQuestion: data.dec(_f$pendingQuestion),
       chatSessionId: data.dec(_f$chatSessionId),
       projectId: data.dec(_f$projectId),
+      taskDocumentId: data.dec(_f$taskDocumentId),
       completedAt: data.dec(_f$completedAt),
     );
   }
@@ -1106,27 +1795,23 @@ class TaskDocumentMapper extends ClassMapperBase<TaskDocument> {
   @override
   final Function instantiate = _instantiate;
 
-  static TaskDocument fromMap(Map<String, dynamic> map) {
-    return ensureInitialized().decodeMap<TaskDocument>(map);
+  static Task fromMap(Map<String, dynamic> map) {
+    return ensureInitialized().decodeMap<Task>(map);
   }
 
-  static TaskDocument fromJson(String json) {
-    return ensureInitialized().decodeJson<TaskDocument>(json);
+  static Task fromJson(String json) {
+    return ensureInitialized().decodeJson<Task>(json);
   }
 }
 
 /// @nodoc
-mixin TaskDocumentMappable {
+mixin TaskMappable {
   String toJson() {
-    return TaskDocumentMapper.ensureInitialized().encodeJson<TaskDocument>(
-      this as TaskDocument,
-    );
+    return TaskMapper.ensureInitialized().encodeJson<Task>(this as Task);
   }
 
   Map<String, dynamic> toMap() {
-    return TaskDocumentMapper.ensureInitialized().encodeMap<TaskDocument>(
-      this as TaskDocument,
-    );
+    return TaskMapper.ensureInitialized().encodeMap<Task>(this as Task);
   }
 }
 
@@ -1379,6 +2064,14 @@ class TaskArtifactMapper extends ClassMapperBase<TaskArtifact> {
     _$path,
     hook: JsonStringHook(),
   );
+  static String _$id(TaskArtifact v) => v.id;
+  static const Field<TaskArtifact, String> _f$id = Field(
+    'id',
+    _$id,
+    opt: true,
+    def: '',
+    hook: JsonStringHook(),
+  );
   static String? _$description(TaskArtifact v) => v.description;
   static const Field<TaskArtifact, String> _f$description = Field(
     'description',
@@ -1393,6 +2086,28 @@ class TaskArtifactMapper extends ClassMapperBase<TaskArtifact> {
     opt: true,
     hook: JsonNullableStringHook(),
   );
+  static String? _$taskId(TaskArtifact v) => v.taskId;
+  static const Field<TaskArtifact, String> _f$taskId = Field(
+    'taskId',
+    _$taskId,
+    opt: true,
+    hook: JsonNullableStringHook(),
+  );
+  static String? _$runId(TaskArtifact v) => v.runId;
+  static const Field<TaskArtifact, String> _f$runId = Field(
+    'runId',
+    _$runId,
+    opt: true,
+    hook: JsonNullableStringHook(),
+  );
+  static String _$kind(TaskArtifact v) => v.kind;
+  static const Field<TaskArtifact, String> _f$kind = Field(
+    'kind',
+    _$kind,
+    opt: true,
+    def: 'file',
+    hook: JsonNullableStringHook(),
+  );
   static DateTime? _$createdAt(TaskArtifact v) => v.createdAt;
   static const Field<TaskArtifact, DateTime> _f$createdAt = Field(
     'createdAt',
@@ -1404,18 +2119,28 @@ class TaskArtifactMapper extends ClassMapperBase<TaskArtifact> {
   @override
   final MappableFields<TaskArtifact> fields = const {
     #path: _f$path,
+    #id: _f$id,
     #description: _f$description,
     #stepId: _f$stepId,
+    #taskId: _f$taskId,
+    #runId: _f$runId,
+    #kind: _f$kind,
     #createdAt: _f$createdAt,
   };
   @override
   final bool ignoreNull = true;
 
+  @override
+  final MappingHook hook = const TaskArtifactJsonHook();
   static TaskArtifact _instantiate(DecodingData data) {
     return TaskArtifact(
       path: data.dec(_f$path),
+      id: data.dec(_f$id),
       description: data.dec(_f$description),
       stepId: data.dec(_f$stepId),
+      taskId: data.dec(_f$taskId),
+      runId: data.dec(_f$runId),
+      kind: data.dec(_f$kind),
       createdAt: data.dec(_f$createdAt),
     );
   }
@@ -1443,6 +2168,142 @@ mixin TaskArtifactMappable {
   Map<String, dynamic> toMap() {
     return TaskArtifactMapper.ensureInitialized().encodeMap<TaskArtifact>(
       this as TaskArtifact,
+    );
+  }
+}
+
+/// @nodoc
+class TaskFailureMapper extends ClassMapperBase<TaskFailure> {
+  TaskFailureMapper._();
+
+  static TaskFailureMapper? _instance;
+  static TaskFailureMapper ensureInitialized() {
+    if (_instance == null) {
+      MapperContainer.globals.use(_instance = TaskFailureMapper._());
+      TaskGateFailureDispositionMapper.ensureInitialized();
+    }
+    return _instance!;
+  }
+
+  @override
+  final String id = 'TaskFailure';
+
+  static String? _$gateId(TaskFailure v) => v.gateId;
+  static const Field<TaskFailure, String> _f$gateId = Field(
+    'gateId',
+    _$gateId,
+    opt: true,
+    hook: JsonNullableStringHook(),
+  );
+  static TaskGateFailureDisposition _$disposition(TaskFailure v) =>
+      v.disposition;
+  static const Field<TaskFailure, TaskGateFailureDisposition> _f$disposition =
+      Field('disposition', _$disposition, hook: EnumAliasHook({}));
+  static String _$failureKey(TaskFailure v) => v.failureKey;
+  static const Field<TaskFailure, String> _f$failureKey = Field(
+    'failureKey',
+    _$failureKey,
+    hook: JsonStringHook(),
+  );
+  static String _$summary(TaskFailure v) => v.summary;
+  static const Field<TaskFailure, String> _f$summary = Field(
+    'summary',
+    _$summary,
+    hook: JsonStringHook(),
+  );
+  static List<String> _$errorCodes(TaskFailure v) => v.errorCodes;
+  static const Field<TaskFailure, List<String>> _f$errorCodes = Field(
+    'errorCodes',
+    _$errorCodes,
+    opt: true,
+    def: const [],
+    hook: JsonStringListHook(),
+  );
+  static List<String> _$toolCallIds(TaskFailure v) => v.toolCallIds;
+  static const Field<TaskFailure, List<String>> _f$toolCallIds = Field(
+    'toolCallIds',
+    _$toolCallIds,
+    opt: true,
+    def: const [],
+    hook: JsonStringListHook(),
+  );
+  static int _$advisoryErrorCount(TaskFailure v) => v.advisoryErrorCount;
+  static const Field<TaskFailure, int> _f$advisoryErrorCount = Field(
+    'advisoryErrorCount',
+    _$advisoryErrorCount,
+    opt: true,
+    def: 0,
+    hook: JsonIntHook(),
+  );
+  static int _$resolvedErrorCount(TaskFailure v) => v.resolvedErrorCount;
+  static const Field<TaskFailure, int> _f$resolvedErrorCount = Field(
+    'resolvedErrorCount',
+    _$resolvedErrorCount,
+    opt: true,
+    def: 0,
+    hook: JsonIntHook(),
+  );
+  static int _$unresolvedErrorCount(TaskFailure v) => v.unresolvedErrorCount;
+  static const Field<TaskFailure, int> _f$unresolvedErrorCount = Field(
+    'unresolvedErrorCount',
+    _$unresolvedErrorCount,
+    opt: true,
+    def: 0,
+    hook: JsonIntHook(),
+  );
+
+  @override
+  final MappableFields<TaskFailure> fields = const {
+    #gateId: _f$gateId,
+    #disposition: _f$disposition,
+    #failureKey: _f$failureKey,
+    #summary: _f$summary,
+    #errorCodes: _f$errorCodes,
+    #toolCallIds: _f$toolCallIds,
+    #advisoryErrorCount: _f$advisoryErrorCount,
+    #resolvedErrorCount: _f$resolvedErrorCount,
+    #unresolvedErrorCount: _f$unresolvedErrorCount,
+  };
+  @override
+  final bool ignoreNull = true;
+
+  static TaskFailure _instantiate(DecodingData data) {
+    return TaskFailure(
+      gateId: data.dec(_f$gateId),
+      disposition: data.dec(_f$disposition),
+      failureKey: data.dec(_f$failureKey),
+      summary: data.dec(_f$summary),
+      errorCodes: data.dec(_f$errorCodes),
+      toolCallIds: data.dec(_f$toolCallIds),
+      advisoryErrorCount: data.dec(_f$advisoryErrorCount),
+      resolvedErrorCount: data.dec(_f$resolvedErrorCount),
+      unresolvedErrorCount: data.dec(_f$unresolvedErrorCount),
+    );
+  }
+
+  @override
+  final Function instantiate = _instantiate;
+
+  static TaskFailure fromMap(Map<String, dynamic> map) {
+    return ensureInitialized().decodeMap<TaskFailure>(map);
+  }
+
+  static TaskFailure fromJson(String json) {
+    return ensureInitialized().decodeJson<TaskFailure>(json);
+  }
+}
+
+/// @nodoc
+mixin TaskFailureMappable {
+  String toJson() {
+    return TaskFailureMapper.ensureInitialized().encodeJson<TaskFailure>(
+      this as TaskFailure,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return TaskFailureMapper.ensureInitialized().encodeMap<TaskFailure>(
+      this as TaskFailure,
     );
   }
 }

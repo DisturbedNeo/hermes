@@ -1,11 +1,16 @@
 part of 'project.dart';
 
-/// Project snapshots are intentionally clean-slate at schema v5. Old data is
-/// rejected instead of being silently interpreted through a compatibility
-/// migration.
+/// Project snapshots use a clean-slate schema with a narrow compatibility
+/// window for the Phase 2 snapshot. Phase 4 only adds optional batch state, so
+/// schema v5 projects can be upgraded at the persistence boundary.
 class ProjectStateJsonHook extends JsonModelHook {
   const ProjectStateJsonHook()
-    : super(outputOverrides: const {'schemaVersion': ProjectState.currentSchemaVersion});
+    : super(
+        outputOverrides: const {
+          'schemaVersion': ProjectState.currentSchemaVersion,
+        },
+        removeKeys: const {'tasks'},
+      );
 
   @override
   Object? beforeDecode(Object? value) {
@@ -13,35 +18,22 @@ class ProjectStateJsonHook extends JsonModelHook {
     if (normalized is! Map) return normalized;
     final json = Map<String, dynamic>.from(normalized);
     final version = jsonInt(json['schemaVersion']);
-    if (version != ProjectState.currentSchemaVersion) {
+    if (version < ProjectState.minimumSupportedSchemaVersion ||
+        version > ProjectState.currentSchemaVersion) {
       throw FormatException(
-        'Unsupported project schema version $version; expected '
+        'Unsupported project schema version $version; supported versions are '
+        '${ProjectState.minimumSupportedSchemaVersion}-'
         '${ProjectState.currentSchemaVersion}.',
       );
     }
-    return json;
-  }
-}
-
-class ProjectTaskJsonHook extends JsonModelHook {
-  const ProjectTaskJsonHook()
-    : super(outputOverrides: const {});
-
-  @override
-  Object? afterDecode(Object? value) {
-    if (value is! ProjectTask || value.fingerprint.isNotEmpty) return value;
-    return value.copyWith(
-      fingerprint: projectTaskFingerprint(value.objective, value.criterionIds),
-    );
-  }
-}
-
-class ProjectArtifactJsonHook extends JsonModelHook {
-  const ProjectArtifactJsonHook();
-
-  @override
-  Object? afterDecode(Object? value) {
-    if (value is! ProjectArtifact || value.id.isNotEmpty) return value;
-    return value.copyWith(id: value.path);
+    // Phase 2 stores the ordered task relationship on the project. Embedded
+    // task objects remain a decode-only compatibility path for old snapshots.
+    if (!json.containsKey('taskIds') && json['tasks'] is List) {
+      json['taskIds'] = [
+        for (final item in json['tasks'] as List)
+          if (item is Map && item['id'] != null) item['id'].toString(),
+      ];
+    }
+    return json..['schemaVersion'] = ProjectState.currentSchemaVersion;
   }
 }

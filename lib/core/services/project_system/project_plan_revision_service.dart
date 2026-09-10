@@ -379,19 +379,24 @@ class ProjectPlanRevisionService {
     }
 
     final desiredById = {for (final task in proposal.tasks) task.id: task};
-    final tasksById = <String, ProjectTask>{};
+    final tasksById = <String, Task>{};
     for (final existing in project.tasks) {
       final desired = desiredById[existing.id];
       if (_preserveTask(existing)) {
         tasksById[existing.id] = existing;
       } else if (desired == null) {
-        tasksById[existing.id] = existing.copyWith(
-          status: proposal.deferredTaskIds.contains(existing.id)
-              ? ProjectTaskStatus.deferred
-              : ProjectTaskStatus.obsolete,
-          revisionUpdated: proposal.revision,
-          updatedAt: now,
-        );
+        final disposition = proposal.deferredTaskIds.contains(existing.id)
+            ? TaskStatus.deferred
+            : proposal.obsoleteTaskIds.contains(existing.id)
+            ? TaskStatus.obsolete
+            : null;
+        tasksById[existing.id] = disposition == null
+            ? existing
+            : existing.copyWith(
+                status: disposition,
+                revisionUpdated: proposal.revision,
+                updatedAt: now,
+              );
       } else {
         tasksById[existing.id] = _mergeTask(
           existing,
@@ -405,7 +410,6 @@ class ProjectPlanRevisionService {
       if (tasksById.containsKey(desired.id)) continue;
       tasksById[desired.id] = desired.copyWith(
         status: _desiredTaskStatus(proposal, desired),
-        taskDocumentId: null,
         recoveryIncidentId: null,
         rejectionReason: null,
         failure: null,
@@ -491,13 +495,22 @@ class ProjectPlanRevisionService {
           if (!project.tasks.any((existing) => existing.id == task.id)) task.id,
       ],
       updatedTaskIds: [
-        for (final task in proposal.tasks)
-          if (project.tasks.any((existing) => existing.id == task.id)) task.id,
+        for (final existing in project.tasks)
+          if (!_preserveTask(existing) &&
+              !proposal.deferredTaskIds.contains(existing.id) &&
+              !proposal.obsoleteTaskIds.contains(existing.id) &&
+              tasksById[existing.id] != null &&
+              _taskSignature([existing]) !=
+                  _taskSignature([tasksById[existing.id]!]))
+            existing.id,
       ],
       removedTaskIds: [
-        for (final task in project.tasks)
-          if (!_preserveTask(task) && !desiredById.containsKey(task.id))
-            task.id,
+        for (final existing in project.tasks)
+          if (!_preserveTask(existing) &&
+              (tasksById[existing.id]?.status == TaskStatus.deferred ||
+                  tasksById[existing.id]?.status == TaskStatus.obsolete) &&
+              tasksById[existing.id]?.status != existing.status)
+            existing.id,
       ],
       criterionChanges: _criterionChanges(project.criteria, proposal.criteria),
       milestoneChanges: _milestoneChanges(
@@ -573,20 +586,17 @@ class ProjectPlanRevisionService {
     );
   }
 
-  static ProjectTaskStatus _desiredTaskStatus(
-    ProjectDesiredPlan proposal,
-    ProjectTask task,
-  ) {
+  static TaskStatus _desiredTaskStatus(ProjectDesiredPlan proposal, Task task) {
     if (proposal.obsoleteTaskIds.contains(task.id)) {
-      return ProjectTaskStatus.obsolete;
+      return TaskStatus.obsolete;
     }
     if (proposal.deferredTaskIds.contains(task.id)) {
-      return ProjectTaskStatus.deferred;
+      return TaskStatus.deferred;
     }
-    return task.status == ProjectTaskStatus.deferred ||
-            task.status == ProjectTaskStatus.obsolete
+    return task.status == TaskStatus.deferred ||
+            task.status == TaskStatus.obsolete
         ? task.status
-        : ProjectTaskStatus.queued;
+        : TaskStatus.queued;
   }
 
   static List<ProjectMilestone> _normaliseMilestones(
@@ -642,17 +652,17 @@ class ProjectPlanRevisionService {
         : null,
   );
 
-  static bool _preserveTask(ProjectTask task) =>
-      task.status == ProjectTaskStatus.running ||
-      task.status == ProjectTaskStatus.completed ||
-      task.status == ProjectTaskStatus.failed ||
-      task.status == ProjectTaskStatus.rejected ||
-      task.status == ProjectTaskStatus.split ||
-      task.status == ProjectTaskStatus.cancelled;
+  static bool _preserveTask(Task task) =>
+      task.status == TaskStatus.running ||
+      task.status == TaskStatus.completed ||
+      task.status == TaskStatus.failed ||
+      task.status == TaskStatus.rejected ||
+      task.status == TaskStatus.split ||
+      task.status == TaskStatus.cancelled;
 
-  static ProjectTask _mergeTask(
-    ProjectTask existing,
-    ProjectTask desired,
+  static Task _mergeTask(
+    Task existing,
+    Task desired,
     int revision,
     DateTime now,
   ) {
@@ -710,16 +720,16 @@ class ProjectPlanRevisionService {
       .join('||');
 
   static String _taskSignature(
-    List<ProjectTask> items,
+    List<Task> items,
   ) => ([...items]..sort((a, b) => a.id.compareTo(b.id)))
       .map(
         (item) =>
-            '${item.id}|${item.title}|${item.objective}|${item.criterionIds.join(',')}|${item.milestoneId}|${item.dependsOnTaskIds.join(',')}|${item.priority.name}|${item.risk.name}|${item.riskReduction.name}|${item.effort.name}|${item.selectionRationale}|${item.status.name}|${_evidenceSignature(item.expectedEvidence)}|${item.readPaths.join(',')}|${item.writePaths.join(',')}|${item.legacyWriteAccess}|${item.doneCriteria.join(',')}|${item.outOfScope.join(',')}|${item.context.join(',')}|${_artifactSignature(item.expectedArtifacts)}|${item.taskDocumentId}|${item.recoveryIncidentId}|${item.fingerprint}',
+            '${item.id}|${item.title}|${item.objective}|${item.criterionIds.join(',')}|${item.milestoneId}|${item.dependsOnTaskIds.join(',')}|${item.priority.name}|${item.risk.name}|${item.riskReduction.name}|${item.effort.name}|${item.selectionRationale}|${item.status.name}|${_evidenceSignature(item.expectedEvidence)}|${item.readPaths.join(',')}|${item.writePaths.join(',')}|${item.legacyWriteAccess}|${item.doneCriteria.join(',')}|${item.outOfScope.join(',')}|${item.context.join(',')}|${_artifactSignature(item.expectedArtifacts)}|${item.recoveryIncidentId}|${item.fingerprint}',
       )
       .join('||');
 
   static String _evidenceSignature(
-    List<ProjectEvidenceExpectation> items,
+    List<TaskEvidenceExpectation> items,
   ) => items
       .map(
         (item) =>
@@ -727,10 +737,10 @@ class ProjectPlanRevisionService {
       )
       .join(';;');
 
-  static String _artifactSignature(List<ProjectArtifact> items) => items
+  static String _artifactSignature(List<TaskArtifact> items) => items
       .map(
         (item) =>
-            '${item.id}|${item.projectTaskId}|${item.taskDocumentId}|${item.taskRunId}|${item.path}|${item.description}|${item.kind}',
+            '${item.id}|${item.taskId}|${item.runId}|${item.path}|${item.description}|${item.kind}',
       )
       .join(';;');
 
@@ -850,7 +860,7 @@ class ProjectPlanRevisionService {
       );
     }
     for (final task in proposal.tasks) {
-      if (task.risk == ProjectTaskRisk.high) {
+      if (task.risk == TaskRisk.high) {
         changes.add(
           _ProjectPlanRiskReason(
             'high_risk_task',

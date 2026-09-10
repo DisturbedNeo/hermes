@@ -20,6 +20,7 @@ import 'package:hermes/core/services/project_system/project_plan_revision_servic
 import 'package:hermes/core/services/project_system/project_progress_monitor.dart';
 import 'package:hermes/core/services/project_system/project_repository.dart';
 import 'package:hermes/core/services/project_system/project_scheduler.dart';
+import 'package:hermes/core/services/project_system/project_task_migration.dart';
 import 'package:hermes/core/services/question_policy_service.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
@@ -27,18 +28,18 @@ import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/workspace_discovery_profile.dart';
 import 'package:path/path.dart' as path;
 
-typedef ProjectTaskSnapshotSink = void Function(TaskDocument? task);
+typedef ProjectTaskSnapshotSink = void Function(Task? task);
 typedef ProjectCompactionStatusSink = void Function(String status);
 
-int projectTaskStepLimit(ProjectTaskEffort effort) => switch (effort) {
-  ProjectTaskEffort.small => 1,
-  ProjectTaskEffort.medium => 4,
-  ProjectTaskEffort.large => 6,
+int taskStepLimit(TaskEffort effort) => switch (effort) {
+  TaskEffort.small => 1,
+  TaskEffort.medium => 4,
+  TaskEffort.large => 6,
 };
 
 class ProjectRunResult {
   final ProjectDocument project;
-  final TaskDocument? activeTask;
+  final Task? activeTask;
 
   const ProjectRunResult({required this.project, this.activeTask});
 }
@@ -58,7 +59,10 @@ class ProjectService {
            ProjectModelCalls(toolService: taskService.toolService),
        _scheduler = scheduler ?? const ProjectScheduler(),
        _memoryService = memoryService ?? const ProjectMemoryService(),
-       _progressMonitor = progressMonitor ?? const ProjectProgressMonitor();
+       _progressMonitor = progressMonitor ?? const ProjectProgressMonitor(),
+       _taskMigration = ProjectTaskSnapshotMigration(
+         taskRepository: taskService.repository,
+       );
 
   final TaskService _taskService;
   final ProjectRepository _repository;
@@ -66,6 +70,7 @@ class ProjectService {
   final ProjectScheduler _scheduler;
   final ProjectMemoryService _memoryService;
   final ProjectProgressMonitor _progressMonitor;
+  final ProjectTaskSnapshotMigration _taskMigration;
   final QuestionPolicyService _questionPolicy = const QuestionPolicyService();
   final ProjectEvidenceService _evidenceService =
       const ProjectEvidenceService();
@@ -87,29 +92,29 @@ class ProjectService {
 
   ProjectRepository get repository => _repository;
 
-  ProjectTask? _activeProjectTask(ProjectDocument project) {
+  Task? _activeProjectTask(ProjectDocument project) {
     final id = project.activeTaskId;
     return id == null ? null : project.taskById(id);
   }
 
-  bool _isTerminalTask(ProjectTask task) => switch (task.status) {
-    ProjectTaskStatus.completed ||
-    ProjectTaskStatus.failed ||
-    ProjectTaskStatus.rejected ||
-    ProjectTaskStatus.split ||
-    ProjectTaskStatus.cancelled => true,
+  bool _isTerminalTask(Task task) => switch (task.status) {
+    TaskStatus.completed ||
+    TaskStatus.failed ||
+    TaskStatus.rejected ||
+    TaskStatus.split ||
+    TaskStatus.cancelled => true,
     _ => false,
   };
 
-  List<ProjectTask> _nonTerminalTasks(ProjectDocument project) =>
+  List<Task> _nonTerminalTasks(ProjectDocument project) =>
       project.tasks.where((task) => !_isTerminalTask(task)).toList();
 
-  List<ProjectTask> _upsertTask(
+  List<Task> _upsertTask(
     ProjectDocument project,
-    ProjectTask replacement, {
+    Task replacement, {
     String? removeId,
   }) {
-    final replaced = <ProjectTask>[];
+    final replaced = <Task>[];
     var found = false;
     for (final task in project.tasks) {
       if (task.id == removeId) continue;
@@ -128,9 +133,214 @@ class ProjectService {
     String workspaceRoot,
     ProjectDocument project,
   ) async {
-    final refreshed = _scheduler.refreshReadiness(project).project;
+    final refreshed = _scheduler
+        .refreshReadiness(project)
+        .project
+        .copyWith(
+          taskIds: project.tasks.isEmpty
+              ? project.taskIds
+              : [for (final task in project.tasks) task.id],
+        );
+    for (final task in refreshed.tasks) {
+      final existing = await _taskService.repository.loadTask(
+        workspaceRoot,
+        task.id,
+      );
+      final taskToSave = _taskForPersistence(
+        task,
+        existing,
+        projectId: refreshed.id,
+        chatSessionId: refreshed.chatSessionId,
+      );
+      await _taskService.repository.saveSnapshot(workspaceRoot, taskToSave);
+    }
     await _repository.saveSnapshot(workspaceRoot, refreshed);
     return refreshed;
+  }
+
+  int _currentPlanRevision(ProjectDocument project) {
+    var revision = 0;
+    for (final item in project.planHistory) {
+      if (item.revision > revision) revision = item.revision;
+    }
+    return revision;
+  }
+
+  Future<ProjectDocument> _startBatch({
+    required String workspaceRoot,
+    required ProjectDocument project,
+    required int maxNewTasks,
+  }) async {
+    final scheduled = _scheduler.schedule(project);
+    final readyTasks = <Task>[];
+    final seen = <String>{};
+    final selected = scheduled.selectedTask;
+    if (selected != null && seen.add(selected.id)) readyTasks.add(selected);
+    for (final task in _scheduler.orderedReadyTasks(scheduled.project)) {
+      if (seen.add(task.id)) readyTasks.add(task);
+    }
+    final batchSize = maxNewTasks <= 0 ? readyTasks.length : maxNewTasks;
+    final batchTaskIds = [
+      for (final task in readyTasks.take(batchSize)) task.id,
+    ];
+    return _persistProject(
+      workspaceRoot,
+      scheduled.project.copyWith(
+        currentBatchTaskIds: batchTaskIds,
+        currentBatchIndex: 0,
+        currentBatchPlanRevision: _currentPlanRevision(scheduled.project),
+        pendingReplanReason: null,
+      ),
+    );
+  }
+
+  ProjectDocument _clearBatch(ProjectDocument project) {
+    return project.copyWith(
+      currentBatchTaskIds: const [],
+      currentBatchIndex: 0,
+      currentBatchPlanRevision: 0,
+      pendingReplanReason: null,
+    );
+  }
+
+  Task? _currentBatchTask(ProjectDocument project) {
+    final id = project.currentBatchTaskId;
+    return id == null ? null : project.taskById(id);
+  }
+
+  ProjectDocument _advanceBatchCursor(
+    ProjectDocument project,
+    String completedTaskId,
+  ) {
+    final index = project.currentBatchTaskIds.indexOf(completedTaskId);
+    if (index < project.currentBatchIndex) return project;
+    return project.copyWith(currentBatchIndex: index + 1);
+  }
+
+  bool _hasWorkOutsideBatch(ProjectDocument project) {
+    final batchIds = project.currentBatchTaskIds.toSet();
+    return project.tasks.any(
+      (task) => !_isTerminalTask(task) && !batchIds.contains(task.id),
+    );
+  }
+
+  String _replanReasonForTriggers(
+    Iterable<ProjectPlanRevisionTrigger> triggers,
+  ) {
+    final labels = [
+      for (final trigger in triggers)
+        switch (trigger) {
+          ProjectPlanRevisionTrigger.taskFailed =>
+            'A task failed and needs a safe recovery decision.',
+          ProjectPlanRevisionTrigger.evidenceRejected =>
+            'A required evidence item was rejected or became stale.',
+          ProjectPlanRevisionTrigger.taskReplanRequested =>
+            'The active task reported that the project plan needs revision.',
+          ProjectPlanRevisionTrigger.scopeChanged =>
+            'The project scope changed and the backlog must be reconciled.',
+          ProjectPlanRevisionTrigger.workspaceChanged =>
+            'A workspace assumption changed and the plan must be revalidated.',
+          ProjectPlanRevisionTrigger.milestoneRoadmapChanged =>
+            'A milestone boundary changed and the roadmap must be refreshed.',
+          ProjectPlanRevisionTrigger.batchComplete =>
+            'The configured execution batch completed.',
+          ProjectPlanRevisionTrigger.noReadyTask =>
+            'No ready task remained at a safe execution boundary.',
+          _ => null,
+        },
+    ].whereType<String>();
+    return labels.isEmpty
+        ? 'The project plan needs revision.'
+        : labels.join(' ');
+  }
+
+  Task _taskForPersistence(
+    Task projectTask,
+    Task? existing, {
+    required String projectId,
+    required String? chatSessionId,
+  }) {
+    if (existing == null || projectTask.steps.isNotEmpty) {
+      return projectTask.copyWith(
+        projectId: projectId,
+        chatSessionId: chatSessionId,
+      );
+    }
+    // A project-side planning update must not erase executable steps or task
+    // history that already exists under the same canonical task ID.
+    return existing.copyWith(
+      id: projectTask.id,
+      title: projectTask.title,
+      originalPrompt: projectTask.originalPrompt,
+      objective: projectTask.objective,
+      constraints: projectTask.constraints,
+      successCriteria: projectTask.successCriteria,
+      gates: projectTask.gates.isEmpty ? existing.gates : projectTask.gates,
+      criterionIds: projectTask.criterionIds,
+      milestoneId: projectTask.milestoneId,
+      dependsOnTaskIds: projectTask.dependsOnTaskIds,
+      priority: projectTask.priority,
+      risk: projectTask.risk,
+      riskReduction: projectTask.riskReduction,
+      effort: projectTask.effort,
+      selectionRationale: projectTask.selectionRationale,
+      revisionIntroduced: projectTask.revisionIntroduced,
+      revisionUpdated: projectTask.revisionUpdated,
+      expectedEvidence: projectTask.expectedEvidence.isEmpty
+          ? existing.expectedEvidence
+          : projectTask.expectedEvidence,
+      readPaths: projectTask.readPaths,
+      writePaths: projectTask.writePaths,
+      legacyWriteAccess: projectTask.legacyWriteAccess,
+      doneCriteria: projectTask.doneCriteria,
+      outOfScope: projectTask.outOfScope,
+      context: projectTask.context,
+      expectedArtifacts: projectTask.expectedArtifacts.isEmpty
+          ? existing.expectedArtifacts
+          : projectTask.expectedArtifacts,
+      status: projectTask.status,
+      recoveryIncidentId: projectTask.recoveryIncidentId,
+      fingerprint: projectTask.fingerprint,
+      rejectionReason: projectTask.rejectionReason,
+      failure: projectTask.failure ?? existing.failure,
+      projectId: projectId,
+      chatSessionId: chatSessionId,
+    );
+  }
+
+  /// Loads the task records referenced by a project snapshot. The in-memory
+  /// task list is only a hydration cache; canonical task definitions live in
+  /// the task repository and are addressed by [ProjectState.taskIds].
+  Future<ProjectDocument> _hydrateProjectTasks(
+    WorkspaceAttachment workspace,
+    ProjectDocument project,
+  ) async {
+    final cachedById = {for (final task in project.tasks) task.id: task};
+    final orderedIds = project.taskIds.isNotEmpty
+        ? project.taskIds
+        : project.tasks.map((task) => task.id).toList();
+    final hydrated = <Task>[];
+    for (final id in orderedIds) {
+      final loaded = await _taskService.loadTask(
+        workspace,
+        id,
+        chatSessionId: project.chatSessionId,
+        projectId: project.id,
+      );
+      final task = loaded ?? cachedById[id];
+      if (task == null) continue;
+      final canonicalTask = task.projectId == project.id
+          ? task
+          : task.copyWith(projectId: project.id);
+      if (loaded == null || canonicalTask.projectId != loaded.projectId) {
+        await _taskService.repository.saveSnapshot(
+          workspace.rootPath,
+          canonicalTask,
+        );
+      }
+      hydrated.add(canonicalTask);
+    }
+    return project.copyWith(tasks: hydrated, taskIds: orderedIds);
   }
 
   Future<List<ProjectSummary>> listProjects(
@@ -146,23 +356,36 @@ class ProjectService {
   Future<ProjectDocument?> loadLatestProject(
     WorkspaceAttachment workspace, {
     String? chatSessionId,
-  }) {
-    return _repository.loadLatestProject(
+  }) async {
+    final project = await _repository.loadLatestProject(
       workspace.rootPath,
       chatSessionId: chatSessionId,
     );
+    return project == null ? null : _prepareLoadedProject(workspace, project);
   }
 
   Future<ProjectDocument?> loadProject(
     WorkspaceAttachment workspace,
     String projectId, {
     String? chatSessionId,
-  }) {
-    return _repository.loadProject(
+  }) async {
+    final project = await _repository.loadProject(
       workspace.rootPath,
       projectId,
       chatSessionId: chatSessionId,
     );
+    return project == null ? null : _prepareLoadedProject(workspace, project);
+  }
+
+  Future<ProjectDocument> _prepareLoadedProject(
+    WorkspaceAttachment workspace,
+    ProjectDocument project,
+  ) async {
+    final migration = await _taskMigration.migrate(workspace.rootPath, project);
+    if (migration.migrated) {
+      await _repository.saveSnapshot(workspace.rootPath, migration.project);
+    }
+    return _hydrateProjectTasks(workspace, migration.project);
   }
 
   Future<int> deleteProjectsForChatSession(
@@ -281,7 +504,7 @@ class ProjectService {
     final initialCriteria = init.criteria;
     final initialCriterionIds = initialCriteria.map((item) => item.id).toList();
     final initialBacklog = planningBlocked
-        ? const <ProjectTask>[]
+        ? const <Task>[]
         : _normaliseInitialBacklog(init.tasks, initialCriterionIds);
     final initialMilestones = _initialMilestones(
       init: init,
@@ -400,6 +623,7 @@ class ProjectService {
     required ProjectDocument snapshot,
     ProjectTaskSnapshotSink? onTaskUpdated,
   }) async {
+    snapshot = await _hydrateProjectTasks(workspace, snapshot);
     if (snapshot.isTerminal) {
       return ProjectRunResult(
         project: snapshot,
@@ -470,7 +694,7 @@ class ProjectService {
         .firstOrNull;
     if (incident == null) return snapshot;
     final sourceTask = snapshot.tasks
-        .where((task) => task.status == ProjectTaskStatus.failed)
+        .where((task) => task.status == TaskStatus.failed)
         .toList()
         .reversed
         .where((task) => task.recoveryIncidentId == incidentId)
@@ -664,6 +888,21 @@ class ProjectService {
       project = await _persistProject(workspace.rootPath, project);
     }
 
+    if (project.activeTaskId != null && project.currentBatchTaskIds.isEmpty) {
+      project = await _persistProject(
+        workspace.rootPath,
+        project.copyWith(
+          currentBatchTaskIds: [project.activeTaskId!],
+          currentBatchIndex: 0,
+          currentBatchPlanRevision: _currentPlanRevision(project),
+        ),
+      );
+    } else if (project.activeTaskId == null &&
+        project.currentBatchPlanRevision != 0 &&
+        project.currentBatchPlanRevision != _currentPlanRevision(project)) {
+      project = await _persistProject(workspace.rootPath, _clearBatch(project));
+    }
+
     final allowedIterations = maxNewTasks <= 0 ? null : maxNewTasks;
     var runIterations = 0;
     var consecutiveInvalidCandidates = 0;
@@ -728,15 +967,64 @@ class ProjectService {
         return ProjectRunResult(project: project, activeTask: activeTask);
       }
 
-      final initialSchedule = _scheduler.schedule(project);
-      project = initialSchedule.project;
-      var candidate =
-          _activeProjectTask(project) ?? initialSchedule.selectedTask;
-      final replanTriggers = _eligibleReplanTriggers(
+      var replanTriggers = _eligibleReplanTriggers(
         project.pendingReplanTriggers,
       );
-      if (replanTriggers.length != project.pendingReplanTriggers.length) {
-        project = project.copyWith(pendingReplanTriggers: replanTriggers);
+      if (replanTriggers.length != project.pendingReplanTriggers.length ||
+          (replanTriggers.isNotEmpty && project.pendingReplanReason == null)) {
+        project = project.copyWith(
+          pendingReplanTriggers: replanTriggers,
+          pendingReplanReason: replanTriggers.isEmpty
+              ? null
+              : _replanReasonForTriggers(replanTriggers),
+        );
+      }
+
+      if (_activeProjectTask(project) == null && replanTriggers.isEmpty) {
+        if (project.currentBatchPlanRevision != 0 &&
+            project.currentBatchPlanRevision != _currentPlanRevision(project)) {
+          project = await _persistProject(
+            workspace.rootPath,
+            _clearBatch(project),
+          );
+        }
+        if (project.currentBatchTaskIds.isNotEmpty &&
+            project.currentBatchIndex >= project.currentBatchTaskIds.length) {
+          if (_hasWorkOutsideBatch(project)) {
+            replanTriggers = _appendTrigger(
+              replanTriggers,
+              ProjectPlanRevisionTrigger.batchComplete,
+            );
+            project = project.copyWith(
+              pendingReplanTriggers: replanTriggers,
+              pendingReplanReason:
+                  project.pendingReplanReason ??
+                  _replanReasonForTriggers(replanTriggers),
+            );
+          } else {
+            project = await _persistProject(
+              workspace.rootPath,
+              _clearBatch(project),
+            );
+          }
+        }
+        if (replanTriggers.isEmpty && !project.hasCurrentBatch) {
+          project = await _startBatch(
+            workspaceRoot: workspace.rootPath,
+            project: project,
+            maxNewTasks: maxNewTasks,
+          );
+        }
+      }
+
+      var candidate = _activeProjectTask(project) ?? _currentBatchTask(project);
+      if (_activeProjectTask(project) == null &&
+          candidate?.isTerminal == true) {
+        project = await _persistProject(
+          workspace.rootPath,
+          _advanceBatchCursor(project, candidate!.id),
+        );
+        continue;
       }
       if (candidate == null && replanTriggers.isEmpty) {
         project = await _applyCompletionEvaluation(
@@ -756,7 +1044,16 @@ class ProjectService {
           project = await _persistProject(workspace.rootPath, project);
           return ProjectRunResult(project: project, activeTask: activeTask);
         }
-        replanTriggers.add(ProjectPlanRevisionTrigger.noReadyTask);
+        replanTriggers = _appendTrigger(
+          replanTriggers,
+          ProjectPlanRevisionTrigger.noReadyTask,
+        );
+        project = project.copyWith(
+          pendingReplanTriggers: replanTriggers,
+          pendingReplanReason:
+              project.pendingReplanReason ??
+              _replanReasonForTriggers(replanTriggers),
+        );
       }
 
       if (_shouldRevisePlan(
@@ -781,9 +1078,7 @@ class ProjectService {
             project.status == ProjectStatus.waitingForUser) {
           return ProjectRunResult(project: project, activeTask: activeTask);
         }
-        final revisedSchedule = _scheduler.schedule(project);
-        project = revisedSchedule.project;
-        candidate = revisedSchedule.selectedTask;
+        continue;
       }
 
       if (candidate == null) {
@@ -805,7 +1100,7 @@ class ProjectService {
       final resumingActiveTask =
           activeProjectTask?.id == candidate.id &&
           activeTask != null &&
-          activeTask.id == activeProjectTask?.taskDocumentId;
+          activeTask.id == activeProjectTask?.id;
       final validation = resumingActiveTask
           ? const _ProjectTaskValidation(true, [])
           : _validateProjectTask(candidate, project);
@@ -829,8 +1124,12 @@ class ProjectService {
           before: projectBeforeRecovery,
           after: project,
         );
-        if (recoveryMadeProgress) {
+        if (recoveryMadeProgress || project.taskById(candidate.id) == null) {
           consecutiveInvalidCandidates = 0;
+          // Selection recovery can replace the candidate with a fresh task.
+          // Rebuild the batch from the repaired project so that replacement
+          // work is eligible without changing the normal sequential path.
+          project = _clearBatch(project);
         } else {
           consecutiveInvalidCandidates++;
         }
@@ -960,6 +1259,28 @@ class ProjectService {
         iterationCount: project.iterationCount + 1,
         updatedAt: DateTime.now(),
       );
+      project = _advanceBatchCursor(project, evaluatedProjectTask.id);
+      final pendingTriggers = _eligibleReplanTriggers(
+        project.pendingReplanTriggers,
+      );
+      if (pendingTriggers.isNotEmpty && project.pendingReplanReason == null) {
+        project = project.copyWith(
+          pendingReplanReason: _replanReasonForTriggers(pendingTriggers),
+        );
+      }
+      if (pendingTriggers.isEmpty &&
+          project.currentBatchTaskIds.isNotEmpty &&
+          project.currentBatchIndex >= project.currentBatchTaskIds.length &&
+          _hasWorkOutsideBatch(project)) {
+        final batchTriggers = _appendTrigger(
+          pendingTriggers,
+          ProjectPlanRevisionTrigger.batchComplete,
+        );
+        project = project.copyWith(
+          pendingReplanTriggers: batchTriggers,
+          pendingReplanReason: _replanReasonForTriggers(batchTriggers),
+        );
+      }
       project = await _persistProject(workspace.rootPath, project);
       runIterations++;
       if (project.status == ProjectStatus.completed ||
@@ -992,6 +1313,8 @@ class ProjectService {
         snapshot.pendingReplanTriggers,
         ProjectPlanRevisionTrigger.scopeChanged,
       ),
+      pendingReplanReason:
+          'The project scope changed and the backlog must be reconciled.',
       updatedAt: DateTime.now(),
     );
     updated = _memoryService
@@ -1044,6 +1367,7 @@ class ProjectService {
       return snapshot;
     }
     final now = DateTime.now();
+    final trimmedReason = context.trim();
     var updated = snapshot.copyWith(
       status: ProjectStatus.active,
       blocker:
@@ -1055,13 +1379,15 @@ class ProjectService {
         snapshot.pendingReplanTriggers,
         ProjectPlanRevisionTrigger.scopeChanged,
       ),
+      pendingReplanReason: trimmedReason.isEmpty
+          ? 'The project scope changed and the backlog must be reconciled.'
+          : 'User changed project scope: $trimmedReason',
       updatedAt: now,
       diagnostics: snapshot.diagnostics.copyWith(
         consecutiveNoProgressIterations: 0,
         recentNoProgressTaskIds: const [],
       ),
     );
-    final trimmedReason = context.trim();
     if (trimmedReason.isNotEmpty) {
       updated = _memoryService
           .record(
@@ -1216,10 +1542,7 @@ class ProjectService {
       tasks: [
         for (final task in snapshot.tasks)
           task.id == activeTask?.id
-              ? task.copyWith(
-                  status: ProjectTaskStatus.cancelled,
-                  updatedAt: now,
-                )
+              ? task.copyWith(status: TaskStatus.cancelled, updatedAt: now)
               : task,
       ],
       openQuestions: const [],
@@ -1237,15 +1560,15 @@ class ProjectService {
     return cancelProject(workspace: workspace, snapshot: snapshot);
   }
 
-  Future<TaskDocument?> _loadActiveTask(
+  Future<Task?> _loadActiveTask(
     WorkspaceAttachment workspace,
     ProjectDocument project,
   ) {
-    final taskDocumentId = project.activeTaskDocumentId;
-    if (taskDocumentId == null) return Future.value();
+    final taskId = project.activeTaskId;
+    if (taskId == null) return Future.value();
     return _taskService.loadTask(
       workspace,
-      taskDocumentId,
+      taskId,
       chatSessionId: project.chatSessionId,
       projectId: project.id,
     );
@@ -1272,7 +1595,7 @@ class ProjectService {
     );
     if (snapshot.workspaceProfile.requiredContextIssues.isNotEmpty) {
       return _blockProject(
-        project,
+        _clearBatch(project),
         ProjectBlockerType.validation,
         _initialPlanningBlockerMessage([
           for (final issue in snapshot.workspaceProfile.requiredContextIssues)
@@ -1313,6 +1636,10 @@ class ProjectService {
       },
     );
     var revised = result.project.copyWith(
+      currentBatchTaskIds: const [],
+      currentBatchIndex: 0,
+      currentBatchPlanRevision: 0,
+      pendingReplanReason: null,
       diagnostics: result.project.diagnostics.copyWith(
         projectModelCalls:
             result.project.diagnostics.projectModelCalls +
@@ -1375,15 +1702,15 @@ class ProjectService {
         _scheduler.schedule(project).selectedTask != null;
   }
 
-  bool _isSelectableTask(ProjectTask task) {
-    return task.status == ProjectTaskStatus.queued;
+  bool _isSelectableTask(Task task) {
+    return task.status == TaskStatus.queued;
   }
 
   Future<ProjectDocument> _handleInvalidProjectTask({
     required ChatClient client,
     required WorkspaceAttachment workspace,
     required ProjectDocument project,
-    required ProjectTask task,
+    required Task task,
     required List<String> violations,
     required String baseSystemPrompt,
     TaskModelOutputSink? onModelOutput,
@@ -1413,7 +1740,7 @@ class ProjectService {
           now: now,
         );
         final rejected = task.copyWith(
-          status: ProjectTaskStatus.rejected,
+          status: TaskStatus.rejected,
           rejectionReason: violations.join('\n'),
           updatedAt: now,
         );
@@ -1437,7 +1764,7 @@ class ProjectService {
         );
       }
       final rejected = task.copyWith(
-        status: ProjectTaskStatus.rejected,
+        status: TaskStatus.rejected,
         rejectionReason: violations.join('\n'),
         updatedAt: now,
       );
@@ -1498,9 +1825,7 @@ class ProjectService {
 
     final now = DateTime.now();
     final rejected = task.copyWith(
-      status: splitTasks.isEmpty
-          ? ProjectTaskStatus.rejected
-          : ProjectTaskStatus.split,
+      status: splitTasks.isEmpty ? TaskStatus.rejected : TaskStatus.split,
       rejectionReason: violations.join('\n'),
       updatedAt: now,
     );
@@ -1557,7 +1882,7 @@ class ProjectService {
     required ChatClient client,
     required WorkspaceAttachment workspace,
     required ProjectDocument project,
-    required ProjectTask projectTask,
+    required Task projectTask,
     required String baseSystemPrompt,
     required bool requirePhaseApproval,
     CompactionSettings? compactionSettings,
@@ -1586,7 +1911,7 @@ class ProjectService {
       );
     }
     final runningProjectTask = projectTask.copyWith(
-      status: ProjectTaskStatus.running,
+      status: TaskStatus.running,
       updatedAt: now,
     );
     var workingProject = project.copyWith(
@@ -1605,23 +1930,27 @@ class ProjectService {
       ],
       updatedAt: now,
     );
+    final loadedTask = await _loadActiveTask(workspace, workingProject);
+    // A queued Task record is the project definition, not yet an executable
+    // plan. Only reuse a record once it contains executable steps.
+    final existingTask = loadedTask?.steps.isNotEmpty == true
+        ? loadedTask
+        : null;
     workingProject = await _persistProject(workspace.rootPath, workingProject);
 
-    final existingTask = workingProject.activeTaskId == null
-        ? null
-        : await _loadActiveTask(workspace, workingProject);
     final planningContext = _planningContext(workingProject, projectTask);
-    late TaskDocument activeTask;
+    late Task activeTask;
     if (existingTask != null) {
       activeTask = existingTask;
     } else {
-      activeTask = projectTask.effort == ProjectTaskEffort.small
-          ? await _taskService.createProjectTaskDocument(
+      activeTask = projectTask.effort == TaskEffort.small
+          ? await _taskService.createProjectTask(
               workspace: workspace,
               userPrompt: _taskPrompt(workingProject, projectTask),
               chatSessionId: workingProject.chatSessionId,
               projectId: workingProject.id,
               planningContext: planningContext,
+              canonicalTaskId: projectTask.id,
             )
           : await _taskService.createTask(
               client: client,
@@ -1636,11 +1965,11 @@ class ProjectService {
               chatSessionId: workingProject.chatSessionId,
               projectId: workingProject.id,
               planningContext: planningContext,
+              canonicalTaskId: projectTask.id,
               onModelOutput: onModelOutput,
               cancellationToken: cancellationToken,
             );
     }
-    final taskDocumentId = activeTask.id;
     final executionRequest = TaskExecutionRequest.fromPlanningContext(
       planningContext,
     );
@@ -1648,10 +1977,7 @@ class ProjectService {
       activeTaskId: projectTask.id,
       tasks: _upsertTask(
         workingProject,
-        runningProjectTask.copyWith(
-          taskDocumentId: taskDocumentId,
-          updatedAt: DateTime.now(),
-        ),
+        runningProjectTask.copyWith(updatedAt: DateTime.now()),
       ),
       updatedAt: DateTime.now(),
     );
@@ -1758,7 +2084,7 @@ class ProjectService {
     }
 
     final result = _taskResultFromTask(
-      _activeProjectTask(workingProject)!,
+      _activeProjectTask(workingProject) ?? projectTask,
       activeTask,
     );
     return _ProjectTaskExecution(
@@ -1773,13 +2099,13 @@ class ProjectService {
   }
 
   ProjectEvaluation _evaluateTaskResult(
-    ProjectTask projectTask,
+    Task projectTask,
     TaskResult result,
     ProjectDocument project,
   ) {
     final accepted = result.status == TaskStatus.completed;
     return ProjectEvaluation(
-      projectTaskId: projectTask.id,
+      taskId: projectTask.id,
       taskAccepted: accepted,
       projectComplete: false,
       summary: result.summary,
@@ -1808,7 +2134,7 @@ class ProjectService {
 
   ProjectDocument _applyTaskEvidence({
     required ProjectDocument project,
-    required ProjectTask task,
+    required Task task,
     required TaskResult result,
     required DateTime evaluatedAt,
   }) {
@@ -1837,9 +2163,9 @@ class ProjectService {
       autonomy: questionAutonomy,
     );
     if (!evaluation.taskAccepted) {
-      final failure = _projectTaskFailure(evaluation);
+      final failure = _taskFailure(evaluation);
       var failedTask = task.copyWith(
-        status: ProjectTaskStatus.failed,
+        status: TaskStatus.failed,
         rejectionReason: evaluation.failureReason,
         failure: failure,
         updatedAt: now,
@@ -1854,7 +2180,7 @@ class ProjectService {
       final tasks = _upsertTask(project, failedTask);
       final recoveryIncidents = recoveryUpdate.recoveryIncidents;
       final failedBudgetCount = _projectFailureBudgetCount(
-        tasks.where((item) => item.status == ProjectTaskStatus.failed).toList(),
+        tasks.where((item) => item.status == TaskStatus.failed).toList(),
         recoveryIncidents,
       );
       final reachedFailureLimit = failedBudgetCount >= project.maxFailedTasks;
@@ -1880,7 +2206,7 @@ class ProjectService {
                 type: ProjectBlockerType.recoveryFailed,
                 message:
                     'Recovery incident `${exhaustedIncident.id}` reached the maximum repair attempt limit of ${exhaustedIncident.maxAttempts}.',
-                taskId: failedTask.taskDocumentId ?? failedTask.id,
+                taskId: failedTask.id,
                 createdAt: now,
               )
             : reachedFailureLimit
@@ -1894,7 +2220,7 @@ class ProjectService {
             ? ProjectBlocker(
                 type: ProjectBlockerType.taskFailed,
                 message: failure.summary,
-                taskId: failedTask.taskDocumentId ?? failedTask.id,
+                taskId: failedTask.id,
                 createdAt: now,
               )
             : null,
@@ -1949,7 +2275,7 @@ class ProjectService {
       return updated;
     }
     final completedTask = task.copyWith(
-      status: ProjectTaskStatus.completed,
+      status: TaskStatus.completed,
       updatedAt: now,
     );
     final recoveryIncidents = _resolveRecoveryIncidentForTask(
@@ -2037,7 +2363,7 @@ class ProjectService {
         ) ||
         _projectFailureBudgetCount(
               project.tasks
-                  .where((task) => task.status == ProjectTaskStatus.failed)
+                  .where((task) => task.status == TaskStatus.failed)
                   .toList(),
               project.recoveryIncidents,
             ) >=
@@ -2231,7 +2557,7 @@ class ProjectService {
   }
 
   _ProjectTaskValidation _validateProjectTask(
-    ProjectTask task,
+    Task task,
     ProjectDocument project,
   ) {
     final violations = <String>[];
@@ -2313,13 +2639,13 @@ class ProjectService {
 
   _DuplicateProjectTaskMatch? _duplicateMatchForTask(
     ProjectDocument project,
-    ProjectTask task,
+    Task task,
   ) {
     if (task.recoveryIncidentId != null) return null;
     final fingerprint = task.fingerprint;
     for (final queued in project.tasks) {
       if (queued.id != task.id &&
-          queued.status == ProjectTaskStatus.queued &&
+          queued.status == TaskStatus.queued &&
           queued.fingerprint == fingerprint) {
         return _QueuedDuplicateProjectTask(queued);
       }
@@ -2331,10 +2657,10 @@ class ProjectService {
       return _QueuedDuplicateProjectTask(current);
     }
     for (final failed in project.tasks.where(
-      (item) => item.status == ProjectTaskStatus.failed,
+      (item) => item.status == TaskStatus.failed,
     )) {
       if (failed.id != task.id &&
-          failed.status == ProjectTaskStatus.failed &&
+          failed.status == TaskStatus.failed &&
           failed.recoveryIncidentId == null &&
           failed.fingerprint == fingerprint) {
         return _FailedDuplicateProjectTask(failed);
@@ -2343,9 +2669,9 @@ class ProjectService {
     return null;
   }
 
-  ProjectTask _retryTaskForFailedDuplicate({
-    required ProjectTask failedTask,
-    required ProjectTask duplicateTask,
+  Task _retryTaskForFailedDuplicate({
+    required Task failedTask,
+    required Task duplicateTask,
     required List<String> violations,
     required DateTime now,
   }) {
@@ -2355,7 +2681,7 @@ class ProjectService {
     }.toList();
     final objective =
         'Retry failed project task after addressing the previous failure: ${failedTask.objective}';
-    return ProjectTask(
+    return Task(
       id: 'project_retry_${uuid.v7()}',
       title: 'Retry ${failedTask.title}',
       objective: objective,
@@ -2391,8 +2717,7 @@ class ProjectService {
           : duplicateTask.writePaths,
       legacyWriteAccess:
           duplicateTask.legacyWriteAccess || failedTask.legacyWriteAccess,
-      status: ProjectTaskStatus.queued,
-      taskDocumentId: null,
+      status: TaskStatus.queued,
       recoveryIncidentId: null,
       fingerprint: projectTaskFingerprint(objective, criteria),
       rejectionReason: null,
@@ -2413,10 +2738,7 @@ class ProjectService {
         text.contains('end-to-end');
   }
 
-  TaskPlanningContext _planningContext(
-    ProjectDocument project,
-    ProjectTask task,
-  ) {
+  TaskPlanningContext _planningContext(ProjectDocument project, Task task) {
     final memoryContext = _memoryService.selectContext(
       project: project,
       task: task,
@@ -2463,13 +2785,13 @@ class ProjectService {
       readPaths: task.readPaths,
       writePaths: task.writePaths,
       legacyWriteAccess: task.legacyWriteAccess,
-      maxSteps: projectTaskStepLimit(task.effort),
+      maxSteps: taskStepLimit(task.effort),
     );
   }
 
   _RecoveryUpdate _recoveryUpdateForFailedTask({
     required ProjectDocument project,
-    required ProjectTask failedTask,
+    required Task failedTask,
     required ProjectEvaluation evaluation,
     required DateTime now,
   }) {
@@ -2532,7 +2854,7 @@ class ProjectService {
               status: status,
               sourceTaskIds: _appendUnique(
                 existing?.sourceTaskIds ?? const [],
-                failedTask.taskDocumentId ?? failedTask.id,
+                failedTask.id,
               ),
               sourceTaskTitles: _appendUnique(
                 existing?.sourceTaskTitles ?? const [],
@@ -2569,7 +2891,7 @@ class ProjectService {
   }
 
   _RecoveryFailure? _recoveryFailureFor({
-    required ProjectTask failedTask,
+    required Task failedTask,
     required ProjectEvaluation evaluation,
   }) {
     final failedGate = evaluation.gateResults
@@ -2619,7 +2941,7 @@ class ProjectService {
     return lines.isEmpty ? '' : 'Unresolved diagnostics:\n${lines.join('\n')}';
   }
 
-  ProjectTaskFailure _projectTaskFailure(ProjectEvaluation evaluation) {
+  TaskFailure _taskFailure(ProjectEvaluation evaluation) {
     final gate = evaluation.gateResults
         .where(
           (result) =>
@@ -2663,7 +2985,7 @@ class ProjectService {
       ...operationKeys,
       if (errorCodes.isEmpty && operationKeys.isEmpty) _normalise(summary),
     ];
-    return ProjectTaskFailure(
+    return TaskFailure(
       gateId: gate?.gateId,
       disposition: disposition,
       failureKey: _cap(keyParts.join('|'), 500),
@@ -2732,21 +3054,21 @@ class ProjectService {
     ].join('|');
   }
 
-  List<ProjectEvidenceExpectation> _replacementExpectedEvidence({
-    required Iterable<ProjectEvidenceExpectation> source,
-    required Iterable<ProjectEvidenceExpectation> additions,
+  List<TaskEvidenceExpectation> _replacementExpectedEvidence({
+    required Iterable<TaskEvidenceExpectation> source,
+    required Iterable<TaskEvidenceExpectation> additions,
     required Iterable<String> criterionIds,
     required String idPrefix,
   }) {
     final validCriteria = criterionIds.toSet();
-    final merged = <String, ProjectEvidenceExpectation>{};
+    final merged = <String, TaskEvidenceExpectation>{};
     for (final expectation in [...source, ...additions]) {
       final linkedCriteria = expectation.criterionIds
           .where(validCriteria.contains)
           .toSet()
           .toList();
       if (linkedCriteria.isEmpty) continue;
-      final normalized = ProjectEvidenceExpectation(
+      final normalized = TaskEvidenceExpectation(
         id: expectation.id,
         type: expectation.type,
         criterionIds: linkedCriteria,
@@ -2759,7 +3081,7 @@ class ProjectService {
       final existing = merged[signature];
       merged[signature] = existing == null
           ? normalized
-          : ProjectEvidenceExpectation(
+          : TaskEvidenceExpectation(
               id: normalized.id,
               type: normalized.type,
               criterionIds: normalized.criterionIds,
@@ -2771,7 +3093,7 @@ class ProjectService {
     }
     return [
       for (final expectation in merged.values)
-        ProjectEvidenceExpectation(
+        TaskEvidenceExpectation(
           id: '${idPrefix}_${uuid.v7()}',
           type: expectation.type,
           criterionIds: expectation.criterionIds,
@@ -2783,7 +3105,7 @@ class ProjectService {
     ];
   }
 
-  String _evidenceExpectationSignature(ProjectEvidenceExpectation expectation) {
+  String _evidenceExpectationSignature(TaskEvidenceExpectation expectation) {
     final criteria = [...expectation.criterionIds]..sort();
     return [
       expectation.type.name,
@@ -2792,9 +3114,9 @@ class ProjectService {
     ].join('|');
   }
 
-  ProjectTask _recoveryTaskForIncident({
+  Task _recoveryTaskForIncident({
     required String incidentId,
-    required ProjectTask sourceTask,
+    required Task sourceTask,
     required _RecoveryFailure failure,
     required int attemptNumber,
     required DateTime now,
@@ -2814,7 +3136,7 @@ class ProjectService {
     final gateSourceRef = command?.isNotEmpty == true
         ? command
         : failure.gateResult.gateId;
-    final recoveryGateExpectation = ProjectEvidenceExpectation(
+    final recoveryGateExpectation = TaskEvidenceExpectation(
       id: 'recovery_gate_expectation',
       type: gateType,
       criterionIds: sourceTask.criterionIds,
@@ -2823,7 +3145,7 @@ class ProjectService {
       sourceRef: gateSourceRef,
       details: failure.gateResult.details,
     );
-    return ProjectTask(
+    return Task(
       id: 'project_recovery_${uuid.v7()}',
       title: 'Recover project health',
       objective: objective,
@@ -2861,8 +3183,7 @@ class ProjectService {
         idPrefix: 'recovery_expectation',
       ),
       expectedArtifacts: const [],
-      status: ProjectTaskStatus.queued,
-      taskDocumentId: null,
+      status: TaskStatus.queued,
       recoveryIncidentId: incidentId,
       fingerprint: projectTaskFingerprint(objective, [
         incidentId,
@@ -2894,7 +3215,7 @@ class ProjectService {
 
   List<ProjectRecoveryIncident> _resolveRecoveryIncidentForTask(
     List<ProjectRecoveryIncident> incidents,
-    ProjectTask completedTask,
+    Task completedTask,
     DateTime now,
   ) {
     final incidentId = completedTask.recoveryIncidentId;
@@ -2912,10 +3233,7 @@ class ProjectService {
     ];
   }
 
-  List<TaskGate> _requiredGatesForTask(
-    ProjectDocument project,
-    ProjectTask task,
-  ) {
+  List<TaskGate> _requiredGatesForTask(ProjectDocument project, Task task) {
     final expectedGates = <TaskGate>[
       for (final expectation in task.expectedEvidence)
         if (expectation.required &&
@@ -2975,13 +3293,13 @@ class ProjectService {
   }
 
   int _projectFailureBudgetCount(
-    List<ProjectTask> failedTasks,
+    List<Task> failedTasks,
     List<ProjectRecoveryIncident> recoveryIncidents,
   ) {
     final nonRecoveryFailures = failedTasks
         .where(
           (task) =>
-              task.status == ProjectTaskStatus.failed &&
+              task.status == TaskStatus.failed &&
               task.recoveryIncidentId == null,
         )
         .map(
@@ -3005,16 +3323,15 @@ class ProjectService {
     return [...current, value];
   }
 
-  TaskResult _taskResultFromTask(ProjectTask projectTask, TaskDocument task) {
+  TaskResult _taskResultFromTask(Task projectTask, Task task) {
     final latestRun = task.runs.isEmpty ? null : task.runs.last;
-    final artifacts = <ProjectArtifact>[
+    final artifacts = <TaskArtifact>[
       for (final run in task.runs)
         for (final artifact in run.artifacts)
-          ProjectArtifact(
+          TaskArtifact(
             id: 'artifact_${uuid.v7()}',
-            projectTaskId: projectTask.id,
-            taskDocumentId: task.id,
-            taskRunId: run.runId,
+            taskId: projectTask.id,
+            runId: run.runId,
             path: artifact.path,
             description: artifact.description ?? '',
             kind: 'file',
@@ -3022,7 +3339,7 @@ class ProjectService {
           ),
     ];
     return TaskResult(
-      taskDocumentId: task.id,
+      taskId: task.id,
       status: task.status,
       summary: latestRun?.summary ?? task.memorySummary,
       memoryUpdate: latestRun?.memoryUpdate ?? task.memorySummary,
@@ -3050,7 +3367,7 @@ class ProjectService {
     _ => type.name,
   };
 
-  (ProjectBlockerType, String)? _taskBlocker(TaskDocument task) {
+  (ProjectBlockerType, String)? _taskBlocker(Task task) {
     if (task.pendingApproval != null) {
       return (
         ProjectBlockerType.taskEditApproval,
@@ -3071,26 +3388,23 @@ class ProjectService {
 
   ProjectDocument _syncCurrentTaskFromTask(
     ProjectDocument project,
-    TaskDocument task,
+    Task task,
     DateTime now,
   ) {
     final current = _activeProjectTask(project);
     if (current == null) return project;
+    final nextStatus = switch (task.status) {
+      TaskStatus.completed => TaskStatus.completed,
+      TaskStatus.failed => TaskStatus.failed,
+      TaskStatus.cancelled => TaskStatus.cancelled,
+      _ => TaskStatus.running,
+    };
     return project.copyWith(
       tasks: _upsertTask(
         project,
-        current.copyWith(
-          taskDocumentId: task.id,
-          status: switch (task.status) {
-            TaskStatus.completed => ProjectTaskStatus.completed,
-            TaskStatus.failed => ProjectTaskStatus.failed,
-            TaskStatus.cancelled => ProjectTaskStatus.cancelled,
-            _ => ProjectTaskStatus.running,
-          },
-          updatedAt: now,
-        ),
+        current.copyWith(status: nextStatus, updatedAt: now),
       ),
-      activeTaskId: current.id,
+      activeTaskId: task.isTerminal ? null : current.id,
       updatedAt: now,
     );
   }
@@ -3165,11 +3479,11 @@ class ProjectService {
         .toList();
   }
 
-  List<ProjectArtifact> _mergeArtifacts(
-    List<ProjectArtifact> current,
-    List<ProjectArtifact> additions,
+  List<TaskArtifact> _mergeArtifacts(
+    List<TaskArtifact> current,
+    List<TaskArtifact> additions,
   ) {
-    final byPath = <String, ProjectArtifact>{
+    final byPath = <String, TaskArtifact>{
       for (final artifact in current) artifact.path: artifact,
     };
     for (final artifact in additions) {
@@ -3204,7 +3518,7 @@ class ProjectService {
 
   ProjectDocument _recordTaskMemory({
     required ProjectDocument project,
-    required ProjectTask task,
+    required Task task,
     required ProjectEvaluation evaluation,
     required List<String> assumptions,
     required bool accepted,
@@ -3271,10 +3585,7 @@ class ProjectService {
     );
   }
 
-  ProjectDocument _projectForModel(
-    ProjectDocument project, {
-    ProjectTask? task,
-  }) {
+  ProjectDocument _projectForModel(ProjectDocument project, {Task? task}) {
     final selection = _memoryService.selectContext(
       project: project,
       task: task,
@@ -3302,22 +3613,22 @@ class ProjectService {
     };
   }
 
-  List<ProjectTask> _normaliseBacklog(List<ProjectTask> tasks) {
+  List<Task> _normaliseBacklog(List<Task> tasks) {
     final seen = <String>{};
     return [
       for (final task in tasks)
         if (task.objective.trim().isNotEmpty && seen.add(task.fingerprint))
           task.copyWith(
-            status: task.status == ProjectTaskStatus.running
-                ? ProjectTaskStatus.queued
+            status: task.status == TaskStatus.running
+                ? TaskStatus.queued
                 : task.status,
             updatedAt: DateTime.now(),
           ),
     ];
   }
 
-  List<ProjectTask> _normaliseInitialBacklog(
-    List<ProjectTask> tasks,
+  List<Task> _normaliseInitialBacklog(
+    List<Task> tasks,
     List<String> criterionIds,
   ) {
     final knownCriterionIds = criterionIds.toSet();
@@ -3328,7 +3639,7 @@ class ProjectService {
           task.copyWith(
             expectedEvidence: [
               for (final expectation in task.expectedEvidence)
-                ProjectEvidenceExpectation(
+                TaskEvidenceExpectation(
                   id: expectation.id,
                   type: expectation.type,
                   criterionIds: expectation.criterionIds.isEmpty
@@ -3387,7 +3698,7 @@ class ProjectService {
       );
     }
 
-    final taskById = <String, ProjectTask>{};
+    final taskById = <String, Task>{};
     for (final task in initialisation.tasks) {
       if (task.id.trim().isEmpty || taskById.containsKey(task.id)) {
         add(
@@ -3444,8 +3755,8 @@ class ProjectService {
           'Task ${task.id} needs an objective, done criteria, and out-of-scope boundaries.',
         );
       }
-      if (task.status != ProjectTaskStatus.queued &&
-          task.status != ProjectTaskStatus.deferred) {
+      if (task.status != TaskStatus.queued &&
+          task.status != TaskStatus.deferred) {
         add(
           'invalid_initial_task_status',
           'Task ${task.id} cannot claim execution progress during initialization.',
@@ -3561,7 +3872,7 @@ class ProjectService {
           );
         }
       }
-      if (task.effort == ProjectTaskEffort.small &&
+      if (task.effort == TaskEffort.small &&
           task.expectedArtifacts.isNotEmpty &&
           task.writePaths.isEmpty &&
           !task.legacyWriteAccess) {
@@ -3801,7 +4112,7 @@ class ProjectService {
                       taskIds.every(
                         (taskId) =>
                             project.taskById(taskId)?.status ==
-                            ProjectTaskStatus.completed,
+                            TaskStatus.completed,
                       );
                 })()))
           _completedMilestone(milestone, now, () => milestoneCompleted = true)
@@ -3842,13 +4153,13 @@ class ProjectService {
         project.tasks.any(
           (task) =>
               task.milestoneId == activeMilestone.id &&
-              task.status != ProjectTaskStatus.completed &&
-              task.status != ProjectTaskStatus.failed &&
-              task.status != ProjectTaskStatus.rejected &&
-              task.status != ProjectTaskStatus.split &&
-              task.status != ProjectTaskStatus.deferred &&
-              task.status != ProjectTaskStatus.obsolete &&
-              task.status != ProjectTaskStatus.cancelled,
+              task.status != TaskStatus.completed &&
+              task.status != TaskStatus.failed &&
+              task.status != TaskStatus.rejected &&
+              task.status != TaskStatus.split &&
+              task.status != TaskStatus.deferred &&
+              task.status != TaskStatus.obsolete &&
+              task.status != TaskStatus.cancelled,
         );
     if (milestoneCompleted &&
         activeMilestone != null &&
@@ -3881,9 +4192,13 @@ class ProjectService {
         ProjectPlanRevisionTrigger.evidenceRejected,
       );
     }
+    final pendingReplanReason = project.isTerminal || triggers.isEmpty
+        ? null
+        : project.pendingReplanReason ?? _replanReasonForTriggers(triggers);
     return project.copyWith(
       milestones: milestones,
       pendingReplanTriggers: project.isTerminal ? const [] : triggers,
+      pendingReplanReason: pendingReplanReason,
       updatedAt: now,
     );
   }
@@ -3920,6 +4235,8 @@ class ProjectService {
     ProjectPlanRevisionTrigger.taskFailed,
     ProjectPlanRevisionTrigger.evidenceRejected,
     ProjectPlanRevisionTrigger.taskReplanRequested,
+    ProjectPlanRevisionTrigger.workspaceChanged,
+    ProjectPlanRevisionTrigger.batchComplete,
     ProjectPlanRevisionTrigger.scopeChanged,
     ProjectPlanRevisionTrigger.milestoneRoadmapChanged,
   };
@@ -3935,7 +4252,7 @@ class ProjectService {
 
   bool _shouldRevisePlan({
     required ProjectDocument project,
-    required ProjectTask? candidate,
+    required Task? candidate,
     required List<ProjectPlanRevisionTrigger> triggers,
   }) {
     if (_activeProjectTask(project) != null || triggers.isEmpty) return false;
@@ -3968,7 +4285,7 @@ class ProjectService {
     ProjectDecisionType type,
     String summary,
     String memoryUpdate, {
-    ProjectTask? task,
+    Task? task,
     String? error,
   }) {
     return ProjectDecisionRecord(
@@ -3976,7 +4293,7 @@ class ProjectService {
       decision: type,
       summary: summary,
       memoryUpdate: memoryUpdate,
-      taskId: task?.taskDocumentId ?? task?.id,
+      taskId: task?.id,
       taskTitle: task?.title,
       taskPrompt: task?.objective,
       error: error,
@@ -3984,7 +4301,7 @@ class ProjectService {
     );
   }
 
-  String _taskPrompt(ProjectDocument project, ProjectTask task) {
+  String _taskPrompt(ProjectDocument project, Task task) {
     final memoryContext = _memoryService.selectContext(
       project: project,
       task: task,
@@ -4013,7 +4330,7 @@ class ProjectService {
   String _buildTaskSystemPrompt(
     String baseSystemPrompt,
     ProjectDocument project,
-    TaskDocument? task,
+    Task? task,
   ) {
     final activeTaskLine = task == null
         ? ''
@@ -4090,7 +4407,7 @@ class _ProjectTaskValidation {
 }
 
 sealed class _DuplicateProjectTaskMatch {
-  final ProjectTask task;
+  final Task task;
 
   const _DuplicateProjectTaskMatch(this.task);
 }
@@ -4105,7 +4422,7 @@ class _FailedDuplicateProjectTask extends _DuplicateProjectTaskMatch {
 
 class _ProjectTaskExecution {
   final ProjectDocument project;
-  final TaskDocument? activeTask;
+  final Task? activeTask;
   final TaskResult? result;
 
   const _ProjectTaskExecution({
@@ -4130,11 +4447,11 @@ class _RecoveryFailure {
 }
 
 class _RecoveryUpdate {
-  final ProjectTask failedTask;
+  final Task failedTask;
   final List<ProjectRecoveryIncident> recoveryIncidents;
   final ProjectRecoveryIncident? incident;
   final ProjectRecoveryIncident? exhaustedIncident;
-  final ProjectTask? recoveryTask;
+  final Task? recoveryTask;
 
   const _RecoveryUpdate({
     required this.failedTask,

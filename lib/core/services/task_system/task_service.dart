@@ -385,7 +385,7 @@ class TaskService {
     );
   }
 
-  Future<TaskDocument?> loadLatestTask(
+  Future<Task?> loadLatestTask(
     WorkspaceAttachment workspace, {
     String? chatSessionId,
     String? projectId,
@@ -397,7 +397,7 @@ class TaskService {
     );
   }
 
-  Future<TaskDocument?> loadTask(
+  Future<Task?> loadTask(
     WorkspaceAttachment workspace,
     String taskId, {
     String? chatSessionId,
@@ -433,9 +433,9 @@ class TaskService {
     );
   }
 
-  Future<TaskDocument> updateTaskChatSessionId({
+  Future<Task> updateTaskChatSessionId({
     required WorkspaceAttachment workspace,
-    required TaskDocument snapshot,
+    required Task snapshot,
     required String chatSessionId,
   }) async {
     if (snapshot.chatSessionId == chatSessionId) return snapshot;
@@ -447,9 +447,9 @@ class TaskService {
     return updated;
   }
 
-  Future<TaskDocument> recoverTask({
+  Future<Task> recoverTask({
     required WorkspaceAttachment workspace,
-    required TaskDocument snapshot,
+    required Task snapshot,
   }) async {
     if (snapshot.status != TaskStatus.running) return snapshot;
     final now = DateTime.now();
@@ -472,7 +472,7 @@ class TaskService {
     return recovered;
   }
 
-  String encodeTask(TaskDocument task) =>
+  String encodeTask(Task task) =>
       '${_encoder.convert(ModelJson.encode(task))}\n';
 
   Future<String> readArtifact({
@@ -549,7 +549,7 @@ $userPrompt
     }
   }
 
-  Future<TaskDocument> createTask({
+  Future<Task> createTask({
     required ChatClient client,
     required WorkspaceAttachment workspace,
     required String userPrompt,
@@ -557,18 +557,19 @@ $userPrompt
     required String baseSystemPrompt,
     String? chatSessionId,
     String? projectId,
+    String? canonicalTaskId,
     TaskPlanningContext? planningContext,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     final now = DateTime.now();
-    final taskId = _newTaskId(userPrompt);
+    final taskId = canonicalTaskId ?? _newTaskId(userPrompt);
     final metadata = await _collectWorkspaceMetadata(
       workspace,
       chatSessionId: chatSessionId,
     );
 
-    TaskDocument task;
+    Task task;
     try {
       final json = await _completeTaskCreation(
         client: client,
@@ -643,15 +644,16 @@ $userPrompt
 
   /// Converts an already-bounded Project task directly into one executable
   /// task step without invoking the Task Planner model.
-  Future<TaskDocument> createProjectTaskDocument({
+  Future<Task> createProjectTask({
     required WorkspaceAttachment workspace,
     required String userPrompt,
     required String? chatSessionId,
     required String? projectId,
     required TaskPlanningContext planningContext,
+    String? canonicalTaskId,
   }) async {
     final now = DateTime.now();
-    final taskId = _newTaskId(userPrompt);
+    final taskId = canonicalTaskId ?? _newTaskId(userPrompt);
     final task = _fallbackProjectBoundedTask(
       taskId: taskId,
       userPrompt: userPrompt,
@@ -664,14 +666,12 @@ $userPrompt
     return task;
   }
 
-  Future<TaskDocument> updateTaskPlan({
+  Future<Task> updateTaskPlan({
     required WorkspaceAttachment workspace,
-    required TaskDocument snapshot,
+    required Task snapshot,
     required String rawJson,
   }) async {
-    final parsed = ModelJson.decode<TaskDocument>(
-      TaskJson.parseObject(rawJson),
-    );
+    final parsed = ModelJson.decode<Task>(TaskJson.parseObject(rawJson));
     final now = DateTime.now();
     final normalised = _normaliseEditedTask(
       parsed.copyWith(
@@ -686,10 +686,10 @@ $userPrompt
     return normalised;
   }
 
-  Future<TaskDocument> runNextStep({
+  Future<Task> runNextStep({
     required ChatClient client,
     required WorkspaceAttachment workspace,
-    required TaskDocument snapshot,
+    required Task snapshot,
     required String baseSystemPrompt,
     bool requirePhaseApproval = false,
     CompactionSettings? compactionSettings,
@@ -914,9 +914,9 @@ $userPrompt
     }
   }
 
-  Future<TaskDocument> approvePendingStep({
+  Future<Task> approvePendingStep({
     required WorkspaceAttachment workspace,
-    required TaskDocument snapshot,
+    required Task snapshot,
   }) async {
     final approval = snapshot.pendingApproval;
     if (approval == null) return snapshot;
@@ -937,9 +937,9 @@ $userPrompt
     return updated;
   }
 
-  Future<TaskDocument> retryCurrentStep({
+  Future<Task> retryCurrentStep({
     required WorkspaceAttachment workspace,
-    required TaskDocument snapshot,
+    required Task snapshot,
   }) async {
     final step = snapshot.currentStep ?? snapshot.nextRunnableStep;
     if (step == null) return snapshot;
@@ -959,9 +959,9 @@ $userPrompt
     return updated;
   }
 
-  Future<TaskDocument> skipCurrentStep({
+  Future<Task> skipCurrentStep({
     required WorkspaceAttachment workspace,
-    required TaskDocument snapshot,
+    required Task snapshot,
   }) async {
     final step = snapshot.currentStep ?? snapshot.nextRunnableStep;
     if (step == null) return snapshot;
@@ -988,9 +988,9 @@ $userPrompt
     return updated;
   }
 
-  Future<TaskDocument> stopTask({
+  Future<Task> stopTask({
     required WorkspaceAttachment workspace,
-    required TaskDocument snapshot,
+    required Task snapshot,
   }) async {
     final now = DateTime.now();
     final updated = snapshot.copyWith(
@@ -1005,9 +1005,9 @@ $userPrompt
     return updated;
   }
 
-  Future<TaskDocument> answerOpenQuestion({
+  Future<Task> answerOpenQuestion({
     required WorkspaceAttachment workspace,
-    required TaskDocument snapshot,
+    required Task snapshot,
     required String answer,
   }) async {
     final question = snapshot.pendingQuestion;
@@ -1043,10 +1043,10 @@ $userPrompt
     return updated;
   }
 
-  Future<TaskDocument> replanUnfinished({
+  Future<Task> replanUnfinished({
     required ChatClient client,
     required WorkspaceAttachment workspace,
-    required TaskDocument snapshot,
+    required Task snapshot,
     required String baseSystemPrompt,
     String reason = 'User requested a replan of unfinished work.',
     TaskModelOutputSink? onModelOutput,
@@ -1231,9 +1231,9 @@ You did not call $_finaliseTaskCreationToolId. Return only the JSON object that 
     );
   }
 
-  Future<TaskDocument> _repairProjectBoundedTaskPlan({
+  Future<Task> _repairProjectBoundedTaskPlan({
     required ChatClient client,
-    required TaskDocument task,
+    required Task task,
     required String taskId,
     required String originalPrompt,
     required String baseSystemPrompt,
@@ -1306,7 +1306,7 @@ ${_encoder.convert(ModelJson.encode(task))}
   }
 
   List<String> _projectPlanningViolations(
-    TaskDocument task,
+    Task task,
     TaskPlanningContext context,
   ) {
     final violations = <String>[];
@@ -1316,7 +1316,8 @@ ${_encoder.convert(ModelJson.encode(task))}
         'Task plan has ${task.steps.length} steps; max is $maxSteps.',
       );
     }
-    if (_normalisePrompt(task.goal) == _normalisePrompt(context.projectGoal)) {
+    if (_normalisePrompt(task.objective) ==
+        _normalisePrompt(context.projectGoal)) {
       violations.add('Task goal matches the whole project goal.');
     }
     if (task.successCriteria.isEmpty) {
@@ -1359,7 +1360,7 @@ ${_encoder.convert(ModelJson.encode(task))}
   Future<_StepExecutionOutput> _executeStep({
     required ChatClient client,
     required WorkspaceAttachment workspace,
-    required TaskDocument task,
+    required Task task,
     required TaskStep step,
     required TaskRun run,
     required String baseSystemPrompt,
@@ -1651,7 +1652,7 @@ ${_encoder.convert(ModelJson.encode(task))}
   Future<_StepExecutionOutput> _applyCompletionGates({
     required ChatClient client,
     required WorkspaceAttachment workspace,
-    required TaskDocument task,
+    required Task task,
     required TaskStep step,
     required _StepExecutionOutput execution,
     required String baseSystemPrompt,
@@ -1751,7 +1752,7 @@ ${_encoder.convert(ModelJson.encode(task))}
     );
   }
 
-  List<TaskGate> _completionGates(TaskDocument task, TaskStep step) {
+  List<TaskGate> _completionGates(Task task, TaskStep step) {
     final hasRemainingSteps = task.steps.any((candidate) {
       if (candidate.id == step.id) return false;
       return candidate.status == TaskStepStatus.pending ||
@@ -1775,10 +1776,7 @@ ${_encoder.convert(ModelJson.encode(task))}
     return {..._readOnlyTaskToolIds, ..._mutatingTaskToolIds};
   }
 
-  List<_AllowedTaskCommand> _allowedCommandsForStep(
-    TaskDocument task,
-    TaskStep step,
-  ) {
+  List<_AllowedTaskCommand> _allowedCommandsForStep(Task task, TaskStep step) {
     final seen = <String>{};
     final commands = <_AllowedTaskCommand>[];
     for (final gate in _completionGates(task, step)) {
@@ -1812,7 +1810,7 @@ ${_encoder.convert(ModelJson.encode(task))}
 
   _FinishToolCallResult _finishStepFromToolCall({
     required Object args,
-    required TaskDocument task,
+    required Task task,
     required TaskStep step,
     required List<TaskToolCallRecord> existingToolCalls,
     required TaskExecutionRequest executionRequest,
@@ -1884,7 +1882,7 @@ ${_encoder.convert(ModelJson.encode(task))}
 
   Future<String> _executeTaskToolCall({
     required ChatCompletionToolCall call,
-    required TaskDocument task,
+    required Task task,
     required TaskStep step,
     required Set<String> allowedToolIds,
     required List<_AllowedTaskCommand> allowedCommands,
@@ -1999,7 +1997,7 @@ ${_encoder.convert(ModelJson.encode(task))}
 
   Future<String> _executeReadOnlyArtifactWrite({
     required ChatCompletionToolCall call,
-    required TaskDocument task,
+    required Task task,
     required TaskStep step,
     required WorkspaceToolContext context,
   }) async {
@@ -2093,7 +2091,7 @@ ${_encoder.convert(ModelJson.encode(task))}
 
   Future<String?> _taskArtifactWriteError({
     required ChatCompletionToolCall call,
-    required TaskDocument task,
+    required Task task,
     required TaskStep step,
     required WorkspaceToolContext context,
   }) async {
@@ -2249,10 +2247,10 @@ Do not call any more tools. Based only on the work already completed and the too
     return '${call.name}:$args';
   }
 
-  Future<TaskDocument> _replanUnfinished({
+  Future<Task> _replanUnfinished({
     required ChatClient client,
     required WorkspaceAttachment workspace,
-    required TaskDocument snapshot,
+    required Task snapshot,
     required String baseSystemPrompt,
     required String reason,
     TaskModelOutputSink? onModelOutput,
@@ -2310,14 +2308,14 @@ ${_encoder.convert(ModelJson.encode(snapshot))}
       );
       replacement = _stepsFromJson(json['steps'], snapshot.id);
       if (replacement.isEmpty) {
-        replacement = [_fallbackExecutionStep(snapshot.id, snapshot.goal)];
+        replacement = [_fallbackExecutionStep(snapshot.id, snapshot.objective)];
       }
     } on OperationCancelledException {
       rethrow;
     } on ChatTransportException {
       rethrow;
     } catch (_) {
-      replacement = [_fallbackExecutionStep(snapshot.id, snapshot.goal)];
+      replacement = [_fallbackExecutionStep(snapshot.id, snapshot.objective)];
     }
 
     final existingIds = completed.map((step) => step.id).toSet();
@@ -2355,7 +2353,7 @@ ${_encoder.convert(ModelJson.encode(snapshot))}
 
   _StepExecutionOutput _parseStepOutput(
     String raw,
-    TaskDocument task,
+    Task task,
     TaskStep step,
     List<TaskToolCallRecord> toolCalls,
     TaskExecutionRequest executionRequest,
@@ -2412,8 +2410,8 @@ ${_encoder.convert(ModelJson.encode(snapshot))}
     );
   }
 
-  TaskDocument _completeStep(
-    TaskDocument snapshot,
+  Task _completeStep(
+    Task snapshot,
     TaskStep step,
     _StepExecutionOutput output,
     DateTime now,
@@ -2435,8 +2433,8 @@ ${_encoder.convert(ModelJson.encode(snapshot))}
     return _advanceAfterStep(updated, now);
   }
 
-  TaskDocument _blockStep(
-    TaskDocument snapshot,
+  Task _blockStep(
+    Task snapshot,
     TaskStep step,
     _StepExecutionOutput output,
     DateTime now,
@@ -2474,8 +2472,8 @@ ${_encoder.convert(ModelJson.encode(snapshot))}
     );
   }
 
-  TaskDocument _failStep(
-    TaskDocument snapshot,
+  Task _failStep(
+    Task snapshot,
     TaskStep step,
     _StepExecutionOutput output,
     DateTime now,
@@ -2492,7 +2490,7 @@ ${_encoder.convert(ModelJson.encode(snapshot))}
     );
   }
 
-  TaskDocument _advanceAfterStep(TaskDocument snapshot, DateTime now) {
+  Task _advanceAfterStep(Task snapshot, DateTime now) {
     final currentStepId = _nextStepId(snapshot.steps);
     return snapshot.copyWith(
       status: currentStepId == null ? TaskStatus.completed : TaskStatus.paused,
@@ -2504,7 +2502,7 @@ ${_encoder.convert(ModelJson.encode(snapshot))}
     );
   }
 
-  TaskDocument _markCompleted(TaskDocument snapshot) {
+  Task _markCompleted(Task snapshot) {
     final now = DateTime.now();
     return snapshot.copyWith(
       status: TaskStatus.completed,
@@ -2514,11 +2512,7 @@ ${_encoder.convert(ModelJson.encode(snapshot))}
     );
   }
 
-  TaskDocument _replaceStep(
-    TaskDocument snapshot,
-    String stepId,
-    TaskStep step,
-  ) {
+  Task _replaceStep(Task snapshot, String stepId, TaskStep step) {
     final index = snapshot.steps.indexWhere((item) => item.id == stepId);
     if (index < 0) return snapshot;
     final steps = [...snapshot.steps];
@@ -2526,7 +2520,7 @@ ${_encoder.convert(ModelJson.encode(snapshot))}
     return snapshot.copyWith(steps: steps);
   }
 
-  TaskDocument _replaceLastRun(TaskDocument snapshot, TaskRun run) {
+  Task _replaceLastRun(Task snapshot, TaskRun run) {
     if (snapshot.runs.isEmpty) return snapshot.copyWith(runs: [run]);
     final runs = [...snapshot.runs];
     runs[runs.length - 1] = run;
@@ -2546,7 +2540,7 @@ ${_encoder.convert(ModelJson.encode(snapshot))}
   }
 
   String _buildStepPrompt(
-    TaskDocument task,
+    Task task,
     TaskStep step,
     WorkspaceAttachment workspace,
     TaskExecutionRequest executionRequest,
@@ -2567,8 +2561,8 @@ ${_encoder.convert(ModelJson.encode(snapshot))}
                   item.status == TaskStepStatus.skipped,
             );
     return '''
-Task goal:
-${task.goal}
+Task objective:
+${task.objective}
 
 Original request:
 ${task.originalPrompt}
@@ -2644,7 +2638,7 @@ For declared artifact outputs, use artifact_exists and artifact_nonempty.
   }
 
   String _stepToolPermissionText(
-    TaskDocument task,
+    Task task,
     TaskStep step,
     WorkspaceAttachment workspace,
   ) {
@@ -2675,7 +2669,7 @@ $whitelist
         .trim();
   }
 
-  String _buildAvailableArtifactInputs(TaskDocument task, TaskStep step) {
+  String _buildAvailableArtifactInputs(Task task, TaskStep step) {
     final currentIndex = task.steps.indexWhere((item) => item.id == step.id);
     final priorStepIds = <String>{};
     if (currentIndex > 0) {
@@ -3111,7 +3105,7 @@ $whitelist
     sink?.call(event);
   }
 
-  TaskDocument _taskFromPlannerJson(
+  Task _taskFromPlannerJson(
     Map<String, dynamic> json, {
     required String taskId,
     required String originalPrompt,
@@ -3129,14 +3123,14 @@ $whitelist
       ...requiredGates,
       ..._defaultTaskGates(safeSteps, originalPrompt),
     ];
-    return TaskDocument(
+    return Task(
       id: taskId,
       title: jsonString(
         json['title'],
         fallback: _titleFromPrompt(originalPrompt),
       ),
       originalPrompt: originalPrompt,
-      goal: jsonString(
+      objective: jsonString(
         json['goal'] ?? json['objective'],
         fallback: originalPrompt,
       ),
@@ -3157,11 +3151,7 @@ $whitelist
     );
   }
 
-  TaskDocument _normaliseEditedTask(
-    TaskDocument candidate,
-    TaskDocument original,
-    DateTime now,
-  ) {
+  Task _normaliseEditedTask(Task candidate, Task original, DateTime now) {
     final steps = candidate.steps.isEmpty
         ? original.steps
         : candidate.steps.map(_normaliseStep).toList();
@@ -3171,12 +3161,14 @@ $whitelist
         ? candidate.currentStepId
         : _nextStepId(steps);
     return candidate.copyWith(
-      schemaVersion: TaskDocument.currentSchemaVersion,
+      schemaVersion: Task.currentSchemaVersion,
       title: candidate.title.trim().isEmpty ? original.title : candidate.title,
       originalPrompt: candidate.originalPrompt.trim().isEmpty
           ? original.originalPrompt
           : candidate.originalPrompt,
-      goal: candidate.goal.trim().isEmpty ? original.goal : candidate.goal,
+      objective: candidate.objective.trim().isEmpty
+          ? original.objective
+          : candidate.objective,
       gates: _dedupeGates(candidate.gates),
       steps: steps,
       status: currentStepId == null ? TaskStatus.completed : TaskStatus.paused,
@@ -3475,7 +3467,7 @@ $whitelist
     );
   }
 
-  TaskDocument _fallbackTask({
+  Task _fallbackTask({
     required String taskId,
     required String userPrompt,
     required String? chatSessionId,
@@ -3483,11 +3475,11 @@ $whitelist
     required DateTime now,
   }) {
     final step = _fallbackExecutionStep(taskId, userPrompt);
-    return TaskDocument(
+    return Task(
       id: taskId,
       title: _titleFromPrompt(userPrompt),
       originalPrompt: userPrompt,
-      goal: userPrompt,
+      objective: userPrompt,
       constraints: const ['Stay within the attached workspace.'],
       successCriteria: const ['Complete the requested task.'],
       gates: _defaultTaskGates([step], userPrompt),
@@ -3503,7 +3495,7 @@ $whitelist
     );
   }
 
-  TaskDocument _fallbackProjectBoundedTask({
+  Task _fallbackProjectBoundedTask({
     required String taskId,
     required String userPrompt,
     required String? chatSessionId,
@@ -3558,13 +3550,13 @@ $whitelist
       artifacts: artifactPaths,
       status: TaskStepStatus.pending,
     );
-    return TaskDocument(
+    return Task(
       id: taskId,
       title: planningContext.projectTaskTitle.trim().isEmpty
           ? _titleFromPrompt(planningContext.projectTaskObjective)
           : planningContext.projectTaskTitle.trim(),
       originalPrompt: userPrompt,
-      goal: planningContext.projectTaskObjective,
+      objective: planningContext.projectTaskObjective,
       constraints: [
         'Stay within the attached workspace.',
         if (planningContext.readPaths.isNotEmpty)

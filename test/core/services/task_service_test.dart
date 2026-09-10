@@ -272,7 +272,7 @@ void main() {
     );
 
     test('converts a small Project task directly into one step', () async {
-      final task = await service.createProjectTaskDocument(
+      final task = await service.createProjectTask(
         workspace: workspace,
         userPrompt: 'Implement the settings toggle',
         chatSessionId: 'chat_1',
@@ -317,7 +317,7 @@ void main() {
     test(
       'direct small Project task is read-only without write paths',
       () async {
-        final task = await service.createProjectTaskDocument(
+        final task = await service.createProjectTask(
           workspace: workspace,
           userPrompt: 'Inspect settings',
           chatSessionId: 'chat_1',
@@ -435,7 +435,7 @@ void main() {
           ),
         );
 
-        expect(task.goal, 'Implement the settings toggle');
+        expect(task.objective, 'Implement the settings toggle');
         expect(task.steps, hasLength(1));
         expect(task.steps.single.id, 'execute_project_task');
         expect(task.successCriteria, contains('The settings toggle works.'));
@@ -2140,7 +2140,7 @@ void main() {
   });
 }
 
-TaskDocument _task({
+Task _task({
   TaskStep? step,
   List<TaskStep>? steps,
   String? currentStepId,
@@ -2148,11 +2148,11 @@ TaskDocument _task({
 }) {
   final now = DateTime(2026, 1, 1);
   final resolvedSteps = steps ?? [step ?? _step()];
-  return TaskDocument(
+  return Task(
     id: 'task_test',
     title: 'Test task',
     originalPrompt: 'Run the task',
-    goal: 'Run the task',
+    objective: 'Run the task',
     constraints: const ['Stay inside workspace.'],
     successCriteria: const ['Finish the task.'],
     gates: gates,
