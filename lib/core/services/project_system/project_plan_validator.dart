@@ -503,6 +503,26 @@ class ProjectPlanValidator {
             );
           }
         }
+        if (expectation.required &&
+            expectation.type == ProjectEvidenceType.command) {
+          final command = expectation.sourceRef?.trim() ?? '';
+          final workingDirectory = _workingDirectoryForExpectation(expectation);
+          final matchingGate =
+              [...task.gates, for (final step in task.steps) ...step.gates].any(
+                (gate) =>
+                    gate.id == 'command_passes' &&
+                    gate.params['command']?.toString() == command &&
+                    gate.params['working_directory']?.toString() ==
+                        workingDirectory,
+              );
+          if (!matchingGate) {
+            issue(
+              'missing_command_passes_gate',
+              expectationPath,
+              'Required command evidence must have a matching command_passes gate with command "$command" and working directory "$workingDirectory".',
+            );
+          }
+        }
       }
       for (final entry in [...task.readPaths, ...task.writePaths]) {
         if (!_isInsideWorkspace(workspaceRoot, entry)) {
@@ -644,4 +664,11 @@ class ProjectPlanValidator {
 
   static String _normalise(String value) =>
       value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
+  static String _workingDirectoryForExpectation(
+    TaskEvidenceExpectation expectation,
+  ) {
+    final value = expectation.details['working_directory']?.toString().trim();
+    return value == null || value.isEmpty ? '.' : value;
+  }
 }

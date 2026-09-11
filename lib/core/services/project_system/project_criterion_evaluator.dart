@@ -19,11 +19,13 @@ class ProjectCriterionEvaluator {
     ProjectDocument project, {
     required bool projectComplete,
     required List<String> remainingCriteria,
+    List<String> supportedCriterionIds = const [],
     required String rationale,
     required DateTime evaluatedAt,
   }) {
     if (!projectComplete && remainingCriteria.isEmpty) return project;
     final remaining = remainingCriteria.map(_normalise).toSet();
+    final supported = supportedCriterionIds.map(_normalise).toSet();
     final hasRecognizedRemaining = project.criteria.any(
       (criterion) => remaining.contains(_normalise(criterion.statement)),
     );
@@ -42,15 +44,19 @@ class ProjectCriterionEvaluator {
         for (var index = 0; index < evidence.length; index++)
           if (evidence[index].criterionIds.contains(criterion.id)) index,
       ];
-      final proposedClaims = relatedIndexes.where(
-        (index) =>
-            evidence[index].status == ProjectEvidenceStatus.proposed &&
-            evidence[index].type == ProjectEvidenceType.taskClaim,
+      final proposedEvidence = relatedIndexes.where(
+        (index) => evidence[index].status == ProjectEvidenceStatus.proposed,
       );
-      final acceptedSupporting = relatedIndexes.where(
+      final acceptableProposedEvidence = proposedEvidence.where(
+        (index) => evidence[index].strength != ProjectEvidenceStrength.advisory,
+      );
+      final acceptedEvidence = relatedIndexes.where(
         (index) => evidence[index].status == ProjectEvidenceStatus.accepted,
       );
-      if (proposedClaims.isEmpty && acceptedSupporting.isEmpty) {
+      final credibleAcceptedEvidence = acceptedEvidence.where(
+        (index) => evidence[index].strength != ProjectEvidenceStrength.advisory,
+      );
+      if (proposedEvidence.isEmpty && acceptedEvidence.isEmpty) {
         criteria.add(criterion);
         continue;
       }
@@ -59,19 +65,23 @@ class ProjectCriterionEvaluator {
           projectComplete ||
           (hasRecognizedRemaining &&
               !remaining.contains(_normalise(criterion.statement)));
+      final reviewSaysSupported = supported.contains(_normalise(criterion.id));
       final reviewedEvidence = [
         for (final index in relatedIndexes)
-          if (evidence[index].status == ProjectEvidenceStatus.accepted ||
-              (reviewSaysSatisfied && proposedClaims.contains(index)))
+          if ((evidence[index].status == ProjectEvidenceStatus.accepted &&
+                  evidence[index].strength !=
+                      ProjectEvidenceStrength.advisory) ||
+              ((reviewSaysSatisfied || reviewSaysSupported) &&
+                  acceptableProposedEvidence.contains(index)))
             evidence[index],
       ];
       final satisfied =
           reviewSaysSatisfied &&
           _hasAllRequiredExpectations(project, criterion, reviewedEvidence);
       if (satisfied) {
-        final reviewedIndexes = proposedClaims.isNotEmpty
-            ? proposedClaims
-            : acceptedSupporting.take(1);
+        final reviewedIndexes = acceptableProposedEvidence.isNotEmpty
+            ? acceptableProposedEvidence
+            : credibleAcceptedEvidence.take(1);
         for (final index in reviewedIndexes) {
           final item = evidence[index];
           evidence[index] = item.copyWith(
@@ -91,8 +101,8 @@ class ProjectCriterionEvaluator {
           ),
         );
       } else {
-        if (reviewSaysSatisfied) {
-          for (final index in proposedClaims) {
+        if (reviewSaysSatisfied || reviewSaysSupported) {
+          for (final index in acceptableProposedEvidence) {
             final item = evidence[index];
             evidence[index] = item.copyWith(
               status: ProjectEvidenceStatus.accepted,
@@ -101,7 +111,7 @@ class ProjectCriterionEvaluator {
             );
           }
         } else {
-          for (final index in proposedClaims) {
+          for (final index in proposedEvidence) {
             final item = evidence[index];
             evidence[index] = item.copyWith(
               status: ProjectEvidenceStatus.rejected,
@@ -111,8 +121,9 @@ class ProjectCriterionEvaluator {
           }
         }
         final hasAccepted =
-            acceptedSupporting.isNotEmpty ||
-            (reviewSaysSatisfied && proposedClaims.isNotEmpty);
+            credibleAcceptedEvidence.isNotEmpty ||
+            ((reviewSaysSatisfied || reviewSaysSupported) &&
+                acceptableProposedEvidence.isNotEmpty);
         criteria.add(
           criterion.copyWith(
             status: hasAccepted

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/project.dart';
+import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/services/project_system/project_criterion_evaluator.dart';
 import 'package:hermes/core/services/project_system/project_plan_revision_service.dart';
 
@@ -222,6 +223,16 @@ void main() {
           type: ProjectEvidenceType.command,
           criterionIds: ['criterion_001'],
           description: 'The focused verification command passes.',
+          sourceRef: 'dart test',
+          details: {'working_directory': '.'},
+        ),
+      ],
+      gates: const [
+        TaskGate(
+          id: 'command_passes',
+          required: true,
+          scope: 'task',
+          params: {'command': 'dart test', 'working_directory': '.'},
         ),
       ],
       expectedArtifacts: [
@@ -635,6 +646,7 @@ Task _task(
   List<String> dependencies = const [],
   List<String> writePaths = const ['lib/feature.dart'],
   List<TaskEvidenceExpectation>? expectedEvidence,
+  List<TaskGate> gates = const [],
   List<TaskArtifact> expectedArtifacts = const [],
   String selectionRationale = '',
   TaskStatus status = TaskStatus.queued,
@@ -646,6 +658,7 @@ Task _task(
     title: 'Bounded slice $id',
     objective: objective,
     criterionIds: const ['criterion_001'],
+    gates: gates,
     dependsOnTaskIds: dependencies,
     selectionRationale: selectionRationale,
     expectedEvidence:

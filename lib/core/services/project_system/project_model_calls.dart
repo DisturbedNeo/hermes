@@ -64,7 +64,9 @@ Initialize a persistent project state. Do not execute the project.
 The supplied workspace profile is authoritative. Treat repository components absent from its tree as absent, not as stale or incomplete discovery. Do not claim an absent path as an existing baseline.
 Create a rolling roadmap with one to three milestones and approximately three to seven detailed near-term tasks. Keep distant work coarse in milestone objectives rather than expanding an unbounded task list.
 Every task needs stable IDs, dependencies, criterion and milestone links, priority, risk, effort, boundaries, expected evidence, and a concise rationale in selectionRationale.
+When a task declares required command evidence, include a matching required command_passes gate with the exact command and working_directory. no_tool_errors and no_failed_commands are safety gates only and do not replace criterion evidence.
 For every small task that will modify workspace files, writePaths must contain the explicit files or directories it may change. Leave writePaths empty only for genuinely read-only work.
+When a task declares required command evidence, include a matching required command_passes gate with the exact command and working_directory. no_tool_errors and no_failed_commands are safety gates only and do not replace criterion evidence.
 Do not add openQuestions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; record a typed assumption in memory instead.
 Add openQuestions only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
 Include sourceId such as workspace:Design.md on every memory claim derived from a supplied workspace file. Model-authored memory remains advisory regardless of its requested confidence.
@@ -358,11 +360,12 @@ ${_encoder.convert(ModelJson.encode(project))}
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
         expectedShape:
-            '{"complete":false,"finalSummary":"...","remainingCriteria":["..."],"openQuestions":[{"question":"..."}]}',
+            '{"complete":false,"finalSummary":"...","remainingCriteria":["..."],"supportedCriterionIds":["criterion_001"],"openQuestions":[{"question":"..."}]}',
         user:
             '''
 Perform one bounded semantic review of the unresolved Project criteria and their persisted evidence.
-Task completion alone is not evidence that a criterion is satisfied. Treat proposed task claims as advisory, inspect accepted gates and artifacts, and list every criterion that still lacks adequate evidence in remainingCriteria.
+Task completion alone is not evidence that a criterion is satisfied. Treat proposed task claims as advisory. List every criterion that still lacks adequate evidence in remainingCriteria, and list criterion IDs with credible partial support in supportedCriterionIds.
+Only include a criterion in supportedCriterionIds when persisted proposed or accepted evidence provides meaningful support beyond merely reporting that work was attempted. Do not include deterministic criteria unless their deterministic evidence is present; do not include evidence that is only advisory.
 Set complete only when every required criterion is adequately supported. Your decision will be persisted as an evidence-review rationale.
 Do not add openQuestions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences.
 Add openQuestions only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
@@ -372,6 +375,7 @@ Return only JSON:
   "complete": false,
   "finalSummary": "...",
   "remainingCriteria": ["..."],
+  "supportedCriterionIds": ["criterion_001"],
   "openQuestions": [{"question": "..."}]
 }
 
@@ -384,6 +388,9 @@ ${_encoder.convert(ModelJson.encode(project))}
         finalSummary: jsonString(json['finalSummary'] ?? json['final_summary']),
         remainingCriteria: jsonStringList(
           json['remainingCriteria'] ?? json['remaining_criteria'],
+        ),
+        supportedCriterionIds: jsonStringList(
+          json['supportedCriterionIds'] ?? json['supported_criterion_ids'],
         ),
         openQuestions: _questionsFromJson(
           json['openQuestions'] ?? json['open_questions'],
@@ -400,6 +407,7 @@ ${_encoder.convert(ModelJson.encode(project))}
         remainingCriteria: project.criteria
             .map((item) => item.statement)
             .toList(),
+        supportedCriterionIds: const [],
         openQuestions: const [],
       );
     }

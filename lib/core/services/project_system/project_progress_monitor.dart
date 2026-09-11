@@ -1,7 +1,8 @@
 import 'package:hermes/core/models/project.dart';
 
-/// Records orchestration progress and stops repeated successful-but-unproductive
-/// task loops before they consume the remaining project budget.
+/// Records project progress at task boundaries while evaluating stagnation at
+/// persisted batch boundaries. A successful task is allowed to be one part of
+/// a larger criterion implementation without consuming the stagnation budget.
 class ProjectProgressMonitor {
   final int stagnationThreshold;
 
@@ -27,70 +28,123 @@ class ProjectProgressMonitor {
       if (afterRank > beforeRank) progressed = true;
       if (afterRank < beforeRank) reversals++;
     }
-    if (!progressed) {
-      progressed = project.evidence.any(
-        (item) =>
-            item.status == ProjectEvidenceStatus.accepted &&
-            !acceptedEvidenceIdsBefore.contains(item.id) &&
-            item.taskId == task.id &&
-            item.criterionIds.any(task.criterionIds.contains),
-      );
-    }
+
+    final batchTaskIds = project.currentBatchTaskIds.isEmpty
+        ? <String>{task.id}
+        : project.currentBatchTaskIds.toSet();
+    final taskIndex = project.currentBatchTaskIds.indexOf(task.id);
+    final isBatchEnd =
+        project.currentBatchTaskIds.isEmpty ||
+        taskIndex < 0 ||
+        taskIndex == project.currentBatchTaskIds.length - 1;
+    final newAcceptedBatchEvidence = project.evidence.any(
+      (item) =>
+          item.status == ProjectEvidenceStatus.accepted &&
+          !acceptedEvidenceIdsBefore.contains(item.id) &&
+          item.taskId != null &&
+          batchTaskIds.contains(item.taskId) &&
+          item.criterionIds.isNotEmpty,
+    );
+    if (!progressed) progressed = newAcceptedBatchEvidence;
 
     final diagnostics = project.diagnostics;
-    final noProgress = taskAccepted && !progressed && !excludeFromStagnation;
-    final consecutive = excludeFromStagnation
-        ? 0
-        : taskAccepted
-        ? noProgress
-              ? diagnostics.consecutiveNoProgressIterations + 1
-              : 0
-        : diagnostics.consecutiveNoProgressIterations;
-    final recentTaskIds = excludeFromStagnation
-        ? const <String>[]
-        : taskAccepted
-        ? noProgress
-              ? [
-                  ...diagnostics.recentNoProgressTaskIds,
-                  task.id,
-                ].reversed.take(stagnationThreshold).toList().reversed.toList()
-              : const <String>[]
-        : diagnostics.recentNoProgressTaskIds;
-    final nextDiagnostics = diagnostics.copyWith(
-      taskExecutions: diagnostics.taskExecutions + 1,
-      completedTaskExecutions:
-          diagnostics.completedTaskExecutions + (taskAccepted ? 1 : 0),
-      completedTasksWithoutCriterionProgress:
-          diagnostics.completedTasksWithoutCriterionProgress +
-          (noProgress ? 1 : 0),
-      criterionReversals: diagnostics.criterionReversals + reversals,
-      consecutiveNoProgressIterations: consecutive,
-      recentNoProgressTaskIds: recentTaskIds,
-    );
-    if (consecutive < stagnationThreshold ||
-        project.isTerminal ||
-        project.blocker != null) {
+    final taskExecutions = diagnostics.taskExecutions + 1;
+    final completedTaskExecutions =
+        diagnostics.completedTaskExecutions + (taskAccepted ? 1 : 0);
+    final nextReversals = diagnostics.criterionReversals + reversals;
+
+    if (excludeFromStagnation) {
       return project.copyWith(
-        diagnostics: nextDiagnostics,
+        currentBatchProgressObserved: false,
+        diagnostics: diagnostics.copyWith(
+          taskExecutions: taskExecutions,
+          completedTaskExecutions: completedTaskExecutions,
+          criterionReversals: nextReversals,
+          consecutiveNoProgressBatches: 0,
+          recentNoProgressBatchIds: const [],
+        ),
         updatedAt: evaluatedAt,
       );
     }
-    return project.copyWith(
+
+    if (!taskAccepted) {
+      return project.copyWith(
+        diagnostics: diagnostics.copyWith(
+          taskExecutions: taskExecutions,
+          completedTaskExecutions: completedTaskExecutions,
+          criterionReversals: nextReversals,
+        ),
+        updatedAt: evaluatedAt,
+      );
+    }
+
+    final observedBatchProgress =
+        project.currentBatchProgressObserved || progressed;
+    if (!isBatchEnd) {
+      return project.copyWith(
+        currentBatchProgressObserved: observedBatchProgress,
+        diagnostics: diagnostics.copyWith(
+          taskExecutions: taskExecutions,
+          completedTaskExecutions: completedTaskExecutions,
+          criterionReversals: nextReversals,
+        ),
+        updatedAt: evaluatedAt,
+      );
+    }
+
+    final batchProgressed = observedBatchProgress;
+    final noProgressBatch = !batchProgressed;
+    final consecutive = noProgressBatch
+        ? diagnostics.consecutiveNoProgressBatches + 1
+        : 0;
+    final batchId = _batchId(project, task);
+    final recentBatchIds = noProgressBatch
+        ? [
+            ...diagnostics.recentNoProgressBatchIds,
+            batchId,
+          ].reversed.take(stagnationThreshold).toList().reversed.toList()
+        : const <String>[];
+    final nextDiagnostics = diagnostics.copyWith(
+      taskExecutions: taskExecutions,
+      completedTaskExecutions: completedTaskExecutions,
+      completedBatchesWithoutCriterionProgress:
+          diagnostics.completedBatchesWithoutCriterionProgress +
+          (noProgressBatch ? 1 : 0),
+      criterionReversals: nextReversals,
+      consecutiveNoProgressBatches: consecutive,
+      recentNoProgressBatchIds: recentBatchIds,
+    );
+    final completed = project.copyWith(
+      currentBatchProgressObserved: false,
+      diagnostics: nextDiagnostics,
+      updatedAt: evaluatedAt,
+    );
+    if (consecutive < stagnationThreshold ||
+        completed.isTerminal ||
+        completed.blocker != null) {
+      return completed;
+    }
+    return completed.copyWith(
       status: ProjectStatus.blocked,
       blocker: ProjectBlocker(
         type: ProjectBlockerType.stagnation,
         message:
-            'Project stopped after $consecutive completed tasks made no '
-            'criterion progress. Recent tasks: ${recentTaskIds.join(', ')}. '
+            'Project stopped after $consecutive completed batches made no '
+            'criterion progress. Recent batches: ${recentBatchIds.join(', ')}. '
             'Completed-without-progress total: '
-            '${nextDiagnostics.completedTasksWithoutCriterionProgress}. '
+            '${nextDiagnostics.completedBatchesWithoutCriterionProgress}. '
             'Request a manual replan with new direction before continuing.',
         taskId: task.id,
         createdAt: evaluatedAt,
       ),
-      diagnostics: nextDiagnostics,
       updatedAt: evaluatedAt,
     );
+  }
+
+  String _batchId(ProjectDocument project, Task task) {
+    if (project.currentBatchTaskIds.isEmpty) return 'single:${task.id}';
+    return '${project.currentBatchPlanRevision}:'
+        '${project.currentBatchTaskIds.join(',')}';
   }
 
   int _criterionProgressRank(ProjectCriterionStatus status) => switch (status) {

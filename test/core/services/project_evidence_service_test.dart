@@ -389,6 +389,7 @@ void main() {
                 expectationId: 'expect_first',
                 claim: 'The first outcome is confirmed.',
                 sourceRef: 'run_1',
+                suggestedStrength: TaskEvidenceClaimStrength.supporting,
               ),
             ],
           ),
@@ -679,27 +680,104 @@ void main() {
       );
     });
 
-    test('accepts a proposed semantic claim with persisted rationale', () {
+    test(
+      'accepts a proposed non-advisory semantic claim with persisted rationale',
+      () {
+        final project = _project(timestamp);
+        final evidence = evidenceService.normalizeTaskResult(
+          project: project,
+          task: project.tasks.single,
+          result: _result(
+            timestamp,
+            summary: 'The report is usable.',
+            claims: const [
+              TaskEvidenceClaim(
+                criterionId: 'criterion_001',
+                claim: 'The report is usable.',
+                sourceRef: 'run_1',
+                suggestedStrength: TaskEvidenceClaimStrength.supporting,
+              ),
+            ],
+          ),
+          evaluatedAt: timestamp,
+        );
+
+        final reviewed = criterionEvaluator.applyModelReview(
+          project.copyWith(evidence: evidence),
+          projectComplete: true,
+          remainingCriteria: const [],
+          rationale:
+              'The persisted task result adequately demonstrates quality.',
+          evaluatedAt: timestamp,
+        );
+
+        expect(reviewed.evidence.single.status, ProjectEvidenceStatus.accepted);
+        expect(reviewed.evidence.single.details['acceptedBy'], 'model_review');
+        expect(
+          reviewed.criteria.single.status,
+          ProjectCriterionStatus.satisfied,
+        );
+        expect(reviewed.criteria.single.notes, contains('adequately'));
+      },
+    );
+
+    test('supported criterion IDs promote supporting evidence to partial', () {
       final project = _project(timestamp);
       final evidence = evidenceService.normalizeTaskResult(
         project: project,
         task: project.tasks.single,
-        result: _result(timestamp, summary: 'The report is usable.'),
+        result: _result(
+          timestamp,
+          summary: 'The first bounded result is present.',
+          claims: const [
+            TaskEvidenceClaim(
+              criterionId: 'criterion_001',
+              claim: 'The first bounded result is present.',
+              sourceRef: 'run_1',
+              suggestedStrength: TaskEvidenceClaimStrength.supporting,
+            ),
+          ],
+        ),
         evaluatedAt: timestamp,
       );
 
       final reviewed = criterionEvaluator.applyModelReview(
         project.copyWith(evidence: evidence),
-        projectComplete: true,
-        remainingCriteria: const [],
-        rationale: 'The persisted task result adequately demonstrates quality.',
+        projectComplete: false,
+        remainingCriteria: const ['The report is correct and usable.'],
+        supportedCriterionIds: const ['criterion_001'],
+        rationale: 'The persisted evidence supports part of the criterion.',
         evaluatedAt: timestamp,
       );
 
       expect(reviewed.evidence.single.status, ProjectEvidenceStatus.accepted);
       expect(reviewed.evidence.single.details['acceptedBy'], 'model_review');
-      expect(reviewed.criteria.single.status, ProjectCriterionStatus.satisfied);
-      expect(reviewed.criteria.single.notes, contains('adequately'));
+      expect(reviewed.criteria.single.status, ProjectCriterionStatus.partial);
+    });
+
+    test('advisory evidence is never promoted by supported criterion IDs', () {
+      final project = _project(timestamp);
+      final evidence = evidenceService.normalizeTaskResult(
+        project: project,
+        task: project.tasks.single,
+        result: _result(timestamp, summary: 'Work was attempted.'),
+        evaluatedAt: timestamp,
+      );
+
+      final reviewed = criterionEvaluator.applyModelReview(
+        project.copyWith(evidence: evidence),
+        projectComplete: false,
+        remainingCriteria: const ['The report is correct and usable.'],
+        supportedCriterionIds: const ['criterion_001'],
+        rationale: 'The claim is only advisory.',
+        evaluatedAt: timestamp,
+      );
+
+      expect(reviewed.evidence.single.status, ProjectEvidenceStatus.proposed);
+      expect(
+        reviewed.criteria.single.status,
+        ProjectCriterionStatus.unsatisfied,
+      );
     });
 
     test(

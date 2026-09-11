@@ -6,8 +6,8 @@ void main() {
   const monitor = ProjectProgressMonitor();
   final now = DateTime.utc(2026, 1, 1);
 
-  test('blocks after three completed tasks make no criterion progress', () {
-    var project = _project(now);
+  test('multiple successful tasks in one batch do not trigger stagnation', () {
+    var project = _batchedProject(now, ['task_1', 'task_2', 'task_3']);
     final before = {'criterion_1': ProjectCriterionStatus.unsatisfied};
 
     for (var index = 1; index <= 3; index++) {
@@ -20,17 +20,80 @@ void main() {
       );
     }
 
-    expect(project.status, ProjectStatus.blocked);
-    expect(project.blocker?.type, ProjectBlockerType.stagnation);
-    expect(project.blocker?.message, contains('3 completed tasks'));
-    expect(project.blocker?.message, contains('task_1, task_2, task_3'));
+    expect(project.status, ProjectStatus.active);
+    expect(project.blocker, isNull);
     expect(project.diagnostics.taskExecutions, 3);
     expect(project.diagnostics.completedTaskExecutions, 3);
-    expect(project.diagnostics.completedTasksWithoutCriterionProgress, 3);
-    expect(project.diagnostics.consecutiveNoProgressIterations, 3);
+    expect(project.diagnostics.completedBatchesWithoutCriterionProgress, 1);
+    expect(project.diagnostics.consecutiveNoProgressBatches, 1);
+    expect(project.currentBatchProgressObserved, isFalse);
   });
 
-  test('criterion progress resets the consecutive stagnation count', () {
+  test('blocks after three complete no-progress batches', () {
+    var project = _project(now);
+    for (var index = 1; index <= 3; index++) {
+      final taskId = 'batch_task_$index';
+      project = _batchedProject(now, [
+        taskId,
+      ], planRevision: index).copyWith(diagnostics: project.diagnostics);
+      project = monitor.recordTaskResult(
+        project: project,
+        task: _task(taskId, now),
+        taskAccepted: true,
+        criterionStatusesBefore: const {
+          'criterion_1': ProjectCriterionStatus.unsatisfied,
+        },
+        evaluatedAt: now.add(Duration(minutes: index)),
+      );
+    }
+
+    expect(project.status, ProjectStatus.blocked);
+    expect(project.blocker?.type, ProjectBlockerType.stagnation);
+    expect(project.blocker?.message, contains('3 completed batches'));
+    expect(project.blocker?.message, contains('1:batch_task_1'));
+    expect(project.diagnostics.completedBatchesWithoutCriterionProgress, 3);
+    expect(project.diagnostics.consecutiveNoProgressBatches, 3);
+    expect(project.diagnostics.recentNoProgressBatchIds, [
+      '1:batch_task_1',
+      '2:batch_task_2',
+      '3:batch_task_3',
+    ]);
+  });
+
+  test('progress observed by an earlier task counts when the batch closes', () {
+    var project = _batchedProject(now, ['task_1', 'task_2']).copyWith(
+      criteria: [
+        _project(
+          now,
+        ).criteria.single.copyWith(status: ProjectCriterionStatus.partial),
+      ],
+    );
+    project = monitor.recordTaskResult(
+      project: project,
+      task: _task('task_1', now),
+      taskAccepted: true,
+      criterionStatusesBefore: const {
+        'criterion_1': ProjectCriterionStatus.unsatisfied,
+      },
+      evaluatedAt: now,
+    );
+    project = monitor.recordTaskResult(
+      project: project,
+      task: _task('task_2', now),
+      taskAccepted: true,
+      criterionStatusesBefore: const {
+        'criterion_1': ProjectCriterionStatus.partial,
+      },
+      evaluatedAt: now.add(const Duration(minutes: 1)),
+    );
+
+    expect(project.status, ProjectStatus.active);
+    expect(project.currentBatchProgressObserved, isFalse);
+    expect(project.diagnostics.consecutiveNoProgressBatches, 0);
+    expect(project.diagnostics.completedBatchesWithoutCriterionProgress, 0);
+  });
+
+  test('criterion progress resets the consecutive batch count', () {
     var project = monitor.recordTaskResult(
       project: _project(now),
       task: _task('task_1', now),
@@ -57,12 +120,12 @@ void main() {
     );
 
     expect(project.status, ProjectStatus.active);
-    expect(project.diagnostics.consecutiveNoProgressIterations, 0);
-    expect(project.diagnostics.recentNoProgressTaskIds, isEmpty);
-    expect(project.diagnostics.completedTasksWithoutCriterionProgress, 1);
+    expect(project.diagnostics.consecutiveNoProgressBatches, 0);
+    expect(project.diagnostics.recentNoProgressBatchIds, isEmpty);
+    expect(project.diagnostics.completedBatchesWithoutCriterionProgress, 1);
   });
 
-  test('new accepted supporting evidence counts as progress', () {
+  test('new accepted supporting evidence counts as batch progress', () {
     final first = monitor.recordTaskResult(
       project: _project(now),
       task: _task('task_1', now),
@@ -98,9 +161,9 @@ void main() {
     );
 
     expect(project.status, ProjectStatus.active);
-    expect(project.diagnostics.consecutiveNoProgressIterations, 0);
-    expect(project.diagnostics.recentNoProgressTaskIds, isEmpty);
-    expect(project.diagnostics.completedTasksWithoutCriterionProgress, 1);
+    expect(project.diagnostics.consecutiveNoProgressBatches, 0);
+    expect(project.diagnostics.recentNoProgressBatchIds, isEmpty);
+    expect(project.diagnostics.completedBatchesWithoutCriterionProgress, 1);
   });
 
   test(
@@ -108,9 +171,9 @@ void main() {
     () {
       final initial = _project(now).copyWith(
         diagnostics: const ProjectDiagnostics(
-          consecutiveNoProgressIterations: 2,
-          recentNoProgressTaskIds: ['task_old_1', 'task_old_2'],
-          completedTasksWithoutCriterionProgress: 2,
+          consecutiveNoProgressBatches: 2,
+          recentNoProgressBatchIds: ['batch_old_1', 'batch_old_2'],
+          completedBatchesWithoutCriterionProgress: 2,
         ),
       );
 
@@ -127,39 +190,46 @@ void main() {
 
       expect(project.status, ProjectStatus.active);
       expect(project.diagnostics.completedTaskExecutions, 1);
-      expect(project.diagnostics.completedTasksWithoutCriterionProgress, 2);
-      expect(project.diagnostics.consecutiveNoProgressIterations, 0);
-      expect(project.diagnostics.recentNoProgressTaskIds, isEmpty);
+      expect(project.diagnostics.completedBatchesWithoutCriterionProgress, 2);
+      expect(project.diagnostics.consecutiveNoProgressBatches, 0);
+      expect(project.diagnostics.recentNoProgressBatchIds, isEmpty);
     },
   );
 
-  test(
-    'records criterion reversals without treating failed work as progress',
-    () {
-      final initial = _project(now).copyWith(
-        criteria: [
-          _project(now).criteria.single.copyWith(
-            status: ProjectCriterionStatus.invalidated,
-          ),
-        ],
-      );
+  test('failed work does not consume the stagnation budget', () {
+    final initial = _project(now).copyWith(
+      diagnostics: const ProjectDiagnostics(
+        consecutiveNoProgressBatches: 2,
+        recentNoProgressBatchIds: ['batch_1', 'batch_2'],
+        completedBatchesWithoutCriterionProgress: 2,
+      ),
+      criteria: [
+        _project(
+          now,
+        ).criteria.single.copyWith(status: ProjectCriterionStatus.invalidated),
+      ],
+    );
 
-      final project = monitor.recordTaskResult(
-        project: initial,
-        task: _task('failed_task', now),
-        taskAccepted: false,
-        criterionStatusesBefore: const {
-          'criterion_1': ProjectCriterionStatus.satisfied,
-        },
-        evaluatedAt: now,
-      );
+    final project = monitor.recordTaskResult(
+      project: initial,
+      task: _task('failed_task', now),
+      taskAccepted: false,
+      criterionStatusesBefore: const {
+        'criterion_1': ProjectCriterionStatus.satisfied,
+      },
+      evaluatedAt: now,
+    );
 
-      expect(project.diagnostics.taskExecutions, 1);
-      expect(project.diagnostics.completedTaskExecutions, 0);
-      expect(project.diagnostics.criterionReversals, 1);
-      expect(project.diagnostics.consecutiveNoProgressIterations, 0);
-    },
-  );
+    expect(project.diagnostics.taskExecutions, 1);
+    expect(project.diagnostics.completedTaskExecutions, 0);
+    expect(project.diagnostics.criterionReversals, 1);
+    expect(project.diagnostics.consecutiveNoProgressBatches, 2);
+    expect(project.diagnostics.completedBatchesWithoutCriterionProgress, 2);
+    expect(project.diagnostics.recentNoProgressBatchIds, [
+      'batch_1',
+      'batch_2',
+    ]);
+  });
 }
 
 ProjectDocument _project(DateTime now) {
@@ -184,19 +254,25 @@ ProjectDocument _project(DateTime now) {
   );
 }
 
+ProjectDocument _batchedProject(
+  DateTime now,
+  List<String> taskIds, {
+  int planRevision = 1,
+}) {
+  return _project(now).copyWith(
+    currentBatchTaskIds: taskIds,
+    currentBatchPlanRevision: planRevision,
+  );
+}
+
 Task _task(String id, DateTime now) {
   return Task(
     id: id,
     title: id,
-    objective: 'Complete $id.',
+    objective: 'Implement bounded slice $id.',
     criterionIds: const ['criterion_1'],
-    doneCriteria: const ['The task is done.'],
-    outOfScope: const [],
-    context: const [],
-    expectedArtifacts: const [],
-    status: TaskStatus.completed,
-    fingerprint: id,
-    rejectionReason: null,
+    doneCriteria: const ['The bounded slice is complete.'],
+    outOfScope: const ['Unrelated work.'],
     createdAt: now,
     updatedAt: now,
   );

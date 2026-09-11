@@ -189,6 +189,7 @@ class ProjectService {
         currentBatchTaskIds: batchTaskIds,
         currentBatchIndex: 0,
         currentBatchPlanRevision: _currentPlanRevision(scheduled.project),
+        currentBatchProgressObserved: false,
         pendingReplanReason: null,
       ),
     );
@@ -199,6 +200,7 @@ class ProjectService {
       currentBatchTaskIds: const [],
       currentBatchIndex: 0,
       currentBatchPlanRevision: 0,
+      currentBatchProgressObserved: false,
       pendingReplanReason: null,
     );
   }
@@ -1228,6 +1230,7 @@ class ProjectService {
               )
           ? activeMilestoneIdBefore
           : null;
+      final batchEnded = _isBatchEnd(project, evaluatedProjectTask.id);
       final reviewReason = _completionReviewReason(
         project: project,
         newEvidenceIds: project.evidence
@@ -1235,6 +1238,7 @@ class ProjectService {
             .map((item) => item.id)
             .toSet(),
         endedMilestoneId: endedMilestoneId,
+        batchEnded: batchEnded,
       );
       project = await _applyCompletionEvaluation(
         client: client,
@@ -1384,8 +1388,8 @@ class ProjectService {
           : 'User changed project scope: $trimmedReason',
       updatedAt: now,
       diagnostics: snapshot.diagnostics.copyWith(
-        consecutiveNoProgressIterations: 0,
-        recentNoProgressTaskIds: const [],
+        consecutiveNoProgressBatches: 0,
+        recentNoProgressBatchIds: const [],
       ),
     );
     if (trimmedReason.isNotEmpty) {
@@ -1639,6 +1643,7 @@ class ProjectService {
       currentBatchTaskIds: const [],
       currentBatchIndex: 0,
       currentBatchPlanRevision: 0,
+      currentBatchProgressObserved: false,
       pendingReplanReason: null,
       diagnostics: result.project.diagnostics.copyWith(
         projectModelCalls:
@@ -2445,6 +2450,7 @@ class ProjectService {
       assessedProject,
       projectComplete: assessment.complete,
       remainingCriteria: assessment.remainingCriteria,
+      supportedCriterionIds: assessment.supportedCriterionIds,
       rationale: assessment.finalSummary,
       evaluatedAt: now,
     );
@@ -2491,6 +2497,7 @@ class ProjectService {
     required ProjectDocument project,
     required Set<String> newEvidenceIds,
     required String? endedMilestoneId,
+    required bool batchEnded,
   }) {
     if (_activeProjectTask(project) == null &&
         _nonTerminalTasks(project).isEmpty) {
@@ -2498,6 +2505,9 @@ class ProjectService {
     }
     if (endedMilestoneId != null) {
       return ProjectCompletionReviewReason.milestoneEnded;
+    }
+    if (batchEnded) {
+      return ProjectCompletionReviewReason.batchEnded;
     }
     final unresolved = project.criteria.where((criterion) {
       return criterion.required &&
@@ -2520,6 +2530,12 @@ class ProjectService {
     return hasNewRelevantEvidence
         ? ProjectCompletionReviewReason.finalCriterionEvidence
         : null;
+  }
+
+  bool _isBatchEnd(ProjectDocument project, String taskId) {
+    if (project.currentBatchTaskIds.isEmpty) return true;
+    final taskIndex = project.currentBatchTaskIds.indexOf(taskId);
+    return taskIndex < 0 || taskIndex == project.currentBatchTaskIds.length - 1;
   }
 
   String _completionEvidenceFingerprint(ProjectDocument project) {

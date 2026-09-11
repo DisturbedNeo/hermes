@@ -2634,6 +2634,8 @@ Choose only these gate ids. Gates are checked by the task runner, not by the exe
 - model_review: subjective review; advisory by default for creative/research work
 For coding tasks, prefer no_tool_errors, no_failed_commands, and command_passes when a likely test/analyze/build command is inferable.
 For declared artifact outputs, use artifact_exists and artifact_nonempty.
+When Expected Project evidence declares a required command, the task must contain a matching required command_passes gate with the exact command and working_directory. Evidence claims are not accepted automatically: command evidence should be emitted by the gate, while no_tool_errors and no_failed_commands remain safety gates unless explicitly linked to a criterion expectation.
+Claims can support a project criterion only after completion review. Advisory failures, including unavailable Docker or other unavailable infrastructure, must not be presented as criterion advancement.
 ''';
   }
 

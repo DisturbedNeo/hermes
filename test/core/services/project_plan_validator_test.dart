@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/project.dart';
+import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/services/project_system/project_plan_validator.dart';
 
 void main() {
@@ -303,6 +304,58 @@ void main() {
       contains('impossible_deterministic_verification'),
     );
   });
+
+  test(
+    'requires a matching command_passes gate for required command evidence',
+    () {
+      final project = _project();
+      const expectation = TaskEvidenceExpectation(
+        id: 'expect_command',
+        type: ProjectEvidenceType.command,
+        criterionIds: ['criterion_001'],
+        description: 'The focused tests pass.',
+        required: true,
+        sourceRef: 'dart test test/feature_test.dart',
+        details: {'working_directory': '.'},
+      );
+      final withoutGate = _task(
+        'command_without_gate',
+      ).copyWith(expectedEvidence: const [expectation]);
+      final invalid = validator.validate(
+        project: project,
+        proposal: _desired(project, [withoutGate]),
+        workspaceRoot: '/workspace',
+      );
+
+      expect(
+        invalid.errors.map((issue) => issue.code),
+        contains('missing_command_passes_gate'),
+      );
+
+      final withGate = withoutGate.copyWith(
+        gates: const [
+          TaskGate(
+            id: 'command_passes',
+            required: true,
+            scope: 'task',
+            params: {
+              'command': 'dart test test/feature_test.dart',
+              'working_directory': '.',
+            },
+          ),
+        ],
+      );
+      final valid = validator.validate(
+        project: project,
+        proposal: _desired(project, [withGate]),
+        workspaceRoot: '/workspace',
+      );
+      expect(
+        valid.errors.map((issue) => issue.code),
+        isNot(contains('missing_command_passes_gate')),
+      );
+    },
+  );
 }
 
 ProjectState _project({List<ProjectMemoryEntry> memory = const []}) {

@@ -121,6 +121,8 @@ enum ProjectCompletionReviewReason {
   noRemainingTasks,
   @MappableValue('milestone_ended')
   milestoneEnded,
+  @MappableValue('batch_ended')
+  batchEnded,
   @MappableValue('final_criterion_evidence')
   finalCriterionEvidence,
 }
@@ -232,14 +234,14 @@ class ProjectDiagnostics with ProjectDiagnosticsMappable {
   final int invalidPlanProposals;
   final int taskExecutions;
   final int completedTaskExecutions;
-  final int completedTasksWithoutCriterionProgress;
+  final int completedBatchesWithoutCriterionProgress;
   final int criterionReversals;
   final int noReadyTaskBlocks;
   final int userApprovals;
   final int userQuestions;
-  final int consecutiveNoProgressIterations;
+  final int consecutiveNoProgressBatches;
   @MappableField(hook: JsonStringListHook())
-  final List<String> recentNoProgressTaskIds;
+  final List<String> recentNoProgressBatchIds;
 
   const ProjectDiagnostics({
     this.projectModelCalls = 0,
@@ -247,13 +249,13 @@ class ProjectDiagnostics with ProjectDiagnosticsMappable {
     this.invalidPlanProposals = 0,
     this.taskExecutions = 0,
     this.completedTaskExecutions = 0,
-    this.completedTasksWithoutCriterionProgress = 0,
+    this.completedBatchesWithoutCriterionProgress = 0,
     this.criterionReversals = 0,
     this.noReadyTaskBlocks = 0,
     this.userApprovals = 0,
     this.userQuestions = 0,
-    this.consecutiveNoProgressIterations = 0,
-    this.recentNoProgressTaskIds = const [],
+    this.consecutiveNoProgressBatches = 0,
+    this.recentNoProgressBatchIds = const [],
   });
 
   double get projectModelCallsPerCompletedTask => completedTaskExecutions == 0
@@ -266,13 +268,13 @@ class ProjectDiagnostics with ProjectDiagnosticsMappable {
     int? invalidPlanProposals,
     int? taskExecutions,
     int? completedTaskExecutions,
-    int? completedTasksWithoutCriterionProgress,
+    int? completedBatchesWithoutCriterionProgress,
     int? criterionReversals,
     int? noReadyTaskBlocks,
     int? userApprovals,
     int? userQuestions,
-    int? consecutiveNoProgressIterations,
-    List<String>? recentNoProgressTaskIds,
+    int? consecutiveNoProgressBatches,
+    List<String>? recentNoProgressBatchIds,
   }) {
     return ProjectDiagnostics(
       projectModelCalls: projectModelCalls ?? this.projectModelCalls,
@@ -281,18 +283,17 @@ class ProjectDiagnostics with ProjectDiagnosticsMappable {
       taskExecutions: taskExecutions ?? this.taskExecutions,
       completedTaskExecutions:
           completedTaskExecutions ?? this.completedTaskExecutions,
-      completedTasksWithoutCriterionProgress:
-          completedTasksWithoutCriterionProgress ??
-          this.completedTasksWithoutCriterionProgress,
+      completedBatchesWithoutCriterionProgress:
+          completedBatchesWithoutCriterionProgress ??
+          this.completedBatchesWithoutCriterionProgress,
       criterionReversals: criterionReversals ?? this.criterionReversals,
       noReadyTaskBlocks: noReadyTaskBlocks ?? this.noReadyTaskBlocks,
       userApprovals: userApprovals ?? this.userApprovals,
       userQuestions: userQuestions ?? this.userQuestions,
-      consecutiveNoProgressIterations:
-          consecutiveNoProgressIterations ??
-          this.consecutiveNoProgressIterations,
-      recentNoProgressTaskIds:
-          recentNoProgressTaskIds ?? this.recentNoProgressTaskIds,
+      consecutiveNoProgressBatches:
+          consecutiveNoProgressBatches ?? this.consecutiveNoProgressBatches,
+      recentNoProgressBatchIds:
+          recentNoProgressBatchIds ?? this.recentNoProgressBatchIds,
     );
   }
 }
@@ -709,7 +710,7 @@ class ProjectCompletionReviewCheckpoint
 @MappableClass(ignoreNull: true, hook: ProjectStateJsonHook())
 class ProjectState with ProjectStateMappable {
   static const int minimumSupportedSchemaVersion = 5;
-  static const int currentSchemaVersion = 6;
+  static const int currentSchemaVersion = 7;
   static const int defaultMaxIterations = 25;
   static const int defaultMaxFailedTasks = 3;
 
@@ -735,6 +736,8 @@ class ProjectState with ProjectStateMappable {
   final int currentBatchIndex;
   @MappableField(hook: JsonIntHook(min: 0))
   final int currentBatchPlanRevision;
+  @MappableField(hook: JsonBoolHook())
+  final bool currentBatchProgressObserved;
   @MappableField(hook: JsonNullableStringHook())
   final String? pendingReplanReason;
   @MappableField(hook: JsonObjectListHook())
@@ -809,6 +812,7 @@ class ProjectState with ProjectStateMappable {
     this.currentBatchTaskIds = const [],
     this.currentBatchIndex = 0,
     this.currentBatchPlanRevision = 0,
+    this.currentBatchProgressObserved = false,
     this.pendingReplanReason,
     List<TaskArtifact>? artifacts,
     List<ProjectRecoveryIncident>? recoveryIncidents,
@@ -912,6 +916,7 @@ class ProjectState with ProjectStateMappable {
     List<String>? currentBatchTaskIds,
     int? currentBatchIndex,
     int? currentBatchPlanRevision,
+    bool? currentBatchProgressObserved,
     Object? pendingReplanReason = kSentinel,
     List<TaskArtifact>? artifacts,
     List<ProjectRecoveryIncident>? recoveryIncidents,
@@ -953,6 +958,8 @@ class ProjectState with ProjectStateMappable {
       currentBatchIndex: currentBatchIndex ?? this.currentBatchIndex,
       currentBatchPlanRevision:
           currentBatchPlanRevision ?? this.currentBatchPlanRevision,
+      currentBatchProgressObserved:
+          currentBatchProgressObserved ?? this.currentBatchProgressObserved,
       pendingReplanReason: resolve(
         pendingReplanReason,
         this.pendingReplanReason,

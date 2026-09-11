@@ -99,12 +99,14 @@ class ProjectCompletionAssessment {
   final bool complete;
   final String finalSummary;
   final List<String> remainingCriteria;
+  final List<String> supportedCriterionIds;
   final List<PendingProjectQuestion> openQuestions;
 
   const ProjectCompletionAssessment({
     required this.complete,
     required this.finalSummary,
     required this.remainingCriteria,
+    this.supportedCriterionIds = const [],
     required this.openQuestions,
   });
 }

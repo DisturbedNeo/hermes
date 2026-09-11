@@ -1,8 +1,8 @@
 part of 'project.dart';
 
 /// Project snapshots use a clean-slate schema with a narrow compatibility
-/// window for the Phase 2 snapshot. Phase 4 only adds optional batch state, so
-/// schema v5 projects can be upgraded at the persistence boundary.
+/// window. Batch-aware stagnation state is optional for older snapshots and is
+/// initialized to its safe defaults when those snapshots are upgraded.
 class ProjectStateJsonHook extends JsonModelHook {
   const ProjectStateJsonHook()
     : super(

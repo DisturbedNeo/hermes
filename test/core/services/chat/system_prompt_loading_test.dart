@@ -392,6 +392,15 @@ void main() {
             'status': 'completed',
             'summary': 'Project task complete.',
             'memoryUpdate': 'Screen built.',
+            'evidenceClaims': [
+              {
+                'criterionId': 'criterion_screen',
+                'claim': 'The reporting screen is built.',
+                'evidenceType': 'task_claim',
+                'sourceRef': 'screen_task_run',
+                'suggestedStrength': 'supporting',
+              },
+            ],
           }),
         ),
         ChatCompletionResponse(
@@ -399,6 +408,7 @@ void main() {
             'complete': false,
             'finalSummary': 'The first project task is complete.',
             'remainingCriteria': ['Screen is built.'],
+            'supportedCriterionIds': ['criterion_screen'],
             'openQuestions': [],
           }),
         ),
@@ -453,6 +463,15 @@ void main() {
             'status': 'completed',
             'summary': 'Reporting task complete.',
             'memoryUpdate': 'The findings were reported.',
+            'evidenceClaims': [
+              {
+                'criterionId': 'criterion_screen',
+                'claim': 'The reporting findings are complete.',
+                'evidenceType': 'task_claim',
+                'sourceRef': 'report_task_run',
+                'suggestedStrength': 'supporting',
+              },
+            ],
           }),
         ),
         ChatCompletionResponse(
@@ -460,6 +479,7 @@ void main() {
             'complete': true,
             'finalSummary': 'Reporting screen is complete.',
             'remainingCriteria': [],
+            'supportedCriterionIds': ['criterion_screen'],
             'openQuestions': [],
           }),
         ),

@@ -112,8 +112,8 @@ class ProjectOutcomeSection extends StatelessWidget {
                 '${project.diagnostics.taskExecutions} task runs · '
                 '${project.diagnostics.planRevisionAttempts} replans · '
                 '${project.diagnostics.projectModelCalls} project model calls · '
-                '${project.diagnostics.completedTasksWithoutCriterionProgress} '
-                'completed without criterion progress',
+                '${project.diagnostics.completedBatchesWithoutCriterionProgress} '
+                'batches completed without criterion progress',
           ),
           const SizedBox(height: 8),
           if (project.criteria.isEmpty)

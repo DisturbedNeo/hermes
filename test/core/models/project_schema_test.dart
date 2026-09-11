@@ -85,6 +85,7 @@ void main() {
       currentBatchTaskIds: const ['task_1', 'task_2', 'task_3'],
       currentBatchIndex: 1,
       currentBatchPlanRevision: 4,
+      currentBatchProgressObserved: true,
       pendingReplanReason: 'The batch reached a safe boundary.',
       status: ProjectStatus.paused,
       activeTaskId: null,
@@ -106,6 +107,7 @@ void main() {
     expect(decoded.currentBatchIndex, 1);
     expect(decoded.currentBatchPlanRevision, 4);
     expect(decoded.pendingReplanReason, project.pendingReplanReason);
+    expect(decoded.currentBatchProgressObserved, isTrue);
     expect(decoded.currentBatchTaskId, 'task_2');
   });
 
@@ -139,6 +141,47 @@ void main() {
     expect(decoded.currentBatchIndex, 0);
     expect(decoded.currentBatchPlanRevision, 0);
     expect(decoded.pendingReplanReason, isNull);
+    expect(decoded.currentBatchProgressObserved, isFalse);
+    expect(decoded.diagnostics.consecutiveNoProgressBatches, 0);
+    expect(decoded.diagnostics.completedBatchesWithoutCriterionProgress, 0);
+    expect(decoded.diagnostics.recentNoProgressBatchIds, isEmpty);
+  });
+
+  test('upgrades a schema 6 snapshot with clean batch progress counters', () {
+    final now = DateTime(2026, 1, 1);
+    final raw = <String, dynamic>{
+      'schemaVersion': 6,
+      'id': 'project_schema_6',
+      'title': 'Schema 6 project',
+      'originalGoal': 'Keep the project running.',
+      'refinedGoal': 'Keep the project running safely.',
+      'criteria': [
+        {
+          'id': 'criterion_1',
+          'statement': 'The project is safe.',
+          'createdAt': now.toIso8601String(),
+          'updatedAt': now.toIso8601String(),
+        },
+      ],
+      'constraints': <String>[],
+      'taskIds': <String>[],
+      'status': 'active',
+      'activeTaskId': null,
+      'diagnostics': {
+        'completedTasksWithoutCriterionProgress': 99,
+        'consecutiveNoProgressIterations': 99,
+        'recentNoProgressTaskIds': ['old_task'],
+      },
+      'createdAt': now.toIso8601String(),
+      'updatedAt': now.toIso8601String(),
+    };
+
+    final decoded = ModelJson.decode<ProjectDocument>(raw);
+    expect(decoded.schemaVersion, ProjectDocument.currentSchemaVersion);
+    expect(decoded.currentBatchProgressObserved, isFalse);
+    expect(decoded.diagnostics.consecutiveNoProgressBatches, 0);
+    expect(decoded.diagnostics.completedBatchesWithoutCriterionProgress, 0);
+    expect(decoded.diagnostics.recentNoProgressBatchIds, isEmpty);
   });
 
   test('round-trips evidence expectation identities', () {

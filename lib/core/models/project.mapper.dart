@@ -764,6 +764,8 @@ class ProjectCompletionReviewReasonMapper
         return ProjectCompletionReviewReason.noRemainingTasks;
       case 'milestone_ended':
         return ProjectCompletionReviewReason.milestoneEnded;
+      case 'batch_ended':
+        return ProjectCompletionReviewReason.batchEnded;
       case 'final_criterion_evidence':
         return ProjectCompletionReviewReason.finalCriterionEvidence;
       default:
@@ -778,6 +780,8 @@ class ProjectCompletionReviewReasonMapper
         return 'no_remaining_tasks';
       case ProjectCompletionReviewReason.milestoneEnded:
         return 'milestone_ended';
+      case ProjectCompletionReviewReason.batchEnded:
+        return 'batch_ended';
       case ProjectCompletionReviewReason.finalCriterionEvidence:
         return 'final_criterion_evidence';
     }
@@ -1201,12 +1205,12 @@ class ProjectDiagnosticsMapper extends ClassMapperBase<ProjectDiagnostics> {
         opt: true,
         def: 0,
       );
-  static int _$completedTasksWithoutCriterionProgress(ProjectDiagnostics v) =>
-      v.completedTasksWithoutCriterionProgress;
+  static int _$completedBatchesWithoutCriterionProgress(ProjectDiagnostics v) =>
+      v.completedBatchesWithoutCriterionProgress;
   static const Field<ProjectDiagnostics, int>
-  _f$completedTasksWithoutCriterionProgress = Field(
-    'completedTasksWithoutCriterionProgress',
-    _$completedTasksWithoutCriterionProgress,
+  _f$completedBatchesWithoutCriterionProgress = Field(
+    'completedBatchesWithoutCriterionProgress',
+    _$completedBatchesWithoutCriterionProgress,
     opt: true,
     def: 0,
   );
@@ -1238,21 +1242,21 @@ class ProjectDiagnosticsMapper extends ClassMapperBase<ProjectDiagnostics> {
     opt: true,
     def: 0,
   );
-  static int _$consecutiveNoProgressIterations(ProjectDiagnostics v) =>
-      v.consecutiveNoProgressIterations;
-  static const Field<ProjectDiagnostics, int>
-  _f$consecutiveNoProgressIterations = Field(
-    'consecutiveNoProgressIterations',
-    _$consecutiveNoProgressIterations,
-    opt: true,
-    def: 0,
-  );
-  static List<String> _$recentNoProgressTaskIds(ProjectDiagnostics v) =>
-      v.recentNoProgressTaskIds;
+  static int _$consecutiveNoProgressBatches(ProjectDiagnostics v) =>
+      v.consecutiveNoProgressBatches;
+  static const Field<ProjectDiagnostics, int> _f$consecutiveNoProgressBatches =
+      Field(
+        'consecutiveNoProgressBatches',
+        _$consecutiveNoProgressBatches,
+        opt: true,
+        def: 0,
+      );
+  static List<String> _$recentNoProgressBatchIds(ProjectDiagnostics v) =>
+      v.recentNoProgressBatchIds;
   static const Field<ProjectDiagnostics, List<String>>
-  _f$recentNoProgressTaskIds = Field(
-    'recentNoProgressTaskIds',
-    _$recentNoProgressTaskIds,
+  _f$recentNoProgressBatchIds = Field(
+    'recentNoProgressBatchIds',
+    _$recentNoProgressBatchIds,
     opt: true,
     def: const [],
     hook: JsonStringListHook(),
@@ -1265,14 +1269,14 @@ class ProjectDiagnosticsMapper extends ClassMapperBase<ProjectDiagnostics> {
     #invalidPlanProposals: _f$invalidPlanProposals,
     #taskExecutions: _f$taskExecutions,
     #completedTaskExecutions: _f$completedTaskExecutions,
-    #completedTasksWithoutCriterionProgress:
-        _f$completedTasksWithoutCriterionProgress,
+    #completedBatchesWithoutCriterionProgress:
+        _f$completedBatchesWithoutCriterionProgress,
     #criterionReversals: _f$criterionReversals,
     #noReadyTaskBlocks: _f$noReadyTaskBlocks,
     #userApprovals: _f$userApprovals,
     #userQuestions: _f$userQuestions,
-    #consecutiveNoProgressIterations: _f$consecutiveNoProgressIterations,
-    #recentNoProgressTaskIds: _f$recentNoProgressTaskIds,
+    #consecutiveNoProgressBatches: _f$consecutiveNoProgressBatches,
+    #recentNoProgressBatchIds: _f$recentNoProgressBatchIds,
   };
   @override
   final bool ignoreNull = true;
@@ -1284,17 +1288,15 @@ class ProjectDiagnosticsMapper extends ClassMapperBase<ProjectDiagnostics> {
       invalidPlanProposals: data.dec(_f$invalidPlanProposals),
       taskExecutions: data.dec(_f$taskExecutions),
       completedTaskExecutions: data.dec(_f$completedTaskExecutions),
-      completedTasksWithoutCriterionProgress: data.dec(
-        _f$completedTasksWithoutCriterionProgress,
+      completedBatchesWithoutCriterionProgress: data.dec(
+        _f$completedBatchesWithoutCriterionProgress,
       ),
       criterionReversals: data.dec(_f$criterionReversals),
       noReadyTaskBlocks: data.dec(_f$noReadyTaskBlocks),
       userApprovals: data.dec(_f$userApprovals),
       userQuestions: data.dec(_f$userQuestions),
-      consecutiveNoProgressIterations: data.dec(
-        _f$consecutiveNoProgressIterations,
-      ),
-      recentNoProgressTaskIds: data.dec(_f$recentNoProgressTaskIds),
+      consecutiveNoProgressBatches: data.dec(_f$consecutiveNoProgressBatches),
+      recentNoProgressBatchIds: data.dec(_f$recentNoProgressBatchIds),
     );
   }
 
@@ -2711,6 +2713,16 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
     def: 0,
     hook: JsonIntHook(min: 0),
   );
+  static bool _$currentBatchProgressObserved(ProjectState v) =>
+      v.currentBatchProgressObserved;
+  static const Field<ProjectState, bool> _f$currentBatchProgressObserved =
+      Field(
+        'currentBatchProgressObserved',
+        _$currentBatchProgressObserved,
+        opt: true,
+        def: false,
+        hook: JsonBoolHook(),
+      );
   static String? _$pendingReplanReason(ProjectState v) => v.pendingReplanReason;
   static const Field<ProjectState, String> _f$pendingReplanReason = Field(
     'pendingReplanReason',
@@ -2912,6 +2924,7 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
     #currentBatchTaskIds: _f$currentBatchTaskIds,
     #currentBatchIndex: _f$currentBatchIndex,
     #currentBatchPlanRevision: _f$currentBatchPlanRevision,
+    #currentBatchProgressObserved: _f$currentBatchProgressObserved,
     #pendingReplanReason: _f$pendingReplanReason,
     #artifacts: _f$artifacts,
     #recoveryIncidents: _f$recoveryIncidents,
@@ -2956,6 +2969,7 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
       currentBatchTaskIds: data.dec(_f$currentBatchTaskIds),
       currentBatchIndex: data.dec(_f$currentBatchIndex),
       currentBatchPlanRevision: data.dec(_f$currentBatchPlanRevision),
+      currentBatchProgressObserved: data.dec(_f$currentBatchProgressObserved),
       pendingReplanReason: data.dec(_f$pendingReplanReason),
       artifacts: data.dec(_f$artifacts),
       recoveryIncidents: data.dec(_f$recoveryIncidents),

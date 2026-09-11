@@ -392,15 +392,15 @@ void main() {
     const diagnostics = ProjectDiagnostics(
       projectModelCalls: 7,
       completedTaskExecutions: 2,
-      consecutiveNoProgressIterations: 1,
-      recentNoProgressTaskIds: ['task_2'],
+      consecutiveNoProgressBatches: 1,
+      recentNoProgressBatchIds: ['batch_2'],
     );
     final decodedDiagnostics = ModelJson.decode<ProjectDiagnostics>(
       ModelJson.encode(diagnostics),
     );
     expect(decodedDiagnostics.projectModelCalls, 7);
     expect(decodedDiagnostics.projectModelCallsPerCompletedTask, 3.5);
-    expect(decodedDiagnostics.recentNoProgressTaskIds, ['task_2']);
+    expect(decodedDiagnostics.recentNoProgressBatchIds, ['batch_2']);
 
     const metadata = WorkspaceMetadata(
       rootFiles: ['pubspec.yaml'],
