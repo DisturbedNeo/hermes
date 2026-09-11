@@ -39,8 +39,10 @@ class HostCommandRunner {
     final process = launched.process;
     final stdout = _BoundedOutputCollector(kMaxCommandOutputBytes);
     final stderr = _BoundedOutputCollector(kMaxCommandOutputBytes);
-    final stdoutDone = process.stdout.listen(stdout.add).asFuture<void>();
-    final stderrDone = process.stderr.listen(stderr.add).asFuture<void>();
+    final stdoutSubscription = process.stdout.listen(stdout.add);
+    final stderrSubscription = process.stderr.listen(stderr.add);
+    final stdoutDone = stdoutSubscription.asFuture<void>();
+    final stderrDone = stderrSubscription.asFuture<void>();
     final cancelled = Completer<_CommandEndReason>();
     final unregister = cancellationToken?.onCancel(() {
       if (!cancelled.isCompleted) {
@@ -60,7 +62,12 @@ class HostCommandRunner {
       if (reason != _CommandEndReason.exited) await _terminate(launched);
 
       final exitCode = await process.exitCode;
-      await Future.wait([stdoutDone, stderrDone]);
+      await _waitForOutputDrain(
+        stdoutDone: stdoutDone,
+        stderrDone: stderrDone,
+        stdoutSubscription: stdoutSubscription,
+        stderrSubscription: stderrSubscription,
+      );
       if (reason == _CommandEndReason.cancelled) {
         throw const OperationCancelledException();
       }
@@ -136,8 +143,36 @@ class HostCommandRunner {
     try {
       await launched.process.exitCode.timeout(terminationGrace);
     } on TimeoutException {
-      await _signal(launched, 'KILL', ProcessSignal.sigkill);
-      await launched.process.exitCode;
+      // Escalation is handled below even when the parent exits during the
+      // grace period. A child can outlive the parent while retaining the
+      // stdout/stderr pipes, which would otherwise leave run() waiting
+      // forever for EOF.
+    }
+    await _signal(launched, 'KILL', ProcessSignal.sigkill);
+    await launched.process.exitCode;
+  }
+
+  Future<void> _waitForOutputDrain({
+    required Future<void> stdoutDone,
+    required Future<void> stderrDone,
+    required StreamSubscription<List<int>> stdoutSubscription,
+    required StreamSubscription<List<int>> stderrSubscription,
+  }) async {
+    try {
+      await Future.wait([stdoutDone, stderrDone]).timeout(terminationGrace);
+    } on TimeoutException {
+      // A descendant may have inherited one of the pipes and escaped the
+      // process-group cleanup. The command is already finished from the
+      // runner's perspective, so do not let pipe EOF block cancellation.
+      try {
+        await Future.wait([
+          stdoutSubscription.cancel(),
+          stderrSubscription.cancel(),
+        ]).timeout(terminationGrace);
+      } on TimeoutException {
+        // Stream cancellation is best-effort; the command result/error must
+        // still be allowed to reach the caller.
+      }
     }
   }
 

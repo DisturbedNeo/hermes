@@ -546,6 +546,35 @@ void main() {
       expect(await _processExists(pid), isFalse);
     });
 
+    test(
+      'runCommand does not wait for a child after the parent exits on cancellation',
+      () async {
+        final cancellableSandbox = WorkspaceSandbox(
+          commandTimeout: const Duration(seconds: 5),
+          commandTerminationGrace: const Duration(milliseconds: 100),
+        );
+        final token = CancellationToken();
+        final running = cancellableSandbox.runCommand(
+          root.path,
+          command:
+              'trap \'exit 0\' TERM; (trap \'\' TERM; sleep 30) & child=\$!; echo \$child > child.pid; wait \$child',
+          cancellationToken: token,
+        );
+        final pidFile = File('${root.path}/child.pid');
+        for (var i = 0; i < 50 && !await pidFile.exists(); i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+
+        await token.cancel();
+        await expectLater(
+          running,
+          throwsA(isA<OperationCancelledException>()),
+        ).timeout(const Duration(seconds: 2));
+        final pid = int.parse((await pidFile.readAsString()).trim());
+        expect(await _processExists(pid), isFalse);
+      },
+    );
+
     test('runCommand drains and bounds large output', () async {
       final result = await sandbox.runCommand(
         root.path,
