@@ -48,3 +48,6 @@ app.*.map.json
 /devtools_options.yaml
 /.agent
 /lib/.agent/
+
+# Documentation
+/docs/*
