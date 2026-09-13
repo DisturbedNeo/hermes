@@ -70,6 +70,7 @@ void main() {
         expect(evidence.single.details['runId'], 'run_command');
         expect(evidence.single.status, ProjectEvidenceStatus.accepted);
         expect(evidence.single.strength, ProjectEvidenceStrength.conclusive);
+        expect(evidence.single.details['origin'], 'gate_evaluation');
         expect(
           evaluated.criteria.single.status,
           ProjectCriterionStatus.satisfied,
@@ -105,6 +106,7 @@ void main() {
       );
 
       expect(evidence.single.strength, ProjectEvidenceStrength.supporting);
+      expect(evidence.single.details['origin'], 'workspace_provenance');
       expect(evidence.single.runId, 'run_artifact');
       expect(evaluated.criteria.single.status, ProjectCriterionStatus.partial);
     });

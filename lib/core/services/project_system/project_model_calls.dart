@@ -4,12 +4,18 @@ import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/project.dart';
+import 'package:hermes/core/models/planning_metrics.dart';
+import 'package:hermes/core/models/planning_protocol.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/project_system/project_planning_gateway.dart';
+import 'package:hermes/core/services/project_system/project_planning_tool_call_runner.dart';
+import 'package:hermes/core/services/project_system/project_planning_tools.dart';
+import 'package:hermes/core/services/project_system/project_plan_revision_service.dart';
+import 'package:hermes/core/services/project_system/project_view_service.dart';
 import 'package:hermes/core/services/question_policy_service.dart';
 import 'package:hermes/core/services/task_system/finalizer_tool_call_runner.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
@@ -21,14 +27,28 @@ export 'package:hermes/core/services/project_system/project_planning_gateway.dar
         ProjectCompletionAssessment,
         ProjectEvidenceSnapshot,
         ProjectInitialisation,
+        ProjectIncrementalPlanResult,
+        ProjectIncrementalPlanningGateway,
         ProjectPlanningGateway;
 
-class ProjectModelCalls implements ProjectPlanningGateway {
-  ProjectModelCalls({required ToolService toolService})
-    : _creationRunner = FinalizerToolCallRunner(toolService: toolService);
+class ProjectModelCalls
+    implements
+        ProjectPlanningGateway,
+        ProjectIncrementalPlanningGateway,
+        PlanningProtocolConfigurable {
+  ProjectModelCalls({
+    required ToolService toolService,
+    ProjectViewService projectViewService = const ProjectViewService(),
+  }) : _creationRunner = FinalizerToolCallRunner(toolService: toolService),
+       _projectViewService = projectViewService,
+       _planningRunner = const ProjectPlanningToolCallRunner();
 
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
   final FinalizerToolCallRunner _creationRunner;
+  final ProjectViewService _projectViewService;
+  final ProjectPlanningToolCallRunner _planningRunner;
+  @override
+  PlanningProtocolMode planningProtocolMode = PlanningProtocolMode.automatic;
 
   @override
   Future<ProjectInitialisation> initializeProject({
@@ -41,56 +61,47 @@ class ProjectModelCalls implements ProjectPlanningGateway {
     CancellationToken? cancellationToken,
   }) async {
     try {
-      final json = await _completeFinalizedJson(
-        client: client,
-        workspace: workspace,
-        label: 'Project Initializer',
-        system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
-        onModelOutput: onModelOutput,
-        cancellationToken: cancellationToken,
-        expectedShape:
-            '{"title":"...","refinedGoal":"...","criteria":[{"id":"criterion_001","statement":"...","required":true,"verificationMode":"mixed"}],"constraints":["..."],"memory":[{"id":"memory_001","kind":"assumption","content":"...","sourceId":"workspace:Design.md"}],"milestones":[{"id":"milestone_001","title":"...","objective":"...","criterionIds":["criterion_001"],"exitConditions":["..."],"order":1}],"openQuestions":[],"tasks":[{"id":"project_task_001","title":"...","objective":"...","criterionIds":["criterion_001"],"milestoneId":"milestone_001","doneCriteria":["..."],"outOfScope":["..."],"expectedEvidence":[{"id":"evidence_001","type":"task_claim","criterionIds":["criterion_001"],"description":"..."}]}]}',
-        finalizerTool: _finaliseProjectCreationToolDefinition(
-          requiredProperties: const [
-            'title',
-            'refinedGoal',
-            'criteria',
-            'constraints',
-          ],
-        ),
-        user:
-            '''
-Initialize a persistent project state. Do not execute the project.
-The supplied workspace profile is authoritative. Treat repository components absent from its tree as absent, not as stale or incomplete discovery. Do not claim an absent path as an existing baseline.
-Create a rolling roadmap with one to three milestones and approximately three to seven detailed near-term tasks. Keep distant work coarse in milestone objectives rather than expanding an unbounded task list.
-Every task needs stable IDs, dependencies, criterion and milestone links, priority, risk, effort, boundaries, expected evidence, and a concise rationale in selectionRationale.
-When a task declares required command evidence, include a matching required command_passes gate with the exact command and working_directory. no_tool_errors and no_failed_commands are safety gates only and do not replace criterion evidence.
-For every small task that will modify workspace files, writePaths must contain the explicit files or directories it may change. Leave writePaths empty only for genuinely read-only work.
-When a task declares required command evidence, include a matching required command_passes gate with the exact command and working_directory. no_tool_errors and no_failed_commands are safety gates only and do not replace criterion evidence.
-Do not add openQuestions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; record a typed assumption in memory instead.
-Add openQuestions only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
-Include sourceId such as workspace:Design.md on every memory claim derived from a supplied workspace file. Model-authored memory remains advisory regardless of its requested confidence.
-
-Return only JSON:
-{
-  "title": "...",
-  "refinedGoal": "...",
-  "criteria": [{"id":"criterion_001","statement":"...","required":true,"verificationMode":"mixed"}],
-  "constraints": ["..."],
-  "memory": [{"id":"memory_001","kind":"fact|assumption|requirement|decision|risk","content":"...","confidence":"inferred|uncertain","sourceId":"workspace:relative/path"}],
-  "milestones": [{"id":"milestone_001","title":"...","objective":"...","criterionIds":["criterion_001"],"exitConditions":["..."],"order":1}],
-  "openQuestions": [{"question": "..."}],
-  "tasks": [{"id":"project_task_001","title":"...","objective":"one bounded task","criterionIds":["criterion_001"],"milestoneId":"milestone_001","dependsOnTaskIds":[],"priority":"normal","risk":"low","riskReduction":"low","effort":"small","doneCriteria":["..."],"outOfScope":["..."],"expectedEvidence":[{"id":"expectation_001","type":"task_claim","criterionIds":["criterion_001"],"description":"...","required":true}],"readPaths":[],"writePaths":[],"selectionRationale":"..."}]
-}
-
-Workspace metadata:
-${_encoder.convert(workspaceMetadata)}
+      if (planningProtocolMode == PlanningProtocolMode.legacy) {
+        final json = await _completeFinalizedJson(
+          client: client,
+          workspace: workspace,
+          label: 'Project Initial Planning (legacy compatibility)',
+          system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
+          onModelOutput: onModelOutput,
+          cancellationToken: cancellationToken,
+          expectedShape:
+              '{"title":"...","refinedGoal":"...","criteria":[],"constraints":[],"memory":[],"milestones":[],"openQuestions":[],"tasks":[]}',
+          finalizerTool: _finaliseProjectCreationToolDefinition(
+            requiredProperties: const [
+              'title',
+              'refinedGoal',
+              'criteria',
+              'constraints',
+            ],
+          ),
+          user:
+              '''
+Create the initial project plan for this user goal. Use the supplied
+workspace profile as the complete discovery input and do not execute work.
 
 Original project goal:
 $originalGoal
+
+Authoritative workspace metadata:
+${_encoder.convert(workspaceMetadata)}
 ''',
+        );
+        return _initialisationFromJson(json, originalGoal: originalGoal);
+      }
+      return await _completeInitialPlanning(
+        client: client,
+        baseSystemPrompt: baseSystemPrompt,
+        workspace: workspace,
+        originalGoal: originalGoal,
+        workspaceMetadata: workspaceMetadata,
+        onModelOutput: onModelOutput,
+        cancellationToken: cancellationToken,
       );
-      return _initialisationFromJson(json, originalGoal: originalGoal);
     } on OperationCancelledException {
       rethrow;
     } on ChatTransportException {
@@ -208,8 +219,8 @@ ${_encoder.convert(triggers.map((item) => item.name).toList())}
 Bounded discovery snapshot:
 ${_encoder.convert(evidenceSnapshot.toMap())}
 
-Project state:
-${_encoder.convert(ModelJson.encode(project))}
+Compact project view:
+${_encoder.convert(_projectViewService.query(project))}
 ''',
       );
       return _proposalFromJson(json, project: project, triggers: triggers);
@@ -227,6 +238,265 @@ ${_encoder.convert(ModelJson.encode(project))}
         createdAt: DateTime.now(),
       );
     }
+  }
+
+  @override
+  Future<ProjectIncrementalPlanResult> revisePlanWithCommands({
+    required ChatClient client,
+    required String baseSystemPrompt,
+    required WorkspaceAttachment workspace,
+    required ProjectState project,
+    required ProjectEvidenceSnapshot evidenceSnapshot,
+    required List<ProjectPlanRevisionTrigger> triggers,
+    required ProjectPlanApprovalPolicy approvalPolicy,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  }) async {
+    final context = ProjectPlanningContext(
+      project: project,
+      workspaceRoot: workspace.rootPath,
+      triggers: triggers,
+      summary: 'Apply the focused project plan revision.',
+      rationale:
+          'Keep completed history intact and change only what is needed.',
+      approvalPolicy: approvalPolicy,
+    );
+    final registry = ProjectPlanningToolRegistry(context: context);
+    try {
+      final result = await _planningRunner.complete(
+        client: client,
+        registry: registry,
+        label: 'Incremental Project Plan Revision',
+        system:
+            '''
+$baseSystemPrompt
+
+You are the project plan revision agent. Use the project planning tools to
+make a small, explicit update to the existing plan and finish by calling
+plan_commit. Do not return a plan as JSON text and do not invent persistent
+IDs, statuses, timestamps, evidence, gates, or runtime state.
+
+Begin with project_view when you need context. The view is bounded; request a
+specific task, criterion, or memory detail when needed. Use
+plan_update_task for an existing mutable task. Use plan_add_tasks for new
+work; the builder generates fresh IDs. Completed, failed, split, rejected,
+cancelled, and running task history is immutable. Use plan_retry_task only for
+failed or rejected work, use plan_split_task only for a mutable oversized task,
+and use plan_add_tasks for focused work around terminal history. Use
+plan_set_dependency to make ordering changes and plan_set_disposition only
+when deferral or obsolescence is justified. Add focused checks, notes, or a
+blocking user decision only when they are needed.
+
+Make the smallest safe diff that addresses all supplied triggers. Preserve
+the original goal, accepted evidence, protected memory, and completed work.
+Use plan_preview if it helps inspect the diff or validation before the final
+plan_commit. A successful plan_commit is the only completion signal.
+''',
+        user:
+            '''
+Revision triggers:
+${_encoder.convert(triggers.map((item) => item.name).toList())}
+
+Bounded discovery snapshot:
+${_encoder.convert(evidenceSnapshot.toMap())}
+
+Current bounded project view:
+${_encoder.convert(_projectViewService.query(project))}
+''',
+        onModelOutput: onModelOutput,
+        cancellationToken: cancellationToken,
+      );
+      return _incrementalPlanResult(
+        context,
+        result,
+        workspaceRoot: workspace.rootPath,
+      );
+    } on OperationCancelledException {
+      rethrow;
+    } on ChatTransportException {
+      rethrow;
+    } catch (error) {
+      return _incrementalFailure(
+        project,
+        'Incremental plan revision failed: $error',
+      );
+    }
+  }
+
+  @override
+  Future<ProjectIncrementalPlanResult> splitTaskWithCommands({
+    required ChatClient client,
+    required String baseSystemPrompt,
+    required WorkspaceAttachment workspace,
+    required ProjectState project,
+    required Task oversizedTask,
+    required List<String> violations,
+    required ProjectPlanApprovalPolicy approvalPolicy,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  }) async {
+    final context = ProjectPlanningContext(
+      project: project,
+      workspaceRoot: workspace.rootPath,
+      triggers: const [ProjectPlanRevisionTrigger.taskReplanRequested],
+      summary: 'Split an invalid project task into bounded work.',
+      rationale:
+          'Replace one unsafe task with smaller independently executable tasks.',
+      approvalPolicy: approvalPolicy,
+    );
+    final registry = ProjectPlanningToolRegistry(context: context);
+    try {
+      final result = await _planningRunner.complete(
+        client: client,
+        registry: registry,
+        label: 'Incremental Project Task Split',
+        system:
+            '''
+$baseSystemPrompt
+
+You are the project task-splitting agent. Inspect the supplied task with
+project_view and call plan_split_task exactly once with 2 to 5 bounded child
+tasks, then call plan_commit. Do not return JSON text. Do not reuse the
+parent's ID or supply IDs, statuses, timestamps, evidence, gates, or runtime
+fields. The builder creates fresh child IDs, preserves the invalid parent as
+split history, and validates all criterion and dependency references.
+
+Each child must have one clear objective, explicit done_criteria,
+out_of_scope, read_paths, write_paths, and any required expected_artifacts.
+Keep the children small enough to execute independently and address every
+reported violation. A successful plan_commit is the only completion signal.
+''',
+        user:
+            '''
+Task to split: ${oversizedTask.id}
+Task title: ${oversizedTask.title}
+
+Validation violations:
+${_encoder.convert(violations)}
+
+Current bounded project view:
+${_encoder.convert(_projectViewService.query(project, taskRef: oversizedTask.id))}
+''',
+        onModelOutput: onModelOutput,
+        cancellationToken: cancellationToken,
+      );
+      return _incrementalPlanResult(
+        context,
+        result,
+        workspaceRoot: workspace.rootPath,
+        splitTaskId: oversizedTask.id,
+      );
+    } on OperationCancelledException {
+      rethrow;
+    } on ChatTransportException {
+      rethrow;
+    } catch (error) {
+      return _incrementalFailure(
+        project,
+        'Incremental task split failed: $error',
+      );
+    }
+  }
+
+  Future<ProjectIncrementalPlanResult> _incrementalPlanResult(
+    ProjectPlanningContext context,
+    Map<String, dynamic> result, {
+    required String workspaceRoot,
+    String? splitTaskId,
+  }) async {
+    final legacy = _legacyPlanMap(result);
+    if (legacy != null &&
+        planningProtocolMode == PlanningProtocolMode.automatic) {
+      final proposal = _proposalFromJson(
+        legacy,
+        project: context.project,
+        triggers: context.builder.triggers,
+      );
+      final applied = await const ProjectPlanRevisionService().prepareAndApply(
+        project: context.project,
+        proposal: proposal,
+        workspaceRoot: workspaceRoot,
+        approvalPolicy: context.approvalPolicy,
+        splitTaskIds: splitTaskId == null ? const [] : [splitTaskId],
+      );
+      final planningMetrics = _planningMetricsFromResult(result);
+      if (applied.validation.valid) {
+        return ProjectIncrementalPlanResult(
+          project: applied.project,
+          committed: true,
+          changed: applied.changed,
+          awaitingApproval: applied.awaitingApproval,
+          modelCalls:
+              (result['model_calls'] as num?)?.toInt() ??
+              planningMetrics.planningCalls,
+          planningMetrics: planningMetrics,
+        );
+      }
+      return _incrementalFailure(
+        applied.project,
+        applied.project.blocker?.message ??
+            'The compatibility plan did not pass validation.',
+        planningMetrics: planningMetrics.copyWith(
+          validationBlockerCount: planningMetrics.validationBlockerCount + 1,
+        ),
+      );
+    }
+    final committed = context.committedProject;
+    if (committed != null && context.closed && result['ok'] == true) {
+      return ProjectIncrementalPlanResult(
+        project: committed,
+        committed: true,
+        changed: result['changed'] == true,
+        awaitingApproval: result['awaiting_approval'] == true,
+        modelCalls: (result['model_calls'] as num?)?.toInt() ?? 1,
+        planningMetrics: _planningMetricsFromResult(result),
+      );
+    }
+    final code = result['code']?.toString().trim();
+    final message = result['message']?.toString().trim();
+    return _incrementalFailure(
+      context.project,
+      [
+        if (code != null && code.isNotEmpty) '$code:',
+        if (message != null && message.isNotEmpty) message,
+        if ((code == null || code.isEmpty) &&
+            (message == null || message.isEmpty))
+          'The planner did not commit an incremental plan.',
+      ].join(' '),
+      planningMetrics: _planningMetricsFromResult(result),
+    );
+  }
+
+  ProjectIncrementalPlanResult _incrementalFailure(
+    ProjectState project,
+    String error, {
+    PlanningMetrics planningMetrics = const PlanningMetrics(),
+  }) => ProjectIncrementalPlanResult(
+    project: project,
+    committed: false,
+    changed: false,
+    awaitingApproval: false,
+    modelCalls: 1,
+    planningMetrics: planningMetrics,
+    error: error,
+  );
+
+  PlanningMetrics _planningMetricsFromResult(Map<String, dynamic> result) {
+    final raw = result['planning_metrics'];
+    if (raw is! Map) return const PlanningMetrics();
+    try {
+      return ModelJson.decode<PlanningMetrics>(Map<String, dynamic>.from(raw));
+    } catch (_) {
+      return const PlanningMetrics();
+    }
+  }
+
+  Map<String, dynamic>? _legacyPlanMap(Map<String, dynamic> result) {
+    final raw = result['legacy_finalizer'] == true
+        ? result['arguments']
+        : result['legacy_json'];
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    return null;
   }
 
   @override
@@ -260,8 +530,8 @@ ${_encoder.convert(validationIssues)}
 Invalid proposal:
 ${_encoder.convert(ModelJson.encode(proposal))}
 
-Authoritative project state:
-${_encoder.convert(ModelJson.encode(project))}
+Compact authoritative project view:
+${_encoder.convert(_projectViewService.query(project))}
 ''',
       );
       return _proposalFromJson(
@@ -490,6 +760,197 @@ $expectedShape
     );
   }
 
+  Future<ProjectInitialisation> _completeInitialPlanning({
+    required ChatClient client,
+    required String baseSystemPrompt,
+    required WorkspaceAttachment workspace,
+    required String originalGoal,
+    required Map<String, dynamic> workspaceMetadata,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+    String additionalInstruction = '',
+  }) async {
+    final now = DateTime.now();
+    final context = ProjectPlanningContext(
+      project: _initialPlanningSeed(originalGoal, now),
+      workspaceRoot: workspace.rootPath,
+      now: now,
+      approvalPolicy: ProjectPlanApprovalPolicy.never,
+      summary: 'Create the initial project roadmap.',
+      rationale:
+          'Create a bounded, executable plan from the supplied goal and workspace profile.',
+    );
+    final registry = ProjectPlanningToolRegistry(
+      context: context,
+      includeProjectDetails: true,
+    );
+    final result = await _planningRunner.complete(
+      client: client,
+      registry: registry,
+      label: 'Project Initial Planning',
+      system:
+          '''
+$baseSystemPrompt
+
+You are planning a new project through explicit planning commands. Do not return a complete project JSON document and do not execute workspace changes. The planning registry is the only tool surface available.
+Tool arguments must follow their schemas, but the plan itself must be built through tool calls rather than returned as a large JSON document.
+Use plan_set_project_details first to set a concise title, a useful refined goal, and the constraints that must remain true. Add one or more success criteria with plan_add_criteria. Milestones are optional; add one or more with plan_add_milestones when they clarify delivery, otherwise Hermes will create a default milestone for executable work.
+Use plan_add_tasks for a small batch of bounded near-term tasks, normally no more than seven queued tasks. Each task needs an objective or title, at least one criterion reference, done criteria, and an explicit out-of-scope boundary. Use temporary refs such as scaffold and verify to link tasks and dependencies; Hermes generates canonical IDs.
+Add command checks with plan_add_check when a task needs verification. Add notes with plan_add_note for sourced facts, assumptions, risks, or decisions. Ask a user decision only for genuinely irreversible, high-risk, credential, scope, or otherwise unsafe-to-assume ambiguity.
+Use project_view when you need a bounded summary or detail. Use plan_preview to inspect the compact diff, then call plan_commit when the plan is complete. Do not supply IDs, statuses, timestamps, revisions, gates, evidence IDs, or runtime execution fields.
+'''
+              .trim(),
+      user:
+          '''
+Create the initial project plan for this user goal.
+
+Original user goal:
+$originalGoal
+
+Bounded workspace profile:
+${_encoder.convert(_compactWorkspaceMetadata(workspaceMetadata))}
+${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
+''',
+      onModelOutput: onModelOutput,
+      cancellationToken: cancellationToken,
+    );
+    final legacy = _legacyPlanMap(result);
+    if (legacy != null &&
+        planningProtocolMode == PlanningProtocolMode.automatic) {
+      return _initialisationFromJson(
+        legacy,
+        originalGoal: originalGoal,
+        planningMetrics: _planningMetricsFromResult(result),
+      );
+    }
+    if (result['ok'] != true || context.committedProposal == null) {
+      throw FormatException(
+        'Initial planning did not commit a valid draft: ${result['message'] ?? result['code'] ?? 'unknown error'}.',
+      );
+    }
+    return _initialisationFromPlanningContext(
+      context,
+      context.committedProposal!,
+      originalGoal: originalGoal,
+      planningMetrics: _planningMetricsFromResult(result),
+    );
+  }
+
+  ProjectState _initialPlanningSeed(String originalGoal, DateTime now) =>
+      ProjectState(
+        id: 'planning_${uuid.v7()}',
+        title: _titleFromGoal(originalGoal),
+        originalGoal: originalGoal,
+        refinedGoal: originalGoal,
+        criteria: const [],
+        constraints: const ['Stay within the attached workspace.'],
+        tasks: const [],
+        milestones: const [],
+        memory: const [],
+        planHistory: const [],
+        status: ProjectStatus.active,
+        activeTaskId: null,
+        createdAt: now,
+        updatedAt: now,
+      );
+
+  ProjectInitialisation _initialisationFromPlanningContext(
+    ProjectPlanningContext context,
+    ProjectDesiredPlan proposal, {
+    required String originalGoal,
+    PlanningMetrics planningMetrics = const PlanningMetrics(),
+  }) {
+    var milestones = proposal.milestones;
+    if (proposal.tasks.isNotEmpty && milestones.isEmpty) {
+      final now = DateTime.now();
+      milestones = [
+        ProjectMilestone(
+          id: 'milestone_${uuid.v7()}',
+          title: 'Deliver the project outcome',
+          objective: context.draftRefinedGoal,
+          criterionIds: proposal.criteria.map((item) => item.id).toList(),
+          status: ProjectMilestoneStatus.active,
+          exitConditions: proposal.criteria
+              .map((item) => item.statement)
+              .toList(),
+          order: 1,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      ];
+    }
+    final defaultMilestoneId = milestones.firstOrNull?.id;
+    final tasks = [
+      for (final task in proposal.tasks)
+        task.copyWith(milestoneId: task.milestoneId ?? defaultMilestoneId),
+    ];
+    return ProjectInitialisation(
+      title: context.draftTitle.trim().isEmpty
+          ? _titleFromGoal(originalGoal)
+          : context.draftTitle,
+      refinedGoal: context.draftRefinedGoal.trim().isEmpty
+          ? originalGoal
+          : context.draftRefinedGoal,
+      criteria: proposal.criteria,
+      constraints: context.draftConstraints,
+      openQuestions: proposal.openQuestions,
+      tasks: tasks,
+      milestones: milestones,
+      memory: proposal.memoryAdditions,
+      planningMetrics: planningMetrics,
+    );
+  }
+
+  Map<String, dynamic> _compactWorkspaceMetadata(
+    Map<String, dynamic> metadata,
+  ) {
+    final profile = metadata['workspaceProfile'];
+    if (profile is! Map) return metadata;
+    final profileMap = Map<String, dynamic>.from(profile);
+    List<String> strings(Object? value, {int limit = 80}) => [
+      if (value is List)
+        for (final item in value)
+          if (item is String) item,
+    ].take(limit).toList();
+    final excerpts = <Map<String, dynamic>>[];
+    final rawFiles = profileMap['highSignalFiles'];
+    if (rawFiles is List) {
+      for (final raw in rawFiles.take(8)) {
+        if (raw is! Map) continue;
+        final file = Map<String, dynamic>.from(raw);
+        final content = file['content']?.toString() ?? '';
+        excerpts.add({
+          'path': file['path']?.toString() ?? '',
+          'content': _boundedText(content, 2400),
+          'truncated': file['truncated'] == true || content.length > 2400,
+        });
+      }
+    }
+    return {
+      'workspaceName': metadata['workspaceName'],
+      'commandExecutionApproved': metadata['commandExecutionApproved'],
+      'rootEntries': strings(metadata['rootEntries']),
+      'gitAvailable': metadata['gitAvailable'] == true,
+      'changedFiles': strings(metadata['changedFiles']),
+      'treePaths': strings(profileMap['treePaths'], limit: 200),
+      'highSignalFiles': excerpts,
+      'packageName': profileMap['packageName'],
+      'scripts': profileMap['scripts'],
+      'dependencies': strings(profileMap['dependencies']),
+      'languages': strings(profileMap['languages']),
+      'frameworks': strings(profileMap['frameworks']),
+      'treeTruncated': profileMap['treeTruncated'] == true,
+      'contentTruncated': profileMap['contentTruncated'] == true,
+      'omittedPathCount': profileMap['omittedPathCount'],
+    };
+  }
+
+  static String _boundedText(String value, int limit) {
+    final text = value.trim();
+    if (text.length <= limit) return text;
+    return '${text.substring(0, limit - 1).trimRight()}…';
+  }
+
   Future<String> _completeRaw({
     required ChatClient client,
     required String system,
@@ -552,6 +1013,7 @@ $expectedShape
   ProjectInitialisation _initialisationFromJson(
     Map<String, dynamic> json, {
     required String originalGoal,
+    PlanningMetrics planningMetrics = const PlanningMetrics(),
   }) {
     final refinedGoal = jsonString(
       json['refinedGoal'] ?? json['refined_goal'],
@@ -572,6 +1034,7 @@ $expectedShape
       ),
       milestones: _milestonesFromJson(json['milestones']),
       memory: _memoryFromJson(json['memory']),
+      planningMetrics: planningMetrics,
     );
   }
 
@@ -696,6 +1159,9 @@ $expectedShape
       criteria: criteria,
       milestones: desiredMilestones,
       tasks: tasks,
+      // Split metadata is owned by the command builder; legacy JSON cannot
+      // request a split by omitting a task from a replacement collection.
+      splitTaskIds: const [],
       deferredTaskIds: jsonStringList(
         json['deferredTaskIds'] ?? json['deferred_task_ids'],
       ),

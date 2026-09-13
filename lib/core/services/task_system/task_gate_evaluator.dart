@@ -161,6 +161,7 @@ class TaskGateEvaluator {
         'artifact_nonempty' => await _artifactNonempty(
           workspace,
           gate,
+          [...task.expectedArtifacts, ...step.artifacts],
           artifacts,
           now,
         ),
@@ -285,15 +286,18 @@ class TaskGateEvaluator {
         TaskGateStatus.failed,
         'Required artifacts are missing: ${missing.join(', ')}.',
         now,
-        {'missing': missing},
+        {'paths': paths, 'missing': missing},
       );
     }
-    return _result(gate, _passStatus(gate), 'Required artifacts exist.', now);
+    return _result(gate, _passStatus(gate), 'Required artifacts exist.', now, {
+      'paths': paths,
+    });
   }
 
   Future<TaskGateResult> _artifactNonempty(
     WorkspaceAttachment workspace,
     TaskGate gate,
+    List<TaskArtifact> declaredArtifacts,
     List<TaskArtifact> artifacts,
     DateTime now,
   ) async {
@@ -306,6 +310,11 @@ class TaskGateEvaluator {
         now,
       );
     }
+    final directoryPaths = {
+      for (final artifact in declaredArtifacts)
+        if (artifact.kind.trim().toLowerCase() == 'directory')
+          path.normalize(artifact.path.trim()),
+    };
     final empty = <String>[];
     for (final item in paths) {
       final resolved = await _sandbox.resolve(
@@ -313,6 +322,11 @@ class TaskGateEvaluator {
         item,
         mustExist: false,
       );
+      if (directoryPaths.contains(path.normalize(item.trim()))) {
+        if (await Directory(resolved.absolutePath).exists()) continue;
+        empty.add(resolved.relativePath);
+        continue;
+      }
       final file = File(resolved.absolutePath);
       if (!await file.exists() || await file.length() == 0) {
         empty.add(resolved.relativePath);
@@ -324,7 +338,7 @@ class TaskGateEvaluator {
         TaskGateStatus.failed,
         'Required artifacts are empty or missing: ${empty.join(', ')}.',
         now,
-        {'empty': empty},
+        {'paths': paths, 'empty': empty},
       );
     }
     return _result(
@@ -332,6 +346,7 @@ class TaskGateEvaluator {
       _passStatus(gate),
       'Required artifacts are non-empty.',
       now,
+      {'paths': paths},
     );
   }
 

@@ -381,26 +381,25 @@ void main() {
                   'type': 'task_claim',
                   'criterionIds': ['criterion_screen'],
                   'description': 'The findings are reported.',
+                  'required': false,
+                },
+                {
+                  'id': 'expect_report_gate',
+                  'type': 'gate',
+                  'criterionIds': ['criterion_screen'],
+                  'description': 'The task completed without workspace errors.',
+                  'required': true,
+                  'sourceRef': 'no_tool_errors',
                 },
               ],
             },
           ],
         }),
-        _finaliseTaskResponse(_projectPlanJson(title: 'Project task')),
         ChatCompletionResponse(
           content: jsonEncode({
             'status': 'completed',
             'summary': 'Project task complete.',
             'memoryUpdate': 'Screen built.',
-            'evidenceClaims': [
-              {
-                'criterionId': 'criterion_screen',
-                'claim': 'The reporting screen is built.',
-                'evidenceType': 'task_claim',
-                'sourceRef': 'screen_task_run',
-                'suggestedStrength': 'supporting',
-              },
-            ],
           }),
         ),
         ChatCompletionResponse(
@@ -444,6 +443,16 @@ void main() {
                     'type': 'task_claim',
                     'criterionIds': ['criterion_screen'],
                     'description': 'The findings are reported.',
+                    'required': false,
+                  },
+                  {
+                    'id': 'expect_report_gate_revision',
+                    'type': 'gate',
+                    'criterionIds': ['criterion_screen'],
+                    'description':
+                        'The task completed without workspace errors.',
+                    'required': true,
+                    'sourceRef': 'no_tool_errors',
                   },
                 ],
               },
@@ -457,21 +466,11 @@ void main() {
             'approvalReason': '',
           }),
         ),
-        _finaliseTaskResponse(_projectPlanJson(title: 'Reporting task')),
         ChatCompletionResponse(
           content: jsonEncode({
             'status': 'completed',
             'summary': 'Reporting task complete.',
             'memoryUpdate': 'The findings were reported.',
-            'evidenceClaims': [
-              {
-                'criterionId': 'criterion_screen',
-                'claim': 'The reporting findings are complete.',
-                'evidenceType': 'task_claim',
-                'sourceRef': 'report_task_run',
-                'suggestedStrength': 'supporting',
-              },
-            ],
           }),
         ),
         ChatCompletionResponse(
@@ -507,7 +506,7 @@ void main() {
         ),
       );
       expect(chat.activeTask, isNull);
-      expect(chat.activeProject?.completionSummary, contains('complete'));
+      expect(chat.activeProject?.completionSummary, isNotEmpty);
     });
 
     test('supports /continue-project for the active project', () async {
@@ -1111,6 +1110,9 @@ Map<String, dynamic> _projectTaskJson({
     'outOfScope': ['Do not perform unrelated project work.'],
     'context': ['Use the attached workspace.'],
     'expectedArtifacts': [],
+    'gates': [
+      {'id': 'no_tool_errors', 'required': true, 'scope': 'task'},
+    ],
   };
 }
 

@@ -68,6 +68,89 @@ void main() {
       );
     });
 
+    test('legacy planner JSON cannot persist duplicate step IDs', () async {
+      final plan = _planJson(title: 'Duplicate-safe task')
+        ..['steps'] = [
+          {
+            'id': 'step_1',
+            'title': 'First',
+            'objective': 'Complete the first step.',
+            'instructions': ['Do the first step.'],
+          },
+          {
+            'id': 'step_1',
+            'title': 'Second',
+            'objective': 'Complete the second step.',
+            'instructions': ['Do the second step.'],
+          },
+          {
+            'id': 'step_1_2',
+            'title': 'Third',
+            'objective': 'Complete the third step.',
+            'instructions': ['Do the third step.'],
+          },
+        ];
+      final task = await service.createTask(
+        client: _QueueChatClient([jsonEncode(plan)]),
+        workspace: workspace,
+        userPrompt: 'Build the reporting screen',
+        selectedMode: ExecutionMode.task,
+        baseSystemPrompt: 'system',
+        chatSessionId: 'chat_1',
+      );
+
+      final ids = task.steps.map((step) => step.id).toList();
+      expect(ids, ['step_1', 'step_1_2', 'step_1_2_2']);
+      expect(ids.toSet(), hasLength(ids.length));
+    });
+
+    test('legacy task-plan edits normalize duplicate step IDs', () async {
+      final original = _task(
+        steps: const [
+          TaskStep(
+            id: 'one',
+            title: 'One',
+            objective: 'Complete one.',
+            instructions: [],
+            mayEditFiles: false,
+            artifacts: [],
+            status: TaskStepStatus.pending,
+          ),
+        ],
+      );
+      final edited = Map<String, dynamic>.from(ModelJson.encode(original));
+      edited['steps'] = [
+        {
+          'id': 'same',
+          'title': 'First edited step',
+          'objective': 'Complete the first edited step.',
+          'instructions': [],
+          'mayEditFiles': false,
+          'artifacts': [],
+          'status': 'pending',
+        },
+        {
+          'id': 'same',
+          'title': 'Second edited step',
+          'objective': 'Complete the second edited step.',
+          'instructions': [],
+          'mayEditFiles': false,
+          'artifacts': [],
+          'status': 'pending',
+        },
+      ];
+
+      final updated = await service.updateTaskPlan(
+        workspace: workspace,
+        snapshot: original,
+        rawJson: jsonEncode(edited),
+      );
+
+      final ids = updated.steps.map((step) => step.id).toList();
+      expect(ids, ['same', 'same_2']);
+      expect(ids.toSet(), hasLength(ids.length));
+    });
+
     test(
       'planner receives deterministic profile without discovery tools',
       () async {
@@ -97,8 +180,8 @@ void main() {
 
         expect(task.title, 'Design-informed task');
         expect(client.requestCount, 1);
-        expect(client.seenToolNames.first, contains('finaliseTaskCreation'));
-        expect(client.seenToolNames.first, hasLength(1));
+        expect(client.seenToolNames.first, contains('task_add_step'));
+        expect(client.seenToolNames.first, isNot(contains('read_file')));
         expect(
           client.seenMessages.single.last.content,
           contains('Build the analytics screen'),
@@ -174,7 +257,7 @@ void main() {
 
       expect(task.title, 'Repaired JSON task');
       expect(client.requestCount, 2);
-      expect(client.seenToolNames.first, contains('finaliseTaskCreation'));
+      expect(client.seenToolNames.first, contains('task_add_step'));
       expect(client.seenToolNames.last, isEmpty);
     });
 
@@ -239,10 +322,13 @@ void main() {
         );
 
         final plannerRequest = client.seenMessages.first.last.content;
+        final normalisedPlannerRequest = plannerRequest
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .toLowerCase();
         expect(plannerRequest, contains('Bounded Project task context'));
         expect(
-          plannerRequest,
-          contains('Do not plan or perform the whole project'),
+          normalisedPlannerRequest,
+          contains('do not plan or perform the whole project'),
         );
         expect(plannerRequest, contains('Implement the settings toggle'));
         expect(plannerRequest, contains('Do not build the whole app.'));
@@ -497,7 +583,8 @@ void main() {
       expect(updated.steps.single.status, TaskStepStatus.completed);
       expect(updated.runs.single.status, TaskRunStatus.completed);
       expect(updated.memorySummary, contains('Found a Flutter app.'));
-      expect(updated.runs.single.artifacts.single.path, contains('notes.md'));
+      expect(updated.runs.single.artifacts, isEmpty);
+      expect(updated.steps.single.artifacts.single.path, contains('notes.md'));
     });
 
     test('runs one step from finish task step tool call', () async {
@@ -541,6 +628,211 @@ void main() {
       expect(updated.memorySummary, contains('Found a Flutter app.'));
       expect(updated.runs.single.toolCalls.single.toolName, 'finish_task_step');
     });
+
+    test('uses an explicit tool for a blocking user decision', () async {
+      final task = _task();
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'task_request_user_decision',
+              arguments: jsonEncode({
+                'question': 'Which production account should be used?',
+                'reason': 'Credentials and account selection require the user.',
+                'riskOfAssuming':
+                    'The wrong account could receive the deployment.',
+              }),
+            ),
+          ],
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(client.seenToolNames.single, contains('finish_task_step'));
+      expect(
+        client.seenToolNames.single,
+        contains('task_request_user_decision'),
+      );
+      expect(client.seenToolNames.single, contains('task_request_replan'));
+      expect(updated.status, TaskStatus.blocked);
+      expect(
+        updated.pendingQuestion?.question,
+        contains('Which production account should be used?'),
+      );
+      expect(
+        updated.runs.single.toolCalls.single.toolName,
+        'task_request_user_decision',
+      );
+    });
+
+    test('uses an explicit tool to request a replan', () async {
+      final task = _task(
+        steps: const [
+          TaskStep(
+            id: 'done',
+            title: 'Done',
+            objective: 'Already complete.',
+            instructions: [],
+            mayEditFiles: false,
+            artifacts: [],
+            status: TaskStepStatus.completed,
+          ),
+          TaskStep(
+            id: 'stale',
+            title: 'Stale step',
+            objective: 'The old approach.',
+            instructions: [],
+            mayEditFiles: false,
+            artifacts: [],
+            status: TaskStepStatus.pending,
+          ),
+        ],
+        currentStepId: 'stale',
+      );
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'task_request_replan',
+              arguments: jsonEncode({
+                'reason': 'The old approach is no longer valid.',
+              }),
+            ),
+          ],
+        ),
+        ChatCompletionResponse(content: jsonEncode({'steps': []})),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'steps': [
+              {
+                'id': 'replacement',
+                'title': 'Replacement',
+                'objective': 'Use the corrected approach.',
+                'instructions': ['Continue with the corrected plan.'],
+                'mayEditFiles': false,
+              },
+            ],
+          }),
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(updated.steps.map((step) => step.id), ['done', 'replacement']);
+      expect(updated.currentStepId, 'replacement');
+      expect(updated.runs.map((run) => run.status), [
+        TaskRunStatus.needsReplan,
+        TaskRunStatus.replanned,
+      ]);
+    });
+
+    test(
+      'records declared artifacts only from successful workspace writes',
+      () async {
+        final task = _task(
+          step: const TaskStep(
+            id: 'write',
+            title: 'Write report',
+            objective: 'Write the report artifact.',
+            instructions: ['Create the report.'],
+            mayEditFiles: true,
+            artifacts: [
+              TaskArtifact(
+                path: '.agent/tasks/task_test/report.md',
+                description: 'Generated report',
+              ),
+            ],
+            gates: [
+              TaskGate(
+                id: 'artifact_exists',
+                params: {
+                  'paths': ['.agent/tasks/task_test/report.md'],
+                },
+              ),
+              TaskGate(
+                id: 'artifact_nonempty',
+                params: {
+                  'paths': ['.agent/tasks/task_test/report.md'],
+                },
+              ),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'write_file',
+                arguments: jsonEncode({
+                  'path': '.agent/tasks/task_test/report.md',
+                  'content': '# Report\n',
+                }),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'finish_task_step',
+                arguments: jsonEncode({
+                  'status': 'completed',
+                  'summary': 'The report was written.',
+                  'artifacts': [
+                    {'path': 'invented.md'},
+                  ],
+                }),
+              ),
+            ],
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(updated.status, TaskStatus.completed);
+        expect(updated.runs.single.artifacts, hasLength(1));
+        expect(
+          updated.runs.single.artifacts.single.path,
+          contains('report.md'),
+        );
+        expect(
+          updated.runs.single.artifacts.single.runId,
+          updated.runs.single.runId,
+        );
+        expect(
+          updated.runs.single.gateResults.map((result) => result.status),
+          everyElement(TaskGateStatus.passed),
+        );
+        expect(
+          updated.steps.single.artifacts.single.path,
+          contains('report.md'),
+        );
+        expect(
+          updated.runs.single.artifacts.map((item) => item.path),
+          isNot(contains('invented.md')),
+        );
+      },
+    );
 
     test(
       'persists validated project evidence claims from a finished step',
@@ -615,7 +907,7 @@ void main() {
         );
         expect(
           updated.runs.single.evidenceClaims.single.suggestedStrength,
-          TaskEvidenceClaimStrength.conclusive,
+          TaskEvidenceClaimStrength.advisory,
         );
         expect(
           updated.runs.single.evidenceClaims.single.runId,
@@ -624,7 +916,12 @@ void main() {
         final executionPrompt = client.seenMessages.single.last.content;
         expect(executionPrompt, contains('The report passes verification.'));
         expect(executionPrompt, contains('final planned task step'));
-        expect(executionPrompt, contains('include a final evidence claim'));
+        expect(
+          executionPrompt,
+          contains(
+            'Project evidence is derived from successful workspace calls',
+          ),
+        );
       },
     );
 
@@ -1843,7 +2140,7 @@ void main() {
       expect(updated.currentStepId, 'step_2');
     });
 
-    test('step output filters artifacts to the current step', () async {
+    test('step output ignores model artifact claims', () async {
       final task = _task(
         steps: const [
           TaskStep(
@@ -1889,11 +2186,7 @@ void main() {
         baseSystemPrompt: 'system',
       );
 
-      expect(updated.runs.single.artifacts, hasLength(1));
-      expect(
-        updated.runs.single.artifacts.single.path,
-        contains('overview.md'),
-      );
+      expect(updated.runs.single.artifacts, isEmpty);
       expect(updated.steps.first.artifacts, hasLength(1));
       expect(
         updated.steps.first.artifacts.single.path,

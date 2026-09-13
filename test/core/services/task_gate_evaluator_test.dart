@@ -86,6 +86,8 @@ void main() {
         passed.results.map((result) => result.status),
         everyElement(TaskGateStatus.passed),
       );
+      expect(passed.results.first.details['paths'], ['out.md']);
+      expect(passed.results.last.details['paths'], ['out.md']);
 
       final failed = await evaluator.evaluate(
         workspace: workspace,
@@ -105,6 +107,32 @@ void main() {
 
       expect(failed.results.single.status, TaskGateStatus.failed);
     });
+
+    test(
+      'directory artifacts do not use file length for non-empty checks',
+      () async {
+        await Directory(path.join(root.path, 'output')).create();
+        final directoryStep = step.copyWith(
+          artifacts: const [TaskArtifact(path: 'output', kind: 'directory')],
+        );
+
+        final evaluation = await evaluator.evaluate(
+          workspace: workspace,
+          task: task,
+          step: directoryStep,
+          gates: const [
+            TaskGate(
+              id: 'artifact_nonempty',
+              params: {
+                'paths': ['output'],
+              },
+            ),
+          ],
+        );
+
+        expect(evaluation.results.single.status, TaskGateStatus.passed);
+      },
+    );
 
     test('content gates fail safely for oversized files', () async {
       await File(path.join(root.path, 'out.md')).writeAsString(

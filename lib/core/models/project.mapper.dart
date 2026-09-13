@@ -1159,6 +1159,7 @@ class ProjectDiagnosticsMapper extends ClassMapperBase<ProjectDiagnostics> {
   static ProjectDiagnosticsMapper ensureInitialized() {
     if (_instance == null) {
       MapperContainer.globals.use(_instance = ProjectDiagnosticsMapper._());
+      PlanningMetricsMapper.ensureInitialized();
     }
     return _instance!;
   }
@@ -1251,6 +1252,16 @@ class ProjectDiagnosticsMapper extends ClassMapperBase<ProjectDiagnostics> {
         opt: true,
         def: 0,
       );
+  static PlanningMetrics _$planningMetrics(ProjectDiagnostics v) =>
+      v.planningMetrics;
+  static const Field<ProjectDiagnostics, PlanningMetrics> _f$planningMetrics =
+      Field(
+        'planningMetrics',
+        _$planningMetrics,
+        opt: true,
+        def: const PlanningMetrics(),
+        hook: OmitEmptyPlanningMetricsHook(),
+      );
   static List<String> _$recentNoProgressBatchIds(ProjectDiagnostics v) =>
       v.recentNoProgressBatchIds;
   static const Field<ProjectDiagnostics, List<String>>
@@ -1276,6 +1287,7 @@ class ProjectDiagnosticsMapper extends ClassMapperBase<ProjectDiagnostics> {
     #userApprovals: _f$userApprovals,
     #userQuestions: _f$userQuestions,
     #consecutiveNoProgressBatches: _f$consecutiveNoProgressBatches,
+    #planningMetrics: _f$planningMetrics,
     #recentNoProgressBatchIds: _f$recentNoProgressBatchIds,
   };
   @override
@@ -1296,6 +1308,7 @@ class ProjectDiagnosticsMapper extends ClassMapperBase<ProjectDiagnostics> {
       userApprovals: data.dec(_f$userApprovals),
       userQuestions: data.dec(_f$userQuestions),
       consecutiveNoProgressBatches: data.dec(_f$consecutiveNoProgressBatches),
+      planningMetrics: data.dec(_f$planningMetrics),
       recentNoProgressBatchIds: data.dec(_f$recentNoProgressBatchIds),
     );
   }
@@ -2032,6 +2045,13 @@ class ProjectDesiredPlanMapper extends ClassMapperBase<ProjectDesiredPlan> {
     opt: true,
     def: const [],
   );
+  static List<String> _$splitTaskIds(ProjectDesiredPlan v) => v.splitTaskIds;
+  static const Field<ProjectDesiredPlan, List<String>> _f$splitTaskIds = Field(
+    'splitTaskIds',
+    _$splitTaskIds,
+    opt: true,
+    def: const [],
+  );
   static List<String> _$deferredTaskIds(ProjectDesiredPlan v) =>
       v.deferredTaskIds;
   static const Field<ProjectDesiredPlan, List<String>> _f$deferredTaskIds =
@@ -2099,6 +2119,7 @@ class ProjectDesiredPlanMapper extends ClassMapperBase<ProjectDesiredPlan> {
     #criteria: _f$criteria,
     #milestones: _f$milestones,
     #tasks: _f$tasks,
+    #splitTaskIds: _f$splitTaskIds,
     #deferredTaskIds: _f$deferredTaskIds,
     #obsoleteTaskIds: _f$obsoleteTaskIds,
     #memoryAdditions: _f$memoryAdditions,
@@ -2122,6 +2143,7 @@ class ProjectDesiredPlanMapper extends ClassMapperBase<ProjectDesiredPlan> {
       criteria: data.dec(_f$criteria),
       milestones: data.dec(_f$milestones),
       tasks: data.dec(_f$tasks),
+      splitTaskIds: data.dec(_f$splitTaskIds),
       deferredTaskIds: data.dec(_f$deferredTaskIds),
       obsoleteTaskIds: data.dec(_f$obsoleteTaskIds),
       memoryAdditions: data.dec(_f$memoryAdditions),

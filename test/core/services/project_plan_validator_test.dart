@@ -18,6 +18,58 @@ void main() {
     expect(validation.issues, isEmpty);
   });
 
+  test('accepts one existing task ID as an update', () {
+    final project = _projectWithTasks([_task('existing')]);
+    final validation = validator.validate(
+      project: project,
+      proposal: _desired(project, [
+        _task('existing').copyWith(title: 'Updated bounded slice'),
+      ]),
+      workspaceRoot: '/workspace',
+    );
+
+    expect(validation.valid, isTrue);
+    expect(
+      validation.errors.map((issue) => issue.code),
+      isNot(contains('duplicate_id')),
+    );
+  });
+
+  test('explains both locations for duplicate task IDs', () {
+    final project = _project();
+    final first = _task('duplicate', writePaths: const ['lib/first.dart']);
+    final second = _task('duplicate', writePaths: const ['lib/second.dart'])
+        .copyWith(
+          title: 'A different bounded slice',
+          objective: 'Implement a different bounded slice.',
+          fingerprint: projectTaskFingerprint(
+            'Implement a different bounded slice.',
+            const ['criterion_001'],
+          ),
+          expectedEvidence: const [
+            TaskEvidenceExpectation(
+              id: 'expect_second',
+              type: ProjectEvidenceType.taskClaim,
+              criterionIds: ['criterion_001'],
+              description: 'The second slice is independently checked.',
+            ),
+          ],
+        );
+    final validation = validator.validate(
+      project: project,
+      proposal: _desired(project, [first, second]),
+      workspaceRoot: '/workspace',
+    );
+
+    final duplicate = validation.errors.firstWhere(
+      (issue) => issue.code == 'duplicate_id',
+    );
+    expect(duplicate.path, 'tasks[1].id');
+    expect(duplicate.message, contains('duplicate'));
+    expect(duplicate.message, contains('tasks[0].id'));
+    expect(duplicate.message, contains('tasks[1].id'));
+  });
+
   test('rejects an incomplete planner response', () {
     final project = _projectWithTasks([_task('existing')]);
     final validation = validator.validate(

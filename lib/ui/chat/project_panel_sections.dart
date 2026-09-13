@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:hermes/core/helpers/a11y.dart';
+import 'package:hermes/core/models/planning_metrics.dart';
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/project_system/project_scheduler.dart';
@@ -113,7 +114,8 @@ class ProjectOutcomeSection extends StatelessWidget {
                 '${project.diagnostics.planRevisionAttempts} replans · '
                 '${project.diagnostics.projectModelCalls} project model calls · '
                 '${project.diagnostics.completedBatchesWithoutCriterionProgress} '
-                'batches completed without criterion progress',
+                'batches completed without criterion progress\n'
+                '${_planningDiagnostics(project.diagnostics.planningMetrics)}',
           ),
           const SizedBox(height: 8),
           if (project.criteria.isEmpty)
@@ -130,6 +132,16 @@ class ProjectOutcomeSection extends StatelessWidget {
       ),
     );
   }
+
+  String _planningDiagnostics(PlanningMetrics metrics) =>
+      'Planning: ${metrics.planningCalls} calls · '
+      '${metrics.promptTokenEstimate} prompt tokens est. · '
+      '${metrics.toolResultTokenEstimate} tool-result tokens est. · '
+      '${(metrics.invalidCommandRate * 100).toStringAsFixed(1)}% invalid commands · '
+      '${metrics.fullPlanRepairCount} full-plan repairs '
+      '(${(metrics.fullPlanRepairRate * 100).toStringAsFixed(1)}%) · '
+      '${metrics.validationBlockerCount} validation blockers · '
+      '${(metrics.recoverySuccessRate * 100).toStringAsFixed(1)}% recovery success';
 }
 
 class _CriterionTile extends StatelessWidget {
@@ -652,6 +664,12 @@ class _PendingRevision extends StatelessWidget {
             values: proposal.tasks
                 .where((item) => existingTaskIds.contains(item.id))
                 .map((item) => '${item.title} (${item.id})')
+                .toList(),
+          ),
+          _DiffList(
+            label: 'Split tasks',
+            values: proposal.splitTaskIds
+                .map((id) => '${project.taskById(id)?.title ?? 'Task'} ($id)')
                 .toList(),
           ),
           _DiffList(label: 'Deferred tasks', values: proposal.deferredTaskIds),

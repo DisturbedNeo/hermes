@@ -1,4 +1,5 @@
 import 'package:hermes/core/models/project.dart';
+import 'package:hermes/core/models/planning_metrics.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
@@ -15,6 +16,7 @@ class ProjectInitialisation {
   final List<Task> tasks;
   final List<ProjectMilestone> milestones;
   final List<ProjectMemoryEntry> memory;
+  final PlanningMetrics planningMetrics;
 
   const ProjectInitialisation({
     required this.title,
@@ -25,6 +27,7 @@ class ProjectInitialisation {
     required this.tasks,
     this.milestones = const [],
     this.memory = const [],
+    this.planningMetrics = const PlanningMetrics(),
   });
 }
 
@@ -111,6 +114,28 @@ class ProjectCompletionAssessment {
   });
 }
 
+/// Result of a planner invocation that edits a draft through incremental
+/// commands and commits it through the planning registry.
+class ProjectIncrementalPlanResult {
+  final ProjectState project;
+  final bool committed;
+  final bool changed;
+  final bool awaitingApproval;
+  final int modelCalls;
+  final PlanningMetrics planningMetrics;
+  final String? error;
+
+  const ProjectIncrementalPlanResult({
+    required this.project,
+    required this.committed,
+    required this.changed,
+    required this.awaitingApproval,
+    required this.modelCalls,
+    this.planningMetrics = const PlanningMetrics(),
+    this.error,
+  });
+}
+
 /// Boundary between deterministic project orchestration and model-backed
 /// planning decisions.
 ///
@@ -179,6 +204,37 @@ abstract interface class ProjectPlanningGateway {
     required ChatClient client,
     required String baseSystemPrompt,
     required ProjectState project,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  });
+}
+
+/// Optional incremental planning capability.
+///
+/// Keeping this separate from [ProjectPlanningGateway] lets older integrations
+/// and test doubles continue to provide the legacy JSON methods while the
+/// built-in gateway uses the safer command-based path.
+abstract interface class ProjectIncrementalPlanningGateway {
+  Future<ProjectIncrementalPlanResult> revisePlanWithCommands({
+    required ChatClient client,
+    required String baseSystemPrompt,
+    required WorkspaceAttachment workspace,
+    required ProjectState project,
+    required ProjectEvidenceSnapshot evidenceSnapshot,
+    required List<ProjectPlanRevisionTrigger> triggers,
+    required ProjectPlanApprovalPolicy approvalPolicy,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  });
+
+  Future<ProjectIncrementalPlanResult> splitTaskWithCommands({
+    required ChatClient client,
+    required String baseSystemPrompt,
+    required WorkspaceAttachment workspace,
+    required ProjectState project,
+    required Task oversizedTask,
+    required List<String> violations,
+    required ProjectPlanApprovalPolicy approvalPolicy,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });

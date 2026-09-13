@@ -217,6 +217,9 @@ class PreferencesService extends ChangeNotifier {
       planApprovalPolicy: ProjectPlanApprovalPolicy.parse(
         prefs.getString(PreferencesKeys.taskSystemPlanApprovalPolicy),
       ),
+      planningProtocol: PlanningProtocolModeWire.parse(
+        prefs.getString(PreferencesKeys.taskSystemPlanningProtocol),
+      ),
     ).normalised();
   }
 
@@ -255,6 +258,10 @@ class PreferencesService extends ChangeNotifier {
         await prefs.setString(
           PreferencesKeys.taskSystemPlanApprovalPolicy,
           normalised.planApprovalPolicy.wire,
+        ) &&
+        await prefs.setString(
+          PreferencesKeys.taskSystemPlanningProtocol,
+          normalised.planningProtocol.wire,
         );
 
     if (saved) notifyListeners();

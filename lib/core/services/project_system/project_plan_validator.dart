@@ -1,4 +1,5 @@
 import 'package:hermes/core/models/project.dart';
+import 'package:hermes/core/models/task.dart';
 import 'package:path/path.dart' as path;
 
 enum ProjectPlanValidationSeverity { warning, error }
@@ -512,8 +513,7 @@ class ProjectPlanValidator {
                 (gate) =>
                     gate.id == 'command_passes' &&
                     gate.params['command']?.toString() == command &&
-                    gate.params['working_directory']?.toString() ==
-                        workingDirectory,
+                    _workingDirectoryForGate(gate) == workingDirectory,
               );
           if (!matchingGate) {
             issue(
@@ -612,25 +612,30 @@ class ProjectPlanValidator {
     String fieldPath,
     List<ProjectPlanValidationIssue> issues,
   ) {
-    final seen = <String>{};
+    final firstPaths = <String, String>{};
     var index = 0;
     for (final id in ids) {
+      final currentPath = '$fieldPath[$index].id';
       if (id.trim().isEmpty) {
         issues.add(
           ProjectPlanValidationIssue(
             code: 'missing_id',
-            path: '$fieldPath[$index].id',
+            path: currentPath,
             message: 'A stable ID is required.',
           ),
         );
-      } else if (!seen.add(id)) {
+      } else if (firstPaths.containsKey(id)) {
         issues.add(
           ProjectPlanValidationIssue(
             code: 'duplicate_id',
-            path: '$fieldPath[$index].id',
-            message: 'Stable ID $id appears more than once.',
+            path: currentPath,
+            message:
+                'Stable ID "$id" appears more than once in $fieldPath '
+                '(first at ${firstPaths[id]}; duplicate at $currentPath).',
           ),
         );
+      } else {
+        firstPaths[id] = currentPath;
       }
       index++;
     }
@@ -668,7 +673,19 @@ class ProjectPlanValidator {
   static String _workingDirectoryForExpectation(
     TaskEvidenceExpectation expectation,
   ) {
-    final value = expectation.details['working_directory']?.toString().trim();
+    final value =
+        (expectation.details['working_directory'] ??
+                expectation.details['workingDirectory'])
+            ?.toString()
+            .trim();
+    return value == null || value.isEmpty ? '.' : value;
+  }
+
+  static String _workingDirectoryForGate(TaskGate gate) {
+    final value =
+        (gate.params['working_directory'] ?? gate.params['workingDirectory'])
+            ?.toString()
+            .trim();
     return value == null || value.isEmpty ? '.' : value;
   }
 }

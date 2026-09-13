@@ -83,4 +83,8 @@ abstract final class PreferencesKeys {
   /// When rolling project-plan revisions require user approval.
   static const String taskSystemPlanApprovalPolicy =
       'task_system_plan_approval_policy';
+
+  /// Planning protocol rollout mode.
+  static const String taskSystemPlanningProtocol =
+      'task_system_planning_protocol';
 }

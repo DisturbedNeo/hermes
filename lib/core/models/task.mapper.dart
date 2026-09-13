@@ -1367,6 +1367,7 @@ class TaskMapper extends ClassMapperBase<Task> {
       TaskRunMapper.ensureInitialized();
       PendingTaskApprovalMapper.ensureInitialized();
       PendingTaskQuestionMapper.ensureInitialized();
+      PlanningMetricsMapper.ensureInitialized();
     }
     return _instance!;
   }
@@ -1678,6 +1679,14 @@ class TaskMapper extends ClassMapperBase<Task> {
     opt: true,
     hook: JsonNullableStringHook(),
   );
+  static PlanningMetrics _$planningMetrics(Task v) => v.planningMetrics;
+  static const Field<Task, PlanningMetrics> _f$planningMetrics = Field(
+    'planningMetrics',
+    _$planningMetrics,
+    opt: true,
+    def: const PlanningMetrics(),
+    hook: OmitEmptyPlanningMetricsHook(),
+  );
   static String? _$taskDocumentId(Task v) => v.taskDocumentId;
   static const Field<Task, String> _f$taskDocumentId = Field(
     'taskDocumentId',
@@ -1736,6 +1745,7 @@ class TaskMapper extends ClassMapperBase<Task> {
     #pendingQuestion: _f$pendingQuestion,
     #chatSessionId: _f$chatSessionId,
     #projectId: _f$projectId,
+    #planningMetrics: _f$planningMetrics,
     #taskDocumentId: _f$taskDocumentId,
     #completedAt: _f$completedAt,
   };
@@ -1787,6 +1797,7 @@ class TaskMapper extends ClassMapperBase<Task> {
       pendingQuestion: data.dec(_f$pendingQuestion),
       chatSessionId: data.dec(_f$chatSessionId),
       projectId: data.dec(_f$projectId),
+      planningMetrics: data.dec(_f$planningMetrics),
       taskDocumentId: data.dec(_f$taskDocumentId),
       completedAt: data.dec(_f$completedAt),
     );

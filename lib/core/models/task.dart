@@ -1,6 +1,7 @@
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/helpers/sentinel.dart' show kSentinel, resolve;
+import 'package:hermes/core/models/planning_metrics.dart';
 import 'package:hermes/core/serialization/json_hooks.dart';
 
 part 'task.mapper.dart';
@@ -356,6 +357,8 @@ class Task with TaskMappable {
   final String? chatSessionId;
   @MappableField(hook: JsonNullableStringHook())
   final String? projectId;
+  @MappableField(hook: OmitEmptyPlanningMetricsHook())
+  final PlanningMetrics planningMetrics;
 
   /// Legacy project-task mapping retained only while old project snapshots
   /// are being read. New project relationships use [id] and [ProjectState.taskIds].
@@ -410,6 +413,7 @@ class Task with TaskMappable {
     this.pendingQuestion,
     this.chatSessionId,
     this.projectId,
+    this.planningMetrics = const PlanningMetrics(),
     this.taskDocumentId,
     this.completedAt,
   }) : originalPrompt = originalPrompt ?? objective ?? '',
@@ -455,6 +459,7 @@ class Task with TaskMappable {
     Object? pendingQuestion = kSentinel,
     Object? chatSessionId = kSentinel,
     Object? projectId = kSentinel,
+    PlanningMetrics? planningMetrics,
     Object? taskDocumentId = kSentinel,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -500,6 +505,7 @@ class Task with TaskMappable {
       pendingQuestion: resolve(pendingQuestion, this.pendingQuestion),
       chatSessionId: resolve(chatSessionId, this.chatSessionId),
       projectId: resolve(projectId, this.projectId),
+      planningMetrics: planningMetrics ?? this.planningMetrics,
       taskDocumentId: resolve(taskDocumentId, this.taskDocumentId),
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,

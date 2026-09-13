@@ -1835,6 +1835,8 @@ class ChatService extends ChangeNotifier implements Disposable {
 
   Future<TaskSystemSettings> _loadTaskSystemSettings() async {
     final settings = await _preferencesService.getTaskSystemSettings();
+    _taskService.planningProtocolMode = settings.planningProtocol;
+    _projectService.planningProtocolMode = settings.planningProtocol;
     if (_disposed) return settings;
     if (taskSystemSettings != settings) {
       taskSystemSettings = settings;

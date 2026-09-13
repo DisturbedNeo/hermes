@@ -81,6 +81,7 @@ class ProjectEvidenceService {
               : ProjectEvidenceStrength.advisory,
           details: {
             ...gate.details,
+            'origin': 'gate_evaluation',
             'gateId': gate.gateId,
             'gateStatus': gate.status.wire,
             if (gate.failureDisposition != null)
@@ -141,6 +142,7 @@ class ProjectEvidenceService {
             status: ProjectEvidenceStatus.accepted,
             strength: ProjectEvidenceStrength.supporting,
             details: {
+              'origin': 'workspace_provenance',
               'kind': artifact.kind,
               'artifactId': artifact.id,
               if (artifact.runId != null) 'runId': artifact.runId,
@@ -265,9 +267,7 @@ class ProjectEvidenceService {
         .toList();
   }
 
-  List<String> _expectationIdsFor(
-    List<TaskEvidenceExpectation> expectations,
-  ) {
+  List<String> _expectationIdsFor(List<TaskEvidenceExpectation> expectations) {
     final ids = <String>[];
     final seen = <String>{};
     for (final expectation in expectations) {

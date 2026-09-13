@@ -636,8 +636,7 @@ class _CurrentProjectTask extends StatelessWidget {
     ];
     final evidenceExpectations = [
       for (final expectation
-          in projectTask?.expectedEvidence ??
-              const <TaskEvidenceExpectation>[])
+          in projectTask?.expectedEvidence ?? const <TaskEvidenceExpectation>[])
         '${expectation.type.name}: ${expectation.description}',
     ];
     return Column(
@@ -747,6 +746,22 @@ class _TaskBody extends StatelessWidget {
           title: 'Goal',
           child: Text(task.objective, style: theme.textTheme.bodyMedium),
         ),
+        if (task.planningMetrics.planningCalls > 0) ...[
+          const SizedBox(height: 10),
+          _Section(
+            title: 'Planning diagnostics',
+            child: Text(
+              '${task.planningMetrics.planningCalls} planning calls · '
+              '${task.planningMetrics.promptTokenEstimate} prompt tokens est. · '
+              '${task.planningMetrics.toolResultTokenEstimate} tool-result tokens est. · '
+              '${(task.planningMetrics.invalidCommandRate * 100).toStringAsFixed(1)}% invalid commands · '
+              '${task.planningMetrics.fullPlanRepairCount} full-plan repairs '
+              '(${(task.planningMetrics.fullPlanRepairRate * 100).toStringAsFixed(1)}%) · '
+              '${(task.planningMetrics.recoverySuccessRate * 100).toStringAsFixed(1)}% recovery success',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        ],
         if (task.memorySummary.trim().isNotEmpty) ...[
           const SizedBox(height: 10),
           _Section(

@@ -37,6 +37,22 @@ class ProjectPlanRevisionService {
   static const ProjectMemoryService _memoryService = ProjectMemoryService();
   static const _maxAutomaticRepairAttempts = 2;
 
+  /// Validates a draft without applying it or changing the supplied project.
+  ///
+  /// Planning tools use this for previews. Keeping the validator behind the
+  /// revision service ensures preview and commit use the same policy.
+  ProjectPlanValidationResult validate({
+    required ProjectState project,
+    required ProjectDesiredPlan proposal,
+    required String workspaceRoot,
+  }) {
+    return _validator.validate(
+      project: project,
+      proposal: proposal,
+      workspaceRoot: workspaceRoot,
+    );
+  }
+
   Future<ProjectPlanRevisionResult> prepareAndApply({
     required ProjectState project,
     required ProjectDesiredPlan proposal,
@@ -44,6 +60,7 @@ class ProjectPlanRevisionService {
     ProjectPlanApprovalPolicy approvalPolicy =
         ProjectPlanApprovalPolicy.highRiskOnly,
     ProjectPlanRepair? repair,
+    Iterable<String> splitTaskIds = const [],
   }) async {
     var candidate = proposal;
     var validation = _validator.validate(
@@ -68,11 +85,12 @@ class ProjectPlanRevisionService {
         );
       }
     }
+    // A repair callback may return a proposal that adds or removes split
+    // metadata. Read it from the final candidate so the validated proposal
+    // and the applied history agree.
+    final splitIds = {...splitTaskIds, ...candidate.splitTaskIds};
     if (!validation.valid) {
-      final codes = validation.errors
-          .map((item) => item.code)
-          .toSet()
-          .join(', ');
+      final details = _validationDetails(validation);
       return ProjectPlanRevisionResult(
         project: project.copyWith(
           pendingReplanTriggers: const [],
@@ -80,7 +98,7 @@ class ProjectPlanRevisionService {
           blocker: ProjectBlocker(
             type: ProjectBlockerType.validation,
             message:
-                'Plan revision ${candidate.revision} was rejected after validation${repairAttempted ? ' and $repairAttempts automatic repair attempt${repairAttempts == 1 ? '' : 's'}' : ''}. Resolve: $codes.',
+                'Plan revision ${candidate.revision} was rejected after validation${repairAttempted ? ' and $repairAttempts automatic repair attempt${repairAttempts == 1 ? '' : 's'}' : ''}. Resolve: $details.',
             createdAt: DateTime.now(),
           ),
           updatedAt: DateTime.now(),
@@ -99,6 +117,7 @@ class ProjectPlanRevisionService {
         proposal: candidate,
         validation: validation,
         approver: ProjectPlanRevisionApprover.automatic,
+        splitTaskIds: splitIds,
         recordRevision: false,
       );
     } on ArgumentError catch (error) {
@@ -183,6 +202,7 @@ class ProjectPlanRevisionService {
           proposal: candidate,
           validation: validation,
           approver: ProjectPlanRevisionApprover.automatic,
+          splitTaskIds: splitIds,
         ),
         validation: validation,
         repairAttempted: repairAttempted,
@@ -235,7 +255,8 @@ class ProjectPlanRevisionService {
           blocker: ProjectBlocker(
             type: ProjectBlockerType.validation,
             message:
-                'The pending plan no longer validates against current state.',
+                'The pending plan no longer validates against current state. '
+                'Resolve: ${_validationDetails(validation)}.',
             createdAt: DateTime.now(),
           ),
           updatedAt: DateTime.now(),
@@ -253,6 +274,7 @@ class ProjectPlanRevisionService {
           proposal: proposal,
           validation: validation,
           approver: ProjectPlanRevisionApprover.user,
+          splitTaskIds: proposal.splitTaskIds.toSet(),
         ),
         validation: validation,
         repairAttempted: false,
@@ -283,6 +305,7 @@ class ProjectPlanRevisionService {
     required ProjectDesiredPlan proposal,
     required ProjectPlanValidationResult validation,
     required ProjectPlanRevisionApprover approver,
+    Set<String> splitTaskIds = const {},
     bool recordRevision = true,
   }) {
     final now = DateTime.now();
@@ -382,7 +405,20 @@ class ProjectPlanRevisionService {
     final tasksById = <String, Task>{};
     for (final existing in project.tasks) {
       final desired = desiredById[existing.id];
-      if (_preserveTask(existing)) {
+      if (splitTaskIds.contains(existing.id)) {
+        if (_preserveTask(existing)) {
+          throw StateError(
+            'Task ${existing.id} cannot be split from its current runtime status.',
+          );
+        }
+        tasksById[existing.id] = existing.copyWith(
+          status: TaskStatus.split,
+          rejectionReason:
+              'Split into smaller tasks in revision ${proposal.revision}.',
+          revisionUpdated: proposal.revision,
+          updatedAt: now,
+        );
+      } else if (_preserveTask(existing)) {
         tasksById[existing.id] = existing;
       } else if (desired == null) {
         final disposition = proposal.deferredTaskIds.contains(existing.id)
@@ -669,6 +705,10 @@ class ProjectPlanRevisionService {
     return existing.copyWith(
       title: desired.title,
       objective: desired.objective,
+      constraints: desired.constraints,
+      successCriteria: desired.successCriteria.isEmpty
+          ? existing.successCriteria
+          : desired.successCriteria,
       criterionIds: desired.criterionIds,
       milestoneId: desired.milestoneId,
       dependsOnTaskIds: desired.dependsOnTaskIds,
@@ -678,6 +718,7 @@ class ProjectPlanRevisionService {
       effort: desired.effort,
       selectionRationale: desired.selectionRationale,
       revisionUpdated: revision,
+      gates: desired.gates.isEmpty ? existing.gates : desired.gates,
       expectedEvidence: desired.expectedEvidence,
       readPaths: desired.readPaths,
       writePaths: desired.writePaths,
@@ -724,13 +765,18 @@ class ProjectPlanRevisionService {
   ) => ([...items]..sort((a, b) => a.id.compareTo(b.id)))
       .map(
         (item) =>
-            '${item.id}|${item.title}|${item.objective}|${item.criterionIds.join(',')}|${item.milestoneId}|${item.dependsOnTaskIds.join(',')}|${item.priority.name}|${item.risk.name}|${item.riskReduction.name}|${item.effort.name}|${item.selectionRationale}|${item.status.name}|${_evidenceSignature(item.expectedEvidence)}|${item.readPaths.join(',')}|${item.writePaths.join(',')}|${item.legacyWriteAccess}|${item.doneCriteria.join(',')}|${item.outOfScope.join(',')}|${item.context.join(',')}|${_artifactSignature(item.expectedArtifacts)}|${item.recoveryIncidentId}|${item.fingerprint}',
+            '${item.id}|${item.title}|${item.objective}|${item.constraints.join(',')}|${item.successCriteria.join(',')}|${item.criterionIds.join(',')}|${item.milestoneId}|${item.dependsOnTaskIds.join(',')}|${item.priority.name}|${item.risk.name}|${item.riskReduction.name}|${item.effort.name}|${item.selectionRationale}|${item.status.name}|${_gateSignature(item.gates)}|${_evidenceSignature(item.expectedEvidence)}|${item.readPaths.join(',')}|${item.writePaths.join(',')}|${item.legacyWriteAccess}|${item.doneCriteria.join(',')}|${item.outOfScope.join(',')}|${item.context.join(',')}|${_artifactSignature(item.expectedArtifacts)}|${item.recoveryIncidentId}|${item.fingerprint}',
       )
       .join('||');
 
-  static String _evidenceSignature(
-    List<TaskEvidenceExpectation> items,
-  ) => items
+  static String _gateSignature(Iterable<dynamic> items) => items
+      .map(
+        (item) =>
+            '${item.id}|${item.required}|${item.scope}|${item.description}|${_stableJson(item.params)}',
+      )
+      .join(';;');
+
+  static String _evidenceSignature(List<TaskEvidenceExpectation> items) => items
       .map(
         (item) =>
             '${item.id}|${item.type.name}|${item.criterionIds.join(',')}|${item.description}|${item.required}|${item.sourceRef}|${_stableJson(item.details)}',
@@ -911,7 +957,8 @@ class ProjectPlanRevisionService {
         blocker: ProjectBlocker(
           type: ProjectBlockerType.validation,
           message:
-              'Plan revision $revision was rejected during reconciliation.',
+              'Plan revision $revision was rejected during reconciliation. '
+              'Resolve: ${_validationDetails(nextValidation)}.',
           createdAt: DateTime.now(),
         ),
         updatedAt: DateTime.now(),
@@ -922,6 +969,11 @@ class ProjectPlanRevisionService {
       awaitingApproval: false,
     );
   }
+
+  String _validationDetails(ProjectPlanValidationResult validation) =>
+      validation.errors
+          .map((issue) => '${issue.code} (${issue.path}): ${issue.message}')
+          .join(' | ');
 }
 
 class _ProjectPlanRiskReason {

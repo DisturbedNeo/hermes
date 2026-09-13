@@ -34,6 +34,68 @@ void main() {
     expect(result.project.planHistory, hasLength(1));
   });
 
+  test('applies a single existing task ID as an update', () async {
+    final existing = _task('existing');
+    final project = _project([existing]);
+    final result = await service.prepareAndApply(
+      project: project,
+      proposal: _desired(project, [
+        existing.copyWith(title: 'Updated bounded slice'),
+      ]),
+      workspaceRoot: workspace.path,
+      approvalPolicy: ProjectPlanApprovalPolicy.never,
+    );
+
+    expect(result.validation.valid, isTrue);
+    expect(result.changed, isTrue);
+    expect(result.project.tasks, hasLength(1));
+    expect(result.project.taskById('existing')?.title, 'Updated bounded slice');
+    expect(result.project.planHistory, hasLength(2));
+  });
+
+  test('rejects duplicate task IDs and preserves the accepted plan', () async {
+    final existing = _task('existing');
+    final project = _project([existing]);
+    final first = _task('duplicate', writePaths: const ['lib/first.dart']);
+    final second = _task('duplicate', writePaths: const ['lib/second.dart'])
+        .copyWith(
+          title: 'A different bounded slice',
+          objective: 'Implement a different bounded slice.',
+          fingerprint: projectTaskFingerprint(
+            'Implement a different bounded slice.',
+            const ['criterion_001'],
+          ),
+          expectedEvidence: const [
+            TaskEvidenceExpectation(
+              id: 'expect_second',
+              type: ProjectEvidenceType.taskClaim,
+              criterionIds: ['criterion_001'],
+              description: 'The second slice is independently checked.',
+            ),
+          ],
+        );
+    final result = await service.prepareAndApply(
+      project: project,
+      proposal: _desired(project, [first, second]),
+      workspaceRoot: workspace.path,
+      approvalPolicy: ProjectPlanApprovalPolicy.never,
+    );
+
+    expect(result.validation.valid, isFalse);
+    expect(result.changed, isFalse);
+    expect(result.project.tasks, same(project.tasks));
+    expect(result.project.taskById('existing'), same(existing));
+    expect(result.project.criteria, same(project.criteria));
+    expect(result.project.milestones, same(project.milestones));
+    expect(result.project.memory, same(project.memory));
+    expect(result.project.evidence, same(project.evidence));
+    expect(result.project.planHistory, same(project.planHistory));
+    expect(result.project.nextRevision, 2);
+    expect(result.project.blocker?.message, contains('duplicate_id'));
+    expect(result.project.blocker?.message, contains('tasks[0].id'));
+    expect(result.project.blocker?.message, contains('tasks[1].id'));
+  });
+
   test(
     'rejects incomplete plans without changing the current backlog',
     () async {

@@ -1,6 +1,7 @@
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/helpers/sentinel.dart' show kSentinel, resolve;
+import 'package:hermes/core/models/planning_metrics.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/serialization/json_hooks.dart';
 
@@ -240,6 +241,8 @@ class ProjectDiagnostics with ProjectDiagnosticsMappable {
   final int userApprovals;
   final int userQuestions;
   final int consecutiveNoProgressBatches;
+  @MappableField(hook: OmitEmptyPlanningMetricsHook())
+  final PlanningMetrics planningMetrics;
   @MappableField(hook: JsonStringListHook())
   final List<String> recentNoProgressBatchIds;
 
@@ -255,6 +258,7 @@ class ProjectDiagnostics with ProjectDiagnosticsMappable {
     this.userApprovals = 0,
     this.userQuestions = 0,
     this.consecutiveNoProgressBatches = 0,
+    this.planningMetrics = const PlanningMetrics(),
     this.recentNoProgressBatchIds = const [],
   });
 
@@ -275,6 +279,7 @@ class ProjectDiagnostics with ProjectDiagnosticsMappable {
     int? userQuestions,
     int? consecutiveNoProgressBatches,
     List<String>? recentNoProgressBatchIds,
+    PlanningMetrics? planningMetrics,
   }) {
     return ProjectDiagnostics(
       projectModelCalls: projectModelCalls ?? this.projectModelCalls,
@@ -294,6 +299,7 @@ class ProjectDiagnostics with ProjectDiagnosticsMappable {
           consecutiveNoProgressBatches ?? this.consecutiveNoProgressBatches,
       recentNoProgressBatchIds:
           recentNoProgressBatchIds ?? this.recentNoProgressBatchIds,
+      planningMetrics: planningMetrics ?? this.planningMetrics,
     );
   }
 }
@@ -577,6 +583,11 @@ class ProjectDesiredPlan with ProjectDesiredPlanMappable {
   final List<ProjectCriterion> criteria;
   final List<ProjectMilestone> milestones;
   final List<Task> tasks;
+
+  /// Source task IDs that the builder is replacing with fresh child tasks.
+  /// This is persisted with pending approvals so approving a split applies the
+  /// same immutable-history rule as an immediate commit.
+  final List<String> splitTaskIds;
   final List<String> deferredTaskIds;
   final List<String> obsoleteTaskIds;
   final List<ProjectMemoryEntry> memoryAdditions;
@@ -596,6 +607,7 @@ class ProjectDesiredPlan with ProjectDesiredPlanMappable {
     this.criteria = const [],
     this.milestones = const [],
     this.tasks = const [],
+    this.splitTaskIds = const [],
     this.deferredTaskIds = const [],
     this.obsoleteTaskIds = const [],
     this.memoryAdditions = const [],

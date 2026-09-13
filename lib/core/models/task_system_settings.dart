@@ -1,4 +1,7 @@
 import 'package:hermes/core/models/project.dart';
+import 'package:hermes/core/models/planning_protocol.dart';
+
+export 'planning_protocol.dart';
 
 enum QuestionAutonomy {
   conservative,
@@ -40,6 +43,7 @@ class TaskSystemSettings {
   final int maxProjectIterations;
   final QuestionAutonomy questionAutonomy;
   final ProjectPlanApprovalPolicy planApprovalPolicy;
+  final PlanningProtocolMode planningProtocol;
 
   const TaskSystemSettings({
     this.enabled = true,
@@ -50,6 +54,7 @@ class TaskSystemSettings {
     this.maxProjectIterations = 25,
     this.questionAutonomy = QuestionAutonomy.balanced,
     this.planApprovalPolicy = ProjectPlanApprovalPolicy.highRiskOnly,
+    this.planningProtocol = PlanningProtocolMode.automatic,
   });
 
   TaskSystemSettings copyWith({
@@ -61,6 +66,7 @@ class TaskSystemSettings {
     int? maxProjectIterations,
     QuestionAutonomy? questionAutonomy,
     ProjectPlanApprovalPolicy? planApprovalPolicy,
+    PlanningProtocolMode? planningProtocol,
   }) {
     return TaskSystemSettings(
       enabled: enabled ?? this.enabled,
@@ -75,6 +81,7 @@ class TaskSystemSettings {
       maxProjectIterations: maxProjectIterations ?? this.maxProjectIterations,
       questionAutonomy: questionAutonomy ?? this.questionAutonomy,
       planApprovalPolicy: planApprovalPolicy ?? this.planApprovalPolicy,
+      planningProtocol: planningProtocol ?? this.planningProtocol,
     );
   }
 
@@ -98,7 +105,8 @@ class TaskSystemSettings {
             maxProjectTasksPerRun == other.maxProjectTasksPerRun &&
             maxProjectIterations == other.maxProjectIterations &&
             questionAutonomy == other.questionAutonomy &&
-            planApprovalPolicy == other.planApprovalPolicy;
+            planApprovalPolicy == other.planApprovalPolicy &&
+            planningProtocol == other.planningProtocol;
   }
 
   @override
@@ -111,5 +119,6 @@ class TaskSystemSettings {
     maxProjectIterations,
     questionAutonomy,
     planApprovalPolicy,
+    planningProtocol,
   );
 }
