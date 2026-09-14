@@ -19,13 +19,9 @@ class _StreamingPlanningToolCall {
   final StringBuffer arguments = StringBuffer();
 }
 
-/// Runs the bounded task planning command loop.
+/// Runs the task planning command loop.
 class TaskPlanningToolCallRunner {
   const TaskPlanningToolCallRunner();
-
-  static const int defaultMaxToolCalls = 24;
-  static const int defaultMaxRepeatedToolCalls = 3;
-  static const int defaultMaxIdleTurns = 2;
 
   Future<Map<String, dynamic>> complete({
     required ChatClient client,
@@ -33,9 +29,6 @@ class TaskPlanningToolCallRunner {
     required String label,
     required String system,
     required String user,
-    int maxToolCalls = defaultMaxToolCalls,
-    int maxRepeatedToolCalls = defaultMaxRepeatedToolCalls,
-    int maxIdleTurns = defaultMaxIdleTurns,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
@@ -44,15 +37,11 @@ class TaskPlanningToolCallRunner {
       ChatMessage(role: 'user', content: user),
     ];
     final definitions = registry.toolDefinitions;
-    var toolCallCount = 0;
-    var idleTurns = 0;
-    var repeatedCalls = 0;
-    String? previousCallKey;
     var turn = 0;
     var usedPlanningTools = false;
     var metrics = const PlanningMetrics();
 
-    while (toolCallCount < maxToolCalls) {
+    while (true) {
       cancellationToken?.throwIfCancelled();
       turn++;
       final completion = await _complete(
@@ -95,17 +84,6 @@ class TaskPlanningToolCallRunner {
             ),
           );
         }
-        idleTurns++;
-        if (idleTurns > maxIdleTurns) {
-          return _error(
-            code: 'planning_loop_incomplete',
-            path: 'tool',
-            message:
-                'The task planner did not call task_commit_plan after $maxIdleTurns reminder turns.',
-            usedPlanningTools: usedPlanningTools,
-            metrics: metrics,
-          );
-        }
         messages.add(
           const ChatMessage(
             role: 'user',
@@ -133,7 +111,6 @@ class TaskPlanningToolCallRunner {
       }
 
       usedPlanningTools = true;
-      idleTurns = 0;
       final assistantCalls = <Map<String, dynamic>>[];
       for (var index = 0; index < completion.toolCalls.length; index++) {
         final call = completion.toolCalls[index];
@@ -160,29 +137,11 @@ class TaskPlanningToolCallRunner {
         cancellationToken?.throwIfCancelled();
         final call = completion.toolCalls[index];
         final commandId = _commandId(call, turn, index, label);
-        final callKey = '${call.name}:${call.arguments}';
-        if (callKey == previousCallKey) {
-          repeatedCalls++;
-        } else {
-          previousCallKey = callKey;
-          repeatedCalls = 1;
-        }
-        final resultJson = repeatedCalls >= maxRepeatedToolCalls
-            ? jsonEncode(
-                _error(
-                  code: 'planning_loop_guard',
-                  path: 'tool',
-                  message:
-                      'The planner repeated the same tool call $repeatedCalls times.',
-                  usedPlanningTools: true,
-                ),
-              )
-            : await registry.execute(
-                call.name,
-                call.arguments,
-                commandId: commandId,
-              );
-        toolCallCount++;
+        final resultJson = await registry.execute(
+          call.name,
+          call.arguments,
+          commandId: commandId,
+        );
         _emit(
           onModelOutput,
           TaskModelOutputEvent(
@@ -204,26 +163,8 @@ class TaskPlanningToolCallRunner {
             'planning_metrics': ModelJson.encode(metrics),
           };
         }
-        if (toolCallCount >= maxToolCalls) {
-          return _error(
-            code: 'planning_loop_limit',
-            path: 'tool',
-            message:
-                'The planner exceeded the task planning tool call limit of $maxToolCalls before committing.',
-            usedPlanningTools: true,
-            metrics: metrics,
-          );
-        }
       }
     }
-    return _error(
-      code: 'planning_loop_limit',
-      path: 'tool',
-      message:
-          'The planner exceeded the task planning tool call limit before committing.',
-      usedPlanningTools: usedPlanningTools,
-      metrics: metrics,
-    );
   }
 
   Future<ChatCompletionResponse> _complete({
@@ -382,20 +323,6 @@ class TaskPlanningToolCallRunner {
     return null;
   }
 
-  static Map<String, dynamic> _error({
-    required String code,
-    required String path,
-    required String message,
-    required bool usedPlanningTools,
-    PlanningMetrics metrics = const PlanningMetrics(),
-  }) => _withMetrics({
-    'ok': false,
-    'code': code,
-    'path': path,
-    'message': message,
-    'used_planning_tools': usedPlanningTools,
-  }, metrics);
-
   static PlanningMetrics _recordModelCall(
     PlanningMetrics metrics, {
     required List<ChatMessage> messages,
@@ -441,11 +368,6 @@ class TaskPlanningToolCallRunner {
       code.contains('duplicate') ||
       code.contains('unknown_ref') ||
       code.contains('stale_revision');
-
-  static Map<String, dynamic> _withMetrics(
-    Map<String, dynamic> result,
-    PlanningMetrics metrics,
-  ) => {...result, 'planning_metrics': ModelJson.encode(metrics)};
 
   static void _emit(TaskModelOutputSink? sink, TaskModelOutputEvent event) {
     sink?.call(event);

@@ -109,6 +109,36 @@ void main() {
   });
 
   test(
+    'continues past the old tool-call limit until the draft is committed',
+    () async {
+      final context = ProjectPlanningContext(
+        project: _project(),
+        workspaceRoot: '/workspace',
+        now: DateTime(2026, 1, 1),
+        approvalPolicy: ProjectPlanApprovalPolicy.never,
+      );
+      final result = await const ProjectPlanningToolCallRunner().complete(
+        client: _Client([
+          for (var index = 0; index < 32; index++)
+            _call('project_view', {'max_items': 1}, id: 'view_$index'),
+          _call('plan_commit', const {}, id: 'commit'),
+        ]),
+        registry: ProjectPlanningToolRegistry(
+          context: context,
+          includeProjectDetails: true,
+        ),
+        label: 'Test Unbounded Planning',
+        system: 'Use planning tools.',
+        user: 'Keep working until the draft is committed.',
+      );
+
+      expect(result['ok'], isTrue);
+      final metrics = result['planning_metrics'] as Map<String, dynamic>;
+      expect(metrics['planningCommandCount'], 33);
+    },
+  );
+
+  test(
     'records invalid planning commands without retaining model payloads',
     () async {
       final context = ProjectPlanningContext(

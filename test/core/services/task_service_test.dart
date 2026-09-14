@@ -529,6 +529,7 @@ void main() {
     );
 
     test('fallback task adds conservative default gates', () async {
+      service.setPlanningProtocolMode(PlanningProtocolMode.legacy);
       final client = _QueueChatClient(['not json']);
 
       final task = await service.createTask(

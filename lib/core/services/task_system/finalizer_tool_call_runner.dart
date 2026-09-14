@@ -28,9 +28,6 @@ class FinalizerToolCallRunner {
   FinalizerToolCallRunner({required ToolService toolService})
     : _toolService = toolService;
 
-  static const int defaultMaxToolCalls = 8;
-  static const int defaultMaxRepeatedToolCalls = 3;
-
   final ToolService _toolService;
 
   Future<Map<String, dynamic>> completeWithFinalizer({
@@ -42,8 +39,6 @@ class FinalizerToolCallRunner {
     required ToolDefinition finalizerTool,
     required String reminderPrompt,
     bool allowReadOnlyTools = true,
-    int maxToolCalls = defaultMaxToolCalls,
-    int maxRepeatedToolCalls = defaultMaxRepeatedToolCalls,
     TaskModelOutputSink? onModelOutput,
     void Function()? throwIfCancelled,
     CancellationToken? cancellationToken,
@@ -67,10 +62,6 @@ class FinalizerToolCallRunner {
       workspace: workspace,
       cancellationToken: cancellationToken,
     );
-    var toolCallCount = 0;
-    var consecutiveRepeatCount = 0;
-    String? previousToolKey;
-
     while (true) {
       throwIfCancelled?.call();
       final completion = await _complete(
@@ -137,37 +128,16 @@ class FinalizerToolCallRunner {
         ),
       );
 
-      String? loopGuardReason;
       for (var i = 0; i < completion.toolCalls.length; i++) {
         throwIfCancelled?.call();
         final call = completion.toolCalls[i];
         final callId = call.id ?? 'call_$i';
-        final toolKey = _toolCallKey(call);
-        if (toolKey == previousToolKey) {
-          consecutiveRepeatCount++;
-        } else {
-          previousToolKey = toolKey;
-          consecutiveRepeatCount = 1;
-        }
-
-        if (loopGuardReason == null &&
-            consecutiveRepeatCount >= maxRepeatedToolCalls) {
-          loopGuardReason =
-              'The model repeated the same creation tool call $consecutiveRepeatCount times: ${call.name}.';
-        }
-        if (loopGuardReason == null && toolCallCount >= maxToolCalls) {
-          loopGuardReason =
-              'The model exceeded the creation read-only tool call limit of $maxToolCalls.';
-        }
-
         final resultJson = await _executeToolCall(
           call: call,
           allowedToolIds: allowedToolIds,
           context: context,
-          blockedReason: loopGuardReason,
           cancellationToken: cancellationToken,
         );
-        toolCallCount++;
         _emit(
           onModelOutput,
           TaskModelOutputEvent(
@@ -180,10 +150,7 @@ class FinalizerToolCallRunner {
         messages.add(
           ChatMessage(role: 'tool', content: resultJson, toolCallId: callId),
         );
-        if (loopGuardReason != null) break;
       }
-
-      if (loopGuardReason != null) break;
     }
 
     final repair = await _complete(
@@ -343,18 +310,9 @@ class FinalizerToolCallRunner {
     required ChatCompletionToolCall call,
     required Set<String> allowedToolIds,
     required WorkspaceToolContext context,
-    required String? blockedReason,
     CancellationToken? cancellationToken,
   }) {
     cancellationToken?.throwIfCancelled();
-    if (blockedReason != null) {
-      return Future.value(
-        jsonEncode({
-          'error': 'Creation tool call skipped by loop guard.',
-          'reason': blockedReason,
-        }),
-      );
-    }
     if (!allowedToolIds.contains(call.name)) {
       return Future.value(
         jsonEncode({
@@ -396,11 +354,6 @@ class FinalizerToolCallRunner {
         ),
       );
     }
-  }
-
-  String _toolCallKey(ChatCompletionToolCall call) {
-    final decoded = TaskJson.decodeJsonOrString(call.arguments);
-    return '${call.name}:${jsonEncode(decoded)}';
   }
 
   void _emit(TaskModelOutputSink? sink, TaskModelOutputEvent event) {

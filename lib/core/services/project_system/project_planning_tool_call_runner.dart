@@ -13,7 +13,7 @@ import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 
-/// Runs a bounded model/tool loop for one project-planning draft.
+/// Runs the model/tool loop for one project-planning draft.
 ///
 /// Unlike [FinalizerToolCallRunner], this runner has no workspace context and
 /// does not wait for a large final JSON payload. The draft registry is the
@@ -21,19 +21,12 @@ import 'package:hermes/core/services/task_system/task_model_output.dart';
 class ProjectPlanningToolCallRunner {
   const ProjectPlanningToolCallRunner();
 
-  static const int defaultMaxToolCalls = 32;
-  static const int defaultMaxRepeatedToolCalls = 3;
-  static const int defaultMaxIdleTurns = 2;
-
   Future<Map<String, dynamic>> complete({
     required ChatClient client,
     required ProjectPlanningToolRegistry registry,
     required String label,
     required String system,
     required String user,
-    int maxToolCalls = defaultMaxToolCalls,
-    int maxRepeatedToolCalls = defaultMaxRepeatedToolCalls,
-    int maxIdleTurns = defaultMaxIdleTurns,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
@@ -42,14 +35,10 @@ class ProjectPlanningToolCallRunner {
       ChatMessage(role: 'user', content: user),
     ];
     final toolDefinitions = registry.toolDefinitions;
-    var toolCallCount = 0;
-    var idleTurns = 0;
-    var repeatedCalls = 0;
-    String? previousCallKey;
     var turn = 0;
     var metrics = const PlanningMetrics();
 
-    while (toolCallCount < maxToolCalls) {
+    while (true) {
       cancellationToken?.throwIfCancelled();
       turn++;
       final completion = await _complete(
@@ -91,16 +80,6 @@ class ProjectPlanningToolCallRunner {
             ),
           );
         }
-        idleTurns++;
-        if (idleTurns > maxIdleTurns) {
-          return _error(
-            code: 'planning_loop_incomplete',
-            path: 'tool',
-            message:
-                'The planner did not call plan_commit after $maxIdleTurns reminder turns.',
-            metrics: metrics,
-          );
-        }
         messages.add(
           const ChatMessage(
             role: 'user',
@@ -125,7 +104,6 @@ class ProjectPlanningToolCallRunner {
         }, metrics);
       }
 
-      idleTurns = 0;
       final assistantCalls = <Map<String, dynamic>>[];
       for (var index = 0; index < completion.toolCalls.length; index++) {
         final call = completion.toolCalls[index];
@@ -152,29 +130,11 @@ class ProjectPlanningToolCallRunner {
         cancellationToken?.throwIfCancelled();
         final call = completion.toolCalls[index];
         final commandId = _commandId(call, turn, index, label);
-        final callKey = '${call.name}:${call.arguments}';
-        if (callKey == previousCallKey) {
-          repeatedCalls++;
-        } else {
-          previousCallKey = callKey;
-          repeatedCalls = 1;
-        }
-
-        final resultJson = repeatedCalls >= maxRepeatedToolCalls
-            ? jsonEncode(
-                _error(
-                  code: 'planning_loop_guard',
-                  path: 'tool',
-                  message:
-                      'The planner repeated the same tool call $repeatedCalls times.',
-                ),
-              )
-            : await registry.execute(
-                call.name,
-                call.arguments,
-                commandId: commandId,
-              );
-        toolCallCount++;
+        final resultJson = await registry.execute(
+          call.name,
+          call.arguments,
+          commandId: commandId,
+        );
         _emit(
           onModelOutput,
           TaskModelOutputEvent(
@@ -218,25 +178,8 @@ class ProjectPlanningToolCallRunner {
               );
           return _withMetrics({...committed, 'model_calls': turn}, metrics);
         }
-        if (toolCallCount >= maxToolCalls) {
-          return _error(
-            code: 'planning_loop_limit',
-            path: 'tool',
-            message:
-                'The planner exceeded the planning tool call limit of $maxToolCalls before committing.',
-            metrics: metrics,
-          );
-        }
       }
     }
-
-    return _error(
-      code: 'planning_loop_limit',
-      path: 'tool',
-      message:
-          'The planner exceeded the planning tool call limit of $maxToolCalls before committing.',
-      metrics: metrics,
-    );
   }
 
   Future<ChatCompletionResponse> _complete({
