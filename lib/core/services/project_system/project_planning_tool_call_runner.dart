@@ -20,12 +20,18 @@ import 'package:hermes/core/services/task_system/task_model_output.dart';
 class ProjectPlanningToolCallRunner {
   const ProjectPlanningToolCallRunner();
 
+  /// A generous safety ceiling for malformed or non-terminating planners.
+  /// Normal planning should commit well before this; workspace context has a
+  /// separate byte budget so this is not used to meter file exploration.
+  static const int defaultMaxToolCalls = 128;
+
   Future<Map<String, dynamic>> complete({
     required ChatClient client,
     required ProjectPlanningToolRegistry registry,
     required String label,
     required String system,
     required String user,
+    int maxToolCalls = defaultMaxToolCalls,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
@@ -34,6 +40,7 @@ class ProjectPlanningToolCallRunner {
       ChatMessage(role: 'user', content: user),
     ];
     final toolDefinitions = registry.toolDefinitions;
+    var toolCallCount = 0;
     var turn = 0;
     var metrics = const PlanningMetrics();
 
@@ -94,6 +101,16 @@ class ProjectPlanningToolCallRunner {
       for (var index = 0; index < completion.toolCalls.length; index++) {
         cancellationToken?.throwIfCancelled();
         final call = completion.toolCalls[index];
+        if (toolCallCount >= maxToolCalls) {
+          return _error(
+            code: 'planning_safety_limit',
+            path: 'tool',
+            message:
+                'The planner reached the safety ceiling of $maxToolCalls tool calls before committing.',
+            metrics: metrics,
+          );
+        }
+        toolCallCount++;
         final commandId = _commandId(call, turn, index, label);
         final resultJson = await registry.execute(
           call.name,

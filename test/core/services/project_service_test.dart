@@ -52,6 +52,29 @@ void main() {
     expect(project.nextRevision, 2);
   });
 
+  test(
+    'does not block initial planning when a referenced document needs continuation reads',
+    () async {
+      await File(
+        '${root.path}/ARCHITECTURE.MD',
+      ).writeAsString(List.filled(65 * 1024, 'a').join());
+      final gateway = _InitialisationGateway(_validInitialisation());
+      final planningService = ProjectService(
+        taskService: taskService,
+        modelCalls: gateway,
+      );
+
+      final project = await planningService.createProject(
+        workspace: workspace,
+        userPrompt: 'Implement ARCHITECTURE.MD.',
+        client: _QueueChatClient(const ['unused']),
+      );
+
+      expect(project.status, ProjectStatus.active);
+      expect(project.tasks, hasLength(1));
+    },
+  );
+
   test('persists task IDs and hydrates canonical task records', () async {
     final project = _project(
       tasks: [_task().copyWith(status: TaskStatus.running)],

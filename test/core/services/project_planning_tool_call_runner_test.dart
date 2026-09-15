@@ -138,6 +138,30 @@ void main() {
     },
   );
 
+  test('stops a non-terminating planning loop at the safety ceiling', () async {
+    final context = ProjectPlanningContext(
+      project: _project(),
+      workspaceRoot: '/workspace',
+      now: DateTime(2026, 1, 1),
+      approvalPolicy: ProjectPlanApprovalPolicy.never,
+    );
+    final result = await const ProjectPlanningToolCallRunner().complete(
+      client: _Client([
+        _call('project_view', const {}, id: 'view_1'),
+        _call('project_view', const {}, id: 'view_2'),
+        _call('project_view', const {}, id: 'view_3'),
+      ]),
+      registry: ProjectPlanningToolRegistry(context: context),
+      label: 'Test Planning Safety Ceiling',
+      system: 'Use planning tools.',
+      user: 'Keep working forever.',
+      maxToolCalls: 2,
+    );
+
+    expect(result['ok'], isFalse);
+    expect(result['code'], 'planning_safety_limit');
+  });
+
   test(
     'records invalid planning commands without retaining model payloads',
     () async {

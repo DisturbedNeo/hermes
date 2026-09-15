@@ -1,8 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/services/project_system/project_planning_tools.dart';
+import 'package:hermes/core/services/project_system/project_planning_workspace_reader.dart';
 import 'package:hermes/core/services/project_system/project_view_service.dart';
+import 'package:hermes/core/models/workspace.dart';
+import 'package:hermes/core/services/workspace_sandbox.dart';
 
 void main() {
   test('planning schemas expose commands without persistence fields', () {
@@ -47,6 +52,45 @@ void main() {
       registry.toolDefinitions.map((item) => item.schema.toString()).join(),
       isNot(contains('ProjectState')),
     );
+  });
+
+  test('initial planning exposes only the bounded context reader', () async {
+    final root = await Directory.systemTemp.createTemp(
+      'hermes_planning_tools_',
+    );
+    addTearDown(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+    await File('${root.path}/Design.md').writeAsString('authoritative design');
+    final reader = ProjectPlanningWorkspaceReader(
+      workspace: WorkspaceAttachment(
+        rootPath: root.path,
+        displayName: 'Workspace',
+        lastOpenedAt: DateTime(2026, 1, 1),
+      ),
+      sandbox: WorkspaceSandbox(),
+      allowedPaths: const ['Design.md'],
+    );
+    final registry = ProjectPlanningToolRegistry(
+      context: ProjectPlanningContext(
+        project: _project(),
+        workspaceRoot: root.path,
+        workspaceReader: reader,
+      ),
+      includeProjectDetails: true,
+    );
+
+    final ids = registry.toolDefinitions.map((item) => item.id).toSet();
+    expect(ids, contains('planning_read_file'));
+    expect(ids, isNot(contains('read_file')));
+    expect(ids, isNot(contains('write_file')));
+    expect(registry.allowsWorkspaceMutation, isFalse);
+
+    final result = await registry.invoke('planning_read_file', {
+      'path': 'Design.md',
+    });
+    expect(result['ok'], isTrue);
+    expect(result['content'], 'authoritative design');
   });
 
   test(

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/chat_message.dart';
@@ -82,6 +83,94 @@ void main() {
     ];
     expect(toolNames, contains('plan_set_project_details'));
   });
+
+  test(
+    'initial planning can read an authoritative design through the bounded reader',
+    () async {
+      final root = await Directory.systemTemp.createTemp(
+        'hermes_initial_planning_',
+      );
+      addTearDown(() async {
+        if (await root.exists()) await root.delete(recursive: true);
+      });
+      const design =
+          'Authoritative design\n\nThe report must remain keyboard accessible.';
+      await File('${root.path}/Design.md').writeAsString(design);
+      final calls = ProjectModelCalls(
+        toolService: ToolService(workspaceSandbox: WorkspaceSandbox()),
+      );
+      final client = _Client([
+        _call('planning_read_file', {'path': 'Design.md'}),
+        _call('plan_set_project_details', {
+          'title': 'Accessible Report',
+          'refined_goal': 'Deliver the accessible report workflow.',
+        }),
+        _call('plan_add_criteria', {
+          'criteria': [
+            {
+              'ref': 'accessibility',
+              'statement': 'The report remains keyboard accessible.',
+            },
+          ],
+        }),
+        _call('plan_add_tasks', {
+          'tasks': [
+            {
+              'ref': 'implement',
+              'objective': 'Implement the accessible report workflow.',
+              'criterion_refs': ['accessibility'],
+              'done_criteria': ['The report remains keyboard accessible.'],
+              'out_of_scope': ['Unrelated visual redesign.'],
+            },
+          ],
+        }),
+        _call('plan_commit', const {}),
+      ]);
+
+      final initialisation = await calls.initializeProject(
+        client: client,
+        baseSystemPrompt: 'system',
+        workspace: WorkspaceAttachment(
+          rootPath: root.path,
+          displayName: 'Workspace',
+          lastOpenedAt: DateTime(2026, 1, 1),
+        ),
+        originalGoal: 'Deliver an accessible report workflow.',
+        workspaceMetadata: const {
+          'workspaceName': 'Workspace',
+          'workspaceProfile': {
+            'treePaths': ['Design.md'],
+            'highSignalFiles': [
+              {
+                'path': 'Design.md',
+                'content': 'Authoritative design...',
+                'truncated': true,
+              },
+            ],
+          },
+        },
+      );
+
+      expect(initialisation.tasks, hasLength(1));
+      expect(
+        client.seenMessages.first.last.content,
+        isNot(contains('Authoritative design...')),
+      );
+      final toolResult =
+          jsonDecode(
+                client.seenMessages[1]
+                    .where((message) => message.role == 'tool')
+                    .single
+                    .content,
+              )
+              as Map;
+      expect(toolResult['content'], design);
+      final tools = client.lastExtraParams?['tools'] as List;
+      expect([
+        for (final item in tools) ((item as Map)['function'] as Map)['name'],
+      ], contains('planning_read_file'));
+    },
+  );
 }
 
 ChatCompletionToolCall _call(String name, Map<String, dynamic> arguments) =>
@@ -96,6 +185,7 @@ class _Client extends ChatClient {
 
   final List<ChatCompletionToolCall> _responses;
   Map<String, dynamic>? lastExtraParams;
+  final List<List<ChatMessage>> seenMessages = [];
   var _index = 0;
 
   @override
@@ -108,6 +198,7 @@ class _Client extends ChatClient {
     int? inputTokensHint,
   }) async {
     lastExtraParams = extraParams;
+    seenMessages.add(List<ChatMessage>.from(messages));
     return ChatCompletionResponse(
       content: '',
       toolCalls: [_responses[_index++]],

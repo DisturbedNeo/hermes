@@ -12,6 +12,7 @@ import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/project_system/project_planning_gateway.dart';
 import 'package:hermes/core/services/project_system/project_planning_tool_call_runner.dart';
 import 'package:hermes/core/services/project_system/project_planning_tools.dart';
+import 'package:hermes/core/services/project_system/project_planning_workspace_reader.dart';
 import 'package:hermes/core/services/project_system/project_view_service.dart';
 import 'package:hermes/core/services/question_policy_service.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
@@ -30,10 +31,12 @@ class ProjectModelCalls implements ProjectPlanningGateway {
   ProjectModelCalls({
     required ToolService toolService,
     ProjectViewService projectViewService = const ProjectViewService(),
-  }) : _projectViewService = projectViewService,
+  }) : _toolService = toolService,
+       _projectViewService = projectViewService,
        _planningRunner = const ProjectPlanningToolCallRunner();
 
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
+  final ToolService _toolService;
   final ProjectViewService _projectViewService;
   final ProjectPlanningToolCallRunner _planningRunner;
 
@@ -441,6 +444,12 @@ Return only the repaired JSON object.
       summary: 'Create the initial project roadmap.',
       rationale:
           'Create a bounded, executable plan from the supplied goal and workspace profile.',
+      workspaceReader: ProjectPlanningWorkspaceReader(
+        workspace: workspace,
+        sandbox: _toolService.workspaceSandbox,
+        allowedPaths: _workspaceFilesFromMetadata(workspaceMetadata),
+        cancellationToken: cancellationToken,
+      ),
     );
     final registry = ProjectPlanningToolRegistry(
       context: context,
@@ -456,9 +465,18 @@ $baseSystemPrompt
 
 You are planning a new project through explicit planning commands. Do not return a complete project JSON document and do not execute workspace changes. The planning registry is the only tool surface available.
 Tool arguments must follow their schemas, but the plan itself must be built through tool calls rather than returned as a large JSON document.
+The workspace profile below is a compact bootstrap map. When the goal depends
+on a file, especially a design, specification, requirements, architecture, or
+instruction document, use planning_read_file to read that existing file before
+deriving requirements.
+The reader is read-only, limited to files in the discovery tree, and has a
+finite byte budget. If a result has has_more=true, continue at its next_start_line.
+Do not use it to inspect unrelated files; use the tree and the goal to choose
+only the smallest set of files needed for the initial plan.
 Use plan_set_project_details first to set a concise title, a useful refined goal, and the constraints that must remain true. Add one or more success criteria with plan_add_criteria. Milestones are optional; add one or more with plan_add_milestones when they clarify delivery, otherwise Hermes will create a default milestone for executable work.
 Use plan_add_tasks for a small batch of bounded near-term tasks, normally no more than seven queued tasks. Each task needs an objective or title, at least one criterion reference, done criteria, and an explicit out-of-scope boundary. Use temporary refs such as scaffold and verify to link tasks and dependencies; Hermes generates canonical IDs.
 Add command checks with plan_add_check when a task needs verification. Add notes with plan_add_note for sourced facts, assumptions, risks, or decisions. Ask a user decision only for genuinely irreversible, high-risk, credential, scope, or otherwise unsafe-to-assume ambiguity.
+When a note is based on a workspace file, set source_id to workspace:<relative-path>.
 Use project_view when you need a bounded summary or detail. Use plan_preview to inspect the compact diff, then call plan_commit when the plan is complete. Do not supply IDs, statuses, timestamps, revisions, gates, evidence IDs, or runtime execution fields.
 '''
               .trim(),
@@ -565,20 +583,10 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
         for (final item in value)
           if (item is String) item,
     ].take(limit).toList();
-    final excerpts = <Map<String, dynamic>>[];
-    final rawFiles = profileMap['highSignalFiles'];
-    if (rawFiles is List) {
-      for (final raw in rawFiles.take(8)) {
-        if (raw is! Map) continue;
-        final file = Map<String, dynamic>.from(raw);
-        final content = file['content']?.toString() ?? '';
-        excerpts.add({
-          'path': file['path']?.toString() ?? '',
-          'content': _boundedText(content, 2400),
-          'truncated': file['truncated'] == true || content.length > 2400,
-        });
-      }
-    }
+    final readableFiles = strings(
+      profileMap['treePaths'],
+      limit: 400,
+    ).where((item) => !item.endsWith('/')).toList();
     return {
       'workspaceName': metadata['workspaceName'],
       'commandExecutionApproved': metadata['commandExecutionApproved'],
@@ -586,22 +594,37 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
       'gitAvailable': metadata['gitAvailable'] == true,
       'changedFiles': strings(metadata['changedFiles']),
       'treePaths': strings(profileMap['treePaths'], limit: 200),
-      'highSignalFiles': excerpts,
+      'readableFiles': readableFiles,
       'packageName': profileMap['packageName'],
       'scripts': profileMap['scripts'],
       'dependencies': strings(profileMap['dependencies']),
       'languages': strings(profileMap['languages']),
       'frameworks': strings(profileMap['frameworks']),
       'treeTruncated': profileMap['treeTruncated'] == true,
-      'contentTruncated': profileMap['contentTruncated'] == true,
       'omittedPathCount': profileMap['omittedPathCount'],
+      'contextWarnings': strings(
+        (profileMap['requiredContextIssues'] is List)
+            ? (profileMap['requiredContextIssues'] as List)
+                  .whereType<Map>()
+                  .map(
+                    (item) => '${item['path'] ?? ''}: ${item['message'] ?? ''}',
+                  )
+                  .toList()
+            : const [],
+        limit: 20,
+      ),
     };
   }
 
-  static String _boundedText(String value, int limit) {
-    final text = value.trim();
-    if (text.length <= limit) return text;
-    return '${text.substring(0, limit - 1).trimRight()}…';
+  List<String> _workspaceFilesFromMetadata(Map<String, dynamic> metadata) {
+    final profile = metadata['workspaceProfile'];
+    if (profile is! Map) return const [];
+    final treePaths = profile['treePaths'];
+    if (treePaths is! List) return const [];
+    return [
+      for (final item in treePaths)
+        if (item is String && !item.endsWith('/')) item,
+    ];
   }
 
   Future<String> _completeRaw({

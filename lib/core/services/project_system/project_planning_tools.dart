@@ -4,13 +4,14 @@ import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/services/project_system/project_plan_builder.dart';
 import 'package:hermes/core/services/project_system/project_plan_revision_service.dart';
+import 'package:hermes/core/services/project_system/project_planning_workspace_reader.dart';
 import 'package:hermes/core/services/project_system/project_view_service.dart';
 
 /// The state and policy available to a single project-planning invocation.
 ///
-/// This context intentionally has no [ToolService], workspace sandbox, or
-/// workspace-mutating callback. Planning commands can only edit the in-memory
-/// [ProjectPlanBuilder] draft.
+/// Planning commands can only edit the in-memory [ProjectPlanBuilder] draft.
+/// Initial planning may additionally receive a separately budgeted,
+/// read-only workspace context reader.
 class ProjectPlanningContext {
   ProjectPlanningContext({
     required this.project,
@@ -25,6 +26,7 @@ class ProjectPlanningContext {
     ProjectPlanRevisionService revisionService =
         const ProjectPlanRevisionService(),
     this.viewService = const ProjectViewService(),
+    this.workspaceReader,
   }) : builder = ProjectPlanBuilder(
          project: project,
          now: now,
@@ -46,6 +48,7 @@ class ProjectPlanningContext {
   final ProjectPlanApprovalPolicy approvalPolicy;
   final ProjectPlanBuilder builder;
   final ProjectViewService viewService;
+  final ProjectPlanningWorkspaceReader? workspaceReader;
 
   String _draftTitle;
   String _draftRefinedGoal;
@@ -86,8 +89,8 @@ class ProjectPlanningContext {
 /// Model-facing project planning tools.
 ///
 /// The registry is deliberately separate from [ToolService]. It returns
-/// [ToolDefinition] values for a planner call and never exposes workspace
-/// tools or full domain objects in those schemas.
+/// [ToolDefinition] values for a planner call and never exposes mutating
+/// workspace tools or full domain objects in those schemas.
 class ProjectPlanningToolRegistry {
   ProjectPlanningToolRegistry({
     required this.context,
@@ -100,6 +103,7 @@ class ProjectPlanningToolRegistry {
 
   List<ToolDefinition> get toolDefinitions => [
     if (includeProjectDetails) _projectDetailsDefinition,
+    if (context.workspaceReader != null) _planningReadFileDefinition,
     _projectViewDefinition,
     _addCriteriaDefinition,
     _addMilestonesDefinition,
@@ -186,6 +190,8 @@ class ProjectPlanningToolRegistry {
       final result = switch (toolId) {
         'plan_set_project_details' when includeProjectDetails =>
           _setProjectDetails(arguments),
+        'planning_read_file' when context.workspaceReader != null =>
+          await _planningReadFile(arguments),
         'project_view' => _view(arguments),
         'plan_add_criteria' => _addCriteria(arguments, commandId),
         'plan_add_milestones' => _addMilestones(arguments, commandId),
@@ -259,6 +265,19 @@ class ProjectPlanningToolRegistry {
       maxItems: _optionalInt(arguments['max_items'], 'max_items'),
     );
     return {...view, 'draft': _draftSummary(preview)};
+  }
+
+  Future<Map<String, dynamic>> _planningReadFile(
+    Map<String, dynamic> arguments,
+  ) async {
+    _keys(arguments, const {'path', 'start_line', 'end_line'});
+    final startLine = _optionalInt(arguments['start_line'], 'start_line') ?? 1;
+    final endLine = _optionalInt(arguments['end_line'], 'end_line');
+    return context.workspaceReader!.read(
+      requestedPath: _requiredString(arguments['path'], 'path'),
+      startLine: startLine,
+      endLine: endLine,
+    );
   }
 
   ProjectState _projectForDetail(ProjectPlanBuilderPreview preview) {
@@ -1294,6 +1313,34 @@ final _projectViewDefinition = ToolDefinition(
       'memory_query': {'type': 'string'},
       'max_items': {'type': 'integer', 'minimum': 1, 'maximum': 100},
     },
+  ),
+);
+
+final _planningReadFileDefinition = ToolDefinition(
+  id: 'planning_read_file',
+  name: 'Read planning context file',
+  description:
+      'Read a bounded line window from one existing file in the discovered workspace. Repeat with next_start_line when has_more is true. This is read-only and cannot access files outside the discovery tree.',
+  schema: _schema(
+    properties: {
+      'path': {
+        'type': 'string',
+        'description': 'Workspace-relative file path from readableFiles.',
+      },
+      'start_line': {
+        'type': 'integer',
+        'minimum': 1,
+        'description': 'First 1-based line to return. Defaults to 1.',
+      },
+      'end_line': {
+        'type': 'integer',
+        'minimum': 1,
+        'maximum': ProjectPlanningWorkspaceReader.defaultMaxWindowLines,
+        'description':
+            'Optional inclusive line number. Each response is capped at a bounded window.',
+      },
+    },
+    required: const ['path'],
   ),
 );
 

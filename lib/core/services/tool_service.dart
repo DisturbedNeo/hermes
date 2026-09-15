@@ -17,6 +17,8 @@ class ToolService {
   final WorkspaceSandbox _workspaceSandbox;
   SubagentService? _subagentService;
 
+  WorkspaceSandbox get workspaceSandbox => _workspaceSandbox;
+
   /// Updates the subagent service. Pass null to disable when the LLM server
   /// is unavailable.
   void setSubagentService(SubagentService? service) {

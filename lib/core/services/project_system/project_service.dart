@@ -434,7 +434,8 @@ class ProjectService {
     var repairAttempts = 0;
     var planningIssues = <Map<String, String>>[
       for (final issue in discovery.workspaceProfile.requiredContextIssues)
-        {'code': issue.code, 'path': issue.path, 'message': issue.message},
+        if (_blocksInitialPlanningForContextIssue(issue))
+          {'code': issue.code, 'path': issue.path, 'message': issue.message},
     ];
     var init = client == null || planningIssues.isNotEmpty
         ? _fallbackInitialisation(userPrompt)
@@ -602,6 +603,10 @@ class ProjectService {
     );
     return _persistProject(workspace.rootPath, project);
   }
+
+  bool _blocksInitialPlanningForContextIssue(
+    WorkspaceRequiredContextIssue issue,
+  ) => issue.code == 'required_context_unreadable';
 
   Future<ProjectDocument> updateProject({
     required WorkspaceAttachment workspace,
