@@ -5,10 +5,6 @@ class PromptAssembler {
 
   PromptAssemblyResult assemble(PromptAssemblyRequest request) {
     final preset = request.preset;
-    if (preset?.isLegacy == true) {
-      return _assembleLegacy(preset!, request);
-    }
-
     final byId = {
       for (final module in request.availableModules) module.id: module,
     };
@@ -96,56 +92,8 @@ class PromptAssembler {
     );
   }
 
-  PromptAssemblyResult _assembleLegacy(
-    PromptPreset preset,
-    PromptAssemblyRequest request,
-  ) {
-    final parts = <String>[
-      preset.legacyFullPrompt?.trim() ?? '',
-      if (preset.customInstructions.trim().isNotEmpty)
-        'Custom instructions:\n${preset.customInstructions.trim()}',
-      _workspaceContext(request),
-      if (request.currentUserRequest?.trim().isNotEmpty ?? false)
-        'Current request:\n${request.currentUserRequest!.trim()}',
-    ].where((part) => part.trim().isNotEmpty).toList();
-
-    return PromptAssemblyResult(
-      text: parts.join('\n\n').trim(),
-      includedModules: const [],
-      omittedModules: const [],
-      diagnostics: const ['Rendered legacy full prompt.'],
-    );
-  }
-
   String _renderModule(PromptModule module, PromptAssemblyRequest request) {
     return _interpolate(module.content.trim(), request);
-  }
-
-  String _workspaceContext(PromptAssemblyRequest request) {
-    if (request.workspaceRootPath == null && !request.workspaceMissing) {
-      return '';
-    }
-
-    if (request.workspaceMissing) {
-      return 'A workspace was attached to this chat, but the folder is currently missing, so workspace tools are unavailable.';
-    }
-
-    return _interpolate(
-      '''
-This chat has an attached workspace. The workspace root is:
-{{workspaceRoot}}
-
-Workspace rules:
-- Use workspace tools for file and folder operations.
-- Only operate inside the attached workspace and use workspace-relative paths.
-- Inspect relevant files before editing them.
-- Prefer small, precise changes.
-- Explain destructive file operations before performing them.
-- Host terminal commands require explicit user approval for this session. They run with the application's host permissions and are not confined to the workspace.
-'''
-          .trim(),
-      request,
-    );
   }
 
   String _interpolate(String input, PromptAssemblyRequest request) {

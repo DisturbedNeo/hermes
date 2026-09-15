@@ -129,6 +129,22 @@ void main() {
       );
       final registry = TaskPlanningToolRegistry(context: context);
 
+      final discarded = await registry.invoke('task_add_step', {
+        'ref': 'discarded',
+        'title': 'Discarded draft step',
+        'objective': 'This draft will be replaced.',
+        'instructions': ['Do not retain this draft.'],
+      }, commandId: 'discarded');
+      expect(discarded['ok'], isTrue);
+
+      final reset = await registry.invoke(
+        'task_reset_plan',
+        const {},
+        commandId: 'reset',
+      );
+      expect(reset['ok'], isTrue);
+      expect(context.builder.steps.map((step) => step.id), ['completed_step']);
+
       final added = await registry.invoke('task_add_step', {
         'ref': 'replacement',
         'title': 'Replacement step',
@@ -171,7 +187,7 @@ void main() {
     },
   );
 
-  test('required project command checks upgrade matching legacy aliases', () {
+  test('required project command checks match canonical directory fields', () {
     final source = _task().copyWith(
       steps: const [
         TaskStep(
@@ -188,7 +204,7 @@ void main() {
         TaskGate(
           id: 'command_passes',
           required: false,
-          params: {'command': 'dart test', 'workingDirectory': '.'},
+          params: {'command': 'dart test', 'working_directory': '.'},
         ),
       ],
     );

@@ -25,7 +25,6 @@ void main() {
       updatedAt: now,
     );
 
-    expect(project.schemaVersion, ProjectDocument.currentSchemaVersion);
     expect(project.tasks, isEmpty);
     expect(project.nextRevision, 2);
     expect(project.taskById('missing'), isNull);

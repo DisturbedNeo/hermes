@@ -1,19 +1,16 @@
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:hermes/core/helpers/json_parsing.dart';
 
-/// Normalises common compatibility concerns before mapping a model and
-/// removes explicitly configured optional values after encoding it.
+/// Normalises boundary payload keys before mapping a model and removes
+/// explicitly configured optional values after encoding it.
 class JsonModelHook extends MappingHook {
   const JsonModelHook({
-    this.aliases = const {},
     this.omitEmpty = const {},
     this.omitEmptyStrings = const {},
     this.removeKeys = const {},
     this.outputOverrides = const {},
   });
 
-  /// Maps canonical field names to additional accepted input names.
-  final Map<String, List<String>> aliases;
   final Set<String> omitEmpty;
   final Set<String> omitEmptyStrings;
   final Set<String> removeKeys;
@@ -28,15 +25,6 @@ class JsonModelHook extends MappingHook {
     for (final entry in source.entries) {
       if (!entry.key.contains('_')) continue;
       normalized.putIfAbsent(_snakeToCamel(entry.key), () => entry.value);
-    }
-    for (final entry in aliases.entries) {
-      if (normalized.containsKey(entry.key)) continue;
-      for (final alias in entry.value) {
-        if (source.containsKey(alias)) {
-          normalized[entry.key] = source[alias];
-          break;
-        }
-      }
     }
     return normalized;
   }
@@ -167,17 +155,4 @@ class EpochDateHook extends MappingHook {
   @override
   Object? beforeEncode(Object? value) =>
       value is DateTime ? value.millisecondsSinceEpoch : value;
-}
-
-class EnumAliasHook extends MappingHook {
-  const EnumAliasHook(this.aliases);
-
-  final Map<String, String> aliases;
-
-  @override
-  Object? beforeDecode(Object? value) {
-    if (value == null) return null;
-    final raw = value.toString().trim().toLowerCase().replaceAll('-', '_');
-    return aliases[raw] ?? aliases[raw.replaceAll('_', '')] ?? raw;
-  }
 }

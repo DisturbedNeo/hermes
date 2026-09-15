@@ -31,8 +31,8 @@ class SystemPromptLibraryService extends ChangeNotifier implements Disposable {
   SystemPromptLibraryService({
     required SystemPromptLibraryRepository repository,
     PromptAssembler assembler = const PromptAssembler(),
-  })  : _repository = repository,
-        _assembler = assembler;
+  }) : _repository = repository,
+       _assembler = assembler;
 
   // ── Preset CRUD (orchestrated) ─────────────────────────────────────────
 
@@ -48,7 +48,6 @@ class SystemPromptLibraryService extends ChangeNotifier implements Disposable {
     List<String> baseModuleIds = const [],
     List<String> optionalModuleIds = const [],
     String customInstructions = '',
-    String? legacyFullPrompt,
   }) async {
     final trimmedName = _validatedName(name);
     await _repository.throwIfNameExists('prompt_presets', trimmedName);
@@ -59,7 +58,6 @@ class SystemPromptLibraryService extends ChangeNotifier implements Disposable {
       baseModuleIds: baseModuleIds,
       optionalModuleIds: optionalModuleIds,
       customInstructions: customInstructions,
-      legacyFullPrompt: _blankToNull(legacyFullPrompt),
       isBuiltIn: false,
     );
 
@@ -73,7 +71,6 @@ class SystemPromptLibraryService extends ChangeNotifier implements Disposable {
     required List<String> baseModuleIds,
     required List<String> optionalModuleIds,
     required String customInstructions,
-    String? legacyFullPrompt,
   }) async {
     final existing = await getPreset(id);
     if (existing == null) {
@@ -96,7 +93,6 @@ class SystemPromptLibraryService extends ChangeNotifier implements Disposable {
       baseModuleIds: baseModuleIds,
       optionalModuleIds: optionalModuleIds,
       customInstructions: customInstructions,
-      legacyFullPrompt: _blankToNull(legacyFullPrompt),
       isBuiltIn: existing.isBuiltIn,
       createdAt: existing.createdAt,
       lastUsedAt: existing.lastUsedAt,
@@ -112,16 +108,12 @@ class SystemPromptLibraryService extends ChangeNotifier implements Disposable {
       throw ArgumentError.value(id, 'id', 'Prompt preset not found');
     }
 
-    final name = await _repository.copyNameFor(
-      'prompt_presets',
-      source.name,
-    );
+    final name = await _repository.copyNameFor('prompt_presets', source.name);
     return createPreset(
       name: name,
       baseModuleIds: source.baseModuleIds,
       optionalModuleIds: source.optionalModuleIds,
       customInstructions: source.customInstructions,
-      legacyFullPrompt: source.legacyFullPrompt,
     );
   }
 
@@ -225,10 +217,7 @@ class SystemPromptLibraryService extends ChangeNotifier implements Disposable {
       throw ArgumentError.value(id, 'id', 'Prompt module not found');
     }
 
-    final name = await _repository.copyNameFor(
-      'prompt_modules',
-      source.name,
-    );
+    final name = await _repository.copyNameFor('prompt_modules', source.name);
     return createModule(
       name: name,
       category: source.category,
@@ -311,60 +300,6 @@ class SystemPromptLibraryService extends ChangeNotifier implements Disposable {
     );
   }
 
-  // ── Convenience wrappers (SavedSystemPrompt) ────────────────────────────
-
-  Future<List<SavedSystemPrompt>> listPrompts() async {
-    final presets = await listPresets();
-    return Future.wait(presets.map(_savedPromptForPreset));
-  }
-
-  Future<List<SavedSystemPrompt>> searchPrompts(String query) async {
-    final presets = await searchPresets(query);
-    return Future.wait(presets.map(_savedPromptForPreset));
-  }
-
-  Future<SavedSystemPrompt?> getPrompt(String id) async {
-    final preset = await getPreset(id);
-    return preset == null ? null : _savedPromptForPreset(preset);
-  }
-
-  Future<SavedSystemPrompt> createPrompt({
-    required String name,
-    required String content,
-  }) async {
-    final preset = await createPreset(name: name, legacyFullPrompt: content);
-    return _savedPromptForPreset(preset);
-  }
-
-  Future<SavedSystemPrompt> updatePrompt({
-    required String id,
-    required String name,
-    required String content,
-  }) async {
-    final preset = await getPreset(id);
-    if (preset == null) {
-      throw ArgumentError.value(id, 'id', 'System prompt not found');
-    }
-    final updated = await updatePreset(
-      id: id,
-      name: name,
-      baseModuleIds: preset.baseModuleIds,
-      optionalModuleIds: preset.optionalModuleIds,
-      customInstructions: preset.customInstructions,
-      legacyFullPrompt: content,
-    );
-    return _savedPromptForPreset(updated);
-  }
-
-  Future<SavedSystemPrompt> duplicatePrompt(String id) async {
-    final preset = await duplicatePreset(id);
-    return _savedPromptForPreset(preset);
-  }
-
-  Future<void> markUsed(String id) => markPresetUsed(id);
-
-  Future<void> deletePrompt(String id) => deletePreset(id);
-
   // ── Business-rule helpers ───────────────────────────────────────────────
 
   List<String> _autoModuleIdsFor(WorkspaceAttachment? workspace) {
@@ -386,20 +321,6 @@ class SystemPromptLibraryService extends ChangeNotifier implements Disposable {
     ];
   }
 
-  Future<SavedSystemPrompt> _savedPromptForPreset(PromptPreset preset) async {
-    final content = preset.isLegacy
-        ? preset.legacyFullPrompt!.trim()
-        : (await assemblePreset(preset)).text;
-    return SavedSystemPrompt(
-      id: preset.id,
-      name: preset.name,
-      content: content,
-      createdAt: preset.createdAt,
-      updatedAt: preset.updatedAt,
-      lastUsedAt: preset.lastUsedAt,
-    );
-  }
-
   // ── Input validation (business rules) ───────────────────────────────────
 
   String _validatedName(String name) {
@@ -416,11 +337,6 @@ class SystemPromptLibraryService extends ChangeNotifier implements Disposable {
       throw ArgumentError.value(content, 'content', 'Content cannot be empty');
     }
     return trimmed;
-  }
-
-  String? _blankToNull(String? value) {
-    final trimmed = value?.trim();
-    return trimmed == null || trimmed.isEmpty ? null : trimmed;
   }
 
   // ── Lifecycle ───────────────────────────────────────────────────────────

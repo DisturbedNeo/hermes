@@ -90,7 +90,6 @@ class TaskPlanBuilder {
     this.outOfScope = const [],
     this.readPaths = const [],
     this.writePaths = const [],
-    this.legacyWriteAccess = false,
     this.requiredArtifacts = const [],
     this.requiredGates = const [],
     this.requiredEvidence = const [],
@@ -131,7 +130,6 @@ class TaskPlanBuilder {
   final List<String> outOfScope;
   final List<String> readPaths;
   final List<String> writePaths;
-  final bool legacyWriteAccess;
   final List<TaskArtifact> requiredArtifacts;
   final List<TaskGate> requiredGates;
   final List<TaskProjectEvidenceExpectation> requiredEvidence;
@@ -164,6 +162,37 @@ class TaskPlanBuilder {
     if (successCriteria != null) {
       _successCriteria = _cleanStrings(successCriteria);
     }
+  }
+
+  /// Clears the current uncommitted draft while retaining work that must
+  /// survive a replan. This lets the planner replace an invalid draft using
+  /// the same command protocol instead of sending a whole replacement plan.
+  bool resetDraft({String? commandId}) {
+    const fingerprint = '{"op":"reset_draft"}';
+    return _idempotent(commandId, fingerprint, () {
+      final preserved = _steps.where(_isPreserved).toList();
+      _steps
+        ..clear()
+        ..addAll(preserved);
+      _stepRefs
+        ..clear()
+        ..addEntries([
+          for (final step in preserved) MapEntry(step.id, step.id),
+        ]);
+      _taskGates
+        ..clear()
+        ..addAll([..._source.gates, ...requiredGates]);
+      _expectedEvidence
+        ..clear()
+        ..addAll(_source.expectedEvidence);
+      _title = _source.title;
+      _objective = _source.objective;
+      _constraints = [..._source.constraints];
+      _successCriteria = [..._source.successCriteria];
+      _replanReason = null;
+      _pendingQuestion = null;
+      return true;
+    });
   }
 
   String addStep(TaskPlanStepSpec spec, {String? commandId}) {
@@ -207,8 +236,7 @@ class TaskPlanBuilder {
       final artifacts = _normaliseArtifacts(spec.artifacts, id);
       if (requireDeclaredWriteBoundary &&
           spec.mayEditFiles &&
-          writePaths.isEmpty &&
-          !legacyWriteAccess) {
+          writePaths.isEmpty) {
         throw _error(
           'missing_write_boundary',
           'may_edit_files',
@@ -516,8 +544,7 @@ class TaskPlanBuilder {
       }
       if (requireDeclaredWriteBoundary &&
           step.mayEditFiles &&
-          writePaths.isEmpty &&
-          !legacyWriteAccess) {
+          writePaths.isEmpty) {
         issues.add(
           TaskPlanIssue(
             code: 'missing_write_boundary',

@@ -834,7 +834,6 @@ ProjectDocument _project(
     context: const [],
     expectedArtifacts: const [],
     status: TaskStatus.queued,
-    taskDocumentId: null,
     fingerprint: 'create-report',
     rejectionReason: null,
     createdAt: timestamp,

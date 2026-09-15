@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/planning_metrics.dart';
-import 'package:hermes/core/models/planning_protocol.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 
 void main() {
@@ -31,20 +30,5 @@ void main() {
     expect(decoded.recoverySuccessRate, closeTo(0.5, 0.0001));
     expect(decoded.timeToFirstExecutableMs, 850);
     expect(decoded.planningStartedAt, started);
-  });
-
-  test('unknown rollout values fail safe to automatic mode', () {
-    expect(
-      PlanningProtocolModeWire.parse('unrecognised'),
-      PlanningProtocolMode.automatic,
-    );
-    expect(
-      PlanningProtocolModeWire.parse('commands'),
-      PlanningProtocolMode.incremental,
-    );
-    expect(
-      PlanningProtocolModeWire.parse('finalizer'),
-      PlanningProtocolMode.legacy,
-    );
   });
 }

@@ -32,10 +32,7 @@ class WorkspaceService extends ChangeNotifier {
     required String rootPath,
     required String displayName,
     required DateTime lastOpenedAt,
-    required bool commandExecutionApproved,
   }) async {
-    // The argument remains for saved-data compatibility. Host command consent
-    // is session-only and must never be restored.
     final exists = await Directory(rootPath).exists();
     if (!exists) {
       return WorkspaceAttachment(

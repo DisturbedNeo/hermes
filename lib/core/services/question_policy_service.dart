@@ -9,15 +9,7 @@ part 'question_policy_service.mapper.dart';
 @MappableEnum(defaultValue: QuestionKind.blocking)
 enum QuestionKind { blocking, preference, advisory }
 
-@MappableClass(
-  generateMethods: GenerateMethods.decode,
-  hook: JsonModelHook(
-    aliases: {
-      'reason': ['whyBlocking'],
-      'kind': ['type'],
-    },
-  ),
-)
+@MappableClass(generateMethods: GenerateMethods.decode, hook: JsonModelHook())
 class AgentQuestion with AgentQuestionMappable {
   @MappableField(hook: JsonStringHook())
   final String question;
@@ -27,7 +19,6 @@ class AgentQuestion with AgentQuestionMappable {
   final String defaultIfUnanswered;
   @MappableField(hook: JsonStringHook())
   final String riskOfAssuming;
-  @MappableField(hook: EnumAliasHook({}))
   final QuestionKind kind;
 
   const AgentQuestion({

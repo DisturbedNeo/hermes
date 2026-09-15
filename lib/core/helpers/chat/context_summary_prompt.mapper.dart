@@ -23,13 +23,6 @@ class ContextSummaryMapper extends ClassMapperBase<ContextSummary> {
   @override
   final String id = 'ContextSummary';
 
-  static int _$schemaVersion(ContextSummary v) => v.schemaVersion;
-  static const Field<ContextSummary, int> _f$schemaVersion = Field(
-    'schemaVersion',
-    _$schemaVersion,
-    key: r'schema_version',
-    hook: JsonIntHook(fallback: 1),
-  );
   static String _$task(ContextSummary v) => v.task;
   static const Field<ContextSummary, String> _f$task = Field(
     'task',
@@ -107,7 +100,6 @@ class ContextSummaryMapper extends ClassMapperBase<ContextSummary> {
 
   @override
   final MappableFields<ContextSummary> fields = const {
-    #schemaVersion: _f$schemaVersion,
     #task: _f$task,
     #latestUserRequest: _f$latestUserRequest,
     #decisions: _f$decisions,
@@ -121,7 +113,6 @@ class ContextSummaryMapper extends ClassMapperBase<ContextSummary> {
 
   static ContextSummary _instantiate(DecodingData data) {
     return ContextSummary(
-      schemaVersion: data.dec(_f$schemaVersion),
       task: data.dec(_f$task),
       latestUserRequest: data.dec(_f$latestUserRequest),
       decisions: data.dec(_f$decisions),

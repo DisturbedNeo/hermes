@@ -39,6 +39,5 @@
   ],
   "readPaths": [],
   "writePaths": [],
-  "legacyWriteAccess": false,
   "maxSteps": 4
 }

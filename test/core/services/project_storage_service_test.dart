@@ -134,7 +134,6 @@ void main() {
       );
       final decoded = jsonDecode(await file.readAsString());
 
-      expect(decoded['schemaVersion'], ProjectDocument.currentSchemaVersion);
       expect(decoded['criteria'], isA<List>());
       expect(decoded['memory'], isA<List>());
       expect(decoded.containsKey('successCriteria'), isFalse);
@@ -145,83 +144,6 @@ void main() {
       expect(decoded.containsKey('completedTasks'), isFalse);
       expect(decoded.containsKey('failedTasks'), isFalse);
       expect(decoded['decisions'], isA<List>());
-    });
-
-    test(
-      'refuses unsupported project schemas without restoring or rewriting them',
-      () async {
-        await repository.saveSnapshot(
-          root.path,
-          _project(id: 'project_future'),
-        );
-        await repository.saveSnapshot(
-          root.path,
-          _project(id: 'project_future'),
-        );
-        final file = File(
-          path.join(
-            root.path,
-            '.agent',
-            'projects',
-            'project_future',
-            'project.json',
-          ),
-        );
-        final raw =
-            Map<String, dynamic>.from(
-                jsonDecode(await file.readAsString()) as Map,
-              )
-              ..['schemaVersion'] = ProjectDocument.currentSchemaVersion + 1
-              ..['futureOnly'] = {'preserve': true};
-        final futureContent = jsonEncode(raw);
-        await file.writeAsString(futureContent);
-
-        await expectLater(
-          repository.loadProject(root.path, 'project_future'),
-          throwsA(
-            isA<UnsupportedSnapshotSchemaException>()
-                .having(
-                  (error) => error.foundVersion,
-                  'foundVersion',
-                  ProjectDocument.currentSchemaVersion + 1,
-                )
-                .having(
-                  (error) => error.supportedVersion,
-                  'supportedVersion',
-                  ProjectDocument.currentSchemaVersion,
-                ),
-          ),
-        );
-        expect(await file.readAsString(), futureContent);
-      },
-    );
-
-    test('rejects an old project schema without migration', () async {
-      final file = File(
-        path.join(
-          root.path,
-          '.agent',
-          'projects',
-          'project_old',
-          'project.json',
-        ),
-      )..parent.createSync(recursive: true);
-      const oldContent = '{"schemaVersion": 4, "id": "project_old"}';
-      await file.writeAsString(oldContent);
-
-      await expectLater(
-        repository.loadProject(root.path, 'project_old'),
-        throwsA(
-          isA<UnsupportedSnapshotSchemaException>()
-              .having((error) => error.foundVersion, 'foundVersion', 4)
-              .having(
-                (error) => error.supportedVersion,
-                'supportedVersion',
-                ProjectDocument.currentSchemaVersion,
-              ),
-        ),
-      );
-      expect(await file.readAsString(), oldContent);
     });
 
     test('rejects delete paths outside project root', () async {

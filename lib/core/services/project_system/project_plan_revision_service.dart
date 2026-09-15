@@ -722,7 +722,6 @@ class ProjectPlanRevisionService {
       expectedEvidence: desired.expectedEvidence,
       readPaths: desired.readPaths,
       writePaths: desired.writePaths,
-      legacyWriteAccess: desired.legacyWriteAccess,
       doneCriteria: desired.doneCriteria,
       outOfScope: desired.outOfScope,
       context: desired.context,
@@ -765,7 +764,7 @@ class ProjectPlanRevisionService {
   ) => ([...items]..sort((a, b) => a.id.compareTo(b.id)))
       .map(
         (item) =>
-            '${item.id}|${item.title}|${item.objective}|${item.constraints.join(',')}|${item.successCriteria.join(',')}|${item.criterionIds.join(',')}|${item.milestoneId}|${item.dependsOnTaskIds.join(',')}|${item.priority.name}|${item.risk.name}|${item.riskReduction.name}|${item.effort.name}|${item.selectionRationale}|${item.status.name}|${_gateSignature(item.gates)}|${_evidenceSignature(item.expectedEvidence)}|${item.readPaths.join(',')}|${item.writePaths.join(',')}|${item.legacyWriteAccess}|${item.doneCriteria.join(',')}|${item.outOfScope.join(',')}|${item.context.join(',')}|${_artifactSignature(item.expectedArtifacts)}|${item.recoveryIncidentId}|${item.fingerprint}',
+            '${item.id}|${item.title}|${item.objective}|${item.constraints.join(',')}|${item.successCriteria.join(',')}|${item.criterionIds.join(',')}|${item.milestoneId}|${item.dependsOnTaskIds.join(',')}|${item.priority.name}|${item.risk.name}|${item.riskReduction.name}|${item.effort.name}|${item.selectionRationale}|${item.status.name}|${_gateSignature(item.gates)}|${_evidenceSignature(item.expectedEvidence)}|${item.readPaths.join(',')}|${item.writePaths.join(',')}|${item.doneCriteria.join(',')}|${item.outOfScope.join(',')}|${item.context.join(',')}|${_artifactSignature(item.expectedArtifacts)}|${item.recoveryIncidentId}|${item.fingerprint}',
       )
       .join('||');
 

@@ -1,5 +1,4 @@
 import 'package:dart_mappable/dart_mappable.dart';
-import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/helpers/sentinel.dart' show kSentinel, resolve;
 import 'package:hermes/core/models/planning_metrics.dart';
 import 'package:hermes/core/serialization/json_hooks.dart';
@@ -123,12 +122,6 @@ class TaskProjectCriterion with TaskProjectCriterionMappable {
 class TaskEvidenceExpectation with TaskEvidenceExpectationMappable {
   @MappableField(hook: JsonStringHook())
   final String id;
-  @MappableField(
-    hook: EnumAliasHook({
-      'taskclaim': 'task_claim',
-      'userapproval': 'user_approval',
-    }),
-  )
   final ProjectEvidenceType type;
   @MappableField(hook: JsonStringListHook())
   final List<String> criterionIds;
@@ -152,7 +145,7 @@ class TaskEvidenceExpectation with TaskEvidenceExpectationMappable {
   });
 }
 
-/// Compatibility DTO used by the task planner prompt. The canonical task
+/// Task-planning DTO used by the task planner prompt. The canonical task
 /// record uses [TaskEvidenceExpectation] and its typed evidence enum.
 @MappableClass(ignoreNull: true)
 class TaskProjectEvidenceExpectation
@@ -229,35 +222,7 @@ extension TaskGateFailureDispositionWire on TaskGateFailureDisposition {
   String get wire => name;
 }
 
-TaskStatus parseTaskStatus(Object? value) =>
-    _parseEnum(TaskStatus.values, value, TaskStatus.paused);
-
-T _parseEnum<T extends Enum>(
-  List<T> values,
-  Object? value,
-  T fallback, {
-  Map<String, T> aliases = const {},
-}) {
-  final raw = value?.toString().trim().toLowerCase();
-  if (raw == null || raw.isEmpty) return fallback;
-  final normalised = raw.replaceAll('-', '_');
-  final alias = aliases[normalised];
-  if (alias != null) return alias;
-  for (final item in values) {
-    if (item.name.toLowerCase() == normalised) return item;
-  }
-  return fallback;
-}
-
-@MappableClass(
-  hook: JsonModelHook(
-    aliases: {
-      'goal': ['objective'],
-      'successCriteria': ['success_criteria'],
-      'questions': ['clarifyingQuestions'],
-    },
-  ),
-)
+@MappableClass(hook: JsonModelHook())
 class RefinedTaskBrief with RefinedTaskBriefMappable {
   @MappableField(hook: JsonStringHook(fallback: 'Untitled task'))
   final String title;
@@ -284,10 +249,6 @@ class RefinedTaskBrief with RefinedTaskBriefMappable {
 
 @MappableClass(ignoreNull: true, hook: TaskJsonHook())
 class Task with TaskMappable {
-  static const int currentSchemaVersion = 3;
-
-  @MappableField(hook: JsonIntHook())
-  final int schemaVersion;
   @MappableField(hook: JsonStringHook())
   final String id;
   @MappableField(hook: JsonStringHook(fallback: 'Untitled task'))
@@ -304,7 +265,6 @@ class Task with TaskMappable {
   final List<TaskGate> gates;
   @MappableField(hook: JsonObjectListHook())
   final List<TaskStep> steps;
-  @MappableField(hook: EnumAliasHook({}))
   final TaskStatus status;
   @MappableField(hook: JsonStringListHook())
   final List<String> criterionIds;
@@ -328,8 +288,6 @@ class Task with TaskMappable {
   final List<String> readPaths;
   @MappableField(hook: JsonStringListHook())
   final List<String> writePaths;
-  @MappableField(hook: JsonBoolHook())
-  final bool legacyWriteAccess;
   @MappableField(hook: JsonStringListHook())
   final List<String> doneCriteria;
   @MappableField(hook: JsonStringListHook())
@@ -360,10 +318,6 @@ class Task with TaskMappable {
   @MappableField(hook: OmitEmptyPlanningMetricsHook())
   final PlanningMetrics planningMetrics;
 
-  /// Legacy project-task mapping retained only while old project snapshots
-  /// are being read. New project relationships use [id] and [ProjectState.taskIds].
-  @MappableField(hook: JsonNullableStringHook())
-  final String? taskDocumentId;
   @MappableField(hook: JsonDateHook())
   final DateTime createdAt;
   @MappableField(hook: JsonDateHook())
@@ -372,7 +326,6 @@ class Task with TaskMappable {
   final DateTime? completedAt;
 
   const Task({
-    this.schemaVersion = currentSchemaVersion,
     required this.id,
     required this.title,
     String? originalPrompt,
@@ -395,7 +348,6 @@ class Task with TaskMappable {
     this.expectedEvidence = const [],
     this.readPaths = const [],
     this.writePaths = const [],
-    this.legacyWriteAccess = false,
     this.doneCriteria = const [],
     this.outOfScope = const [],
     this.context = const [],
@@ -414,13 +366,11 @@ class Task with TaskMappable {
     this.chatSessionId,
     this.projectId,
     this.planningMetrics = const PlanningMetrics(),
-    this.taskDocumentId,
     this.completedAt,
   }) : originalPrompt = originalPrompt ?? objective ?? '',
        objective = objective ?? originalPrompt ?? '';
 
   Task copyWith({
-    int? schemaVersion,
     String? id,
     String? title,
     String? originalPrompt,
@@ -443,7 +393,6 @@ class Task with TaskMappable {
     List<TaskEvidenceExpectation>? expectedEvidence,
     List<String>? readPaths,
     List<String>? writePaths,
-    bool? legacyWriteAccess,
     List<String>? doneCriteria,
     List<String>? outOfScope,
     List<String>? context,
@@ -460,13 +409,11 @@ class Task with TaskMappable {
     Object? chatSessionId = kSentinel,
     Object? projectId = kSentinel,
     PlanningMetrics? planningMetrics,
-    Object? taskDocumentId = kSentinel,
     DateTime? createdAt,
     DateTime? updatedAt,
     Object? completedAt = kSentinel,
   }) {
     return Task(
-      schemaVersion: schemaVersion ?? this.schemaVersion,
       id: id ?? this.id,
       title: title ?? this.title,
       originalPrompt: originalPrompt ?? this.originalPrompt,
@@ -489,7 +436,6 @@ class Task with TaskMappable {
       expectedEvidence: expectedEvidence ?? this.expectedEvidence,
       readPaths: readPaths ?? this.readPaths,
       writePaths: writePaths ?? this.writePaths,
-      legacyWriteAccess: legacyWriteAccess ?? this.legacyWriteAccess,
       doneCriteria: doneCriteria ?? this.doneCriteria,
       outOfScope: outOfScope ?? this.outOfScope,
       context: context ?? this.context,
@@ -506,7 +452,6 @@ class Task with TaskMappable {
       chatSessionId: resolve(chatSessionId, this.chatSessionId),
       projectId: resolve(projectId, this.projectId),
       planningMetrics: planningMetrics ?? this.planningMetrics,
-      taskDocumentId: resolve(taskDocumentId, this.taskDocumentId),
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       completedAt: resolve(completedAt, this.completedAt),
@@ -542,30 +487,7 @@ class Task with TaskMappable {
 }
 
 class TaskJsonHook extends JsonModelHook {
-  const TaskJsonHook()
-    : super(
-        aliases: const {
-          'objective': ['goal'],
-        },
-        omitEmpty: const {'gates'},
-        removeKeys: const {'taskDocumentId'},
-        outputOverrides: const {'schemaVersion': Task.currentSchemaVersion},
-      );
-
-  @override
-  Object? beforeDecode(Object? value) {
-    final normalized = super.beforeDecode(value);
-    if (normalized is! Map) return normalized;
-    final json = Map<String, dynamic>.from(normalized);
-    final version = jsonInt(json['schemaVersion']);
-    if (version > Task.currentSchemaVersion) {
-      throw FormatException(
-        'Unsupported task schema version $version; maximum supported '
-        'version is ${Task.currentSchemaVersion}.',
-      );
-    }
-    return json..['schemaVersion'] = Task.currentSchemaVersion;
-  }
+  const TaskJsonHook() : super(omitEmpty: const {'gates'});
 }
 
 @MappableClass(ignoreNull: true, hook: JsonModelHook(omitEmpty: {'gates'}))
@@ -584,7 +506,6 @@ class TaskStep with TaskStepMappable {
   final List<TaskArtifact> artifacts;
   @MappableField(hook: JsonObjectListHook())
   final List<TaskGate> gates;
-  @MappableField(hook: EnumAliasHook({}))
   final TaskStepStatus status;
 
   const TaskStep({
@@ -647,13 +568,11 @@ class TaskGate with TaskGateMappable {
 class TaskGateResult with TaskGateResultMappable {
   @MappableField(hook: JsonStringHook())
   final String gateId;
-  @MappableField(hook: EnumAliasHook({}))
   final TaskGateStatus status;
   @MappableField(hook: JsonStringHook())
   final String summary;
   @MappableField(hook: JsonMapValueHook())
   final Map<String, dynamic> details;
-  @MappableField(hook: EnumAliasHook({}))
   final TaskGateFailureDisposition? failureDisposition;
   @MappableField(hook: JsonDateHook())
   final DateTime evaluatedAt;
@@ -672,7 +591,6 @@ class TaskGateResult with TaskGateResultMappable {
 class TaskFailure with TaskFailureMappable {
   @MappableField(hook: JsonNullableStringHook())
   final String? gateId;
-  @MappableField(hook: EnumAliasHook({}))
   final TaskGateFailureDisposition disposition;
   @MappableField(hook: JsonStringHook())
   final String failureKey;
@@ -757,16 +675,7 @@ class TaskArtifact with TaskArtifactMappable {
 }
 
 class TaskArtifactJsonHook extends JsonModelHook {
-  const TaskArtifactJsonHook()
-    : super(
-        aliases: const {
-          // Legacy artifacts used separate project-task and execution-task
-          // identifiers. Decode the execution identifier first so the
-          // migration can resolve it to the canonical task ID.
-          'taskId': ['taskDocumentId', 'projectTaskId'],
-          'runId': ['taskRunId'],
-        },
-      );
+  const TaskArtifactJsonHook();
 
   @override
   Object? afterEncode(Object? value) {
@@ -784,11 +693,9 @@ class TaskEvidenceClaim with TaskEvidenceClaimMappable {
   final String criterionId;
   @MappableField(hook: JsonStringHook())
   final String claim;
-  @MappableField(hook: EnumAliasHook({}))
   final TaskEvidenceClaimType evidenceType;
   @MappableField(hook: JsonStringHook())
   final String sourceRef;
-  @MappableField(hook: EnumAliasHook({}))
   final TaskEvidenceClaimStrength suggestedStrength;
   @MappableField(hook: JsonNullableStringHook())
   final String? expectationId;
@@ -815,7 +722,6 @@ class TaskRun with TaskRunMappable {
   final String runId;
   @MappableField(hook: JsonStringHook())
   final String stepId;
-  @MappableField(hook: EnumAliasHook({'needsreplan': 'needs_replan'}))
   final TaskRunStatus status;
   @MappableField(hook: JsonStringHook())
   final String summary;
@@ -893,7 +799,6 @@ class TaskToolError with TaskToolErrorMappable {
   final String code;
   @MappableField(hook: JsonStringHook())
   final String message;
-  @MappableField(hook: EnumAliasHook({}))
   final TaskToolErrorDisposition disposition;
 
   const TaskToolError({
@@ -917,9 +822,6 @@ class TaskToolCallRecord with TaskToolCallRecordMappable {
   final Object? result;
   @MappableField(hook: JsonNullableStringHook())
   final String? resultSummary;
-  @MappableField(hook: JsonNullableStringHook())
-  final String? error;
-  @MappableField(hook: EnumAliasHook({}))
   final TaskToolCallOutcome outcome;
   @MappableField(hook: JsonNullableStringHook())
   final String? operationKey;
@@ -936,95 +838,10 @@ class TaskToolCallRecord with TaskToolCallRecordMappable {
     this.arguments,
     this.result,
     this.resultSummary,
-    this.error,
     this.outcome = TaskToolCallOutcome.succeeded,
     this.operationKey,
     this.toolError,
   });
-}
-
-extension TaskToolCallRecordCompatibility on TaskToolCallRecord {
-  TaskToolError? get effectiveToolError {
-    if (toolError != null) {
-      final structured = toolError!;
-      final normalised = structured.message.toLowerCase();
-      final isLegacyRequestModeValidationError =
-          toolName == 'read_file' &&
-          structured.code == 'subagent_extraction_failed' &&
-          normalised.startsWith('failed to extract information:') &&
-          const [
-            'path not found',
-            'path is not a directory',
-            'path is a directory',
-            'file is too large',
-            'use workspace-relative paths only',
-            'path escapes the workspace',
-          ].any(normalised.contains);
-      if (isLegacyRequestModeValidationError) {
-        return TaskToolError(
-          code: 'workspace_validation',
-          message: structured.message,
-          disposition: TaskToolErrorDisposition.advisory,
-        );
-      }
-      return structured;
-    }
-    final message = error?.trim();
-    if (message == null || message.isEmpty) return null;
-    final normalised = message.toLowerCase();
-    final advisoryCodes = <String, List<String>>{
-      'guard_denial': [
-        'blocked by terminal policy',
-        'command substitution is blocked',
-        'terminal command is not whitelisted',
-        'terminal commands are disabled',
-        'tool is not available',
-        'read-only steps',
-        'task steps may only create artifacts',
-        'use workspace-relative paths only',
-        'path escapes the workspace',
-        'refusing to delete the workspace root',
-        'file deletion commands are blocked',
-        'find -delete is blocked',
-        'git clean is blocked',
-        'git reset --hard is blocked',
-      ],
-      'workspace_validation': [
-        'path not found',
-        'path is not a directory',
-        'path is a directory',
-        'file is too large',
-        'patch text was not found',
-        'search returned too many',
-        'search results are too large',
-        'no existing parent directory',
-      ],
-      'invalid_tool_arguments': [
-        'arguments must be a json object',
-        'formatexception',
-        'is not a subtype of type',
-        'requires a path',
-        'requires string content',
-        'command is required',
-        'search query is required',
-      ],
-      'loop_guard': ['tool call skipped by task runner'],
-    };
-    for (final entry in advisoryCodes.entries) {
-      if (entry.value.any(normalised.contains)) {
-        return TaskToolError(
-          code: entry.key,
-          message: message,
-          disposition: TaskToolErrorDisposition.advisory,
-        );
-      }
-    }
-    return TaskToolError(
-      code: 'legacy_unclassified_error',
-      message: message,
-      disposition: TaskToolErrorDisposition.fatal,
-    );
-  }
 }
 
 @MappableClass(ignoreNull: true)

@@ -126,7 +126,6 @@ class _SystemPromptLibraryPanelState extends State<SystemPromptLibraryPanel> {
         baseModuleIds: draft.baseModuleIds,
         optionalModuleIds: draft.optionalModuleIds,
         customInstructions: draft.customInstructions,
-        legacyFullPrompt: draft.legacyFullPrompt,
       );
       await _reload(showLoading: false);
       _showMessage('Preset created');
@@ -150,7 +149,6 @@ class _SystemPromptLibraryPanelState extends State<SystemPromptLibraryPanel> {
         baseModuleIds: draft.baseModuleIds,
         optionalModuleIds: draft.optionalModuleIds,
         customInstructions: draft.customInstructions,
-        legacyFullPrompt: draft.legacyFullPrompt,
       );
       await _reload(showLoading: false);
       _showMessage('Preset saved');
@@ -189,7 +187,7 @@ class _SystemPromptLibraryPanelState extends State<SystemPromptLibraryPanel> {
       final optionalModules = modules
           .where((module) => preset.optionalModuleIds.contains(module.id))
           .toList();
-      if (!preset.isLegacy && optionalModules.isNotEmpty) {
+      if (optionalModules.isNotEmpty) {
         if (!mounted) return;
         final activeChat = _tabs.activeChat;
         final targetWorkspace =
@@ -644,16 +642,10 @@ class _PresetTile extends StatelessWidget {
         return ListTile(
           contentPadding: EdgeInsets.symmetric(horizontal: compact ? 8 : 16),
           minLeadingWidth: compact ? 28 : 40,
-          leading: Icon(
-            preset.isLegacy
-                ? Icons.article_outlined
-                : Icons.account_tree_outlined,
-          ),
+          leading: Icon(Icons.account_tree_outlined),
           title: _LockableTitle(text: preset.name, locked: preset.isBuiltIn),
           subtitle: Text(
-            preset.isLegacy
-                ? compactPreview(preset.legacyFullPrompt ?? '')
-                : '${preset.baseModuleIds.length} base, ${preset.optionalModuleIds.length} optional${preset.customInstructions.trim().isEmpty ? '' : ' + custom instructions'}',
+            '${preset.baseModuleIds.length} base, ${preset.optionalModuleIds.length} optional${preset.customInstructions.trim().isEmpty ? '' : ' + custom instructions'}',
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),

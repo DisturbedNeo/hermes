@@ -38,7 +38,6 @@ class TaskPlanningToolCallRunner {
     ];
     final definitions = registry.toolDefinitions;
     var turn = 0;
-    var usedPlanningTools = false;
     var metrics = const PlanningMetrics();
 
     while (true) {
@@ -64,53 +63,16 @@ class TaskPlanningToolCallRunner {
         final text = completion.content.trim().isNotEmpty
             ? completion.content.trim()
             : completion.reasoning.trim();
-        // Old integrations still return the former whole-plan JSON. Let the
-        // caller use its compatibility path without spending reminder turns.
-        if (text.startsWith('{') || text.startsWith('```')) {
-          final legacy = TaskJson.tryParseObject(text);
-          return {
-            'ok': false,
-            'legacy_json': legacy,
-            'used_planning_tools': usedPlanningTools,
-            'planning_metrics': ModelJson.encode(metrics),
-          };
-        }
-        if (text.isNotEmpty) {
-          messages.add(
-            ChatMessage(
-              role: 'assistant',
-              content: completion.content,
-              reasoningContent: completion.reasoning,
-            ),
-          );
-        }
-        messages.add(
-          const ChatMessage(
-            role: 'user',
-            content:
-                'Continue with the task planning tools. When the draft is complete, call task_commit_plan; do not return the plan as a JSON document in text.',
-          ),
-        );
-        continue;
-      }
-
-      // Older adapters may still send the former single finalizer call. Keep
-      // it lossless and let TaskService decode it through its compatibility
-      // normalisation path without making a second model request.
-      if (completion.toolCalls.length == 1 &&
-          completion.toolCalls.first.name == 'finaliseTaskCreation') {
         return {
           'ok': false,
-          'legacy_finalizer': true,
-          'arguments': TaskJson.decodeJsonOrString(
-            completion.toolCalls.first.arguments,
-          ),
-          'used_planning_tools': false,
+          'code': 'planning_protocol_violation',
+          'message': text.isEmpty
+              ? 'The planner returned no planning command.'
+              : 'The planner returned text instead of a planning command.',
           'planning_metrics': ModelJson.encode(metrics),
         };
       }
 
-      usedPlanningTools = true;
       final assistantCalls = <Map<String, dynamic>>[];
       for (var index = 0; index < completion.toolCalls.length; index++) {
         final call = completion.toolCalls[index];

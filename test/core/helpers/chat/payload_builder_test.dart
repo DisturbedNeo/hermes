@@ -28,7 +28,6 @@ void main() {
           text: 'Summary memory',
           reasoning: '',
           isSummaryMemory: true,
-          summarySchemaVersion: 1,
         ),
         const Bubble(
           id: 'covered',

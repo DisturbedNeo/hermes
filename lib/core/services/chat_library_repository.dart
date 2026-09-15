@@ -185,14 +185,9 @@ class ChatLibraryRepository {
         'workspace_display_name': workspace?.displayName,
         'workspace_last_opened_at':
             workspace?.lastOpenedAt.millisecondsSinceEpoch,
-        // Host-terminal consent is deliberately session-only.
-        'workspace_command_approved': 0,
         'system_prompt_snapshot_json': systemPromptSnapshot == null
             ? null
             : ModelJson.encodeString(systemPromptSnapshot),
-        'system_prompt_id': systemPromptSnapshot?.id,
-        'system_prompt_name': systemPromptSnapshot?.name,
-        'system_prompt_text': systemPromptSnapshot?.text,
       };
       if (existing.isEmpty) {
         await txn.insert('saved_chats', chatValues);
@@ -236,7 +231,6 @@ class ChatLibraryRepository {
           'omitted_from_model_payload': message.omittedFromModelPayload ? 1 : 0,
           'summary_id': message.summaryId,
           'is_summary_memory': message.isSummaryMemory ? 1 : 0,
-          'summary_schema_version': message.summarySchemaVersion,
           'position': i,
           'created_at': messageCreatedAt.millisecondsSinceEpoch,
           'updated_at': now.millisecondsSinceEpoch,
@@ -378,16 +372,14 @@ class ChatLibraryRepository {
     final db = await _databaseFactory.openDatabase(
       dbPath,
       options: OpenDatabaseOptions(
-        version: 1,
         singleInstance: false,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
         },
-        onCreate: (db, _) async => _createSchema(db),
-        onOpen: (db) async => _createSchema(db),
       ),
     );
 
+    await _createSchema(db);
     return db;
   }
 
@@ -403,11 +395,7 @@ class ChatLibraryRepository {
         workspace_root_path TEXT,
         workspace_display_name TEXT,
         workspace_last_opened_at INTEGER,
-        workspace_command_approved INTEGER NOT NULL DEFAULT 0,
-        system_prompt_snapshot_json TEXT,
-        system_prompt_id TEXT,
-        system_prompt_name TEXT,
-        system_prompt_text TEXT
+        system_prompt_snapshot_json TEXT
       )
     ''');
 
@@ -422,18 +410,9 @@ class ChatLibraryRepository {
     await _ensureColumn(
       db,
       'saved_chats',
-      'workspace_command_approved',
-      'INTEGER NOT NULL DEFAULT 0',
-    );
-    await _ensureColumn(
-      db,
-      'saved_chats',
       'system_prompt_snapshot_json',
       'TEXT',
     );
-    await _ensureColumn(db, 'saved_chats', 'system_prompt_id', 'TEXT');
-    await _ensureColumn(db, 'saved_chats', 'system_prompt_name', 'TEXT');
-    await _ensureColumn(db, 'saved_chats', 'system_prompt_text', 'TEXT');
 
     await db.execute('''
       CREATE TABLE IF NOT EXISTS saved_chat_messages (
@@ -446,7 +425,6 @@ class ChatLibraryRepository {
         omitted_from_model_payload INTEGER NOT NULL DEFAULT 0,
         summary_id TEXT,
         is_summary_memory INTEGER NOT NULL DEFAULT 0,
-        summary_schema_version INTEGER,
         position INTEGER NOT NULL,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
@@ -473,13 +451,6 @@ class ChatLibraryRepository {
       'is_summary_memory',
       'INTEGER NOT NULL DEFAULT 0',
     );
-    await _ensureColumn(
-      db,
-      'saved_chat_messages',
-      'summary_schema_version',
-      'INTEGER',
-    );
-
     await db.execute('''
       CREATE VIRTUAL TABLE IF NOT EXISTS saved_chat_search USING fts5(
         chat_id UNINDEXED,
@@ -563,7 +534,6 @@ class ChatLibraryRepository {
       'omitted_from_model_payload',
       'summary_id',
       'is_summary_memory',
-      'summary_schema_version',
       'position',
     ];
     return comparedColumns.any(
@@ -609,7 +579,6 @@ class ChatLibraryRepository {
               lastOpenedAt:
                   _nullableDate(workspaceLastOpenedAt) ??
                   DateTime.fromMillisecondsSinceEpoch(0),
-              // Decode the legacy column but never restore host authority.
               commandExecutionApproved: false,
             ),
       systemPromptSnapshot: _systemPromptFromRow(row),
@@ -618,25 +587,12 @@ class ChatLibraryRepository {
 
   SystemPromptSnapshot? _systemPromptFromRow(Map<String, Object?> row) {
     final snapshotJson = row['system_prompt_snapshot_json'] as String?;
-    if (snapshotJson != null && snapshotJson.isNotEmpty) {
-      try {
-        return ModelJson.decodeString<SystemPromptSnapshot>(snapshotJson);
-      } catch (_) {
-        // Fall through to legacy columns.
-      }
-    }
-
-    final text = row['system_prompt_text'] as String?;
-    final name = row['system_prompt_name'] as String?;
-    if (text == null || text.isEmpty || name == null || name.isEmpty) {
+    if (snapshotJson == null || snapshotJson.isEmpty) return null;
+    try {
+      return ModelJson.decodeString<SystemPromptSnapshot>(snapshotJson);
+    } catch (_) {
       return null;
     }
-
-    return SystemPromptSnapshot.legacy(
-      id: row['system_prompt_id'] as String?,
-      name: name,
-      text: text,
-    );
   }
 
   Bubble _bubbleFromRow(Map<String, Object?> row) {
@@ -651,7 +607,6 @@ class ChatLibraryRepository {
           (row['omitted_from_model_payload'] as int? ?? 0) == 1,
       summaryId: row['summary_id'] as String?,
       isSummaryMemory: (row['is_summary_memory'] as int? ?? 0) == 1,
-      summarySchemaVersion: row['summary_schema_version'] as int?,
     );
   }
 

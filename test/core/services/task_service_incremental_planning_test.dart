@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/chat_message.dart';
-import 'package:hermes/core/models/planning_protocol.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
@@ -76,7 +75,7 @@ void main() {
   );
 
   test(
-    'strict incremental mode does not expose or follow the legacy finalizer',
+    'falls back safely when the planner violates the command protocol',
     () async {
       final root = await Directory.systemTemp.createTemp(
         'hermes_strict_incremental_task_',
@@ -88,11 +87,10 @@ void main() {
       final service = TaskService(
         toolService: ToolService(workspaceSandbox: sandbox),
         sandbox: sandbox,
-        planningProtocolMode: PlanningProtocolMode.incremental,
       );
       final client = _QueueClient([
-        _call('finaliseTaskCreation', {
-          'title': 'Legacy replacement plan',
+        _call('unsupported_planning_command', {
+          'title': 'Unsupported replacement plan',
           'objective': 'This must not be accepted in strict mode.',
         }),
       ]);
@@ -114,7 +112,7 @@ void main() {
       expect(task.planningMetrics.fullPlanRepairCount, 0);
       expect(
         client.offeredToolNames.single,
-        isNot(contains('finaliseTaskCreation')),
+        isNot(contains('unsupported_planning_command')),
       );
     },
   );

@@ -1003,16 +1003,7 @@ class TaskEvidenceExpectationMapper
   );
   static ProjectEvidenceType _$type(TaskEvidenceExpectation v) => v.type;
   static const Field<TaskEvidenceExpectation, ProjectEvidenceType> _f$type =
-      Field(
-        'type',
-        _$type,
-        opt: true,
-        def: ProjectEvidenceType.taskClaim,
-        hook: EnumAliasHook({
-          'taskclaim': 'task_claim',
-          'userapproval': 'user_approval',
-        }),
-      );
+      Field('type', _$type, opt: true, def: ProjectEvidenceType.taskClaim);
   static List<String> _$criterionIds(TaskEvidenceExpectation v) =>
       v.criterionIds;
   static const Field<TaskEvidenceExpectation, List<String>> _f$criterionIds =
@@ -1303,13 +1294,7 @@ class RefinedTaskBriefMapper extends ClassMapperBase<RefinedTaskBrief> {
   };
 
   @override
-  final MappingHook hook = const JsonModelHook(
-    aliases: {
-      'goal': ['objective'],
-      'successCriteria': ['success_criteria'],
-      'questions': ['clarifyingQuestions'],
-    },
-  );
+  final MappingHook hook = const JsonModelHook();
   static RefinedTaskBrief _instantiate(DecodingData data) {
     return RefinedTaskBrief(
       title: data.dec(_f$title),
@@ -1375,14 +1360,6 @@ class TaskMapper extends ClassMapperBase<Task> {
   @override
   final String id = 'Task';
 
-  static int _$schemaVersion(Task v) => v.schemaVersion;
-  static const Field<Task, int> _f$schemaVersion = Field(
-    'schemaVersion',
-    _$schemaVersion,
-    opt: true,
-    def: Task.currentSchemaVersion,
-    hook: JsonIntHook(),
-  );
   static String _$id(Task v) => v.id;
   static const Field<Task, String> _f$id = Field(
     'id',
@@ -1447,7 +1424,6 @@ class TaskMapper extends ClassMapperBase<Task> {
     _$status,
     opt: true,
     def: TaskStatus.paused,
-    hook: EnumAliasHook({}),
   );
   static List<String> _$criterionIds(Task v) => v.criterionIds;
   static const Field<Task, List<String>> _f$criterionIds = Field(
@@ -1549,14 +1525,6 @@ class TaskMapper extends ClassMapperBase<Task> {
     opt: true,
     def: const [],
     hook: JsonStringListHook(),
-  );
-  static bool _$legacyWriteAccess(Task v) => v.legacyWriteAccess;
-  static const Field<Task, bool> _f$legacyWriteAccess = Field(
-    'legacyWriteAccess',
-    _$legacyWriteAccess,
-    opt: true,
-    def: false,
-    hook: JsonBoolHook(),
   );
   static List<String> _$doneCriteria(Task v) => v.doneCriteria;
   static const Field<Task, List<String>> _f$doneCriteria = Field(
@@ -1687,13 +1655,6 @@ class TaskMapper extends ClassMapperBase<Task> {
     def: const PlanningMetrics(),
     hook: OmitEmptyPlanningMetricsHook(),
   );
-  static String? _$taskDocumentId(Task v) => v.taskDocumentId;
-  static const Field<Task, String> _f$taskDocumentId = Field(
-    'taskDocumentId',
-    _$taskDocumentId,
-    opt: true,
-    hook: JsonNullableStringHook(),
-  );
   static DateTime? _$completedAt(Task v) => v.completedAt;
   static const Field<Task, DateTime> _f$completedAt = Field(
     'completedAt',
@@ -1704,7 +1665,6 @@ class TaskMapper extends ClassMapperBase<Task> {
 
   @override
   final MappableFields<Task> fields = const {
-    #schemaVersion: _f$schemaVersion,
     #id: _f$id,
     #title: _f$title,
     #originalPrompt: _f$originalPrompt,
@@ -1727,7 +1687,6 @@ class TaskMapper extends ClassMapperBase<Task> {
     #expectedEvidence: _f$expectedEvidence,
     #readPaths: _f$readPaths,
     #writePaths: _f$writePaths,
-    #legacyWriteAccess: _f$legacyWriteAccess,
     #doneCriteria: _f$doneCriteria,
     #outOfScope: _f$outOfScope,
     #context: _f$context,
@@ -1746,7 +1705,6 @@ class TaskMapper extends ClassMapperBase<Task> {
     #chatSessionId: _f$chatSessionId,
     #projectId: _f$projectId,
     #planningMetrics: _f$planningMetrics,
-    #taskDocumentId: _f$taskDocumentId,
     #completedAt: _f$completedAt,
   };
   @override
@@ -1756,7 +1714,6 @@ class TaskMapper extends ClassMapperBase<Task> {
   final MappingHook hook = const TaskJsonHook();
   static Task _instantiate(DecodingData data) {
     return Task(
-      schemaVersion: data.dec(_f$schemaVersion),
       id: data.dec(_f$id),
       title: data.dec(_f$title),
       originalPrompt: data.dec(_f$originalPrompt),
@@ -1779,7 +1736,6 @@ class TaskMapper extends ClassMapperBase<Task> {
       expectedEvidence: data.dec(_f$expectedEvidence),
       readPaths: data.dec(_f$readPaths),
       writePaths: data.dec(_f$writePaths),
-      legacyWriteAccess: data.dec(_f$legacyWriteAccess),
       doneCriteria: data.dec(_f$doneCriteria),
       outOfScope: data.dec(_f$outOfScope),
       context: data.dec(_f$context),
@@ -1798,7 +1754,6 @@ class TaskMapper extends ClassMapperBase<Task> {
       chatSessionId: data.dec(_f$chatSessionId),
       projectId: data.dec(_f$projectId),
       planningMetrics: data.dec(_f$planningMetrics),
-      taskDocumentId: data.dec(_f$taskDocumentId),
       completedAt: data.dec(_f$completedAt),
     );
   }
@@ -1995,7 +1950,6 @@ class TaskStepMapper extends ClassMapperBase<TaskStep> {
   static const Field<TaskStep, TaskStepStatus> _f$status = Field(
     'status',
     _$status,
-    hook: EnumAliasHook({}),
   );
 
   @override
@@ -2209,7 +2163,7 @@ class TaskFailureMapper extends ClassMapperBase<TaskFailure> {
   static TaskGateFailureDisposition _$disposition(TaskFailure v) =>
       v.disposition;
   static const Field<TaskFailure, TaskGateFailureDisposition> _f$disposition =
-      Field('disposition', _$disposition, hook: EnumAliasHook({}));
+      Field('disposition', _$disposition);
   static String _$failureKey(TaskFailure v) => v.failureKey;
   static const Field<TaskFailure, String> _f$failureKey = Field(
     'failureKey',
@@ -2355,7 +2309,6 @@ class TaskRunMapper extends ClassMapperBase<TaskRun> {
   static const Field<TaskRun, TaskRunStatus> _f$status = Field(
     'status',
     _$status,
-    hook: EnumAliasHook({'needsreplan': 'needs_replan'}),
   );
   static String _$summary(TaskRun v) => v.summary;
   static const Field<TaskRun, String> _f$summary = Field(
@@ -2561,13 +2514,6 @@ class TaskToolCallRecordMapper extends ClassMapperBase<TaskToolCallRecord> {
     opt: true,
     hook: JsonNullableStringHook(),
   );
-  static String? _$error(TaskToolCallRecord v) => v.error;
-  static const Field<TaskToolCallRecord, String> _f$error = Field(
-    'error',
-    _$error,
-    opt: true,
-    hook: JsonNullableStringHook(),
-  );
   static TaskToolCallOutcome _$outcome(TaskToolCallRecord v) => v.outcome;
   static const Field<TaskToolCallRecord, TaskToolCallOutcome> _f$outcome =
       Field(
@@ -2575,7 +2521,6 @@ class TaskToolCallRecordMapper extends ClassMapperBase<TaskToolCallRecord> {
         _$outcome,
         opt: true,
         def: TaskToolCallOutcome.succeeded,
-        hook: EnumAliasHook({}),
       );
   static String? _$operationKey(TaskToolCallRecord v) => v.operationKey;
   static const Field<TaskToolCallRecord, String> _f$operationKey = Field(
@@ -2601,7 +2546,6 @@ class TaskToolCallRecordMapper extends ClassMapperBase<TaskToolCallRecord> {
     #arguments: _f$arguments,
     #result: _f$result,
     #resultSummary: _f$resultSummary,
-    #error: _f$error,
     #outcome: _f$outcome,
     #operationKey: _f$operationKey,
     #toolError: _f$toolError,
@@ -2619,7 +2563,6 @@ class TaskToolCallRecordMapper extends ClassMapperBase<TaskToolCallRecord> {
       arguments: data.dec(_f$arguments),
       result: data.dec(_f$result),
       resultSummary: data.dec(_f$resultSummary),
-      error: data.dec(_f$error),
       outcome: data.dec(_f$outcome),
       operationKey: data.dec(_f$operationKey),
       toolError: data.dec(_f$toolError),
@@ -2682,7 +2625,7 @@ class TaskToolErrorMapper extends ClassMapperBase<TaskToolError> {
   static TaskToolErrorDisposition _$disposition(TaskToolError v) =>
       v.disposition;
   static const Field<TaskToolError, TaskToolErrorDisposition> _f$disposition =
-      Field('disposition', _$disposition, hook: EnumAliasHook({}));
+      Field('disposition', _$disposition);
 
   @override
   final MappableFields<TaskToolError> fields = const {
@@ -2755,7 +2698,6 @@ class TaskGateResultMapper extends ClassMapperBase<TaskGateResult> {
   static const Field<TaskGateResult, TaskGateStatus> _f$status = Field(
     'status',
     _$status,
-    hook: EnumAliasHook({}),
   );
   static String _$summary(TaskGateResult v) => v.summary;
   static const Field<TaskGateResult, String> _f$summary = Field(
@@ -2778,7 +2720,6 @@ class TaskGateResultMapper extends ClassMapperBase<TaskGateResult> {
     'failureDisposition',
     _$failureDisposition,
     opt: true,
-    hook: EnumAliasHook({}),
   );
   static DateTime _$evaluatedAt(TaskGateResult v) => v.evaluatedAt;
   static const Field<TaskGateResult, DateTime> _f$evaluatedAt = Field(
@@ -2876,7 +2817,6 @@ class TaskEvidenceClaimMapper extends ClassMapperBase<TaskEvidenceClaim> {
         _$evidenceType,
         opt: true,
         def: TaskEvidenceClaimType.taskClaim,
-        hook: EnumAliasHook({}),
       );
   static String _$sourceRef(TaskEvidenceClaim v) => v.sourceRef;
   static const Field<TaskEvidenceClaim, String> _f$sourceRef = Field(
@@ -2892,7 +2832,6 @@ class TaskEvidenceClaimMapper extends ClassMapperBase<TaskEvidenceClaim> {
     _$suggestedStrength,
     opt: true,
     def: TaskEvidenceClaimStrength.advisory,
-    hook: EnumAliasHook({}),
   );
   static String? _$expectationId(TaskEvidenceClaim v) => v.expectationId;
   static const Field<TaskEvidenceClaim, String> _f$expectationId = Field(

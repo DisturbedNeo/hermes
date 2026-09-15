@@ -5,19 +5,15 @@ import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/planning_metrics.dart';
-import 'package:hermes/core/models/planning_protocol.dart';
 import 'package:hermes/core/serialization/model_json.dart';
-import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/project_system/project_planning_gateway.dart';
 import 'package:hermes/core/services/project_system/project_planning_tool_call_runner.dart';
 import 'package:hermes/core/services/project_system/project_planning_tools.dart';
-import 'package:hermes/core/services/project_system/project_plan_revision_service.dart';
 import 'package:hermes/core/services/project_system/project_view_service.dart';
 import 'package:hermes/core/services/question_policy_service.dart';
-import 'package:hermes/core/services/task_system/finalizer_tool_call_runner.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/tool_service.dart';
@@ -28,27 +24,18 @@ export 'package:hermes/core/services/project_system/project_planning_gateway.dar
         ProjectEvidenceSnapshot,
         ProjectInitialisation,
         ProjectIncrementalPlanResult,
-        ProjectIncrementalPlanningGateway,
         ProjectPlanningGateway;
 
-class ProjectModelCalls
-    implements
-        ProjectPlanningGateway,
-        ProjectIncrementalPlanningGateway,
-        PlanningProtocolConfigurable {
+class ProjectModelCalls implements ProjectPlanningGateway {
   ProjectModelCalls({
     required ToolService toolService,
     ProjectViewService projectViewService = const ProjectViewService(),
-  }) : _creationRunner = FinalizerToolCallRunner(toolService: toolService),
-       _projectViewService = projectViewService,
+  }) : _projectViewService = projectViewService,
        _planningRunner = const ProjectPlanningToolCallRunner();
 
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
-  final FinalizerToolCallRunner _creationRunner;
   final ProjectViewService _projectViewService;
   final ProjectPlanningToolCallRunner _planningRunner;
-  @override
-  PlanningProtocolMode planningProtocolMode = PlanningProtocolMode.automatic;
 
   @override
   Future<ProjectInitialisation> initializeProject({
@@ -61,38 +48,6 @@ class ProjectModelCalls
     CancellationToken? cancellationToken,
   }) async {
     try {
-      if (planningProtocolMode == PlanningProtocolMode.legacy) {
-        final json = await _completeFinalizedJson(
-          client: client,
-          workspace: workspace,
-          label: 'Project Initial Planning (legacy compatibility)',
-          system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
-          onModelOutput: onModelOutput,
-          cancellationToken: cancellationToken,
-          expectedShape:
-              '{"title":"...","refinedGoal":"...","criteria":[],"constraints":[],"memory":[],"milestones":[],"openQuestions":[],"tasks":[]}',
-          finalizerTool: _finaliseProjectCreationToolDefinition(
-            requiredProperties: const [
-              'title',
-              'refinedGoal',
-              'criteria',
-              'constraints',
-            ],
-          ),
-          user:
-              '''
-Create the initial project plan for this user goal. Use the supplied
-workspace profile as the complete discovery input and do not execute work.
-
-Original project goal:
-$originalGoal
-
-Authoritative workspace metadata:
-${_encoder.convert(workspaceMetadata)}
-''',
-        );
-        return _initialisationFromJson(json, originalGoal: originalGoal);
-      }
       return await _completeInitialPlanning(
         client: client,
         baseSystemPrompt: baseSystemPrompt,
@@ -124,119 +79,34 @@ ${_encoder.convert(workspaceMetadata)}
     CancellationToken? cancellationToken,
   }) async {
     try {
-      final json = await _completeFinalizedJson(
+      return await _completeInitialPlanning(
         client: client,
+        baseSystemPrompt: baseSystemPrompt,
         workspace: workspace,
-        label: 'Project Initializer Repair',
-        system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
+        originalGoal: originalGoal,
+        workspaceMetadata: workspaceMetadata,
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
-        expectedShape:
-            '{"title":"...","refinedGoal":"...","criteria":[],"constraints":[],"memory":[],"milestones":[],"openQuestions":[],"tasks":[]}',
-        finalizerTool: _finaliseProjectCreationToolDefinition(
-          requiredProperties: const [
-            'title',
-            'refinedGoal',
-            'criteria',
-            'constraints',
-          ],
-        ),
-        user:
+        additionalInstruction:
             '''
-Repair or replan this initial project plan. Resolve every structured validation issue without inventing workspace state. This may be retried automatically when the repaired plan still fails validation, so return a complete replacement plan rather than a partial patch.
-The supplied workspace profile is authoritative: a component absent from its tree is absent, not undiscovered or stale. A readPath may name an absent path only when a declared dependency produces it through writePaths or expectedArtifacts.
-Preserve the user's original outcome separately from the refined planning interpretation. Do not execute work.
-Model-authored memory is advisory. Include sourceId such as workspace:Design.md for claims derived from supplied files.
+Repair the previous draft by resolving every structured validation issue below.
+Preserve the user's original outcome and do not invent workspace state. Build
+the corrected draft through the planning commands and commit it with
+plan_commit.
 
 Validation issues:
 ${_encoder.convert(validationIssues)}
 
-Invalid initial plan:
+Previous draft:
 ${_encoder.convert(_initialisationToMap(initialisation))}
-
-Authoritative workspace metadata:
-${_encoder.convert(workspaceMetadata)}
-
-Original project goal:
-$originalGoal
 ''',
       );
-      return _initialisationFromJson(json, originalGoal: originalGoal);
     } on OperationCancelledException {
       rethrow;
     } on ChatTransportException {
       return null;
     } catch (_) {
       return null;
-    }
-  }
-
-  @override
-  Future<ProjectDesiredPlan> revisePlan({
-    required ChatClient client,
-    required String baseSystemPrompt,
-    required WorkspaceAttachment workspace,
-    required ProjectState project,
-    required ProjectEvidenceSnapshot evidenceSnapshot,
-    required List<ProjectPlanRevisionTrigger> triggers,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) async {
-    try {
-      final json = await _completeJson(
-        client: client,
-        label: 'Project Plan Revision',
-        system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
-        onModelOutput: onModelOutput,
-        cancellationToken: cancellationToken,
-        expectedShape:
-            '{"summary":"...","rationale":"...","assumptions":[],"criteria":[],"milestones":[],"tasks":[],"deferredTaskIds":[],"obsoleteTaskIds":[],"memoryAdditions":[],"memorySupersessions":[],"openQuestions":[],"requiresApproval":false,"approvalReason":""}',
-        user:
-            '''
-Propose one coherent revision to the rolling project plan for all supplied triggers.
-Do not execute work. Preserve completed task history, accepted evidence, gate results, recovery incidents, and protected user memory.
-The original goal is the authoritative user request; the refined goal is a separate planning interpretation and must not overwrite it. Treat the supplied discovery snapshot as authoritative for current workspace state.
-    Criterion status and evidence are evaluator-owned progress state. Return the complete desired criterion definitions without changing evaluator-owned status.
-    Return the complete desired set of active and non-terminal bounded tasks. Use stable existing IDs for updates and new unique IDs for additions. Completed, failed, running, and recovery history is preserved by the reconciler.
-    Criteria, milestones, and tasks are complete collections: always include each field, including an explicit empty array when that collection should be cleared. Omitted or malformed collection fields are treated as unavailable and preserve the current planner-visible state.
-For every small task that will modify workspace files, writePaths must contain the explicit files or directories it may change. Leave writePaths empty only for genuinely read-only work.
-Do not add openQuestions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; choose a reasonable next task/order and record the assumption in memoryAdditions.
-Add openQuestions only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
-    Include sourceId such as workspace:Design.md on memory derived from supplied files. If confirmed workspace evidence contradicts active inferred planner memory, supersede each conflicting entry through memorySupersessions.
-
-Return only JSON:
-{
-      "summary": "...", "rationale": "...", "assumptions": [],
-      "criteria": [], "milestones": [], "tasks": [],
-  "deferredTaskIds": [], "obsoleteTaskIds": [],
-  "memoryAdditions": [], "memorySupersessions": [],
-  "openQuestions": [], "requiresApproval": false, "approvalReason": ""
-}
-
-Revision triggers:
-${_encoder.convert(triggers.map((item) => item.name).toList())}
-
-Bounded discovery snapshot:
-${_encoder.convert(evidenceSnapshot.toMap())}
-
-Compact project view:
-${_encoder.convert(_projectViewService.query(project))}
-''',
-      );
-      return _proposalFromJson(json, project: project, triggers: triggers);
-    } on OperationCancelledException {
-      rethrow;
-    } on ChatTransportException {
-      rethrow;
-    } catch (_) {
-      return ProjectDesiredPlan(
-        revision: project.nextRevision,
-        triggers: triggers,
-        summary: 'No safe plan revision was produced.',
-        rationale: 'The planning call failed without a valid proposal.',
-        hasCompleteCollections: false,
-        createdAt: DateTime.now(),
-      );
     }
   }
 
@@ -306,11 +176,7 @@ ${_encoder.convert(_projectViewService.query(project))}
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
       );
-      return _incrementalPlanResult(
-        context,
-        result,
-        workspaceRoot: workspace.rootPath,
-      );
+      return _incrementalPlanResult(context, result);
     } on OperationCancelledException {
       rethrow;
     } on ChatTransportException {
@@ -380,12 +246,7 @@ ${_encoder.convert(_projectViewService.query(project, taskRef: oversizedTask.id)
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
       );
-      return _incrementalPlanResult(
-        context,
-        result,
-        workspaceRoot: workspace.rootPath,
-        splitTaskId: oversizedTask.id,
-      );
+      return _incrementalPlanResult(context, result);
     } on OperationCancelledException {
       rethrow;
     } on ChatTransportException {
@@ -400,47 +261,8 @@ ${_encoder.convert(_projectViewService.query(project, taskRef: oversizedTask.id)
 
   Future<ProjectIncrementalPlanResult> _incrementalPlanResult(
     ProjectPlanningContext context,
-    Map<String, dynamic> result, {
-    required String workspaceRoot,
-    String? splitTaskId,
-  }) async {
-    final legacy = _legacyPlanMap(result);
-    if (legacy != null &&
-        planningProtocolMode == PlanningProtocolMode.automatic) {
-      final proposal = _proposalFromJson(
-        legacy,
-        project: context.project,
-        triggers: context.builder.triggers,
-      );
-      final applied = await const ProjectPlanRevisionService().prepareAndApply(
-        project: context.project,
-        proposal: proposal,
-        workspaceRoot: workspaceRoot,
-        approvalPolicy: context.approvalPolicy,
-        splitTaskIds: splitTaskId == null ? const [] : [splitTaskId],
-      );
-      final planningMetrics = _planningMetricsFromResult(result);
-      if (applied.validation.valid) {
-        return ProjectIncrementalPlanResult(
-          project: applied.project,
-          committed: true,
-          changed: applied.changed,
-          awaitingApproval: applied.awaitingApproval,
-          modelCalls:
-              (result['model_calls'] as num?)?.toInt() ??
-              planningMetrics.planningCalls,
-          planningMetrics: planningMetrics,
-        );
-      }
-      return _incrementalFailure(
-        applied.project,
-        applied.project.blocker?.message ??
-            'The compatibility plan did not pass validation.',
-        planningMetrics: planningMetrics.copyWith(
-          validationBlockerCount: planningMetrics.validationBlockerCount + 1,
-        ),
-      );
-    }
+    Map<String, dynamic> result,
+  ) async {
     final committed = context.committedProject;
     if (committed != null && context.closed && result['ok'] == true) {
       return ProjectIncrementalPlanResult(
@@ -491,129 +313,6 @@ ${_encoder.convert(_projectViewService.query(project, taskRef: oversizedTask.id)
     }
   }
 
-  Map<String, dynamic>? _legacyPlanMap(Map<String, dynamic> result) {
-    final raw = result['legacy_finalizer'] == true
-        ? result['arguments']
-        : result['legacy_json'];
-    if (raw is Map) return Map<String, dynamic>.from(raw);
-    return null;
-  }
-
-  @override
-  Future<ProjectDesiredPlan?> repairPlanProposal({
-    required ChatClient client,
-    required String baseSystemPrompt,
-    required WorkspaceAttachment workspace,
-    required ProjectState project,
-    required ProjectDesiredPlan proposal,
-    required List<Map<String, String>> validationIssues,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) async {
-    try {
-      final json = await _completeJson(
-        client: client,
-        label: 'Project Plan Repair',
-        system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
-        onModelOutput: onModelOutput,
-        cancellationToken: cancellationToken,
-        expectedShape:
-            '{"summary":"...","rationale":"...","criteria":[],"milestones":[],"tasks":[],"deferredTaskIds":[],"obsoleteTaskIds":[],"openQuestions":[]}',
-        user:
-            '''
-Repair or replan the proposed plan so every structured validation issue is resolved. This may be retried automatically when the repaired plan still fails validation, so return a complete replacement plan rather than a partial patch.
-Preserve its intent and revision number. Do not execute work or mutate immutable history.
-
-Validation issues:
-${_encoder.convert(validationIssues)}
-
-Invalid proposal:
-${_encoder.convert(ModelJson.encode(proposal))}
-
-Compact authoritative project view:
-${_encoder.convert(_projectViewService.query(project))}
-''',
-      );
-      return _proposalFromJson(
-        json,
-        project: project,
-        triggers: proposal.triggers,
-      );
-    } on OperationCancelledException {
-      rethrow;
-    } on ChatTransportException {
-      rethrow;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  @override
-  Future<List<Task>> splitTask({
-    required ChatClient client,
-    required String baseSystemPrompt,
-    required ProjectState project,
-    required Task oversizedTask,
-    required List<String> violations,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) async {
-    try {
-      final json = await _completeJson(
-        client: client,
-        label: 'Project Task Splitter',
-        system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
-        onModelOutput: onModelOutput,
-        cancellationToken: cancellationToken,
-        expectedShape:
-            '{"tasks":[{"title":"...","objective":"...","criterionIds":["criterion_001"],"doneCriteria":["..."],"outOfScope":["..."],"context":["..."],"expectedArtifacts":[]}]}',
-        user:
-            '''
-Split this oversized or invalid project task into 2 to 5 smaller bounded tasks.
-
-Return only JSON:
-{
-  "tasks": [
-    {
-      "title": "...",
-      "objective": "one small bounded task",
-      "criterionIds": ["criterion_001"],
-      "doneCriteria": ["..."],
-      "outOfScope": ["..."],
-      "context": ["..."],
-      "readPaths": ["..."],
-      "writePaths": ["..."],
-      "expectedArtifacts": [{"path": "...", "description": "...", "kind": "file"}]
-    }
-  ]
-}
-
-Validation violations:
-${_encoder.convert(violations)}
-
-Allowed criterion IDs and exact statements:
-${_encoder.convert({for (final criterion in project.criteria) criterion.id: criterion.statement})}
-
-Invalid task:
-${_encoder.convert(ModelJson.encode(oversizedTask))}
-
-Project state:
-${_encoder.convert(ModelJson.encode(project))}
-''',
-      );
-      return _bindTasksToCriteria(
-        _tasksFromJson(json['tasks']),
-        project.criteria,
-      ).take(5).toList();
-    } on OperationCancelledException {
-      rethrow;
-    } on ChatTransportException {
-      rethrow;
-    } catch (_) {
-      return const [];
-    }
-  }
-
   @override
   Future<ProjectCompletionAssessment> evaluateCompletion({
     required ChatClient client,
@@ -626,7 +325,7 @@ ${_encoder.convert(ModelJson.encode(project))}
       final json = await _completeJson(
         client: client,
         label: 'Project Completion Evaluator',
-        system: '$baseSystemPrompt\n\n$_projectJsonSystemInstruction',
+        system: '$baseSystemPrompt\n\n$_completionEvaluationSystemInstruction',
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
         expectedShape:
@@ -723,43 +422,6 @@ Return only the repaired JSON object.
     return TaskJson.parseObject(repaired);
   }
 
-  Future<Map<String, dynamic>> _completeFinalizedJson({
-    required ChatClient client,
-    required WorkspaceAttachment workspace,
-    required String system,
-    required String user,
-    required String label,
-    required String expectedShape,
-    required ToolDefinition finalizerTool,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) {
-    return _creationRunner.completeWithFinalizer(
-      client: client,
-      workspace: workspace,
-      label: label,
-      system:
-          '''
-$system
-
-Use the supplied bounded workspace profile as the complete discovery input.
-Do not call tools or perform a second workspace exploration during project creation.
-When the project creation data is ready, call the $_finaliseProjectCreationToolId tool with the complete structured payload.
-'''
-              .trim(),
-      user: user,
-      finalizerTool: finalizerTool,
-      reminderPrompt:
-          '''
-You did not call $_finaliseProjectCreationToolId. Return only the JSON object that would be passed as that tool's arguments, matching this shape:
-$expectedShape
-''',
-      allowReadOnlyTools: false,
-      onModelOutput: onModelOutput,
-      cancellationToken: cancellationToken,
-    );
-  }
-
   Future<ProjectInitialisation> _completeInitialPlanning({
     required ChatClient client,
     required String baseSystemPrompt,
@@ -814,15 +476,6 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
       onModelOutput: onModelOutput,
       cancellationToken: cancellationToken,
     );
-    final legacy = _legacyPlanMap(result);
-    if (legacy != null &&
-        planningProtocolMode == PlanningProtocolMode.automatic) {
-      return _initialisationFromJson(
-        legacy,
-        originalGoal: originalGoal,
-        planningMetrics: _planningMetricsFromResult(result),
-      );
-    }
     if (result['ok'] != true || context.committedProposal == null) {
       throw FormatException(
         'Initial planning did not commit a valid draft: ${result['message'] ?? result['code'] ?? 'unknown error'}.',
@@ -1010,34 +663,6 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
     sink?.call(event);
   }
 
-  ProjectInitialisation _initialisationFromJson(
-    Map<String, dynamic> json, {
-    required String originalGoal,
-    PlanningMetrics planningMetrics = const PlanningMetrics(),
-  }) {
-    final refinedGoal = jsonString(
-      json['refinedGoal'] ?? json['refined_goal'],
-      fallback: originalGoal,
-    );
-    final structuredCriteria = _criteriaFromJson(json['criteria']);
-    return ProjectInitialisation(
-      title: jsonString(json['title'], fallback: _titleFromGoal(originalGoal)),
-      refinedGoal: refinedGoal,
-      criteria: structuredCriteria,
-      constraints: jsonStringList(json['constraints']),
-      openQuestions: _questionsFromJson(
-        json['openQuestions'] ?? json['open_questions'],
-      ),
-      tasks: _bindTasksToCriteria(
-        _tasksFromJson(json['tasks']),
-        structuredCriteria,
-      ),
-      milestones: _milestonesFromJson(json['milestones']),
-      memory: _memoryFromJson(json['memory']),
-      planningMetrics: planningMetrics,
-    );
-  }
-
   Map<String, dynamic> _initialisationToMap(ProjectInitialisation value) => {
     'title': value.title,
     'refinedGoal': value.refinedGoal,
@@ -1067,261 +692,6 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
     );
   }
 
-  List<Task> _tasksFromJson(Object? value) {
-    if (value is! List) return const [];
-    final tasks = <Task>[];
-    for (var i = 0; i < value.length; i++) {
-      final raw = value[i];
-      if (raw is! Map) continue;
-      tasks.add(_taskFromMap(Map<String, dynamic>.from(raw), i));
-    }
-    return tasks;
-  }
-
-  Task _taskFromMap(Map<String, dynamic> map, int index) {
-    map['id'] = jsonString(
-      map['id'],
-      fallback: 'project_task_${index + 1}_${uuid.v7()}',
-    );
-    map['status'] ??= TaskStatus.queued.wire;
-    final task = ModelJson.decode<Task>(map);
-    final expectedEvidence = task.expectedEvidence.isEmpty
-        ? [
-            TaskEvidenceExpectation(
-              id: 'expect_${task.id}',
-              type: ProjectEvidenceType.taskClaim,
-              criterionIds: task.criterionIds,
-              description: task.doneCriteria.isEmpty
-                  ? 'The bounded task result is independently verified.'
-                  : task.doneCriteria.join(' '),
-            ),
-          ]
-        : task.expectedEvidence;
-    return task.copyWith(
-      expectedEvidence: expectedEvidence,
-      fingerprint: projectTaskFingerprint(task.objective, task.criterionIds),
-    );
-  }
-
-  ProjectDesiredPlan _proposalFromJson(
-    Map<String, dynamic> json, {
-    required ProjectState project,
-    required List<ProjectPlanRevisionTrigger> triggers,
-  }) {
-    final criteriaValue = json['criteria'];
-    final criteriaComplete =
-        criteriaValue is List && criteriaValue.every((item) => item is Map);
-    final criteria = criteriaComplete
-        ? _criteriaFromJson(json['criteria'])
-        : project.criteria;
-    final tasksValue = json['tasks'];
-    final tasksComplete =
-        tasksValue is List && tasksValue.every((item) => item is Map);
-    final desiredTasks = tasksComplete
-        ? _tasksFromJson(json['tasks'])
-        : project.tasks
-              .where(
-                (task) =>
-                    task.status != TaskStatus.completed &&
-                    task.status != TaskStatus.failed &&
-                    task.status != TaskStatus.rejected &&
-                    task.status != TaskStatus.split &&
-                    task.status != TaskStatus.cancelled,
-              )
-              .toList();
-    final tasks = _bindTasksToCriteria(desiredTasks, criteria);
-    final milestonesValue = json['milestones'];
-    final milestonesComplete =
-        milestonesValue is List && milestonesValue.every((item) => item is Map);
-    final desiredMilestones = milestonesComplete
-        ? _milestonesFromJson(json['milestones'])
-        : project.milestones;
-    final openQuestionsValue = json['openQuestions'] ?? json['open_questions'];
-    final openQuestions =
-        openQuestionsValue is List &&
-            openQuestionsValue.every((item) => item is Map)
-        ? _questionsFromJson(openQuestionsValue)
-        : project.openQuestions;
-    return ProjectDesiredPlan(
-      revision: project.nextRevision,
-      triggers: triggers.toSet().toList(),
-      summary: jsonString(
-        json['summary'],
-        fallback: 'Revise the rolling plan.',
-      ),
-      rationale: jsonString(
-        json['rationale'],
-        fallback: 'Respond to the collected replanning triggers.',
-      ),
-      hasCompleteCollections:
-          criteriaComplete && milestonesComplete && tasksComplete,
-      assumptions: jsonStringList(json['assumptions']),
-      criteria: criteria,
-      milestones: desiredMilestones,
-      tasks: tasks,
-      // Split metadata is owned by the command builder; legacy JSON cannot
-      // request a split by omitting a task from a replacement collection.
-      splitTaskIds: const [],
-      deferredTaskIds: jsonStringList(
-        json['deferredTaskIds'] ?? json['deferred_task_ids'],
-      ),
-      obsoleteTaskIds: jsonStringList(
-        json['obsoleteTaskIds'] ?? json['obsolete_task_ids'],
-      ),
-      memoryAdditions: _memoryFromJson(
-        json['memoryAdditions'] ?? json['memory_additions'],
-      ),
-      memorySupersessions: _memorySupersessionsFromJson(
-        json['memorySupersessions'] ?? json['memory_supersessions'],
-      ),
-      openQuestions: openQuestions,
-      requiresApproval: jsonBool(
-        json['requiresApproval'] ?? json['requires_approval'],
-      ),
-      approvalReason: jsonString(
-        json['approvalReason'] ?? json['approval_reason'],
-      ),
-      createdAt: DateTime.now(),
-    );
-  }
-
-  List<Task> _bindTasksToCriteria(
-    List<Task> tasks,
-    Iterable<ProjectCriterion> criteria,
-  ) {
-    final available = criteria.toList();
-    final criterionIds = available.map((item) => item.id).toSet();
-    final byStatement = {
-      for (final criterion in available)
-        criterion.statement.trim().toLowerCase(): criterion.id,
-    };
-    String? resolveCriterion(String value) {
-      if (criterionIds.contains(value)) return value;
-      return byStatement[value.trim().toLowerCase()];
-    }
-
-    return [
-      for (final task in tasks)
-        (() {
-          final resolved = task.criterionIds
-              .map(resolveCriterion)
-              .whereType<String>()
-              .toSet()
-              .toList();
-          final boundIds = resolved;
-          return task.copyWith(
-            criterionIds: boundIds,
-            expectedEvidence: [
-              for (final expectation in task.expectedEvidence)
-                TaskEvidenceExpectation(
-                  id: expectation.id,
-                  type: expectation.type,
-                  criterionIds: expectation.criterionIds.isEmpty
-                      ? boundIds
-                      : expectation.criterionIds
-                            .map(resolveCriterion)
-                            .whereType<String>()
-                            .where(boundIds.contains)
-                            .toSet()
-                            .toList(),
-                  description: expectation.description,
-                  required: expectation.required,
-                  sourceRef: expectation.sourceRef,
-                  details: expectation.details,
-                ),
-            ],
-          );
-        })(),
-    ];
-  }
-
-  List<ProjectCriterion> _criteriaFromJson(Object? value) {
-    if (value is! List) return const [];
-    final now = DateTime.now();
-    final criteria = <ProjectCriterion>[];
-    for (var index = 0; index < value.length; index++) {
-      final raw = value[index];
-      if (raw is! Map) continue;
-      final map = Map<String, dynamic>.from(raw);
-      map['id'] = jsonString(
-        map['id'],
-        fallback: 'criterion_${(index + 1).toString().padLeft(3, '0')}',
-      );
-      map['statement'] = jsonString(map['statement']);
-      map['createdAt'] ??= now.toIso8601String();
-      map['updatedAt'] ??= now.toIso8601String();
-      criteria.add(ModelJson.decode<ProjectCriterion>(map));
-    }
-    return criteria;
-  }
-
-  List<ProjectMilestone> _milestonesFromJson(Object? value) {
-    if (value is! List) return const [];
-    final now = DateTime.now();
-    final milestones = <ProjectMilestone>[];
-    for (var index = 0; index < value.length; index++) {
-      final raw = value[index];
-      if (raw is! Map) continue;
-      final map = Map<String, dynamic>.from(raw);
-      map['id'] = jsonString(
-        map['id'],
-        fallback: 'milestone_${(index + 1).toString().padLeft(3, '0')}',
-      );
-      map['title'] = jsonString(
-        map['title'],
-        fallback: 'Milestone ${index + 1}',
-      );
-      map['objective'] = jsonString(map['objective'], fallback: map['title']);
-      map['order'] ??= index + 1;
-      map['createdAt'] ??= now.toIso8601String();
-      map['updatedAt'] ??= now.toIso8601String();
-      milestones.add(ModelJson.decode<ProjectMilestone>(map));
-    }
-    return milestones;
-  }
-
-  List<ProjectMemoryEntry> _memoryFromJson(Object? value) {
-    if (value is! List) return const [];
-    final now = DateTime.now();
-    final entries = <ProjectMemoryEntry>[];
-    for (var index = 0; index < value.length; index++) {
-      final raw = value[index];
-      if (raw is! Map) continue;
-      final map = Map<String, dynamic>.from(raw);
-      map['id'] = jsonString(
-        map['id'],
-        fallback: 'memory_${(index + 1).toString().padLeft(3, '0')}',
-      );
-      map['content'] = jsonString(map['content']);
-      map['sourceType'] = ProjectMemorySourceType.planner.name;
-      map['confidence'] = ProjectMemoryConfidence.inferred.name;
-      map['protected'] = false;
-      map['createdAt'] ??= now.toIso8601String();
-      map['updatedAt'] ??= now.toIso8601String();
-      entries.add(ModelJson.decode<ProjectMemoryEntry>(map));
-    }
-    return entries;
-  }
-
-  List<ProjectMemorySupersession> _memorySupersessionsFromJson(Object? value) {
-    if (value is! List) return const [];
-    final entries = <ProjectMemorySupersession>[];
-    for (final raw in value.whereType<Map>()) {
-      final entryId = jsonString(raw['entryId'] ?? raw['entry_id']);
-      final replacementId = jsonString(
-        raw['supersededById'] ?? raw['superseded_by_id'],
-      );
-      if (entryId.isEmpty || replacementId.isEmpty) continue;
-      entries.add(
-        ProjectMemorySupersession(
-          entryId: entryId,
-          supersededById: replacementId,
-        ),
-      );
-    }
-    return entries;
-  }
-
   List<PendingProjectQuestion> _questionsFromJson(Object? value) {
     if (value is! List) return const [];
     return value.whereType<Map>().map((raw) {
@@ -1345,96 +715,9 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
   }
 }
 
-const String _finaliseProjectCreationToolId = 'finaliseProjectCreation';
-
-ToolDefinition _finaliseProjectCreationToolDefinition({
-  required List<String> requiredProperties,
-}) {
-  return ToolDefinition(
-    id: _finaliseProjectCreationToolId,
-    name: 'Finalise project creation',
-    description:
-        'Finalize the complete structured project payload. Call this exactly once after any needed read-only workspace discovery.',
-    schema: {
-      'type': 'object',
-      'properties': {
-        'title': {'type': 'string'},
-        'refinedGoal': {'type': 'string'},
-        'summary': {'type': 'string'},
-        'rationale': {'type': 'string'},
-        'criteria': {
-          'type': 'array',
-          'items': {'type': 'object'},
-        },
-        'memory': {
-          'type': 'array',
-          'items': {'type': 'object'},
-        },
-        'milestones': {
-          'type': 'array',
-          'items': {'type': 'object'},
-        },
-        'assumptions': {
-          'type': 'array',
-          'items': {'type': 'string'},
-        },
-        'tasks': {
-          'type': 'array',
-          'items': {'type': 'object'},
-        },
-        'deferredTaskIds': {
-          'type': 'array',
-          'items': {'type': 'string'},
-        },
-        'obsoleteTaskIds': {
-          'type': 'array',
-          'items': {'type': 'string'},
-        },
-        'memoryAdditions': {
-          'type': 'array',
-          'items': {'type': 'object'},
-        },
-        'memorySupersessions': {
-          'type': 'array',
-          'items': {'type': 'object'},
-        },
-        'requiresApproval': {'type': 'boolean'},
-        'approvalReason': {'type': 'string'},
-        'constraints': {
-          'type': 'array',
-          'items': {'type': 'string'},
-        },
-        'openQuestions': {
-          'type': 'array',
-          'items': {
-            'type': 'object',
-            'properties': {
-              'question': {'type': 'string'},
-              'reason': {'type': 'string'},
-              'defaultIfUnanswered': {'type': 'string'},
-              'riskOfAssuming': {'type': 'string'},
-              'kind': {
-                'type': 'string',
-                'enum': ['blocking', 'preference', 'advisory'],
-              },
-            },
-            'required': ['question'],
-          },
-        },
-      },
-      'required': requiredProperties,
-    },
-  );
-}
-
-const String _projectJsonSystemInstruction = '''
-You are a project orchestration planner.
-Return only valid JSON.
-Use only read-only tools when they are exposed.
-Do not execute workspace changes directly.
-Project mode controls a loop outside the model.
-Every proposed task must be small, bounded, independently verifiable, and narrower than the whole project.
-Every proposed task must include doneCriteria and outOfScope.
-When revising a plan, return complete criteria, milestone, and task collections; include an explicit empty array when a collection should be cleared.
-Never propose one task that completes the entire project unless the project has exactly one remaining narrow criterion.
+const String _completionEvaluationSystemInstruction = '''
+You are a project completion evaluator.
+Return only valid JSON for the requested semantic assessment.
+Do not propose or mutate a plan. Treat persisted evidence as authoritative and
+task claims as advisory.
 ''';

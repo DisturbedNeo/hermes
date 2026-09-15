@@ -58,7 +58,7 @@ void main() {
 
       expect(task.title, 'Planned task');
       expect(task.status, TaskStatus.paused);
-      expect(task.currentStepId, 'inspect');
+      expect(task.currentStepId, startsWith('step_'));
       expect(task.steps, hasLength(2));
       expect(
         File(
@@ -68,89 +68,6 @@ void main() {
       );
     });
 
-    test('legacy planner JSON cannot persist duplicate step IDs', () async {
-      final plan = _planJson(title: 'Duplicate-safe task')
-        ..['steps'] = [
-          {
-            'id': 'step_1',
-            'title': 'First',
-            'objective': 'Complete the first step.',
-            'instructions': ['Do the first step.'],
-          },
-          {
-            'id': 'step_1',
-            'title': 'Second',
-            'objective': 'Complete the second step.',
-            'instructions': ['Do the second step.'],
-          },
-          {
-            'id': 'step_1_2',
-            'title': 'Third',
-            'objective': 'Complete the third step.',
-            'instructions': ['Do the third step.'],
-          },
-        ];
-      final task = await service.createTask(
-        client: _QueueChatClient([jsonEncode(plan)]),
-        workspace: workspace,
-        userPrompt: 'Build the reporting screen',
-        selectedMode: ExecutionMode.task,
-        baseSystemPrompt: 'system',
-        chatSessionId: 'chat_1',
-      );
-
-      final ids = task.steps.map((step) => step.id).toList();
-      expect(ids, ['step_1', 'step_1_2', 'step_1_2_2']);
-      expect(ids.toSet(), hasLength(ids.length));
-    });
-
-    test('legacy task-plan edits normalize duplicate step IDs', () async {
-      final original = _task(
-        steps: const [
-          TaskStep(
-            id: 'one',
-            title: 'One',
-            objective: 'Complete one.',
-            instructions: [],
-            mayEditFiles: false,
-            artifacts: [],
-            status: TaskStepStatus.pending,
-          ),
-        ],
-      );
-      final edited = Map<String, dynamic>.from(ModelJson.encode(original));
-      edited['steps'] = [
-        {
-          'id': 'same',
-          'title': 'First edited step',
-          'objective': 'Complete the first edited step.',
-          'instructions': [],
-          'mayEditFiles': false,
-          'artifacts': [],
-          'status': 'pending',
-        },
-        {
-          'id': 'same',
-          'title': 'Second edited step',
-          'objective': 'Complete the second edited step.',
-          'instructions': [],
-          'mayEditFiles': false,
-          'artifacts': [],
-          'status': 'pending',
-        },
-      ];
-
-      final updated = await service.updateTaskPlan(
-        workspace: workspace,
-        snapshot: original,
-        rawJson: jsonEncode(edited),
-      );
-
-      final ids = updated.steps.map((step) => step.id).toList();
-      expect(ids, ['same', 'same_2']);
-      expect(ids.toSet(), hasLength(ids.length));
-    });
-
     test(
       'planner receives deterministic profile without discovery tools',
       () async {
@@ -158,15 +75,7 @@ void main() {
           path.join(root.path, 'README.md'),
         ).writeAsString('# Design\nBuild the analytics screen.\n');
         final client = _QueueCompletionClient([
-          ChatCompletionResponse(
-            content: '',
-            toolCalls: [
-              ChatCompletionToolCall(
-                name: 'finaliseTaskCreation',
-                arguments: jsonEncode(_planJson(title: 'Design-informed task')),
-              ),
-            ],
-          ),
+          _planResponse(_planJson(title: 'Design-informed task')),
         ]);
 
         final task = await service.createTask(
@@ -189,77 +98,32 @@ void main() {
       },
     );
 
-    test('task creation accepts planner-selected gates', () async {
-      final plan = _planJson(title: 'Gated task')
-        ..['gates'] = [
-          {'id': 'no_tool_errors', 'required': true, 'scope': 'task'},
-        ]
-        ..['steps'] = [
-          {
-            'id': 'write_report',
-            'title': 'Write report',
-            'objective': 'Write the report artifact.',
-            'instructions': ['Write report.'],
-            'mayEditFiles': false,
-            'artifacts': [
-              {'path': '.agent/tasks/{{task_id}}/report.md'},
-            ],
-            'gates': [
-              {
-                'id': 'artifact_exists',
-                'required': true,
-                'scope': 'step',
-                'params': {
-                  'paths': ['.agent/tasks/{{task_id}}/report.md'],
-                },
-              },
-            ],
-          },
-        ];
-      final client = _QueueChatClient([jsonEncode(plan)]);
+    test(
+      'planner falls back when it returns JSON instead of commands',
+      () async {
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: jsonEncode(_planJson(title: 'Plain JSON task')),
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode(_planJson(title: 'Repaired JSON task')),
+          ),
+        ]);
 
-      final task = await service.createTask(
-        client: client,
-        workspace: workspace,
-        userPrompt: 'Write a report',
-        selectedMode: ExecutionMode.task,
-        baseSystemPrompt: 'system',
-        chatSessionId: 'chat_1',
-      );
+        final task = await service.createTask(
+          client: client,
+          workspace: workspace,
+          userPrompt: 'Build the reporting screen',
+          selectedMode: ExecutionMode.task,
+          baseSystemPrompt: 'system',
+          chatSessionId: 'chat_1',
+        );
 
-      expect(task.gates.single.id, 'no_tool_errors');
-      expect(task.steps.single.gates, isNotEmpty);
-      expect(task.steps.single.gates.first.id, 'artifact_exists');
-      expect(
-        task.steps.single.gates.first.params.toString(),
-        contains(task.id),
-      );
-    });
-
-    test('planner retries once when finalizer is missing', () async {
-      final client = _QueueCompletionClient([
-        ChatCompletionResponse(
-          content: jsonEncode(_planJson(title: 'Plain JSON task')),
-        ),
-        ChatCompletionResponse(
-          content: jsonEncode(_planJson(title: 'Repaired JSON task')),
-        ),
-      ]);
-
-      final task = await service.createTask(
-        client: client,
-        workspace: workspace,
-        userPrompt: 'Build the reporting screen',
-        selectedMode: ExecutionMode.task,
-        baseSystemPrompt: 'system',
-        chatSessionId: 'chat_1',
-      );
-
-      expect(task.title, 'Repaired JSON task');
-      expect(client.requestCount, 2);
-      expect(client.seenToolNames.first, contains('task_add_step'));
-      expect(client.seenToolNames.last, isEmpty);
-    });
+        expect(task.title, 'Build the reporting screen');
+        expect(client.requestCount, 1);
+        expect(client.seenToolNames.first, contains('task_add_step'));
+      },
+    );
 
     test('passes terminal approval into task planner metadata', () async {
       workspace = workspace.copyWith(commandExecutionApproved: true);
@@ -425,6 +289,7 @@ void main() {
       'repairs a project plan that exceeds its effort-derived limit',
       () async {
         final oversized = _projectBoundedPlanJson(title: 'Oversized task');
+        oversized['successCriteria'] = <String>[];
         oversized['steps'] = [
           for (var index = 0; index < 3; index++)
             {
@@ -452,6 +317,7 @@ void main() {
             projectGoal: 'Build the whole app',
             projectTaskObjective: 'Implement the settings toggle',
             doneCriteria: ['The settings toggle works.'],
+            writePaths: ['lib'],
             maxSteps: 2,
           ),
         );
@@ -529,7 +395,6 @@ void main() {
     );
 
     test('fallback task adds conservative default gates', () async {
-      service.setPlanningProtocolMode(PlanningProtocolMode.legacy);
       final client = _QueueChatClient(['not json']);
 
       final task = await service.createTask(
@@ -709,20 +574,19 @@ void main() {
             ),
           ],
         ),
-        ChatCompletionResponse(content: jsonEncode({'steps': []})),
-        ChatCompletionResponse(
-          content: jsonEncode({
-            'steps': [
-              {
-                'id': 'replacement',
-                'title': 'Replacement',
-                'objective': 'Use the corrected approach.',
-                'instructions': ['Continue with the corrected plan.'],
-                'mayEditFiles': false,
-              },
-            ],
-          }),
-        ),
+        _replanResponse({
+          'title': 'Test task',
+          'goal': 'Use the corrected approach.',
+          'steps': [
+            {
+              'id': 'replacement',
+              'title': 'Replacement',
+              'objective': 'Use the corrected approach.',
+              'instructions': ['Continue with the corrected plan.'],
+              'mayEditFiles': false,
+            },
+          ],
+        }),
       ]);
 
       final updated = await service.runNextStep(
@@ -732,8 +596,11 @@ void main() {
         baseSystemPrompt: 'system',
       );
 
-      expect(updated.steps.map((step) => step.id), ['done', 'replacement']);
-      expect(updated.currentStepId, 'replacement');
+      expect(updated.steps.map((step) => step.id), [
+        'done',
+        startsWith('step_'),
+      ]);
+      expect(updated.currentStepId, startsWith('step_'));
       expect(updated.runs.map((run) => run.status), [
         TaskRunStatus.needsReplan,
         TaskRunStatus.replanned,
@@ -965,7 +832,7 @@ void main() {
           updated.runs.single.toolCalls.single.toolName,
           'finish_task_step',
         );
-        expect(updated.runs.single.toolCalls.single.error, isNull);
+        expect(updated.runs.single.toolCalls.single.toolError, isNull);
       },
     );
 
@@ -1139,8 +1006,11 @@ void main() {
         baseSystemPrompt: 'system',
       );
 
-      expect(updated.steps.map((step) => step.id), ['done', 'verify']);
-      expect(updated.currentStepId, 'verify');
+      expect(updated.steps.map((step) => step.id), [
+        'done',
+        startsWith('step_'),
+      ]);
+      expect(updated.currentStepId, startsWith('step_'));
       expect(updated.runs.map((run) => run.status), [
         TaskRunStatus.needsReplan,
         TaskRunStatus.replanned,
@@ -1188,7 +1058,7 @@ void main() {
       expect(client.seenToolNames.first, isNot(contains('patch_file')));
       expect(updated.runs.single.toolCalls.single.toolName, 'write_file');
       expect(
-        updated.runs.single.toolCalls.single.error,
+        updated.runs.single.toolCalls.single.toolError?.message,
         contains('task-owned artifact'),
       );
       expect(updated.status, TaskStatus.completed);
@@ -1369,7 +1239,7 @@ void main() {
           contains('Do not add or remove arguments, flags, pipes, redirects'),
         );
         expect(updated.status, TaskStatus.completed);
-        expect(updated.runs.single.toolCalls.single.error, isNull);
+        expect(updated.runs.single.toolCalls.single.toolError, isNull);
         expect(
           updated.runs.single.gateResults.single.status,
           TaskGateStatus.passed,
@@ -1654,19 +1524,17 @@ void main() {
               'memoryUpdate': '',
             }),
           ),
-          ChatCompletionResponse(
-            content: jsonEncode({
-              'steps': [
-                {
-                  'id': 'safe_verification',
-                  'title': 'Verify safely',
-                  'objective': 'Use read-only inspection instead.',
-                  'instructions': ['Inspect without mutation.'],
-                  'mayEditFiles': false,
-                },
-              ],
-            }),
-          ),
+          _replanResponse({
+            'steps': [
+              {
+                'id': 'safe_verification',
+                'title': 'Verify safely',
+                'objective': 'Use read-only inspection instead.',
+                'instructions': ['Inspect without mutation.'],
+                'mayEditFiles': false,
+              },
+            ],
+          }),
         ]);
 
         final updated = await service.runNextStep(
@@ -1678,7 +1546,7 @@ void main() {
 
         expect(client.seenToolNames.first, contains('run_command'));
         expect(updated.status, TaskStatus.paused);
-        expect(updated.currentStepId, 'safe_verification');
+        expect(updated.currentStepId, startsWith('step_'));
         expect(updated.runs.map((run) => run.status), [
           TaskRunStatus.needsReplan,
           TaskRunStatus.replanned,
@@ -1737,7 +1605,7 @@ void main() {
 
         expect(updated.status, TaskStatus.completed);
         expect(
-          updated.runs.single.toolCalls.single.error,
+          updated.runs.single.toolCalls.single.toolError?.message,
           contains('terminal access is disabled'),
         );
       },
@@ -1784,19 +1652,17 @@ void main() {
               'memoryUpdate': '',
             }),
           ),
-          ChatCompletionResponse(
-            content: jsonEncode({
-              'steps': [
-                {
-                  'id': 'verify_command',
-                  'title': 'Verify command',
-                  'objective': 'Run the exact required command.',
-                  'instructions': ['Run dart --version exactly.'],
-                  'mayEditFiles': false,
-                },
-              ],
-            }),
-          ),
+          _replanResponse({
+            'steps': [
+              {
+                'id': 'verify_command',
+                'title': 'Verify command',
+                'objective': 'Run the exact required command.',
+                'instructions': ['Run dart --version exactly.'],
+                'mayEditFiles': false,
+              },
+            ],
+          }),
         ]);
 
         final updated = await service.runNextStep(
@@ -1807,13 +1673,13 @@ void main() {
         );
 
         expect(updated.status, TaskStatus.paused);
-        expect(updated.currentStepId, 'verify_command');
+        expect(updated.currentStepId, startsWith('step_'));
         expect(updated.runs.map((run) => run.status), [
           TaskRunStatus.needsReplan,
           TaskRunStatus.replanned,
         ]);
         expect(
-          updated.runs.first.toolCalls.single.error,
+          updated.runs.first.toolCalls.single.toolError?.message,
           contains('must exactly match'),
         );
         expect(
@@ -1984,7 +1850,7 @@ void main() {
       );
       expect(report.existsSync(), isTrue);
       expect(report.readAsStringSync(), '# Report\n');
-      expect(updated.runs.single.toolCalls.single.error, isNull);
+      expect(updated.runs.single.toolCalls.single.toolError, isNull);
       expect(updated.status, TaskStatus.completed);
     });
 
@@ -2057,7 +1923,7 @@ void main() {
         isFalse,
       );
       expect(
-        updated.runs.single.toolCalls.single.error,
+        updated.runs.single.toolCalls.single.toolError?.message,
         contains('current step'),
       );
       expect(updated.runs.single.artifacts, isEmpty);
@@ -2134,7 +2000,7 @@ void main() {
         isFalse,
       );
       expect(
-        updated.runs.single.toolCalls.single.error,
+        updated.runs.single.toolCalls.single.toolError?.message,
         contains('current step'),
       );
       expect(updated.status, TaskStatus.paused);
@@ -2261,7 +2127,7 @@ void main() {
         baseSystemPrompt: 'system',
       );
 
-      expect(updated.runs.single.toolCalls.single.error, isNull);
+      expect(updated.runs.single.toolCalls.single.toolError, isNull);
       expect(
         updated.runs.single.toolCalls.single.resultSummary,
         contains('Prior analysis'),
@@ -2336,7 +2202,6 @@ void main() {
         ),
         ChatCompletionResponse(
           content: jsonEncode({
-            'schema_version': 1,
             'task': 'Continue the task step.',
             'current_state': 'A large file was inspected earlier.',
           }),
@@ -2411,7 +2276,10 @@ void main() {
       expect(updated.runs.single.status, TaskRunStatus.completed);
       expect(updated.runs.single.summary, 'Stopped repeating and finalized.');
       expect(updated.runs.single.toolCalls, hasLength(3));
-      expect(updated.runs.single.toolCalls.last.error, contains('skipped'));
+      expect(
+        updated.runs.single.toolCalls.last.toolError?.message,
+        contains('skipped'),
+      );
     });
 
     test(
@@ -2497,6 +2365,83 @@ Map<String, dynamic> _planJson({required String title}) {
   };
 }
 
+ChatCompletionResponse _planResponse(
+  Map<String, dynamic> plan, {
+  String idSuffix = '',
+  bool resetFirst = false,
+}) {
+  String callId(String base) => idSuffix.isEmpty ? base : '${base}_$idSuffix';
+
+  final calls = <ChatCompletionToolCall>[
+    if (resetFirst)
+      ChatCompletionToolCall(
+        id: callId('call_task_reset_plan'),
+        name: 'task_reset_plan',
+        arguments: '{}',
+      ),
+    ChatCompletionToolCall(
+      id: callId('call_task_set_brief'),
+      name: 'task_set_brief',
+      arguments: jsonEncode({
+        'title': plan['title'] ?? 'Task',
+        'objective': plan['objective'] ?? plan['goal'] ?? '',
+        'constraints': plan['constraints'] ?? const [],
+        'success_criteria': plan['successCriteria'] ?? const [],
+      }),
+    ),
+    for (final raw in (plan['steps'] as List? ?? const []))
+      if (raw is Map)
+        ChatCompletionToolCall(
+          id: callId('call_task_add_step_${raw['id'] ?? raw['title']}'),
+          name: 'task_add_step',
+          arguments: jsonEncode({
+            'ref': raw['id'] ?? '',
+            'title': raw['title'] ?? '',
+            'objective': raw['objective'] ?? '',
+            'instructions': raw['instructions'] ?? const [],
+            'may_edit_files': raw['mayEditFiles'] ?? false,
+            'artifacts': raw['artifacts'] ?? const [],
+          }),
+        ),
+    ChatCompletionToolCall(
+      id: callId('call_task_commit_plan'),
+      name: 'task_commit_plan',
+      arguments: '{}',
+    ),
+  ];
+  return ChatCompletionResponse(content: '', toolCalls: calls);
+}
+
+ChatCompletionResponse _replanResponse(
+  Map<String, dynamic> plan, {
+  String idSuffix = '',
+}) {
+  String callId(String base) => idSuffix.isEmpty ? base : '${base}_$idSuffix';
+
+  final calls = <ChatCompletionToolCall>[
+    for (final raw in (plan['steps'] as List? ?? const []))
+      if (raw is Map)
+        ChatCompletionToolCall(
+          id: callId('call_task_add_step_${raw['id'] ?? raw['title']}'),
+          name: 'task_add_step',
+          arguments: jsonEncode({
+            'ref': raw['id'] ?? '',
+            'title': raw['title'] ?? '',
+            'objective': raw['objective'] ?? '',
+            'instructions': raw['instructions'] ?? const [],
+            'may_edit_files': raw['mayEditFiles'] ?? false,
+            'artifacts': raw['artifacts'] ?? const [],
+          }),
+        ),
+    ChatCompletionToolCall(
+      id: callId('call_task_commit_replan'),
+      name: 'task_commit_plan',
+      arguments: '{}',
+    ),
+  ];
+  return ChatCompletionResponse(content: '', toolCalls: calls);
+}
+
 Map<String, dynamic> _projectBoundedPlanJson({required String title}) {
   return {
     'title': title,
@@ -2540,6 +2485,7 @@ class _QueueChatClient extends ChatClient {
 
   final List<String> _responses;
   final List<List<ChatMessage>> seenMessages = [];
+  final Set<String> _convertedPlans = {};
   var _index = 0;
 
   @override
@@ -2554,7 +2500,21 @@ class _QueueChatClient extends ChatClient {
     seenMessages.add(List<ChatMessage>.of(messages));
     final index = _index >= _responses.length ? _responses.length - 1 : _index;
     _index++;
-    return ChatCompletionResponse(content: _responses[index]);
+    final response = _responses[index];
+    try {
+      final decoded = jsonDecode(response);
+      if (decoded is Map &&
+          decoded['steps'] is List &&
+          _convertedPlans.add(response)) {
+        final plan = Map<String, dynamic>.from(decoded);
+        return plan['title'] == null && plan['goal'] == null
+            ? _replanResponse(plan, idSuffix: '$_index')
+            : _planResponse(plan, idSuffix: '$_index', resetFirst: _index > 1);
+      }
+    } on FormatException {
+      // Keep malformed responses as plain model output for fallback tests.
+    }
+    return ChatCompletionResponse(content: response);
   }
 
   @override

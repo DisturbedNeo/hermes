@@ -171,11 +171,6 @@ class PromptPresetMapper extends ClassMapperBase<PromptPreset> {
     _$customInstructions,
     hook: JsonStringHook(),
   );
-  static String? _$legacyFullPrompt(PromptPreset v) => v.legacyFullPrompt;
-  static const Field<PromptPreset, String> _f$legacyFullPrompt = Field(
-    'legacyFullPrompt',
-    _$legacyFullPrompt,
-  );
   static bool _$isBuiltIn(PromptPreset v) => v.isBuiltIn;
   static const Field<PromptPreset, bool> _f$isBuiltIn = Field(
     'isBuiltIn',
@@ -209,7 +204,6 @@ class PromptPresetMapper extends ClassMapperBase<PromptPreset> {
     #baseModuleIds: _f$baseModuleIds,
     #optionalModuleIds: _f$optionalModuleIds,
     #customInstructions: _f$customInstructions,
-    #legacyFullPrompt: _f$legacyFullPrompt,
     #isBuiltIn: _f$isBuiltIn,
     #createdAt: _f$createdAt,
     #updatedAt: _f$updatedAt,
@@ -223,7 +217,6 @@ class PromptPresetMapper extends ClassMapperBase<PromptPreset> {
       baseModuleIds: data.dec(_f$baseModuleIds),
       optionalModuleIds: data.dec(_f$optionalModuleIds),
       customInstructions: data.dec(_f$customInstructions),
-      legacyFullPrompt: data.dec(_f$legacyFullPrompt),
       isBuiltIn: data.dec(_f$isBuiltIn),
       createdAt: data.dec(_f$createdAt),
       updatedAt: data.dec(_f$updatedAt),

@@ -24,7 +24,7 @@ import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
 import 'package:hermes/core/services/question_policy_service.dart';
-import 'package:hermes/core/services/task_system/finalizer_tool_call_runner.dart';
+import 'package:hermes/core/services/sandbox_policy.dart';
 import 'package:hermes/core/services/task_system/task_gate_evaluator.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
@@ -72,7 +72,6 @@ class TaskPlanningContext with TaskPlanningContextMappable {
   final List<TaskProjectEvidenceExpectation> expectedEvidence;
   final List<String> readPaths;
   final List<String> writePaths;
-  final bool legacyWriteAccess;
   final int maxSteps;
 
   const TaskPlanningContext({
@@ -89,7 +88,6 @@ class TaskPlanningContext with TaskPlanningContextMappable {
     this.expectedEvidence = const [],
     this.readPaths = const [],
     this.writePaths = const [],
-    this.legacyWriteAccess = false,
     this.maxSteps = 3,
   });
 }
@@ -235,103 +233,14 @@ const ToolDefinition _requestTaskReplanToolDefinition = ToolDefinition(
   },
 );
 
-const String _finaliseTaskCreationToolId = 'finaliseTaskCreation';
-
-const ToolDefinition _finaliseTaskCreationToolDefinition = ToolDefinition(
-  id: _finaliseTaskCreationToolId,
-  name: 'Finalise task creation',
-  description:
-      'Finalize task creation with the complete structured task plan. Call this exactly once after any needed read-only workspace discovery.',
-  schema: {
-    'type': 'object',
-    'properties': {
-      'title': {'type': 'string'},
-      'goal': {'type': 'string'},
-      'constraints': {
-        'type': 'array',
-        'items': {'type': 'string'},
-      },
-      'successCriteria': {
-        'type': 'array',
-        'items': {'type': 'string'},
-      },
-      'gates': {
-        'type': 'array',
-        'items': {
-          'type': 'object',
-          'properties': {
-            'id': {'type': 'string'},
-            'required': {'type': 'boolean'},
-            'scope': {'type': 'string'},
-            'params': {'type': 'object'},
-            'description': {'type': 'string'},
-          },
-          'required': ['id'],
-        },
-      },
-      'steps': {
-        'type': 'array',
-        'items': {
-          'type': 'object',
-          'properties': {
-            'id': {'type': 'string'},
-            'title': {'type': 'string'},
-            'objective': {'type': 'string'},
-            'instructions': {
-              'type': 'array',
-              'items': {'type': 'string'},
-            },
-            'mayEditFiles': {'type': 'boolean'},
-            'artifacts': {
-              'type': 'array',
-              'items': {
-                'type': 'object',
-                'properties': {
-                  'path': {'type': 'string'},
-                  'description': {'type': 'string'},
-                },
-                'required': ['path'],
-              },
-            },
-            'gates': {
-              'type': 'array',
-              'items': {
-                'type': 'object',
-                'properties': {
-                  'id': {'type': 'string'},
-                  'required': {'type': 'boolean'},
-                  'scope': {'type': 'string'},
-                  'params': {'type': 'object'},
-                  'description': {'type': 'string'},
-                },
-                'required': ['id'],
-              },
-            },
-          },
-          'required': [
-            'id',
-            'title',
-            'objective',
-            'instructions',
-            'mayEditFiles',
-          ],
-        },
-      },
-    },
-    'required': ['title', 'goal', 'successCriteria', 'steps'],
-  },
-);
-
-class TaskService implements PlanningProtocolConfigurable {
+class TaskService {
   TaskService({
     required ToolService toolService,
     required WorkspaceSandbox sandbox,
     TaskRepository? repository,
     WorkspaceDiscoveryProfileService profileService =
         const WorkspaceDiscoveryProfileService(),
-    this.planningProtocolMode = PlanningProtocolMode.automatic,
   }) : _toolService = toolService,
-       _creationRunner = FinalizerToolCallRunner(toolService: toolService),
        _planningRunner = const TaskPlanningToolCallRunner(),
        _repository = repository ?? TaskRepository(),
        _sandbox = sandbox,
@@ -339,24 +248,17 @@ class TaskService implements PlanningProtocolConfigurable {
        _gateEvaluator = TaskGateEvaluator(sandbox: sandbox);
 
   final ToolService _toolService;
-  final FinalizerToolCallRunner _creationRunner;
   final TaskPlanningToolCallRunner _planningRunner;
   final TaskViewService _taskViewService = const TaskViewService();
   final TaskRepository _repository;
   final WorkspaceSandbox _sandbox;
   final WorkspaceDiscoveryProfileService _profileService;
   final TaskGateEvaluator _gateEvaluator;
-  @override
-  PlanningProtocolMode planningProtocolMode;
   final QuestionPolicyService _questionPolicy = const QuestionPolicyService();
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
 
   TaskRepository get repository => _repository;
   ToolService get toolService => _toolService;
-
-  void setPlanningProtocolMode(PlanningProtocolMode mode) {
-    planningProtocolMode = mode;
-  }
 
   Future<List<TaskSummary>> listTasks(
     WorkspaceAttachment workspace, {
@@ -557,56 +459,24 @@ $userPrompt
     Task task;
     var planningMetrics = PlanningMetrics(planningStartedAt: now);
     try {
-      final incremental = planningProtocolMode == PlanningProtocolMode.legacy
-          ? null
-          : await _completeTaskPlanWithCommands(
-              client: client,
-              baseSystemPrompt: baseSystemPrompt,
-              workspace: workspace,
-              taskId: taskId,
-              userPrompt: userPrompt,
-              metadata: metadata,
-              planningContext: planningContext,
-              now: now,
-              chatSessionId: chatSessionId,
-              projectId: projectId,
-              onModelOutput: onModelOutput,
-              cancellationToken: cancellationToken,
-            );
-      if (incremental == null) {
-        final json = await _completeTaskCreation(
-          client: client,
-          system: '$baseSystemPrompt\n\n$_plannerSystemInstruction',
-          label: 'Task Planner (legacy compatibility)',
-          workspace: workspace,
-          onModelOutput: onModelOutput,
-          cancellationToken: cancellationToken,
-          user: _buildPlannerPrompt(
-            taskId: taskId,
-            userPrompt: userPrompt,
-            metadata: metadata,
-            planningContext: planningContext,
-          ),
-        );
-        planningMetrics = planningMetrics.copyWith(planningCalls: 1);
-        task = _taskFromPlannerJson(
-          json,
-          taskId: taskId,
-          originalPrompt: userPrompt,
-          chatSessionId: chatSessionId,
-          projectId: projectId,
-          requiredGates: planningContext?.requiredGates ?? const [],
-          now: now,
-        );
-      } else {
-        planningMetrics = planningMetrics.add(incremental.planningMetrics);
-        if (incremental.task != null) {
-          task = incremental.task!;
-        } else if (incremental.usedPlanningTools) {
-          // A malformed command affects the draft only. Preserve the existing
-          // safe deterministic fallback rather than asking for another whole
-          // task document.
-          task = planningContext == null
+      final incremental = await _completeTaskPlanWithCommands(
+        client: client,
+        baseSystemPrompt: baseSystemPrompt,
+        workspace: workspace,
+        taskId: taskId,
+        userPrompt: userPrompt,
+        metadata: metadata,
+        planningContext: planningContext,
+        now: now,
+        chatSessionId: chatSessionId,
+        projectId: projectId,
+        onModelOutput: onModelOutput,
+        cancellationToken: cancellationToken,
+      );
+      planningMetrics = planningMetrics.add(incremental.planningMetrics);
+      task =
+          incremental.task ??
+          (planningContext == null
               ? _fallbackTask(
                   taskId: taskId,
                   userPrompt: userPrompt,
@@ -621,79 +491,7 @@ $userPrompt
                   projectId: projectId,
                   planningContext: planningContext,
                   now: now,
-                );
-        } else if (planningProtocolMode == PlanningProtocolMode.automatic) {
-          // Older model adapters can still return the former finalizer shape.
-          // Keep this fallback until those adapters have migrated.
-          final json = await _completeTaskCreation(
-            client: client,
-            system: '$baseSystemPrompt\n\n$_plannerSystemInstruction',
-            label: 'Task Planner',
-            workspace: workspace,
-            onModelOutput: onModelOutput,
-            cancellationToken: cancellationToken,
-            user: _buildPlannerPrompt(
-              taskId: taskId,
-              userPrompt: userPrompt,
-              metadata: metadata,
-              planningContext: planningContext,
-            ),
-          );
-          planningMetrics = planningMetrics.copyWith(
-            planningCalls: planningMetrics.planningCalls + 1,
-          );
-          task = _taskFromPlannerJson(
-            json,
-            taskId: taskId,
-            originalPrompt: userPrompt,
-            chatSessionId: chatSessionId,
-            projectId: projectId,
-            requiredGates: planningContext?.requiredGates ?? const [],
-            now: now,
-          );
-          if (planningContext != null) {
-            final violations = _projectPlanningViolations(
-              task,
-              planningContext,
-            );
-            if (violations.isNotEmpty) {
-              task = await _repairProjectBoundedTaskPlan(
-                client: client,
-                task: task,
-                taskId: taskId,
-                originalPrompt: userPrompt,
-                baseSystemPrompt: baseSystemPrompt,
-                workspace: workspace,
-                metadata: metadata,
-                planningContext: planningContext,
-                violations: violations,
-                chatSessionId: chatSessionId,
-                projectId: projectId,
-                now: now,
-                onModelOutput: onModelOutput,
-                cancellationToken: cancellationToken,
-              );
-            }
-          }
-        } else {
-          task = planningContext == null
-              ? _fallbackTask(
-                  taskId: taskId,
-                  userPrompt: userPrompt,
-                  chatSessionId: chatSessionId,
-                  projectId: projectId,
-                  now: now,
-                )
-              : _fallbackProjectBoundedTask(
-                  taskId: taskId,
-                  userPrompt: userPrompt,
-                  chatSessionId: chatSessionId,
-                  projectId: projectId,
-                  planningContext: planningContext,
-                  now: now,
-                );
-        }
-      }
+                ));
     } on OperationCancelledException {
       rethrow;
     } on ChatTransportException {
@@ -772,7 +570,6 @@ $userPrompt
       outOfScope: planningContext?.outOfScope ?? const [],
       readPaths: planningContext?.readPaths ?? const [],
       writePaths: planningContext?.writePaths ?? const [],
-      legacyWriteAccess: planningContext?.legacyWriteAccess ?? false,
       requiredArtifacts: requiredArtifacts,
       requiredGates: planningContext?.requiredGates ?? const [],
       requiredEvidence: planningContext?.expectedEvidence ?? const [],
@@ -808,138 +605,11 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
       onModelOutput: onModelOutput,
       cancellationToken: cancellationToken,
     );
-    if (result['legacy_finalizer'] == true && result['arguments'] is Map) {
-      if (planningProtocolMode == PlanningProtocolMode.incremental) {
-        return _IncrementalTaskPlanAttempt(
-          planningMetrics: _planningMetricsFromResult(result),
-        );
-      }
-      var task = _taskFromPlannerJson(
-        Map<String, dynamic>.from(result['arguments'] as Map),
-        taskId: taskId,
-        originalPrompt: userPrompt,
-        chatSessionId: chatSessionId,
-        projectId: projectId,
-        requiredGates: planningContext?.requiredGates ?? const [],
-        now: now,
-      );
-      task = await _repairLegacyProjectTaskIfNeeded(
-        task: task,
-        taskId: taskId,
-        originalPrompt: userPrompt,
-        baseSystemPrompt: baseSystemPrompt,
-        workspace: workspace,
-        metadata: metadata,
-        planningContext: planningContext,
-        chatSessionId: chatSessionId,
-        projectId: projectId,
-        now: now,
-        client: client,
-        onModelOutput: onModelOutput,
-        cancellationToken: cancellationToken,
-      );
-      return _IncrementalTaskPlanAttempt(
-        task: task,
-        planningMetrics: _planningMetricsFromResult(result),
-      );
-    }
-    if (result['legacy_json'] is Map) {
-      if (planningProtocolMode == PlanningProtocolMode.incremental) {
-        return _IncrementalTaskPlanAttempt(
-          planningMetrics: _planningMetricsFromResult(result),
-        );
-      }
-      final repaired = await _completeJson(
-        client: client,
-        system: '$baseSystemPrompt\n\n$_plannerSystemInstruction',
-        label: 'Task Planner Finalizer Repair',
-        onModelOutput: onModelOutput,
-        cancellationToken: cancellationToken,
-        user:
-            '''
-The previous task-planning adapter returned a complete JSON plan instead of
-using the task planning tools. Convert or repair it once for compatibility.
-Return only the complete legacy task plan object.
 
-Previous plan:
-${_encoder.convert(result['legacy_json'])}
-''',
-      );
-      var task = _taskFromPlannerJson(
-        repaired,
-        taskId: taskId,
-        originalPrompt: userPrompt,
-        chatSessionId: chatSessionId,
-        projectId: projectId,
-        requiredGates: planningContext?.requiredGates ?? const [],
-        now: now,
-      );
-      task = await _repairLegacyProjectTaskIfNeeded(
-        task: task,
-        taskId: taskId,
-        originalPrompt: userPrompt,
-        baseSystemPrompt: baseSystemPrompt,
-        workspace: workspace,
-        metadata: metadata,
-        planningContext: planningContext,
-        chatSessionId: chatSessionId,
-        projectId: projectId,
-        now: now,
-        client: client,
-        onModelOutput: onModelOutput,
-        cancellationToken: cancellationToken,
-      );
-      return _IncrementalTaskPlanAttempt(
-        task: task,
-        planningMetrics: _planningMetricsFromResult(result).copyWith(
-          planningCalls: _planningMetricsFromResult(result).planningCalls + 1,
-          fullPlanRepairCount:
-              _planningMetricsFromResult(result).fullPlanRepairCount + 1,
-        ),
-      );
-    }
     return _IncrementalTaskPlanAttempt(
       task: context.committedTask,
-      usedPlanningTools:
-          result['used_planning_tools'] == true ||
-          context.committedTask != null,
+      usedPlanningTools: context.committedTask != null,
       planningMetrics: _planningMetricsFromResult(result),
-    );
-  }
-
-  Future<Task> _repairLegacyProjectTaskIfNeeded({
-    required Task task,
-    required String taskId,
-    required String originalPrompt,
-    required String baseSystemPrompt,
-    required WorkspaceAttachment workspace,
-    required WorkspaceMetadata metadata,
-    required TaskPlanningContext? planningContext,
-    required String? chatSessionId,
-    required String? projectId,
-    required DateTime now,
-    required ChatClient client,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) async {
-    if (planningContext == null) return task;
-    final violations = _projectPlanningViolations(task, planningContext);
-    if (violations.isEmpty) return task;
-    return _repairProjectBoundedTaskPlan(
-      client: client,
-      task: task,
-      taskId: taskId,
-      originalPrompt: originalPrompt,
-      baseSystemPrompt: baseSystemPrompt,
-      workspace: workspace,
-      metadata: metadata,
-      planningContext: planningContext,
-      violations: violations,
-      chatSessionId: chatSessionId,
-      projectId: projectId,
-      now: now,
-      onModelOutput: onModelOutput,
-      cancellationToken: cancellationToken,
     );
   }
 
@@ -990,7 +660,6 @@ ${_encoder.convert(result['legacy_json'])}
       criterionIds: planningContext?.criterionIds ?? const [],
       readPaths: planningContext?.readPaths ?? const [],
       writePaths: planningContext?.writePaths ?? const [],
-      legacyWriteAccess: planningContext?.legacyWriteAccess ?? false,
       doneCriteria: planningContext?.doneCriteria ?? const [],
       outOfScope: planningContext?.outOfScope ?? const [],
       context: planningContext?.knownFacts ?? const [],
@@ -1024,7 +693,6 @@ ${_encoder.convert(result['legacy_json'])}
     ],
     'read_paths': context.readPaths,
     'write_paths': context.writePaths,
-    'legacy_write_access': context.legacyWriteAccess,
     'expected_artifacts': [
       for (final artifact in context.expectedArtifacts)
         {
@@ -1550,295 +1218,6 @@ ${_encoder.convert(result['legacy_json'])}
     );
   }
 
-  String _buildPlannerPrompt({
-    required String taskId,
-    required String userPrompt,
-    required WorkspaceMetadata metadata,
-    required TaskPlanningContext? planningContext,
-  }) {
-    final context = planningContext;
-    if (context == null) {
-      return '''
-Create a linear multi-step task plan.
-
-Return only JSON:
-{
-  "title": "...",
-  "goal": "...",
-  "constraints": ["..."],
-  "successCriteria": ["..."],
-  "gates": [{"id": "no_tool_errors", "required": true, "scope": "task", "params": {}, "description": "..."}],
-  "steps": [
-    {
-      "id": "short_stable_id",
-      "title": "...",
-      "objective": "...",
-      "instructions": ["..."],
-      "mayEditFiles": false,
-      "artifacts": [{"path": ".agent/tasks/$taskId/output.md", "description": "..."}],
-      "gates": [{"id": "artifact_exists", "required": true, "scope": "step", "params": {"paths": [".agent/tasks/$taskId/output.md"]}, "description": "..."}]
-    }
-  ]
-}
-
-Gate catalog:
-${_taskGateCatalogPrompt()}
-
-Use this exact task id when referencing task-owned artifacts: $taskId
-Create only as many steps as are necessary to accomplish the task.
-Artifacts are optional.
-
-Workspace metadata:
-${_encoder.convert(ModelJson.encode(metadata))}
-
-Request:
-$userPrompt
-''';
-    }
-
-    return '''
-Create a linear plan for exactly one bounded Project task.
-
-The Project goal is context only. Do not plan or perform the whole project.
-The task plan must cover only the selected Project task objective.
-Use at most ${context.maxSteps.clamp(1, 6)} steps.
-Every step must stay inside the task's done criteria and out-of-scope boundaries.
-
-Return only JSON:
-{
-  "title": "...",
-  "goal": "the selected Project task objective, not the whole Project goal",
-  "constraints": ["..."],
-  "successCriteria": ["copy or refine the task doneCriteria"],
-  "gates": [{"id": "no_tool_errors", "required": true, "scope": "task", "params": {}, "description": "..."}],
-  "steps": [
-    {
-      "id": "short_stable_id",
-      "title": "...",
-      "objective": "...",
-      "instructions": ["..."],
-      "mayEditFiles": false,
-      "artifacts": [{"path": ".agent/tasks/$taskId/output.md", "description": "..."}],
-      "gates": [{"id": "artifact_exists", "required": true, "scope": "step", "params": {"paths": [".agent/tasks/$taskId/output.md"]}, "description": "..."}]
-    }
-  ]
-}
-
-Gate catalog:
-${_taskGateCatalogPrompt()}
-
-Use this exact task id when referencing task-owned artifacts: $taskId
-Artifacts are optional unless expectedArtifacts lists them.
-
-Workspace metadata:
-${_encoder.convert(ModelJson.encode(metadata))}
-
-Bounded Project task context:
-${_encoder.convert(ModelJson.encode(context))}
-
-Request:
-$userPrompt
-''';
-  }
-
-  Future<Map<String, dynamic>> _completeTaskCreation({
-    required ChatClient client,
-    required WorkspaceAttachment workspace,
-    required String system,
-    required String user,
-    required String label,
-    bool allowReadOnlyTools = false,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) {
-    return _creationRunner.completeWithFinalizer(
-      client: client,
-      workspace: workspace,
-      label: label,
-      system:
-          '''
-$system
-
-Use the supplied bounded workspace profile as the complete discovery input.
-Do not call tools or perform a second workspace exploration during task creation.
-When the task plan is ready, call the $_finaliseTaskCreationToolId tool with the complete structured task plan.
-'''
-              .trim(),
-      user: user,
-      finalizerTool: _finaliseTaskCreationToolDefinition,
-      reminderPrompt:
-          '''
-You did not call $_finaliseTaskCreationToolId. Return only the JSON object that would be passed as that tool's arguments:
-{
-  "title": "...",
-  "goal": "...",
-  "constraints": ["..."],
-  "successCriteria": ["..."],
-  "steps": [
-    {
-      "id": "short_stable_id",
-      "title": "...",
-      "objective": "...",
-      "instructions": ["..."],
-      "mayEditFiles": false,
-      "artifacts": []
-    }
-  ]
-}
-''',
-      allowReadOnlyTools: allowReadOnlyTools,
-      onModelOutput: onModelOutput,
-      throwIfCancelled: cancellationToken?.throwIfCancelled,
-      cancellationToken: cancellationToken,
-    );
-  }
-
-  Future<Task> _repairProjectBoundedTaskPlan({
-    required ChatClient client,
-    required Task task,
-    required String taskId,
-    required String originalPrompt,
-    required String baseSystemPrompt,
-    required WorkspaceAttachment workspace,
-    required WorkspaceMetadata metadata,
-    required TaskPlanningContext planningContext,
-    required List<String> violations,
-    required String? chatSessionId,
-    required String? projectId,
-    required DateTime now,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) async {
-    try {
-      final json = await _completeTaskCreation(
-        client: client,
-        system: '$baseSystemPrompt\n\n$_plannerSystemInstruction',
-        label: 'Task Plan Repair',
-        workspace: workspace,
-        allowReadOnlyTools: false,
-        onModelOutput: onModelOutput,
-        cancellationToken: cancellationToken,
-        user:
-            '''
-Repair this task plan so it executes exactly one bounded Project task.
-
-Return only JSON in the normal task plan shape.
-
-Violations:
-${_encoder.convert(violations)}
-
-Bounded Project task context:
-${_encoder.convert(ModelJson.encode(planningContext))}
-
-Workspace metadata:
-${_encoder.convert(ModelJson.encode(metadata))}
-
-Invalid task plan:
-${_encoder.convert(ModelJson.encode(task))}
-''',
-      );
-      final repaired = _taskFromPlannerJson(
-        json,
-        taskId: taskId,
-        originalPrompt: originalPrompt,
-        chatSessionId: chatSessionId,
-        projectId: projectId,
-        requiredGates: planningContext.requiredGates,
-        now: now,
-      );
-      if (_projectPlanningViolations(repaired, planningContext).isEmpty) {
-        return repaired;
-      }
-    } on OperationCancelledException {
-      rethrow;
-    } on ChatTransportException {
-      rethrow;
-    } catch (_) {
-      // Fall through to deterministic bounded fallback.
-    }
-
-    return _fallbackProjectBoundedTask(
-      taskId: taskId,
-      userPrompt: originalPrompt,
-      chatSessionId: chatSessionId,
-      projectId: projectId,
-      planningContext: planningContext,
-      now: now,
-    );
-  }
-
-  List<String> _projectPlanningViolations(
-    Task task,
-    TaskPlanningContext context,
-  ) {
-    final violations = <String>[];
-    final maxSteps = context.maxSteps.clamp(1, 6).toInt();
-    if (task.steps.length > maxSteps) {
-      violations.add(
-        'Task plan has ${task.steps.length} steps; max is $maxSteps.',
-      );
-    }
-    if (_normalisePrompt(task.objective) ==
-        _normalisePrompt(context.projectGoal)) {
-      violations.add('Task goal matches the whole project goal.');
-    }
-    if (task.successCriteria.isEmpty) {
-      violations.add('Task plan has no success criteria.');
-    }
-    if (context.doneCriteria.isNotEmpty) {
-      final planned = _normalisePrompt(task.successCriteria.join(' '));
-      final missing = context.doneCriteria.where(
-        (criterion) => !planned.contains(_normalisePrompt(criterion)),
-      );
-      if (missing.length == context.doneCriteria.length) {
-        violations.add(
-          'Task success criteria do not reflect the task done criteria.',
-        );
-      }
-    }
-    for (final step in task.steps) {
-      if (_looksLikeWholeProject(step.objective, context.projectGoal)) {
-        violations.add(
-          'Step "${step.id}" appears to target the whole project.',
-        );
-      }
-    }
-    if (context.expectedArtifacts.isNotEmpty) {
-      final declaredPaths = {
-        for (final step in task.steps)
-          for (final artifact in step.artifacts)
-            path.normalize(
-              artifact.path.replaceAll('{{task_id}}', task.id).trim(),
-            ),
-      };
-      final missingArtifacts = context.expectedArtifacts.where((artifact) {
-        final expectedPath = path.normalize(
-          artifact.path.replaceAll('{{task_id}}', task.id).trim(),
-        );
-        return expectedPath.isNotEmpty && !declaredPaths.contains(expectedPath);
-      });
-      if (missingArtifacts.isNotEmpty) {
-        violations.add(
-          'Task plan does not declare all required project artifacts.',
-        );
-      }
-    }
-    return violations;
-  }
-
-  bool _looksLikeWholeProject(String value, String projectGoal) {
-    final normalised = _normalisePrompt(value);
-    final project = _normalisePrompt(projectGoal);
-    if (normalised == project) return true;
-    return normalised.contains('entire project') ||
-        normalised.contains('whole project') ||
-        normalised.contains('complete the project') ||
-        normalised.contains('finish the project');
-  }
-
-  String _normalisePrompt(String value) =>
-      value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
-
   Future<_StepExecutionOutput> _executeStep({
     required ChatClient client,
     required WorkspaceAttachment workspace,
@@ -1938,7 +1317,6 @@ ${_encoder.convert(ModelJson.encode(task))}
             arguments: args,
             result: result,
             resultSummary: _cap(resultJson, 1200),
-            error: terminal.error,
             outcome: terminal.error == null
                 ? TaskToolCallOutcome.succeeded
                 : TaskToolCallOutcome.failed,
@@ -2052,7 +1430,6 @@ ${_encoder.convert(ModelJson.encode(task))}
             arguments: args,
             result: result,
             resultSummary: _cap(resultJson, 1200),
-            error: toolError?.message,
             outcome: _toolCallOutcome(result, toolError),
             operationKey: _operationKey(call.name, args),
             toolError: toolError,
@@ -2489,10 +1866,10 @@ ${_encoder.convert(ModelJson.encode(task))}
       json['summary'],
       fallback: status == 'failed' ? 'Step failed.' : 'Step completed.',
     );
-    // memoryUpdate is accepted only as a rollout compatibility field. Artifact
-    // paths never become execution artifacts; legacy evidence fields are
-    // parsed only as advisory claims. Authoritative facts come from executed
-    // workspace calls and gate evaluation below.
+    // memoryUpdate and evidence claims are model-output fields only. Artifact
+    // paths never become execution artifacts; evidence claims are advisory.
+    // Authoritative facts come from executed workspace calls and gate
+    // evaluation below.
     final finalContent = _encoder.convert({
       'status': status,
       'summary': summary,
@@ -2842,7 +2219,7 @@ ${_encoder.convert(ModelJson.encode(task))}
     final artifacts = <TaskArtifact>[];
     for (final call in toolCalls) {
       if (call.outcome != TaskToolCallOutcome.succeeded ||
-          call.effectiveToolError != null) {
+          call.toolError != null) {
         continue;
       }
       final result = jsonMap(call.result);
@@ -2946,18 +2323,6 @@ provenance and evaluates gates separately.
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
-    if (planningProtocolMode == PlanningProtocolMode.legacy) {
-      return _replanUnfinishedLegacy(
-        client: client,
-        workspace: workspace,
-        snapshot: snapshot,
-        baseSystemPrompt: baseSystemPrompt,
-        reason: reason,
-        planningMetrics: const PlanningMetrics(planningCalls: 1),
-        onModelOutput: onModelOutput,
-        cancellationToken: cancellationToken,
-      );
-    }
     final context = TaskPlanningToolContext(
       task: snapshot,
       workspaceRoot: workspace.rootPath,
@@ -2969,7 +2334,6 @@ provenance and evaluates gates separately.
       outOfScope: snapshot.outOfScope,
       readPaths: snapshot.readPaths,
       writePaths: snapshot.writePaths,
-      legacyWriteAccess: snapshot.legacyWriteAccess,
       requiredArtifacts: snapshot.expectedArtifacts,
       requiredGates: snapshot.gates,
       preserveCompletedStepsOnly: true,
@@ -2995,7 +2359,7 @@ Reason for replan:
 $reason
 
 Current bounded task view:
-${_encoder.convert(_taskViewService.query(snapshot, maxSteps: _taskPlanningStepLimit(snapshot), doneCriteria: context.doneCriteria, outOfScope: context.outOfScope, readPaths: context.readPaths, writePaths: context.writePaths, legacyWriteAccess: context.legacyWriteAccess, requiredGates: context.requiredGates))}
+${_encoder.convert(_taskViewService.query(snapshot, maxSteps: _taskPlanningStepLimit(snapshot), doneCriteria: context.doneCriteria, outOfScope: context.outOfScope, readPaths: context.readPaths, writePaths: context.writePaths, requiredGates: context.requiredGates))}
 ''',
       onModelOutput: onModelOutput,
       cancellationToken: cancellationToken,
@@ -3034,147 +2398,12 @@ ${_encoder.convert(_taskViewService.query(snapshot, maxSteps: _taskPlanningStepL
         updatedAt: now,
       );
     }
-    if (result['used_planning_tools'] == true) {
-      return _fallbackReplannedTask(
-        snapshot,
-        reason,
-        planningMetrics: planningMetrics.copyWith(
-          recoveryAttempts: planningMetrics.recoveryAttempts + 1,
-        ),
-      );
-    }
-    if (planningProtocolMode == PlanningProtocolMode.automatic) {
-      return _replanUnfinishedLegacy(
-        client: client,
-        workspace: workspace,
-        snapshot: snapshot,
-        baseSystemPrompt: baseSystemPrompt,
-        reason: reason,
-        planningMetrics: planningMetrics.copyWith(
-          planningCalls: planningMetrics.planningCalls + 1,
-          fullPlanRepairCount: planningMetrics.fullPlanRepairCount + 1,
-          recoveryAttempts: planningMetrics.recoveryAttempts + 1,
-        ),
-        onModelOutput: onModelOutput,
-        cancellationToken: cancellationToken,
-      );
-    }
     return _fallbackReplannedTask(
       snapshot,
       reason,
       planningMetrics: planningMetrics.copyWith(
         recoveryAttempts: planningMetrics.recoveryAttempts + 1,
       ),
-    );
-  }
-
-  Future<Task> _replanUnfinishedLegacy({
-    required ChatClient client,
-    required WorkspaceAttachment workspace,
-    required Task snapshot,
-    required String baseSystemPrompt,
-    required String reason,
-    PlanningMetrics planningMetrics = const PlanningMetrics(planningCalls: 1),
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) async {
-    final now = DateTime.now();
-    final completed = snapshot.steps
-        .where(
-          (step) =>
-              step.status == TaskStepStatus.completed ||
-              step.status == TaskStepStatus.skipped,
-        )
-        .toList();
-
-    List<TaskStep> replacement;
-    try {
-      final json = await _completeJson(
-        client: client,
-        system: '$baseSystemPrompt\n\n$_replannerSystemInstruction',
-        label: 'Unfinished Work Replanner',
-        onModelOutput: onModelOutput,
-        cancellationToken: cancellationToken,
-        user:
-            '''
-Rewrite only the unfinished steps for this task.
-
-Return only JSON:
-{
-  "steps": [
-    {
-      "id": "short_stable_id",
-      "title": "...",
-      "objective": "...",
-      "instructions": ["..."],
-      "mayEditFiles": false,
-      "artifacts": [{"path": "...", "description": "..."}],
-      "gates": [{"id": "artifact_exists", "required": true, "scope": "step", "params": {"paths": ["..."]}, "description": "..."}]
-    }
-  ],
-  "memorySummary": "optional updated memory summary"
-}
-
-Gate catalog:
-${_taskGateCatalogPrompt()}
-
-Reason for replan:
-$reason
-
-Completed or skipped steps to preserve:
-${_encoder.convert(completed.map(ModelJson.encode).toList())}
-
-Current task:
-${_encoder.convert(ModelJson.encode(snapshot))}
-''',
-      );
-      replacement = _stepsFromJson(json['steps'], snapshot.id);
-      if (replacement.isEmpty) {
-        replacement = [_fallbackExecutionStep(snapshot.id, snapshot.objective)];
-      }
-    } on OperationCancelledException {
-      rethrow;
-    } on ChatTransportException {
-      rethrow;
-    } catch (_) {
-      replacement = [_fallbackExecutionStep(snapshot.id, snapshot.objective)];
-    }
-
-    final existingIds = completed.map((step) => step.id).toSet();
-    replacement = [
-      for (final step in replacement) _dedupeStepId(step, existingIds),
-    ];
-
-    final replanRun = TaskRun(
-      runId: 'run_${uuid.v7()}',
-      stepId: snapshot.currentStepId ?? 'replan',
-      status: TaskRunStatus.replanned,
-      summary: 'Replanned unfinished work.',
-      memoryUpdate: reason,
-      toolCalls: const [],
-      artifacts: const [],
-      startedAt: now,
-      completedAt: now,
-      replanReason: reason,
-    );
-    final steps = [...completed, ...replacement];
-    final currentStepId = _nextStepId(steps);
-    return snapshot.copyWith(
-      status: currentStepId == null ? TaskStatus.completed : TaskStatus.paused,
-      steps: steps,
-      currentStepId: currentStepId,
-      memorySummary: _appendMemory(snapshot.memorySummary, 'Replan: $reason'),
-      runs: [...snapshot.runs, replanRun],
-      pendingApproval: null,
-      pendingQuestion: null,
-      completedAt: currentStepId == null ? now : null,
-      planningMetrics: snapshot.planningMetrics.add(
-        planningMetrics.copyWith(
-          recoveryAttempts: planningMetrics.recoveryAttempts + 1,
-          recoverySuccesses: planningMetrics.recoverySuccesses + 1,
-        ),
-      ),
-      updatedAt: now,
     );
   }
 
@@ -3264,9 +2493,9 @@ ${_encoder.convert(ModelJson.encode(snapshot))}
     }
 
     final status = _parseStepExecutionStatus(json['status']);
-    // JSON output is retained as a compatibility path for older models, but
-    // execution facts are never accepted from it. Artifacts come from actual
-    // successful workspace calls, and claims are advisory only.
+    // JSON output remains a model-output boundary, but execution facts are
+    // never accepted from it. Artifacts come from actual successful workspace
+    // calls, and claims are advisory only.
     final artifacts = _artifactsFromToolCalls(task.id, step, toolCalls);
     final summary = jsonString(
       json['summary'],
@@ -3494,31 +2723,6 @@ When finished, call finish_task_step with only this result object. If finish_tas
 For a genuinely blocking user decision, call task_request_user_decision with
 the question and context. If the approach is wrong or incomplete, call
 task_request_replan with a concrete reason. Those tools end the step.
-''';
-  }
-
-  String _taskGateCatalogPrompt() {
-    return '''
-Choose only these gate ids. Gates are checked by the task runner, not by the executor.
-- artifact_exists: params {"paths": ["relative/path"]}
-- artifact_nonempty: params {"paths": ["relative/path"]}
-- command_passes: params {"command": "dart test", "working_directory": "."}
-- no_tool_errors: params {} (fails unresolved fatal tool errors; recoverable guard denials are recorded as advisory details)
-- no_failed_commands: params {}
-- content_contains: params {"path": "relative/path", "mustContain": ["..."]}
-- content_not_contains: params {"path": "relative/path", "mustNotContain": ["TODO", "FIXME", "[...]"]}
-- json_valid: params {"path": "relative/path"}
-- yaml_valid: params {"path": "relative/path"}
-- xml_valid: params {"path": "relative/path"}
-- markdown_links_valid: params {"path": "relative/path"}
-- schema_matches: params {"path": "relative/path", "requiredKeys": ["..."], "types": {"key": "string|number|boolean|array|object"}}
-- workspace_clean_enough: usually advisory unless the user requires clean git state
-- human_approval: use for risky irreversible or subjective acceptance checkpoints
-- model_review: subjective review; advisory by default for creative/research work
-For coding tasks, prefer no_tool_errors, no_failed_commands, and command_passes when a likely test/analyze/build command is inferable.
-For declared artifact outputs, use artifact_exists and artifact_nonempty.
-When Expected Project evidence declares a required command, the task must contain a matching required command_passes gate with the exact command and working_directory. Evidence claims are not accepted automatically: command evidence should be emitted by the gate, while no_tool_errors and no_failed_commands remain safety gates unless explicitly linked to a criterion expectation.
-Claims can support a project criterion only after completion review. Advisory failures, including unavailable Docker or other unavailable infrastructure, must not be presented as criterion advancement.
 ''';
   }
 
@@ -3990,52 +3194,6 @@ $whitelist
     sink?.call(event);
   }
 
-  Task _taskFromPlannerJson(
-    Map<String, dynamic> json, {
-    required String taskId,
-    required String originalPrompt,
-    required String? chatSessionId,
-    required String? projectId,
-    List<TaskGate> requiredGates = const [],
-    required DateTime now,
-  }) {
-    final steps = _stepsFromJson(json['steps'], taskId);
-    final safeSteps = steps.isEmpty
-        ? [_fallbackExecutionStep(taskId, originalPrompt)]
-        : steps;
-    final gates = [
-      ..._gatesFromJson(json['gates'], fallbackScope: 'task', taskId: taskId),
-      ...requiredGates,
-      ..._defaultTaskGates(safeSteps, originalPrompt),
-    ];
-    return Task(
-      id: taskId,
-      title: jsonString(
-        json['title'],
-        fallback: _titleFromPrompt(originalPrompt),
-      ),
-      originalPrompt: originalPrompt,
-      objective: jsonString(
-        json['goal'] ?? json['objective'],
-        fallback: originalPrompt,
-      ),
-      constraints: jsonStringList(json['constraints']),
-      successCriteria: jsonStringList(
-        json['successCriteria'] ?? json['success_criteria'],
-      ),
-      gates: _dedupeGates(gates),
-      steps: safeSteps,
-      status: TaskStatus.paused,
-      currentStepId: _nextStepId(safeSteps),
-      memorySummary: '',
-      runs: const [],
-      chatSessionId: chatSessionId,
-      projectId: projectId,
-      createdAt: now,
-      updatedAt: now,
-    );
-  }
-
   Task _normaliseEditedTask(Task candidate, Task original, DateTime now) {
     final steps = candidate.steps.isEmpty
         ? original.steps
@@ -4046,7 +3204,6 @@ $whitelist
         ? candidate.currentStepId
         : _nextStepId(steps);
     return candidate.copyWith(
-      schemaVersion: Task.currentSchemaVersion,
       title: candidate.title.trim().isEmpty ? original.title : candidate.title,
       originalPrompt: candidate.originalPrompt.trim().isEmpty
           ? original.originalPrompt
@@ -4061,70 +3218,6 @@ $whitelist
       createdAt: original.createdAt,
       updatedAt: now,
     );
-  }
-
-  List<TaskStep> _stepsFromJson(Object? value, String taskId) {
-    if (value is! List) return const [];
-    final usedIds = <String>{};
-    final steps = <TaskStep>[];
-    for (var i = 0; i < value.length; i++) {
-      final raw = value[i];
-      if (raw is! Map) continue;
-      final map = Map<String, dynamic>.from(raw);
-      final fallbackId = 'step_${i + 1}';
-      final id = _safeId(
-        jsonString(map['id'], fallback: fallbackId),
-        fallbackId,
-      );
-      var uniqueId = id;
-      var suffix = 2;
-      while (!usedIds.add(uniqueId)) {
-        uniqueId = '${id}_$suffix';
-        suffix++;
-      }
-      final artifacts = _artifactsFromJson(map['artifacts'], uniqueId)
-          .map(
-            (artifact) => artifact.path.contains('{{task_id}}')
-                ? artifact.copyWith(
-                    path: artifact.path.replaceAll('{{task_id}}', taskId),
-                    stepId: uniqueId,
-                  )
-                : artifact,
-          )
-          .toList();
-      final gates = [
-        ..._gatesFromJson(map['gates'], fallbackScope: 'step', taskId: taskId),
-      ];
-      steps.add(
-        _normaliseStep(
-          TaskStep(
-            id: uniqueId,
-            title: jsonString(map['title'], fallback: 'Step ${i + 1}'),
-            objective: jsonString(map['objective']),
-            instructions: jsonStringList(map['instructions']),
-            mayEditFiles: jsonBool(
-              map['mayEditFiles'] ?? map['may_edit_files'],
-            ),
-            artifacts: artifacts,
-            gates: _dedupeGates(gates),
-            status: TaskStepStatus.pending,
-          ),
-        ),
-      );
-    }
-    return steps;
-  }
-
-  List<TaskArtifact> _artifactsFromJson(Object? value, String stepId) {
-    if (value is! List) return const [];
-    return value
-        .whereType<Map>()
-        .map((raw) {
-          final artifact = ModelJson.decode<TaskArtifact>(raw);
-          return artifact.copyWith(stepId: stepId);
-        })
-        .where((artifact) => artifact.path.trim().isNotEmpty)
-        .toList();
   }
 
   List<TaskEvidenceClaim> _evidenceClaimsFromJson(
@@ -4185,46 +3278,6 @@ $whitelist
       );
     }
     return claims;
-  }
-
-  List<TaskGate> _gatesFromJson(
-    Object? value, {
-    required String fallbackScope,
-    String? taskId,
-  }) {
-    if (value is! List) return const [];
-    final gates = <TaskGate>[];
-    for (final raw in value.whereType<Map>()) {
-      final gate = ModelJson.decode<TaskGate>(raw);
-      final id = gate.id.trim();
-      gates.add(
-        TaskGate(
-          id: id,
-          required: gate.required,
-          scope: gate.scope.trim().isEmpty ? fallbackScope : gate.scope,
-          params: jsonMap(_replaceTaskIdPlaceholder(gate.params, taskId)),
-          description: gate.description,
-        ),
-      );
-    }
-    return gates;
-  }
-
-  Object? _replaceTaskIdPlaceholder(Object? value, String? taskId) {
-    if (taskId == null) return value;
-    if (value is String) return value.replaceAll('{{task_id}}', taskId);
-    if (value is List) {
-      return value
-          .map((item) => _replaceTaskIdPlaceholder(item, taskId))
-          .toList();
-    }
-    if (value is Map) {
-      return {
-        for (final entry in value.entries)
-          entry.key.toString(): _replaceTaskIdPlaceholder(entry.value, taskId),
-      };
-    }
-    return value;
   }
 
   List<TaskGate> _defaultTaskGates(List<TaskStep> steps, String prompt) {
@@ -4343,16 +3396,6 @@ $whitelist
     return result;
   }
 
-  TaskStep _dedupeStepId(TaskStep step, Set<String> existingIds) {
-    var id = step.id;
-    var suffix = 2;
-    while (!existingIds.add(id)) {
-      id = '${step.id}_$suffix';
-      suffix++;
-    }
-    return _rebindStep(step, id);
-  }
-
   TaskStep _rebindStep(TaskStep step, String id) {
     if (step.id == id &&
         step.artifacts.every((artifact) => artifact.stepId == id)) {
@@ -4447,9 +3490,7 @@ $whitelist
     final successCriteria = planningContext.doneCriteria.isEmpty
         ? ['Complete the selected bounded Project task.']
         : planningContext.doneCriteria;
-    final mayEditFiles =
-        planningContext.writePaths.isNotEmpty ||
-        planningContext.legacyWriteAccess;
+    final mayEditFiles = planningContext.writePaths.isNotEmpty;
     final step = TaskStep(
       id: 'execute_project_task',
       title: 'Execute bounded project task',
@@ -4782,25 +3823,6 @@ Ask at most three questions.
 Return only valid JSON.
 ''';
 
-const String _plannerSystemInstruction = '''
-You create simple linear plans for long-horizon workspace tasks.
-The plan should be small, clear, and robust.
-Each step must be independently executable from the shared goal, plan, memory summary, and previous run summaries.
-Do not ask blocking questions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; choose a reasonable default and continue.
-Ask the user only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
-Choose completion gates from the provided gate catalog when observable evidence should be required before a step or task can complete.
-Use model_review only for subjective creative/research judgment; use deterministic gates whenever possible.
-Read-only steps may create new task-owned artifact files under `.agent/tasks/<taskId>/`.
-Declare an artifact only on the step that will actually create it.
-Do not split broad "explore" and "analyze" work into separate steps when the exploration exists only to support the analysis.
-Mark mayEditFiles true only when a step may edit existing files, write outside the task folder, rename paths, delete paths, or run terminal commands beyond exact commands declared in command_passes gates.
-A command_passes gate declares and permits one exact command and working directory for its step regardless of command classification. Set required true when the command must run successfully for completion. Set required false when the command should still be attempted but absence or failure is advisory evidence. On a read-only step, the runner exposes run_command only for commands declared by command_passes gates and rejects every variation, including added arguments, flags, pipes, redirects, shell wrappers, or combined commands.
-If the request involves opaque or binary documents such as .odt, .docx, .pdf, .xlsx, or archives, mark inspection/extraction steps mayEditFiles true when terminal commands may be needed and commandExecutionApproved is true in workspace metadata.
-Keep research/design/planning/reporting-to-task-folder steps read-only when they only read files and create new task-owned artifacts.
-Do not include review, retry, validation, terminal policy, or approval policy fields.
-Return only valid JSON.
-''';
-
 const String _executorSystemInstruction = '''
 You execute one step of a larger linear task.
 Use the full plan and memory to keep long-horizon context.
@@ -4821,30 +3843,14 @@ When done, call finish_task_step with only status and summary. Hermes derives ar
 If finish_task_step is unavailable, return only the requested JSON object.
 ''';
 
-const String _replannerSystemInstruction = '''
-You replan unfinished work for a linear long-horizon task.
-Preserve completed and skipped steps.
-Rewrite only unfinished work into a short, concrete sequence.
-Do not ask blocking questions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences; choose a reasonable default and continue.
-Ask the user only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
-Choose completion gates from the provided gate catalog when observable evidence should be required before a step or task can complete.
-Use model_review only for subjective creative/research judgment; use deterministic gates whenever possible.
-Read-only steps may create new task-owned artifact files under `.agent/tasks/<taskId>/`.
-Declare an artifact only on the step that will actually create it.
-Do not split broad "explore" and "analyze" work into separate steps when the exploration exists only to support the analysis.
-Mark mayEditFiles true only when a step may edit existing files, write outside the task folder, rename paths, delete paths, or run terminal commands beyond exact commands declared in command_passes gates.
-A command_passes gate declares and permits one exact command and working directory for its step regardless of command classification. Set required true when the command must run successfully for completion. Set required false when the command should still be attempted but absence or failure is advisory evidence. On a read-only step, the runner exposes run_command only for commands declared by command_passes gates and rejects every variation, including added arguments, flags, pipes, redirects, shell wrappers, or combined commands.
-If unfinished work involves opaque or binary documents such as .odt, .docx, .pdf, .xlsx, or archives, mark inspection/extraction steps mayEditFiles true when terminal commands may be needed and commandExecutionApproved is true in workspace metadata.
-Do not include review, retry, validation, terminal policy, or approval policy fields.
-Return only valid JSON.
-''';
-
 const String _taskPlanningToolsSystemInstruction = '''
 You create a compact linear task plan through explicit task planning tools.
 Do not return a complete task JSON document. Start with task_view when context
 is needed, optionally use task_set_brief, add one independently executable
 step at a time with task_add_step, attach exact verification commands with
-task_add_check, and finish with task_commit_plan.
+task_add_check, and finish with task_commit_plan. If a validation error means
+the current uncommitted draft must be replaced, use task_reset_plan first and
+then rebuild the corrected draft with commands.
 
 Hermes generates step, artifact, gate, evidence, question, and runtime IDs.
 Never provide persistent IDs, statuses, timestamps, run history, fingerprints,

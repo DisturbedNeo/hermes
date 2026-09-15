@@ -51,11 +51,17 @@ void main() {
   });
 
   test('saved chats keep a snapshot of the selected system prompt', () async {
-    final prompt = await promptLibrary.createPrompt(
-      name: 'Reviewer',
+    final module = await promptLibrary.createModule(
+      name: 'Reviewer rules',
+      category: 'Task',
       content: 'Review code carefully.',
+      priority: 10,
     );
-    final snapshot = prompt.toSnapshot();
+    final prompt = await promptLibrary.createPreset(
+      name: 'Reviewer',
+      baseModuleIds: [module.id],
+    );
+    final snapshot = await promptLibrary.snapshotForPreset(prompt);
 
     final saved = await chatLibrary.saveChatSnapshot(
       title: 'Prompted chat',
@@ -78,12 +84,14 @@ void main() {
       systemPromptSnapshot: snapshot,
     );
 
-    await promptLibrary.updatePrompt(
+    await promptLibrary.updatePreset(
       id: prompt.id,
       name: 'Reviewer',
-      content: 'A later prompt edit.',
+      baseModuleIds: [module.id],
+      optionalModuleIds: const [],
+      customInstructions: 'A later prompt edit.',
     );
-    await promptLibrary.deletePrompt(prompt.id);
+    await promptLibrary.deletePreset(prompt.id);
 
     final restored = await chatLibrary.getChat(saved.id);
     expect(restored?.chat.systemPromptSnapshot?.id, prompt.id);
@@ -91,44 +99,31 @@ void main() {
     expect(restored?.chat.systemPromptSnapshot?.text, 'Review code carefully.');
   });
 
-  test('falls back to legacy saved-chat prompt columns', () async {
-    final saved = await chatLibrary.saveChatSnapshot(
-      title: 'Legacy columns chat',
-      messages: const [
-        Bubble(
-          id: 'system',
-          role: MessageRole.system,
-          text: 'Legacy prompt text.',
-          reasoning: '',
-        ),
-      ],
-      modelSnapshot: null,
-      workspace: null,
-      systemPromptSnapshot: null,
-    );
+  test(
+    'creates only canonical saved-chat prompt and session columns',
+    () async {
+      await chatLibrary.saveChatSnapshot(
+        title: 'Canonical columns chat',
+        messages: const [],
+        modelSnapshot: null,
+        workspace: null,
+        systemPromptSnapshot: null,
+      );
+      final db = await databaseFactoryFfi.openDatabase(
+        databasePath,
+        options: OpenDatabaseOptions(singleInstance: false),
+      );
+      final columns = await db.rawQuery('PRAGMA table_info(saved_chats)');
+      await db.close();
 
-    final db = await databaseFactoryFfi.openDatabase(
-      databasePath,
-      options: OpenDatabaseOptions(singleInstance: false),
-    );
-    await db.update(
-      'saved_chats',
-      {
-        'system_prompt_snapshot_json': null,
-        'system_prompt_id': 'legacy-prompt',
-        'system_prompt_name': 'Legacy prompt',
-        'system_prompt_text': 'Legacy prompt text.',
-      },
-      where: 'id = ?',
-      whereArgs: [saved.id],
-    );
-    await db.close();
-
-    final restored = await chatLibrary.getChat(saved.id);
-    expect(restored?.chat.systemPromptSnapshot?.id, 'legacy-prompt');
-    expect(restored?.chat.systemPromptSnapshot?.name, 'Legacy prompt');
-    expect(restored?.chat.systemPromptSnapshot?.text, 'Legacy prompt text.');
-  });
+      final names = columns.map((row) => row['name']).toSet();
+      expect(names, contains('system_prompt_snapshot_json'));
+      expect(names, isNot(contains('system_prompt_id')));
+      expect(names, isNot(contains('system_prompt_name')));
+      expect(names, isNot(contains('system_prompt_text')));
+      expect(names, isNot(contains('workspace_command_approved')));
+    },
+  );
 
   test(
     'preserves message creation timestamps when saving and loading',

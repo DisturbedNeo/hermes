@@ -15,9 +15,8 @@ import 'package:hermes/core/services/task_system/task_model_output.dart';
 
 /// Runs the model/tool loop for one project-planning draft.
 ///
-/// Unlike [FinalizerToolCallRunner], this runner has no workspace context and
-/// does not wait for a large final JSON payload. The draft registry is the
-/// only tool surface, and [plan_commit] is the terminal command.
+/// The draft registry is the only tool surface, and [plan_commit] is the
+/// terminal command.
 class ProjectPlanningToolCallRunner {
   const ProjectPlanningToolCallRunner();
 
@@ -61,46 +60,12 @@ class ProjectPlanningToolCallRunner {
         final text = completion.content.trim().isNotEmpty
             ? completion.content.trim()
             : completion.reasoning.trim();
-        // Older project adapters may still return the former whole-plan JSON.
-        // Let the owning gateway decide whether automatic compatibility mode
-        // may decode it; strict incremental mode will reject the marker.
-        if (text.startsWith('{') || text.startsWith('```')) {
-          return _withMetrics({
-            'ok': false,
-            'legacy_json': TaskJson.tryParseObject(text),
-          }, metrics);
-        }
-        if (completion.content.trim().isNotEmpty ||
-            completion.reasoning.trim().isNotEmpty) {
-          messages.add(
-            ChatMessage(
-              role: 'assistant',
-              content: completion.content,
-              reasoningContent: completion.reasoning,
-            ),
-          );
-        }
-        messages.add(
-          const ChatMessage(
-            role: 'user',
-            content:
-                'Continue with the planning tools. When the draft is complete, call plan_commit; do not return the plan as a JSON document in text.',
-          ),
-        );
-        continue;
-      }
-
-      // Keep a lossless compatibility marker for older adapters that still
-      // emit the old project creation finalizer despite the command-only
-      // tool surface.
-      if (completion.toolCalls.length == 1 &&
-          completion.toolCalls.first.name == 'finaliseProjectCreation') {
         return _withMetrics({
           'ok': false,
-          'legacy_finalizer': true,
-          'arguments': TaskJson.decodeJsonOrString(
-            completion.toolCalls.first.arguments,
-          ),
+          'code': 'planning_protocol_violation',
+          'message': text.isEmpty
+              ? 'The planner returned no planning command.'
+              : 'The planner returned text instead of a planning command.',
         }, metrics);
       }
 

@@ -7,8 +7,8 @@ import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
+import 'package:hermes/core/services/sandbox_policy.dart';
 import 'package:hermes/core/services/task_system/task_gate_evaluator.dart';
-import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
@@ -135,9 +135,9 @@ void main() {
     );
 
     test('content gates fail safely for oversized files', () async {
-      await File(path.join(root.path, 'out.md')).writeAsString(
-        List.filled(WorkspaceSandbox.maxReadBytes + 1, 'x').join(),
-      );
+      await File(
+        path.join(root.path, 'out.md'),
+      ).writeAsString(List.filled(kMaxReadBytes + 1, 'x').join());
 
       final evaluation = await evaluator.evaluate(
         workspace: workspace,
@@ -419,12 +419,33 @@ void main() {
           TaskGate(id: 'no_failed_commands'),
         ],
         toolCalls: [
-          _toolCall('read_file', error: 'Path not found.'),
-          _toolCall('write_file', error: 'Use workspace-relative paths only.'),
+          _toolCall(
+            'read_file',
+            toolError: const TaskToolError(
+              code: 'workspace_validation',
+              message: 'Path not found.',
+              disposition: TaskToolErrorDisposition.advisory,
+            ),
+            outcome: TaskToolCallOutcome.failed,
+          ),
+          _toolCall(
+            'write_file',
+            toolError: const TaskToolError(
+              code: 'workspace_validation',
+              message: 'Use workspace-relative paths only.',
+              disposition: TaskToolErrorDisposition.advisory,
+            ),
+            outcome: TaskToolCallOutcome.failed,
+          ),
           _toolCall(
             'run_command',
-            error:
-                'File deletion commands are blocked by terminal policy. Use workspace delete tools for scoped file removal.',
+            toolError: const TaskToolError(
+              code: 'guard_denial',
+              message:
+                  'File deletion commands are blocked by terminal policy. Use workspace delete tools for scoped file removal.',
+              disposition: TaskToolErrorDisposition.advisory,
+            ),
+            outcome: TaskToolCallOutcome.denied,
           ),
           _toolCall(
             'run_command',
@@ -444,7 +465,7 @@ void main() {
     });
 
     test(
-      'no_tool_errors treats legacy request-mode path failures as advisory',
+      'no_tool_errors uses structured workspace errors as advisory',
       () async {
         final evaluation = await evaluator.evaluate(
           workspace: workspace,
@@ -458,11 +479,10 @@ void main() {
                 'path': 'lib/missing.dart',
                 'request': 'Summarize this file.',
               },
-              error: 'Failed to extract information: Path not found.',
               toolError: const TaskToolError(
-                code: 'subagent_extraction_failed',
-                message: 'Failed to extract information: Path not found.',
-                disposition: TaskToolErrorDisposition.retryable,
+                code: 'workspace_validation',
+                message: 'Path not found.',
+                disposition: TaskToolErrorDisposition.advisory,
               ),
               outcome: TaskToolCallOutcome.failed,
             ),
@@ -484,7 +504,17 @@ void main() {
         task: task,
         step: step,
         gates: const [TaskGate(id: 'no_tool_errors')],
-        toolCalls: [_toolCall('read_file', error: 'Tool crashed.')],
+        toolCalls: [
+          _toolCall(
+            'read_file',
+            toolError: const TaskToolError(
+              code: 'unexpected_tool_failure',
+              message: 'Tool crashed.',
+              disposition: TaskToolErrorDisposition.fatal,
+            ),
+            outcome: TaskToolCallOutcome.failed,
+          ),
+        ],
         artifacts: const [],
       );
 
@@ -518,7 +548,6 @@ void main() {
             'patch_file',
             id: 'failed_patch',
             arguments: {'path': 'lib/a.dart'},
-            error: 'Temporary tool failure.',
             toolError: const TaskToolError(
               code: 'workspace_io_failure',
               message: 'Temporary tool failure.',
@@ -564,7 +593,11 @@ void main() {
             'patch_file',
             id: 'failed_patch',
             arguments: {'path': 'lib/a.dart'},
-            error: 'Patch text was not found.',
+            toolError: const TaskToolError(
+              code: 'workspace_validation',
+              message: 'Patch text was not found.',
+              disposition: TaskToolErrorDisposition.advisory,
+            ),
             outcome: TaskToolCallOutcome.denied,
           ),
         ];
@@ -594,7 +627,11 @@ void main() {
       final priorFailure = _toolCall(
         'read_file',
         id: 'prior_failure',
-        error: 'Tool crashed.',
+        toolError: const TaskToolError(
+          code: 'unexpected_tool_failure',
+          message: 'Tool crashed.',
+          disposition: TaskToolErrorDisposition.fatal,
+        ),
         outcome: TaskToolCallOutcome.failed,
       );
       final evaluation = await evaluator.evaluate(
@@ -700,7 +737,6 @@ TaskToolCallRecord _toolCall(
   Map<String, dynamic> arguments = const {},
   Map<String, dynamic> result = const {},
   String? resultSummary,
-  String? error,
   TaskToolCallOutcome outcome = TaskToolCallOutcome.succeeded,
   TaskToolError? toolError,
 }) {
@@ -712,7 +748,6 @@ TaskToolCallRecord _toolCall(
     arguments: arguments,
     result: result,
     resultSummary: resultSummary ?? jsonEncode(result),
-    error: error,
     outcome: outcome,
     toolError: toolError,
     timestamp: DateTime(2026, 1, 1),

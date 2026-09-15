@@ -21,7 +21,6 @@ import 'package:hermes/core/services/project_system/project_plan_revision_servic
 import 'package:hermes/core/services/project_system/project_progress_monitor.dart';
 import 'package:hermes/core/services/project_system/project_repository.dart';
 import 'package:hermes/core/services/project_system/project_scheduler.dart';
-import 'package:hermes/core/services/project_system/project_task_migration.dart';
 import 'package:hermes/core/services/question_policy_service.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
@@ -45,7 +44,7 @@ class ProjectRunResult {
   const ProjectRunResult({required this.project, this.activeTask});
 }
 
-class ProjectService implements PlanningProtocolConfigurable {
+class ProjectService {
   ProjectService({
     required TaskService taskService,
     ProjectRepository? repository,
@@ -53,7 +52,6 @@ class ProjectService implements PlanningProtocolConfigurable {
     ProjectScheduler? scheduler,
     ProjectMemoryService? memoryService,
     ProjectProgressMonitor? progressMonitor,
-    PlanningProtocolMode planningProtocolMode = PlanningProtocolMode.automatic,
   }) : _taskService = taskService,
        _repository = repository ?? ProjectRepository(),
        _modelCalls =
@@ -61,12 +59,7 @@ class ProjectService implements PlanningProtocolConfigurable {
            ProjectModelCalls(toolService: taskService.toolService),
        _scheduler = scheduler ?? const ProjectScheduler(),
        _memoryService = memoryService ?? const ProjectMemoryService(),
-       _progressMonitor = progressMonitor ?? const ProjectProgressMonitor(),
-       _taskMigration = ProjectTaskSnapshotMigration(
-         taskRepository: taskService.repository,
-       ) {
-    this.planningProtocolMode = planningProtocolMode;
-  }
+       _progressMonitor = progressMonitor ?? const ProjectProgressMonitor();
 
   final TaskService _taskService;
   final ProjectRepository _repository;
@@ -74,7 +67,6 @@ class ProjectService implements PlanningProtocolConfigurable {
   final ProjectScheduler _scheduler;
   final ProjectMemoryService _memoryService;
   final ProjectProgressMonitor _progressMonitor;
-  final ProjectTaskSnapshotMigration _taskMigration;
   final QuestionPolicyService _questionPolicy = const QuestionPolicyService();
   final ProjectEvidenceService _evidenceService =
       const ProjectEvidenceService();
@@ -95,21 +87,6 @@ class ProjectService implements PlanningProtocolConfigurable {
   static const _maxAutomaticInitialPlanRepairs = 2;
 
   ProjectRepository get repository => _repository;
-
-  @override
-  set planningProtocolMode(PlanningProtocolMode value) {
-    _planningProtocolMode = value;
-    final configurable = _modelCalls;
-    if (configurable is PlanningProtocolConfigurable) {
-      (configurable as PlanningProtocolConfigurable).planningProtocolMode =
-          value;
-    }
-  }
-
-  PlanningProtocolMode _planningProtocolMode = PlanningProtocolMode.automatic;
-
-  @override
-  PlanningProtocolMode get planningProtocolMode => _planningProtocolMode;
 
   Task? _activeProjectTask(ProjectDocument project) {
     final id = project.activeTaskId;
@@ -312,7 +289,6 @@ class ProjectService implements PlanningProtocolConfigurable {
           : projectTask.expectedEvidence,
       readPaths: projectTask.readPaths,
       writePaths: projectTask.writePaths,
-      legacyWriteAccess: projectTask.legacyWriteAccess,
       doneCriteria: projectTask.doneCriteria,
       outOfScope: projectTask.outOfScope,
       context: projectTask.context,
@@ -336,12 +312,13 @@ class ProjectService implements PlanningProtocolConfigurable {
     WorkspaceAttachment workspace,
     ProjectDocument project,
   ) async {
+    // A newly-created in-memory project may be handed directly to the runner
+    // before its task documents have been persisted. Persisted projects cannot
+    // contain an embedded `tasks` field because ProjectStateJsonHook rejects
+    // it; this cache only supports that current in-memory lifecycle.
     final cachedById = {for (final task in project.tasks) task.id: task};
-    final orderedIds = project.taskIds.isNotEmpty
-        ? project.taskIds
-        : project.tasks.map((task) => task.id).toList();
     final hydrated = <Task>[];
-    for (final id in orderedIds) {
+    for (final id in project.taskIds) {
       final loaded = await _taskService.loadTask(
         workspace,
         id,
@@ -349,19 +326,9 @@ class ProjectService implements PlanningProtocolConfigurable {
         projectId: project.id,
       );
       final task = loaded ?? cachedById[id];
-      if (task == null) continue;
-      final canonicalTask = task.projectId == project.id
-          ? task
-          : task.copyWith(projectId: project.id);
-      if (loaded == null || canonicalTask.projectId != loaded.projectId) {
-        await _taskService.repository.saveSnapshot(
-          workspace.rootPath,
-          canonicalTask,
-        );
-      }
-      hydrated.add(canonicalTask);
+      if (task != null) hydrated.add(task);
     }
-    return project.copyWith(tasks: hydrated, taskIds: orderedIds);
+    return project.copyWith(tasks: hydrated);
   }
 
   Future<List<ProjectSummary>> listProjects(
@@ -401,13 +368,7 @@ class ProjectService implements PlanningProtocolConfigurable {
   Future<ProjectDocument> _prepareLoadedProject(
     WorkspaceAttachment workspace,
     ProjectDocument project,
-  ) async {
-    final migration = await _taskMigration.migrate(workspace.rootPath, project);
-    if (migration.migrated) {
-      await _repository.saveSnapshot(workspace.rootPath, migration.project);
-    }
-    return _hydrateProjectTasks(workspace, migration.project);
-  }
+  ) => _hydrateProjectTasks(workspace, project);
 
   Future<int> deleteProjectsForChatSession(
     WorkspaceAttachment workspace, {
@@ -494,7 +455,6 @@ class ProjectService implements PlanningProtocolConfigurable {
         workspaceProfile: discovery.workspaceProfile,
       );
       while (planningIssues.isNotEmpty &&
-          planningProtocolMode != PlanningProtocolMode.incremental &&
           repairAttempts < _maxAutomaticInitialPlanRepairs) {
         repairAttempts++;
         final repaired = await _modelCalls.repairInitialisation(
@@ -652,7 +612,6 @@ class ProjectService implements PlanningProtocolConfigurable {
       TaskJson.parseObject(rawJson),
     );
     final updated = parsed.copyWith(
-      schemaVersion: ProjectDocument.currentSchemaVersion,
       id: snapshot.id,
       chatSessionId: snapshot.chatSessionId,
       createdAt: snapshot.createdAt,
@@ -1455,21 +1414,6 @@ class ProjectService implements PlanningProtocolConfigurable {
     return _persistProject(workspace.rootPath, updated);
   }
 
-  @Deprecated('Use requestScopeChange for explicit scope changes.')
-  Future<ProjectDocument> requestManualReplan({
-    required WorkspaceAttachment workspace,
-    required ProjectDocument snapshot,
-    String reason = '',
-  }) {
-    return requestScopeChange(
-      workspace: workspace,
-      snapshot: snapshot,
-      context: reason.trim().isEmpty
-          ? 'User explicitly requested a roadmap revision.'
-          : reason,
-    );
-  }
-
   Future<ProjectDocument> compactMemory({
     required WorkspaceAttachment workspace,
     required ProjectDocument snapshot,
@@ -1654,89 +1598,25 @@ class ProjectService implements PlanningProtocolConfigurable {
         DateTime.now(),
       );
     }
-    final incrementalGateway = _modelCalls;
-    if (planningProtocolMode != PlanningProtocolMode.legacy &&
-        incrementalGateway is ProjectIncrementalPlanningGateway) {
-      final incremental =
-          await (incrementalGateway as ProjectIncrementalPlanningGateway)
-              .revisePlanWithCommands(
-                client: client,
-                baseSystemPrompt: baseSystemPrompt,
-                workspace: workspace,
-                project: project,
-                evidenceSnapshot: snapshot,
-                triggers: debouncedTriggers,
-                approvalPolicy: approvalPolicy,
-                onModelOutput: onModelOutput,
-                cancellationToken: cancellationToken,
-              );
-      return _finishPlanRevision(
-        revised: incremental.project,
-        questionAutonomy: questionAutonomy,
-        modelCalls: incremental.modelCalls,
-        planningMetrics: incremental.planningMetrics,
-        invalidPlan: !incremental.committed,
-        awaitingApproval: incremental.awaitingApproval,
-        planningError: incremental.error,
-      );
-    }
-    if (planningProtocolMode == PlanningProtocolMode.incremental) {
-      return _finishPlanRevision(
-        revised: _blockProject(
-          project,
-          ProjectBlockerType.validation,
-          'The configured incremental planning adapter is unavailable; no legacy plan document was requested.',
-          DateTime.now(),
-        ),
-        questionAutonomy: questionAutonomy,
-        modelCalls: 0,
-        invalidPlan: true,
-        awaitingApproval: false,
-        planningError: 'incremental_planning_unavailable',
-      );
-    }
-    final planningProject = _projectForModel(project);
-    final proposal = await _modelCalls.revisePlan(
+    final incremental = await _modelCalls.revisePlanWithCommands(
       client: client,
       baseSystemPrompt: baseSystemPrompt,
       workspace: workspace,
-      project: planningProject,
+      project: project,
       evidenceSnapshot: snapshot,
       triggers: debouncedTriggers,
+      approvalPolicy: approvalPolicy,
       onModelOutput: onModelOutput,
       cancellationToken: cancellationToken,
     );
-    final result = await _planRevisionService.prepareAndApply(
-      project: project,
-      proposal: proposal,
-      workspaceRoot: workspace.rootPath,
-      approvalPolicy: approvalPolicy,
-      repair: (invalid, validation) {
-        return _modelCalls.repairPlanProposal(
-          client: client,
-          baseSystemPrompt: baseSystemPrompt,
-          workspace: workspace,
-          project: planningProject,
-          proposal: invalid,
-          validationIssues: validation.issues
-              .map((item) => item.toMap())
-              .toList(),
-          onModelOutput: onModelOutput,
-          cancellationToken: cancellationToken,
-        );
-      },
-    );
     return _finishPlanRevision(
-      revised: result.project,
+      revised: incremental.project,
       questionAutonomy: questionAutonomy,
-      modelCalls: 1 + (result.repairAttempted ? 1 : 0),
-      planningMetrics: PlanningMetrics(
-        planningCalls: 1 + (result.repairAttempted ? 1 : 0),
-        fullPlanRepairCount: result.repairAttempted ? 1 : 0,
-        validationBlockerCount: result.validation.valid ? 0 : 1,
-      ),
-      invalidPlan: result.repairAttempted || !result.validation.valid,
-      awaitingApproval: result.awaitingApproval,
+      modelCalls: incremental.modelCalls,
+      planningMetrics: incremental.planningMetrics,
+      invalidPlan: !incremental.committed,
+      awaitingApproval: incremental.awaitingApproval,
+      planningError: incremental.error,
     );
   }
 
@@ -1908,199 +1788,70 @@ class ProjectService implements PlanningProtocolConfigurable {
       );
     }
 
-    final incrementalGateway = _modelCalls;
-    if (planningProtocolMode != PlanningProtocolMode.legacy &&
-        incrementalGateway is ProjectIncrementalPlanningGateway) {
-      final incremental =
-          await (incrementalGateway as ProjectIncrementalPlanningGateway)
-              .splitTaskWithCommands(
-                client: client,
-                baseSystemPrompt: baseSystemPrompt,
-                workspace: workspace,
-                project: project,
-                oversizedTask: task,
-                violations: violations,
-                approvalPolicy: approvalPolicy,
-                onModelOutput: onModelOutput,
-                cancellationToken: cancellationToken,
-              );
-      if (!incremental.committed) {
-        return _blockProject(
-          project.copyWith(
-            diagnostics: project.diagnostics.copyWith(
-              projectModelCalls:
-                  project.diagnostics.projectModelCalls +
-                  incremental.modelCalls.toInt(),
-              planningMetrics: project.diagnostics.planningMetrics.add(
-                incremental.planningMetrics.copyWith(
-                  recoveryAttempts:
-                      incremental.planningMetrics.recoveryAttempts + 1,
-                ),
-              ),
-            ),
-            updatedAt: DateTime.now(),
-          ),
-          ProjectBlockerType.validation,
-          'Project task split did not commit: ${incremental.error ?? 'no safe split was produced.'}',
-          DateTime.now(),
-          taskId: task.id,
-        );
-      }
-      final revisedTask = incremental.project.taskById(task.id);
-      final splitMetrics = incremental.planningMetrics.copyWith(
-        recoveryAttempts: incremental.planningMetrics.recoveryAttempts + 1,
-        recoverySuccesses: incremental.planningMetrics.recoverySuccesses + 1,
-      );
-      return incremental.project.copyWith(
-        status: incremental.awaitingApproval
-            ? incremental.project.status
-            : ProjectStatus.active,
-        blocker: incremental.awaitingApproval
-            ? incremental.project.blocker
-            : null,
-        decisions: [
-          ...incremental.project.decisions,
-          _decision(
-            ProjectDecisionType.splitTask,
-            'Split invalid project task into bounded child tasks.',
-            violations.join('\n'),
-            task: revisedTask ?? task,
-          ),
-        ],
-        diagnostics: incremental.project.diagnostics.copyWith(
-          projectModelCalls:
-              incremental.project.diagnostics.projectModelCalls +
-              incremental.modelCalls.toInt(),
-          planningMetrics: incremental.project.diagnostics.planningMetrics.add(
-            splitMetrics,
-          ),
-        ),
-        updatedAt: DateTime.now(),
-      );
-    }
-
-    if (planningProtocolMode == PlanningProtocolMode.incremental) {
+    final incremental = await _modelCalls.splitTaskWithCommands(
+      client: client,
+      baseSystemPrompt: baseSystemPrompt,
+      workspace: workspace,
+      project: project,
+      oversizedTask: task,
+      violations: violations,
+      approvalPolicy: approvalPolicy,
+      onModelOutput: onModelOutput,
+      cancellationToken: cancellationToken,
+    );
+    if (!incremental.committed) {
       return _blockProject(
         project.copyWith(
           diagnostics: project.diagnostics.copyWith(
-            planningMetrics: project.diagnostics.planningMetrics.copyWith(
-              recoveryAttempts:
-                  project.diagnostics.planningMetrics.recoveryAttempts + 1,
-              validationBlockerCount:
-                  project.diagnostics.planningMetrics.validationBlockerCount +
-                  1,
+            projectModelCalls:
+                project.diagnostics.projectModelCalls + incremental.modelCalls,
+            planningMetrics: project.diagnostics.planningMetrics.add(
+              incremental.planningMetrics.copyWith(
+                recoveryAttempts:
+                    incremental.planningMetrics.recoveryAttempts + 1,
+                validationBlockerCount:
+                    incremental.planningMetrics.validationBlockerCount + 1,
+              ),
             ),
           ),
+          updatedAt: DateTime.now(),
         ),
         ProjectBlockerType.validation,
-        'The configured incremental planning adapter is unavailable; no legacy split document was requested.',
+        'Project task split did not commit: ${incremental.error ?? 'no safe split was produced.'}',
         DateTime.now(),
         taskId: task.id,
       );
     }
-
-    var splitModelCalls = 1;
-    var split = await _modelCalls.splitTask(
-      client: client,
-      baseSystemPrompt: baseSystemPrompt,
-      project: _projectForModel(project, task: task),
-      oversizedTask: task,
-      violations: violations,
-      onModelOutput: onModelOutput,
-      cancellationToken: cancellationToken,
+    final revisedTask = incremental.project.taskById(task.id);
+    final splitMetrics = incremental.planningMetrics.copyWith(
+      recoveryAttempts: incremental.planningMetrics.recoveryAttempts + 1,
+      recoverySuccesses: incremental.planningMetrics.recoverySuccesses + 1,
     );
-    final splitLinkViolations = <String>{
-      for (final item in split)
-        for (final violation in _validateProjectTask(item, project).violations)
-          if (violation.toLowerCase().contains('criterion')) violation,
-    };
-    if (splitLinkViolations.isNotEmpty) {
-      split = await _modelCalls.splitTask(
-        client: client,
-        baseSystemPrompt: baseSystemPrompt,
-        project: _projectForModel(project, task: task),
-        oversizedTask: task,
-        violations: [
-          ...violations,
-          'Repair the previous split using only exact allowed criterion IDs.',
-          ...splitLinkViolations,
-        ],
-        onModelOutput: onModelOutput,
-        cancellationToken: cancellationToken,
-      );
-      splitModelCalls++;
-    }
-    final known = _knownFingerprints(project)..add(task.fingerprint);
-    final splitTasks = _normaliseBacklog(split)
-        .where((item) => !known.contains(item.fingerprint))
-        .where((item) => _validateProjectTask(item, project).valid)
-        .take(5)
-        .toList();
-    final safeSplitTasks = _normaliseLegacySplitTasks(
-      project: project,
-      source: task,
-      candidates: splitTasks,
-    );
-
-    final now = DateTime.now();
-    final rejected = task.copyWith(
-      status: safeSplitTasks.isEmpty ? TaskStatus.rejected : TaskStatus.split,
-      rejectionReason: violations.join('\n'),
-      updatedAt: now,
-    );
-    if (safeSplitTasks.isEmpty) {
-      return _blockProject(
-        project.copyWith(
-          tasks: _upsertTask(project, rejected),
-          decisions: [
-            ...project.decisions,
-            _decision(
-              ProjectDecisionType.rejectTask,
-              'Rejected oversized project task: ${task.title}',
-              violations.join('\n'),
-              task: rejected,
-            ),
-          ],
-          diagnostics: project.diagnostics.copyWith(
-            projectModelCalls:
-                project.diagnostics.projectModelCalls + splitModelCalls,
-          ),
-          updatedAt: now,
-        ),
-        ProjectBlockerType.validation,
-        'Project task was too broad and could not be split safely: ${violations.join('; ')}',
-        now,
-      );
-    }
-
-    return project.copyWith(
-      tasks: [
-        ...safeSplitTasks,
-        for (final existing in project.tasks)
-          if (existing.id != task.id)
-            _rewireLegacySplitDependent(
-              existing,
-              sourceId: task.id,
-              childIds: safeSplitTasks.map((item) => item.id),
-              now: now,
-            ),
-        rejected,
-      ],
-      status: ProjectStatus.active,
+    return incremental.project.copyWith(
+      status: incremental.awaitingApproval
+          ? incremental.project.status
+          : ProjectStatus.active,
+      blocker: incremental.awaitingApproval
+          ? incremental.project.blocker
+          : null,
       decisions: [
-        ...project.decisions,
+        ...incremental.project.decisions,
         _decision(
           ProjectDecisionType.splitTask,
-          'Split oversized project task into ${safeSplitTasks.length} smaller task(s).',
+          'Split invalid project task into bounded child tasks.',
           violations.join('\n'),
-          task: rejected,
+          task: revisedTask ?? task,
         ),
       ],
-      diagnostics: project.diagnostics.copyWith(
+      diagnostics: incremental.project.diagnostics.copyWith(
         projectModelCalls:
-            project.diagnostics.projectModelCalls + splitModelCalls,
+            incremental.project.diagnostics.projectModelCalls +
+            incremental.modelCalls,
+        planningMetrics: incremental.project.diagnostics.planningMetrics.add(
+          splitMetrics,
+        ),
       ),
-      updatedAt: now,
+      updatedAt: DateTime.now(),
     );
   }
 
@@ -2952,8 +2703,6 @@ class ProjectService implements PlanningProtocolConfigurable {
       writePaths: duplicateTask.writePaths.isEmpty
           ? failedTask.writePaths
           : duplicateTask.writePaths,
-      legacyWriteAccess:
-          duplicateTask.legacyWriteAccess || failedTask.legacyWriteAccess,
       status: TaskStatus.queued,
       recoveryIncidentId: null,
       fingerprint: projectTaskFingerprint(objective, criteria),
@@ -3022,7 +2771,6 @@ class ProjectService implements PlanningProtocolConfigurable {
       ],
       readPaths: task.readPaths,
       writePaths: task.writePaths,
-      legacyWriteAccess: task.legacyWriteAccess,
       maxSteps: taskStepLimit(task.effort),
     );
   }
@@ -3413,7 +3161,6 @@ class ProjectService implements PlanningProtocolConfigurable {
       ],
       readPaths: sourceTask.readPaths,
       writePaths: sourceTask.writePaths,
-      legacyWriteAccess: sourceTask.legacyWriteAccess,
       expectedEvidence: _replacementExpectedEvidence(
         source: sourceTask.expectedEvidence,
         additions: [recoveryGateExpectation],
@@ -3851,61 +3598,6 @@ class ProjectService implements PlanningProtocolConfigurable {
     };
   }
 
-  List<Task> _normaliseLegacySplitTasks({
-    required ProjectDocument project,
-    required Task source,
-    required Iterable<Task> candidates,
-  }) {
-    final usedIds = project.tasks.map((task) => task.id).toSet();
-    final inheritedDependencies = source.dependsOnTaskIds;
-    final result = <Task>[];
-    for (final candidate in candidates) {
-      var id = candidate.id.trim();
-      if (id.isEmpty || usedIds.contains(id)) {
-        do {
-          id = 'task_${uuid.v7()}';
-        } while (!usedIds.add(id));
-      } else {
-        usedIds.add(id);
-      }
-      final dependencies = <String>[];
-      for (final dependencyId in candidate.dependsOnTaskIds) {
-        if (dependencyId == source.id) {
-          for (final inheritedId in inheritedDependencies) {
-            if (!dependencies.contains(inheritedId)) {
-              dependencies.add(inheritedId);
-            }
-          }
-        } else if (!dependencies.contains(dependencyId)) {
-          dependencies.add(dependencyId);
-        }
-      }
-      result.add(candidate.copyWith(id: id, dependsOnTaskIds: dependencies));
-    }
-    return result;
-  }
-
-  Task _rewireLegacySplitDependent(
-    Task task, {
-    required String sourceId,
-    required Iterable<String> childIds,
-    required DateTime now,
-  }) {
-    if (!task.dependsOnTaskIds.contains(sourceId)) return task;
-    final children = childIds.toList();
-    final dependencies = <String>[];
-    for (final dependencyId in task.dependsOnTaskIds) {
-      if (dependencyId == sourceId) {
-        for (final childId in children) {
-          if (!dependencies.contains(childId)) dependencies.add(childId);
-        }
-      } else if (!dependencies.contains(dependencyId)) {
-        dependencies.add(dependencyId);
-      }
-    }
-    return task.copyWith(dependsOnTaskIds: dependencies, updatedAt: now);
-  }
-
   List<Task> _normaliseBacklog(List<Task> tasks) {
     final seen = <String>{};
     return [
@@ -4167,8 +3859,7 @@ class ProjectService implements PlanningProtocolConfigurable {
       }
       if (task.effort == TaskEffort.small &&
           task.expectedArtifacts.isNotEmpty &&
-          task.writePaths.isEmpty &&
-          !task.legacyWriteAccess) {
+          task.writePaths.isEmpty) {
         add(
           'missing_write_paths',
           'Small artifact-producing tasks must declare write paths.',

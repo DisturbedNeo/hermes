@@ -72,7 +72,7 @@ class ChatService extends ChangeNotifier implements Disposable {
   int _historyRevision = 0;
   Timer? _autosaveTimer;
   Future<void> _saveChain = Future.value();
-  _PendingScopeMigration? _pendingScopeMigration;
+  _PendingScopeMove? _pendingScopeMove;
   Future<void>? _disposeFuture;
   String _chatSessionScopeId = uuid.v7();
 
@@ -88,7 +88,7 @@ class ChatService extends ChangeNotifier implements Disposable {
   WorkspaceAttachment? workspace;
   SystemPromptSnapshot? currentSystemPromptSnapshot;
   ExecutionMode executionMode = ExecutionMode.chat;
-  ProjectSnapshot? activeProject;
+  ProjectDocument? activeProject;
   List<ProjectSummary> availableProjects = const [];
   Task? activeTask;
   List<TaskSummary> availableTasks = const [];
@@ -301,7 +301,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       _clearTaskModelOutput(notify: false);
       workspace = await _restoreWorkspace(snapshot.chat.workspace);
       if (workspace != null && workspace?.missing != true) {
-        activeProject = (await _recoverProjectSnapshot(
+        activeProject = (await _recoverProject(
           workspace!,
           await _projectService.loadLatestProject(
             workspace!,
@@ -493,7 +493,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     workspace = nextWorkspace;
     _syncSystemPrompt();
     final scopeId = _taskScopeId;
-    activeProject = (await _recoverProjectSnapshot(
+    activeProject = (await _recoverProject(
       workspace!,
       await _projectService.loadLatestProject(
         workspace!,
@@ -672,7 +672,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     }
 
     final scopeId = _taskScopeId;
-    activeProject = (await _recoverProjectSnapshot(
+    activeProject = (await _recoverProject(
       current,
       activeProject ??
           await _projectService.loadLatestProject(
@@ -713,9 +713,9 @@ class ChatService extends ChangeNotifier implements Disposable {
     return _taskService.recoverTask(workspace: current, snapshot: snapshot);
   }
 
-  Future<ProjectRunResult?> _recoverProjectSnapshot(
+  Future<ProjectRunResult?> _recoverProject(
     WorkspaceAttachment current,
-    ProjectSnapshot? snapshot,
+    ProjectDocument? snapshot,
   ) {
     if (snapshot == null) return Future.value();
     return _projectService.recoverProject(
@@ -727,7 +727,7 @@ class ChatService extends ChangeNotifier implements Disposable {
 
   Future<Task?> _taskForActiveProject(
     WorkspaceAttachment current,
-    ProjectSnapshot? project,
+    ProjectDocument? project,
   ) async {
     final taskId = project?.activeTaskId;
     if (project == null || taskId == null) return null;
@@ -774,7 +774,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     if (current == null || current.missing || taskBusy) {
       return;
     }
-    final result = await _recoverProjectSnapshot(
+    final result = await _recoverProject(
       current,
       await _projectService.loadLatestProject(current, chatSessionId: scopeId),
     );
@@ -789,7 +789,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     if (current == null || current.missing || taskBusy) {
       return;
     }
-    final result = await _recoverProjectSnapshot(
+    final result = await _recoverProject(
       current,
       await _projectService.loadProject(
         current,
@@ -1313,7 +1313,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     }
 
     final scopeId = _taskScopeId;
-    activeProject ??= (await _recoverProjectSnapshot(
+    activeProject ??= (await _recoverProject(
       currentWorkspace,
       await _projectService.loadLatestProject(
         currentWorkspace,
@@ -1381,7 +1381,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     final scopeId = await _ensureTaskScopeId();
     final existingProject =
         activeProject ??
-        (await _recoverProjectSnapshot(
+        (await _recoverProject(
           currentWorkspace,
           await _projectService.loadLatestProject(
             currentWorkspace,
@@ -1835,8 +1835,6 @@ class ChatService extends ChangeNotifier implements Disposable {
 
   Future<TaskSystemSettings> _loadTaskSystemSettings() async {
     final settings = await _preferencesService.getTaskSystemSettings();
-    _taskService.planningProtocolMode = settings.planningProtocol;
-    _projectService.planningProtocolMode = settings.planningProtocol;
     if (_disposed) return settings;
     if (taskSystemSettings != settings) {
       taskSystemSettings = settings;
@@ -2221,7 +2219,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       _chatSessionScopeId = saved.id;
       currentSavedChat = saved;
       if (previousChatId == null) {
-        _pendingScopeMigration ??= _PendingScopeMigration(
+        _pendingScopeMove ??= _PendingScopeMove(
           previousScopeId: previousScopeId,
           savedChatId: saved.id,
           workspace: capturedWorkspace,
@@ -2229,22 +2227,21 @@ class ChatService extends ChangeNotifier implements Disposable {
           activeProjectId: capturedActiveProjectId,
         );
       }
-      final pendingMigration = _pendingScopeMigration;
-      if (pendingMigration != null &&
-          pendingMigration.savedChatId == saved.id) {
-        await _migrateTaskScope(
-          previousScopeId: pendingMigration.previousScopeId,
-          savedChatId: pendingMigration.savedChatId,
-          migrationWorkspace: pendingMigration.workspace,
-          activeTaskId: pendingMigration.activeTaskId,
+      final pendingMove = _pendingScopeMove;
+      if (pendingMove != null && pendingMove.savedChatId == saved.id) {
+        await _moveTaskScope(
+          previousScopeId: pendingMove.previousScopeId,
+          savedChatId: pendingMove.savedChatId,
+          scopeWorkspace: pendingMove.workspace,
+          activeTaskId: pendingMove.activeTaskId,
         );
-        await _migrateProjectScope(
-          previousScopeId: pendingMigration.previousScopeId,
-          savedChatId: pendingMigration.savedChatId,
-          migrationWorkspace: pendingMigration.workspace,
-          activeProjectId: pendingMigration.activeProjectId,
+        await _moveProjectScope(
+          previousScopeId: pendingMove.previousScopeId,
+          savedChatId: pendingMove.savedChatId,
+          scopeWorkspace: pendingMove.workspace,
+          activeProjectId: pendingMove.activeProjectId,
         );
-        _pendingScopeMigration = null;
+        _pendingScopeMove = null;
       }
       _persistedRevision = capturedRevision;
       saveFailure = null;
@@ -2263,14 +2260,14 @@ class ChatService extends ChangeNotifier implements Disposable {
     return completer.future;
   }
 
-  Future<void> _migrateTaskScope({
+  Future<void> _moveTaskScope({
     required String previousScopeId,
     required String savedChatId,
-    required WorkspaceAttachment? migrationWorkspace,
+    required WorkspaceAttachment? scopeWorkspace,
     required String? activeTaskId,
   }) async {
     if (previousScopeId == savedChatId) return;
-    final currentWorkspace = migrationWorkspace;
+    final currentWorkspace = scopeWorkspace;
     if (currentWorkspace == null || currentWorkspace.missing) return;
 
     final tasks = await _taskService.listTasks(
@@ -2294,23 +2291,23 @@ class ChatService extends ChangeNotifier implements Disposable {
         activeTask = updated;
       }
     }
-    final migratedTasks = await _taskService.listTasks(
+    final scopedTasks = await _taskService.listTasks(
       currentWorkspace,
       chatSessionId: savedChatId,
     );
     if (workspace?.rootPath == currentWorkspace.rootPath) {
-      availableTasks = migratedTasks;
+      availableTasks = scopedTasks;
     }
   }
 
-  Future<void> _migrateProjectScope({
+  Future<void> _moveProjectScope({
     required String previousScopeId,
     required String savedChatId,
-    required WorkspaceAttachment? migrationWorkspace,
+    required WorkspaceAttachment? scopeWorkspace,
     required String? activeProjectId,
   }) async {
     if (previousScopeId == savedChatId) return;
-    final currentWorkspace = migrationWorkspace;
+    final currentWorkspace = scopeWorkspace;
     if (currentWorkspace == null || currentWorkspace.missing) return;
 
     final projects = await _projectService.listProjects(
@@ -2334,12 +2331,12 @@ class ChatService extends ChangeNotifier implements Disposable {
         activeProject = updated;
       }
     }
-    final migratedProjects = await _projectService.listProjects(
+    final scopedProjects = await _projectService.listProjects(
       currentWorkspace,
       chatSessionId: savedChatId,
     );
     if (workspace?.rootPath == currentWorkspace.rootPath) {
-      availableProjects = migratedProjects;
+      availableProjects = scopedProjects;
     }
   }
 
@@ -2381,7 +2378,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     currentSystemPromptSnapshot = null;
     pendingModelRestore = null;
     pendingModelRestoreIssue = null;
-    _pendingScopeMigration = null;
+    _pendingScopeMove = null;
     _resetPersistenceRevisions();
     saveFailure = null;
     notifyListeners();
@@ -2404,7 +2401,6 @@ class ChatService extends ChangeNotifier implements Disposable {
       rootPath: saved.rootPath,
       displayName: saved.displayName,
       lastOpenedAt: saved.lastOpenedAt,
-      commandExecutionApproved: saved.commandExecutionApproved,
     );
   }
 
@@ -2473,7 +2469,7 @@ Workspace rules:
     return _buildSystemPrompt(currentUserRequest: snapshot.originalPrompt);
   }
 
-  String _buildProjectSystemPrompt(ProjectSnapshot snapshot) {
+  String _buildProjectSystemPrompt(ProjectDocument snapshot) {
     return _buildSystemPrompt(currentUserRequest: snapshot.originalGoal);
   }
 
@@ -2605,7 +2601,7 @@ Workspace rules:
     return buffer.toString().trim();
   }
 
-  String _projectCreatedMessage(ProjectSnapshot snapshot) {
+  String _projectCreatedMessage(ProjectDocument snapshot) {
     final buffer = StringBuffer()
       ..writeln('Project created: **${snapshot.title}**')
       ..writeln()
@@ -2620,7 +2616,7 @@ Workspace rules:
     return buffer.toString().trim();
   }
 
-  String _projectStatusMessage(ProjectSnapshot snapshot) {
+  String _projectStatusMessage(ProjectDocument snapshot) {
     final buffer = StringBuffer()
       ..writeln('Project status: **${snapshot.title}**')
       ..writeln()
@@ -2706,7 +2702,7 @@ Workspace rules:
         latestRun.error?.contains('Model transport failed') == true;
   }
 
-  bool _projectHasTransportFailure(ProjectSnapshot snapshot) {
+  bool _projectHasTransportFailure(ProjectDocument snapshot) {
     if (snapshot.status != ProjectStatus.paused ||
         snapshot.activeTaskId == null) {
       return false;
@@ -2861,8 +2857,8 @@ class _SlashCommand {
   });
 }
 
-class _PendingScopeMigration {
-  const _PendingScopeMigration({
+class _PendingScopeMove {
+  const _PendingScopeMove({
     required this.previousScopeId,
     required this.savedChatId,
     required this.workspace,

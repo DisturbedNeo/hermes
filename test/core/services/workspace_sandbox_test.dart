@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/workspace.dart';
+import 'package:hermes/core/services/sandbox_policy.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/services/workspace_service.dart';
@@ -36,7 +37,7 @@ void main() {
       expect(resolved.absolutePath, endsWith('notes/chapter.txt'));
     });
 
-    test('does not restore legacy host terminal approval', () async {
+    test('restores workspaces without terminal approval', () async {
       final service = WorkspaceService(sandbox: sandbox);
       addTearDown(service.dispose);
 
@@ -44,7 +45,6 @@ void main() {
         rootPath: root.path,
         displayName: 'workspace',
         lastOpenedAt: DateTime(2024),
-        commandExecutionApproved: true,
       );
 
       expect(restored.commandExecutionApproved, isFalse);
@@ -206,7 +206,7 @@ void main() {
 
     test('search reports oversized results as a tool error', () async {
       final longLine =
-          '${List.filled(WorkspaceSandbox.maxSearchOutputBytes, 'x').join()} needle';
+          '${List.filled(kMaxSearchOutputBytes, 'x').join()} needle';
       await File('${root.path}/huge.txt').writeAsString(longLine);
 
       final result = await ToolService(workspaceSandbox: sandbox).execute(
@@ -237,10 +237,7 @@ void main() {
     });
 
     test('bounds reads, writes, and patched results by UTF-8 bytes', () async {
-      final oversized = List.filled(
-        WorkspaceSandbox.maxWriteBytes + 1,
-        'x',
-      ).join();
+      final oversized = List.filled(kMaxWriteBytes + 1, 'x').join();
       final existing = File('${root.path}/existing.txt');
       await existing.writeAsString('keep me');
 
@@ -338,7 +335,7 @@ void main() {
     });
 
     test('directory listings reject more than the configured limit', () async {
-      for (var i = 0; i <= WorkspaceSandbox.maxDirectoryEntries; i++) {
+      for (var i = 0; i <= kMaxDirectoryEntries; i++) {
         File('${root.path}/entry_$i').createSync();
       }
 
@@ -355,7 +352,7 @@ void main() {
     });
 
     test('searches reject more than the configured file limit', () async {
-      for (var i = 0; i <= WorkspaceSandbox.maxSearchFiles; i++) {
+      for (var i = 0; i <= kMaxSearchFiles; i++) {
         File('${root.path}/file_$i').createSync();
       }
 
@@ -378,7 +375,7 @@ void main() {
       await expectLater(
         sandbox.runCommand(
           root.path,
-          executable: 'rm',
+          command: 'rm',
           arguments: ['generated.txt'],
         ),
         throwsA(
@@ -413,7 +410,7 @@ void main() {
         await expectLater(
           sandbox.runCommand(
             root.path,
-            executable: 'bash',
+            command: 'bash',
             arguments: ['-lc', 'echo ok && rm generated.txt'],
           ),
           throwsA(

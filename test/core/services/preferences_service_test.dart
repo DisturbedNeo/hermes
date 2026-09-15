@@ -28,7 +28,6 @@ void main() {
         settings.planApprovalPolicy,
         ProjectPlanApprovalPolicy.highRiskOnly,
       );
-      expect(settings.planningProtocol, PlanningProtocolMode.automatic);
     });
 
     test('persists configurable task limits', () async {
@@ -43,7 +42,6 @@ void main() {
           maxProjectIterations: 0,
           questionAutonomy: QuestionAutonomy.autonomous,
           planApprovalPolicy: ProjectPlanApprovalPolicy.never,
-          planningProtocol: PlanningProtocolMode.incremental,
         ),
       );
 
@@ -56,7 +54,6 @@ void main() {
       expect(settings.maxProjectIterations, 0);
       expect(settings.questionAutonomy, QuestionAutonomy.autonomous);
       expect(settings.planApprovalPolicy, ProjectPlanApprovalPolicy.never);
-      expect(settings.planningProtocol, PlanningProtocolMode.incremental);
     });
   });
 

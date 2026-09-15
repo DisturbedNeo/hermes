@@ -21,7 +21,6 @@ class TaskViewService {
     List<String> outOfScope = const [],
     List<String> readPaths = const [],
     List<String> writePaths = const [],
-    bool legacyWriteAccess = false,
     List<TaskArtifact> requiredArtifacts = const [],
     List<TaskGate> requiredGates = const [],
     List<TaskProjectEvidenceExpectation> requiredEvidence = const [],
@@ -72,7 +71,6 @@ class TaskViewService {
         ],
         'read_paths': [for (final item in readPaths.take(limit)) _text(item)],
         'write_paths': [for (final item in writePaths.take(limit)) _text(item)],
-        'legacy_write_access': legacyWriteAccess,
         'expected_artifacts': [
           for (final artifact in requiredArtifacts.take(limit))
             {

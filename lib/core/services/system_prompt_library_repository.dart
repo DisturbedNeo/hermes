@@ -59,10 +59,9 @@ class SystemPromptLibraryRepository {
       FROM prompt_presets
       WHERE lower(name) LIKE ?
          OR lower(custom_instructions) LIKE ?
-         OR lower(legacy_full_prompt) LIKE ?
       ORDER BY COALESCE(last_used_at, updated_at) DESC, name COLLATE NOCASE
       ''',
-      [like, like, like],
+      [like, like],
     );
     return rows.map(_presetFromRow).toList();
   }
@@ -84,7 +83,6 @@ class SystemPromptLibraryRepository {
     required List<String> baseModuleIds,
     required List<String> optionalModuleIds,
     required String customInstructions,
-    String? legacyFullPrompt,
     required bool isBuiltIn,
   }) async {
     final db = await _db;
@@ -95,7 +93,6 @@ class SystemPromptLibraryRepository {
       baseModuleIds: baseModuleIds,
       optionalModuleIds: optionalModuleIds,
       customInstructions: customInstructions.trim(),
-      legacyFullPrompt: _blankToNull(legacyFullPrompt),
       isBuiltIn: isBuiltIn,
       createdAt: now,
       updatedAt: now,
@@ -112,7 +109,6 @@ class SystemPromptLibraryRepository {
     required List<String> baseModuleIds,
     required List<String> optionalModuleIds,
     required String customInstructions,
-    String? legacyFullPrompt,
     required bool isBuiltIn,
     required DateTime createdAt,
     required DateTime? lastUsedAt,
@@ -124,7 +120,6 @@ class SystemPromptLibraryRepository {
       baseModuleIds: baseModuleIds,
       optionalModuleIds: optionalModuleIds,
       customInstructions: customInstructions.trim(),
-      legacyFullPrompt: _blankToNull(legacyFullPrompt),
       isBuiltIn: isBuiltIn,
       createdAt: createdAt,
       updatedAt: DateTime.now(),
@@ -253,7 +248,7 @@ class SystemPromptLibraryRepository {
     await db.delete('prompt_modules', where: 'id = ?', whereArgs: [id]);
   }
 
-  // ── Seeding & migration ────────────────────────────────────────────────
+  // ── Seeding ────────────────────────────────────────────────────────────
 
   Future<void> seedBuiltIns() async {
     final db = await _db;
@@ -340,7 +335,6 @@ Workspace rules:
         baseModuleIds: const [BuiltInPromptIds.coreDefaultModule],
         optionalModuleIds: const [],
         customInstructions: '',
-        legacyFullPrompt: null,
         isBuiltIn: true,
         createdAt: existingDefault.isEmpty
             ? now
@@ -395,7 +389,6 @@ Workspace rules:
           baseModuleIds: seed.baseModuleIds,
           optionalModuleIds: seed.optionalModuleIds,
           customInstructions: seed.customInstructions.trim(),
-          legacyFullPrompt: null,
           isBuiltIn: false,
           createdAt: now,
           updatedAt: now,
@@ -410,56 +403,6 @@ Workspace rules:
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  Future<void> migrateLegacyPrompts() async {
-    final db = await _db;
-    await _migrateLegacyPrompts(db);
-  }
-
-  Future<void> _migrateLegacyPrompts(DatabaseExecutor db) async {
-    if (await _metaValueDb(db, 'legacy_system_prompts_migrated') == '1') {
-      return;
-    }
-
-    final rows = await db.query('system_prompts', orderBy: 'created_at ASC');
-    for (final row in rows) {
-      final id = row['id'] as String;
-      final exists = await db.query(
-        'prompt_presets',
-        columns: const ['id'],
-        where: 'id = ?',
-        whereArgs: [id],
-        limit: 1,
-      );
-      if (exists.isNotEmpty) continue;
-
-      final name = await _uniqueNameForDb(
-        db,
-        'prompt_presets',
-        row['name'] as String,
-      );
-      await db.insert(
-        'prompt_presets',
-        _presetRow(
-          id: id,
-          name: name,
-          baseModuleIds: const [],
-          optionalModuleIds: const [],
-          customInstructions: '',
-          legacyFullPrompt: row['content'] as String,
-          isBuiltIn: false,
-          createdAt: _date(row['created_at'] as int),
-          updatedAt: _date(row['updated_at'] as int),
-          lastUsedAt: _nullableDate(row['last_used_at'] as int?),
-        ),
-      );
-    }
-
-    await db.insert('prompt_library_meta', {
-      'key': 'legacy_system_prompts_migrated',
-      'value': '1',
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
-  }
-
   // ── Internal helpers (database lifecycle, schema, mapping) ─────────────
 
   Future<Database> _open() async {
@@ -469,29 +412,14 @@ Workspace rules:
 
     final db = await _databaseFactory.openDatabase(
       dbPath,
-      options: OpenDatabaseOptions(
-        version: 1,
-        singleInstance: false,
-        onCreate: (db, _) async => _createSchema(db),
-        onOpen: (db) async => _createSchema(db),
-      ),
+      options: OpenDatabaseOptions(singleInstance: false),
     );
 
+    await _createSchema(db);
     return db;
   }
 
   Future<void> _createSchema(DatabaseExecutor db) async {
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS system_prompts (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL COLLATE NOCASE UNIQUE,
-        content TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        last_used_at INTEGER
-      )
-    ''');
-
     await db.execute('''
       CREATE TABLE IF NOT EXISTS prompt_library_meta (
         key TEXT PRIMARY KEY,
@@ -521,7 +449,6 @@ Workspace rules:
         base_module_ids_json TEXT NOT NULL,
         optional_module_ids_json TEXT NOT NULL,
         custom_instructions TEXT NOT NULL,
-        legacy_full_prompt TEXT,
         is_builtin INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
@@ -530,11 +457,10 @@ Workspace rules:
     ''');
 
     await _seedBuiltIns(db);
-    await _migrateLegacyPrompts(db);
     await _seedStarterLibrary(db);
   }
 
-  // ── Private helpers for seeding/migration (database-taking variants) ───
+  // ── Private helpers for seeding (database-taking variants) ─────────────
 
   Future<bool> _idExistsDb(DatabaseExecutor db, String table, String id) async {
     final rows = await db.query(
@@ -667,7 +593,6 @@ Workspace rules:
     required List<String> baseModuleIds,
     required List<String> optionalModuleIds,
     required String customInstructions,
-    required String? legacyFullPrompt,
     required bool isBuiltIn,
     required DateTime createdAt,
     required DateTime updatedAt,
@@ -679,7 +604,6 @@ Workspace rules:
       'base_module_ids_json': jsonEncode(baseModuleIds),
       'optional_module_ids_json': jsonEncode(optionalModuleIds),
       'custom_instructions': customInstructions,
-      'legacy_full_prompt': legacyFullPrompt,
       'is_builtin': isBuiltIn ? 1 : 0,
       'created_at': createdAt.millisecondsSinceEpoch,
       'updated_at': updatedAt.millisecondsSinceEpoch,
@@ -717,7 +641,6 @@ Workspace rules:
         row['optional_module_ids_json'] as String? ?? '[]',
       ),
       customInstructions: row['custom_instructions'] as String? ?? '',
-      legacyFullPrompt: row['legacy_full_prompt'] as String?,
       isBuiltIn: (row['is_builtin'] as int? ?? 0) == 1,
       createdAt: _date(row['created_at'] as int),
       updatedAt: _date(row['updated_at'] as int),
@@ -732,11 +655,6 @@ Workspace rules:
   }
 
   // ── Utility helpers ────────────────────────────────────────────────────
-
-  String? _blankToNull(String? value) {
-    final trimmed = value?.trim();
-    return trimmed == null || trimmed.isEmpty ? null : trimmed;
-  }
 
   DateTime _date(int millis) => DateTime.fromMillisecondsSinceEpoch(millis);
 

@@ -19,9 +19,6 @@ import 'package:hermes/core/services/host_command_runner.dart';
 import 'package:hermes/core/services/terminal_command_parser.dart';
 import 'sandbox_policy.dart';
 
-// Re-export for backward compatibility with existing imports.
-export 'sandbox_policy.dart' show WorkspacePath, WorkspaceSandboxException;
-
 class WorkspaceSandbox {
   WorkspaceSandbox({
     Duration commandTimeout = kCommandTimeout,
@@ -36,17 +33,6 @@ class WorkspaceSandbox {
 
   final Duration commandTerminationGrace;
   final HostCommandRunner _hostCommandRunner;
-
-  // Backward-compatible static accessors for constants previously defined here.
-  // These delegate to the canonical definitions in sandbox_policy.dart.
-  static const int maxReadBytes = kMaxReadBytes;
-  static const int maxWriteBytes = kMaxWriteBytes;
-  static const int maxDirectoryEntries = kMaxDirectoryEntries;
-  static const int maxSearchFiles = kMaxSearchFiles;
-  static const int maxSearchResults = kMaxSearchResults;
-  static const int maxSearchOutputBytes = kMaxSearchOutputBytes;
-  static const int maxCommandOutputBytes = kMaxCommandOutputBytes;
-  static const Duration commandTimeout = kCommandTimeout;
 
   Future<String> canonicalRoot(String rootPath) async {
     final dir = Directory(rootPath);
@@ -409,16 +395,11 @@ class WorkspaceSandbox {
   Future<Map<String, dynamic>> runCommand(
     String rootPath, {
     String? command,
-    String? executable,
     List<String> arguments = const [],
     String workingDirectory = '.',
     CancellationToken? cancellationToken,
   }) async {
-    final commandLine = _commandLine(
-      command: command,
-      executable: executable,
-      arguments: arguments,
-    );
+    final commandLine = _commandLine(command: command, arguments: arguments);
     final cwd = await resolve(rootPath, workingDirectory, directory: true);
     return _hostCommandRunner.run(
       commandLine: commandLine,
@@ -525,17 +506,11 @@ class WorkspaceSandbox {
 
   String _commandLine({
     required String? command,
-    required String? executable,
     required List<String> arguments,
   }) {
     final trimmed = command?.trim();
-    if (trimmed != null && trimmed.isNotEmpty) return trimmed;
-    final legacyExecutable = executable?.trim();
-    if (legacyExecutable == null || legacyExecutable.isEmpty) return '';
-    return TerminalCommandParser.commandTextFromParts(
-      legacyExecutable,
-      arguments,
-    );
+    if (trimmed == null || trimmed.isEmpty) return '';
+    return TerminalCommandParser.commandTextFromParts(trimmed, arguments);
   }
 
   Future<String> _resolveCreatable(String requested) async {

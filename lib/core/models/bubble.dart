@@ -11,7 +11,6 @@ class Bubble {
   final bool omittedFromModelPayload;
   final String? summaryId;
   final bool isSummaryMemory;
-  final int? summarySchemaVersion;
 
   const Bubble({
     required this.id,
@@ -23,7 +22,6 @@ class Bubble {
     this.omittedFromModelPayload = false,
     this.summaryId,
     this.isSummaryMemory = false,
-    this.summarySchemaVersion,
   });
 
   Bubble copyWith({
@@ -36,7 +34,6 @@ class Bubble {
     bool? omittedFromModelPayload,
     Object? summaryId = kSentinel,
     bool? isSummaryMemory,
-    Object? summarySchemaVersion = kSentinel,
   }) {
     return Bubble(
       id: id ?? this.id,
@@ -53,9 +50,6 @@ class Bubble {
           ? this.summaryId
           : summaryId as String?,
       isSummaryMemory: isSummaryMemory ?? this.isSummaryMemory,
-      summarySchemaVersion: identical(summarySchemaVersion, kSentinel)
-          ? this.summarySchemaVersion
-          : summarySchemaVersion as int?,
     );
   }
 }

@@ -81,7 +81,6 @@ void main() {
         ((item as Map)['function'] as Map)['name'],
     ];
     expect(toolNames, contains('plan_set_project_details'));
-    expect(toolNames, isNot(contains('finaliseProjectCreation')));
   });
 }
 

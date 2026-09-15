@@ -52,7 +52,6 @@ void main() {
       arguments: const {'command': 'dart test'},
       outcome: TaskToolCallOutcome.failed,
       operationKey: 'command:.:dart test',
-      error: 'Process failed to start.',
       toolError: const TaskToolError(
         code: 'process_launch_failed',
         message: 'Process failed to start.',
@@ -137,31 +136,12 @@ void main() {
     expect(ModelJson.encode(run)['status'], 'needs_replan');
     expect(ModelJson.encode(approval)['stepId'], 'step_1');
     expect(ModelJson.encode(question)['question'], 'Continue?');
-    expect(
-      ModelJson.encode(document),
-      containsPair('schemaVersion', Task.currentSchemaVersion),
-    );
-
-    final legacyCall = ModelJson.decode<TaskToolCallRecord>({
-      'id': 'legacy_call',
-      'stepId': 'step_1',
-      'runId': 'run_1',
-      'toolName': 'read_file',
-      'error': 'Path not found.',
-      'timestamp': now.toIso8601String(),
-    });
-    expect(legacyCall.outcome, TaskToolCallOutcome.succeeded);
-    expect(legacyCall.toolError, isNull);
-    expect(
-      legacyCall.effectiveToolError?.disposition,
-      TaskToolErrorDisposition.advisory,
-    );
-    expect(legacyCall.error, 'Path not found.');
+    expect(ModelJson.encode(document), isNot(contains('legacyWriteAccess')));
 
     final brief = ModelJson.decode<RefinedTaskBrief>({
       'title': 'Brief',
-      'objective': 'Ship',
-      'success_criteria': ['Works'],
+      'goal': 'Ship',
+      'successCriteria': ['Works'],
     });
     expect(brief.goal, 'Ship');
     expect(ModelJson.encode(brief)['successCriteria'], ['Works']);
@@ -230,39 +210,10 @@ void main() {
       createdAt: now,
     );
 
-    expect(ModelJson.encode(artifact), isNot(contains('taskDocumentId')));
-    final legacyArtifact = ModelJson.decode<TaskArtifact>({
-      'path': '.agent/tasks/document_1/report.md',
-      'projectTaskId': 'task_1',
-      'taskDocumentId': 'document_1',
-      'taskRunId': 'run_1',
-    });
-    expect(legacyArtifact.taskId, 'document_1');
-    expect(legacyArtifact.runId, 'run_1');
     expect(
-      ModelJson.encode(legacyArtifact),
-      containsPair('taskId', 'document_1'),
+      ModelJson.encode(artifact),
+      containsPair('taskId', 'project_task_1'),
     );
-    expect(ModelJson.encode(legacyArtifact), containsPair('runId', 'run_1'));
-    expect(ModelJson.encode(legacyArtifact), isNot(contains('taskDocumentId')));
-
-    final legacyEvidence = ModelJson.decode<ProjectEvidence>({
-      'id': 'evidence_legacy',
-      'type': 'artifact',
-      'projectTaskId': 'task_1',
-      'taskDocumentId': 'document_1',
-      'taskRunId': 'run_1',
-      'sourceRef': 'report.md',
-      'summary': 'Legacy report.',
-      'createdAt': now.toIso8601String(),
-    });
-    expect(legacyEvidence.taskId, 'document_1');
-    expect(legacyEvidence.runId, 'run_1');
-    expect(
-      ModelJson.encode(legacyEvidence),
-      containsPair('taskId', 'document_1'),
-    );
-    expect(ModelJson.encode(legacyEvidence), containsPair('runId', 'run_1'));
 
     expect(ModelJson.encode(task)['expectedArtifacts'], hasLength(1));
     expect(ModelJson.encode(task)['failure'], {
@@ -304,7 +255,6 @@ void main() {
     final decodedProject = ModelJson.decode<ProjectDocument>(
       ModelJson.encode(project),
     );
-    expect(decodedProject.schemaVersion, ProjectDocument.currentSchemaVersion);
     expect(decodedProject.taskIds, [task.id]);
     expect(decodedProject.tasks, isEmpty);
     expect(ModelJson.encode(project), isNot(contains('tasks')));
@@ -329,7 +279,6 @@ void main() {
       baseModuleIds: const ['module_1'],
       optionalModuleIds: const [],
       customInstructions: '',
-      legacyFullPrompt: null,
       isBuiltIn: false,
       createdAt: now,
       updatedAt: now,
@@ -351,72 +300,75 @@ void main() {
     );
   });
 
-  test('boundary DTOs keep aliases and protocol omission rules', () async {
-    final summary = ModelJson.decode<ContextSummary>({
-      'schema_version': 1,
-      'task': 'Work',
-      'open_questions': ['Which platform?'],
-    });
-    expect(summary.openQuestions, ['Which platform?']);
+  test(
+    'boundary DTOs keep canonical fields and protocol omission rules',
+    () async {
+      final summary = ModelJson.decode<ContextSummary>({
+        'task': 'Work',
+        'open_questions': ['Which platform?'],
+      });
+      expect(summary.openQuestions, ['Which platform?']);
 
-    final question = ModelJson.decode<AgentQuestion>({
-      'question': 'Choose?',
-      'whyBlocking': 'Required',
-      'default_if_unanswered': 'Desktop',
-      'type': 'PREFERENCE',
-    });
-    expect(question.kind, QuestionKind.preference);
-    expect(question.reason, 'Required');
+      final question = ModelJson.decode<AgentQuestion>({
+        'question': 'Choose?',
+        'reason': 'Required',
+        'defaultIfUnanswered': 'Desktop',
+        'kind': 'preference',
+      });
+      expect(question.kind, QuestionKind.preference);
+      expect(question.reason, 'Required');
+      expect(question.defaultIfUnanswered, 'Desktop');
 
-    const message = ChatMessage(
-      role: 'assistant',
-      content: 'Done',
-      reasoningContent: 'Thought',
-    );
-    expect(ModelJson.encode(message), {
-      'role': 'assistant',
-      'content': 'Done',
-      'reasoning_content': 'Thought',
-    });
+      const message = ChatMessage(
+        role: 'assistant',
+        content: 'Done',
+        reasoningContent: 'Thought',
+      );
+      expect(ModelJson.encode(message), {
+        'role': 'assistant',
+        'content': 'Done',
+        'reasoning_content': 'Thought',
+      });
 
-    final planning = TaskPlanningContext(
-      projectGoal: 'Build',
-      projectTaskObjective: 'Implement',
-      expectedArtifacts: const [TaskArtifact(path: 'out.md')],
-      requiredGates: const [TaskGate(id: 'tests')],
-    );
-    expect(ModelJson.encode(planning)['expectedArtifacts'], [
-      {'path': 'out.md'},
-    ]);
+      final planning = TaskPlanningContext(
+        projectGoal: 'Build',
+        projectTaskObjective: 'Implement',
+        expectedArtifacts: const [TaskArtifact(path: 'out.md')],
+        requiredGates: const [TaskGate(id: 'tests')],
+      );
+      expect(ModelJson.encode(planning)['expectedArtifacts'], [
+        {'path': 'out.md'},
+      ]);
 
-    const diagnostics = ProjectDiagnostics(
-      projectModelCalls: 7,
-      completedTaskExecutions: 2,
-      consecutiveNoProgressBatches: 1,
-      recentNoProgressBatchIds: ['batch_2'],
-    );
-    final decodedDiagnostics = ModelJson.decode<ProjectDiagnostics>(
-      ModelJson.encode(diagnostics),
-    );
-    expect(decodedDiagnostics.projectModelCalls, 7);
-    expect(decodedDiagnostics.projectModelCallsPerCompletedTask, 3.5);
-    expect(decodedDiagnostics.recentNoProgressBatchIds, ['batch_2']);
+      const diagnostics = ProjectDiagnostics(
+        projectModelCalls: 7,
+        completedTaskExecutions: 2,
+        consecutiveNoProgressBatches: 1,
+        recentNoProgressBatchIds: ['batch_2'],
+      );
+      final decodedDiagnostics = ModelJson.decode<ProjectDiagnostics>(
+        ModelJson.encode(diagnostics),
+      );
+      expect(decodedDiagnostics.projectModelCalls, 7);
+      expect(decodedDiagnostics.projectModelCallsPerCompletedTask, 3.5);
+      expect(decodedDiagnostics.recentNoProgressBatchIds, ['batch_2']);
 
-    const metadata = WorkspaceMetadata(
-      rootFiles: ['pubspec.yaml'],
-      gitAvailable: true,
-    );
-    expect(ModelJson.encode(metadata), isNot(contains('workspaceName')));
+      const metadata = WorkspaceMetadata(
+        rootFiles: ['pubspec.yaml'],
+        gitAvailable: true,
+      );
+      expect(ModelJson.encode(metadata), isNot(contains('workspaceName')));
 
-    final operation = ModelJson.decode<CalculatorOperation>({
-      'paramA': '2',
-      'paramB': 3,
-      'operator': '+',
-    });
-    expect(operation.paramA, 2);
-    expect(
-      () => ModelJson.decode<CalculatorOperation>({'paramA': 'nope'}),
-      throwsA(anything),
-    );
-  });
+      final operation = ModelJson.decode<CalculatorOperation>({
+        'paramA': '2',
+        'paramB': 3,
+        'operator': '+',
+      });
+      expect(operation.paramA, 2);
+      expect(
+        () => ModelJson.decode<CalculatorOperation>({'paramA': 'nope'}),
+        throwsA(anything),
+      );
+    },
+  );
 }

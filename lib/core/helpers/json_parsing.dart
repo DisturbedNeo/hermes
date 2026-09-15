@@ -29,7 +29,7 @@ String? jsonNullableString(Object? value) {
 /// Parses a list of strings. Handles:
 /// - `List<dynamic>` where each item is converted via [toString]
 /// - `List<Map<String, dynamic>>` where items with a `question` key yield
-///   that value's string representation (for compatibility with task models)
+///   that value's string representation (as used by task question data)
 /// - A single non-empty string (wrapped in a one-element list)
 /// - Empty or non-list values return an empty list.
 List<String> jsonStringList(Object? value) {

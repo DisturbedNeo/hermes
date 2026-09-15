@@ -432,7 +432,7 @@ class TaskGateEvaluator {
     for (var i = 0; i < toolCalls.length; i++) {
       final call = toolCalls[i];
       if (call.toolName == 'finish_task_step') continue;
-      final error = _effectiveToolError(call);
+      final error = call.toolError;
       if (error == null) continue;
       final operationKey = _operationKey(call);
       final entry = <String, String>{
@@ -503,10 +503,6 @@ class TaskGateEvaluator {
     );
   }
 
-  TaskToolError? _effectiveToolError(TaskToolCallRecord call) {
-    return call.effectiveToolError;
-  }
-
   TaskGateResult _noFailedCommands(
     Task task,
     TaskStep step,
@@ -526,7 +522,7 @@ class TaskGateEvaluator {
     final advisoryFailed = <Map<String, dynamic>>[];
     for (final call in latestCommands.values) {
       final result = _resultSummaryMap(call);
-      final exitCode = _effectiveToolError(call) == null
+      final exitCode = call.toolError == null
           ? jsonInt(result['exit_code'], fallback: 0)
           : -1;
       if (exitCode != 0) {
@@ -842,7 +838,7 @@ class TaskGateEvaluator {
     }
     final result = await _sandbox.runCommand(
       workspace.rootPath,
-      executable: 'git',
+      command: 'git',
       arguments: const ['status', '--porcelain'],
       cancellationToken: cancellationToken,
     );
@@ -998,7 +994,7 @@ $prompt
   }
 
   bool _callSucceeded(TaskToolCallRecord call) {
-    if (_effectiveToolError(call) != null) return false;
+    if (call.toolError != null) return false;
     if (call.outcome != TaskToolCallOutcome.succeeded) return false;
     if (call.toolName != 'run_command') return true;
     return jsonInt(_resultSummaryMap(call)['exit_code'], fallback: 0) == 0;

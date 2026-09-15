@@ -20,7 +20,6 @@ class TaskPlanningToolContext {
     this.outOfScope = const [],
     this.readPaths = const [],
     this.writePaths = const [],
-    this.legacyWriteAccess = false,
     this.requiredArtifacts = const [],
     this.requiredGates = const [],
     this.requiredEvidence = const [],
@@ -36,7 +35,6 @@ class TaskPlanningToolContext {
          outOfScope: outOfScope,
          readPaths: readPaths,
          writePaths: writePaths,
-         legacyWriteAccess: legacyWriteAccess,
          requiredArtifacts: requiredArtifacts,
          requiredGates: requiredGates,
          requiredEvidence: requiredEvidence,
@@ -53,7 +51,6 @@ class TaskPlanningToolContext {
   final List<String> outOfScope;
   final List<String> readPaths;
   final List<String> writePaths;
-  final bool legacyWriteAccess;
   final List<TaskArtifact> requiredArtifacts;
   final List<TaskGate> requiredGates;
   final List<TaskProjectEvidenceExpectation> requiredEvidence;
@@ -76,6 +73,7 @@ class TaskPlanningToolRegistry {
   List<ToolDefinition> get toolDefinitions => const [
     _taskViewDefinition,
     _setBriefDefinition,
+    _resetPlanDefinition,
     _addStepDefinition,
     _addCheckDefinition,
     _previewDefinition,
@@ -153,6 +151,7 @@ class TaskPlanningToolRegistry {
       final result = switch (toolId) {
         'task_view' => _view(arguments),
         'task_set_brief' => _setBrief(arguments),
+        'task_reset_plan' => _resetPlan(arguments, commandId),
         'task_add_step' => _addStep(arguments, commandId),
         'task_add_check' => _addCheck(arguments, commandId),
         'task_preview_plan' => _preview(arguments),
@@ -199,7 +198,6 @@ class TaskPlanningToolRegistry {
       outOfScope: context.outOfScope,
       readPaths: context.readPaths,
       writePaths: context.writePaths,
-      legacyWriteAccess: context.legacyWriteAccess,
       requiredArtifacts: context.requiredArtifacts,
       requiredGates: context.requiredGates,
       requiredEvidence: context.requiredEvidence,
@@ -252,6 +250,19 @@ class TaskPlanningToolRegistry {
       'title': context.builder.preview().task.title,
       'objective': context.builder.preview().task.objective,
       'success_criteria': context.builder.preview().task.successCriteria,
+    };
+  }
+
+  Map<String, dynamic> _resetPlan(
+    Map<String, dynamic> arguments,
+    String? commandId,
+  ) {
+    _ensureOpen();
+    _keys(arguments, const {});
+    context.builder.resetDraft(commandId: commandId);
+    return {
+      'reset': true,
+      'preserved_step_count': context.builder.steps.length,
     };
   }
 
@@ -650,6 +661,14 @@ const ToolDefinition _addStepDefinition = ToolDefinition(
     },
     'required': ['title', 'objective', 'instructions'],
   },
+);
+
+const ToolDefinition _resetPlanDefinition = ToolDefinition(
+  id: 'task_reset_plan',
+  name: 'Reset task draft',
+  description:
+      'Discard the current uncommitted draft so it can be rebuilt with planning commands. Completed and skipped steps are preserved during replanning.',
+  schema: {'type': 'object', 'additionalProperties': false, 'properties': {}},
 );
 
 const ToolDefinition _addCheckDefinition = ToolDefinition(

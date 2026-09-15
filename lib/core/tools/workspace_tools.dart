@@ -5,6 +5,7 @@ import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/subagent_service.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
+import 'package:hermes/core/services/sandbox_policy.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/tools/tool.dart';
 import 'package:hermes/core/tools/tool_error.dart';
@@ -497,7 +498,6 @@ class RunCommandTool extends WorkspaceTool {
     }
 
     final rawArgs = input['args'];
-    final hasDeclaredArgs = input.containsKey('args');
     final args = rawArgs is List
         ? rawArgs.map((item) => item.toString()).toList()
         : <String>[];
@@ -505,8 +505,7 @@ class RunCommandTool extends WorkspaceTool {
 
     return sandbox.runCommand(
       context.workspace.rootPath,
-      command: hasDeclaredArgs ? null : command,
-      executable: hasDeclaredArgs ? command : null,
+      command: command,
       arguments: args,
       workingDirectory: stringArg(input, 'working_directory', fallback: '.'),
       cancellationToken: context.cancellationToken,

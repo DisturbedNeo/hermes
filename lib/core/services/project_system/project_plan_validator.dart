@@ -535,8 +535,7 @@ class ProjectPlanValidator {
       }
       if (task.effort == TaskEffort.small &&
           task.expectedArtifacts.isNotEmpty &&
-          task.writePaths.isEmpty &&
-          !task.legacyWriteAccess) {
+          task.writePaths.isEmpty) {
         issue(
           'missing_write_paths',
           '$fieldPath.writePaths',

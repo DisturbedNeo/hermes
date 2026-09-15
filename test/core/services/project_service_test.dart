@@ -46,7 +46,6 @@ void main() {
       userPrompt: 'Build the reporting screen',
     );
 
-    expect(project.schemaVersion, ProjectDocument.currentSchemaVersion);
     expect(project.originalGoal, 'Build the reporting screen');
     expect(project.tasks, isEmpty);
     expect(project.planHistory.single.revision, 1);
@@ -169,14 +168,15 @@ void main() {
           ),
         ],
       );
-      final revisedPlan = _desiredPlan(
-        blocked,
-        [revisedTask],
+      final revisedProject = blocked.copyWith(
+        tasks: [revisedTask],
         milestones: [milestone],
+        status: ProjectStatus.active,
+        blocker: null,
       );
       final gateway = _InitialisationGateway(
         _validInitialisation(),
-        revisedPlan: revisedPlan,
+        revisedProject: revisedProject,
       );
       final planningService = ProjectService(
         taskService: taskService,
@@ -421,39 +421,36 @@ void main() {
     expect(scheduler.scheduleCalls, 0);
   });
 
-  test(
-    'answers project questions without a compatibility pending field',
-    () async {
-      final now = DateTime(2026, 1, 1);
-      final question = PendingProjectQuestion(
-        id: 'question_1',
-        question: 'Which platform?',
+  test('answers project questions without a pending plan field', () async {
+    final now = DateTime(2026, 1, 1);
+    final question = PendingProjectQuestion(
+      id: 'question_1',
+      question: 'Which platform?',
+      createdAt: now,
+    );
+    final project = _project(
+      status: ProjectStatus.waitingForUser,
+      openQuestions: [question],
+      blocker: ProjectBlocker(
+        type: ProjectBlockerType.question,
+        message: question.question,
         createdAt: now,
-      );
-      final project = _project(
-        status: ProjectStatus.waitingForUser,
-        openQuestions: [question],
-        blocker: ProjectBlocker(
-          type: ProjectBlockerType.question,
-          message: question.question,
-          createdAt: now,
-        ),
-      );
+      ),
+    );
 
-      final answered = await service.answerOpenQuestion(
-        workspace: workspace,
-        snapshot: project,
-        answer: 'Desktop first.',
-      );
+    final answered = await service.answerOpenQuestion(
+      workspace: workspace,
+      snapshot: project,
+      answer: 'Desktop first.',
+    );
 
-      expect(answered.openQuestions, isEmpty);
-      expect(answered.blocker, isNull);
-      expect(
-        answered.memory.map((entry) => entry.content),
-        contains(contains('Desktop first.')),
-      );
-    },
-  );
+    expect(answered.openQuestions, isEmpty);
+    expect(answered.blocker, isNull);
+    expect(
+      answered.memory.map((entry) => entry.content),
+      contains(contains('Desktop first.')),
+    );
+  });
 
   test(
     'cancelling an active project task updates its lifecycle status in place',
@@ -711,24 +708,6 @@ ProjectDocument _project({
   );
 }
 
-ProjectDesiredPlan _desiredPlan(
-  ProjectDocument project,
-  List<Task> tasks, {
-  List<ProjectMilestone>? milestones,
-}) {
-  return ProjectDesiredPlan(
-    revision: project.nextRevision,
-    triggers: const [ProjectPlanRevisionTrigger.noReadyTask],
-    summary: 'Recover the blocked project plan.',
-    rationale: 'Restore bounded executable work after validation failure.',
-    criteria: project.criteria,
-    milestones: milestones ?? project.milestones,
-    tasks: tasks,
-    openQuestions: project.openQuestions,
-    createdAt: DateTime(2026, 1, 2),
-  );
-}
-
 Task _task() {
   final now = DateTime(2026, 1, 1);
   return Task(
@@ -786,12 +765,12 @@ class _InitialisationGateway implements ProjectPlanningGateway {
   _InitialisationGateway(
     this.initialisation, {
     this.repairedInitialisations = const [],
-    this.revisedPlan,
+    this.revisedProject,
   });
 
   final ProjectInitialisation initialisation;
   final List<ProjectInitialisation> repairedInitialisations;
-  final ProjectDesiredPlan? revisedPlan;
+  final ProjectDocument? revisedProject;
   List<Map<String, String>>? validationIssues;
   var repairCalls = 0;
   var revisePlanCalls = 0;
@@ -828,44 +807,48 @@ class _InitialisationGateway implements ProjectPlanningGateway {
   }
 
   @override
-  Future<ProjectDesiredPlan> revisePlan({
+  Future<ProjectIncrementalPlanResult> revisePlanWithCommands({
     required ChatClient client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required ProjectState project,
     required ProjectEvidenceSnapshot evidenceSnapshot,
     required List<ProjectPlanRevisionTrigger> triggers,
+    required ProjectPlanApprovalPolicy approvalPolicy,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     revisePlanCalls++;
-    final plan = revisedPlan;
-    if (plan == null) throw UnimplementedError();
-    return plan;
+    final revised = revisedProject;
+    if (revised == null) throw UnimplementedError();
+    return ProjectIncrementalPlanResult(
+      project: revised,
+      committed: true,
+      changed: true,
+      awaitingApproval: false,
+      modelCalls: 1,
+    );
   }
 
   @override
-  Future<ProjectDesiredPlan?> repairPlanProposal({
+  Future<ProjectIncrementalPlanResult> splitTaskWithCommands({
     required ChatClient client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required ProjectState project,
-    required ProjectDesiredPlan proposal,
-    required List<Map<String, String>> validationIssues,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) async => revisedPlan;
-
-  @override
-  Future<List<Task>> splitTask({
-    required ChatClient client,
-    required String baseSystemPrompt,
-    required ProjectState project,
     required Task oversizedTask,
     required List<String> violations,
+    required ProjectPlanApprovalPolicy approvalPolicy,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
-  }) => throw UnimplementedError();
+  }) async => ProjectIncrementalPlanResult(
+    project: project,
+    committed: false,
+    changed: false,
+    awaitingApproval: false,
+    modelCalls: 1,
+    error: 'test gateway does not split tasks',
+  );
 
   @override
   Future<ProjectCompletionAssessment> evaluateCompletion({
@@ -944,7 +927,6 @@ ProjectInitialisation _invalidInitialisation() {
     doneCriteria: const ['The task is complete.'],
     outOfScope: const ['Unrelated work.'],
     status: TaskStatus.queued,
-    taskDocumentId: null,
     fingerprint: id,
     rejectionReason: null,
     createdAt: now,
@@ -1000,7 +982,6 @@ ProjectInitialisation _validInitialisation() {
     context: const [],
     expectedArtifacts: const [],
     status: TaskStatus.queued,
-    taskDocumentId: null,
     fingerprint: 'task_1',
     rejectionReason: null,
     createdAt: now,

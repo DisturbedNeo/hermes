@@ -138,9 +138,6 @@ class ProjectIncrementalPlanResult {
 
 /// Boundary between deterministic project orchestration and model-backed
 /// planning decisions.
-///
-/// Implementations return proposed data only. [ProjectService] remains
-/// responsible for validation, state transitions, and persistence.
 abstract interface class ProjectPlanningGateway {
   Future<ProjectInitialisation> initializeProject({
     required ChatClient client,
@@ -166,55 +163,6 @@ abstract interface class ProjectPlanningGateway {
     CancellationToken? cancellationToken,
   });
 
-  Future<ProjectDesiredPlan> revisePlan({
-    required ChatClient client,
-    required String baseSystemPrompt,
-    required WorkspaceAttachment workspace,
-    required ProjectState project,
-    required ProjectEvidenceSnapshot evidenceSnapshot,
-    required List<ProjectPlanRevisionTrigger> triggers,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  });
-
-  /// Repairs an invalid desired plan. The orchestrator may call this a small,
-  /// bounded number of times before surfacing a validation blocker.
-  Future<ProjectDesiredPlan?> repairPlanProposal({
-    required ChatClient client,
-    required String baseSystemPrompt,
-    required WorkspaceAttachment workspace,
-    required ProjectState project,
-    required ProjectDesiredPlan proposal,
-    required List<Map<String, String>> validationIssues,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  });
-
-  Future<List<Task>> splitTask({
-    required ChatClient client,
-    required String baseSystemPrompt,
-    required ProjectState project,
-    required Task oversizedTask,
-    required List<String> violations,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  });
-
-  Future<ProjectCompletionAssessment> evaluateCompletion({
-    required ChatClient client,
-    required String baseSystemPrompt,
-    required ProjectState project,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  });
-}
-
-/// Optional incremental planning capability.
-///
-/// Keeping this separate from [ProjectPlanningGateway] lets older integrations
-/// and test doubles continue to provide the legacy JSON methods while the
-/// built-in gateway uses the safer command-based path.
-abstract interface class ProjectIncrementalPlanningGateway {
   Future<ProjectIncrementalPlanResult> revisePlanWithCommands({
     required ChatClient client,
     required String baseSystemPrompt,
@@ -235,6 +183,14 @@ abstract interface class ProjectIncrementalPlanningGateway {
     required Task oversizedTask,
     required List<String> violations,
     required ProjectPlanApprovalPolicy approvalPolicy,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  });
+
+  Future<ProjectCompletionAssessment> evaluateCompletion({
+    required ChatClient client,
+    required String baseSystemPrompt,
+    required ProjectState project,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });

@@ -83,7 +83,6 @@ class PromptPreset with PromptPresetMappable {
   final List<String> optionalModuleIds;
   @MappableField(hook: JsonStringHook())
   final String customInstructions;
-  final String? legacyFullPrompt;
   @MappableField(hook: JsonBoolHook())
   final bool isBuiltIn;
   @MappableField(hook: EpochDateHook(fallbackNow: true))
@@ -99,15 +98,11 @@ class PromptPreset with PromptPresetMappable {
     required this.baseModuleIds,
     required this.optionalModuleIds,
     required this.customInstructions,
-    required this.legacyFullPrompt,
     required this.isBuiltIn,
     required this.createdAt,
     required this.updatedAt,
     this.lastUsedAt,
   });
-
-  bool get isLegacy =>
-      legacyFullPrompt != null && legacyFullPrompt!.trim().isNotEmpty;
 
   PromptPreset copyWith({
     String? id,
@@ -115,7 +110,6 @@ class PromptPreset with PromptPresetMappable {
     List<String>? baseModuleIds,
     List<String>? optionalModuleIds,
     String? customInstructions,
-    Object? legacyFullPrompt = kSentinel,
     bool? isBuiltIn,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -127,9 +121,6 @@ class PromptPreset with PromptPresetMappable {
       baseModuleIds: baseModuleIds ?? this.baseModuleIds,
       optionalModuleIds: optionalModuleIds ?? this.optionalModuleIds,
       customInstructions: customInstructions ?? this.customInstructions,
-      legacyFullPrompt: identical(legacyFullPrompt, kSentinel)
-          ? this.legacyFullPrompt
-          : legacyFullPrompt as String?,
       isBuiltIn: isBuiltIn ?? this.isBuiltIn,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -232,52 +223,4 @@ class SystemPromptSnapshot with SystemPromptSnapshotMappable {
     this.selectedModuleIds = const [],
     this.diagnostics = const [],
   });
-
-  factory SystemPromptSnapshot.legacy({
-    required String? id,
-    required String name,
-    required String text,
-  }) {
-    final now = DateTime.fromMillisecondsSinceEpoch(0);
-    return SystemPromptSnapshot(
-      id: id,
-      name: name,
-      text: text,
-      preset: PromptPreset(
-        id: id ?? 'legacy',
-        name: name,
-        baseModuleIds: const [],
-        optionalModuleIds: const [],
-        customInstructions: '',
-        legacyFullPrompt: text,
-        isBuiltIn: false,
-        createdAt: now,
-        updatedAt: now,
-      ),
-      modules: const [],
-      selectedModuleIds: const [],
-    );
-  }
-}
-
-class SavedSystemPrompt {
-  final String id;
-  final String name;
-  final String content;
-  final DateTime createdAt;
-  final DateTime updatedAt;
-  final DateTime? lastUsedAt;
-
-  const SavedSystemPrompt({
-    required this.id,
-    required this.name,
-    required this.content,
-    required this.createdAt,
-    required this.updatedAt,
-    this.lastUsedAt,
-  });
-
-  SystemPromptSnapshot toSnapshot() {
-    return SystemPromptSnapshot.legacy(id: id, name: name, text: content);
-  }
 }

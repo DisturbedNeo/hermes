@@ -11,7 +11,6 @@ import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
-import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/core/serialization/model_json.dart';
@@ -207,7 +206,6 @@ void main() {
         baseModuleIds: const ['request-aware'],
         optionalModuleIds: const [],
         customInstructions: '',
-        legacyFullPrompt: null,
         isBuiltIn: false,
         createdAt: now,
         updatedAt: now,
@@ -267,7 +265,7 @@ void main() {
 
     test('supports /task command by creating and running steps', () async {
       serverManager.chatClient = _QueueCompletionClient([
-        _finaliseTaskResponse(_planJson(title: 'Runnable task')),
+        _commandPlanTaskResponse(_planJson(title: 'Runnable task')),
         ChatCompletionResponse(
           content: jsonEncode({
             'status': 'completed',
@@ -286,7 +284,7 @@ void main() {
 
     test('run task continues across successful paused checkpoints', () async {
       serverManager.chatClient = _QueueCompletionClient([
-        _finaliseTaskResponse({
+        _commandPlanTaskResponse({
           ..._planJson(title: 'Multi-step task'),
           'steps': [
             {
@@ -332,186 +330,9 @@ void main() {
       ]);
     });
 
-    test('supports /project command by creating tasks until complete', () async {
-      final projectClient = _QueueCompletionClient([
-        _finaliseProjectResponse({
-          'title': 'Build screen',
-          'refinedGoal': 'Build the reporting screen',
-          'criteria': [
-            {'id': 'criterion_screen', 'statement': 'Screen is built.'},
-          ],
-          'constraints': ['Stay in workspace.'],
-          'openQuestions': [],
-          'milestones': [
-            {
-              'id': 'milestone_screen',
-              'title': 'Build screen',
-              'objective': 'Build and verify the reporting screen.',
-              'criterionIds': ['criterion_screen'],
-              'exitConditions': ['Screen is built.'],
-              'order': 1,
-            },
-          ],
-          'tasks': [
-            {
-              ..._projectTaskJson(),
-              'id': 'task_screen',
-              'criterionIds': ['criterion_screen'],
-              'milestoneId': 'milestone_screen',
-              'expectedEvidence': [
-                {
-                  'id': 'expect_screen',
-                  'type': 'task_claim',
-                  'criterionIds': ['criterion_screen'],
-                  'description': 'The reporting screen is checked.',
-                  'required': false,
-                },
-              ],
-            },
-            {
-              ..._projectTaskJson(),
-              'id': 'task_report',
-              'title': 'Report findings',
-              'objective': 'Report the checked reporting screen.',
-              'criterionIds': ['criterion_screen'],
-              'milestoneId': 'milestone_screen',
-              'expectedEvidence': [
-                {
-                  'id': 'expect_report',
-                  'type': 'task_claim',
-                  'criterionIds': ['criterion_screen'],
-                  'description': 'The findings are reported.',
-                  'required': false,
-                },
-                {
-                  'id': 'expect_report_gate',
-                  'type': 'gate',
-                  'criterionIds': ['criterion_screen'],
-                  'description': 'The task completed without workspace errors.',
-                  'required': true,
-                  'sourceRef': 'no_tool_errors',
-                },
-              ],
-            },
-          ],
-        }),
-        ChatCompletionResponse(
-          content: jsonEncode({
-            'status': 'completed',
-            'summary': 'Project task complete.',
-            'memoryUpdate': 'Screen built.',
-          }),
-        ),
-        ChatCompletionResponse(
-          content: jsonEncode({
-            'complete': false,
-            'finalSummary': 'The first project task is complete.',
-            'remainingCriteria': ['Screen is built.'],
-            'supportedCriterionIds': ['criterion_screen'],
-            'openQuestions': [],
-          }),
-        ),
-        ChatCompletionResponse(
-          content: jsonEncode({
-            'summary': 'Continue with the reporting task.',
-            'rationale':
-                'The screen task is complete and the remaining bounded task is still required.',
-            'criteria': [
-              {'id': 'criterion_screen', 'statement': 'Screen is built.'},
-            ],
-            'milestones': [
-              {
-                'id': 'milestone_screen',
-                'title': 'Build screen',
-                'objective': 'Build and verify the reporting screen.',
-                'criterionIds': ['criterion_screen'],
-                'exitConditions': ['Screen is built.'],
-                'order': 1,
-              },
-            ],
-            'tasks': [
-              {
-                ..._projectTaskJson(),
-                'id': 'task_report',
-                'title': 'Report findings',
-                'objective': 'Report the checked reporting screen.',
-                'criterionIds': ['criterion_screen'],
-                'milestoneId': 'milestone_screen',
-                'expectedEvidence': [
-                  {
-                    'id': 'expect_report_revision',
-                    'type': 'task_claim',
-                    'criterionIds': ['criterion_screen'],
-                    'description': 'The findings are reported.',
-                    'required': false,
-                  },
-                  {
-                    'id': 'expect_report_gate_revision',
-                    'type': 'gate',
-                    'criterionIds': ['criterion_screen'],
-                    'description':
-                        'The task completed without workspace errors.',
-                    'required': true,
-                    'sourceRef': 'no_tool_errors',
-                  },
-                ],
-              },
-            ],
-            'deferredTaskIds': [],
-            'obsoleteTaskIds': [],
-            'memoryAdditions': [],
-            'memorySupersessions': [],
-            'openQuestions': [],
-            'requiresApproval': false,
-            'approvalReason': '',
-          }),
-        ),
-        ChatCompletionResponse(
-          content: jsonEncode({
-            'status': 'completed',
-            'summary': 'Reporting task complete.',
-            'memoryUpdate': 'The findings were reported.',
-          }),
-        ),
-        ChatCompletionResponse(
-          content: jsonEncode({
-            'complete': true,
-            'finalSummary': 'Reporting screen is complete.',
-            'remainingCriteria': [],
-            'supportedCriterionIds': ['criterion_screen'],
-            'openQuestions': [],
-          }),
-        ),
-      ]);
-      serverManager.chatClient = projectClient;
-      await preferences.setTaskSystemSettings(
-        const TaskSystemSettings(
-          maxProjectTasksPerRun: 1,
-          planApprovalPolicy: ProjectPlanApprovalPolicy.never,
-        ),
-      );
-      await chat.attachWorkspace(tempDir.path);
-
-      await chat.send('/project Build the reporting screen');
-
-      expect(chat.activeProject?.status, ProjectStatus.completed);
-      expect(
-        chat.activeProject?.tasks,
-        everyElement(
-          isA<Task>().having(
-            (task) => task.status,
-            'status',
-            TaskStatus.completed,
-          ),
-        ),
-      );
-      expect(chat.activeTask, isNull);
-      expect(chat.activeProject?.completionSummary, isNotEmpty);
-    });
-
     test('supports /continue-project for the active project', () async {
       serverManager.chatClient = _QueueCompletionClient([
-        _finaliseProjectResponse({
+        _commandPlanProjectResponse({
           'tasks': [
             _projectTaskJson(relevantSuccessCriteria: const ['Finish']),
           ],
@@ -522,7 +343,7 @@ void main() {
             'task': _projectTaskJson(relevantSuccessCriteria: const ['Finish']),
           }),
         ),
-        _finaliseTaskResponse(_projectPlanJson(title: 'Project task')),
+        _commandPlanTaskResponse(_projectPlanJson(title: 'Project task')),
         ChatCompletionResponse(
           content: jsonEncode({
             'status': 'completed',
@@ -613,7 +434,7 @@ void main() {
       'renders task model reasoning and tool calls as chat bubbles',
       () async {
         serverManager.chatClient = _QueueCompletionClient([
-          _finaliseTaskResponse(
+          _commandPlanTaskResponse(
             _planJson(title: 'Visible task'),
             reasoning: 'Planning rationale.',
             content: jsonEncode(_planJson(title: 'Visible task')),
@@ -722,7 +543,7 @@ void main() {
         expect(chat.taskBusy, isFalse);
         expect(chat.taskCancellationRequested, isFalse);
         expect(chat.activeTask?.status, TaskStatus.paused);
-        expect(chat.activeTask?.currentStepId, 'build');
+        expect(chat.activeTask?.currentStepId, startsWith('step_'));
         expect(chat.activeTask?.steps.single.status, TaskStepStatus.pending);
         expect(chat.activeTask?.runs.single.status, TaskRunStatus.cancelled);
         expect(chat.activeTask?.runs.single.summary, contains('cancelled'));
@@ -933,16 +754,25 @@ void main() {
     });
 
     test('loads system prompts into the active tab', () async {
-      final reviewer = await promptLibrary.createPrompt(
-        name: 'Reviewer',
+      final module = await promptLibrary.createModule(
+        name: 'Reviewer rules',
+        category: 'Task',
         content: 'Review code carefully.',
+        priority: 10,
+      );
+      final reviewer = await promptLibrary.createPreset(
+        name: 'Reviewer',
+        baseModuleIds: [module.id],
       );
 
-      final target = await tabs.loadSystemPromptIntoActiveChat(reviewer);
+      final target = await tabs.loadPromptPresetIntoActiveChat(reviewer);
 
       expect(target, SystemPromptLoadTarget.currentChat);
       expect(tabs.activeChat?.currentSystemPromptSnapshot?.id, reviewer.id);
-      expect(tabs.activeChat?.messageStore.first.text, reviewer.content);
+      expect(
+        tabs.activeChat?.messageStore.first.text,
+        contains('Review code carefully.'),
+      );
     });
 
     test('does not relay per-message or stream events through all tabs', () {
@@ -1169,45 +999,139 @@ ProjectDocument _projectDocument({
   );
 }
 
-ChatCompletionResponse _finaliseTaskResponse(
+ChatCompletionResponse _commandPlanTaskResponse(
   Map<String, dynamic> arguments, {
   String content = '',
   String reasoning = '',
 }) {
+  final calls = <ChatCompletionToolCall>[
+    _toolCall('task_set_brief', {
+      'title': arguments['title'] ?? 'Task',
+      'objective': arguments['objective'] ?? arguments['goal'] ?? '',
+      'constraints': arguments['constraints'] ?? const [],
+      'success_criteria':
+          arguments['successCriteria'] ??
+          arguments['success_criteria'] ??
+          const [],
+    }),
+    for (final raw in (arguments['steps'] as List? ?? const []))
+      if (raw is Map)
+        _toolCall('task_add_step', {
+          'ref': raw['id'] ?? raw['ref'] ?? '',
+          'title': raw['title'] ?? '',
+          'objective': raw['objective'] ?? '',
+          'instructions': raw['instructions'] ?? const [],
+          'may_edit_files':
+              raw['mayEditFiles'] ?? raw['may_edit_files'] ?? false,
+        }),
+    _toolCall('task_commit_plan', const {}),
+  ];
   return ChatCompletionResponse(
     content: content,
     reasoning: reasoning,
-    toolCalls: [
-      ChatCompletionToolCall(
-        name: 'finaliseTaskCreation',
-        arguments: jsonEncode(arguments),
-      ),
-    ],
+    toolCalls: calls,
   );
 }
 
-ChatCompletionResponse _finaliseProjectResponse(
+ChatCompletionResponse _commandPlanProjectResponse(
   Map<String, dynamic> arguments, {
   String content = '',
   String reasoning = '',
 }) {
+  final calls = <ChatCompletionToolCall>[
+    if (arguments['title'] != null || arguments['refinedGoal'] != null)
+      _toolCall('plan_set_project_details', {
+        'title': arguments['title'] ?? 'Project',
+        'refined_goal':
+            arguments['refinedGoal'] ?? arguments['refined_goal'] ?? '',
+        'constraints': arguments['constraints'] ?? const [],
+      }),
+    if (arguments['criteria'] is List &&
+        (arguments['criteria'] as List).isNotEmpty)
+      _toolCall('plan_add_criteria', {
+        'criteria': [
+          for (final raw in arguments['criteria'] as List)
+            if (raw is Map)
+              {
+                'ref': raw['id'] ?? raw['ref'] ?? '',
+                'statement': raw['statement'] ?? '',
+                'required': raw['required'] ?? true,
+                'verification_mode': 'deterministic',
+              },
+        ],
+      }),
+    if (arguments['milestones'] is List &&
+        (arguments['milestones'] as List).isNotEmpty)
+      _toolCall('plan_add_milestones', {
+        'milestones': [
+          for (final raw in arguments['milestones'] as List)
+            if (raw is Map)
+              {
+                'ref': raw['id'] ?? raw['ref'] ?? '',
+                'title': raw['title'] ?? '',
+                'objective': raw['objective'] ?? '',
+                'criterion_refs': raw['criterionIds'] ?? const [],
+                'exit_conditions': raw['exitConditions'] ?? const [],
+                'order': raw['order'] ?? 1,
+              },
+        ],
+      }),
+    if (arguments['tasks'] is List && (arguments['tasks'] as List).isNotEmpty)
+      _toolCall('plan_add_tasks', {
+        'tasks': [
+          for (final raw in arguments['tasks'] as List)
+            if (raw is Map)
+              {
+                'ref': raw['id'] ?? raw['ref'] ?? '',
+                'title': raw['title'] ?? '',
+                'objective': raw['objective'] ?? '',
+                'criterion_refs': raw['criterionIds'] ?? const [],
+                'dependency_refs': raw['dependsOnTaskIds'] ?? const [],
+                'milestone_ref': raw['milestoneId'],
+                'constraints': raw['constraints'] ?? const [],
+                'read_paths': raw['readPaths'] ?? const [],
+                'write_paths': raw['writePaths'] ?? const [],
+                'done_criteria': raw['doneCriteria'] ?? const [],
+                'out_of_scope': raw['outOfScope'] ?? const [],
+                'context': raw['context'] ?? const [],
+                'expected_artifacts': raw['expectedArtifacts'] ?? const [],
+              },
+        ],
+      }),
+    for (final raw in (arguments['tasks'] as List? ?? const []))
+      if (raw is Map)
+        _toolCall('plan_add_check', {
+          'task': raw['id'] ?? raw['ref'] ?? '',
+          'kind': 'command',
+          'command': 'true',
+          'criterion_refs': raw['criterionIds'] ?? const [],
+          'required': true,
+        }),
+    _toolCall('plan_commit', {
+      'summary': arguments['summary'] ?? 'Apply the project plan.',
+      'rationale': arguments['rationale'] ?? 'Commit the bounded project plan.',
+    }),
+  ];
   return ChatCompletionResponse(
     content: content,
     reasoning: reasoning,
-    toolCalls: [
-      ChatCompletionToolCall(
-        name: 'finaliseProjectCreation',
-        arguments: jsonEncode(arguments),
-      ),
-    ],
+    toolCalls: calls,
   );
 }
+
+ChatCompletionToolCall _toolCall(String name, Map<String, dynamic> arguments) =>
+    ChatCompletionToolCall(
+      id: 'call_${name}_${arguments.hashCode}',
+      name: name,
+      arguments: jsonEncode(arguments),
+    );
 
 class _QueueChatClient extends ChatClient {
   _QueueChatClient(this._responses)
     : super(baseUrl: 'http://localhost', model: 'test');
 
   final List<String> _responses;
+  final Set<String> _convertedPlans = {};
   var _index = 0;
 
   @override
@@ -1221,7 +1145,18 @@ class _QueueChatClient extends ChatClient {
   }) async {
     final index = _index >= _responses.length ? _responses.length - 1 : _index;
     _index++;
-    return ChatCompletionResponse(content: _responses[index]);
+    final response = _responses[index];
+    try {
+      final decoded = jsonDecode(response);
+      if (decoded is Map &&
+          decoded['steps'] is List &&
+          _convertedPlans.add(response)) {
+        return _commandPlanTaskResponse(Map<String, dynamic>.from(decoded));
+      }
+    } on FormatException {
+      // Preserve non-JSON responses for tests that exercise transport errors.
+    }
+    return ChatCompletionResponse(content: response);
   }
 
   @override
@@ -1332,20 +1267,46 @@ class _StuckTaskClient extends ChatClient {
 
     if (_streamCalls == 1) {
       controller.onListen = () {
-        controller.add(
-          ChatToken(
-            tool: ToolCallDelta(
-              index: 0,
-              id: 'call_finalise_task',
-              name: 'finaliseTaskCreation',
+        final commands = [
+          (
+            'call_task_set_brief',
+            'task_set_brief',
+            {
+              'title': _plan['title'] ?? 'Task',
+              'objective': _plan['goal'] ?? '',
+              'constraints': _plan['constraints'] ?? const [],
+              'success_criteria': _plan['successCriteria'] ?? const [],
+            },
+          ),
+          (
+            'call_task_add_step',
+            'task_add_step',
+            {
+              'ref': 'step',
+              'title': 'Step',
+              'objective': 'Do the bounded work.',
+              'instructions': ['Do the bounded work.'],
+              'may_edit_files': false,
+            },
+          ),
+          ('call_task_commit', 'task_commit_plan', <String, dynamic>{}),
+        ];
+        for (var index = 0; index < commands.length; index++) {
+          final (id, name, arguments) = commands[index];
+          controller.add(
+            ChatToken(
+              tool: ToolCallDelta(index: index, id: id, name: name),
             ),
-          ),
-        );
-        controller.add(
-          ChatToken(
-            tool: ToolCallDelta(index: 0, argumentsChunk: jsonEncode(_plan)),
-          ),
-        );
+          );
+          controller.add(
+            ChatToken(
+              tool: ToolCallDelta(
+                index: index,
+                argumentsChunk: jsonEncode(arguments),
+              ),
+            ),
+          );
+        }
         unawaited(controller.close());
       };
       return controller.stream;

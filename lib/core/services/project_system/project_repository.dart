@@ -32,12 +32,8 @@ class ProjectRepository {
       if (!await file.exists()) continue;
 
       try {
-        final raw = await _snapshots.readMap(
-          file,
-          isValid: _isProjectSnapshotCandidate,
-        );
+        final raw = await _snapshots.readMap(file, isValid: _isProjectMap);
         if (raw == null) continue;
-        _checkSchemaVersion(file, raw);
         final project = ModelJson.decode<ProjectDocument>(raw);
         if (chatSessionId != null && project.chatSessionId != chatSessionId) {
           continue;
@@ -53,7 +49,6 @@ class ProjectRepository {
           ),
         );
       } catch (error) {
-        if (error is UnsupportedSnapshotSchemaException) rethrow;
         continue;
       }
     }
@@ -85,8 +80,7 @@ class ProjectRepository {
 
   /// Loads a single project by [projectId] from the given workspace root.
   /// Returns `null` when the project does not exist or its
-  /// [chatSessionId] does not match (when provided). The previous Phase 2
-  /// schema is upgraded on load because Phase 4 adds only optional batch state.
+  /// [chatSessionId] does not match (when provided).
   Future<ProjectDocument?> loadProject(
     String workspaceRoot,
     String projectId, {
@@ -94,18 +88,11 @@ class ProjectRepository {
   }) async {
     final dir = _validatedProjectDirectory(workspaceRoot, projectId);
     final file = File(path.join(dir.path, documentFileName));
-    final raw = await _snapshots.readMap(
-      file,
-      isValid: _isProjectSnapshotCandidate,
-    );
+    final raw = await _snapshots.readMap(file, isValid: _isProjectMap);
     if (raw == null) return null;
-    _checkSchemaVersion(file, raw);
     final project = ModelJson.decode<ProjectDocument>(raw);
     if (chatSessionId != null && project.chatSessionId != chatSessionId) {
       return null;
-    }
-    if (_rawSchemaVersion(raw) != ProjectDocument.currentSchemaVersion) {
-      await saveSnapshot(workspaceRoot, project);
     }
     return project;
   }
@@ -241,44 +228,17 @@ class ProjectRepository {
     }
   }
 
-  int _rawSchemaVersion(Map<String, dynamic> map) {
-    final value = map['schemaVersion'];
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    if (value is String) return int.tryParse(value) ?? 0;
-    return 0;
-  }
-
   Future<void> _writeText(File file, String content) async {
     await file.parent.create(recursive: true);
     await file.writeAsString(content);
   }
 
   bool _isProjectMap(Map<String, dynamic> map) {
-    if (_rawSchemaVersion(map) != ProjectDocument.currentSchemaVersion) {
-      return false;
-    }
     try {
       final project = ModelJson.decode<ProjectDocument>(map);
       return project.id.trim().isNotEmpty;
     } catch (_) {
       return false;
     }
-  }
-
-  bool _isProjectSnapshotCandidate(Map<String, dynamic> map) =>
-      map.containsKey('schemaVersion');
-
-  void _checkSchemaVersion(File file, Map<String, dynamic> raw) {
-    final foundVersion = _rawSchemaVersion(raw);
-    if (foundVersion >= ProjectDocument.minimumSupportedSchemaVersion &&
-        foundVersion <= ProjectDocument.currentSchemaVersion) {
-      return;
-    }
-    throw UnsupportedSnapshotSchemaException(
-      path: file.path,
-      foundVersion: foundVersion,
-      supportedVersion: ProjectDocument.currentSchemaVersion,
-    );
   }
 }

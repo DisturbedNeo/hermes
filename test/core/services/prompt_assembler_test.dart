@@ -126,20 +126,6 @@ void main() {
         expect(result.text, contains('Summarise this file.'));
       },
     );
-
-    test('renders legacy full prompts with workspace context', () {
-      final result = assembler.assemble(
-        PromptAssemblyRequest(
-          preset: _preset(legacy: 'Legacy prompt.'),
-          availableModules: const [],
-          workspaceRootPath: '/repo',
-        ),
-      );
-
-      expect(result.text, startsWith('Legacy prompt.'));
-      expect(result.text, contains('This chat has an attached workspace.'));
-      expect(result.diagnostics.single, contains('legacy'));
-    });
   });
 }
 
@@ -147,7 +133,6 @@ PromptPreset _preset({
   List<String> base = const [],
   List<String> optional = const [],
   String custom = '',
-  String? legacy,
 }) {
   final now = DateTime(2026);
   return PromptPreset(
@@ -156,7 +141,6 @@ PromptPreset _preset({
     baseModuleIds: base,
     optionalModuleIds: optional,
     customInstructions: custom,
-    legacyFullPrompt: legacy,
     isBuiltIn: false,
     createdAt: now,
     updatedAt: now,

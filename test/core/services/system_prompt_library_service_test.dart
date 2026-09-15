@@ -107,7 +107,6 @@ void main() {
         baseModuleIds: preset.baseModuleIds,
         optionalModuleIds: preset.optionalModuleIds,
         customInstructions: 'Prefer compact examples.',
-        legacyFullPrompt: preset.legacyFullPrompt,
       );
       await library.updateModule(
         id: module.id,
@@ -291,43 +290,4 @@ void main() {
       expect(() => library.createPreset(name: 'reviewer'), throwsArgumentError);
     },
   );
-
-  test('migrates legacy whole prompts into legacy presets', () async {
-    await library.dispose();
-
-    final db = await databaseFactoryFfi.openDatabase(databasePath);
-    await db.execute('''
-      CREATE TABLE system_prompts (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL COLLATE NOCASE UNIQUE,
-        content TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        last_used_at INTEGER
-      )
-    ''');
-    await db.insert('system_prompts', {
-      'id': 'legacy-1',
-      'name': 'Old prompt',
-      'content': 'Legacy instructions.',
-      'created_at': 1,
-      'updated_at': 2,
-      'last_used_at': 3,
-    });
-    await db.close();
-
-    repository = SystemPromptLibraryRepository(
-      preferencesService: PreferencesService(),
-      databasePath: databasePath,
-    );
-    library = SystemPromptLibraryService(repository: repository);
-
-    final migrated = await library.getPreset('legacy-1');
-    expect(migrated?.name, 'Old prompt');
-    expect(migrated?.legacyFullPrompt, 'Legacy instructions.');
-    expect(
-      (await library.assemblePreset(migrated!)).text,
-      'Legacy instructions.',
-    );
-  });
 }

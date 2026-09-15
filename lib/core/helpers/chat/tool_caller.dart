@@ -26,7 +26,7 @@ class ToolCaller {
   );
 
   static BubbleToolCall? parseXML(String body) {
-    return _parseTaggedFunctionCall(body) ?? _parseLegacyXmlCall(body);
+    return _parseTaggedFunctionCall(body) ?? _parseArgumentTagCall(body);
   }
 
   static InlineToolCallExtraction extractInlineToolCalls(String text) {
@@ -121,7 +121,7 @@ class ToolCaller {
     );
   }
 
-  static BubbleToolCall? _parseLegacyXmlCall(String body) {
+  static BubbleToolCall? _parseArgumentTagCall(String body) {
     final lines = body
         .split('\n')
         .map((l) => l.trim())

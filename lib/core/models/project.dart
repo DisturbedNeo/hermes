@@ -1,5 +1,4 @@
 import 'package:dart_mappable/dart_mappable.dart';
-import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/helpers/sentinel.dart' show kSentinel, resolve;
 import 'package:hermes/core/models/planning_metrics.dart';
 import 'package:hermes/core/models/task.dart';
@@ -319,21 +318,6 @@ extension ProjectDecisionTypeWire on ProjectDecisionType {
   };
 }
 
-ProjectStatus parseProjectStatus(Object? value) => _parseEnum(
-  ProjectStatus.values,
-  value,
-  ProjectStatus.active,
-  aliases: {
-    'running': ProjectStatus.runningTask,
-    'running_task': ProjectStatus.runningTask,
-    'runningtask': ProjectStatus.runningTask,
-    'reviewing_task': ProjectStatus.reviewingTask,
-    'reviewingtask': ProjectStatus.reviewingTask,
-    'waiting_for_user': ProjectStatus.waitingForUser,
-    'waitingforuser': ProjectStatus.waitingForUser,
-  },
-);
-
 @MappableClass(ignoreNull: true)
 class ProjectCriterion with ProjectCriterionMappable {
   final String id;
@@ -383,18 +367,7 @@ class ProjectCriterion with ProjectCriterionMappable {
   }
 }
 
-@MappableClass(
-  ignoreNull: true,
-  hook: JsonModelHook(
-    aliases: {
-      // Old project evidence stored both the project task ID and the
-      // execution document ID. Prefer the latter while the one-time snapshot
-      // migration is resolving the old relationship.
-      'taskId': ['taskDocumentId', 'projectTaskId'],
-      'runId': ['taskRunId'],
-    },
-  ),
-)
+@MappableClass(ignoreNull: true)
 class ProjectEvidence with ProjectEvidenceMappable {
   final String id;
   final ProjectEvidenceType type;
@@ -680,26 +653,6 @@ extension ProjectRecoveryIncidentStatusWire on ProjectRecoveryIncidentStatus {
   String get wire => name;
 }
 
-T _parseEnum<T extends Enum>(
-  List<T> values,
-  Object? value,
-  T fallback, {
-  Map<String, T> aliases = const {},
-}) {
-  final raw = value?.toString().trim().toLowerCase();
-  if (raw == null || raw.isEmpty) return fallback;
-  final normalised = raw.replaceAll('-', '_');
-  final alias = aliases[normalised] ?? aliases[normalised.replaceAll('_', '')];
-  if (alias != null) return alias;
-  for (final item in values) {
-    if (item.name.toLowerCase() == normalised ||
-        item.name.toLowerCase() == normalised.replaceAll('_', '')) {
-      return item;
-    }
-  }
-  return fallback;
-}
-
 @MappableClass(ignoreNull: true)
 class ProjectCompletionReviewCheckpoint
     with ProjectCompletionReviewCheckpointMappable {
@@ -721,13 +674,9 @@ class ProjectCompletionReviewCheckpoint
 
 @MappableClass(ignoreNull: true, hook: ProjectStateJsonHook())
 class ProjectState with ProjectStateMappable {
-  static const int minimumSupportedSchemaVersion = 5;
-  static const int currentSchemaVersion = 7;
   static const int defaultMaxIterations = 25;
   static const int defaultMaxFailedTasks = 3;
 
-  @MappableField(hook: JsonIntHook())
-  final int schemaVersion;
   @MappableField(hook: JsonStringHook())
   final String id;
   @MappableField(hook: JsonStringHook(fallback: 'Untitled project'))
@@ -771,14 +720,6 @@ class ProjectState with ProjectStateMappable {
   final ProjectCompletionReviewCheckpoint? completionReviewCheckpoint;
   @MappableField(hook: JsonObjectListHook())
   final List<PendingProjectQuestion> openQuestions;
-  @MappableField(
-    hook: EnumAliasHook({
-      'running': 'running_task',
-      'runningtask': 'running_task',
-      'reviewingtask': 'reviewing_task',
-      'waitingforuser': 'waiting_for_user',
-    }),
-  )
   final ProjectStatus status;
   @MappableField(hook: JsonIntHook())
   final int iterationCount;
@@ -812,7 +753,6 @@ class ProjectState with ProjectStateMappable {
   final DateTime? completedAt;
 
   ProjectState({
-    this.schemaVersion = currentSchemaVersion,
     required this.id,
     required this.title,
     required this.originalGoal,
@@ -916,7 +856,6 @@ class ProjectState with ProjectStateMappable {
       hasCurrentBatch ? currentBatchTaskIds[currentBatchIndex] : null;
 
   ProjectState copyWith({
-    int? schemaVersion,
     String? id,
     String? title,
     String? originalGoal,
@@ -955,7 +894,6 @@ class ProjectState with ProjectStateMappable {
     Object? completedAt = kSentinel,
   }) {
     return ProjectState(
-      schemaVersion: schemaVersion ?? this.schemaVersion,
       id: id ?? this.id,
       title: title ?? this.title,
       originalGoal: originalGoal ?? this.originalGoal,
@@ -1011,7 +949,6 @@ class ProjectState with ProjectStateMappable {
 }
 
 typedef ProjectDocument = ProjectState;
-typedef ProjectSnapshot = ProjectState;
 
 @MappableClass(ignoreNull: true)
 class ProjectRecoveryIncident with ProjectRecoveryIncidentMappable {
@@ -1019,7 +956,6 @@ class ProjectRecoveryIncident with ProjectRecoveryIncidentMappable {
 
   @MappableField(hook: JsonStringHook(fallback: 'recovery_incident'))
   final String id;
-  @MappableField(hook: EnumAliasHook({}))
   final ProjectRecoveryIncidentStatus status;
   @MappableField(hook: JsonStringListHook())
   final List<String> sourceTaskIds;
@@ -1106,7 +1042,6 @@ class ProjectRecoveryIncident with ProjectRecoveryIncidentMappable {
 
 class TaskResult {
   final String taskId;
-  @MappableField(hook: EnumAliasHook({}))
   final TaskStatus status;
   final String summary;
   final String memoryUpdate;
@@ -1171,19 +1106,6 @@ class ProjectEvaluation {
 class ProjectDecisionRecord with ProjectDecisionRecordMappable {
   @MappableField(hook: JsonStringHook())
   final String id;
-  @MappableField(
-    hook: EnumAliasHook({
-      'createtask': 'create_task',
-      'createrecoverytask': 'create_recovery_task',
-      'rejecttask': 'reject_task',
-      'splittask': 'split_task',
-      'evaluatetask': 'evaluate_task',
-      'retryrecovery': 'retry_recovery',
-      'applyplanrevision': 'apply_plan_revision',
-      'approveplanrevision': 'approve_plan_revision',
-      'rejectplanrevision': 'reject_plan_revision',
-    }),
-  )
   final ProjectDecisionType decision;
   @MappableField(hook: JsonStringHook())
   final String summary;
@@ -1243,18 +1165,6 @@ class ProjectDecisionRecord with ProjectDecisionRecordMappable {
 
 @MappableClass(ignoreNull: true)
 class ProjectBlocker with ProjectBlockerMappable {
-  @MappableField(
-    hook: EnumAliasHook({
-      'taskapproval': 'task_approval',
-      'taskblocked': 'task_blocked',
-      'taskfailed': 'task_failed',
-      'recoveryfailed': 'recovery_failed',
-      'duplicatetask': 'duplicate_task',
-      'oversizedtask': 'oversized_task',
-      'maxfailures': 'max_failures',
-      'planapproval': 'plan_approval',
-    }),
-  )
   final ProjectBlockerType type;
   @MappableField(hook: JsonStringHook())
   final String message;

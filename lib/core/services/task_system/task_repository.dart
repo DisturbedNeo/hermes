@@ -9,7 +9,6 @@ import 'package:path/path.dart' as path;
 class TaskRepository {
   static const String tasksRoot = '.agent/tasks';
   static const String documentFileName = 'task.json';
-  static const String v2BackupFileName = 'task.v2.json';
 
   final AtomicJsonSnapshotStore _snapshots = const AtomicJsonSnapshotStore();
 
@@ -31,7 +30,6 @@ class TaskRepository {
         final raw = await _snapshots.readMap(file, isValid: _isTaskMap);
         if (raw == null) continue;
         final task = ModelJson.decode<Task>(raw);
-        if (task.schemaVersion != Task.currentSchemaVersion) continue;
         if (chatSessionId != null && task.chatSessionId != chatSessionId) {
           continue;
         }
@@ -84,25 +82,11 @@ class TaskRepository {
     final file = File(path.join(dir.path, documentFileName));
     final raw = await _snapshots.readMap(file, isValid: _isTaskMap);
     if (raw == null) return null;
-    final rawVersion = _rawSchemaVersion(raw);
-    if (rawVersion > Task.currentSchemaVersion) {
-      throw UnsupportedSnapshotSchemaException(
-        path: file.path,
-        foundVersion: rawVersion,
-        supportedVersion: Task.currentSchemaVersion,
-      );
-    }
     final task = ModelJson.decode<Task>(raw);
     if (chatSessionId != null && task.chatSessionId != chatSessionId) {
       return null;
     }
     if (projectId != null && task.projectId != projectId) return null;
-    if (rawVersion != Task.currentSchemaVersion) {
-      if (rawVersion == 2) {
-        await _writeV2MigrationBackup(dir, raw);
-      }
-      await saveSnapshot(workspaceRoot, task);
-    }
     return task;
   }
 
@@ -114,65 +98,6 @@ class TaskRepository {
       ModelJson.encode(task),
       isValid: _isTaskMap,
     );
-  }
-
-  /// Writes a task under its canonical ID while retaining auxiliary files
-  /// (for example task logs) from a legacy task directory. The legacy
-  /// directory is removed only after the canonical snapshot has been saved.
-  Future<void> migrateSnapshot(
-    String workspaceRoot, {
-    required String sourceTaskId,
-    required Task task,
-  }) async {
-    final sourceDir = _validatedTaskDirectory(workspaceRoot, sourceTaskId);
-    final targetDir = _validatedTaskDirectory(workspaceRoot, task.id);
-    if (sourceTaskId != task.id && await sourceDir.exists()) {
-      await targetDir.create(recursive: true);
-      await _copyMissingFiles(sourceDir, targetDir);
-    }
-
-    await saveSnapshot(workspaceRoot, task);
-
-    if (sourceTaskId != task.id && await sourceDir.exists()) {
-      await sourceDir.delete(recursive: true);
-    }
-  }
-
-  Future<void> _writeV2MigrationBackup(
-    Directory taskDirectory,
-    Map<String, dynamic> raw,
-  ) async {
-    final backup = File(path.join(taskDirectory.path, v2BackupFileName));
-    if (await backup.exists()) return;
-    await _snapshots.writeMap(backup, raw, isValid: _isTaskMap);
-  }
-
-  Future<void> _copyMissingFiles(Directory source, Directory target) async {
-    await for (final entity in source.list(followLinks: false)) {
-      if (entity is Directory) {
-        final destination = Directory(
-          path.join(target.path, path.basename(entity.path)),
-        );
-        await destination.create(recursive: true);
-        await _copyMissingFiles(entity, destination);
-      } else if (entity is File &&
-          path.basename(entity.path) != documentFileName) {
-        final destination = File(
-          path.join(target.path, path.basename(entity.path)),
-        );
-        if (!await destination.exists()) {
-          await entity.copy(destination.path);
-        }
-      }
-    }
-  }
-
-  int _rawSchemaVersion(Map<String, dynamic> map) {
-    final value = map['schemaVersion'] ?? map['schema_version'];
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    if (value is String) return int.tryParse(value) ?? 0;
-    return 0;
   }
 
   Future<bool> deleteTask(String workspaceRoot, String taskId) async {
@@ -270,9 +195,6 @@ class TaskRepository {
   }
 
   bool _isTaskMap(Map<String, dynamic> map) {
-    if (_rawSchemaVersion(map) > Task.currentSchemaVersion) {
-      return (map['id'] ?? '').toString().trim().isNotEmpty;
-    }
     try {
       final task = ModelJson.decode<Task>(map);
       return task.id.trim().isNotEmpty;

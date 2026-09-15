@@ -112,13 +112,6 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
     opt: true,
     def: const [],
   );
-  static bool _$legacyWriteAccess(TaskPlanningContext v) => v.legacyWriteAccess;
-  static const Field<TaskPlanningContext, bool> _f$legacyWriteAccess = Field(
-    'legacyWriteAccess',
-    _$legacyWriteAccess,
-    opt: true,
-    def: false,
-  );
   static int _$maxSteps(TaskPlanningContext v) => v.maxSteps;
   static const Field<TaskPlanningContext, int> _f$maxSteps = Field(
     'maxSteps',
@@ -142,7 +135,6 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
     #expectedEvidence: _f$expectedEvidence,
     #readPaths: _f$readPaths,
     #writePaths: _f$writePaths,
-    #legacyWriteAccess: _f$legacyWriteAccess,
     #maxSteps: _f$maxSteps,
   };
 
@@ -161,7 +153,6 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
       expectedEvidence: data.dec(_f$expectedEvidence),
       readPaths: data.dec(_f$readPaths),
       writePaths: data.dec(_f$writePaths),
-      legacyWriteAccess: data.dec(_f$legacyWriteAccess),
       maxSteps: data.dec(_f$maxSteps),
     );
   }

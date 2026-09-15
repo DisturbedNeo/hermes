@@ -1,39 +1,19 @@
 part of 'project.dart';
 
-/// Project snapshots use a clean-slate schema with a narrow compatibility
-/// window. Batch-aware stagnation state is optional for older snapshots and is
-/// initialized to its safe defaults when those snapshots are upgraded.
+/// Project documents use the single schema supported by the current baseline.
 class ProjectStateJsonHook extends JsonModelHook {
-  const ProjectStateJsonHook()
-    : super(
-        outputOverrides: const {
-          'schemaVersion': ProjectState.currentSchemaVersion,
-        },
-        removeKeys: const {'tasks'},
-      );
+  const ProjectStateJsonHook() : super(removeKeys: const {'tasks'});
 
   @override
   Object? beforeDecode(Object? value) {
     final normalized = super.beforeDecode(value);
     if (normalized is! Map) return normalized;
     final json = Map<String, dynamic>.from(normalized);
-    final version = jsonInt(json['schemaVersion']);
-    if (version < ProjectState.minimumSupportedSchemaVersion ||
-        version > ProjectState.currentSchemaVersion) {
-      throw FormatException(
-        'Unsupported project schema version $version; supported versions are '
-        '${ProjectState.minimumSupportedSchemaVersion}-'
-        '${ProjectState.currentSchemaVersion}.',
+    if (json.containsKey('tasks')) {
+      throw const FormatException(
+        'Embedded project tasks are not supported; use taskIds.',
       );
     }
-    // Phase 2 stores the ordered task relationship on the project. Embedded
-    // task objects remain a decode-only compatibility path for old snapshots.
-    if (!json.containsKey('taskIds') && json['tasks'] is List) {
-      json['taskIds'] = [
-        for (final item in json['tasks'] as List)
-          if (item is Map && item['id'] != null) item['id'].toString(),
-      ];
-    }
-    return json..['schemaVersion'] = ProjectState.currentSchemaVersion;
+    return json;
   }
 }

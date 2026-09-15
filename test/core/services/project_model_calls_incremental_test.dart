@@ -44,7 +44,6 @@ void main() {
         hasLength(1),
       );
       expect(client.toolNames, contains('plan_update_task'));
-      expect(client.toolNames, isNot(contains('finaliseProjectCreation')));
     },
   );
 

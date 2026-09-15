@@ -48,9 +48,6 @@ void main() {
       ModelJson.encodeString(original),
     );
     final defaults = ModelJson.decode<ModelLoadConfiguration>(const {});
-    final legacy = ModelJson.decode<ModelLoadConfiguration>(const {
-      'nGpuLayers': 24,
-    });
 
     expect(decoded.temperature, 1.2);
     expect(decoded.thinking, isTrue);
@@ -66,7 +63,6 @@ void main() {
     expect(defaults.mtpEnabled, isFalse);
     expect(defaults.mtpModelPath, isNull);
     expect(defaults.mtpDraftTokens, 3);
-    expect(ModelJson.encode(legacy), isNot(contains('nGpuLayers')));
   });
 
   test('binds runtime model identity only when creating a snapshot', () {

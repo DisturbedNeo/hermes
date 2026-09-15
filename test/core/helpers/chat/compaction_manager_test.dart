@@ -39,7 +39,6 @@ void main() {
               {
                 'message': {
                   'content': jsonEncode({
-                    'schema_version': 1,
                     'task': 'Continue the long task.',
                     'current_state': 'Ready for the next user request.',
                     'artifacts': ['Old context was summarised.'],

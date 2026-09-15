@@ -141,7 +141,6 @@ class CompactionManager {
       reasoning: '',
       createdAt: existingSummary?.createdAt ?? DateTime.now(),
       isSummaryMemory: true,
-      summarySchemaVersion: summary.schemaVersion,
     );
 
     final proposedMessages = _applyCompactionToCopy(

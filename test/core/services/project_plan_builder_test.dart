@@ -108,7 +108,7 @@ void main() {
           id: 'command_passes',
           required: false,
           scope: 'task',
-          params: {'command': 'dart test', 'workingDirectory': '.'},
+          params: {'command': 'dart test', 'working_directory': '.'},
         ),
       ],
       expectedEvidence: [
@@ -119,7 +119,7 @@ void main() {
           description: 'The bounded slice is checked.',
           required: false,
           sourceRef: 'dart test',
-          details: {'workingDirectory': '.'},
+          details: {'working_directory': '.'},
         ),
       ],
     );

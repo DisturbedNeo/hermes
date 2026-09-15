@@ -8,8 +8,6 @@ part 'context_summary_prompt.mapper.dart';
 class ContextSummaryPrompt {
   const ContextSummaryPrompt._();
 
-  static const int schemaVersion = 1;
-
   static const String systemPrompt = '''
 You are a context compression assistant. Your task is to summarise a conversation
 history so that an AI agent can continue its work without losing track of what it
@@ -18,7 +16,6 @@ was doing.
 Return a JSON object with these fields:
 
 {
-  "schema_version": 1,
   "task": "One or two sentences describing the overall task/goal.",
   "latest_user_request": "The most recent concrete request from the user, if relevant.",
   "decisions": ["Key decisions made during the conversation."],
@@ -35,15 +32,13 @@ Do not invent facts. If information is missing, omit the field item rather than 
 
   static const String mergeInstruction = '''
 Merge the existing context summary and the new intermediate summaries into one
-fresh JSON object using the required schema. Preserve durable task state, current
+fresh JSON object using the required fields. Preserve durable task state, current
 next steps, constraints, artifacts, and failures. Remove duplication.
 ''';
 }
 
 @MappableClass(generateMethods: GenerateMethods.decode)
 class ContextSummary with ContextSummaryMappable {
-  @MappableField(key: 'schema_version', hook: JsonIntHook(fallback: 1))
-  final int schemaVersion;
   @MappableField(hook: JsonStringHook())
   final String task;
   @MappableField(key: 'latest_user_request', hook: JsonStringHook())
@@ -63,7 +58,6 @@ class ContextSummary with ContextSummaryMappable {
   final String? rawText;
 
   const ContextSummary({
-    required this.schemaVersion,
     this.task = '',
     this.latestUserRequest = '',
     this.decisions = const [],
@@ -76,11 +70,7 @@ class ContextSummary with ContextSummaryMappable {
   });
 
   factory ContextSummary.fromRawText(String text) {
-    return ContextSummary(
-      schemaVersion: ContextSummaryPrompt.schemaVersion,
-      currentState: text.trim(),
-      rawText: text.trim(),
-    );
+    return ContextSummary(currentState: text.trim(), rawText: text.trim());
   }
 
   bool get hasUsableContent {
@@ -144,7 +134,6 @@ ${rawText!.trim()}
 
   String toJsonText() {
     return jsonEncode({
-      'schema_version': schemaVersion,
       if (task.isNotEmpty) 'task': task,
       if (latestUserRequest.isNotEmpty)
         'latest_user_request': latestUserRequest,

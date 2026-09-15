@@ -187,7 +187,6 @@ void main() {
         baseModuleIds: const [],
         optionalModuleIds: const [],
         customInstructions: 'Prefer concise responses.',
-        legacyFullPrompt: null,
         isBuiltIn: true,
         createdAt: now,
         updatedAt: now,
@@ -339,7 +338,6 @@ class _FakeSystemPromptLibraryService extends SystemPromptLibraryService {
     List<String> baseModuleIds = const [],
     List<String> optionalModuleIds = const [],
     String customInstructions = '',
-    String? legacyFullPrompt,
   }) async {
     final now = DateTime.now();
     final preset = PromptPreset(
@@ -348,7 +346,6 @@ class _FakeSystemPromptLibraryService extends SystemPromptLibraryService {
       baseModuleIds: baseModuleIds,
       optionalModuleIds: optionalModuleIds,
       customInstructions: customInstructions,
-      legacyFullPrompt: legacyFullPrompt,
       isBuiltIn: false,
       createdAt: now,
       updatedAt: now,
@@ -365,7 +362,6 @@ class _FakeSystemPromptLibraryService extends SystemPromptLibraryService {
     required List<String> baseModuleIds,
     required List<String> optionalModuleIds,
     required String customInstructions,
-    String? legacyFullPrompt,
   }) async {
     final index = _presets.indexWhere((preset) => preset.id == id);
     final existing = _presets[index];
@@ -374,7 +370,6 @@ class _FakeSystemPromptLibraryService extends SystemPromptLibraryService {
       baseModuleIds: baseModuleIds,
       optionalModuleIds: optionalModuleIds,
       customInstructions: customInstructions,
-      legacyFullPrompt: legacyFullPrompt,
       updatedAt: DateTime.now(),
     );
     _presets[index] = updated;
@@ -390,7 +385,6 @@ class _FakeSystemPromptLibraryService extends SystemPromptLibraryService {
       baseModuleIds: source.baseModuleIds,
       optionalModuleIds: source.optionalModuleIds,
       customInstructions: source.customInstructions,
-      legacyFullPrompt: source.legacyFullPrompt,
     );
   }
 

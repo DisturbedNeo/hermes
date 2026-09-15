@@ -201,24 +201,6 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
     }
   }
 
-  Future<SystemPromptLoadTarget> loadSystemPromptIntoActiveChat(
-    SavedSystemPrompt prompt,
-  ) async {
-    final snapshot = prompt.toSnapshot();
-    final active = activeChat;
-    if (active != null && !active.isSystemPromptLocked) {
-      active.setSystemPromptSnapshot(snapshot);
-      await _systemPromptLibrary.markUsed(prompt.id);
-      notifyListeners();
-      return SystemPromptLoadTarget.currentChat;
-    }
-
-    newTab(systemPromptSnapshot: snapshot);
-    await _systemPromptLibrary.markUsed(prompt.id);
-    notifyListeners();
-    return SystemPromptLoadTarget.newTab;
-  }
-
   Future<SystemPromptLoadTarget> loadPromptPresetIntoActiveChat(
     PromptPreset preset, {
     List<String> selectedOptionalModuleIds = const [],

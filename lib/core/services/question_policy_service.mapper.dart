@@ -114,7 +114,6 @@ class AgentQuestionMapper extends ClassMapperBase<AgentQuestion> {
     _$kind,
     opt: true,
     def: QuestionKind.blocking,
-    hook: EnumAliasHook({}),
   );
 
   @override
@@ -127,12 +126,7 @@ class AgentQuestionMapper extends ClassMapperBase<AgentQuestion> {
   };
 
   @override
-  final MappingHook hook = const JsonModelHook(
-    aliases: {
-      'reason': ['whyBlocking'],
-      'kind': ['type'],
-    },
-  );
+  final MappingHook hook = const JsonModelHook();
   static AgentQuestion _instantiate(DecodingData data) {
     return AgentQuestion(
       question: data.dec(_f$question),

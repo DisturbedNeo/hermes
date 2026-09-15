@@ -3,17 +3,6 @@ import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 
 void main() {
-  test('rejects unsupported persisted project schemas', () {
-    expect(
-      () => ModelJson.decode<ProjectDocument>({
-        'schema_version': 4,
-        'id': 'legacy-project',
-        'title': 'Legacy',
-      }),
-      throwsA(anything),
-    );
-  });
-
   test('persists ordered task IDs without embedding task records', () {
     final now = DateTime(2026, 1, 1);
     final task = Task(
@@ -57,7 +46,6 @@ void main() {
     expect(encoded, isNot(contains('tasks')));
 
     final decoded = ModelJson.decode<ProjectDocument>(encoded);
-    expect(decoded.schemaVersion, ProjectDocument.currentSchemaVersion);
     expect(decoded.taskIds, ['task_1']);
     expect(decoded.tasks, isEmpty);
     expect(decoded.nextRevision, 2);
@@ -111,77 +99,14 @@ void main() {
     expect(decoded.currentBatchTaskId, 'task_2');
   });
 
-  test('upgrades a Phase 2 project with an empty batch cursor', () {
-    final now = DateTime(2026, 1, 1);
-    final raw = <String, dynamic>{
-      'schemaVersion': 5,
-      'id': 'project_phase_2',
-      'title': 'Phase 2 project',
-      'originalGoal': 'Keep the project running.',
-      'refinedGoal': 'Keep the project running safely.',
-      'criteria': [
-        {
-          'id': 'criterion_1',
-          'statement': 'The project is safe.',
-          'createdAt': now.toIso8601String(),
-          'updatedAt': now.toIso8601String(),
-        },
-      ],
-      'constraints': <String>[],
-      'taskIds': <String>[],
-      'status': 'active',
-      'activeTaskId': null,
-      'createdAt': now.toIso8601String(),
-      'updatedAt': now.toIso8601String(),
-    };
-
-    final decoded = ModelJson.decode<ProjectDocument>(raw);
-    expect(decoded.schemaVersion, ProjectDocument.currentSchemaVersion);
-    expect(decoded.currentBatchTaskIds, isEmpty);
-    expect(decoded.currentBatchIndex, 0);
-    expect(decoded.currentBatchPlanRevision, 0);
-    expect(decoded.pendingReplanReason, isNull);
-    expect(decoded.currentBatchProgressObserved, isFalse);
-    expect(decoded.diagnostics.consecutiveNoProgressBatches, 0);
-    expect(decoded.diagnostics.completedBatchesWithoutCriterionProgress, 0);
-    expect(decoded.diagnostics.recentNoProgressBatchIds, isEmpty);
-  });
-
-  test('upgrades a schema 6 snapshot with clean batch progress counters', () {
-    final now = DateTime(2026, 1, 1);
-    final raw = <String, dynamic>{
-      'schemaVersion': 6,
-      'id': 'project_schema_6',
-      'title': 'Schema 6 project',
-      'originalGoal': 'Keep the project running.',
-      'refinedGoal': 'Keep the project running safely.',
-      'criteria': [
-        {
-          'id': 'criterion_1',
-          'statement': 'The project is safe.',
-          'createdAt': now.toIso8601String(),
-          'updatedAt': now.toIso8601String(),
-        },
-      ],
-      'constraints': <String>[],
-      'taskIds': <String>[],
-      'status': 'active',
-      'activeTaskId': null,
-      'diagnostics': {
-        'completedTasksWithoutCriterionProgress': 99,
-        'consecutiveNoProgressIterations': 99,
-        'recentNoProgressTaskIds': ['old_task'],
-      },
-      'createdAt': now.toIso8601String(),
-      'updatedAt': now.toIso8601String(),
-    };
-
-    final decoded = ModelJson.decode<ProjectDocument>(raw);
-    expect(decoded.schemaVersion, ProjectDocument.currentSchemaVersion);
-    expect(decoded.currentBatchProgressObserved, isFalse);
-    expect(decoded.diagnostics.consecutiveNoProgressBatches, 0);
-    expect(decoded.diagnostics.completedBatchesWithoutCriterionProgress, 0);
-    expect(decoded.diagnostics.recentNoProgressBatchIds, isEmpty);
+  test('rejects an embedded task collection', () {
+    expect(
+      () => ModelJson.decode<ProjectDocument>({
+        'id': 'project_embedded_tasks',
+        'tasks': const [],
+      }),
+      throwsA(anything),
+    );
   });
 
   test('round-trips evidence expectation identities', () {

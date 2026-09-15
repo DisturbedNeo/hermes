@@ -3,12 +3,12 @@ import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 
 void main() {
-  test('task JSON remains backward compatible without gates', () {
+  test('canonical task JSON defaults missing gates to empty', () {
     final task = ModelJson.decode<Task>({
       'id': 'task_1',
       'title': 'Old task',
       'originalPrompt': 'Do work',
-      'goal': 'Do work',
+      'objective': 'Do work',
       'constraints': <String>[],
       'successCriteria': ['Done'],
       'steps': [

@@ -389,31 +389,6 @@ class _SettingsContent extends StatelessWidget {
       ),
     ),
     const SizedBox(height: 12),
-    AccessibleWidget(
-      label: 'Planning protocol',
-      child: DropdownButtonFormField<PlanningProtocolMode>(
-        initialValue: taskSystemSettings.planningProtocol,
-        decoration: const InputDecoration(
-          labelText: 'Planning protocol',
-          helperText:
-              'Automatic prefers planning commands and keeps legacy adapters compatible during rollout.',
-          prefixIcon: Icon(Icons.alt_route_outlined),
-          border: OutlineInputBorder(),
-        ),
-        items: PlanningProtocolMode.values.map((mode) {
-          return DropdownMenuItem(value: mode, child: Text(mode.label));
-        }).toList(),
-        onChanged: taskSystemSettings.enabled
-            ? (mode) {
-                if (mode == null) return;
-                onTaskSystemChanged(
-                  taskSystemSettings.copyWith(planningProtocol: mode),
-                );
-              }
-            : null,
-      ),
-    ),
-    const SizedBox(height: 12),
     _taskLimitField(
       controller: maxProjectTasksPerRunCtrl,
       label: 'Project tasks per run',

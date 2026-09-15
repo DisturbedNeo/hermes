@@ -1585,13 +1585,6 @@ class ProjectEvidenceMapper extends ClassMapperBase<ProjectEvidence> {
   @override
   final bool ignoreNull = true;
 
-  @override
-  final MappingHook hook = const JsonModelHook(
-    aliases: {
-      'taskId': ['taskDocumentId', 'projectTaskId'],
-      'runId': ['taskRunId'],
-    },
-  );
   static ProjectEvidence _instantiate(DecodingData data) {
     return ProjectEvidence(
       id: data.dec(_f$id),
@@ -2651,14 +2644,6 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
   @override
   final String id = 'ProjectState';
 
-  static int _$schemaVersion(ProjectState v) => v.schemaVersion;
-  static const Field<ProjectState, int> _f$schemaVersion = Field(
-    'schemaVersion',
-    _$schemaVersion,
-    opt: true,
-    def: ProjectState.currentSchemaVersion,
-    hook: JsonIntHook(),
-  );
   static String _$id(ProjectState v) => v.id;
   static const Field<ProjectState, String> _f$id = Field(
     'id',
@@ -2835,12 +2820,6 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
   static const Field<ProjectState, ProjectStatus> _f$status = Field(
     'status',
     _$status,
-    hook: EnumAliasHook({
-      'running': 'running_task',
-      'runningtask': 'running_task',
-      'reviewingtask': 'reviewing_task',
-      'waitingforuser': 'waiting_for_user',
-    }),
   );
   static int _$iterationCount(ProjectState v) => v.iterationCount;
   static const Field<ProjectState, int> _f$iterationCount = Field(
@@ -2934,7 +2913,6 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
 
   @override
   final MappableFields<ProjectState> fields = const {
-    #schemaVersion: _f$schemaVersion,
     #id: _f$id,
     #title: _f$title,
     #originalGoal: _f$originalGoal,
@@ -2979,7 +2957,6 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
   final MappingHook hook = const ProjectStateJsonHook();
   static ProjectState _instantiate(DecodingData data) {
     return ProjectState(
-      schemaVersion: data.dec(_f$schemaVersion),
       id: data.dec(_f$id),
       title: data.dec(_f$title),
       originalGoal: data.dec(_f$originalGoal),
@@ -3074,7 +3051,7 @@ class ProjectRecoveryIncidentMapper
   static ProjectRecoveryIncidentStatus _$status(ProjectRecoveryIncident v) =>
       v.status;
   static const Field<ProjectRecoveryIncident, ProjectRecoveryIncidentStatus>
-  _f$status = Field('status', _$status, hook: EnumAliasHook({}));
+  _f$status = Field('status', _$status);
   static List<String> _$sourceTaskIds(ProjectRecoveryIncident v) =>
       v.sourceTaskIds;
   static const Field<ProjectRecoveryIncident, List<String>> _f$sourceTaskIds =
@@ -3241,16 +3218,6 @@ class ProjectBlockerMapper extends ClassMapperBase<ProjectBlocker> {
   static const Field<ProjectBlocker, ProjectBlockerType> _f$type = Field(
     'type',
     _$type,
-    hook: EnumAliasHook({
-      'taskapproval': 'task_approval',
-      'taskblocked': 'task_blocked',
-      'taskfailed': 'task_failed',
-      'recoveryfailed': 'recovery_failed',
-      'duplicatetask': 'duplicate_task',
-      'oversizedtask': 'oversized_task',
-      'maxfailures': 'max_failures',
-      'planapproval': 'plan_approval',
-    }),
   );
   static String _$message(ProjectBlocker v) => v.message;
   static const Field<ProjectBlocker, String> _f$message = Field(
@@ -3343,21 +3310,7 @@ class ProjectDecisionRecordMapper
   );
   static ProjectDecisionType _$decision(ProjectDecisionRecord v) => v.decision;
   static const Field<ProjectDecisionRecord, ProjectDecisionType> _f$decision =
-      Field(
-        'decision',
-        _$decision,
-        hook: EnumAliasHook({
-          'createtask': 'create_task',
-          'createrecoverytask': 'create_recovery_task',
-          'rejecttask': 'reject_task',
-          'splittask': 'split_task',
-          'evaluatetask': 'evaluate_task',
-          'retryrecovery': 'retry_recovery',
-          'applyplanrevision': 'apply_plan_revision',
-          'approveplanrevision': 'approve_plan_revision',
-          'rejectplanrevision': 'reject_plan_revision',
-        }),
-      );
+      Field('decision', _$decision);
   static String _$summary(ProjectDecisionRecord v) => v.summary;
   static const Field<ProjectDecisionRecord, String> _f$summary = Field(
     'summary',

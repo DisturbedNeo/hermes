@@ -12,14 +12,12 @@ class PresetEditorDraft {
   final List<String> baseModuleIds;
   final List<String> optionalModuleIds;
   final String customInstructions;
-  final String? legacyFullPrompt;
 
   const PresetEditorDraft({
     required this.name,
     required this.baseModuleIds,
     required this.optionalModuleIds,
     required this.customInstructions,
-    required this.legacyFullPrompt,
   });
 }
 
@@ -55,7 +53,8 @@ String compactPreview(String content) {
 List<PromptModule> modulesById(List<String> ids, List<PromptModule> modules) {
   final byId = {for (final module in modules) module.id: module};
   return [
-    for (final id in ids) if (byId[id] != null) byId[id]!,
+    for (final id in ids)
+      if (byId[id] != null) byId[id]!,
   ];
 }
 
@@ -178,10 +177,8 @@ class PromptLibraryPreviewDialog extends StatelessWidget {
   }) {
     return showDialog<void>(
       context: context,
-      builder: (dialogContext) => PromptLibraryPreviewDialog(
-        preset: preset,
-        result: result,
-      ),
+      builder: (dialogContext) =>
+          PromptLibraryPreviewDialog(preset: preset, result: result),
     );
   }
 
@@ -196,9 +193,9 @@ class PromptLibraryPreviewDialog extends StatelessWidget {
           children: [
             Text(
               'Assembled prompt',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
             SelectableText(result.text.isEmpty ? '(empty)' : result.text),
@@ -377,9 +374,9 @@ class _PromptLibraryPresetLoadDialogState
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to preview preset: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to preview preset: $e')));
     } finally {
       if (mounted) setState(() => _previewing = false);
     }
@@ -405,10 +402,8 @@ class PromptLibraryPresetEditorDialog extends StatefulWidget {
   }) {
     return showDialog<PresetEditorDraft>(
       context: context,
-      builder: (dialogContext) => PromptLibraryPresetEditorDialog(
-        preset: preset,
-        modules: modules,
-      ),
+      builder: (dialogContext) =>
+          PromptLibraryPresetEditorDialog(preset: preset, modules: modules),
     );
   }
 
@@ -422,7 +417,6 @@ class _PromptLibraryPresetEditorDialogState
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
   late final TextEditingController _customController;
-  late final TextEditingController _legacyController;
   late final Set<String> _baseModuleIds;
   late final Set<String> _optionalModuleIds;
 
@@ -434,9 +428,6 @@ class _PromptLibraryPresetEditorDialogState
     _customController = TextEditingController(
       text: preset?.customInstructions ?? '',
     );
-    _legacyController = TextEditingController(
-      text: preset?.legacyFullPrompt ?? '',
-    );
     _baseModuleIds = {...?preset?.baseModuleIds};
     _optionalModuleIds = {...?preset?.optionalModuleIds};
   }
@@ -445,14 +436,12 @@ class _PromptLibraryPresetEditorDialogState
   void dispose() {
     _nameController.dispose();
     _customController.dispose();
-    _legacyController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final editing = widget.preset != null;
-    final legacy = widget.preset?.isLegacy == true;
 
     return AlertDialog(
       title: Text(editing ? 'Edit preset' : 'Create preset'),
@@ -482,19 +471,6 @@ class _PromptLibraryPresetEditorDialogState
                   alignLabelWithHint: true,
                 ),
               ),
-              if (legacy) ...[
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _legacyController,
-                  minLines: 5,
-                  maxLines: 10,
-                  keyboardType: TextInputType.multiline,
-                  decoration: const InputDecoration(
-                    labelText: 'Legacy full prompt',
-                    alignLabelWithHint: true,
-                  ),
-                ),
-              ],
               const SizedBox(height: 16),
               ModulePickerSection(
                 title: 'Base modules',
@@ -538,9 +514,6 @@ class _PromptLibraryPresetEditorDialogState
       baseModuleIds: _baseModuleIds.toList(),
       optionalModuleIds: _optionalModuleIds.toList(),
       customInstructions: _customController.text.trim(),
-      legacyFullPrompt: _legacyController.text.trim().isEmpty
-          ? null
-          : _legacyController.text.trim(),
       isBuiltIn: false,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
@@ -548,11 +521,7 @@ class _PromptLibraryPresetEditorDialogState
     final result = const PromptAssembler().assemble(
       PromptAssemblyRequest(preset: preset, availableModules: widget.modules),
     );
-    PromptLibraryPreviewDialog.show(
-      context,
-      preset: preset,
-      result: result,
-    );
+    PromptLibraryPreviewDialog.show(context, preset: preset, result: result);
   }
 
   void _submit() {
@@ -563,9 +532,6 @@ class _PromptLibraryPresetEditorDialogState
         baseModuleIds: _baseModuleIds.toList(),
         optionalModuleIds: _optionalModuleIds.toList(),
         customInstructions: _customController.text.trim(),
-        legacyFullPrompt: _legacyController.text.trim().isEmpty
-            ? null
-            : _legacyController.text.trim(),
       ),
     );
   }
@@ -590,10 +556,8 @@ class PromptLibraryModuleEditorDialog extends StatefulWidget {
   }) {
     return showDialog<ModuleEditorDraft>(
       context: context,
-      builder: (dialogContext) => PromptLibraryModuleEditorDialog(
-        module: module,
-        modules: modules,
-      ),
+      builder: (dialogContext) =>
+          PromptLibraryModuleEditorDialog(module: module, modules: modules),
     );
   }
 
@@ -645,8 +609,8 @@ class _PromptLibraryModuleEditorDialogState
         readOnly
             ? 'View module'
             : editing
-                ? 'Edit module'
-                : 'Create module',
+            ? 'Edit module'
+            : 'Create module',
       ),
       content: SizedBox(
         width: 760,
@@ -684,8 +648,8 @@ class _PromptLibraryModuleEditorDialogState
                     decoration: const InputDecoration(labelText: 'Priority'),
                     validator: (value) =>
                         int.tryParse(value?.trim() ?? '') == null
-                            ? 'Enter a number'
-                            : null,
+                        ? 'Enter a number'
+                        : null,
                   );
 
                   if (compact) {

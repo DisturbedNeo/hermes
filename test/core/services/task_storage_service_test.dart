@@ -8,7 +8,7 @@ import 'package:hermes/core/services/task_system/task_repository.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
-  group('TaskRepository v3', () {
+  group('TaskRepository', () {
     late Directory root;
     late TaskRepository repository;
 
@@ -39,31 +39,20 @@ void main() {
       expect(loaded?.status, TaskStatus.paused);
     });
 
-    test(
-      'lists current tasks newest first and ignores legacy folders',
-      () async {
-        final oldTaskDir = Directory(
-          path.join(root.path, '.agent', 'tasks', 'legacy_task'),
-        );
-        await oldTaskDir.create(recursive: true);
-        await File(
-          path.join(oldTaskDir.path, 'task-spec.yaml'),
-        ).writeAsString('{}');
+    test('lists current tasks newest first', () async {
+      await repository.saveSnapshot(
+        root.path,
+        _task(id: 'task_old', updatedAt: DateTime(2026, 1, 1)),
+      );
+      await repository.saveSnapshot(
+        root.path,
+        _task(id: 'task_new', updatedAt: DateTime(2026, 1, 2)),
+      );
 
-        await repository.saveSnapshot(
-          root.path,
-          _task(id: 'task_old', updatedAt: DateTime(2026, 1, 1)),
-        );
-        await repository.saveSnapshot(
-          root.path,
-          _task(id: 'task_new', updatedAt: DateTime(2026, 1, 2)),
-        );
+      final tasks = await repository.listTasks(root.path);
 
-        final tasks = await repository.listTasks(root.path);
-
-        expect(tasks.map((task) => task.id), ['task_new', 'task_old']);
-      },
-    );
+      expect(tasks.map((task) => task.id), ['task_new', 'task_old']);
+    });
 
     test('filters and deletes by chat session', () async {
       await repository.saveSnapshot(
@@ -126,73 +115,10 @@ void main() {
       );
       final decoded = jsonDecode(await file.readAsString());
 
-      expect(decoded['schemaVersion'], Task.currentSchemaVersion);
       expect(decoded['steps'], isA<List>());
       expect(decoded['runs'], isA<List>());
       expect(decoded['projectId'], isNull);
     });
-
-    test('migrates schema-v2 tasks and writes a one-time backup', () async {
-      await repository.saveSnapshot(root.path, _task(id: 'task_migration'));
-      final directory = Directory(
-        path.join(root.path, '.agent', 'tasks', 'task_migration'),
-      );
-      final file = File(path.join(directory.path, 'task.json'));
-      final raw =
-          Map<String, dynamic>.from(
-              jsonDecode(await file.readAsString()) as Map,
-            )
-            ..['schemaVersion'] = 2
-            ..remove('projectCriterionIds');
-      await file.writeAsString(jsonEncode(raw));
-
-      final migrated = await repository.loadTask(root.path, 'task_migration');
-      final backup = File(
-        path.join(directory.path, TaskRepository.v2BackupFileName),
-      );
-
-      expect(migrated?.schemaVersion, Task.currentSchemaVersion);
-      expect(migrated, isNotNull);
-      expect(jsonDecode(await file.readAsString())['schemaVersion'], 3);
-      expect(jsonDecode(await backup.readAsString())['schemaVersion'], 2);
-    });
-
-    test(
-      'refuses a newer task schema without restoring or rewriting it',
-      () async {
-        await repository.saveSnapshot(root.path, _task(id: 'task_future'));
-        await repository.saveSnapshot(root.path, _task(id: 'task_future'));
-        final file = File(
-          path.join(root.path, '.agent', 'tasks', 'task_future', 'task.json'),
-        );
-        final raw =
-            Map<String, dynamic>.from(
-                jsonDecode(await file.readAsString()) as Map,
-              )
-              ..['schemaVersion'] = Task.currentSchemaVersion + 1
-              ..['futureOnly'] = {'preserve': true};
-        final futureContent = jsonEncode(raw);
-        await file.writeAsString(futureContent);
-
-        await expectLater(
-          repository.loadTask(root.path, 'task_future'),
-          throwsA(
-            isA<UnsupportedSnapshotSchemaException>()
-                .having(
-                  (error) => error.foundVersion,
-                  'foundVersion',
-                  Task.currentSchemaVersion + 1,
-                )
-                .having(
-                  (error) => error.supportedVersion,
-                  'supportedVersion',
-                  Task.currentSchemaVersion,
-                ),
-          ),
-        );
-        expect(await file.readAsString(), futureContent);
-      },
-    );
 
     test('recovers and repairs a corrupt primary from its backup', () async {
       await repository.saveSnapshot(
