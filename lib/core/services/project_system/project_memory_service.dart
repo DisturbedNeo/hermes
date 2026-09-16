@@ -407,7 +407,7 @@ class ProjectMemoryService {
     return _ContextCandidate(
       item: ProjectMemoryContextItem(
         id: 'memory:${entry.id}',
-        content: '${entry.id} [${entry.kind.name}]: ${entry.content}',
+        content: _memoryContextContent(entry),
         reason: reason,
         rank: rank,
         memoryEntryId: entry.id,
@@ -415,6 +415,21 @@ class ProjectMemoryService {
       updatedAt: entry.updatedAt,
       relevanceScore: _termScore(entry.content, relevanceTerms),
     );
+  }
+
+  static String _trustLabel(ProjectMemoryEntry entry) {
+    if (entry.sourceType == ProjectMemorySourceType.task) {
+      return 'model-reported, ${entry.confidence.name}';
+    }
+    return '';
+  }
+
+  static String _memoryContextContent(ProjectMemoryEntry entry) {
+    final trust = _trustLabel(entry);
+    final label = trust.isEmpty
+        ? entry.kind.name
+        : '${entry.kind.name}; $trust';
+    return '${entry.id} [$label]: ${entry.content}';
   }
 
   static Set<String> _relevanceTerms(ProjectDocument project, Task? task) {

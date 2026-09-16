@@ -1420,7 +1420,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
         );
         cancellationToken?.throwIfCancelled();
         final result = _structuredToolResult(call.name, resultJson);
-        final toolError = _toolErrorInfo(result);
+        final toolError = _toolErrorInfoForCall(call.name, result);
         toolCalls.add(
           TaskToolCallRecord(
             id: callId,
@@ -1551,6 +1551,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
       ),
       client: client,
       baseSystemPrompt: baseSystemPrompt,
+      humanApprovalGranted: step.status == TaskStepStatus.approved,
       cancellationToken: cancellationToken,
     );
     if (!evaluation.hasRequiredFailure && !evaluation.hasRequiredPending) {
@@ -1861,25 +1862,38 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
     }
 
     final json = Map<String, dynamic>.from(args);
-    final status = jsonString(json['status'], fallback: 'completed');
+    final rawStatus = jsonString(
+      json['status'],
+    ).trim().toLowerCase().replaceAll('-', '_');
+    final parsedStatus = _parseStepExecutionStatusStrict(rawStatus);
+    if (parsedStatus == null) {
+      return _invalidTaskControlCall(
+        'finish_task_step requires status to be either completed or failed.',
+        task: task,
+        step: step,
+        existingToolCalls: existingToolCalls,
+      );
+    }
     final summary = jsonString(
       json['summary'],
-      fallback: status == 'failed' ? 'Step failed.' : 'Step completed.',
+      fallback: parsedStatus == _StepExecutionStatus.failed
+          ? 'Step failed.'
+          : 'Step completed.',
     );
     // memoryUpdate and evidence claims are model-output fields only. Artifact
     // paths never become execution artifacts; evidence claims are advisory.
     // Authoritative facts come from executed workspace calls and gate
     // evaluation below.
     final finalContent = _encoder.convert({
-      'status': status,
+      'status': rawStatus,
       'summary': summary,
     });
     return _TaskTerminalToolCallResult(
-      resultJson: jsonEncode({'finished': true, 'status': status}),
+      resultJson: jsonEncode({'finished': true, 'status': rawStatus}),
       finalContent: finalContent,
       output: _StepExecutionOutput(
-        status: _parseStepExecutionStatus(status),
-        runStatus: switch (_parseStepExecutionStatus(status)) {
+        status: parsedStatus,
+        runStatus: switch (parsedStatus) {
           _StepExecutionStatus.completed => TaskRunStatus.completed,
           _StepExecutionStatus.blocked => TaskRunStatus.blocked,
           _StepExecutionStatus.failed => TaskRunStatus.failed,
@@ -2483,16 +2497,33 @@ ${_encoder.convert(_taskViewService.query(snapshot, maxSteps: _taskPlanningStepL
     final json = TaskJson.tryParseObject(raw);
     if (json == null) {
       return _StepExecutionOutput(
-        status: _StepExecutionStatus.completed,
-        runStatus: TaskRunStatus.completed,
-        summary: raw.trim().isEmpty ? 'Step completed.' : raw.trim(),
-        memoryUpdate: raw.trim(),
+        status: _StepExecutionStatus.failed,
+        runStatus: TaskRunStatus.failed,
+        summary: raw.trim().isEmpty
+            ? 'The model did not return a structured step result.'
+            : 'The model did not return a structured step result: ${raw.trim()}',
+        memoryUpdate: '',
         artifacts: const [],
         toolCalls: toolCalls,
+        error: 'invalid_step_result',
       );
     }
 
-    final status = _parseStepExecutionStatus(json['status']);
+    final rawStatus = jsonString(
+      json['status'],
+    ).trim().toLowerCase().replaceAll('-', '_');
+    final status = _parseStepExecutionStatusStrict(rawStatus);
+    if (status == null) {
+      return _StepExecutionOutput(
+        status: _StepExecutionStatus.failed,
+        runStatus: TaskRunStatus.failed,
+        summary: 'The model did not return a valid terminal step status.',
+        memoryUpdate: '',
+        artifacts: _artifactsFromToolCalls(task.id, step, toolCalls),
+        toolCalls: toolCalls,
+        error: 'invalid_step_status',
+      );
+    }
     // JSON output remains a model-output boundary, but execution facts are
     // never accepted from it. Artifacts come from actual successful workspace
     // calls, and claims are advisory only.
@@ -2541,7 +2572,9 @@ ${_encoder.convert(_taskViewService.query(snapshot, maxSteps: _taskPlanningStepL
     final updated = _replaceStep(snapshot, step.id, updatedStep).copyWith(
       memorySummary: _appendMemory(
         snapshot.memorySummary,
-        output.memoryUpdate.isEmpty ? output.summary : output.memoryUpdate,
+        _unverifiedModelReport(
+          output.memoryUpdate.isEmpty ? output.summary : output.memoryUpdate,
+        ),
       ),
       updatedAt: now,
     );
@@ -2582,7 +2615,10 @@ ${_encoder.convert(_taskViewService.query(snapshot, maxSteps: _taskPlanningStepL
               createdAt: now,
             )
           : null,
-      memorySummary: _appendMemory(snapshot.memorySummary, output.summary),
+      memorySummary: _appendMemory(
+        snapshot.memorySummary,
+        _unverifiedModelReport(output.summary),
+      ),
       updatedAt: now,
     );
   }
@@ -2600,7 +2636,10 @@ ${_encoder.convert(_taskViewService.query(snapshot, maxSteps: _taskPlanningStepL
     ).copyWith(
       status: TaskStatus.failed,
       currentStepId: step.id,
-      memorySummary: _appendMemory(snapshot.memorySummary, output.summary),
+      memorySummary: _appendMemory(
+        snapshot.memorySummary,
+        _unverifiedModelReport(output.summary),
+      ),
       updatedAt: now,
     );
   }
@@ -2662,7 +2701,7 @@ ${_encoder.convert(_taskViewService.query(snapshot, maxSteps: _taskPlanningStepL
   ) {
     final previousRuns = task.runs
         .where((run) => run.status != TaskRunStatus.running)
-        .map((run) => '- ${run.stepId}: ${run.summary}')
+        .map((run) => '- ${run.stepId}: ${_unverifiedModelReport(run.summary)}')
         .join('\n');
     final availableArtifacts = _buildAvailableArtifactInputs(task, step);
     final stepIndex = task.steps.indexWhere((item) => item.id == step.id);
@@ -3306,14 +3345,6 @@ $whitelist
         .where((item) => item.trim().isNotEmpty)
         .toList();
     if (paths.isEmpty) return const [];
-    final filePaths = artifacts
-        .where(
-          (artifact) =>
-              artifact.path.trim().isNotEmpty &&
-              artifact.kind.trim().toLowerCase() != 'directory',
-        )
-        .map((artifact) => artifact.path)
-        .toList();
     return [
       TaskGate(
         id: 'artifact_exists',
@@ -3322,14 +3353,14 @@ $whitelist
         params: {'paths': paths},
         description: 'Declared artifacts must exist.',
       ),
-      if (filePaths.isNotEmpty)
-        TaskGate(
-          id: 'artifact_nonempty',
-          required: true,
-          scope: 'step',
-          params: {'paths': filePaths},
-          description: 'Declared file artifacts must be non-empty.',
-        ),
+      TaskGate(
+        id: 'artifact_nonempty',
+        required: true,
+        scope: 'step',
+        params: {'paths': paths},
+        description:
+            'Declared file artifacts must be non-empty; directories must exist.',
+      ),
     ];
   }
 
@@ -3600,19 +3631,43 @@ $whitelist
     return id.isEmpty ? fallback : id;
   }
 
-  _StepExecutionStatus _parseStepExecutionStatus(Object? value) {
-    final raw = value?.toString().trim().toLowerCase().replaceAll('-', '_');
+  _StepExecutionStatus? _parseStepExecutionStatusStrict(String raw) {
     return switch (raw) {
       'blocked' => _StepExecutionStatus.blocked,
       'needs_replan' || 'replan' => _StepExecutionStatus.needsReplan,
       'failed' || 'failure' => _StepExecutionStatus.failed,
-      _ => _StepExecutionStatus.completed,
+      'completed' || 'complete' => _StepExecutionStatus.completed,
+      _ => null,
     };
   }
 
   TaskToolError? _toolErrorInfo(Map<String, dynamic>? result) {
     if (result == null) return null;
     return taskToolErrorFromResult(result);
+  }
+
+  TaskToolError? _toolErrorInfoForCall(
+    String toolName,
+    Map<String, dynamic>? result,
+  ) {
+    final error = _toolErrorInfo(result);
+    if (error != null) return error;
+    if (toolName != 'run_command' || _commandExitCode(result) != null) {
+      return null;
+    }
+    return const TaskToolError(
+      code: 'invalid_command_result',
+      message: 'run_command did not return a valid exit_code.',
+      disposition: TaskToolErrorDisposition.retryable,
+    );
+  }
+
+  int? _commandExitCode(Map<String, dynamic>? result) {
+    if (result == null || !result.containsKey('exit_code')) return null;
+    final raw = result['exit_code'];
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    return int.tryParse(raw?.toString() ?? '');
   }
 
   TaskToolCallOutcome _toolCallOutcome(
@@ -3712,6 +3767,12 @@ $whitelist
     if (trimmed.isEmpty) return current;
     final parts = [if (current.trim().isNotEmpty) current.trim(), trimmed];
     return _cap(parts.join('\n\n'), 12000);
+  }
+
+  String _unverifiedModelReport(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return '';
+    return 'Model-reported (unverified): $trimmed';
   }
 
   String _cap(String value, int maxChars) {

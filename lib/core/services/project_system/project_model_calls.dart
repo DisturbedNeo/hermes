@@ -355,15 +355,28 @@ Project state:
 ${_encoder.convert(ModelJson.encode(project))}
 ''',
       );
+      final rawRemainingCriteria =
+          json['remainingCriteria'] ?? json['remaining_criteria'];
+      final rawSupportedCriterionIds =
+          json['supportedCriterionIds'] ?? json['supported_criterion_ids'];
+      if (json['complete'] is! bool ||
+          rawRemainingCriteria is! List ||
+          rawSupportedCriterionIds is! List) {
+        return ProjectCompletionAssessment(
+          complete: false,
+          finalSummary: '',
+          remainingCriteria: project.criteria
+              .map((item) => item.statement)
+              .toList(),
+          supportedCriterionIds: const [],
+          openQuestions: const [],
+        );
+      }
       return ProjectCompletionAssessment(
-        complete: jsonBool(json['complete']),
+        complete: json['complete'] as bool,
         finalSummary: jsonString(json['finalSummary'] ?? json['final_summary']),
-        remainingCriteria: jsonStringList(
-          json['remainingCriteria'] ?? json['remaining_criteria'],
-        ),
-        supportedCriterionIds: jsonStringList(
-          json['supportedCriterionIds'] ?? json['supported_criterion_ids'],
-        ),
+        remainingCriteria: jsonStringList(rawRemainingCriteria),
+        supportedCriterionIds: jsonStringList(rawSupportedCriterionIds),
         openQuestions: _questionsFromJson(
           json['openQuestions'] ?? json['open_questions'],
         ),

@@ -495,6 +495,56 @@ void main() {
       expect(updated.runs.single.toolCalls.single.toolName, 'finish_task_step');
     });
 
+    test('does not accept an unknown finish status as completion', () async {
+      final task = _task();
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'finish_task_step',
+              arguments: jsonEncode({
+                'status': 'done',
+                'summary': 'This must not be accepted as completed.',
+              }),
+            ),
+          ],
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(updated.status, TaskStatus.failed);
+      expect(updated.runs.single.status, TaskRunStatus.failed);
+      expect(updated.runs.single.error, contains('status'));
+    });
+
+    test(
+      'does not treat unstructured model output as completed work',
+      () async {
+        final task = _task();
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(content: 'The work is complete.'),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(updated.status, TaskStatus.failed);
+        expect(updated.runs.single.status, TaskRunStatus.failed);
+        expect(updated.runs.single.error, 'invalid_step_result');
+      },
+    );
+
     test('uses an explicit tool for a blocking user decision', () async {
       final task = _task();
       final client = _QueueCompletionClient([
@@ -1182,6 +1232,66 @@ void main() {
         'exit_code': 0,
       });
     });
+
+    test(
+      'malformed command results cannot be recorded as successful',
+      () async {
+        workspace = workspace.copyWith(commandExecutionApproved: true);
+        final runner = _RecordingHostCommandRunner(includeExitCode: false);
+        final sandbox = WorkspaceSandbox(hostCommandRunner: runner);
+        service = TaskService(
+          toolService: ToolService(workspaceSandbox: sandbox),
+          sandbox: sandbox,
+        );
+        final task = _task(
+          step: const TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Run the check',
+            instructions: ['Run the check.'],
+            mayEditFiles: true,
+            artifacts: [],
+            status: TaskStepStatus.pending,
+          ),
+          gates: const [TaskGate(id: 'no_tool_errors')],
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({'command': 'dart --version'}),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({'status': 'completed', 'summary': 'Done.'}),
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(updated.status, TaskStatus.failed);
+        expect(
+          updated.runs.single.toolCalls.single.outcome,
+          TaskToolCallOutcome.failed,
+        );
+        expect(
+          updated.runs.single.toolCalls.single.toolError?.code,
+          'invalid_command_result',
+        );
+        expect(
+          updated.runs.single.gateResults.single.status,
+          TaskGateStatus.failed,
+        );
+      },
+    );
 
     test(
       'read-only command_passes gate exposes only the required command',
@@ -2582,6 +2692,9 @@ class _TransportFailureClient extends ChatClient {
 }
 
 class _RecordingHostCommandRunner extends HostCommandRunner {
+  _RecordingHostCommandRunner({this.includeExitCode = true});
+
+  final bool includeExitCode;
   final List<String> commands = [];
 
   @override
@@ -2595,7 +2708,7 @@ class _RecordingHostCommandRunner extends HostCommandRunner {
     return {
       'command': commandLine,
       'working_directory': relativeWorkingDirectory,
-      'exit_code': 0,
+      if (includeExitCode) 'exit_code': 0,
       'stdout': '',
       'stderr': '',
     };

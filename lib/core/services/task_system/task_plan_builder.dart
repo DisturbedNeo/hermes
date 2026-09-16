@@ -703,12 +703,6 @@ class TaskPlanBuilder {
         if (artifact.path.trim().isNotEmpty) artifact.path,
     ];
     if (paths.isEmpty) return const [];
-    final filePaths = [
-      for (final artifact in artifacts)
-        if (artifact.path.trim().isNotEmpty &&
-            artifact.kind.trim().toLowerCase() != 'directory')
-          artifact.path,
-    ];
     return [
       TaskGate(
         id: 'artifact_exists',
@@ -717,14 +711,14 @@ class TaskPlanBuilder {
         params: {'paths': paths},
         description: 'Declared artifacts must exist.',
       ),
-      if (filePaths.isNotEmpty)
-        TaskGate(
-          id: 'artifact_nonempty',
-          required: true,
-          scope: 'step',
-          params: {'paths': filePaths},
-          description: 'Declared file artifacts must be non-empty.',
-        ),
+      TaskGate(
+        id: 'artifact_nonempty',
+        required: true,
+        scope: 'step',
+        params: {'paths': paths},
+        description:
+            'Declared file artifacts must be non-empty; directories must exist.',
+      ),
     ];
   }
 

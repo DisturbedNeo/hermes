@@ -164,28 +164,26 @@ void main() {
     },
   );
 
-  test(
-    'directory artifacts require existence but not file non-empty checks',
-    () {
-      final builder = TaskPlanBuilder(task: _task(), maxSteps: 2);
-      builder.addStep(
-        const TaskPlanStepSpec(
-          ref: 'directory',
-          title: 'Create output directory',
-          objective: 'Create the output directory.',
-          instructions: ['Create the directory.'],
-          artifacts: [TaskArtifact(path: 'build/output', kind: 'directory')],
-        ),
-      );
+  test('directory artifacts use the same actual-type non-empty gate', () {
+    final builder = TaskPlanBuilder(task: _task(), maxSteps: 2);
+    builder.addStep(
+      const TaskPlanStepSpec(
+        ref: 'directory',
+        title: 'Create output directory',
+        objective: 'Create the output directory.',
+        instructions: ['Create the directory.'],
+        artifacts: [TaskArtifact(path: 'build/output', kind: 'directory')],
+      ),
+    );
 
-      final committed = builder.commit();
-      expect(committed.valid, isTrue);
-      expect(committed.task.steps.single.artifacts.single.kind, 'directory');
-      expect(committed.task.steps.single.gates.map((gate) => gate.id), [
-        'artifact_exists',
-      ]);
-    },
-  );
+    final committed = builder.commit();
+    expect(committed.valid, isTrue);
+    expect(committed.task.steps.single.artifacts.single.kind, 'directory');
+    expect(committed.task.steps.single.gates.map((gate) => gate.id), [
+      'artifact_exists',
+      'artifact_nonempty',
+    ]);
+  });
 
   test('required project command checks match canonical directory fields', () {
     final source = _task().copyWith(

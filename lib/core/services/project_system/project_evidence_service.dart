@@ -161,27 +161,11 @@ class ProjectEvidenceService {
     DateTime evaluatedAt,
   ) {
     final validCriterionIds = project.criteria.map((item) => item.id).toSet();
-    final claims = <TaskEvidenceClaim>[
-      ...result.evidenceClaims,
-      if (result.status == TaskStatus.completed &&
-          result.summary.trim().isNotEmpty)
-        for (final criterionId in task.criterionIds)
-          if (!result.evidenceClaims.any(
-            (claim) => claim.criterionId == criterionId,
-          ))
-            TaskEvidenceClaim(
-              criterionId: criterionId,
-              claim: result.summary.trim(),
-              sourceRef: result.taskId,
-              expectationId: _uniqueClaimExpectationId(
-                task,
-                criterionId,
-                TaskEvidenceClaimType.taskClaim,
-                result.taskId,
-              ),
-              runId: result.finalRunId,
-            ),
-    ];
+    // A task summary is an operational report, not evidence. Only explicit
+    // claims are retained here, and those remain proposed/advisory until an
+    // independent deterministic gate, artifact provenance check, or human
+    // approval supplies authoritative evidence.
+    final claims = result.evidenceClaims;
     return [
       for (final claim in claims)
         if (validCriterionIds.contains(claim.criterionId) &&
@@ -198,7 +182,10 @@ class ProjectEvidenceService {
                 '${runId ?? ''}|${claim.criterionId}|${claim.sourceRef}|'
                 '${claim.expectationId ?? ''}|${claim.claim}',
               ),
-              type: _projectEvidenceType(claim.evidenceType),
+              // The model may describe a claim as a command, artifact, or
+              // approval, but it did not create that authoritative evidence.
+              // Preserve the requested label only in details for diagnosis.
+              type: ProjectEvidenceType.taskClaim,
               criterionIds: [claim.criterionId],
               expectationIds: expectationIds,
               taskId: task.id,
@@ -214,7 +201,11 @@ class ProjectEvidenceService {
               summary: claim.claim.trim(),
               status: ProjectEvidenceStatus.proposed,
               strength: _projectStrength(claim.suggestedStrength),
-              details: {'origin': 'task_claim', 'runId': ?runId},
+              details: {
+                'origin': 'task_claim',
+                'claimedEvidenceType': claim.evidenceType.name,
+                'runId': ?runId,
+              },
               createdAt: evaluatedAt,
             );
           })(),
@@ -277,7 +268,7 @@ class ProjectEvidenceService {
   }
 
   String? _claimExpectationId(Task task, TaskEvidenceClaim claim) {
-    final type = _projectEvidenceType(claim.evidenceType);
+    const type = ProjectEvidenceType.taskClaim;
     final explicit = claim.expectationId?.trim();
     if (explicit != null && explicit.isNotEmpty) {
       final matches = task.expectedEvidence.where(
@@ -291,7 +282,7 @@ class ProjectEvidenceService {
     return _uniqueClaimExpectationId(
       task,
       claim.criterionId,
-      claim.evidenceType,
+      TaskEvidenceClaimType.taskClaim,
       claim.sourceRef,
     );
   }

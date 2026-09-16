@@ -10,7 +10,7 @@ void main() {
   final timestamp = DateTime.utc(2026, 1, 1);
 
   group('ProjectEvidenceService', () {
-    test('task completion creates only proposed criterion claims', () {
+    test('task completion summaries do not become criterion claims', () {
       final project = _project(timestamp);
 
       final evidence = evidenceService.normalizeTaskResult(
@@ -24,8 +24,7 @@ void main() {
         evaluatedAt: timestamp,
       );
 
-      expect(evidence.single.type, ProjectEvidenceType.taskClaim);
-      expect(evidence.single.status, ProjectEvidenceStatus.proposed);
+      expect(evidence, isEmpty);
       expect(
         evaluated.criteria.single.status,
         ProjectCriterionStatus.unsatisfied,
@@ -359,6 +358,46 @@ void main() {
       expect(evidence.single.expectationIds, ['expect_claim']);
     });
 
+    test('model evidence labels cannot promote a task claim', () {
+      final project = _project(
+        timestamp,
+        verificationMode: ProjectVerificationMode.modelReview,
+      );
+      final evidence = evidenceService.normalizeTaskResult(
+        project: project,
+        task: project.tasks.single,
+        result: _result(
+          timestamp,
+          summary: '',
+          claims: const [
+            TaskEvidenceClaim(
+              criterionId: 'criterion_001',
+              claim: 'The report passed.',
+              evidenceType: TaskEvidenceClaimType.command,
+              sourceRef: 'flutter test',
+              suggestedStrength: TaskEvidenceClaimStrength.supporting,
+            ),
+          ],
+        ),
+        evaluatedAt: timestamp,
+      );
+      final reviewed = criterionEvaluator.applyModelReview(
+        project.copyWith(evidence: evidence),
+        projectComplete: true,
+        remainingCriteria: const [],
+        rationale: 'The model claims the command passed.',
+        evaluatedAt: timestamp,
+      );
+
+      expect(evidence.single.type, ProjectEvidenceType.taskClaim);
+      expect(evidence.single.details['claimedEvidenceType'], 'command');
+      expect(reviewed.evidence.single.status, ProjectEvidenceStatus.proposed);
+      expect(
+        reviewed.criteria.single.status,
+        ProjectCriterionStatus.unsatisfied,
+      );
+    });
+
     test(
       'model review does not satisfy a criterion with partial expectations',
       () {
@@ -405,8 +444,11 @@ void main() {
           evaluatedAt: timestamp,
         );
 
-        expect(reviewed.evidence.single.status, ProjectEvidenceStatus.accepted);
-        expect(reviewed.criteria.single.status, ProjectCriterionStatus.partial);
+        expect(reviewed.evidence.single.status, ProjectEvidenceStatus.proposed);
+        expect(
+          reviewed.criteria.single.status,
+          ProjectCriterionStatus.unsatisfied,
+        );
       },
     );
 
@@ -683,7 +725,7 @@ void main() {
     });
 
     test(
-      'accepts a proposed non-advisory semantic claim with persisted rationale',
+      'model review cannot promote a task claim into criterion evidence',
       () {
         final project = _project(timestamp);
         final evidence = evidenceService.normalizeTaskResult(
@@ -713,17 +755,16 @@ void main() {
           evaluatedAt: timestamp,
         );
 
-        expect(reviewed.evidence.single.status, ProjectEvidenceStatus.accepted);
-        expect(reviewed.evidence.single.details['acceptedBy'], 'model_review');
+        expect(reviewed.evidence.single.status, ProjectEvidenceStatus.proposed);
+        expect(reviewed.evidence.single.details['acceptedBy'], isNull);
         expect(
           reviewed.criteria.single.status,
-          ProjectCriterionStatus.satisfied,
+          ProjectCriterionStatus.unsatisfied,
         );
-        expect(reviewed.criteria.single.notes, contains('adequately'));
       },
     );
 
-    test('supported criterion IDs promote supporting evidence to partial', () {
+    test('supported criterion IDs cannot promote task claims to evidence', () {
       final project = _project(timestamp);
       final evidence = evidenceService.normalizeTaskResult(
         project: project,
@@ -752,9 +793,12 @@ void main() {
         evaluatedAt: timestamp,
       );
 
-      expect(reviewed.evidence.single.status, ProjectEvidenceStatus.accepted);
-      expect(reviewed.evidence.single.details['acceptedBy'], 'model_review');
-      expect(reviewed.criteria.single.status, ProjectCriterionStatus.partial);
+      expect(reviewed.evidence.single.status, ProjectEvidenceStatus.proposed);
+      expect(reviewed.evidence.single.details['acceptedBy'], isNull);
+      expect(
+        reviewed.criteria.single.status,
+        ProjectCriterionStatus.unsatisfied,
+      );
     });
 
     test('advisory evidence is never promoted by supported criterion IDs', () {
@@ -762,7 +806,17 @@ void main() {
       final evidence = evidenceService.normalizeTaskResult(
         project: project,
         task: project.tasks.single,
-        result: _result(timestamp, summary: 'Work was attempted.'),
+        result: _result(
+          timestamp,
+          summary: 'Work was attempted.',
+          claims: const [
+            TaskEvidenceClaim(
+              criterionId: 'criterion_001',
+              claim: 'Work was attempted.',
+              sourceRef: 'run_1',
+            ),
+          ],
+        ),
         evaluatedAt: timestamp,
       );
 
@@ -789,7 +843,17 @@ void main() {
         final evidence = evidenceService.normalizeTaskResult(
           project: project,
           task: project.tasks.single,
-          result: _result(timestamp, summary: 'Work was attempted.'),
+          result: _result(
+            timestamp,
+            summary: 'Work was attempted.',
+            claims: const [
+              TaskEvidenceClaim(
+                criterionId: 'criterion_001',
+                claim: 'Work was attempted.',
+                sourceRef: 'run_1',
+              ),
+            ],
+          ),
           evaluatedAt: timestamp,
         );
 

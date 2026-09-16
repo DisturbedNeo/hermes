@@ -134,6 +134,34 @@ void main() {
       },
     );
 
+    test('artifact non-empty checks use the actual filesystem type', () async {
+      await Directory(path.join(root.path, 'output')).create();
+      final directoryStep = step.copyWith(
+        // A malformed or legacy model declaration must not turn a real
+        // directory into a zero-length file check.
+        artifacts: const [TaskArtifact(path: 'output', kind: 'code')],
+      );
+
+      final evaluation = await evaluator.evaluate(
+        workspace: workspace,
+        task: task,
+        step: directoryStep,
+        gates: const [
+          TaskGate(
+            id: 'artifact_nonempty',
+            params: {
+              'paths': ['output'],
+            },
+          ),
+        ],
+      );
+
+      expect(evaluation.results.single.status, TaskGateStatus.passed);
+      expect(evaluation.results.single.details['entityTypes'], {
+        'output': 'directory',
+      });
+    });
+
     test('content gates fail safely for oversized files', () async {
       await File(
         path.join(root.path, 'out.md'),
@@ -265,6 +293,35 @@ void main() {
         );
       },
     );
+
+    test('command gates fail closed when exit code is missing', () async {
+      const gate = TaskGate(
+        id: 'command_passes',
+        params: {'command': 'dart test', 'working_directory': '.'},
+      );
+      final evaluation = await evaluator.evaluate(
+        workspace: workspace,
+        task: task,
+        step: step,
+        gates: const [
+          gate,
+          TaskGate(id: 'no_failed_commands'),
+        ],
+        toolCalls: [
+          _toolCall(
+            'run_command',
+            arguments: {'command': 'dart test', 'working_directory': '.'},
+            result: const {'command': 'dart test'},
+          ),
+        ],
+      );
+
+      expect(evaluation.results.first.status, TaskGateStatus.failed);
+      expect(evaluation.results.last.status, TaskGateStatus.failed);
+      expect(evaluation.results.last.details['failedCommands'], [
+        {'command': 'dart test', 'reason': 'missing_exit_code'},
+      ]);
+    });
 
     test('command arguments are matched with exact shell grouping', () async {
       const gate = TaskGate(
@@ -728,6 +785,31 @@ void main() {
         expect(evaluation.hasHumanApprovalPending, isTrue);
       },
     );
+
+    test('malformed model review cannot pass a required gate', () async {
+      final evaluation = await evaluator.evaluate(
+        workspace: workspace,
+        task: task,
+        step: step,
+        gates: const [TaskGate(id: 'model_review')],
+        client: _ReviewClient(content: '{"summary":"Looks good"}'),
+      );
+
+      expect(evaluation.results.single.status, TaskGateStatus.pending);
+      expect(evaluation.results.single.details['invalidResponse'], isTrue);
+    });
+
+    test('approved human gate passes without another model claim', () async {
+      final evaluation = await evaluator.evaluate(
+        workspace: workspace,
+        task: task,
+        step: step,
+        gates: const [TaskGate(id: 'human_approval')],
+        humanApprovalGranted: true,
+      );
+
+      expect(evaluation.results.single.status, TaskGateStatus.passed);
+    });
   });
 }
 
@@ -755,7 +837,10 @@ TaskToolCallRecord _toolCall(
 }
 
 class _ReviewClient extends ChatClient {
-  _ReviewClient() : super(baseUrl: 'http://localhost', model: 'test');
+  _ReviewClient({this.content = '{"passed":false,"summary":"Needs polish."}'})
+    : super(baseUrl: 'http://localhost', model: 'test');
+
+  final String content;
 
   @override
   Future<ChatCompletionResponse> completeChat({
@@ -766,9 +851,7 @@ class _ReviewClient extends ChatClient {
     int? contextLimitTokens,
     int? inputTokensHint,
   }) async {
-    return ChatCompletionResponse(
-      content: jsonEncode({'passed': false, 'summary': 'Needs polish.'}),
-    );
+    return ChatCompletionResponse(content: content);
   }
 
   @override

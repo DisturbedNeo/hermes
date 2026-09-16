@@ -3524,8 +3524,11 @@ class ProjectService {
             content: evaluation.summary,
             sourceType: ProjectMemorySourceType.task,
             sourceId: task.id,
+            // Task summaries are model-reported descriptions. A completed
+            // task can have deterministic evidence, but that evidence does
+            // not prove every factual statement in the summary.
             confidence: accepted
-                ? ProjectMemoryConfidence.confirmed
+                ? ProjectMemoryConfidence.inferred
                 : ProjectMemoryConfidence.uncertain,
             timestamp: timestamp,
           )
@@ -3543,8 +3546,10 @@ class ProjectService {
             content: fact,
             sourceType: ProjectMemorySourceType.task,
             sourceId: task.id,
+            // Facts extracted from model output remain unverified even when
+            // the surrounding task passed its completion gates.
             confidence: accepted
-                ? ProjectMemoryConfidence.confirmed
+                ? ProjectMemoryConfidence.inferred
                 : ProjectMemoryConfidence.uncertain,
             timestamp: timestamp,
           )

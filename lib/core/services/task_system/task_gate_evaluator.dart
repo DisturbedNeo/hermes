@@ -96,6 +96,7 @@ class TaskGateEvaluator {
     TaskGateEvidence? evidence,
     ChatClient? client,
     String baseSystemPrompt = '',
+    bool humanApprovalGranted = false,
     CancellationToken? cancellationToken,
   }) async {
     final results = <TaskGateResult>[];
@@ -120,6 +121,7 @@ class TaskGateEvaluator {
               : evidence.stepArtifacts,
           client: client,
           baseSystemPrompt: baseSystemPrompt,
+          humanApprovalGranted: humanApprovalGranted,
           cancellationToken: cancellationToken,
         ),
       );
@@ -136,6 +138,7 @@ class TaskGateEvaluator {
     required List<TaskArtifact> artifacts,
     required ChatClient? client,
     required String baseSystemPrompt,
+    required bool humanApprovalGranted,
     CancellationToken? cancellationToken,
   }) async {
     cancellationToken?.throwIfCancelled();
@@ -161,7 +164,6 @@ class TaskGateEvaluator {
         'artifact_nonempty' => await _artifactNonempty(
           workspace,
           gate,
-          [...task.expectedArtifacts, ...step.artifacts],
           artifacts,
           now,
         ),
@@ -217,12 +219,20 @@ class TaskGateEvaluator {
           now,
           cancellationToken,
         ),
-        'human_approval' => _result(
-          gate,
-          TaskGateStatus.pending,
-          'Human approval is required before this step can complete.',
-          now,
-        ),
+        'human_approval' =>
+          humanApprovalGranted
+              ? _result(
+                  gate,
+                  _passStatus(gate),
+                  'Human approval was granted for this step.',
+                  now,
+                )
+              : _result(
+                  gate,
+                  TaskGateStatus.pending,
+                  'Human approval is required before this step can complete.',
+                  now,
+                ),
         'model_review' => await _modelReview(
           task,
           step,
@@ -297,7 +307,6 @@ class TaskGateEvaluator {
   Future<TaskGateResult> _artifactNonempty(
     WorkspaceAttachment workspace,
     TaskGate gate,
-    List<TaskArtifact> declaredArtifacts,
     List<TaskArtifact> artifacts,
     DateTime now,
   ) async {
@@ -310,26 +319,34 @@ class TaskGateEvaluator {
         now,
       );
     }
-    final directoryPaths = {
-      for (final artifact in declaredArtifacts)
-        if (artifact.kind.trim().toLowerCase() == 'directory')
-          path.normalize(artifact.path.trim()),
-    };
     final empty = <String>[];
+    final entityTypes = <String, String>{};
     for (final item in paths) {
       final resolved = await _sandbox.resolve(
         workspace.rootPath,
         item,
         mustExist: false,
       );
-      if (directoryPaths.contains(path.normalize(item.trim()))) {
-        if (await Directory(resolved.absolutePath).exists()) continue;
-        empty.add(resolved.relativePath);
-        continue;
-      }
-      final file = File(resolved.absolutePath);
-      if (!await file.exists() || await file.length() == 0) {
-        empty.add(resolved.relativePath);
+      final type = await FileSystemEntity.type(
+        resolved.absolutePath,
+        followLinks: true,
+      );
+      entityTypes[resolved.relativePath] = _fileSystemEntityTypeName(type);
+      switch (type) {
+        case FileSystemEntityType.directory:
+          // A directory is an existence boundary. File length is not a
+          // meaningful non-empty check for directories, and the persisted
+          // artifact kind is descriptive model input rather than authority.
+          continue;
+        case FileSystemEntityType.file:
+          if (await File(resolved.absolutePath).length() > 0) continue;
+          empty.add(resolved.relativePath);
+          continue;
+        case FileSystemEntityType.notFound:
+        case FileSystemEntityType.link:
+        case FileSystemEntityType.pipe:
+        case FileSystemEntityType.unixDomainSock:
+          empty.add(resolved.relativePath);
       }
     }
     if (empty.isNotEmpty) {
@@ -338,7 +355,7 @@ class TaskGateEvaluator {
         TaskGateStatus.failed,
         'Required artifacts are empty or missing: ${empty.join(', ')}.',
         now,
-        {'paths': paths, 'empty': empty},
+        {'paths': paths, 'empty': empty, 'entityTypes': entityTypes},
       );
     }
     return _result(
@@ -346,7 +363,7 @@ class TaskGateEvaluator {
       _passStatus(gate),
       'Required artifacts are non-empty.',
       now,
-      {'paths': paths},
+      {'paths': paths, 'entityTypes': entityTypes},
     );
   }
 
@@ -522,14 +539,16 @@ class TaskGateEvaluator {
     final advisoryFailed = <Map<String, dynamic>>[];
     for (final call in latestCommands.values) {
       final result = _resultSummaryMap(call);
-      final exitCode = call.toolError == null
-          ? jsonInt(result['exit_code'], fallback: 0)
-          : -1;
+      final exitCode = call.toolError == null ? _runCommandExitCode(call) : -1;
       if (exitCode != 0) {
         final failure = <String, dynamic>{
           'command': result['command'] ?? _commandText(call),
-          'exitCode': exitCode,
         };
+        if (exitCode == null) {
+          failure['reason'] = 'missing_exit_code';
+        } else {
+          failure['exitCode'] = exitCode;
+        }
         if (advisoryCommands.contains(_commandKeyFromCall(call))) {
           advisoryFailed.add(failure);
           continue;
@@ -920,8 +939,17 @@ $prompt
       cancellationToken: cancellationToken,
       diagnosticsLabel: 'Task gate review',
     );
-    final json = TaskJson.tryParseObject(text) ?? const <String, dynamic>{};
-    final passed = jsonBool(json['passed'], fallback: true);
+    final json = TaskJson.tryParseObject(text);
+    if (json == null || json['passed'] is! bool) {
+      return _result(
+        gate,
+        gate.required ? TaskGateStatus.pending : TaskGateStatus.advisory,
+        'Model review did not return a valid boolean decision.',
+        now,
+        {'invalidResponse': true},
+      );
+    }
+    final passed = json['passed'] as bool;
     final summary = jsonString(
       json['summary'],
       fallback: passed ? 'Model review passed.' : 'Model review failed.',
@@ -997,7 +1025,29 @@ $prompt
     if (call.toolError != null) return false;
     if (call.outcome != TaskToolCallOutcome.succeeded) return false;
     if (call.toolName != 'run_command') return true;
-    return jsonInt(_resultSummaryMap(call)['exit_code'], fallback: 0) == 0;
+    return _runCommandExitCode(call) == 0;
+  }
+
+  int? _runCommandExitCode(TaskToolCallRecord call) {
+    if (call.toolName != 'run_command') return null;
+    final result = _resultSummaryMap(call);
+    if (!result.containsKey('exit_code')) return null;
+    final raw = result['exit_code'];
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    return int.tryParse(raw?.toString() ?? '');
+  }
+
+  String _fileSystemEntityTypeName(FileSystemEntityType type) {
+    return switch (type) {
+      FileSystemEntityType.file => 'file',
+      FileSystemEntityType.directory => 'directory',
+      FileSystemEntityType.link => 'link',
+      FileSystemEntityType.pipe => 'pipe',
+      FileSystemEntityType.unixDomainSock => 'unix_domain_socket',
+      FileSystemEntityType.notFound => 'not_found',
+      _ => 'unknown',
+    };
   }
 
   String _operationKey(TaskToolCallRecord call) {

@@ -48,13 +48,17 @@ class ProjectCriterionEvaluator {
         (index) => evidence[index].status == ProjectEvidenceStatus.proposed,
       );
       final acceptableProposedEvidence = proposedEvidence.where(
-        (index) => evidence[index].strength != ProjectEvidenceStrength.advisory,
+        (index) =>
+            evidence[index].strength != ProjectEvidenceStrength.advisory &&
+            !_isTaskClaimEvidence(evidence[index]),
       );
       final acceptedEvidence = relatedIndexes.where(
         (index) => evidence[index].status == ProjectEvidenceStatus.accepted,
       );
       final credibleAcceptedEvidence = acceptedEvidence.where(
-        (index) => evidence[index].strength != ProjectEvidenceStrength.advisory,
+        (index) =>
+            evidence[index].strength != ProjectEvidenceStrength.advisory &&
+            !_isTaskClaimEvidence(evidence[index]),
       );
       if (proposedEvidence.isEmpty && acceptedEvidence.isEmpty) {
         criteria.add(criterion);
@@ -77,6 +81,7 @@ class ProjectCriterionEvaluator {
       ];
       final satisfied =
           reviewSaysSatisfied &&
+          reviewedEvidence.isNotEmpty &&
           _hasAllRequiredExpectations(project, criterion, reviewedEvidence);
       if (satisfied) {
         final reviewedIndexes = acceptableProposedEvidence.isNotEmpty
@@ -160,21 +165,27 @@ class ProjectCriterionEvaluator {
               item.criterionIds.contains(criterion.id),
         )
         .toList();
+    final eligibleAccepted = accepted
+        .where((item) => !_isTaskClaimEvidence(item))
+        .toList();
     final modelAccepted = accepted.where(
-      (item) => item.details['acceptedBy'] == 'model_review',
+      (item) =>
+          item.details['acceptedBy'] == 'model_review' &&
+          !_isTaskClaimEvidence(item),
     );
     final deterministic = accepted.where(
       (item) =>
           item.strength == ProjectEvidenceStrength.conclusive &&
           (item.type == ProjectEvidenceType.gate ||
-              item.type == ProjectEvidenceType.command),
+              item.type == ProjectEvidenceType.command) &&
+          !_isTaskClaimEvidence(item),
     );
     final approvals = accepted.where(
       (item) => item.type == ProjectEvidenceType.userApproval,
     );
 
     final satisfied =
-        _hasAllRequiredExpectations(project, criterion, accepted) &&
+        _hasAllRequiredExpectations(project, criterion, eligibleAccepted) &&
         (modelAccepted.isNotEmpty ||
             (criterion.verificationMode ==
                     ProjectVerificationMode.deterministic &&
@@ -197,10 +208,10 @@ class ProjectCriterionEvaluator {
       );
     }
     return criterion.copyWith(
-      status: accepted.isEmpty
+      status: eligibleAccepted.isEmpty
           ? ProjectCriterionStatus.unsatisfied
           : ProjectCriterionStatus.partial,
-      notes: accepted.isEmpty
+      notes: eligibleAccepted.isEmpty
           ? 'No accepted evidence currently satisfies this criterion.'
           : 'Accepted evidence is supporting but not yet conclusive.',
       updatedAt: evaluatedAt,
@@ -237,6 +248,11 @@ class ProjectCriterionEvaluator {
             item.expectationIds.contains(entry.key),
       ),
     );
+  }
+
+  bool _isTaskClaimEvidence(ProjectEvidence item) {
+    return item.type == ProjectEvidenceType.taskClaim ||
+        item.details['origin'] == 'task_claim';
   }
 
   String _normalise(String value) =>
