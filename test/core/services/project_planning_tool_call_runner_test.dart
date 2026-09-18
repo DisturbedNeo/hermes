@@ -117,12 +117,13 @@ void main() {
         now: DateTime(2026, 1, 1),
         approvalPolicy: ProjectPlanApprovalPolicy.never,
       );
+      final client = _Client([
+        for (var index = 0; index < 32; index++)
+          _call('project_view', {'max_items': 1}, id: 'view_$index'),
+        _call('plan_commit', const {}, id: 'commit'),
+      ]);
       final result = await const ProjectPlanningToolCallRunner().complete(
-        client: _Client([
-          for (var index = 0; index < 32; index++)
-            _call('project_view', {'max_items': 1}, id: 'view_$index'),
-          _call('plan_commit', const {}, id: 'commit'),
-        ]),
+        client: client,
         registry: ProjectPlanningToolRegistry(
           context: context,
           includeProjectDetails: true,
@@ -135,6 +136,14 @@ void main() {
       expect(result['ok'], isTrue);
       final metrics = result['planning_metrics'] as Map<String, dynamic>;
       expect(metrics['planningCommandCount'], 33);
+      expect(
+        client.messagesByCall.any(
+          (messages) => messages.any(
+            (message) => message.content.contains('planning_history_compacted'),
+          ),
+        ),
+        isTrue,
+      );
     },
   );
 
@@ -251,6 +260,7 @@ class _Client extends ChatClient {
   _Client(this._responses) : super(baseUrl: 'http://localhost', model: 'test');
 
   final List<ChatCompletionToolCall> _responses;
+  final messagesByCall = <List<ChatMessage>>[];
   Map<String, dynamic>? lastExtraParams;
   var _index = 0;
 
@@ -263,6 +273,7 @@ class _Client extends ChatClient {
     int? contextLimitTokens,
     int? inputTokensHint,
   }) async {
+    messagesByCall.add(List<ChatMessage>.of(messages));
     lastExtraParams = extraParams;
     return ChatCompletionResponse(
       content: '',

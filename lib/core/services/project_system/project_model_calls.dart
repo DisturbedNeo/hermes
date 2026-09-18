@@ -478,6 +478,11 @@ $baseSystemPrompt
 
 You are planning a new project through explicit planning commands. Do not return a complete project JSON document and do not execute workspace changes. The planning registry is the only tool surface available.
 Tool arguments must follow their schemas, but the plan itself must be built through tool calls rather than returned as a large JSON document.
+Your job is to create and commit the roadmap, not to solve or implement its
+tasks during planning. Read workspace files only when they resolve a planning
+uncertainty, then express implementation and verification work as bounded
+tasks. Once there is enough context for an executable task list, stop exploring
+and commit the plan.
 The workspace profile below is a compact bootstrap map. When the goal depends
 on a file, especially a design, specification, requirements, architecture, or
 instruction document, use planning_read_file to read that existing file before

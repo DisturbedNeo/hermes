@@ -12,6 +12,7 @@ import 'package:hermes/core/services/project_system/project_scheduler.dart';
 import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
+import 'package:hermes/core/services/task_system/task_repository.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 
@@ -263,6 +264,47 @@ void main() {
     expect(result.project.activeTaskId, isNull);
     expect(result.project.status, ProjectStatus.paused);
     expect(result.activeTask?.status, TaskStatus.completed);
+  });
+
+  test('does not rewrite unchanged project tasks during a run', () async {
+    final countingRepository = _CountingTaskRepository();
+    final countedTaskService = TaskService(
+      toolService: taskService.toolService,
+      sandbox: WorkspaceSandbox(),
+      repository: countingRepository,
+    );
+    final countedProjectService = ProjectService(
+      taskService: countedTaskService,
+    );
+    final secondTask = _task().copyWith(
+      id: 'task_2',
+      title: 'Second bounded task',
+      objective: 'Complete a second bounded project slice.',
+      fingerprint: 'task_2',
+    );
+
+    await countedProjectService.runProject(
+      client: _QueueChatClient([
+        jsonEncode({
+          'status': 'completed',
+          'summary': 'The first bounded task is complete.',
+          'memoryUpdate': '',
+        }),
+        jsonEncode({
+          'complete': true,
+          'finalSummary': 'The project is complete.',
+          'remainingCriteria': [],
+          'openQuestions': [],
+        }),
+      ]),
+      workspace: workspace,
+      snapshot: _project(tasks: [_task(), secondTask]),
+      baseSystemPrompt: 'system',
+      maxNewTasks: 1,
+    );
+
+    expect(countingRepository.savedTaskIds, isNot(contains('task_2')));
+    expect(countingRepository.savedTaskIds, contains('task_1'));
   });
 
   test(
@@ -782,6 +824,16 @@ class _QueueChatClient extends ChatClient {
 
   @override
   void dispose() {}
+}
+
+class _CountingTaskRepository extends TaskRepository {
+  final List<String> savedTaskIds = [];
+
+  @override
+  Future<void> saveSnapshot(String workspaceRoot, Task task) async {
+    savedTaskIds.add(task.id);
+    await super.saveSnapshot(workspaceRoot, task);
+  }
 }
 
 class _InitialisationGateway implements ProjectPlanningGateway {

@@ -289,12 +289,14 @@ class TaskService {
     String taskId, {
     String? chatSessionId,
     String? projectId,
+    bool includeHistory = true,
   }) {
     return _repository.loadTask(
       workspace.rootPath,
       taskId,
       chatSessionId: chatSessionId,
       projectId: projectId,
+      includeHistory: includeHistory,
     );
   }
 

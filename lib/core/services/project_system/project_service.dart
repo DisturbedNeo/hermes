@@ -127,8 +127,9 @@ class ProjectService {
 
   Future<ProjectDocument> _persistProject(
     String workspaceRoot,
-    ProjectDocument project,
-  ) async {
+    ProjectDocument project, {
+    _ProjectPersistenceContext? persistenceContext,
+  }) async {
     final refreshed = _scheduler
         .refreshReadiness(project)
         .project
@@ -137,10 +138,14 @@ class ProjectService {
               ? project.taskIds
               : [for (final task in project.tasks) task.id],
         );
-    for (final task in refreshed.tasks) {
+    final tasksToPersist = persistenceContext == null
+        ? refreshed.tasks
+        : refreshed.tasks.where(persistenceContext.shouldPersistTask);
+    for (final task in tasksToPersist) {
       final existing = await _taskService.repository.loadTask(
         workspaceRoot,
         task.id,
+        includeHistory: false,
       );
       final taskToSave = _taskForPersistence(
         task,
@@ -149,6 +154,7 @@ class ProjectService {
         chatSessionId: refreshed.chatSessionId,
       );
       await _taskService.repository.saveSnapshot(workspaceRoot, taskToSave);
+      persistenceContext?.markPersisted(task);
     }
     await _repository.saveSnapshot(workspaceRoot, refreshed);
     return refreshed;
@@ -166,6 +172,7 @@ class ProjectService {
     required String workspaceRoot,
     required ProjectDocument project,
     required int maxNewTasks,
+    _ProjectPersistenceContext? persistenceContext,
   }) async {
     final scheduled = _scheduler.schedule(project);
     final readyTasks = <Task>[];
@@ -188,6 +195,7 @@ class ProjectService {
         currentBatchProgressObserved: false,
         pendingReplanReason: null,
       ),
+      persistenceContext: persistenceContext,
     );
   }
 
@@ -324,6 +332,7 @@ class ProjectService {
         id,
         chatSessionId: project.chatSessionId,
         projectId: project.id,
+        includeHistory: false,
       );
       final task = loaded ?? cachedById[id];
       if (task != null) hydrated.add(task);
@@ -838,12 +847,17 @@ class ProjectService {
     );
     var project = recovered.project;
     var activeTask = recovered.activeTask;
+    final persistenceContext = _ProjectPersistenceContext(project.tasks);
     if (maxIterations != null && project.maxIterations != maxIterations) {
       project = project.copyWith(
         maxIterations: _normaliseOptionalLimit(maxIterations),
         updatedAt: DateTime.now(),
       );
-      project = await _persistProject(workspace.rootPath, project);
+      project = await _persistProject(
+        workspace.rootPath,
+        project,
+        persistenceContext: persistenceContext,
+      );
     }
     if (project.isTerminal) {
       return ProjectRunResult(project: project, activeTask: activeTask);
@@ -860,6 +874,7 @@ class ProjectService {
         project = await _persistProject(
           workspace.rootPath,
           reconsidered.project,
+          persistenceContext: persistenceContext,
         );
       }
     }
@@ -879,7 +894,11 @@ class ProjectService {
         ),
         updatedAt: DateTime.now(),
       );
-      project = await _persistProject(workspace.rootPath, project);
+      project = await _persistProject(
+        workspace.rootPath,
+        project,
+        persistenceContext: persistenceContext,
+      );
     }
     final canResumeValidationBlocker =
         project.blocker?.type == ProjectBlockerType.validation &&
@@ -892,7 +911,11 @@ class ProjectService {
         blocker: null,
         updatedAt: DateTime.now(),
       );
-      project = await _persistProject(workspace.rootPath, project);
+      project = await _persistProject(
+        workspace.rootPath,
+        project,
+        persistenceContext: persistenceContext,
+      );
     }
 
     if (project.activeTaskId != null && project.currentBatchTaskIds.isEmpty) {
@@ -903,11 +926,16 @@ class ProjectService {
           currentBatchIndex: 0,
           currentBatchPlanRevision: _currentPlanRevision(project),
         ),
+        persistenceContext: persistenceContext,
       );
     } else if (project.activeTaskId == null &&
         project.currentBatchPlanRevision != 0 &&
         project.currentBatchPlanRevision != _currentPlanRevision(project)) {
-      project = await _persistProject(workspace.rootPath, _clearBatch(project));
+      project = await _persistProject(
+        workspace.rootPath,
+        _clearBatch(project),
+        persistenceContext: persistenceContext,
+      );
     }
 
     final allowedIterations = maxNewTasks <= 0 ? null : maxNewTasks;
@@ -941,13 +969,21 @@ class ProjectService {
             filtered.assumptions,
             sourceId: 'question_policy',
           );
-          project = await _persistProject(workspace.rootPath, project);
+          project = await _persistProject(
+            workspace.rootPath,
+            project,
+            persistenceContext: persistenceContext,
+          );
         }
       }
       if (project.openQuestions.isNotEmpty ||
           project.blocker?.type == ProjectBlockerType.question) {
         project = _waitingForUser(project, DateTime.now());
-        project = await _persistProject(workspace.rootPath, project);
+        project = await _persistProject(
+          workspace.rootPath,
+          project,
+          persistenceContext: persistenceContext,
+        );
         return ProjectRunResult(project: project, activeTask: activeTask);
       }
       if (project.status == ProjectStatus.blocked &&
@@ -962,7 +998,11 @@ class ProjectService {
           'Project reached the maximum iteration limit of ${project.maxIterations}.',
           DateTime.now(),
         );
-        project = await _persistProject(workspace.rootPath, project);
+        project = await _persistProject(
+          workspace.rootPath,
+          project,
+          persistenceContext: persistenceContext,
+        );
         return ProjectRunResult(project: project, activeTask: activeTask);
       }
       if (allowedIterations != null && runIterations >= allowedIterations) {
@@ -970,7 +1010,11 @@ class ProjectService {
           status: ProjectStatus.paused,
           updatedAt: DateTime.now(),
         );
-        project = await _persistProject(workspace.rootPath, project);
+        project = await _persistProject(
+          workspace.rootPath,
+          project,
+          persistenceContext: persistenceContext,
+        );
         return ProjectRunResult(project: project, activeTask: activeTask);
       }
 
@@ -993,6 +1037,7 @@ class ProjectService {
           project = await _persistProject(
             workspace.rootPath,
             _clearBatch(project),
+            persistenceContext: persistenceContext,
           );
         }
         if (project.currentBatchTaskIds.isNotEmpty &&
@@ -1012,6 +1057,7 @@ class ProjectService {
             project = await _persistProject(
               workspace.rootPath,
               _clearBatch(project),
+              persistenceContext: persistenceContext,
             );
           }
         }
@@ -1020,6 +1066,7 @@ class ProjectService {
             workspaceRoot: workspace.rootPath,
             project: project,
             maxNewTasks: maxNewTasks,
+            persistenceContext: persistenceContext,
           );
         }
       }
@@ -1030,6 +1077,7 @@ class ProjectService {
         project = await _persistProject(
           workspace.rootPath,
           _advanceBatchCursor(project, candidate!.id),
+          persistenceContext: persistenceContext,
         );
         continue;
       }
@@ -1048,7 +1096,11 @@ class ProjectService {
         if (project.isTerminal ||
             project.status == ProjectStatus.waitingForUser ||
             project.openQuestions.isNotEmpty) {
-          project = await _persistProject(workspace.rootPath, project);
+          project = await _persistProject(
+            workspace.rootPath,
+            project,
+            persistenceContext: persistenceContext,
+          );
           return ProjectRunResult(project: project, activeTask: activeTask);
         }
         replanTriggers = _appendTrigger(
@@ -1079,7 +1131,11 @@ class ProjectService {
           onModelOutput: onModelOutput,
           cancellationToken: cancellationToken,
         );
-        project = await _persistProject(workspace.rootPath, project);
+        project = await _persistProject(
+          workspace.rootPath,
+          project,
+          persistenceContext: persistenceContext,
+        );
         if (project.pendingPlanApproval != null ||
             project.status == ProjectStatus.blocked ||
             project.status == ProjectStatus.waitingForUser) {
@@ -1099,7 +1155,11 @@ class ProjectService {
           'The validated plan left no ready bounded task. Revise the scope, constraints, or dependencies before resuming.',
           DateTime.now(),
         );
-        project = await _persistProject(workspace.rootPath, project);
+        project = await _persistProject(
+          workspace.rootPath,
+          project,
+          persistenceContext: persistenceContext,
+        );
         return ProjectRunResult(project: project, activeTask: activeTask);
       }
 
@@ -1125,11 +1185,19 @@ class ProjectService {
           cancellationToken: cancellationToken,
         );
         if (project.status == ProjectStatus.blocked) {
-          project = await _persistProject(workspace.rootPath, project);
+          project = await _persistProject(
+            workspace.rootPath,
+            project,
+            persistenceContext: persistenceContext,
+          );
           return ProjectRunResult(project: project, activeTask: activeTask);
         }
         if (project.pendingPlanApproval != null) {
-          project = await _persistProject(workspace.rootPath, project);
+          project = await _persistProject(
+            workspace.rootPath,
+            project,
+            persistenceContext: persistenceContext,
+          );
           return ProjectRunResult(project: project, activeTask: activeTask);
         }
         final recoveryMadeProgress = _invalidTaskRecoveryMadeProgress(
@@ -1152,10 +1220,18 @@ class ProjectService {
             'Project task selection produced $consecutiveInvalidCandidates invalid candidates in a row.',
             DateTime.now(),
           );
-          project = await _persistProject(workspace.rootPath, project);
+          project = await _persistProject(
+            workspace.rootPath,
+            project,
+            persistenceContext: persistenceContext,
+          );
           return ProjectRunResult(project: project, activeTask: activeTask);
         }
-        project = await _persistProject(workspace.rootPath, project);
+        project = await _persistProject(
+          workspace.rootPath,
+          project,
+          persistenceContext: persistenceContext,
+        );
         continue;
       }
       consecutiveInvalidCandidates = 0;
@@ -1174,6 +1250,7 @@ class ProjectService {
         onTaskUpdated: onTaskUpdated,
         cancellationToken: cancellationToken,
         questionAutonomy: questionAutonomy,
+        persistenceContext: persistenceContext,
       );
       project = execution.project;
       activeTask = execution.activeTask;
@@ -1186,7 +1263,11 @@ class ProjectService {
         status: ProjectStatus.reviewingTask,
         updatedAt: now,
       );
-      project = await _persistProject(workspace.rootPath, project);
+      project = await _persistProject(
+        workspace.rootPath,
+        project,
+        persistenceContext: persistenceContext,
+      );
 
       final evaluatedProjectTask = _activeProjectTask(project) ?? candidate;
       final criterionStatusesBefore = {
@@ -1295,7 +1376,11 @@ class ProjectService {
           pendingReplanReason: _replanReasonForTriggers(batchTriggers),
         );
       }
-      project = await _persistProject(workspace.rootPath, project);
+      project = await _persistProject(
+        workspace.rootPath,
+        project,
+        persistenceContext: persistenceContext,
+      );
       runIterations++;
       if (project.status == ProjectStatus.completed ||
           project.status == ProjectStatus.failed ||
@@ -1874,6 +1959,7 @@ class ProjectService {
     ProjectTaskSnapshotSink? onTaskUpdated,
     CancellationToken? cancellationToken,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
+    _ProjectPersistenceContext? persistenceContext,
   }) async {
     cancellationToken?.throwIfCancelled();
     final now = DateTime.now();
@@ -1889,7 +1975,11 @@ class ProjectService {
         taskId: projectTask.id,
       );
       return _ProjectTaskExecution(
-        project: await _persistProject(workspace.rootPath, blocked),
+        project: await _persistProject(
+          workspace.rootPath,
+          blocked,
+          persistenceContext: persistenceContext,
+        ),
       );
     }
     final runningProjectTask = projectTask.copyWith(
@@ -1918,7 +2008,11 @@ class ProjectService {
     final existingTask = loadedTask?.steps.isNotEmpty == true
         ? loadedTask
         : null;
-    workingProject = await _persistProject(workspace.rootPath, workingProject);
+    workingProject = await _persistProject(
+      workspace.rootPath,
+      workingProject,
+      persistenceContext: persistenceContext,
+    );
 
     final planningContext = _planningContext(workingProject, projectTask);
     late Task activeTask;
@@ -1963,7 +2057,14 @@ class ProjectService {
       ),
       updatedAt: DateTime.now(),
     );
-    workingProject = await _persistProject(workspace.rootPath, workingProject);
+    persistenceContext?.markPersisted(
+      workingProject.taskById(activeTask.id) ?? runningProjectTask,
+    );
+    workingProject = await _persistProject(
+      workspace.rootPath,
+      workingProject,
+      persistenceContext: persistenceContext,
+    );
     onTaskUpdated?.call(activeTask);
 
     while (activeTask.nextRunnableStep != null && !activeTask.isTerminal) {
@@ -1992,9 +2093,14 @@ class ProjectService {
         activeTask,
         DateTime.now(),
       );
+      final syncedTask = workingProject.taskById(activeTask.id);
+      if (syncedTask != null) {
+        persistenceContext?.markPersisted(syncedTask);
+      }
       workingProject = await _persistProject(
         workspace.rootPath,
         workingProject,
+        persistenceContext: persistenceContext,
       );
 
       final latestRun = activeTask.runs.isEmpty ? null : activeTask.runs.last;
@@ -2007,7 +2113,11 @@ class ProjectService {
           blocker: null,
           updatedAt: DateTime.now(),
         );
-        final persisted = await _persistProject(workspace.rootPath, paused);
+        final persisted = await _persistProject(
+          workspace.rootPath,
+          paused,
+          persistenceContext: persistenceContext,
+        );
         return _ProjectTaskExecution(
           project: persisted,
           activeTask: activeTask,
@@ -2019,7 +2129,11 @@ class ProjectService {
           status: ProjectStatus.paused,
           updatedAt: DateTime.now(),
         );
-        final persisted = await _persistProject(workspace.rootPath, paused);
+        final persisted = await _persistProject(
+          workspace.rootPath,
+          paused,
+          persistenceContext: persistenceContext,
+        );
         return _ProjectTaskExecution(
           project: persisted,
           activeTask: activeTask,
@@ -2035,7 +2149,11 @@ class ProjectService {
           DateTime.now(),
           taskId: activeTask.id,
         ).copyWith(status: ProjectStatus.waitingForUser);
-        final persisted = await _persistProject(workspace.rootPath, blocked);
+        final persisted = await _persistProject(
+          workspace.rootPath,
+          blocked,
+          persistenceContext: persistenceContext,
+        );
         return _ProjectTaskExecution(
           project: persisted,
           activeTask: activeTask,
@@ -2069,12 +2187,17 @@ class ProjectService {
       _activeProjectTask(workingProject) ?? projectTask,
       activeTask,
     );
+    final syncedProject = _syncCurrentTaskFromTask(
+      workingProject,
+      activeTask,
+      DateTime.now(),
+    );
+    final syncedTask = syncedProject.taskById(activeTask.id);
+    if (syncedTask != null) {
+      persistenceContext?.markPersisted(syncedTask);
+    }
     return _ProjectTaskExecution(
-      project: _syncCurrentTaskFromTask(
-        workingProject,
-        activeTask,
-        DateTime.now(),
-      ),
+      project: syncedProject,
       activeTask: activeTask,
       result: result,
     );
@@ -4391,6 +4514,36 @@ Ask the user only for destructive or irreversible actions, credentials/secrets/a
     final resolved = value ?? fallback;
     return resolved < 0 ? 0 : resolved;
   }
+}
+
+/// Tracks task snapshots during one project run so project-only state changes
+/// do not rewrite every task document.
+class _ProjectPersistenceContext {
+  _ProjectPersistenceContext(Iterable<Task> initialTasks) {
+    for (final task in initialTasks) {
+      _lastPersistedTasks[task.id] = task;
+    }
+  }
+
+  final Map<String, Task> _lastPersistedTasks = {};
+  final Map<String, String> _lastFingerprints = {};
+
+  bool shouldPersistTask(Task task) {
+    final previous = _lastPersistedTasks[task.id];
+    if (previous == null || identical(previous, task)) return previous == null;
+    final previousFingerprint = _lastFingerprints.putIfAbsent(
+      task.id,
+      () => _fingerprint(previous),
+    );
+    return _fingerprint(task) != previousFingerprint;
+  }
+
+  void markPersisted(Task task) {
+    _lastPersistedTasks[task.id] = task;
+    _lastFingerprints.remove(task.id);
+  }
+
+  String _fingerprint(Task task) => jsonEncode(ModelJson.encode(task));
 }
 
 class _ProjectTaskValidation {

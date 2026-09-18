@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/services/atomic_json_snapshot_store.dart';
 import 'package:hermes/core/services/task_system/task_repository.dart';
+import 'package:hermes/core/serialization/model_json.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
@@ -106,19 +107,65 @@ void main() {
       );
     });
 
-    test('round-trips the raw task json shape', () async {
-      final task = _task(id: 'task_json');
+    test('stores compact task state and separate run history', () async {
+      final task = _task(id: 'task_json', runs: [_run()]);
       await repository.saveSnapshot(root.path, task);
 
       final file = File(
         path.join(root.path, '.agent', 'tasks', 'task_json', 'task.json'),
       );
       final decoded = jsonDecode(await file.readAsString());
+      final runFile = File(
+        path.join(
+          root.path,
+          '.agent',
+          'tasks',
+          'task_json',
+          'runs',
+          'run_1.json',
+        ),
+      );
 
       expect(decoded['steps'], isA<List>());
-      expect(decoded['runs'], isA<List>());
+      expect(decoded['runs'], isNull);
+      expect(runFile.existsSync(), isTrue);
       expect(decoded['projectId'], isNull);
+
+      final metadata = await repository.loadTask(
+        root.path,
+        'task_json',
+        includeHistory: false,
+      );
+      expect(metadata?.runs, isEmpty);
+
+      final loaded = await repository.loadTask(root.path, 'task_json');
+      expect(loaded?.runs.single.runId, 'run_1');
     });
+
+    test(
+      'migrates legacy embedded run history when the task is saved',
+      () async {
+        final task = _task(id: 'task_legacy', runs: [_run()]);
+        final taskDir = Directory(
+          path.join(root.path, '.agent', 'tasks', 'task_legacy'),
+        );
+        await taskDir.create(recursive: true);
+        final file = File(path.join(taskDir.path, 'task.json'));
+        await file.writeAsString(jsonEncode(ModelJson.encode(task)));
+
+        final loaded = await repository.loadTask(root.path, 'task_legacy');
+        expect(loaded?.runs.single.runId, 'run_1');
+
+        await repository.saveSnapshot(root.path, loaded!);
+
+        final compact = jsonDecode(await file.readAsString());
+        expect(compact['runs'], isNull);
+        expect(
+          File(path.join(taskDir.path, 'runs', 'run_1.json')).existsSync(),
+          isTrue,
+        );
+      },
+    );
 
     test('recovers and repairs a corrupt primary from its backup', () async {
       await repository.saveSnapshot(
@@ -193,6 +240,7 @@ Task _task({
   DateTime? updatedAt,
   String? chatSessionId,
   String? projectId,
+  List<TaskRun> runs = const [],
 }) {
   final now = DateTime(2026, 1, 1);
   return Task(
@@ -216,10 +264,25 @@ Task _task({
     status: TaskStatus.paused,
     currentStepId: 'step_1',
     memorySummary: '',
-    runs: const [],
+    runs: runs,
     chatSessionId: chatSessionId,
     projectId: projectId,
     createdAt: now,
     updatedAt: updatedAt ?? now,
+  );
+}
+
+TaskRun _run() {
+  final now = DateTime(2026, 1, 1, 12);
+  return TaskRun(
+    runId: 'run_1',
+    stepId: 'step_1',
+    status: TaskRunStatus.completed,
+    summary: 'Completed the step.',
+    memoryUpdate: 'The step completed.',
+    toolCalls: const [],
+    artifacts: const [],
+    startedAt: now,
+    completedAt: now.add(const Duration(minutes: 1)),
   );
 }

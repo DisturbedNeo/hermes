@@ -5,9 +5,9 @@ import 'package:hermes/core/helpers/chat/tool_caller.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/models/planning_metrics.dart';
-import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/core/services/planner_message_compactor.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/task_system/task_planning_tools.dart';
@@ -32,11 +32,15 @@ class TaskPlanningToolCallRunner {
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
-    final messages = <ChatMessage>[
+    var messages = <ChatMessage>[
       ChatMessage(role: 'system', content: system),
       ChatMessage(role: 'user', content: user),
     ];
     final definitions = registry.toolDefinitions;
+    final extraParams = ToolCaller.buildExtraParams(
+      addGenerationPrompt: true,
+      toolDefs: definitions,
+    );
     var turn = 0;
     var metrics = const PlanningMetrics();
 
@@ -47,7 +51,7 @@ class TaskPlanningToolCallRunner {
         client: client,
         label: label,
         messages: messages,
-        definitions: definitions,
+        extraParams: extraParams,
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
       );
@@ -55,7 +59,7 @@ class TaskPlanningToolCallRunner {
       metrics = _recordModelCall(
         metrics,
         messages: messages,
-        definitions: definitions,
+        extraParams: extraParams,
         completion: completion,
       );
 
@@ -126,6 +130,7 @@ class TaskPlanningToolCallRunner {
           };
         }
       }
+      messages = PlannerMessageCompactor.compact(messages);
     }
   }
 
@@ -133,17 +138,13 @@ class TaskPlanningToolCallRunner {
     required ChatClient client,
     required String label,
     required List<ChatMessage> messages,
-    required List<ToolDefinition> definitions,
+    required Map<String, dynamic> extraParams,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     _emit(
       onModelOutput,
       TaskModelOutputEvent(type: TaskModelOutputEventType.start, label: label),
-    );
-    final extraParams = ToolCaller.buildExtraParams(
-      addGenerationPrompt: true,
-      toolDefs: definitions,
     );
     final completion = client.supportsStreamingCancellation
         ? await _completeFromStream(
@@ -288,13 +289,9 @@ class TaskPlanningToolCallRunner {
   static PlanningMetrics _recordModelCall(
     PlanningMetrics metrics, {
     required List<ChatMessage> messages,
-    required List<ToolDefinition> definitions,
+    required Map<String, dynamic> extraParams,
     required ChatCompletionResponse completion,
   }) {
-    final extraParams = ToolCaller.buildExtraParams(
-      addGenerationPrompt: true,
-      toolDefs: definitions,
-    );
     final promptTokens =
         completion.diagnostics?.promptTokens ??
         ContextEstimator.estimateChatCompletionRequest(
