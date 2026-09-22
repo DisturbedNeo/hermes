@@ -24,6 +24,9 @@ import 'package:hermes/core/services/chat/chat_stream.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/project_system/project_service.dart';
+import 'package:hermes/core/services/project_system/project_orchestrator.dart';
+import 'package:hermes/core/services/project_system/orchestration_contracts.dart';
+import 'package:hermes/core/services/persistence_contracts.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/task_system/task_summary.dart';
@@ -89,6 +92,7 @@ class ChatService extends ChangeNotifier implements Disposable {
   SystemPromptSnapshot? currentSystemPromptSnapshot;
   ExecutionMode executionMode = ExecutionMode.chat;
   ProjectDocument? activeProject;
+  ProjectPersistenceDiagnostics? activeProjectPersistenceDiagnostics;
   List<ProjectSummary> availableProjects = const [];
   Task? activeTask;
   List<TaskSummary> availableTasks = const [];
@@ -360,8 +364,8 @@ class ChatService extends ChangeNotifier implements Disposable {
     );
     await _chatLibrary.deleteChat(chatId);
     try {
-      await _deleteTasksForChatSessionInWorkspaces(chatId, workspaces);
       await _deleteProjectsForChatSessionInWorkspaces(chatId, workspaces);
+      await _deleteTasksForChatSessionInWorkspaces(chatId, workspaces);
     } finally {
       await resetIfCurrentSavedChatDeleted(chatId);
     }
@@ -780,6 +784,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     );
     activeProject = result?.project;
     activeTask = result?.activeTask;
+    activeProjectPersistenceDiagnostics = result?.persistenceDiagnostics;
     await reloadTasks();
   }
 
@@ -799,6 +804,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     );
     activeProject = result?.project;
     activeTask = result?.activeTask;
+    activeProjectPersistenceDiagnostics = result?.persistenceDiagnostics;
     await reloadTasks();
   }
 
@@ -1477,42 +1483,79 @@ class ChatService extends ChangeNotifier implements Disposable {
     try {
       final compactionSettings = await _preferencesService
           .getCompactionSettings();
-      var projectSnapshot = snapshot;
-      while (true) {
-        final result = await _projectService.runProject(
-          client: client,
-          workspace: currentWorkspace,
-          snapshot: projectSnapshot,
-          baseSystemPrompt: _buildProjectSystemPrompt(projectSnapshot),
-          maxNewTasks: maxNewTasks ?? settings.maxProjectTasksPerRun,
-          maxIterations: settings.maxProjectIterations,
-          requirePhaseApproval: settings.requireApprovalBeforeFileEdits,
-          questionAutonomy: settings.questionAutonomy,
-          planApprovalPolicy: settings.planApprovalPolicy,
-          compactionSettings: compactionSettings,
-          contextLimitTokens: _diagnosticsContextLimit,
-          onCompactionStatus: (status) {
-            taskStatusMessage = status;
-            notifyListeners();
-          },
-          onModelOutput: _handleTaskModelOutput,
-          onTaskUpdated: (task) {
-            activeTask = task;
-            notifyListeners();
-          },
-          cancellationToken: token,
+      final orchestrator = _projectService;
+      if (orchestrator is ProjectOrchestrator) {
+        final result = await orchestrator.executeUntilStop(
+          ProjectExecutionRequest(
+            client: client,
+            workspace: currentWorkspace,
+            snapshot: snapshot,
+            baseSystemPrompt: _buildProjectSystemPrompt(snapshot),
+            maxNewTasks: maxNewTasks ?? settings.maxProjectTasksPerRun,
+            maxIterations: settings.maxProjectIterations,
+            requirePhaseApproval: settings.requireApprovalBeforeFileEdits,
+            questionAutonomy: settings.questionAutonomy,
+            planApprovalPolicy: settings.planApprovalPolicy,
+            compactionSettings: compactionSettings,
+            contextLimitTokens: _diagnosticsContextLimit,
+            onCompactionStatus: (status) {
+              taskStatusMessage = status;
+              notifyListeners();
+            },
+            onModelOutput: _handleTaskModelOutput,
+            onTaskUpdated: (task) {
+              activeTask = task;
+              notifyListeners();
+            },
+            cancellationToken: token,
+          ),
+          boundedRun: maxNewTasks != null,
         );
         activeProject = result.project;
         activeTask = result.activeTask;
+        activeProjectPersistenceDiagnostics = result.persistenceDiagnostics;
         notifyListeners();
+      } else {
+        var projectSnapshot = snapshot;
+        while (true) {
+          final result = await _projectService.runProject(
+            client: client,
+            workspace: currentWorkspace,
+            snapshot: projectSnapshot,
+            baseSystemPrompt: _buildProjectSystemPrompt(projectSnapshot),
+            maxNewTasks: maxNewTasks ?? settings.maxProjectTasksPerRun,
+            maxIterations: settings.maxProjectIterations,
+            requirePhaseApproval: settings.requireApprovalBeforeFileEdits,
+            questionAutonomy: settings.questionAutonomy,
+            planApprovalPolicy: settings.planApprovalPolicy,
+            compactionSettings: compactionSettings,
+            contextLimitTokens: _diagnosticsContextLimit,
+            onCompactionStatus: (status) {
+              taskStatusMessage = status;
+              notifyListeners();
+            },
+            onModelOutput: _handleTaskModelOutput,
+            onTaskUpdated: (task) {
+              activeTask = task;
+              notifyListeners();
+            },
+            cancellationToken: token,
+          );
+          activeProject = result.project;
+          activeTask = result.activeTask;
+          activeProjectPersistenceDiagnostics = result.persistenceDiagnostics;
+          notifyListeners();
 
-        if (!_shouldContinueProjectAutomatically(
-          result,
-          boundedRun: maxNewTasks != null,
-        )) {
-          break;
+          if (result.persistenceDiagnostics?.isReadOnly ?? false) break;
+
+          if (!_shouldContinueProjectAutomatically(
+            result,
+            boundedRun: maxNewTasks != null,
+          )) {
+            break;
+          }
+          projectSnapshot = result.project;
         }
-        projectSnapshot = result.project;
       }
       await reloadTasks();
       _insertTaskAssistantMessage(_projectStatusMessage(activeProject!));

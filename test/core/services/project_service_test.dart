@@ -13,6 +13,7 @@ import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/task_system/task_repository.dart';
+import 'package:hermes/core/services/persistence_contracts.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 
@@ -62,7 +63,8 @@ void main() {
       final gateway = _InitialisationGateway(_validInitialisation());
       final planningService = ProjectService(
         taskService: taskService,
-        modelCalls: gateway,
+        planner: gateway,
+        completionEvaluator: gateway,
       );
 
       final project = await planningService.createProject(
@@ -89,8 +91,11 @@ void main() {
       '${root.path}/.agent/projects/${project.id}/project.json',
     );
     final rawProject = jsonDecode(await projectFile.readAsString());
-    expect(rawProject['taskIds'], [project.tasks.single.id]);
-    expect(rawProject, isNot(contains('tasks')));
+    expect(rawProject['schemaVersion'], 1);
+    expect(rawProject['revision'], 1);
+    final document = rawProject['document'] as Map<String, dynamic>;
+    expect(document['taskIds'], [project.tasks.single.id]);
+    expect(document, isNot(contains('tasks')));
 
     final loaded = await service.loadProject(workspace, project.id);
     expect(loaded?.tasks.single.id, project.tasks.single.id);
@@ -110,7 +115,8 @@ void main() {
       final gateway = _InitialisationGateway(_invalidInitialisation());
       final planningService = ProjectService(
         taskService: taskService,
-        modelCalls: gateway,
+        planner: gateway,
+        completionEvaluator: gateway,
       );
 
       final project = await planningService.createProject(
@@ -143,7 +149,8 @@ void main() {
       );
       final planningService = ProjectService(
         taskService: taskService,
-        modelCalls: gateway,
+        planner: gateway,
+        completionEvaluator: gateway,
       );
 
       final project = await planningService.createProject(
@@ -204,7 +211,8 @@ void main() {
       );
       final planningService = ProjectService(
         taskService: taskService,
-        modelCalls: gateway,
+        planner: gateway,
+        completionEvaluator: gateway,
       );
 
       final result = await planningService.runProject(
@@ -282,6 +290,11 @@ void main() {
       objective: 'Complete a second bounded project slice.',
       fingerprint: 'task_2',
     );
+    await countedTaskService.repository.saveSnapshot(
+      workspace.rootPath,
+      secondTask,
+    );
+    countingRepository.savedTaskIds.clear();
 
     await countedProjectService.runProject(
       client: _QueueChatClient([
@@ -313,7 +326,8 @@ void main() {
       final gateway = _InitialisationGateway(_validInitialisation());
       final planningService = ProjectService(
         taskService: taskService,
-        modelCalls: gateway,
+        planner: gateway,
+        completionEvaluator: gateway,
       );
       final secondTask = _task().copyWith(
         id: 'task_2',
@@ -830,13 +844,24 @@ class _CountingTaskRepository extends TaskRepository {
   final List<String> savedTaskIds = [];
 
   @override
-  Future<void> saveSnapshot(String workspaceRoot, Task task) async {
+  Future<PersistedSnapshot<Task>> saveSnapshot(
+    String workspaceRoot,
+    Task task, {
+    int? expectedRevision,
+    bool assumeLocked = false,
+  }) async {
     savedTaskIds.add(task.id);
-    await super.saveSnapshot(workspaceRoot, task);
+    return super.saveSnapshot(
+      workspaceRoot,
+      task,
+      expectedRevision: expectedRevision,
+      assumeLocked: assumeLocked,
+    );
   }
 }
 
-class _InitialisationGateway implements ProjectPlanningGateway {
+class _InitialisationGateway
+    implements ProjectPlanner, ProjectCompletionEvaluator {
   _InitialisationGateway(
     this.initialisation, {
     this.repairedInitialisations = const [],

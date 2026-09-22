@@ -2,8 +2,10 @@ import 'dart:io';
 
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/services/atomic_json_snapshot_store.dart';
+import 'package:hermes/core/services/persistence_contracts.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/services/task_system/task_summary.dart';
+import 'package:hermes/core/services/workspace_persistence_coordinator.dart';
 import 'package:path/path.dart' as path;
 
 class TaskRepository {
@@ -11,12 +13,33 @@ class TaskRepository {
   static const String documentFileName = 'task.json';
   static const String runsDirectoryName = 'runs';
 
+  TaskRepository({WorkspacePersistenceCoordinator? coordinator})
+    : _coordinator = coordinator ?? WorkspacePersistenceCoordinator();
+
   final AtomicJsonSnapshotStore _snapshots = const AtomicJsonSnapshotStore();
+  final WorkspacePersistenceCoordinator _coordinator;
+
+  WorkspacePersistenceCoordinator get coordinator => _coordinator;
   final Map<String, _TaskSummaryCacheEntry> _summaryCache = {};
   final Map<String, _TaskCacheEntry> _metadataCache = {};
   final Set<String> _knownCompactTaskFiles = {};
 
   Future<List<TaskSummary>> listTasks(
+    String workspaceRoot, {
+    String? chatSessionId,
+    String? projectId,
+  }) async {
+    return _coordinator.synchronized(
+      workspaceRoot,
+      () => _listTasks(
+        workspaceRoot,
+        chatSessionId: chatSessionId,
+        projectId: projectId,
+      ),
+    );
+  }
+
+  Future<List<TaskSummary>> _listTasks(
     String workspaceRoot, {
     String? chatSessionId,
     String? projectId,
@@ -36,7 +59,9 @@ class TaskRepository {
         final summary = cached != null && cached.matches(stat)
             ? cached.summary
             : _summaryFromMap(
-                await _snapshots.readMap(file, isValid: _isTaskMap),
+                await _snapshots
+                    .readMapWithoutRepair(file, isValid: _isEnvelopeMap)
+                    .then((value) => value?.map),
               );
         if (summary == null) continue;
         if (cached == null || !cached.matches(stat)) {
@@ -56,7 +81,7 @@ class TaskRepository {
     return summaries;
   }
 
-  Future<Task?> loadLatestTask(
+  Future<PersistedSnapshot<Task>?> loadLatestTask(
     String workspaceRoot, {
     String? chatSessionId,
     String? projectId,
@@ -74,7 +99,54 @@ class TaskRepository {
     );
   }
 
-  Future<Task?> loadTask(
+  Future<PersistedSnapshot<Task>?> loadTask(
+    String workspaceRoot,
+    String taskId, {
+    String? chatSessionId,
+    String? projectId,
+    bool includeHistory = true,
+  }) async {
+    final snapshot = await loadTaskSnapshot(
+      workspaceRoot,
+      taskId,
+      chatSessionId: chatSessionId,
+      projectId: projectId,
+      includeHistory: includeHistory,
+    );
+    return snapshot;
+  }
+
+  Future<PersistedSnapshot<Task>?> loadTaskSnapshot(
+    String workspaceRoot,
+    String taskId, {
+    String? chatSessionId,
+    String? projectId,
+    bool includeHistory = true,
+    bool assumeLocked = false,
+  }) async {
+    if (!assumeLocked) {
+      return _coordinator.synchronized(
+        workspaceRoot,
+        () => loadTaskSnapshot(
+          workspaceRoot,
+          taskId,
+          chatSessionId: chatSessionId,
+          projectId: projectId,
+          includeHistory: includeHistory,
+          assumeLocked: true,
+        ),
+      );
+    }
+    return _loadTaskSnapshotUnlocked(
+      workspaceRoot,
+      taskId,
+      chatSessionId: chatSessionId,
+      projectId: projectId,
+      includeHistory: includeHistory,
+    );
+  }
+
+  Future<PersistedSnapshot<Task>?> _loadTaskSnapshotUnlocked(
     String workspaceRoot,
     String taskId, {
     String? chatSessionId,
@@ -87,48 +159,100 @@ class TaskRepository {
     if (!includeHistory && metadataStat != null) {
       final cached = _metadataCache[file.path];
       if (cached != null && cached.matches(metadataStat)) {
-        final task = cached.task;
+        final task = cached.task.copyWith(persistenceRevision: cached.revision);
         if (chatSessionId != null && task.chatSessionId != chatSessionId) {
           return null;
         }
         if (projectId != null && task.projectId != projectId) return null;
-        return task;
+        return PersistedSnapshot(
+          value: task,
+          revision: task.persistenceRevision,
+        );
       }
     }
-    final raw = await _snapshots.readMap(file, isValid: _isTaskMap);
+    final raw = await _snapshots.readMapWithoutRepair(
+      file,
+      isValid: _isEnvelopeMap,
+    );
     if (raw == null) return null;
+    final envelope = SnapshotEnvelope.decode(raw.map);
+    final decoded = ModelJson.decode<Task>(
+      envelope.document,
+    ).copyWith(persistenceRevision: envelope.revision);
     final task = includeHistory
-        ? ModelJson.decode<Task>(raw)
-        : _cachedMetadataTask(file, metadataStat ?? await file.stat(), raw);
+        ? decoded
+        : _cachedMetadataTask(
+            file,
+            metadataStat ?? await file.stat(),
+            envelope.document,
+            envelope.revision,
+          ).copyWith(persistenceRevision: envelope.revision);
     if (chatSessionId != null && task.chatSessionId != chatSessionId) {
       return null;
     }
     if (projectId != null && task.projectId != projectId) return null;
-    if (!includeHistory || raw.containsKey('runs')) return task;
+    if (!includeHistory) {
+      return PersistedSnapshot(value: task, revision: envelope.revision);
+    }
     final runs = await _loadRuns(dir);
-    return runs.isEmpty ? task : task.copyWith(runs: runs);
+    return PersistedSnapshot(
+      value: runs.isEmpty ? task : task.copyWith(runs: runs),
+      revision: envelope.revision,
+      fromBackup: raw.fromBackup,
+    );
   }
 
-  Future<void> saveSnapshot(String workspaceRoot, Task task) async {
+  Future<PersistedSnapshot<Task>> saveSnapshot(
+    String workspaceRoot,
+    Task task, {
+    int? expectedRevision,
+    bool assumeLocked = false,
+  }) async {
+    if (!assumeLocked) {
+      return _coordinator.synchronized(
+        workspaceRoot,
+        () => saveSnapshot(
+          workspaceRoot,
+          task,
+          expectedRevision: expectedRevision,
+          assumeLocked: true,
+        ),
+      );
+    }
+    return _saveSnapshotUnlocked(
+      workspaceRoot,
+      task,
+      expectedRevision: expectedRevision,
+    );
+  }
+
+  Future<PersistedSnapshot<Task>> _saveSnapshotUnlocked(
+    String workspaceRoot,
+    Task task, {
+    int? expectedRevision,
+  }) async {
     final dir = _validatedTaskDirectory(workspaceRoot, task.id);
     await dir.create(recursive: true);
     final file = File(path.join(dir.path, documentFileName));
+    final current = await _loadTaskSnapshotUnlocked(
+      workspaceRoot,
+      task.id,
+      includeHistory: true,
+    );
+    final actualRevision = current?.revision ?? 0;
+    final requiredRevision = expectedRevision ?? task.persistenceRevision;
+    if (requiredRevision != actualRevision) {
+      throw StaleSnapshotException(
+        path: file.path,
+        expectedRevision: requiredRevision,
+        actualRevision: actualRevision,
+      );
+    }
+    final nextRevision = actualRevision + 1;
     final fileExists = await file.exists();
     final historyDir = Directory(path.join(dir.path, runsDirectoryName));
     final hasHistory = await historyDir.exists();
-    final existing =
-        fileExists &&
-            !hasHistory &&
-            task.runs.isEmpty &&
-            !_knownCompactTaskFiles.contains(file.path)
-        ? await _readExistingTaskMap(file)
-        : null;
-    final legacyRuns = _legacyRuns(existing);
-    final runsToPersist = legacyRuns != null
-        ? task.runs.isEmpty
-              ? legacyRuns
-              : task.runs
-        : !fileExists || !hasHistory
+    final runsToPersist = !fileExists || !hasHistory
         ? task.runs
         : task.runs.isEmpty
         ? const <TaskRun>[]
@@ -138,12 +262,51 @@ class TaskRepository {
       await _saveRun(historyDir, run);
     }
 
-    await _snapshots.writeMap(file, _compactTaskMap(task), isValid: _isTaskMap);
+    await _snapshots.writeMap(
+      file,
+      SnapshotEnvelope.encode(_compactTaskMap(task), nextRevision),
+      isValid: _isEnvelopeMap,
+    );
     _invalidateTaskCaches(file);
     _knownCompactTaskFiles.add(file.path);
+    return PersistedSnapshot(
+      value: task.copyWith(persistenceRevision: nextRevision),
+      revision: nextRevision,
+    );
   }
 
+  Future<PersistedSnapshot<Task>?> loadTaskSnapshotUnlocked(
+    String workspaceRoot,
+    String taskId, {
+    String? chatSessionId,
+    String? projectId,
+    bool includeHistory = true,
+  }) => _loadTaskSnapshotUnlocked(
+    workspaceRoot,
+    taskId,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+    includeHistory: includeHistory,
+  );
+
+  Future<PersistedSnapshot<Task>> saveSnapshotUnlocked(
+    String workspaceRoot,
+    Task task, {
+    required int expectedRevision,
+  }) => _saveSnapshotUnlocked(
+    workspaceRoot,
+    task,
+    expectedRevision: expectedRevision,
+  );
+
   Future<bool> deleteTask(String workspaceRoot, String taskId) async {
+    return _coordinator.synchronized(
+      workspaceRoot,
+      () => deleteTaskUnlocked(workspaceRoot, taskId),
+    );
+  }
+
+  Future<bool> deleteTaskUnlocked(String workspaceRoot, String taskId) async {
     final dir = _validatedTaskDirectory(workspaceRoot, taskId);
     if (!await dir.exists()) return false;
     await dir.delete(recursive: true);
@@ -187,11 +350,13 @@ class TaskRepository {
     String name,
     String content,
   ) async {
-    final taskDir = _validatedTaskDirectory(workspaceRoot, taskId);
-    _validateFileName(name, 'name');
-    final dir = Directory(path.join(taskDir.path, 'logs'));
-    await dir.create(recursive: true);
-    await _writeText(File(path.join(dir.path, name)), content);
+    await _coordinator.synchronized(workspaceRoot, () async {
+      final taskDir = _validatedTaskDirectory(workspaceRoot, taskId);
+      _validateFileName(name, 'name');
+      final dir = Directory(path.join(taskDir.path, 'logs'));
+      await dir.create(recursive: true);
+      await _writeText(File(path.join(dir.path, name)), content);
+    });
   }
 
   String taskRelativePath(String taskId, String fileName) {
@@ -239,19 +404,11 @@ class TaskRepository {
     await file.writeAsString(content);
   }
 
-  bool _isTaskMap(Map<String, dynamic> map) {
-    try {
-      final task = ModelJson.decode<Task>(map);
-      return task.id.trim().isNotEmpty;
-    } catch (_) {
-      return false;
-    }
-  }
-
   TaskSummary? _summaryFromMap(Map<String, dynamic>? raw) {
     if (raw == null) return null;
     try {
-      final task = ModelJson.decode<Task>(_withoutRuns(raw));
+      final envelope = SnapshotEnvelope.decode(raw);
+      final task = ModelJson.decode<Task>(_withoutRuns(envelope.document));
       return TaskSummary(
         id: task.id,
         title: task.title,
@@ -266,17 +423,27 @@ class TaskRepository {
     }
   }
 
-  Task _cachedMetadataTask(File file, FileStat stat, Map<String, dynamic> raw) {
+  Task _cachedMetadataTask(
+    File file,
+    FileStat stat,
+    Map<String, dynamic> raw,
+    int revision,
+  ) {
     final cached = _metadataCache[file.path];
-    if (cached != null && cached.matches(stat)) return cached.task;
+    if (cached != null && cached.matches(stat)) {
+      return cached.task.copyWith(persistenceRevision: cached.revision);
+    }
     final task = ModelJson.decode<Task>(_withoutRuns(raw));
-    _metadataCache[file.path] = _TaskCacheEntry(stat, task);
+    _metadataCache[file.path] = _TaskCacheEntry(stat, task, revision);
     return task;
   }
 
   Map<String, dynamic> _compactTaskMap(Task task) {
-    final map = ModelJson.encode(task.copyWith(runs: const []));
+    final map = ModelJson.encode(
+      task.copyWith(runs: const [], persistenceRevision: 0),
+    );
     map.remove('runs');
+    map.remove('persistenceRevision');
     return map;
   }
 
@@ -284,24 +451,6 @@ class TaskRepository {
     final compact = Map<String, dynamic>.from(raw);
     compact.remove('runs');
     return compact;
-  }
-
-  Future<Map<String, dynamic>?> _readExistingTaskMap(File file) async {
-    try {
-      return await _snapshots.readMap(file, isValid: _isTaskMap);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  List<TaskRun>? _legacyRuns(Map<String, dynamic>? raw) {
-    if (raw == null || !raw.containsKey('runs')) return null;
-    try {
-      final task = ModelJson.decode<Task>(raw);
-      return task.runs;
-    } catch (_) {
-      return const [];
-    }
   }
 
   Future<void> _saveRun(Directory historyDir, TaskRun run) async {
@@ -320,9 +469,9 @@ class TaskRepository {
     final runs = <TaskRun>[];
     await for (final entity in historyDir.list(followLinks: false)) {
       if (entity is! File || path.extension(entity.path) != '.json') continue;
-      final raw = await _snapshots.readMap(entity, isValid: _isTaskRunMap);
+      final raw = await _snapshots.readMapWithoutRepair(entity);
       if (raw == null) continue;
-      runs.add(ModelJson.decode<TaskRun>(raw));
+      runs.add(ModelJson.decode<TaskRun>(raw.map));
     }
     runs.sort((a, b) {
       final started = a.startedAt.compareTo(b.startedAt);
@@ -335,6 +484,16 @@ class TaskRepository {
     try {
       final run = ModelJson.decode<TaskRun>(map);
       return run.runId.trim().isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _isEnvelopeMap(Map<String, dynamic> map) {
+    try {
+      final envelope = SnapshotEnvelope.decode(map);
+      final task = ModelJson.decode<Task>(envelope.document);
+      return task.id.trim().isNotEmpty;
     } catch (_) {
       return false;
     }
@@ -367,8 +526,9 @@ class _TaskSummaryCacheEntry {
 class _TaskCacheEntry {
   final FileStat stat;
   final Task task;
+  final int revision;
 
-  const _TaskCacheEntry(this.stat, this.task);
+  const _TaskCacheEntry(this.stat, this.task, this.revision);
 
   bool matches(FileStat other) =>
       stat.modified == other.modified && stat.size == other.size;

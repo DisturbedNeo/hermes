@@ -23,13 +23,14 @@ import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
+import 'package:hermes/core/services/planning_structured_output.dart';
 import 'package:hermes/core/services/question_policy_service.dart';
 import 'package:hermes/core/services/sandbox_policy.dart';
 import 'package:hermes/core/services/task_system/task_gate_evaluator.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
-import 'package:hermes/core/services/task_system/task_planning_tool_call_runner.dart';
 import 'package:hermes/core/services/task_system/task_planning_tools.dart';
+import 'package:hermes/core/services/task_system/task_planning_service.dart';
 import 'package:hermes/core/services/task_system/task_repository.dart';
 import 'package:hermes/core/services/task_system/task_summary.dart';
 import 'package:hermes/core/services/task_system/task_view_service.dart';
@@ -238,17 +239,22 @@ class TaskService {
     required ToolService toolService,
     required WorkspaceSandbox sandbox,
     TaskRepository? repository,
+    TaskPlanner planner = const TaskPlanningService(),
+    StructuredPlanningOutputService structuredOutput =
+        const StructuredPlanningOutputService(),
     WorkspaceDiscoveryProfileService profileService =
         const WorkspaceDiscoveryProfileService(),
   }) : _toolService = toolService,
-       _planningRunner = const TaskPlanningToolCallRunner(),
+       _planner = planner,
+       _structuredOutput = structuredOutput,
        _repository = repository ?? TaskRepository(),
        _sandbox = sandbox,
        _profileService = profileService,
        _gateEvaluator = TaskGateEvaluator(sandbox: sandbox);
 
   final ToolService _toolService;
-  final TaskPlanningToolCallRunner _planningRunner;
+  final TaskPlanner _planner;
+  final StructuredPlanningOutputService _structuredOutput;
   final TaskViewService _taskViewService = const TaskViewService();
   final TaskRepository _repository;
   final WorkspaceSandbox _sandbox;
@@ -259,6 +265,11 @@ class TaskService {
 
   TaskRepository get repository => _repository;
   ToolService get toolService => _toolService;
+
+  Future<Task> _persistTask(String workspaceRoot, Task task) async {
+    final persisted = await _repository.saveSnapshot(workspaceRoot, task);
+    return persisted.value;
+  }
 
   Future<List<TaskSummary>> listTasks(
     WorkspaceAttachment workspace, {
@@ -276,12 +287,13 @@ class TaskService {
     WorkspaceAttachment workspace, {
     String? chatSessionId,
     String? projectId,
-  }) {
-    return _repository.loadLatestTask(
+  }) async {
+    final snapshot = await _repository.loadLatestTask(
       workspace.rootPath,
       chatSessionId: chatSessionId,
       projectId: projectId,
     );
+    return snapshot?.value;
   }
 
   Future<Task?> loadTask(
@@ -290,14 +302,15 @@ class TaskService {
     String? chatSessionId,
     String? projectId,
     bool includeHistory = true,
-  }) {
-    return _repository.loadTask(
+  }) async {
+    final snapshot = await _repository.loadTask(
       workspace.rootPath,
       taskId,
       chatSessionId: chatSessionId,
       projectId: projectId,
       includeHistory: includeHistory,
     );
+    return snapshot?.value;
   }
 
   Future<int> deleteTasksForChatSession(
@@ -332,13 +345,13 @@ class TaskService {
       chatSessionId: chatSessionId,
       updatedAt: DateTime.now(),
     );
-    await _repository.saveSnapshot(workspace.rootPath, updated);
-    return updated;
+    return _persistTask(workspace.rootPath, updated);
   }
 
   Future<Task> recoverTask({
     required WorkspaceAttachment workspace,
     required Task snapshot,
+    bool persist = true,
   }) async {
     if (snapshot.status != TaskStatus.running) return snapshot;
     final now = DateTime.now();
@@ -357,8 +370,7 @@ class TaskService {
         'Recovered an interrupted task. Review the current step before continuing.',
       ),
     );
-    await _repository.saveSnapshot(workspace.rootPath, recovered);
-    return recovered;
+    return persist ? _persistTask(workspace.rootPath, recovered) : recovered;
   }
 
   String encodeTask(Task task) =>
@@ -400,6 +412,8 @@ class TaskService {
       final json = await _completeJson(
         client: client,
         system: _refinerSystemInstruction,
+        expectedShape:
+            '{"title":"...","goal":"...","constraints":[],"successCriteria":[],"assumptions":[],"questions":[]}',
         label: 'Prompt Refiner',
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
@@ -528,8 +542,15 @@ $userPrompt
     task = task.copyWith(
       planningMetrics: task.planningMetrics.add(planningMetrics),
     );
-    await _repository.saveSnapshot(workspace.rootPath, task);
-    return task;
+    final existing = await _repository.loadTaskSnapshot(
+      workspace.rootPath,
+      task.id,
+      includeHistory: false,
+    );
+    if (existing != null) {
+      task = task.copyWith(persistenceRevision: existing.revision);
+    }
+    return _persistTask(workspace.rootPath, task);
   }
 
   Future<_IncrementalTaskPlanAttempt> _completeTaskPlanWithCommands({
@@ -577,10 +598,9 @@ $userPrompt
       requiredEvidence: planningContext?.expectedEvidence ?? const [],
       requireDeclaredWriteBoundary: planningContext != null,
     );
-    final registry = TaskPlanningToolRegistry(context: context);
-    final result = await _planningRunner.complete(
+    final planningResult = await _planner.plan(
       client: client,
-      registry: registry,
+      context: context,
       label: 'Incremental Task Planner',
       system:
           '''
@@ -611,18 +631,8 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
     return _IncrementalTaskPlanAttempt(
       task: context.committedTask,
       usedPlanningTools: context.committedTask != null,
-      planningMetrics: _planningMetricsFromResult(result),
+      planningMetrics: planningResult.planningMetrics,
     );
-  }
-
-  PlanningMetrics _planningMetricsFromResult(Map<String, dynamic> result) {
-    final raw = result['planning_metrics'];
-    if (raw is! Map) return const PlanningMetrics();
-    try {
-      return ModelJson.decode<PlanningMetrics>(Map<String, dynamic>.from(raw));
-    } catch (_) {
-      return const PlanningMetrics();
-    }
   }
 
   Task _taskPlanningSeed({
@@ -794,8 +804,15 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
       planningContext: planningContext,
       now: now,
     );
-    await _repository.saveSnapshot(workspace.rootPath, task);
-    return task;
+    final existing = await _repository.loadTaskSnapshot(
+      workspace.rootPath,
+      task.id,
+      includeHistory: false,
+    );
+    final prepared = existing == null
+        ? task
+        : task.copyWith(persistenceRevision: existing.revision);
+    return _persistTask(workspace.rootPath, prepared);
   }
 
   Future<Task> updateTaskPlan({
@@ -808,14 +825,14 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
     final normalised = _normaliseEditedTask(
       parsed.copyWith(
         id: snapshot.id,
+        persistenceRevision: snapshot.persistenceRevision,
         chatSessionId: snapshot.chatSessionId,
         projectId: snapshot.projectId,
       ),
       snapshot,
       now,
     );
-    await _repository.saveSnapshot(workspace.rootPath, normalised);
-    return normalised;
+    return _persistTask(workspace.rootPath, normalised);
   }
 
   Future<Task> runNextStep({
@@ -831,15 +848,21 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
     CancellationToken? cancellationToken,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
     TaskExecutionRequest executionRequest = const TaskExecutionRequest(),
+    bool persist = true,
   }) async {
     cancellationToken?.throwIfCancelled();
-    var working = await recoverTask(workspace: workspace, snapshot: snapshot);
+    var working = await recoverTask(
+      workspace: workspace,
+      snapshot: snapshot,
+      persist: persist,
+    );
+    Future<Task> save(Task task) =>
+        persist ? _persistTask(workspace.rootPath, task) : Future.value(task);
     if (working.isTerminal) return working;
     final step = working.nextRunnableStep;
     if (step == null) {
       final completed = _markCompleted(working);
-      await _repository.saveSnapshot(workspace.rootPath, completed);
-      return completed;
+      return save(completed);
     }
 
     if (working.pendingQuestion != null) return working;
@@ -862,8 +885,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
             ),
             updatedAt: DateTime.now(),
           );
-      await _repository.saveSnapshot(workspace.rootPath, blocked);
-      return blocked;
+      return save(blocked);
     }
 
     final now = DateTime.now();
@@ -891,7 +913,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
           pendingQuestion: null,
           updatedAt: now,
         );
-    await _repository.saveSnapshot(workspace.rootPath, working);
+    working = await save(working);
 
     try {
       var execution = await _executeStep(
@@ -973,8 +995,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
           break;
       }
 
-      await _repository.saveSnapshot(workspace.rootPath, working);
-      return working;
+      return save(working);
     } on OperationCancelledException catch (e) {
       final cancelledAt = DateTime.now();
       final cancelledRun = run.copyWith(
@@ -996,8 +1017,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
             pendingQuestion: null,
             updatedAt: cancelledAt,
           );
-      await _repository.saveSnapshot(workspace.rootPath, working);
-      return working;
+      return save(working);
     } on ChatTransportException catch (e) {
       final pausedAt = DateTime.now();
       final pausedRun = run.copyWith(
@@ -1021,8 +1041,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
             pendingQuestion: null,
             updatedAt: pausedAt,
           );
-      await _repository.saveSnapshot(workspace.rootPath, working);
-      return working;
+      return save(working);
     } catch (e) {
       final failedRun = run.copyWith(
         status: TaskRunStatus.failed,
@@ -1041,8 +1060,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
             currentStepId: step.id,
             updatedAt: DateTime.now(),
           );
-      await _repository.saveSnapshot(workspace.rootPath, working);
-      return working;
+      return save(working);
     }
   }
 
@@ -1065,8 +1083,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
           pendingApproval: null,
           updatedAt: DateTime.now(),
         );
-    await _repository.saveSnapshot(workspace.rootPath, updated);
-    return updated;
+    return _persistTask(workspace.rootPath, updated);
   }
 
   Future<Task> retryCurrentStep({
@@ -1087,8 +1104,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
           pendingQuestion: null,
           updatedAt: DateTime.now(),
         );
-    await _repository.saveSnapshot(workspace.rootPath, updated);
-    return updated;
+    return _persistTask(workspace.rootPath, updated);
   }
 
   Future<Task> skipCurrentStep({
@@ -1116,8 +1132,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
         ),
       ],
     );
-    await _repository.saveSnapshot(workspace.rootPath, updated);
-    return updated;
+    return _persistTask(workspace.rootPath, updated);
   }
 
   Future<Task> stopTask({
@@ -1133,8 +1148,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
       completedAt: now,
       updatedAt: now,
     );
-    await _repository.saveSnapshot(workspace.rootPath, updated);
-    return updated;
+    return _persistTask(workspace.rootPath, updated);
   }
 
   Future<Task> answerOpenQuestion({
@@ -1171,8 +1185,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
           ),
           updatedAt: DateTime.now(),
         );
-    await _repository.saveSnapshot(workspace.rootPath, updated);
-    return updated;
+    return _persistTask(workspace.rootPath, updated);
   }
 
   Future<Task> replanUnfinished({
@@ -1193,8 +1206,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
       onModelOutput: onModelOutput,
       cancellationToken: cancellationToken,
     );
-    await _repository.saveSnapshot(workspace.rootPath, updated);
-    return updated;
+    return _persistTask(workspace.rootPath, updated);
   }
 
   Future<WorkspaceMetadata> _collectWorkspaceMetadata(
@@ -2354,10 +2366,9 @@ provenance and evaluates gates separately.
       requiredGates: snapshot.gates,
       preserveCompletedStepsOnly: true,
     );
-    final registry = TaskPlanningToolRegistry(context: context);
-    final result = await _planningRunner.complete(
+    final planningResult = await _planner.replan(
       client: client,
-      registry: registry,
+      context: context,
       label: 'Incremental Task Replan',
       system:
           '''
@@ -2380,7 +2391,7 @@ ${_encoder.convert(_taskViewService.query(snapshot, maxSteps: _taskPlanningStepL
       onModelOutput: onModelOutput,
       cancellationToken: cancellationToken,
     );
-    var planningMetrics = _planningMetricsFromResult(result);
+    var planningMetrics = planningResult.planningMetrics;
     if (context.committedTask != null) {
       final now = DateTime.now();
       final replanRun = TaskRun(
@@ -2837,23 +2848,20 @@ $whitelist
     required String system,
     required String user,
     required String label,
+    required String expectedShape,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
-    final completion = await _completeChatForTask(
+    final result = await _structuredOutput.completeObject(
       client: client,
       label: label,
+      system: system,
+      user: user,
+      expectedShape: expectedShape,
       onModelOutput: onModelOutput,
       cancellationToken: cancellationToken,
-      messages: [
-        ChatMessage(role: 'system', content: system),
-        ChatMessage(role: 'user', content: user),
-      ],
     );
-    final text = completion.content.trim().isNotEmpty
-        ? completion.content
-        : completion.reasoning;
-    return TaskJson.parseObject(text);
+    return result.value;
   }
 
   Future<List<ChatMessage>> _prepareTaskCompletionMessages({

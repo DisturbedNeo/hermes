@@ -426,7 +426,7 @@ void main() {
           status: TaskStepStatus.pending,
         ),
       );
-      await service.repository.saveSnapshot(root.path, task);
+      final persisted = await service.repository.saveSnapshot(root.path, task);
       final client = _QueueChatClient([
         jsonEncode({
           'status': 'completed',
@@ -441,7 +441,7 @@ void main() {
       final updated = await service.runNextStep(
         client: client,
         workspace: workspace,
-        snapshot: task,
+        snapshot: persisted.value,
         baseSystemPrompt: 'system',
       );
 

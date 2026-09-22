@@ -27,6 +27,20 @@ class AtomicJsonSnapshotStore {
     File primary, {
     bool Function(Map<String, dynamic> map)? isValid,
   }) async {
+    final result = await readMapWithoutRepair(primary, isValid: isValid);
+    if (result == null || !result.fromBackup) return result?.map;
+    await _replace(
+      primary,
+      '${const JsonEncoder.withIndent('  ').convert(result.map)}\n',
+    );
+    return result.map;
+  }
+
+  /// Reads a primary or backup without rewriting a corrupt primary.
+  Future<({Map<String, dynamic> map, bool fromBackup})?> readMapWithoutRepair(
+    File primary, {
+    bool Function(Map<String, dynamic> map)? isValid,
+  }) async {
     Object? primaryError;
     if (await primary.exists()) {
       try {
@@ -34,7 +48,7 @@ class AtomicJsonSnapshotStore {
         if (isValid != null && !isValid(map)) {
           throw const FormatException('Snapshot object is invalid');
         }
-        return map;
+        return (map: map, fromBackup: false);
       } catch (error) {
         primaryError = error;
       }
@@ -47,11 +61,7 @@ class AtomicJsonSnapshotStore {
         if (isValid != null && !isValid(recovered)) {
           throw const FormatException('Backup snapshot object is invalid');
         }
-        await _replace(
-          primary,
-          '${const JsonEncoder.withIndent('  ').convert(recovered)}\n',
-        );
-        return recovered;
+        return (map: recovered, fromBackup: true);
       } catch (backupError) {
         throw SnapshotCorruptionException(
           primary.path,

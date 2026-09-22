@@ -2644,6 +2644,14 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
   @override
   final String id = 'ProjectState';
 
+  static int _$persistenceRevision(ProjectState v) => v.persistenceRevision;
+  static const Field<ProjectState, int> _f$persistenceRevision = Field(
+    'persistenceRevision',
+    _$persistenceRevision,
+    opt: true,
+    def: 0,
+    hook: JsonIntHook(min: 0),
+  );
   static String _$id(ProjectState v) => v.id;
   static const Field<ProjectState, String> _f$id = Field(
     'id',
@@ -2913,6 +2921,7 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
 
   @override
   final MappableFields<ProjectState> fields = const {
+    #persistenceRevision: _f$persistenceRevision,
     #id: _f$id,
     #title: _f$title,
     #originalGoal: _f$originalGoal,
@@ -2957,6 +2966,7 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
   final MappingHook hook = const ProjectStateJsonHook();
   static ProjectState _instantiate(DecodingData data) {
     return ProjectState(
+      persistenceRevision: data.dec(_f$persistenceRevision),
       id: data.dec(_f$id),
       title: data.dec(_f$title),
       originalGoal: data.dec(_f$originalGoal),

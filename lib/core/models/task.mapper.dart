@@ -1360,6 +1360,14 @@ class TaskMapper extends ClassMapperBase<Task> {
   @override
   final String id = 'Task';
 
+  static int _$persistenceRevision(Task v) => v.persistenceRevision;
+  static const Field<Task, int> _f$persistenceRevision = Field(
+    'persistenceRevision',
+    _$persistenceRevision,
+    opt: true,
+    def: 0,
+    hook: JsonIntHook(min: 0),
+  );
   static String _$id(Task v) => v.id;
   static const Field<Task, String> _f$id = Field(
     'id',
@@ -1665,6 +1673,7 @@ class TaskMapper extends ClassMapperBase<Task> {
 
   @override
   final MappableFields<Task> fields = const {
+    #persistenceRevision: _f$persistenceRevision,
     #id: _f$id,
     #title: _f$title,
     #originalPrompt: _f$originalPrompt,
@@ -1714,6 +1723,7 @@ class TaskMapper extends ClassMapperBase<Task> {
   final MappingHook hook = const TaskJsonHook();
   static Task _instantiate(DecodingData data) {
     return Task(
+      persistenceRevision: data.dec(_f$persistenceRevision),
       id: data.dec(_f$id),
       title: data.dec(_f$title),
       originalPrompt: data.dec(_f$originalPrompt),

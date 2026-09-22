@@ -256,8 +256,8 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
     );
     await _chatLibrary.deleteChat(chatId);
     try {
-      await _deleteTasksForChatSessionInWorkspaces(chatId, workspaces);
       await _deleteProjectsForChatSessionInWorkspaces(chatId, workspaces);
+      await _deleteTasksForChatSessionInWorkspaces(chatId, workspaces);
     } finally {
       for (final tab in _tabs.where((tab) => tab.currentChatId == chatId)) {
         await tab.resetIfCurrentSavedChatDeleted(chatId);

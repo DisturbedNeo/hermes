@@ -2,20 +2,19 @@ import 'dart:convert';
 
 import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/helpers/uuid.dart';
-import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/planning_metrics.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
+import 'package:hermes/core/services/planning_runtime.dart';
+import 'package:hermes/core/services/planning_structured_output.dart';
 import 'package:hermes/core/services/project_system/project_planning_gateway.dart';
-import 'package:hermes/core/services/project_system/project_planning_tool_call_runner.dart';
 import 'package:hermes/core/services/project_system/project_planning_tools.dart';
 import 'package:hermes/core/services/project_system/project_planning_workspace_reader.dart';
 import 'package:hermes/core/services/project_system/project_view_service.dart';
 import 'package:hermes/core/services/question_policy_service.dart';
-import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/tool_service.dart';
 
@@ -25,20 +24,46 @@ export 'package:hermes/core/services/project_system/project_planning_gateway.dar
         ProjectEvidenceSnapshot,
         ProjectInitialisation,
         ProjectIncrementalPlanResult,
-        ProjectPlanningGateway;
+        ProjectPlanner,
+        ProjectCompletionEvaluator;
 
-class ProjectModelCalls implements ProjectPlanningGateway {
+class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
   ProjectModelCalls({
     required ToolService toolService,
     ProjectViewService projectViewService = const ProjectViewService(),
+    PlanningToolCallRunner planningRunner = const PlanningToolCallRunner(),
+    StructuredPlanningOutputService structuredOutput =
+        const StructuredPlanningOutputService(),
   }) : _toolService = toolService,
        _projectViewService = projectViewService,
-       _planningRunner = const ProjectPlanningToolCallRunner();
+       _planningRunner = planningRunner,
+       _structuredOutput = structuredOutput;
 
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
   final ToolService _toolService;
   final ProjectViewService _projectViewService;
-  final ProjectPlanningToolCallRunner _planningRunner;
+  final PlanningToolCallRunner _planningRunner;
+  final StructuredPlanningOutputService _structuredOutput;
+
+  Future<Map<String, dynamic>> _runPlanning({
+    required ChatClient client,
+    required PlanningToolRegistry registry,
+    required String label,
+    required String system,
+    required String user,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  }) async => (await _planningRunner.complete(
+    PlanningRunRequest(
+      client: client,
+      registry: registry,
+      label: label,
+      system: system,
+      user: user,
+      onModelOutput: onModelOutput,
+      cancellationToken: cancellationToken,
+    ),
+  )).toMap();
 
   @override
   Future<ProjectInitialisation> initializeProject({
@@ -136,7 +161,7 @@ ${_encoder.convert(_initialisationToMap(initialisation))}
     );
     final registry = ProjectPlanningToolRegistry(context: context);
     try {
-      final result = await _planningRunner.complete(
+      final result = await _runPlanning(
         client: client,
         registry: registry,
         label: 'Incremental Project Plan Revision',
@@ -215,7 +240,7 @@ ${_encoder.convert(_projectViewService.query(project))}
     );
     final registry = ProjectPlanningToolRegistry(context: context);
     try {
-      final result = await _planningRunner.complete(
+      final result = await _runPlanning(
         client: client,
         registry: registry,
         label: 'Incremental Project Task Split',
@@ -407,35 +432,16 @@ ${_encoder.convert(ModelJson.encode(project))}
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
-    final first = await _completeRaw(
+    final result = await _structuredOutput.completeObject(
       client: client,
+      label: label,
       system: system,
       user: user,
-      label: label,
+      expectedShape: expectedShape,
       onModelOutput: onModelOutput,
       cancellationToken: cancellationToken,
     );
-    final parsed = TaskJson.tryParseObject(first);
-    if (parsed != null) return parsed;
-
-    final repaired = await _completeRaw(
-      client: client,
-      system: system,
-      user:
-          '''
-Repair this malformed model output into one valid JSON object matching this shape:
-$expectedShape
-
-Malformed output:
-$first
-
-Return only the repaired JSON object.
-''',
-      label: '$label Repair',
-      onModelOutput: onModelOutput,
-      cancellationToken: cancellationToken,
-    );
-    return TaskJson.parseObject(repaired);
+    return result.value;
   }
 
   Future<ProjectInitialisation> _completeInitialPlanning({
@@ -468,7 +474,7 @@ Return only the repaired JSON object.
       context: context,
       includeProjectDetails: true,
     );
-    final result = await _planningRunner.complete(
+    final result = await _runPlanning(
       client: client,
       registry: registry,
       label: 'Project Initial Planning',
@@ -643,65 +649,6 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
       for (final item in treePaths)
         if (item is String && !item.endsWith('/')) item,
     ];
-  }
-
-  Future<String> _completeRaw({
-    required ChatClient client,
-    required String system,
-    required String user,
-    required String label,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) async {
-    _emit(
-      onModelOutput,
-      TaskModelOutputEvent(type: TaskModelOutputEventType.start, label: label),
-    );
-    final completion = await client.completeChatStreamed(
-      messages: [
-        ChatMessage(role: 'system', content: system),
-        ChatMessage(role: 'user', content: user),
-      ],
-      diagnosticsLabel: label,
-      onToken: (token) {
-        final content = token.content;
-        if (content != null && content.isNotEmpty) {
-          _emit(
-            onModelOutput,
-            TaskModelOutputEvent(
-              type: TaskModelOutputEventType.content,
-              label: label,
-              text: content,
-              token: token,
-            ),
-          );
-        }
-        final reasoning = token.reasoning;
-        if (reasoning != null && reasoning.isNotEmpty) {
-          _emit(
-            onModelOutput,
-            TaskModelOutputEvent(
-              type: TaskModelOutputEventType.reasoning,
-              label: label,
-              text: reasoning,
-              token: token,
-            ),
-          );
-        }
-      },
-      cancellationToken: cancellationToken,
-    );
-    _emit(
-      onModelOutput,
-      TaskModelOutputEvent(type: TaskModelOutputEventType.done, label: label),
-    );
-    return completion.content.trim().isNotEmpty
-        ? completion.content
-        : completion.reasoning;
-  }
-
-  void _emit(TaskModelOutputSink? sink, TaskModelOutputEvent event) {
-    sink?.call(event);
   }
 
   Map<String, dynamic> _initialisationToMap(ProjectInitialisation value) => {

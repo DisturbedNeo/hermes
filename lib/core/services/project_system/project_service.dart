@@ -20,12 +20,18 @@ import 'package:hermes/core/services/project_system/project_memory_service.dart'
 import 'package:hermes/core/services/project_system/project_plan_revision_service.dart';
 import 'package:hermes/core/services/project_system/project_progress_monitor.dart';
 import 'package:hermes/core/services/project_system/project_repository.dart';
+import 'package:hermes/core/services/project_system/project_aggregate_repository.dart';
 import 'package:hermes/core/services/project_system/project_scheduler.dart';
 import 'package:hermes/core/services/question_policy_service.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
+import 'package:hermes/core/services/task_system/task_execution_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/workspace_discovery_profile.dart';
+import 'package:hermes/core/services/persistence_contracts.dart';
+import 'package:hermes/core/services/planning_runtime.dart';
+import 'package:hermes/core/services/planning_structured_output.dart';
+import 'package:hermes/core/services/workspace_persistence_coordinator.dart';
 import 'package:path/path.dart' as path;
 
 typedef ProjectTaskSnapshotSink = void Function(Task? task);
@@ -40,33 +46,77 @@ int taskStepLimit(TaskEffort effort) => switch (effort) {
 class ProjectRunResult {
   final ProjectDocument project;
   final Task? activeTask;
+  final ProjectPersistenceDiagnostics? persistenceDiagnostics;
 
-  const ProjectRunResult({required this.project, this.activeTask});
+  const ProjectRunResult({
+    required this.project,
+    this.activeTask,
+    this.persistenceDiagnostics,
+  });
 }
 
 class ProjectService {
   ProjectService({
     required TaskService taskService,
     ProjectRepository? repository,
-    ProjectPlanningGateway? modelCalls,
+    ProjectPlanner? planner,
+    ProjectCompletionEvaluator? completionEvaluator,
     ProjectScheduler? scheduler,
     ProjectMemoryService? memoryService,
     ProjectProgressMonitor? progressMonitor,
+    WorkspacePersistenceCoordinator? persistenceCoordinator,
+    ProjectAggregateRepository? aggregateRepository,
+    TaskExecutionService? taskExecutionService,
+    PlanningToolCallRunner planningRunner = const PlanningToolCallRunner(),
+    StructuredPlanningOutputService structuredOutput =
+        const StructuredPlanningOutputService(),
   }) : _taskService = taskService,
-       _repository = repository ?? ProjectRepository(),
-       _modelCalls =
-           modelCalls ??
-           ProjectModelCalls(toolService: taskService.toolService),
+       _repository =
+           repository ??
+           ProjectRepository(
+             coordinator:
+                 persistenceCoordinator ?? taskService.repository.coordinator,
+           ),
+       _persistenceCoordinator =
+           persistenceCoordinator ?? taskService.repository.coordinator,
+       _providedAggregateRepository = aggregateRepository,
+       _planner =
+           planner ??
+           ProjectModelCalls(
+             toolService: taskService.toolService,
+             planningRunner: planningRunner,
+             structuredOutput: structuredOutput,
+           ),
+       _completionEvaluator =
+           completionEvaluator ??
+           ProjectModelCalls(
+             toolService: taskService.toolService,
+             planningRunner: planningRunner,
+             structuredOutput: structuredOutput,
+           ),
        _scheduler = scheduler ?? const ProjectScheduler(),
        _memoryService = memoryService ?? const ProjectMemoryService(),
-       _progressMonitor = progressMonitor ?? const ProjectProgressMonitor();
+       _progressMonitor = progressMonitor ?? const ProjectProgressMonitor(),
+       _taskExecutionService =
+           taskExecutionService ?? TaskExecutionService(tasks: taskService);
 
   final TaskService _taskService;
   final ProjectRepository _repository;
-  final ProjectPlanningGateway _modelCalls;
+  final ProjectPlanner _planner;
+  final ProjectCompletionEvaluator _completionEvaluator;
   final ProjectScheduler _scheduler;
   final ProjectMemoryService _memoryService;
   final ProjectProgressMonitor _progressMonitor;
+  final TaskExecutionService _taskExecutionService;
+  final WorkspacePersistenceCoordinator _persistenceCoordinator;
+  final ProjectAggregateRepository? _providedAggregateRepository;
+  late final ProjectAggregateRepository _aggregateRepository =
+      _providedAggregateRepository ??
+      ProjectAggregateRepository(
+        projectRepository: _repository,
+        taskRepository: _taskService.repository,
+        coordinator: _persistenceCoordinator,
+      );
   final QuestionPolicyService _questionPolicy = const QuestionPolicyService();
   final ProjectEvidenceService _evidenceService =
       const ProjectEvidenceService();
@@ -138,26 +188,40 @@ class ProjectService {
               ? project.taskIds
               : [for (final task in project.tasks) task.id],
         );
-    final tasksToPersist = persistenceContext == null
-        ? refreshed.tasks
-        : refreshed.tasks.where(persistenceContext.shouldPersistTask);
-    for (final task in tasksToPersist) {
-      final existing = await _taskService.repository.loadTask(
+    final preparedTasks = <Task>[];
+    for (final task in refreshed.tasks) {
+      final existingSnapshot = await _taskService.repository.loadTask(
         workspaceRoot,
         task.id,
         includeHistory: false,
       );
+      final existing = existingSnapshot?.value;
+      if (persistenceContext != null &&
+          !persistenceContext.shouldPersistTask(task) &&
+          existing != null) {
+        continue;
+      }
       final taskToSave = _taskForPersistence(
         task,
         existing,
         projectId: refreshed.id,
         chatSessionId: refreshed.chatSessionId,
       );
-      await _taskService.repository.saveSnapshot(workspaceRoot, taskToSave);
+      preparedTasks.add(taskToSave);
       persistenceContext?.markPersisted(task);
     }
-    await _repository.saveSnapshot(workspaceRoot, refreshed);
-    return refreshed;
+    final committed = await _aggregateRepository.commit(
+      workspaceRoot: workspaceRoot,
+      project: refreshed,
+      tasks: preparedTasks,
+    );
+    final persistedTasks = {
+      for (final task in refreshed.tasks)
+        task.id: committed.tasks[task.id]?.value ?? task,
+    };
+    return committed.project.value.copyWith(
+      tasks: [for (final task in refreshed.tasks) persistedTasks[task.id]!],
+    );
   }
 
   int _currentPlanRevision(ProjectDocument project) {
@@ -268,6 +332,8 @@ class ProjectService {
   }) {
     if (existing == null || projectTask.steps.isNotEmpty) {
       return projectTask.copyWith(
+        persistenceRevision:
+            existing?.persistenceRevision ?? projectTask.persistenceRevision,
         projectId: projectId,
         chatSessionId: chatSessionId,
       );
@@ -354,11 +420,32 @@ class ProjectService {
     WorkspaceAttachment workspace, {
     String? chatSessionId,
   }) async {
-    final project = await _repository.loadLatestProject(
+    final result = await loadLatestProjectResult(
+      workspace,
+      chatSessionId: chatSessionId,
+    );
+    return result.project;
+  }
+
+  Future<ProjectLoadResult> loadLatestProjectResult(
+    WorkspaceAttachment workspace, {
+    String? chatSessionId,
+  }) async {
+    final summaries = await _repository.listProjects(
       workspace.rootPath,
       chatSessionId: chatSessionId,
     );
-    return project == null ? null : _prepareLoadedProject(workspace, project);
+    if (summaries.isEmpty) {
+      return const ProjectLoadResult(
+        project: null,
+        diagnostics: ProjectPersistenceDiagnostics(),
+      );
+    }
+    return loadProjectResult(
+      workspace,
+      summaries.first.id,
+      chatSessionId: chatSessionId,
+    );
   }
 
   Future<ProjectDocument?> loadProject(
@@ -366,12 +453,30 @@ class ProjectService {
     String projectId, {
     String? chatSessionId,
   }) async {
-    final project = await _repository.loadProject(
+    final result = await loadProjectResult(
+      workspace,
+      projectId,
+      chatSessionId: chatSessionId,
+    );
+    return result.project;
+  }
+
+  Future<ProjectLoadResult> loadProjectResult(
+    WorkspaceAttachment workspace,
+    String projectId, {
+    String? chatSessionId,
+  }) async {
+    final result = await _aggregateRepository.loadProject(
       workspace.rootPath,
       projectId,
       chatSessionId: chatSessionId,
     );
-    return project == null ? null : _prepareLoadedProject(workspace, project);
+    final project = result.project;
+    if (project == null) return result;
+    return ProjectLoadResult(
+      project: await _prepareLoadedProject(workspace, project),
+      diagnostics: result.diagnostics,
+    );
   }
 
   Future<ProjectDocument> _prepareLoadedProject(
@@ -382,23 +487,51 @@ class ProjectService {
   Future<int> deleteProjectsForChatSession(
     WorkspaceAttachment workspace, {
     required String chatSessionId,
-  }) {
+  }) async {
     if (workspace.missing) return Future.value(0);
-    return _repository.deleteProjectsForChatSession(
+    return _deleteProjectAggregates(
       workspace.rootPath,
-      chatSessionId: chatSessionId,
+      (await _repository.listProjects(
+        workspace.rootPath,
+        chatSessionId: chatSessionId,
+      )).map((summary) => summary.id),
     );
   }
 
   Future<int> deleteOrphanedChatProjects(
     WorkspaceAttachment workspace, {
     required Set<String> retainedChatSessionIds,
-  }) {
+  }) async {
     if (workspace.missing) return Future.value(0);
-    return _repository.deleteOrphanedChatProjects(
+    return _deleteProjectAggregates(
       workspace.rootPath,
-      retainedChatSessionIds: retainedChatSessionIds,
+      (await _repository.listProjects(workspace.rootPath))
+          .where((summary) {
+            final chatSessionId = summary.chatSessionId;
+            return chatSessionId != null &&
+                !retainedChatSessionIds.contains(chatSessionId);
+          })
+          .map((summary) => summary.id),
     );
+  }
+
+  Future<int> _deleteProjectAggregates(
+    String workspaceRoot,
+    Iterable<String> projectIds,
+  ) async {
+    var deleted = 0;
+    for (final projectId in projectIds) {
+      final loaded = await _aggregateRepository.loadProject(
+        workspaceRoot,
+        projectId,
+      );
+      final project = loaded.project;
+      if (project == null) continue;
+      if (await _aggregateRepository.deleteProject(workspaceRoot, project)) {
+        deleted++;
+      }
+    }
+    return deleted;
   }
 
   Future<ProjectDocument> updateProjectChatSessionId({
@@ -448,7 +581,7 @@ class ProjectService {
     ];
     var init = client == null || planningIssues.isNotEmpty
         ? _fallbackInitialisation(userPrompt)
-        : await _modelCalls.initializeProject(
+        : await _planner.initializeProject(
             client: client,
             baseSystemPrompt: baseSystemPrompt,
             workspace: workspace,
@@ -467,7 +600,7 @@ class ProjectService {
       while (planningIssues.isNotEmpty &&
           repairAttempts < _maxAutomaticInitialPlanRepairs) {
         repairAttempts++;
-        final repaired = await _modelCalls.repairInitialisation(
+        final repaired = await _planner.repairInitialisation(
           client: client,
           baseSystemPrompt: baseSystemPrompt,
           workspace: workspace,
@@ -639,6 +772,16 @@ class ProjectService {
     required ProjectDocument snapshot,
     ProjectTaskSnapshotSink? onTaskUpdated,
   }) async {
+    final persistenceDiagnostics = await _aggregateRepository.inspect(
+      workspace.rootPath,
+      snapshot,
+    );
+    if (persistenceDiagnostics.isReadOnly) {
+      return ProjectRunResult(
+        project: snapshot,
+        persistenceDiagnostics: persistenceDiagnostics,
+      );
+    }
     snapshot = await _hydrateProjectTasks(workspace, snapshot);
     if (snapshot.isTerminal) {
       return ProjectRunResult(
@@ -679,6 +822,7 @@ class ProjectService {
     final recoveredTask = await _taskService.recoverTask(
       workspace: workspace,
       snapshot: activeTask,
+      persist: false,
     );
     onTaskUpdated?.call(recoveredTask);
     final taskStatusBlocker = _taskBlocker(recoveredTask);
@@ -845,6 +989,9 @@ class ProjectService {
       snapshot: snapshot,
       onTaskUpdated: onTaskUpdated,
     );
+    if (recovered.persistenceDiagnostics?.isReadOnly ?? false) {
+      return recovered;
+    }
     var project = recovered.project;
     var activeTask = recovered.activeTask;
     final persistenceContext = _ProjectPersistenceContext(project.tasks);
@@ -1688,7 +1835,7 @@ class ProjectService {
         DateTime.now(),
       );
     }
-    final incremental = await _modelCalls.revisePlanWithCommands(
+    final incremental = await _planner.revisePlanWithCommands(
       client: client,
       baseSystemPrompt: baseSystemPrompt,
       workspace: workspace,
@@ -1699,7 +1846,7 @@ class ProjectService {
       onModelOutput: onModelOutput,
       cancellationToken: cancellationToken,
     );
-    return _finishPlanRevision(
+    final revised = _finishPlanRevision(
       revised: incremental.project,
       questionAutonomy: questionAutonomy,
       modelCalls: incremental.modelCalls,
@@ -1707,6 +1854,12 @@ class ProjectService {
       invalidPlan: !incremental.committed,
       awaitingApproval: incremental.awaitingApproval,
       planningError: incremental.error,
+    );
+    return revised.copyWith(
+      id: project.id,
+      persistenceRevision: project.persistenceRevision,
+      createdAt: project.createdAt,
+      chatSessionId: project.chatSessionId,
     );
   }
 
@@ -1878,7 +2031,7 @@ class ProjectService {
       );
     }
 
-    final incremental = await _modelCalls.splitTaskWithCommands(
+    final incremental = await _planner.splitTaskWithCommands(
       client: client,
       baseSystemPrompt: baseSystemPrompt,
       workspace: workspace,
@@ -2069,7 +2222,7 @@ class ProjectService {
 
     while (activeTask.nextRunnableStep != null && !activeTask.isTerminal) {
       cancellationToken?.throwIfCancelled();
-      activeTask = await _taskService.runNextStep(
+      activeTask = await _taskExecutionService.executeStep(
         client: client,
         workspace: workspace,
         snapshot: activeTask,
@@ -2162,7 +2315,7 @@ class ProjectService {
     }
 
     if (!activeTask.isTerminal && activeTask.nextRunnableStep == null) {
-      activeTask = await _taskService.runNextStep(
+      activeTask = await _taskExecutionService.executeStep(
         client: client,
         workspace: workspace,
         snapshot: activeTask,
@@ -2492,7 +2645,7 @@ class ProjectService {
       return project.copyWith(status: ProjectStatus.active, updatedAt: now);
     }
 
-    final assessment = await _modelCalls.evaluateCompletion(
+    final assessment = await _completionEvaluator.evaluateCompletion(
       client: client,
       baseSystemPrompt: baseSystemPrompt,
       project: project,
@@ -3515,7 +3668,11 @@ class ProjectService {
     return project.copyWith(
       tasks: _upsertTask(
         project,
-        current.copyWith(status: nextStatus, updatedAt: now),
+        current.copyWith(
+          status: nextStatus,
+          persistenceRevision: task.persistenceRevision,
+          updatedAt: now,
+        ),
       ),
       activeTaskId: task.isTerminal ? null : current.id,
       updatedAt: now,
@@ -4543,7 +4700,8 @@ class _ProjectPersistenceContext {
     _lastFingerprints.remove(task.id);
   }
 
-  String _fingerprint(Task task) => jsonEncode(ModelJson.encode(task));
+  String _fingerprint(Task task) =>
+      jsonEncode(ModelJson.encode(task.copyWith(persistenceRevision: 0)));
 }
 
 class _ProjectTaskValidation {

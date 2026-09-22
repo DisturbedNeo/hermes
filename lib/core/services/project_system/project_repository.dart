@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/services/atomic_json_snapshot_store.dart';
+import 'package:hermes/core/services/persistence_contracts.dart';
+import 'package:hermes/core/services/workspace_persistence_coordinator.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:path/path.dart' as path;
 
@@ -11,7 +13,13 @@ class ProjectRepository {
   static const String projectsRoot = '.agent/projects';
   static const String documentFileName = 'project.json';
 
+  ProjectRepository({WorkspacePersistenceCoordinator? coordinator})
+    : _coordinator = coordinator ?? WorkspacePersistenceCoordinator();
+
   final AtomicJsonSnapshotStore _snapshots = const AtomicJsonSnapshotStore();
+  final WorkspacePersistenceCoordinator _coordinator;
+
+  WorkspacePersistenceCoordinator get coordinator => _coordinator;
 
   // ── Listing ──────────────────────────────────────────────────────────
 
@@ -19,6 +27,16 @@ class ProjectRepository {
   /// filtered by [chatSessionId]. Returns an empty list when no projects
   /// directory exists.
   Future<List<ProjectSummary>> listProjects(
+    String workspaceRoot, {
+    String? chatSessionId,
+  }) async {
+    return _coordinator.synchronized(
+      workspaceRoot,
+      () => _listProjects(workspaceRoot, chatSessionId: chatSessionId),
+    );
+  }
+
+  Future<List<ProjectSummary>> _listProjects(
     String workspaceRoot, {
     String? chatSessionId,
   }) async {
@@ -32,9 +50,13 @@ class ProjectRepository {
       if (!await file.exists()) continue;
 
       try {
-        final raw = await _snapshots.readMap(file, isValid: _isProjectMap);
+        final raw = await _snapshots.readMapWithoutRepair(
+          file,
+          isValid: _isEnvelopeMap,
+        );
         if (raw == null) continue;
-        final project = ModelJson.decode<ProjectDocument>(raw);
+        final snapshot = _decodeProjectSnapshot(raw.map, raw.fromBackup);
+        final project = snapshot.value;
         if (chatSessionId != null && project.chatSessionId != chatSessionId) {
           continue;
         }
@@ -60,7 +82,7 @@ class ProjectRepository {
   /// Loads the most recently updated project in [workspaceRoot],
   /// optionally filtered by [chatSessionId]. Returns `null` when no
   /// matching project exists.
-  Future<ProjectDocument?> loadLatestProject(
+  Future<PersistedSnapshot<ProjectDocument>?> loadLatestProject(
     String workspaceRoot, {
     String? chatSessionId,
   }) async {
@@ -81,38 +103,132 @@ class ProjectRepository {
   /// Loads a single project by [projectId] from the given workspace root.
   /// Returns `null` when the project does not exist or its
   /// [chatSessionId] does not match (when provided).
-  Future<ProjectDocument?> loadProject(
+  Future<PersistedSnapshot<ProjectDocument>?> loadProject(
+    String workspaceRoot,
+    String projectId, {
+    String? chatSessionId,
+  }) async {
+    final snapshot = await loadProjectSnapshot(
+      workspaceRoot,
+      projectId,
+      chatSessionId: chatSessionId,
+    );
+    return snapshot;
+  }
+
+  Future<PersistedSnapshot<ProjectDocument>?> loadProjectSnapshot(
+    String workspaceRoot,
+    String projectId, {
+    String? chatSessionId,
+    bool assumeLocked = false,
+  }) async {
+    if (!assumeLocked) {
+      return _coordinator.synchronized(
+        workspaceRoot,
+        () => loadProjectSnapshot(
+          workspaceRoot,
+          projectId,
+          chatSessionId: chatSessionId,
+          assumeLocked: true,
+        ),
+      );
+    }
+    return _loadProjectSnapshotUnlocked(
+      workspaceRoot,
+      projectId,
+      chatSessionId: chatSessionId,
+    );
+  }
+
+  Future<PersistedSnapshot<ProjectDocument>?> _loadProjectSnapshotUnlocked(
     String workspaceRoot,
     String projectId, {
     String? chatSessionId,
   }) async {
     final dir = _validatedProjectDirectory(workspaceRoot, projectId);
     final file = File(path.join(dir.path, documentFileName));
-    final raw = await _snapshots.readMap(file, isValid: _isProjectMap);
+    final raw = await _snapshots.readMapWithoutRepair(
+      file,
+      isValid: _isEnvelopeMap,
+    );
     if (raw == null) return null;
-    final project = ModelJson.decode<ProjectDocument>(raw);
+    final snapshot = _decodeProjectSnapshot(raw.map, raw.fromBackup);
+    final project = snapshot.value;
     if (chatSessionId != null && project.chatSessionId != chatSessionId) {
       return null;
     }
-    return project;
+    return snapshot;
   }
 
   // ── Saving ───────────────────────────────────────────────────────────
 
   /// Persists [project] to disk under the given workspace root. Creates
   /// the project directory if it does not already exist.
-  Future<void> saveSnapshot(
+  Future<PersistedSnapshot<ProjectDocument>> saveSnapshot(
     String workspaceRoot,
-    ProjectDocument project,
-  ) async {
+    ProjectDocument project, {
+    int? expectedRevision,
+    bool assumeLocked = false,
+  }) async {
+    if (!assumeLocked) {
+      return _coordinator.synchronized(
+        workspaceRoot,
+        () => saveSnapshot(
+          workspaceRoot,
+          project,
+          expectedRevision: expectedRevision,
+          assumeLocked: true,
+        ),
+      );
+    }
     final dir = _validatedProjectDirectory(workspaceRoot, project.id);
     await dir.create(recursive: true);
-    await _snapshots.writeMap(
-      File(path.join(dir.path, documentFileName)),
-      ModelJson.encode(project),
-      isValid: _isProjectMap,
+    final file = File(path.join(dir.path, documentFileName));
+    final current = await _loadProjectSnapshotUnlocked(
+      workspaceRoot,
+      project.id,
     );
+    final actualRevision = current?.revision ?? 0;
+    final requiredRevision = expectedRevision ?? project.persistenceRevision;
+    if (requiredRevision != actualRevision) {
+      throw StaleSnapshotException(
+        path: file.path,
+        expectedRevision: requiredRevision,
+        actualRevision: actualRevision,
+      );
+    }
+    final nextRevision = actualRevision + 1;
+    await _snapshots.writeMap(
+      file,
+      SnapshotEnvelope.encode(_documentMap(project), nextRevision),
+      isValid: _isEnvelopeMap,
+    );
+    final persisted = project.copyWith(persistenceRevision: nextRevision);
+    return PersistedSnapshot(value: persisted, revision: nextRevision);
   }
+
+  /// Internal aggregate-commit entry point. The caller must hold the shared
+  /// workspace coordinator lock.
+  Future<PersistedSnapshot<ProjectDocument>?> loadProjectSnapshotUnlocked(
+    String workspaceRoot,
+    String projectId, {
+    String? chatSessionId,
+  }) => _loadProjectSnapshotUnlocked(
+    workspaceRoot,
+    projectId,
+    chatSessionId: chatSessionId,
+  );
+
+  Future<PersistedSnapshot<ProjectDocument>> saveSnapshotUnlocked(
+    String workspaceRoot,
+    ProjectDocument project, {
+    required int expectedRevision,
+  }) => saveSnapshot(
+    workspaceRoot,
+    project,
+    expectedRevision: expectedRevision,
+    assumeLocked: true,
+  );
 
   // ── Deletion ─────────────────────────────────────────────────────────
 
@@ -120,6 +236,16 @@ class ProjectRepository {
   /// was deleted, `false` when it did not exist. Throws [ArgumentError]
   /// if [projectId] resolves outside the projects root (path traversal).
   Future<bool> deleteProject(String workspaceRoot, String projectId) async {
+    return _coordinator.synchronized(
+      workspaceRoot,
+      () => deleteProjectUnlocked(workspaceRoot, projectId),
+    );
+  }
+
+  Future<bool> deleteProjectUnlocked(
+    String workspaceRoot,
+    String projectId,
+  ) async {
     final dir = _validatedProjectDirectory(workspaceRoot, projectId);
     if (!await dir.exists()) return false;
     await dir.delete(recursive: true);
@@ -181,11 +307,13 @@ class ProjectRepository {
     String name,
     String content,
   ) async {
-    _validateFileName(name, 'name');
-    final projectDir = _validatedProjectDirectory(workspaceRoot, projectId);
-    final dir = Directory(path.join(projectDir.path, 'logs'));
-    await dir.create(recursive: true);
-    await _writeText(File(path.join(dir.path, name)), content);
+    await _coordinator.synchronized(workspaceRoot, () async {
+      _validateFileName(name, 'name');
+      final projectDir = _validatedProjectDirectory(workspaceRoot, projectId);
+      final dir = Directory(path.join(projectDir.path, 'logs'));
+      await dir.create(recursive: true);
+      await _writeText(File(path.join(dir.path, name)), content);
+    });
   }
 
   // ── Private helpers ──────────────────────────────────────────────────
@@ -233,9 +361,32 @@ class ProjectRepository {
     await file.writeAsString(content);
   }
 
-  bool _isProjectMap(Map<String, dynamic> map) {
+  PersistedSnapshot<ProjectDocument> _decodeProjectSnapshot(
+    Map<String, dynamic> raw,
+    bool fromBackup,
+  ) {
+    final envelope = SnapshotEnvelope.decode(raw);
+    final project = ModelJson.decode<ProjectDocument>(envelope.document);
+    if (project.id.trim().isEmpty) {
+      throw const FormatException('Project snapshot has no id');
+    }
+    return PersistedSnapshot(
+      value: project.copyWith(persistenceRevision: envelope.revision),
+      revision: envelope.revision,
+      fromBackup: fromBackup,
+    );
+  }
+
+  Map<String, dynamic> _documentMap(ProjectDocument project) {
+    final map = ModelJson.encode(project.copyWith(persistenceRevision: 0));
+    map.remove('persistenceRevision');
+    return map;
+  }
+
+  bool _isEnvelopeMap(Map<String, dynamic> map) {
     try {
-      final project = ModelJson.decode<ProjectDocument>(map);
+      final envelope = SnapshotEnvelope.decode(map);
+      final project = ModelJson.decode<ProjectDocument>(envelope.document);
       return project.id.trim().isNotEmpty;
     } catch (_) {
       return false;

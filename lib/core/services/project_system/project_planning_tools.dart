@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/tool_definition.dart';
+import 'package:hermes/core/services/planning_runtime.dart';
 import 'package:hermes/core/services/project_system/project_plan_builder.dart';
 import 'package:hermes/core/services/project_system/project_plan_revision_service.dart';
 import 'package:hermes/core/services/project_system/project_planning_workspace_reader.dart';
@@ -91,7 +92,7 @@ class ProjectPlanningContext {
 /// The registry is deliberately separate from [ToolService]. It returns
 /// [ToolDefinition] values for a planner call and never exposes mutating
 /// workspace tools or full domain objects in those schemas.
-class ProjectPlanningToolRegistry {
+class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
   ProjectPlanningToolRegistry({
     required this.context,
     this.includeProjectDetails = false,
@@ -99,8 +100,17 @@ class ProjectPlanningToolRegistry {
 
   final ProjectPlanningContext context;
   final bool includeProjectDetails;
-  final Map<String, _RegistryCommand> _commands = {};
 
+  @override
+  String get terminalToolId => 'plan_commit';
+
+  @override
+  String get closedCode => 'draft_closed';
+
+  @override
+  String get closedMessage => 'This planning draft has already been committed.';
+
+  @override
   List<ToolDefinition> get toolDefinitions => [
     if (includeProjectDetails) _projectDetailsDefinition,
     if (context.workspaceReader != null) _planningReadFileDefinition,
@@ -121,73 +131,16 @@ class ProjectPlanningToolRegistry {
   ];
 
   /// The planning registry has no route to workspace mutation.
+  @override
   bool get allowsWorkspaceMutation => false;
 
-  Future<String> execute(
-    String toolId,
-    String argumentsJson, {
-    String? commandId,
-  }) async {
-    try {
-      final decoded = jsonDecode(argumentsJson);
-      if (decoded is! Map) {
-        return jsonEncode(
-          _error(
-            code: 'invalid_argument',
-            path: 'arguments',
-            message: 'Tool arguments must be a JSON object.',
-          ),
-        );
-      }
-      final arguments = <String, dynamic>{};
-      for (final entry in decoded.entries) {
-        if (entry.key is! String) {
-          return jsonEncode(
-            _error(
-              code: 'invalid_argument',
-              path: 'arguments',
-              message: 'Tool argument names must be strings.',
-            ),
-          );
-        }
-        arguments[entry.key as String] = entry.value;
-      }
-      return jsonEncode(await invoke(toolId, arguments, commandId: commandId));
-    } on FormatException catch (error) {
-      return jsonEncode(
-        _error(
-          code: 'invalid_argument',
-          path: 'arguments',
-          message: 'Malformed JSON arguments: ${error.message}',
-        ),
-      );
-    }
-  }
-
-  Future<Map<String, dynamic>> invoke(
+  @override
+  Future<Map<String, dynamic>> dispatch(
     String toolId,
     Map<String, dynamic> arguments, {
     String? commandId,
   }) async {
-    try {
-      final key = commandId?.trim();
-      final fingerprint = key == null || key.isEmpty
-          ? null
-          : jsonEncode({'tool': toolId, 'arguments': arguments});
-      if (key != null && key.isNotEmpty) {
-        final previous = _commands[key];
-        if (previous != null) {
-          if (previous.fingerprint != fingerprint) {
-            throw _argument(
-              'duplicate_command',
-              'command',
-              'Command $key was already used with different arguments.',
-            );
-          }
-          return previous.result;
-        }
-      }
-      final result = switch (toolId) {
+    return switch (toolId) {
         'plan_set_project_details' when includeProjectDetails =>
           _setProjectDetails(arguments),
         'planning_read_file' when context.workspaceReader != null =>
@@ -212,24 +165,17 @@ class ProjectPlanningToolRegistry {
           'Unknown project planning tool $toolId.',
         ),
       };
-      final response = {'ok': true, ...result};
-      if (key != null && key.isNotEmpty) {
-        _commands[key] = _RegistryCommand(fingerprint!, response);
-      }
-      return response;
-    } on ProjectPlanBuilderException catch (error) {
+  }
+
+  @override
+  Map<String, dynamic> domainError(Object error) {
+    if (error is ProjectPlanBuilderException) {
       return _error(code: error.code, path: error.path, message: error.message);
-    } on ProjectViewException catch (error) {
-      return _error(code: error.code, path: error.path, message: error.message);
-    } on _PlanningArgumentException catch (error) {
-      return _error(code: error.code, path: error.path, message: error.message);
-    } catch (error) {
-      return _error(
-        code: 'planning_tool_failed',
-        path: 'tool',
-        message: 'The planning command could not be applied: $error',
-      );
     }
+    if (error is ProjectViewException) {
+      return _error(code: error.code, path: error.path, message: error.message);
+    }
+    return super.domainError(error);
   }
 
   Map<String, dynamic> _view(Map<String, dynamic> arguments) {
@@ -884,37 +830,22 @@ class ProjectPlanningToolRegistry {
   }
 
   void _rejectPersistentFields(Map<String, dynamic> value, String path) {
-    const forbidden = {
-      'id',
-      'task_id',
-      'taskId',
-      'status',
-      'created_at',
-      'createdAt',
-      'updated_at',
-      'updatedAt',
-      'revision',
-      'fingerprint',
-      'revisionIntroduced',
-      'revisionUpdated',
-      'runs',
-      'evidence',
-      'expectedEvidence',
-      'gates',
-      'steps',
-      'currentStepId',
-      'failure',
-      'completedAt',
-    };
-    for (final field in forbidden) {
-      if (value.containsKey(field)) {
-        throw _argument(
-          'invalid_argument',
-          '$path.$field',
-          'Creation tools generate persistent fields; $field is not accepted.',
-        );
-      }
-    }
+    rejectPersistentFields(
+      value,
+      path,
+      additional: const {
+        'task_id',
+        'taskId',
+        'revision',
+        'fingerprint',
+        'revisionIntroduced',
+        'revisionUpdated',
+        'evidence',
+        'steps',
+        'currentStepId',
+      },
+      message: 'Creation tools generate persistent fields; the field is not accepted.',
+    );
   }
 
   List<TaskArtifact> _artifacts(Object? value, String path) {
@@ -1216,19 +1147,8 @@ class ProjectPlanningToolRegistry {
   }) => {'ok': false, 'code': code, 'path': path, 'message': message, ...extra};
 }
 
-class _PlanningArgumentException implements Exception {
-  final String code;
-  final String path;
-  final String message;
-
-  const _PlanningArgumentException(this.code, this.path, this.message);
-}
-
-class _RegistryCommand {
-  final String fingerprint;
-  final Map<String, dynamic> result;
-
-  const _RegistryCommand(this.fingerprint, this.result);
+class _PlanningArgumentException extends PlanningToolArgumentException {
+  const _PlanningArgumentException(super.code, super.path, super.message);
 }
 
 Map<String, dynamic> _schema({

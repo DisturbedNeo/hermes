@@ -361,10 +361,14 @@ void main() {
         ),
       ]);
       await chat.attachWorkspace(tempDir.path);
-      chat.activeProject = _projectDocument();
-      await ProjectService(
+      final seedProject = _projectDocument();
+      final seedProjectService = ProjectService(
         taskService: _createTaskService(),
-      ).repository.saveSnapshot(tempDir.path, chat.activeProject!);
+      );
+      chat.activeProject = (await seedProjectService.repository.saveSnapshot(
+        tempDir.path,
+        seedProject,
+      )).value;
 
       await chat.send('/continue-project');
 
@@ -690,7 +694,10 @@ void main() {
       ]);
       await chat.attachWorkspace(tempDir.path);
       chat.activeTask = _taskDocument();
-      await TaskRepository().saveSnapshot(tempDir.path, chat.activeTask!);
+      chat.activeTask = (await TaskRepository().saveSnapshot(
+        tempDir.path,
+        chat.activeTask!,
+      )).value;
 
       await chat.send('/continue');
 

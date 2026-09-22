@@ -137,8 +137,8 @@ class ProjectIncrementalPlanResult {
 }
 
 /// Boundary between deterministic project orchestration and model-backed
-/// planning decisions.
-abstract interface class ProjectPlanningGateway {
+/// project planning decisions.
+abstract interface class ProjectPlanner {
   Future<ProjectInitialisation> initializeProject({
     required ChatClient client,
     required String baseSystemPrompt,
@@ -187,6 +187,10 @@ abstract interface class ProjectPlanningGateway {
     CancellationToken? cancellationToken,
   });
 
+}
+
+/// Domain-specific structured evaluator used by project completion.
+abstract interface class ProjectCompletionEvaluator {
   Future<ProjectCompletionAssessment> evaluateCompletion({
     required ChatClient client,
     required String baseSystemPrompt,

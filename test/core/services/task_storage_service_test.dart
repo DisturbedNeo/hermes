@@ -35,9 +35,9 @@ void main() {
       expect(file.existsSync(), isTrue);
 
       final loaded = await repository.loadTask(root.path, 'task_test');
-      expect(loaded?.id, 'task_test');
-      expect(loaded?.steps.single.title, 'Step 1');
-      expect(loaded?.status, TaskStatus.paused);
+      expect(loaded?.value.id, 'task_test');
+      expect(loaded?.value.steps.single.title, 'Step 1');
+      expect(loaded?.value.status, TaskStatus.paused);
     });
 
     test('lists current tasks newest first', () async {
@@ -126,8 +126,11 @@ void main() {
         ),
       );
 
-      expect(decoded['steps'], isA<List>());
-      expect(decoded['runs'], isNull);
+      expect(decoded['schemaVersion'], 1);
+      expect(decoded['revision'], 1);
+      final document = decoded['document'] as Map<String, dynamic>;
+      expect(document['steps'], isA<List>());
+      expect(document['runs'], isNull);
       expect(runFile.existsSync(), isTrue);
       expect(decoded['projectId'], isNull);
 
@@ -136,45 +139,39 @@ void main() {
         'task_json',
         includeHistory: false,
       );
-      expect(metadata?.runs, isEmpty);
+      expect(metadata?.value.runs, isEmpty);
 
       final loaded = await repository.loadTask(root.path, 'task_json');
-      expect(loaded?.runs.single.runId, 'run_1');
+      expect(loaded?.value.runs.single.runId, 'run_1');
     });
 
-    test(
-      'migrates legacy embedded run history when the task is saved',
-      () async {
-        final task = _task(id: 'task_legacy', runs: [_run()]);
-        final taskDir = Directory(
-          path.join(root.path, '.agent', 'tasks', 'task_legacy'),
-        );
-        await taskDir.create(recursive: true);
-        final file = File(path.join(taskDir.path, 'task.json'));
-        await file.writeAsString(jsonEncode(ModelJson.encode(task)));
+    test('rejects legacy embedded task documents', () async {
+      final task = _task(id: 'task_legacy', runs: [_run()]);
+      final taskDir = Directory(
+        path.join(root.path, '.agent', 'tasks', 'task_legacy'),
+      );
+      await taskDir.create(recursive: true);
+      final file = File(path.join(taskDir.path, 'task.json'));
+      await file.writeAsString(jsonEncode(ModelJson.encode(task)));
 
-        final loaded = await repository.loadTask(root.path, 'task_legacy');
-        expect(loaded?.runs.single.runId, 'run_1');
-
-        await repository.saveSnapshot(root.path, loaded!);
-
-        final compact = jsonDecode(await file.readAsString());
-        expect(compact['runs'], isNull);
-        expect(
-          File(path.join(taskDir.path, 'runs', 'run_1.json')).existsSync(),
-          isTrue,
-        );
-      },
-    );
+      await expectLater(
+        repository.loadTask(root.path, 'task_legacy'),
+        throwsA(isA<SnapshotCorruptionException>()),
+      );
+    });
 
     test('recovers and repairs a corrupt primary from its backup', () async {
-      await repository.saveSnapshot(
+      final first = await repository.saveSnapshot(
         root.path,
         _task(id: 'task_recovery', updatedAt: DateTime(2026, 1, 1)),
       );
       await repository.saveSnapshot(
         root.path,
-        _task(id: 'task_recovery', updatedAt: DateTime(2026, 1, 2)),
+        _task(
+          id: 'task_recovery',
+          updatedAt: DateTime(2026, 1, 2),
+          persistenceRevision: first.revision,
+        ),
       );
       final file = File(
         path.join(root.path, '.agent', 'tasks', 'task_recovery', 'task.json'),
@@ -183,13 +180,19 @@ void main() {
 
       final recovered = await repository.loadTask(root.path, 'task_recovery');
 
-      expect(recovered?.updatedAt, DateTime(2026, 1, 1));
-      expect(jsonDecode(await file.readAsString()), isA<Map>());
+      expect(recovered?.value.updatedAt, DateTime(2026, 1, 1));
+      expect(await file.readAsString(), '{broken');
     });
 
     test('throws a typed error when primary and backup are corrupt', () async {
-      await repository.saveSnapshot(root.path, _task(id: 'task_corrupt'));
-      await repository.saveSnapshot(root.path, _task(id: 'task_corrupt'));
+      final first = await repository.saveSnapshot(
+        root.path,
+        _task(id: 'task_corrupt'),
+      );
+      await repository.saveSnapshot(
+        root.path,
+        _task(id: 'task_corrupt', persistenceRevision: first.revision),
+      );
       final file = File(
         path.join(root.path, '.agent', 'tasks', 'task_corrupt', 'task.json'),
       );
@@ -214,7 +217,7 @@ void main() {
 
       final loaded = await repository.loadTask(root.path, 'task_stable');
 
-      expect(loaded?.id, 'task_stable');
+      expect(loaded?.value.id, 'task_stable');
     });
 
     test('validates task ids and log names for every path API', () async {
@@ -241,9 +244,11 @@ Task _task({
   String? chatSessionId,
   String? projectId,
   List<TaskRun> runs = const [],
+  int persistenceRevision = 0,
 }) {
   final now = DateTime(2026, 1, 1);
   return Task(
+    persistenceRevision: persistenceRevision,
     id: id,
     title: 'Test task',
     originalPrompt: 'Run the task',

@@ -42,9 +42,9 @@ void main() {
       expect(file.existsSync(), isTrue);
 
       final loaded = await repository.loadProject(root.path, 'project_test');
-      expect(loaded?.id, 'project_test');
-      expect(loaded?.title, 'Test project');
-      expect(loaded?.status, ProjectStatus.paused);
+      expect(loaded?.value.id, 'project_test');
+      expect(loaded?.value.title, 'Test project');
+      expect(loaded?.value.status, ProjectStatus.paused);
     });
 
     test('lists projects newest first', () async {
@@ -134,16 +134,19 @@ void main() {
       );
       final decoded = jsonDecode(await file.readAsString());
 
-      expect(decoded['criteria'], isA<List>());
-      expect(decoded['memory'], isA<List>());
-      expect(decoded.containsKey('successCriteria'), isFalse);
-      expect(decoded.containsKey('knownFacts'), isFalse);
-      expect(decoded['taskIds'], isA<List>());
-      expect(decoded.containsKey('tasks'), isFalse);
-      expect(decoded.containsKey('backlog'), isFalse);
-      expect(decoded.containsKey('completedTasks'), isFalse);
-      expect(decoded.containsKey('failedTasks'), isFalse);
-      expect(decoded['decisions'], isA<List>());
+      expect(decoded['schemaVersion'], 1);
+      expect(decoded['revision'], 1);
+      final document = decoded['document'] as Map<String, dynamic>;
+      expect(document['criteria'], isA<List>());
+      expect(document['memory'], isA<List>());
+      expect(document.containsKey('successCriteria'), isFalse);
+      expect(document.containsKey('knownFacts'), isFalse);
+      expect(document['taskIds'], isA<List>());
+      expect(document.containsKey('tasks'), isFalse);
+      expect(document.containsKey('backlog'), isFalse);
+      expect(document.containsKey('completedTasks'), isFalse);
+      expect(document.containsKey('failedTasks'), isFalse);
+      expect(document['decisions'], isA<List>());
     });
 
     test('rejects delete paths outside project root', () async {
@@ -161,13 +164,17 @@ void main() {
     });
 
     test('recovers and repairs a corrupt primary from its backup', () async {
-      await repository.saveSnapshot(
+      final first = await repository.saveSnapshot(
         root.path,
         _project(id: 'project_recovery', updatedAt: DateTime(2026, 1, 1)),
       );
       await repository.saveSnapshot(
         root.path,
-        _project(id: 'project_recovery', updatedAt: DateTime(2026, 1, 2)),
+        _project(
+          id: 'project_recovery',
+          updatedAt: DateTime(2026, 1, 2),
+          persistenceRevision: first.revision,
+        ),
       );
       final file = File(
         path.join(
@@ -185,13 +192,19 @@ void main() {
         'project_recovery',
       );
 
-      expect(recovered?.updatedAt, DateTime(2026, 1, 1));
-      expect(jsonDecode(await file.readAsString()), isA<Map>());
+      expect(recovered?.value.updatedAt, DateTime(2026, 1, 1));
+      expect(jsonDecode(await file.readAsString()), {});
     });
 
     test('throws a typed error when primary and backup are corrupt', () async {
-      await repository.saveSnapshot(root.path, _project(id: 'project_corrupt'));
-      await repository.saveSnapshot(root.path, _project(id: 'project_corrupt'));
+      final first = await repository.saveSnapshot(
+        root.path,
+        _project(id: 'project_corrupt'),
+      );
+      await repository.saveSnapshot(
+        root.path,
+        _project(id: 'project_corrupt', persistenceRevision: first.revision),
+      );
       final file = File(
         path.join(
           root.path,
@@ -232,9 +245,11 @@ ProjectDocument _project({
   required String id,
   DateTime? updatedAt,
   String? chatSessionId,
+  int persistenceRevision = 0,
 }) {
   final now = DateTime(2026, 1, 1);
   return ProjectDocument(
+    persistenceRevision: persistenceRevision,
     id: id,
     title: 'Test project',
     originalGoal: 'Build the app',

@@ -6,14 +6,20 @@ import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/chat_library_repository.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/project_system/project_service.dart';
+import 'package:hermes/core/services/project_system/project_orchestrator.dart';
+import 'package:hermes/core/services/planning_runtime.dart';
+import 'package:hermes/core/services/planning_structured_output.dart';
 import 'package:hermes/core/services/system_prompt_library_repository.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/core/services/task_system/task_repository.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
+import 'package:hermes/core/services/task_system/task_planning_service.dart';
+import 'package:hermes/core/services/task_system/task_orchestrator.dart';
 import 'package:hermes/core/services/theme_manager.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/services/workspace_service.dart';
+import 'package:hermes/core/services/workspace_persistence_coordinator.dart';
 
 /// The eagerly-created, application-scoped dependency graph.
 ///
@@ -27,7 +33,9 @@ class AppDependencies {
     required this.workspaceService,
     required this.toolService,
     required this.taskService,
+    required this.taskOrchestrator,
     required this.projectService,
+    required this.projectOrchestrator,
     required this.chatLibraryService,
     required this.systemPromptLibraryService,
     required this.chatTabsService,
@@ -39,13 +47,25 @@ class AppDependencies {
     final themeManager = ThemeManager(preferencesService: preferencesService);
     final workspaceService = WorkspaceService(sandbox: workspaceSandbox);
     final toolService = ToolService(workspaceSandbox: workspaceSandbox);
-    final taskRepository = TaskRepository();
+    const planningRunner = PlanningToolCallRunner();
+    const structuredOutput = StructuredPlanningOutputService();
+    const taskPlanner = TaskPlanningService(runner: planningRunner);
+    final persistenceCoordinator = WorkspacePersistenceCoordinator();
+    final taskRepository = TaskRepository(coordinator: persistenceCoordinator);
     final taskService = TaskService(
       toolService: toolService,
       sandbox: workspaceSandbox,
       repository: taskRepository,
+      planner: taskPlanner,
+      structuredOutput: structuredOutput,
     );
-    final projectService = ProjectService(taskService: taskService);
+    final projectOrchestrator = ProjectOrchestrator(
+      taskService: taskService,
+      persistenceCoordinator: persistenceCoordinator,
+      planningRunner: planningRunner,
+      structuredOutput: structuredOutput,
+    );
+    final taskOrchestrator = TaskOrchestrator(service: taskService);
     final chatLibraryRepository = ChatLibraryRepository(
       preferencesService: preferencesService,
     );
@@ -63,7 +83,7 @@ class AppDependencies {
       systemPromptLibrary: systemPromptLibraryService,
       toolService: toolService,
       taskService: taskService,
-      projectService: projectService,
+      projectService: projectOrchestrator,
       workspaceService: workspaceService,
       preferencesService: preferencesService,
     );
@@ -75,7 +95,9 @@ class AppDependencies {
       workspaceService: workspaceService,
       toolService: toolService,
       taskService: taskService,
-      projectService: projectService,
+      taskOrchestrator: taskOrchestrator,
+      projectService: projectOrchestrator,
+      projectOrchestrator: projectOrchestrator,
       chatLibraryService: chatLibraryService,
       systemPromptLibraryService: systemPromptLibraryService,
       chatTabsService: chatTabsService,
@@ -88,7 +110,9 @@ class AppDependencies {
   final WorkspaceService workspaceService;
   final ToolService toolService;
   final TaskService taskService;
+  final TaskOrchestrator taskOrchestrator;
   final ProjectService projectService;
+  final ProjectOrchestrator projectOrchestrator;
   final ChatLibraryService chatLibraryService;
   final SystemPromptLibraryService systemPromptLibraryService;
   final ChatTabsService chatTabsService;

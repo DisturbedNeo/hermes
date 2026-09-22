@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
-import 'package:hermes/core/services/project_system/project_planning_tool_call_runner.dart';
+import 'package:hermes/core/services/planning_runtime.dart';
 import 'package:hermes/core/services/project_system/project_planning_tools.dart';
 
 void main() {
@@ -19,8 +19,7 @@ void main() {
       context: context,
       includeProjectDetails: true,
     );
-    final runner = const ProjectPlanningToolCallRunner();
-    final result = await runner.complete(
+    final result = await _complete(
       client: _Client([
         _call('plan_set_project_details', {
           'title': 'Bounded Project',
@@ -91,7 +90,7 @@ void main() {
       ),
     );
     final client = _Client([_call('plan_commit', const {}, id: 'commit')]);
-    final result = await const ProjectPlanningToolCallRunner().complete(
+    final result = await _complete(
       client: client,
       registry: registry,
       label: 'Test Planning',
@@ -122,7 +121,7 @@ void main() {
           _call('project_view', {'max_items': 1}, id: 'view_$index'),
         _call('plan_commit', const {}, id: 'commit'),
       ]);
-      final result = await const ProjectPlanningToolCallRunner().complete(
+      final result = await _complete(
         client: client,
         registry: ProjectPlanningToolRegistry(
           context: context,
@@ -154,7 +153,7 @@ void main() {
       now: DateTime(2026, 1, 1),
       approvalPolicy: ProjectPlanApprovalPolicy.never,
     );
-    final result = await const ProjectPlanningToolCallRunner().complete(
+    final result = await _complete(
       client: _Client([
         _call('project_view', const {}, id: 'view_1'),
         _call('project_view', const {}, id: 'view_2'),
@@ -180,7 +179,7 @@ void main() {
         now: DateTime(2026, 1, 1),
         approvalPolicy: ProjectPlanApprovalPolicy.never,
       );
-      final result = await const ProjectPlanningToolCallRunner().complete(
+      final result = await _complete(
         client: _Client([
           _call('plan_add_tasks', {
             'tasks': [
@@ -225,6 +224,24 @@ void main() {
     },
   );
 }
+
+Future<Map<String, dynamic>> _complete({
+  required ChatClient client,
+  required PlanningToolRegistry registry,
+  required String label,
+  required String system,
+  required String user,
+  int maxToolCalls = PlanningToolCallRunner.defaultMaxToolCalls,
+}) async => (await const PlanningToolCallRunner().complete(
+  PlanningRunRequest(
+    client: client,
+    registry: registry,
+    label: label,
+    system: system,
+    user: user,
+    maxToolCalls: maxToolCalls,
+  ),
+)).toMap();
 
 ChatCompletionToolCall _call(
   String name,

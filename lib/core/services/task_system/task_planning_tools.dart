@@ -1,7 +1,6 @@
-import 'dart:convert';
-
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/tool_definition.dart';
+import 'package:hermes/core/services/planning_runtime.dart';
 import 'package:hermes/core/services/task_system/task_plan_builder.dart';
 import 'package:hermes/core/services/task_system/task_view_service.dart';
 
@@ -64,12 +63,15 @@ class TaskPlanningToolContext {
   bool closed = false;
 }
 
-class TaskPlanningToolRegistry {
+class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
   TaskPlanningToolRegistry({required this.context});
 
   final TaskPlanningToolContext context;
-  final Map<String, _AppliedTaskCommand> _commands = {};
 
+  @override
+  String get terminalToolId => 'task_commit_plan';
+
+  @override
   List<ToolDefinition> get toolDefinitions => const [
     _taskViewDefinition,
     _setBriefDefinition,
@@ -82,73 +84,16 @@ class TaskPlanningToolRegistry {
     _requestDecisionDefinition,
   ];
 
+  @override
   bool get allowsWorkspaceMutation => false;
 
-  Future<String> execute(
-    String toolId,
-    String argumentsJson, {
-    String? commandId,
-  }) async {
-    try {
-      final decoded = jsonDecode(argumentsJson);
-      if (decoded is! Map) {
-        return jsonEncode(
-          _error(
-            code: 'invalid_argument',
-            path: 'arguments',
-            message: 'Tool arguments must be a JSON object.',
-          ),
-        );
-      }
-      final arguments = <String, dynamic>{};
-      for (final entry in decoded.entries) {
-        if (entry.key is! String) {
-          return jsonEncode(
-            _error(
-              code: 'invalid_argument',
-              path: 'arguments',
-              message: 'Tool argument names must be strings.',
-            ),
-          );
-        }
-        arguments[entry.key as String] = entry.value;
-      }
-      return jsonEncode(await invoke(toolId, arguments, commandId: commandId));
-    } on FormatException catch (error) {
-      return jsonEncode(
-        _error(
-          code: 'invalid_argument',
-          path: 'arguments',
-          message: 'Malformed JSON arguments: ${error.message}',
-        ),
-      );
-    }
-  }
-
-  Future<Map<String, dynamic>> invoke(
+  @override
+  Future<Map<String, dynamic>> dispatch(
     String toolId,
     Map<String, dynamic> arguments, {
     String? commandId,
   }) async {
-    try {
-      final key = commandId?.trim();
-      final fingerprint = key == null || key.isEmpty
-          ? null
-          : jsonEncode({'tool': toolId, 'arguments': arguments});
-      if (key != null && key.isNotEmpty) {
-        final previous = _commands[key];
-        if (previous != null) {
-          if (previous.fingerprint != fingerprint) {
-            throw _argument(
-              'duplicate_command',
-              'command',
-              'Command $key was already used with different arguments.',
-            );
-          }
-          return previous.result;
-        }
-      }
-      final result = switch (toolId) {
+    return switch (toolId) {
         'task_view' => _view(arguments),
         'task_set_brief' => _setBrief(arguments),
         'task_reset_plan' => _resetPlan(arguments, commandId),
@@ -164,24 +109,17 @@ class TaskPlanningToolRegistry {
           'Unknown task planning tool $toolId.',
         ),
       };
-      final response = {'ok': true, ...result};
-      if (key != null && key.isNotEmpty) {
-        _commands[key] = _AppliedTaskCommand(fingerprint!, response);
-      }
-      return response;
-    } on TaskPlanBuilderException catch (error) {
+  }
+
+  @override
+  Map<String, dynamic> domainError(Object error) {
+    if (error is TaskPlanBuilderException) {
       return _error(code: error.code, path: error.path, message: error.message);
-    } on TaskViewException catch (error) {
-      return _error(code: error.code, path: error.path, message: error.message);
-    } on _TaskPlanningArgumentException catch (error) {
-      return _error(code: error.code, path: error.path, message: error.message);
-    } catch (error) {
-      return _error(
-        code: 'planning_tool_failed',
-        path: 'tool',
-        message: 'The task planning command could not be applied: $error',
-      );
     }
+    if (error is TaskViewException) {
+      return _error(code: error.code, path: error.path, message: error.message);
+    }
+    return super.domainError(error);
   }
 
   Map<String, dynamic> _view(Map<String, dynamic> arguments) {
@@ -417,36 +355,18 @@ class TaskPlanningToolRegistry {
   }
 
   void _rejectPersistentFields(Map<String, dynamic> value, String fieldPath) {
-    const forbidden = {
-      'id',
-      'step_id',
-      'stepId',
-      'status',
-      'created_at',
-      'createdAt',
-      'updated_at',
-      'updatedAt',
-      'run_id',
-      'runId',
-      'runs',
-      'gates',
-      'expected_evidence',
-      'expectedEvidence',
-      'current_step_id',
-      'currentStepId',
-      'failure',
-      'completed_at',
-      'completedAt',
-    };
-    for (final field in forbidden) {
-      if (value.containsKey(field)) {
-        throw _argument(
-          'invalid_argument',
-          '$fieldPath.$field',
-          'Planning commands generate persistent fields; $field is not accepted.',
-        );
-      }
-    }
+    rejectPersistentFields(
+      value,
+      fieldPath,
+      additional: const {
+        'step_id',
+        'stepId',
+        'run_id',
+        'runId',
+        'current_step_id',
+        'currentStepId',
+      },
+    );
   }
 
   List<TaskArtifact> _artifacts(Object? value, String fieldPath) {
@@ -571,19 +491,8 @@ class TaskPlanningToolRegistry {
   ) => _TaskPlanningArgumentException(code, path, message);
 }
 
-class _AppliedTaskCommand {
-  final String fingerprint;
-  final Map<String, dynamic> result;
-
-  const _AppliedTaskCommand(this.fingerprint, this.result);
-}
-
-class _TaskPlanningArgumentException implements Exception {
-  final String code;
-  final String path;
-  final String message;
-
-  const _TaskPlanningArgumentException(this.code, this.path, this.message);
+class _TaskPlanningArgumentException extends PlanningToolArgumentException {
+  const _TaskPlanningArgumentException(super.code, super.path, super.message);
 }
 
 const ToolDefinition _taskViewDefinition = ToolDefinition(

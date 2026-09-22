@@ -677,6 +677,9 @@ class ProjectState with ProjectStateMappable {
   static const int defaultMaxIterations = 25;
   static const int defaultMaxFailedTasks = 3;
 
+  /// Revision of the canonical project snapshot.
+  @MappableField(hook: JsonIntHook(min: 0))
+  final int persistenceRevision;
   @MappableField(hook: JsonStringHook())
   final String id;
   @MappableField(hook: JsonStringHook(fallback: 'Untitled project'))
@@ -753,6 +756,7 @@ class ProjectState with ProjectStateMappable {
   final DateTime? completedAt;
 
   ProjectState({
+    this.persistenceRevision = 0,
     required this.id,
     required this.title,
     required this.originalGoal,
@@ -856,6 +860,7 @@ class ProjectState with ProjectStateMappable {
       hasCurrentBatch ? currentBatchTaskIds[currentBatchIndex] : null;
 
   ProjectState copyWith({
+    int? persistenceRevision,
     String? id,
     String? title,
     String? originalGoal,
@@ -894,6 +899,7 @@ class ProjectState with ProjectStateMappable {
     Object? completedAt = kSentinel,
   }) {
     return ProjectState(
+      persistenceRevision: persistenceRevision ?? this.persistenceRevision,
       id: id ?? this.id,
       title: title ?? this.title,
       originalGoal: originalGoal ?? this.originalGoal,

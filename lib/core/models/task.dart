@@ -249,6 +249,10 @@ class RefinedTaskBrief with RefinedTaskBriefMappable {
 
 @MappableClass(ignoreNull: true, hook: TaskJsonHook())
 class Task with TaskMappable {
+  /// Revision of the canonical task snapshot. This is runtime metadata and
+  /// is omitted from the document nested in the persistence envelope.
+  @MappableField(hook: JsonIntHook(min: 0))
+  final int persistenceRevision;
   @MappableField(hook: JsonStringHook())
   final String id;
   @MappableField(hook: JsonStringHook(fallback: 'Untitled task'))
@@ -326,6 +330,7 @@ class Task with TaskMappable {
   final DateTime? completedAt;
 
   const Task({
+    this.persistenceRevision = 0,
     required this.id,
     required this.title,
     String? originalPrompt,
@@ -371,6 +376,7 @@ class Task with TaskMappable {
        objective = objective ?? originalPrompt ?? '';
 
   Task copyWith({
+    int? persistenceRevision,
     String? id,
     String? title,
     String? originalPrompt,
@@ -414,6 +420,7 @@ class Task with TaskMappable {
     Object? completedAt = kSentinel,
   }) {
     return Task(
+      persistenceRevision: persistenceRevision ?? this.persistenceRevision,
       id: id ?? this.id,
       title: title ?? this.title,
       originalPrompt: originalPrompt ?? this.originalPrompt,
@@ -487,7 +494,11 @@ class Task with TaskMappable {
 }
 
 class TaskJsonHook extends JsonModelHook {
-  const TaskJsonHook() : super(omitEmpty: const {'gates'});
+  const TaskJsonHook()
+    : super(
+        omitEmpty: const {'gates'},
+        removeKeys: const {'persistenceRevision'},
+      );
 }
 
 @MappableClass(ignoreNull: true, hook: JsonModelHook(omitEmpty: {'gates'}))

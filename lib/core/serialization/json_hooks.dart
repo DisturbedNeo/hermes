@@ -7,12 +7,14 @@ class JsonModelHook extends MappingHook {
   const JsonModelHook({
     this.omitEmpty = const {},
     this.omitEmptyStrings = const {},
+    this.omitZero = const {},
     this.removeKeys = const {},
     this.outputOverrides = const {},
   });
 
   final Set<String> omitEmpty;
   final Set<String> omitEmptyStrings;
+  final Set<String> omitZero;
   final Set<String> removeKeys;
   final Map<String, Object?> outputOverrides;
 
@@ -40,7 +42,10 @@ class JsonModelHook extends MappingHook {
               (value is Map && value.isEmpty))) {
         return true;
       }
-      return omitEmptyStrings.contains(key) && value is String && value.isEmpty;
+      if (omitEmptyStrings.contains(key) && value is String && value.isEmpty) {
+        return true;
+      }
+      return omitZero.contains(key) && value is num && value == 0;
     });
     encoded.addAll(outputOverrides);
     return encoded;
