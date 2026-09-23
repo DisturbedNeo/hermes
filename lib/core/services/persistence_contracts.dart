@@ -1,8 +1,5 @@
 import 'dart:convert';
 
-/// The only persisted snapshot schema supported by the project system.
-const int currentSnapshotSchemaVersion = 1;
-
 /// A decoded document together with the revision read from its envelope.
 class PersistedSnapshot<T> {
   const PersistedSnapshot({
@@ -26,21 +23,12 @@ class PersistedSnapshot<T> {
 
 /// The persisted wrapper around a project or task document.
 class SnapshotEnvelope {
-  const SnapshotEnvelope({
-    required this.schemaVersion,
-    required this.revision,
-    required this.document,
-  });
+  const SnapshotEnvelope({required this.revision, required this.document});
 
-  final int schemaVersion;
   final int revision;
   final Map<String, dynamic> document;
 
-  Map<String, dynamic> asMap() => {
-    'schemaVersion': schemaVersion,
-    'revision': revision,
-    'document': document,
-  };
+  Map<String, dynamic> asMap() => {'revision': revision, 'document': document};
 
   static Map<String, dynamic> encode(
     Map<String, dynamic> document,
@@ -50,25 +38,18 @@ class SnapshotEnvelope {
       throw const FormatException('Snapshot revision must be positive');
     }
     return SnapshotEnvelope(
-      schemaVersion: currentSnapshotSchemaVersion,
       revision: revision,
       document: Map<String, dynamic>.from(document),
     ).asMap();
   }
 
   static SnapshotEnvelope decode(Map<String, dynamic> raw) {
-    final schemaVersion = raw['schemaVersion'];
     final revision = raw['revision'];
     final document = raw['document'];
-    if (schemaVersion is! int ||
-        schemaVersion != currentSnapshotSchemaVersion ||
-        revision is! int ||
-        revision < 1 ||
-        document is! Map) {
+    if (revision is! int || revision < 1 || document is! Map) {
       throw const FormatException('Snapshot metadata is missing or invalid');
     }
     return SnapshotEnvelope(
-      schemaVersion: schemaVersion,
       revision: revision,
       document: Map<String, dynamic>.from(document),
     );

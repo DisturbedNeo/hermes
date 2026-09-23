@@ -118,7 +118,7 @@ void main() {
                 ).readAsString(),
               )
               as Map<String, dynamic>;
-      expect(raw['schemaVersion'], 1);
+      expect(raw, isNot(contains('schemaVersion')));
       expect(raw['revision'], 1);
       expect((raw['document'] as Map<String, dynamic>)['tasks'], isNull);
 

@@ -15,7 +15,7 @@ import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/chat_library_repository.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/preferences_service.dart';
-import 'package:hermes/core/services/project_system/project_service.dart';
+import 'package:hermes/core/services/project_system/project_orchestrator.dart';
 import 'package:hermes/core/services/system_prompt_library_repository.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
@@ -46,7 +46,7 @@ void main() {
       serverManager: serverManager,
       toolService: tools,
       taskService: tasks,
-      projectService: ProjectService(taskService: tasks),
+      projectOrchestrator: ProjectOrchestrator(taskService: tasks),
       chatLibrary: library,
       workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,
@@ -97,7 +97,7 @@ void main() {
       serverManager: serverManager,
       toolService: tools,
       taskService: tasks,
-      projectService: ProjectService(taskService: tasks),
+      projectOrchestrator: ProjectOrchestrator(taskService: tasks),
       chatLibrary: library,
       workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,
@@ -143,7 +143,7 @@ void main() {
       serverManager: serverManager,
       toolService: tools,
       taskService: tasks,
-      projectService: ProjectService(taskService: tasks),
+      projectOrchestrator: ProjectOrchestrator(taskService: tasks),
       chatLibrary: library,
       workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,
@@ -204,7 +204,7 @@ void main() {
       systemPromptLibrary: promptLibrary,
       toolService: tools,
       taskService: tasks,
-      projectService: ProjectService(taskService: tasks),
+      projectOrchestrator: ProjectOrchestrator(taskService: tasks),
       workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,
     );

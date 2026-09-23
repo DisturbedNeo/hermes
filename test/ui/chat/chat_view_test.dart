@@ -13,7 +13,7 @@ import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat_library_repository.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
-import 'package:hermes/core/services/project_system/project_service.dart';
+import 'package:hermes/core/services/project_system/project_orchestrator.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/system_prompt_library_repository.dart';
@@ -65,7 +65,7 @@ void main() {
       systemPromptLibrary: promptLibrary,
       toolService: toolService,
       taskService: taskService,
-      projectService: ProjectService(taskService: taskService),
+      projectOrchestrator: ProjectOrchestrator(taskService: taskService),
       workspaceService: workspaceService,
       preferencesService: preferences,
     );

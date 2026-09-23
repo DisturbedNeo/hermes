@@ -2,14 +2,17 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/project.dart';
+import 'package:hermes/core/models/task_system_settings.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/core/services/project_system/orchestration_contracts.dart';
 import 'package:hermes/core/services/project_system/project_planning_gateway.dart';
 import 'package:hermes/core/services/project_system/project_scheduler.dart';
-import 'package:hermes/core/services/project_system/project_service.dart';
+import 'package:hermes/core/services/project_system/project_orchestrator.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/task_system/task_repository.dart';
@@ -17,14 +20,55 @@ import 'package:hermes/core/services/persistence_contracts.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 
+extension _ProjectOrchestratorTestCommands on ProjectOrchestrator {
+  Future<ProjectCommandResult> executeProject({
+    required ChatClient client,
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String baseSystemPrompt,
+    required int maxNewTasks,
+    int? maxIterations,
+    bool requirePhaseApproval = false,
+    CompactionSettings? compactionSettings,
+    int? contextLimitTokens,
+    ProjectCompactionStatusSink? onCompactionStatus,
+    TaskModelOutputSink? onModelOutput,
+    ProjectTaskSnapshotSink? onTaskUpdated,
+    CancellationToken? cancellationToken,
+    QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
+    ProjectPlanApprovalPolicy planApprovalPolicy =
+        ProjectPlanApprovalPolicy.highRiskOnly,
+  }) => execute(
+    ProjectExecutionRequest(
+      client: client,
+      workspace: workspace,
+      snapshot: snapshot,
+      baseSystemPrompt: baseSystemPrompt,
+      maxNewTasks: maxNewTasks,
+      maxIterations: maxIterations,
+      requirePhaseApproval: requirePhaseApproval,
+      compactionSettings: compactionSettings,
+      contextLimitTokens: contextLimitTokens,
+      onCompactionStatus: onCompactionStatus,
+      onModelOutput: onModelOutput,
+      onTaskUpdated: onTaskUpdated,
+      cancellationToken: cancellationToken,
+      questionAutonomy: questionAutonomy,
+      planApprovalPolicy: planApprovalPolicy,
+    ),
+  );
+}
+
 void main() {
   late Directory root;
   late WorkspaceAttachment workspace;
   late TaskService taskService;
-  late ProjectService service;
+  late ProjectOrchestrator service;
 
   setUp(() async {
-    root = await Directory.systemTemp.createTemp('hermes_project_service_');
+    root = await Directory.systemTemp.createTemp(
+      'hermes_project_orchestrator_',
+    );
     workspace = WorkspaceAttachment(
       rootPath: root.path,
       displayName: 'Workspace',
@@ -35,7 +79,7 @@ void main() {
       toolService: ToolService(workspaceSandbox: sandbox),
       sandbox: sandbox,
     );
-    service = ProjectService(taskService: taskService);
+    service = ProjectOrchestrator(taskService: taskService);
   });
 
   tearDown(() async {
@@ -61,7 +105,7 @@ void main() {
         '${root.path}/ARCHITECTURE.MD',
       ).writeAsString(List.filled(65 * 1024, 'a').join());
       final gateway = _InitialisationGateway(_validInitialisation());
-      final planningService = ProjectService(
+      final planningService = ProjectOrchestrator(
         taskService: taskService,
         planner: gateway,
         completionEvaluator: gateway,
@@ -91,7 +135,7 @@ void main() {
       '${root.path}/.agent/projects/${project.id}/project.json',
     );
     final rawProject = jsonDecode(await projectFile.readAsString());
-    expect(rawProject['schemaVersion'], 1);
+    expect(rawProject, isNot(contains('schemaVersion')));
     expect(rawProject['revision'], 1);
     final document = rawProject['document'] as Map<String, dynamic>;
     expect(document['taskIds'], [project.tasks.single.id]);
@@ -113,7 +157,7 @@ void main() {
     'blocks initial plans with invalid dependencies and verification contracts',
     () async {
       final gateway = _InitialisationGateway(_invalidInitialisation());
-      final planningService = ProjectService(
+      final planningService = ProjectOrchestrator(
         taskService: taskService,
         planner: gateway,
         completionEvaluator: gateway,
@@ -147,7 +191,7 @@ void main() {
           _validInitialisation(),
         ],
       );
-      final planningService = ProjectService(
+      final planningService = ProjectOrchestrator(
         taskService: taskService,
         planner: gateway,
         completionEvaluator: gateway,
@@ -209,13 +253,13 @@ void main() {
         _validInitialisation(),
         revisedProject: revisedProject,
       );
-      final planningService = ProjectService(
+      final planningService = ProjectOrchestrator(
         taskService: taskService,
         planner: gateway,
         completionEvaluator: gateway,
       );
 
-      final result = await planningService.runProject(
+      final result = await planningService.executeProject(
         client: _QueueChatClient([
           jsonEncode({
             'status': 'completed',
@@ -247,7 +291,7 @@ void main() {
 
   test('runs a queued bounded task and retains terminal history', () async {
     final project = _project(tasks: [_task()]);
-    final result = await service.runProject(
+    final result = await service.executeProject(
       client: _QueueChatClient([
         jsonEncode({
           'status': 'completed',
@@ -281,7 +325,7 @@ void main() {
       sandbox: WorkspaceSandbox(),
       repository: countingRepository,
     );
-    final countedProjectService = ProjectService(
+    final countedProjectOrchestrator = ProjectOrchestrator(
       taskService: countedTaskService,
     );
     final secondTask = _task().copyWith(
@@ -296,7 +340,7 @@ void main() {
     );
     countingRepository.savedTaskIds.clear();
 
-    await countedProjectService.runProject(
+    await countedProjectOrchestrator.executeProject(
       client: _QueueChatClient([
         jsonEncode({
           'status': 'completed',
@@ -324,7 +368,7 @@ void main() {
     'does not replan immediately after a successful task in the same batch',
     () async {
       final gateway = _InitialisationGateway(_validInitialisation());
-      final planningService = ProjectService(
+      final planningService = ProjectOrchestrator(
         taskService: taskService,
         planner: gateway,
         completionEvaluator: gateway,
@@ -336,7 +380,7 @@ void main() {
         fingerprint: 'task_2',
       );
 
-      final result = await planningService.runProject(
+      final result = await planningService.executeProject(
         client: _QueueChatClient([
           jsonEncode({
             'status': 'completed',
@@ -370,7 +414,7 @@ void main() {
     'persists a fixed batch cursor and queues its boundary replan',
     () async {
       final scheduler = _CountingScheduler();
-      final batchService = ProjectService(
+      final batchService = ProjectOrchestrator(
         taskService: taskService,
         scheduler: scheduler,
       );
@@ -387,7 +431,7 @@ void main() {
         fingerprint: 'task_3',
       );
 
-      final result = await batchService.runProject(
+      final result = await batchService.executeProject(
         client: _QueueChatClient([
           jsonEncode({
             'status': 'completed',
@@ -433,7 +477,7 @@ void main() {
 
   test('resumes the persisted batch cursor without reselection', () async {
     final scheduler = _CountingScheduler();
-    final batchService = ProjectService(
+    final batchService = ProjectOrchestrator(
       taskService: taskService,
       scheduler: scheduler,
     );
@@ -464,7 +508,7 @@ void main() {
           currentBatchPlanRevision: 1,
         );
 
-    final first = await batchService.runProject(
+    final first = await batchService.executeProject(
       client: _QueueChatClient([
         jsonEncode({
           'status': 'completed',
@@ -481,7 +525,7 @@ void main() {
     expect(first.project.currentBatchIndex, 2);
     expect(first.project.status, ProjectStatus.paused);
 
-    final second = await batchService.runProject(
+    final second = await batchService.executeProject(
       client: _QueueChatClient([
         jsonEncode({
           'status': 'completed',
@@ -595,7 +639,7 @@ void main() {
       activeTaskId: terminalTask.id,
       status: ProjectStatus.reviewingTask,
     );
-    final result = await service.runProject(
+    final result = await service.executeProject(
       client: _QueueChatClient(const []),
       workspace: workspace,
       snapshot: project,
@@ -684,7 +728,7 @@ void main() {
         id: 'duplicate_task',
         fingerprint: 'duplicate_work',
       );
-      final result = await service.runProject(
+      final result = await service.executeProject(
         client: _QueueChatClient([
           jsonEncode({
             'status': 'completed',
@@ -723,7 +767,7 @@ void main() {
     () async {
       final candidate = _task();
       final existing = _task().copyWith(id: 'task_2');
-      final result = await service.runProject(
+      final result = await service.executeProject(
         client: _QueueChatClient([
           jsonEncode({
             'status': 'completed',

@@ -6,8 +6,10 @@ import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/persistence_contracts.dart';
 import 'package:hermes/core/services/project_system/project_aggregate_repository.dart';
-import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
+
+typedef ProjectTaskSnapshotSink = void Function(Task? task);
+typedef ProjectCompactionStatusSink = void Function(String status);
 
 /// Why a project command stopped making progress.
 enum ProjectCommandStopReason {
@@ -56,8 +58,21 @@ class ProjectCommandResult {
     this.persistenceDiagnostics,
   });
 
-  factory ProjectCommandResult.fromRun({
-    required ProjectRunResult result,
+  factory ProjectCommandResult.fromSnapshot({
+    required ProjectDocument project,
+    Task? activeTask,
+    ProjectPersistenceDiagnostics? persistenceDiagnostics,
+  }) => ProjectCommandResult(
+    project: project,
+    activeTask: activeTask,
+    stopReason: persistenceDiagnostics?.isReadOnly == true
+        ? ProjectCommandStopReason.readOnly
+        : ProjectCommandStopReasonFor.project(project),
+    persistenceDiagnostics: persistenceDiagnostics,
+  );
+
+  factory ProjectCommandResult.withTransition({
+    required ProjectCommandResult result,
     ProjectDocument? before,
     String trigger = 'command',
   }) {
@@ -78,17 +93,11 @@ class ProjectCommandResult {
     return ProjectCommandResult(
       project: project,
       activeTask: result.activeTask,
-      stopReason: ProjectCommandStopReasonFor.project(project),
-      transitions: transitions,
+      stopReason: result.stopReason,
+      transitions: [...result.transitions, ...transitions],
       persistenceDiagnostics: result.persistenceDiagnostics,
     );
   }
-
-  ProjectRunResult asRunResult() => ProjectRunResult(
-    project: project,
-    activeTask: activeTask,
-    persistenceDiagnostics: persistenceDiagnostics,
-  );
 }
 
 class ProjectCommandStopReasonFor {
@@ -235,13 +244,12 @@ class ProjectReadOnlyException implements Exception {
       'ProjectReadOnlyException: ${diagnostics.issues.join(' ')}';
 }
 
-/// A small adapter used by the focused services while the legacy service is
-/// being decomposed. It keeps their dependencies explicit and testable.
-typedef ProjectRunDelegate =
-    Future<ProjectRunResult> Function(ProjectExecutionRequest request);
+/// Delegate seams keep the focused execution paths explicit and testable.
+typedef ProjectExecutionDelegate =
+    Future<ProjectCommandResult> Function(ProjectExecutionRequest request);
 
 typedef ProjectRecoveryDelegate =
-    Future<ProjectRunResult> Function(ProjectRecoveryRequest request);
+    Future<ProjectCommandResult> Function(ProjectRecoveryRequest request);
 
 typedef ProjectLoadDelegate =
     Future<ProjectLoadResult> Function(

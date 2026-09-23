@@ -5,7 +5,6 @@ import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/chat_library_repository.dart';
 import 'package:hermes/core/services/preferences_service.dart';
-import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/project_system/project_orchestrator.dart';
 import 'package:hermes/core/services/planning_runtime.dart';
 import 'package:hermes/core/services/planning_structured_output.dart';
@@ -34,7 +33,6 @@ class AppDependencies {
     required this.toolService,
     required this.taskService,
     required this.taskOrchestrator,
-    required this.projectService,
     required this.projectOrchestrator,
     required this.chatLibraryService,
     required this.systemPromptLibraryService,
@@ -83,7 +81,7 @@ class AppDependencies {
       systemPromptLibrary: systemPromptLibraryService,
       toolService: toolService,
       taskService: taskService,
-      projectService: projectOrchestrator,
+      projectOrchestrator: projectOrchestrator,
       workspaceService: workspaceService,
       preferencesService: preferencesService,
     );
@@ -96,7 +94,6 @@ class AppDependencies {
       toolService: toolService,
       taskService: taskService,
       taskOrchestrator: taskOrchestrator,
-      projectService: projectOrchestrator,
       projectOrchestrator: projectOrchestrator,
       chatLibraryService: chatLibraryService,
       systemPromptLibraryService: systemPromptLibraryService,
@@ -111,7 +108,6 @@ class AppDependencies {
   final ToolService toolService;
   final TaskService taskService;
   final TaskOrchestrator taskOrchestrator;
-  final ProjectService projectService;
   final ProjectOrchestrator projectOrchestrator;
   final ChatLibraryService chatLibraryService;
   final SystemPromptLibraryService systemPromptLibraryService;

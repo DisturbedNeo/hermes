@@ -30,7 +30,6 @@ class PlanningMetrics with PlanningMetricsMappable {
   final int recoverySuccesses;
   @MappableField(hook: JsonNullableDateHook())
   final DateTime? planningStartedAt;
-  @MappableField(hook: JsonIntHook())
   final int? timeToFirstExecutableMs;
 
   const PlanningMetrics({
@@ -101,20 +100,4 @@ class PlanningMetrics with PlanningMetricsMappable {
     recoveryAttempts: recoveryAttempts + other.recoveryAttempts,
     recoverySuccesses: recoverySuccesses + other.recoverySuccesses,
   );
-}
-
-/// Keeps old snapshots byte-for-byte stable until planning telemetry exists.
-/// A non-empty metrics object is still persisted as soon as a planning event
-/// records a count or timestamp.
-class OmitEmptyPlanningMetricsHook extends MappingHook {
-  const OmitEmptyPlanningMetricsHook();
-
-  @override
-  Object? afterEncode(Object? value) {
-    if (value is Map &&
-        value.values.every((item) => item == null || item == 0)) {
-      return null;
-    }
-    return value;
-  }
 }

@@ -91,25 +91,6 @@ void main() {
       question: 'Continue?',
       createdAt: now,
     );
-    final document = Task(
-      id: 'task_1',
-      title: 'Task',
-      originalPrompt: 'Work',
-      objective: 'Finish',
-      constraints: const [],
-      successCriteria: const ['Done'],
-      gates: [gate],
-      steps: [step],
-      status: TaskStatus.blocked,
-      currentStepId: step.id,
-      memorySummary: '',
-      runs: [run],
-      pendingApproval: approval,
-      pendingQuestion: question,
-      createdAt: now,
-      updatedAt: now,
-    );
-
     expect(ModelJson.encode(gate), {
       'id': 'artifact_exists',
       'required': true,
@@ -136,7 +117,6 @@ void main() {
     expect(ModelJson.encode(run)['status'], 'needs_replan');
     expect(ModelJson.encode(approval)['stepId'], 'step_1');
     expect(ModelJson.encode(question)['question'], 'Continue?');
-    expect(ModelJson.encode(document), isNot(contains('legacyWriteAccess')));
 
     final brief = ModelJson.decode<RefinedTaskBrief>({
       'title': 'Brief',

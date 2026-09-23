@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hermes/core/helpers/chat/context_estimator.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/core/models/task.dart';
@@ -2599,6 +2600,13 @@ class _QueueChatClient extends ChatClient {
   var _index = 0;
 
   @override
+  Future<int> countInputTokens({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+    CancellationToken? cancellationToken,
+  }) async => 0;
+
+  @override
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
@@ -2643,6 +2651,16 @@ class _QueueCompletionClient extends ChatClient {
   int get requestCount => _index;
 
   @override
+  Future<int> countInputTokens({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+    CancellationToken? cancellationToken,
+  }) async => ContextEstimator.estimateChatCompletionRequest(
+    messages: messages,
+    extraParams: extraParams ?? const {},
+  );
+
+  @override
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
@@ -2674,6 +2692,13 @@ class _QueueCompletionClient extends ChatClient {
 
 class _TransportFailureClient extends ChatClient {
   _TransportFailureClient() : super(baseUrl: 'http://localhost', model: 'test');
+
+  @override
+  Future<int> countInputTokens({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+    CancellationToken? cancellationToken,
+  }) async => 0;
 
   @override
   Future<ChatCompletionResponse> completeChat({

@@ -6,7 +6,7 @@ import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/core/models/chat_persistence.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
-import 'package:hermes/core/services/project_system/project_service.dart';
+import 'package:hermes/core/services/project_system/project_orchestrator.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/preferences_service.dart';
@@ -27,7 +27,7 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
   final SystemPromptLibraryService _systemPromptLibrary;
   final ToolService _toolService;
   final TaskService _taskService;
-  final ProjectService _projectService;
+  final ProjectOrchestrator _projectOrchestrator;
   final WorkspaceService _workspaceService;
   final PreferencesService _preferencesService;
 
@@ -44,14 +44,14 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
     required SystemPromptLibraryService systemPromptLibrary,
     required ToolService toolService,
     required TaskService taskService,
-    required ProjectService projectService,
+    required ProjectOrchestrator projectOrchestrator,
     required WorkspaceService workspaceService,
     required PreferencesService preferencesService,
   }) : _chatLibrary = chatLibrary,
        _systemPromptLibrary = systemPromptLibrary,
        _toolService = toolService,
        _taskService = taskService,
-       _projectService = projectService,
+       _projectOrchestrator = projectOrchestrator,
        _workspaceService = workspaceService,
        _preferencesService = preferencesService {
     newTab();
@@ -271,7 +271,7 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
       serverManager: serverManager,
       toolService: _toolService,
       taskService: _taskService,
-      projectService: _projectService,
+      projectOrchestrator: _projectOrchestrator,
       chatLibrary: _chatLibrary,
       workspaceService: _workspaceService,
       preferencesService: _preferencesService,
@@ -426,7 +426,7 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
     Iterable<WorkspaceAttachment> workspaces,
   ) async {
     for (final workspace in workspaces) {
-      await _projectService.deleteProjectsForChatSession(
+      await _projectOrchestrator.deleteProjectsForChatSession(
         workspace,
         chatSessionId: chatSessionId,
       );
@@ -452,7 +452,7 @@ class ChatTabsService extends ChangeNotifier implements Disposable {
         workspace,
         retainedChatSessionIds: retainedChatSessionIds,
       );
-      await _projectService.deleteOrphanedChatProjects(
+      await _projectOrchestrator.deleteOrphanedChatProjects(
         workspace,
         retainedChatSessionIds: retainedChatSessionIds,
       );

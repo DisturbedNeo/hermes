@@ -20,7 +20,7 @@ import 'package:hermes/core/services/chat_library_repository.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
-import 'package:hermes/core/services/project_system/project_service.dart';
+import 'package:hermes/core/services/project_system/project_orchestrator.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/task_system/task_repository.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
@@ -63,7 +63,7 @@ void main() {
         serverManager: serverManager,
         toolService: toolService,
         taskService: taskService,
-        projectService: ProjectService(taskService: taskService),
+        projectOrchestrator: ProjectOrchestrator(taskService: taskService),
         chatLibrary: chatLibrary,
         workspaceService: WorkspaceService(sandbox: sandbox),
         preferencesService: preferences,
@@ -362,13 +362,14 @@ void main() {
       ]);
       await chat.attachWorkspace(tempDir.path);
       final seedProject = _projectDocument();
-      final seedProjectService = ProjectService(
+      final seedProjectOrchestrator = ProjectOrchestrator(
         taskService: _createTaskService(),
       );
-      chat.activeProject = (await seedProjectService.repository.saveSnapshot(
-        tempDir.path,
-        seedProject,
-      )).value;
+      chat.activeProject =
+          (await seedProjectOrchestrator.repository.saveSnapshot(
+            tempDir.path,
+            seedProject,
+          )).value;
 
       await chat.send('/continue-project');
 
@@ -676,7 +677,7 @@ void main() {
           contains('SvelteKit'),
         );
         expect(
-          (await ProjectService(
+          (await ProjectOrchestrator(
             taskService: _createTaskService(),
           ).repository.listProjects(tempDir.path)),
           hasLength(1),
@@ -745,7 +746,7 @@ void main() {
         systemPromptLibrary: promptLibrary,
         toolService: toolService,
         taskService: taskService,
-        projectService: ProjectService(taskService: taskService),
+        projectOrchestrator: ProjectOrchestrator(taskService: taskService),
         workspaceService: WorkspaceService(sandbox: sandbox),
         preferencesService: preferences,
       );
@@ -876,7 +877,7 @@ void main() {
         id: 'project_orphaned',
         chatSessionId: 'deleted_chat',
       );
-      await ProjectService(
+      await ProjectOrchestrator(
         taskService: _createTaskService(),
       ).repository.saveSnapshot(tempDir.path, orphaned);
       final projectDir = Directory(
@@ -1142,6 +1143,13 @@ class _QueueChatClient extends ChatClient {
   var _index = 0;
 
   @override
+  Future<int> countInputTokens({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+    CancellationToken? cancellationToken,
+  }) async => 0;
+
+  @override
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
@@ -1174,6 +1182,13 @@ class _RecordingStreamClient extends ChatClient {
   _RecordingStreamClient() : super(baseUrl: 'http://localhost', model: 'test');
 
   final Completer<Map<String, dynamic>> extraParams = Completer();
+
+  @override
+  Future<int> countInputTokens({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+    CancellationToken? cancellationToken,
+  }) async => 0;
 
   @override
   Stream<ChatToken> streamMessage({
@@ -1224,6 +1239,13 @@ class _QueueCompletionClient extends ChatClient {
   var _index = 0;
 
   @override
+  Future<int> countInputTokens({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+    CancellationToken? cancellationToken,
+  }) async => 0;
+
+  @override
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
@@ -1250,6 +1272,13 @@ class _StuckTaskClient extends ChatClient {
   final Completer<void> stepCancelled = Completer<void>();
   final List<int> requestEstimates = [];
   var _streamCalls = 0;
+
+  @override
+  Future<int> countInputTokens({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+    CancellationToken? cancellationToken,
+  }) async => 0;
 
   @override
   bool get supportsStreamingCancellation => true;
@@ -1353,7 +1382,7 @@ class _BlockingCountClient extends ChatClient {
   var streamCalls = 0;
 
   @override
-  Future<int?> countInputTokens({
+  Future<int> countInputTokens({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
     CancellationToken? cancellationToken,
@@ -1391,6 +1420,13 @@ class _TwoToolClient extends ChatClient {
   _TwoToolClient() : super(baseUrl: 'http://localhost', model: 'test');
 
   var streamCalls = 0;
+
+  @override
+  Future<int> countInputTokens({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+    CancellationToken? cancellationToken,
+  }) async => 0;
 
   @override
   Stream<ChatToken> streamMessage({

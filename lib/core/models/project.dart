@@ -240,7 +240,6 @@ class ProjectDiagnostics with ProjectDiagnosticsMappable {
   final int userApprovals;
   final int userQuestions;
   final int consecutiveNoProgressBatches;
-  @MappableField(hook: OmitEmptyPlanningMetricsHook())
   final PlanningMetrics planningMetrics;
   @MappableField(hook: JsonStringListHook())
   final List<String> recentNoProgressBatchIds;

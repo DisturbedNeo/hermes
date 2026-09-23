@@ -445,44 +445,48 @@ void main() {
       expect(await client.streamMessage(messages: const []).toList(), isEmpty);
     });
 
-    test('retries and caches an enhanced telemetry incompatibility', () async {
-      final bodies = <Map<String, dynamic>>[];
-      final snapshots = <ModelCallDiagnostics>[];
-      final client = ChatClient(
-        baseUrl: 'http://localhost',
-        model: 'test-model',
-        onDiagnostics: snapshots.add,
-        clientFactory: () => _ScriptedClient((request) async {
-          bodies.add(jsonDecode(await request.finalize().bytesToString()));
-          if (bodies.length == 1) {
-            return http.StreamedResponse(
-              Stream.value(
-                utf8.encode(
-                  '{"error":{"message":"unknown field return_progress"}}',
+    test(
+      'surfaces enhanced telemetry incompatibility without retrying',
+      () async {
+        final bodies = <Map<String, dynamic>>[];
+        final snapshots = <ModelCallDiagnostics>[];
+        final client = ChatClient(
+          baseUrl: 'http://localhost',
+          model: 'test-model',
+          onDiagnostics: snapshots.add,
+          clientFactory: () => _ScriptedClient((request) async {
+            bodies.add(jsonDecode(await request.finalize().bytesToString()));
+            if (bodies.length == 1) {
+              return http.StreamedResponse(
+                Stream.value(
+                  utf8.encode(
+                    '{"error":{"message":"unknown field return_progress"}}',
+                  ),
                 ),
-              ),
-              HttpStatus.badRequest,
+                HttpStatus.badRequest,
+              );
+            }
+            return _sseResponse(
+              'data: ${jsonEncode({
+                'choices': [
+                  {'delta': <String, Object?>{}, 'finish_reason': 'stop'},
+                ],
+              })}\n\ndata: [DONE]\n\n',
             );
-          }
-          return _sseResponse(
-            'data: ${jsonEncode({
-              'choices': [
-                {'delta': <String, Object?>{}, 'finish_reason': 'stop'},
-              ],
-            })}\n\ndata: [DONE]\n\n',
-          );
-        }),
-      );
+          }),
+        );
 
-      await client.streamMessage(messages: const []).toList();
-      await client.streamMessage(messages: const []).toList();
+        await expectLater(
+          client.streamMessage(messages: const []).toList(),
+          throwsA(isA<HttpException>()),
+        );
 
-      expect(bodies, hasLength(3));
-      expect(bodies.first, contains('return_progress'));
-      expect(bodies[1], isNot(contains('stream_options')));
-      expect(bodies[2], isNot(contains('stream_options')));
-      expect(snapshots.map((item) => item.callId).toSet(), hasLength(2));
-    });
+        expect(bodies, hasLength(1));
+        expect(bodies.first, contains('return_progress'));
+        expect(bodies.first, contains('stream_options'));
+        expect(snapshots, isNotEmpty);
+      },
+    );
 
     test('parses non-streamed usage and timings into the response', () async {
       final client = ChatClient(
@@ -889,7 +893,7 @@ void main() {
       },
     );
 
-    test('caches definitive token-count endpoint incompatibility', () async {
+    test('surfaces token-count endpoint incompatibility', () async {
       var requests = 0;
       final client = ChatClient(
         baseUrl: 'http://localhost',
@@ -903,9 +907,15 @@ void main() {
         }),
       );
 
-      expect(await client.countInputTokens(messages: const []), isNull);
-      expect(await client.countInputTokens(messages: const []), isNull);
-      expect(requests, 1);
+      await expectLater(
+        client.countInputTokens(messages: const []),
+        throwsA(isA<HttpException>()),
+      );
+      await expectLater(
+        client.countInputTokens(messages: const []),
+        throwsA(isA<HttpException>()),
+      );
+      expect(requests, 2);
     });
 
     test('times out a model request after an inactivity window', () async {
@@ -963,7 +973,7 @@ void main() {
       },
     );
 
-    test('falls back when token counting fails transiently', () async {
+    test('surfaces transient token-count failures', () async {
       var requests = 0;
       final client = ChatClient(
         baseUrl: 'http://localhost',
@@ -977,8 +987,14 @@ void main() {
         }),
       );
 
-      expect(await client.countInputTokens(messages: const []), isNull);
-      expect(await client.countInputTokens(messages: const []), isNull);
+      await expectLater(
+        client.countInputTokens(messages: const []),
+        throwsA(isA<HttpException>()),
+      );
+      await expectLater(
+        client.countInputTokens(messages: const []),
+        throwsA(isA<HttpException>()),
+      );
       expect(requests, 2);
     });
 

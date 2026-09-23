@@ -401,12 +401,7 @@ class ProjectAggregateRepository {
   }) async {
     await _snapshots.writeMap(
       File(path.join(transaction.directory.path, 'manifest.json')),
-      {
-        'schemaVersion': currentSnapshotSchemaVersion,
-        'transactionId': transaction.id,
-        'phase': phase,
-        'entries': entries,
-      },
+      {'transactionId': transaction.id, 'phase': phase, 'entries': entries},
     );
   }
 

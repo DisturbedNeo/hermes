@@ -8,10 +8,8 @@ import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/persistence_contracts.dart';
 import 'package:hermes/core/services/project_system/orchestration_contracts.dart';
 import 'package:hermes/core/services/project_system/project_completion_service.dart';
-import 'package:hermes/core/services/project_system/project_execution_service.dart';
 import 'package:hermes/core/services/project_system/project_lifecycle_service.dart';
 import 'package:hermes/core/services/project_system/project_orchestrator.dart';
-import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/task_system/task_lifecycle_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
@@ -119,12 +117,10 @@ void main() {
     var executionCalls = 0;
     final orchestrator = ProjectOrchestrator(
       taskService: taskService,
-      execution: ProjectExecutionService(
-        run: (request) async {
-          executionCalls++;
-          return ProjectRunResult(project: request.snapshot);
-        },
-      ),
+      executionOverride: (request) async {
+        executionCalls++;
+        return ProjectCommandResult.fromSnapshot(project: request.snapshot);
+      },
     );
     final saved = await orchestrator.repository.saveSnapshot(
       root.path,
@@ -140,12 +136,55 @@ void main() {
   });
 
   test(
-    'orchestrator rejects a second command for the same project as busy',
+    'orchestrator executes and recovers through canonical commands',
     () async {
-      final release = Completer<ProjectRunResult>();
+      var executionCalls = 0;
+      var recoveryCalls = 0;
       final orchestrator = ProjectOrchestrator(
         taskService: taskService,
-        execution: ProjectExecutionService(run: (request) => release.future),
+        executionOverride: (request) async {
+          executionCalls++;
+          return ProjectCommandResult.fromSnapshot(project: request.snapshot);
+        },
+        recoveryOverride: (request) async {
+          recoveryCalls++;
+          return ProjectCommandResult.fromSnapshot(project: request.snapshot);
+        },
+      );
+      final saved = await orchestrator.repository.saveSnapshot(
+        root.path,
+        _project(),
+      );
+      final workspace = WorkspaceAttachment(
+        rootPath: root.path,
+        displayName: 'Workspace',
+        lastOpenedAt: DateTime(2026, 1, 1),
+      );
+
+      final executed = await orchestrator.execute(
+        _request(saved.value, root.path),
+      );
+      final recovered = await orchestrator.recover(
+        ProjectRecoveryRequest(
+          workspace: workspace,
+          snapshot: executed.project,
+        ),
+      );
+
+      expect(executed, isA<ProjectCommandResult>());
+      expect(recovered, isA<ProjectCommandResult>());
+      expect(executionCalls, 1);
+      expect(recoveryCalls, 1);
+    },
+  );
+
+  test(
+    'orchestrator rejects a second command for the same project as busy',
+    () async {
+      final release = Completer<ProjectCommandResult>();
+      final orchestrator = ProjectOrchestrator(
+        taskService: taskService,
+        executionOverride: (request) => release.future,
       );
       final saved = await orchestrator.repository.saveSnapshot(
         root.path,
@@ -158,7 +197,7 @@ void main() {
         throwsA(isA<ProjectBusyException>()),
       );
 
-      release.complete(ProjectRunResult(project: saved.value));
+      release.complete(ProjectCommandResult.fromSnapshot(project: saved.value));
       await first;
     },
   );

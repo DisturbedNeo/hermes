@@ -126,7 +126,7 @@ void main() {
         ),
       );
 
-      expect(decoded['schemaVersion'], 1);
+      expect(decoded, isNot(contains('schemaVersion')));
       expect(decoded['revision'], 1);
       final document = decoded['document'] as Map<String, dynamic>;
       expect(document['steps'], isA<List>());
@@ -145,7 +145,26 @@ void main() {
       expect(loaded?.value.runs.single.runId, 'run_1');
     });
 
-    test('rejects legacy embedded task documents', () async {
+    test(
+      'loads structurally compatible envelopes with unknown metadata',
+      () async {
+        await repository.saveSnapshot(root.path, _task(id: 'task_metadata'));
+        final file = File(
+          path.join(root.path, '.agent', 'tasks', 'task_metadata', 'task.json'),
+        );
+        final envelope =
+            jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+        envelope['schemaVersion'] = 1;
+        await file.writeAsString(jsonEncode(envelope));
+
+        final loaded = await repository.loadTask(root.path, 'task_metadata');
+
+        expect(loaded?.value.id, 'task_metadata');
+        expect(await file.readAsString(), contains('schemaVersion'));
+      },
+    );
+
+    test('rejects unwrapped task documents', () async {
       final task = _task(id: 'task_legacy', runs: [_run()]);
       final taskDir = Directory(
         path.join(root.path, '.agent', 'tasks', 'task_legacy'),

@@ -134,7 +134,7 @@ void main() {
       );
       final decoded = jsonDecode(await file.readAsString());
 
-      expect(decoded['schemaVersion'], 1);
+      expect(decoded, isNot(contains('schemaVersion')));
       expect(decoded['revision'], 1);
       final document = decoded['document'] as Map<String, dynamic>;
       expect(document['criteria'], isA<List>());

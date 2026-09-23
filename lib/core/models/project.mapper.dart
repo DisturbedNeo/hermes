@@ -1260,7 +1260,6 @@ class ProjectDiagnosticsMapper extends ClassMapperBase<ProjectDiagnostics> {
         _$planningMetrics,
         opt: true,
         def: const PlanningMetrics(),
-        hook: OmitEmptyPlanningMetricsHook(),
       );
   static List<String> _$recentNoProgressBatchIds(ProjectDiagnostics v) =>
       v.recentNoProgressBatchIds;

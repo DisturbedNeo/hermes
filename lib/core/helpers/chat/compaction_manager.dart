@@ -565,16 +565,11 @@ class CompactionManager {
       omitCoveredMessages: true,
       omittedMessageIds: omittedMessageIds,
     );
-    final exact = await client.countInputTokens(
+    return client.countInputTokens(
       messages: payload,
       extraParams: extraParams,
       cancellationToken: cancellationToken,
     );
-    return exact ??
-        ContextEstimator.estimateChatCompletionRequest(
-          messages: payload,
-          extraParams: extraParams,
-        );
   }
 
   List<Bubble> _selectCandidates(

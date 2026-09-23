@@ -112,7 +112,6 @@ class PlanningMetricsMapper extends ClassMapperBase<PlanningMetrics> {
     'timeToFirstExecutableMs',
     _$timeToFirstExecutableMs,
     opt: true,
-    hook: JsonIntHook(),
   );
 
   @override

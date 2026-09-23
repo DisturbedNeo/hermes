@@ -1661,7 +1661,6 @@ class TaskMapper extends ClassMapperBase<Task> {
     _$planningMetrics,
     opt: true,
     def: const PlanningMetrics(),
-    hook: OmitEmptyPlanningMetricsHook(),
   );
   static DateTime? _$completedAt(Task v) => v.completedAt;
   static const Field<Task, DateTime> _f$completedAt = Field(

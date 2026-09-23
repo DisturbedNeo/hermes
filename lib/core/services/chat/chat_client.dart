@@ -711,8 +711,6 @@ class ChatClient {
   final Duration tokenCountTimeout;
   final Set<http.Client> _activeClients = {};
   bool _isDisposed = false;
-  bool _inputTokenEndpointUnsupported = false;
-  bool _enhancedTelemetryUnsupported = false;
 
   ChatClient({
     required String baseUrl,
@@ -979,36 +977,17 @@ class ChatClient {
   }) async* {
     cancellationToken?.throwIfCancelled();
     final chatUri = Uri.parse('$_baseUrl/v1/chat/completions');
-    var enhanced = !_enhancedTelemetryUnsupported;
     try {
-      while (true) {
-        final body = _streamBody(
-          messages: messages,
-          extraParams: extraParams,
-          enhanced: enhanced,
-        );
-        try {
-          await for (final token in _streamWithTransportRetries(
-            chatUri: chatUri,
-            body: body,
-            cancellationToken: cancellationToken,
-            tracker: tracker,
-          )) {
-            yield token;
-          }
-          tracker.complete();
-          return;
-        } catch (error) {
-          if (enhanced &&
-              tracker.firstOutputAt == null &&
-              _isTelemetryCompatibilityError(error)) {
-            _enhancedTelemetryUnsupported = true;
-            enhanced = false;
-            continue;
-          }
-          rethrow;
-        }
+      final body = _streamBody(messages: messages, extraParams: extraParams);
+      await for (final token in _streamWithTransportRetries(
+        chatUri: chatUri,
+        body: body,
+        cancellationToken: cancellationToken,
+        tracker: tracker,
+      )) {
+        yield token;
       }
+      tracker.complete();
     } on OperationCancelledException {
       tracker.cancel();
       rethrow;
@@ -1219,7 +1198,6 @@ class ChatClient {
   Map<String, dynamic> _streamBody({
     required List<ChatMessage> messages,
     required Map<String, dynamic>? extraParams,
-    required bool enhanced,
   }) {
     final body = <String, dynamic>{
       ...?extraParams,
@@ -1227,8 +1205,6 @@ class ChatClient {
       'messages': messages.map(ModelJson.encode).toList(),
       'stream': true,
     };
-    if (!enhanced) return body;
-
     final callerOptions = extraParams?['stream_options'];
     final streamOptions = <String, dynamic>{
       if (callerOptions is Map)
@@ -1242,22 +1218,6 @@ class ChatClient {
       body['return_progress'] = true;
     }
     return body;
-  }
-
-  bool _isTelemetryCompatibilityError(Object error) {
-    if (error is! HttpException) return false;
-    final message = error.message.toLowerCase();
-    final invalidRequest =
-        message.startsWith('400:') ||
-        message.startsWith('422:') ||
-        message.contains('invalid parameter') ||
-        message.contains('unknown field') ||
-        message.contains('extra inputs');
-    if (!invalidRequest) return false;
-    return message.contains('stream_options') ||
-        message.contains('include_usage') ||
-        message.contains('timings_per_token') ||
-        message.contains('return_progress');
   }
 
   Future<LlamaServerProperties?> fetchServerProperties() async {
@@ -1356,13 +1316,11 @@ class ChatClient {
     }
   }
 
-  Future<int?> countInputTokens({
+  Future<int> countInputTokens({
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
     CancellationToken? cancellationToken,
   }) async {
-    if (runtimeType != ChatClient) return null;
-    if (_inputTokenEndpointUnsupported) return null;
     cancellationToken?.throwIfCancelled();
 
     final uri = Uri.parse('$_baseUrl/v1/chat/completions/input_tokens');
@@ -1372,40 +1330,36 @@ class ChatClient {
       ...?extraParams,
     };
 
-    try {
-      return await _withClient((client) async {
-        final request = _request(uri, accept: 'application/json', body: body);
-        final streamed = await _sendWithTimeout(
-          client,
-          request,
-          uri,
-          tokenCountTimeout,
+    return _runBeforeOutputRetry(uri, cancellationToken, (client) async {
+      final request = _request(uri, accept: 'application/json', body: body);
+      final streamed = await _sendWithTimeout(
+        client,
+        request,
+        uri,
+        tokenCountTimeout,
+      );
+      if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+        throw HttpException(
+          'HTTP ${streamed.statusCode} from input-token endpoint',
+          uri: uri,
         );
-        if (streamed.statusCode == HttpStatus.notFound ||
-            streamed.statusCode == HttpStatus.methodNotAllowed) {
-          _inputTokenEndpointUnsupported = true;
-          return null;
-        }
-        if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
-          return null;
-        }
-        final responseBody = await _readResponseBody(
-          streamed.stream,
-          client,
-          uri,
-          tokenCountTimeout,
-        );
-        final decoded = jsonDecode(responseBody);
-        final value = decoded is Map ? decoded['input_tokens'] : null;
-        if (value is int) return value;
-        if (value is num) return value.toInt();
-        return int.tryParse(value?.toString() ?? '');
-      }, cancellationToken);
-    } on OperationCancelledException {
-      rethrow;
-    } catch (_) {
-      return null;
-    }
+      }
+      final responseBody = await _readResponseBody(
+        streamed.stream,
+        client,
+        uri,
+        tokenCountTimeout,
+      );
+      final decoded = jsonDecode(responseBody);
+      final value = decoded is Map ? decoded['input_tokens'] : null;
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      final parsed = int.tryParse(value?.toString() ?? '');
+      if (parsed != null) return parsed;
+      throw const FormatException(
+        'Input-token endpoint returned no input_tokens value',
+      );
+    });
   }
 
   Future<http.StreamedResponse> _sendWithTimeout(

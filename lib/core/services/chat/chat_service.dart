@@ -23,7 +23,6 @@ import 'package:hermes/core/services/chat/chat_session_manager.dart';
 import 'package:hermes/core/services/chat/chat_stream.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
-import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/project_system/project_orchestrator.dart';
 import 'package:hermes/core/services/project_system/orchestration_contracts.dart';
 import 'package:hermes/core/services/persistence_contracts.dart';
@@ -54,7 +53,7 @@ class ChatService extends ChangeNotifier implements Disposable {
 
   final ToolService _toolService;
   final TaskService _taskService;
-  final ProjectService _projectService;
+  final ProjectOrchestrator _projectOrchestrator;
   final ChatLibraryService _chatLibrary;
   final WorkspaceService _workspaceService;
   final PreferencesService _preferencesService;
@@ -122,7 +121,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     required this.serverManager,
     required ToolService toolService,
     required TaskService taskService,
-    required ProjectService projectService,
+    required ProjectOrchestrator projectOrchestrator,
     required ChatLibraryService chatLibrary,
     required WorkspaceService workspaceService,
     required PreferencesService preferencesService,
@@ -133,7 +132,7 @@ class ChatService extends ChangeNotifier implements Disposable {
        _workspaceService = workspaceService,
        _preferencesService = preferencesService,
        _taskService = taskService,
-       _projectService = projectService {
+       _projectOrchestrator = projectOrchestrator {
     currentSystemPromptSnapshot = initialSystemPromptSnapshot;
     messageStore.setMessages([systemPrompt]);
 
@@ -229,7 +228,7 @@ class ChatService extends ChangeNotifier implements Disposable {
 
   String? get activeProjectJson => activeProject == null
       ? null
-      : _projectService.encodeProject(activeProject!);
+      : _projectOrchestrator.encodeProject(activeProject!);
 
   List<String> get defaultToolIds => workspaceToolsEnabled
       ? _toolService.defaultToolIds(includeWorkspaceTools: true)
@@ -307,12 +306,12 @@ class ChatService extends ChangeNotifier implements Disposable {
       if (workspace != null && workspace?.missing != true) {
         activeProject = (await _recoverProject(
           workspace!,
-          await _projectService.loadLatestProject(
+          await _projectOrchestrator.loadLatestProject(
             workspace!,
             chatSessionId: snapshot.chat.id,
           ),
         ))?.project;
-        availableProjects = await _projectService.listProjects(
+        availableProjects = await _projectOrchestrator.listProjects(
           workspace!,
           chatSessionId: snapshot.chat.id,
         );
@@ -489,7 +488,7 @@ class ChatService extends ChangeNotifier implements Disposable {
         previousWorkspace,
         chatSessionId: previousScopeId,
       );
-      await _projectService.deleteProjectsForChatSession(
+      await _projectOrchestrator.deleteProjectsForChatSession(
         previousWorkspace,
         chatSessionId: previousScopeId,
       );
@@ -499,12 +498,12 @@ class ChatService extends ChangeNotifier implements Disposable {
     final scopeId = _taskScopeId;
     activeProject = (await _recoverProject(
       workspace!,
-      await _projectService.loadLatestProject(
+      await _projectOrchestrator.loadLatestProject(
         workspace!,
         chatSessionId: scopeId,
       ),
     ))?.project;
-    availableProjects = await _projectService.listProjects(
+    availableProjects = await _projectOrchestrator.listProjects(
       workspace!,
       chatSessionId: scopeId,
     );
@@ -679,12 +678,12 @@ class ChatService extends ChangeNotifier implements Disposable {
     activeProject = (await _recoverProject(
       current,
       activeProject ??
-          await _projectService.loadLatestProject(
+          await _projectOrchestrator.loadLatestProject(
             current,
             chatSessionId: scopeId,
           ),
     ))?.project;
-    availableProjects = await _projectService.listProjects(
+    availableProjects = await _projectOrchestrator.listProjects(
       current,
       chatSessionId: scopeId,
     );
@@ -717,15 +716,17 @@ class ChatService extends ChangeNotifier implements Disposable {
     return _taskService.recoverTask(workspace: current, snapshot: snapshot);
   }
 
-  Future<ProjectRunResult?> _recoverProject(
+  Future<ProjectCommandResult?> _recoverProject(
     WorkspaceAttachment current,
     ProjectDocument? snapshot,
   ) {
     if (snapshot == null) return Future.value();
-    return _projectService.recoverProject(
-      workspace: current,
-      snapshot: snapshot,
-      onTaskUpdated: (task) => activeTask = task,
+    return _projectOrchestrator.recover(
+      ProjectRecoveryRequest(
+        workspace: current,
+        snapshot: snapshot,
+        onTaskUpdated: (task) => activeTask = task,
+      ),
     );
   }
 
@@ -780,7 +781,10 @@ class ChatService extends ChangeNotifier implements Disposable {
     }
     final result = await _recoverProject(
       current,
-      await _projectService.loadLatestProject(current, chatSessionId: scopeId),
+      await _projectOrchestrator.loadLatestProject(
+        current,
+        chatSessionId: scopeId,
+      ),
     );
     activeProject = result?.project;
     activeTask = result?.activeTask;
@@ -796,7 +800,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     }
     final result = await _recoverProject(
       current,
-      await _projectService.loadProject(
+      await _projectOrchestrator.loadProject(
         current,
         projectId,
         chatSessionId: scopeId,
@@ -992,7 +996,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       return;
     }
 
-    activeProject = await _projectService.answerOpenQuestion(
+    activeProject = await _projectOrchestrator.answerOpenQuestion(
       workspace: currentWorkspace,
       snapshot: snapshot,
       answer: answer,
@@ -1014,7 +1018,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       return;
     }
 
-    activeProject = await _projectService.stopProject(
+    activeProject = await _projectOrchestrator.stopProject(
       workspace: currentWorkspace,
       snapshot: snapshot,
     );
@@ -1032,7 +1036,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       return;
     }
 
-    activeProject = await _projectService.pauseProject(
+    activeProject = await _projectOrchestrator.pauseProject(
       workspace: currentWorkspace,
       snapshot: snapshot,
     );
@@ -1049,7 +1053,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       return;
     }
 
-    activeProject = await _projectService.retryRecoveryIncident(
+    activeProject = await _projectOrchestrator.retryRecoveryIncident(
       workspace: currentWorkspace,
       snapshot: snapshot,
       incidentId: incidentId,
@@ -1067,7 +1071,7 @@ class ChatService extends ChangeNotifier implements Disposable {
         snapshot.pendingPlanApproval == null) {
       return;
     }
-    activeProject = await _projectService.approvePlanRevision(
+    activeProject = await _projectOrchestrator.approvePlanRevision(
       workspace: currentWorkspace,
       snapshot: snapshot,
     );
@@ -1084,7 +1088,7 @@ class ChatService extends ChangeNotifier implements Disposable {
         snapshot.pendingPlanApproval == null) {
       return;
     }
-    activeProject = await _projectService.rejectPlanRevision(
+    activeProject = await _projectOrchestrator.rejectPlanRevision(
       workspace: currentWorkspace,
       snapshot: snapshot,
     );
@@ -1102,7 +1106,7 @@ class ChatService extends ChangeNotifier implements Disposable {
         taskBusy) {
       return;
     }
-    activeProject = await _projectService.requestScopeChange(
+    activeProject = await _projectOrchestrator.requestScopeChange(
       workspace: currentWorkspace,
       snapshot: snapshot,
       context: reason.trim().isEmpty
@@ -1321,7 +1325,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     final scopeId = _taskScopeId;
     activeProject ??= (await _recoverProject(
       currentWorkspace,
-      await _projectService.loadLatestProject(
+      await _projectOrchestrator.loadLatestProject(
         currentWorkspace,
         chatSessionId: scopeId,
       ),
@@ -1389,13 +1393,13 @@ class ChatService extends ChangeNotifier implements Disposable {
         activeProject ??
         (await _recoverProject(
           currentWorkspace,
-          await _projectService.loadLatestProject(
+          await _projectOrchestrator.loadLatestProject(
             currentWorkspace,
             chatSessionId: scopeId,
           ),
         ))?.project;
     if (existingProject != null && !existingProject.isTerminal) {
-      activeProject = await _projectService.addUserContext(
+      activeProject = await _projectOrchestrator.addUserContext(
         workspace: currentWorkspace,
         snapshot: existingProject,
         text: prompt,
@@ -1419,7 +1423,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     notifyListeners();
 
     try {
-      final project = await _projectService.createProject(
+      final project = await _projectOrchestrator.createProject(
         workspace: currentWorkspace,
         userPrompt: prompt,
         chatSessionId: scopeId,
@@ -1483,80 +1487,36 @@ class ChatService extends ChangeNotifier implements Disposable {
     try {
       final compactionSettings = await _preferencesService
           .getCompactionSettings();
-      final orchestrator = _projectService;
-      if (orchestrator is ProjectOrchestrator) {
-        final result = await orchestrator.executeUntilStop(
-          ProjectExecutionRequest(
-            client: client,
-            workspace: currentWorkspace,
-            snapshot: snapshot,
-            baseSystemPrompt: _buildProjectSystemPrompt(snapshot),
-            maxNewTasks: maxNewTasks ?? settings.maxProjectTasksPerRun,
-            maxIterations: settings.maxProjectIterations,
-            requirePhaseApproval: settings.requireApprovalBeforeFileEdits,
-            questionAutonomy: settings.questionAutonomy,
-            planApprovalPolicy: settings.planApprovalPolicy,
-            compactionSettings: compactionSettings,
-            contextLimitTokens: _diagnosticsContextLimit,
-            onCompactionStatus: (status) {
-              taskStatusMessage = status;
-              notifyListeners();
-            },
-            onModelOutput: _handleTaskModelOutput,
-            onTaskUpdated: (task) {
-              activeTask = task;
-              notifyListeners();
-            },
-            cancellationToken: token,
-          ),
-          boundedRun: maxNewTasks != null,
-        );
-        activeProject = result.project;
-        activeTask = result.activeTask;
-        activeProjectPersistenceDiagnostics = result.persistenceDiagnostics;
-        notifyListeners();
-      } else {
-        var projectSnapshot = snapshot;
-        while (true) {
-          final result = await _projectService.runProject(
-            client: client,
-            workspace: currentWorkspace,
-            snapshot: projectSnapshot,
-            baseSystemPrompt: _buildProjectSystemPrompt(projectSnapshot),
-            maxNewTasks: maxNewTasks ?? settings.maxProjectTasksPerRun,
-            maxIterations: settings.maxProjectIterations,
-            requirePhaseApproval: settings.requireApprovalBeforeFileEdits,
-            questionAutonomy: settings.questionAutonomy,
-            planApprovalPolicy: settings.planApprovalPolicy,
-            compactionSettings: compactionSettings,
-            contextLimitTokens: _diagnosticsContextLimit,
-            onCompactionStatus: (status) {
-              taskStatusMessage = status;
-              notifyListeners();
-            },
-            onModelOutput: _handleTaskModelOutput,
-            onTaskUpdated: (task) {
-              activeTask = task;
-              notifyListeners();
-            },
-            cancellationToken: token,
-          );
-          activeProject = result.project;
-          activeTask = result.activeTask;
-          activeProjectPersistenceDiagnostics = result.persistenceDiagnostics;
-          notifyListeners();
-
-          if (result.persistenceDiagnostics?.isReadOnly ?? false) break;
-
-          if (!_shouldContinueProjectAutomatically(
-            result,
-            boundedRun: maxNewTasks != null,
-          )) {
-            break;
-          }
-          projectSnapshot = result.project;
-        }
-      }
+      final result = await _projectOrchestrator.executeUntilStop(
+        ProjectExecutionRequest(
+          client: client,
+          workspace: currentWorkspace,
+          snapshot: snapshot,
+          baseSystemPrompt: _buildProjectSystemPrompt(snapshot),
+          maxNewTasks: maxNewTasks ?? settings.maxProjectTasksPerRun,
+          maxIterations: settings.maxProjectIterations,
+          requirePhaseApproval: settings.requireApprovalBeforeFileEdits,
+          questionAutonomy: settings.questionAutonomy,
+          planApprovalPolicy: settings.planApprovalPolicy,
+          compactionSettings: compactionSettings,
+          contextLimitTokens: _diagnosticsContextLimit,
+          onCompactionStatus: (status) {
+            taskStatusMessage = status;
+            notifyListeners();
+          },
+          onModelOutput: _handleTaskModelOutput,
+          onTaskUpdated: (task) {
+            activeTask = task;
+            notifyListeners();
+          },
+          cancellationToken: token,
+        ),
+        boundedRun: maxNewTasks != null,
+      );
+      activeProject = result.project;
+      activeTask = result.activeTask;
+      activeProjectPersistenceDiagnostics = result.persistenceDiagnostics;
+      notifyListeners();
       await reloadTasks();
       _insertTaskAssistantMessage(_projectStatusMessage(activeProject!));
     } on OperationCancelledException {
@@ -1834,7 +1794,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     taskStatusMessage = 'Updating project...';
     notifyListeners();
     try {
-      activeProject = await _projectService.updateProject(
+      activeProject = await _projectOrchestrator.updateProject(
         workspace: currentWorkspace,
         snapshot: snapshot,
         rawJson: rawJson,
@@ -1914,7 +1874,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     if (currentChatId != null) return;
     final currentWorkspace = workspace;
     if (currentWorkspace == null || currentWorkspace.missing) return;
-    await _projectService.deleteProjectsForChatSession(
+    await _projectOrchestrator.deleteProjectsForChatSession(
       currentWorkspace,
       chatSessionId: _chatSessionScopeId,
     );
@@ -1954,7 +1914,7 @@ class ChatService extends ChangeNotifier implements Disposable {
     Iterable<WorkspaceAttachment> workspaces,
   ) async {
     for (final workspace in workspaces) {
-      await _projectService.deleteProjectsForChatSession(
+      await _projectOrchestrator.deleteProjectsForChatSession(
         workspace,
         chatSessionId: chatSessionId,
       );
@@ -1975,7 +1935,7 @@ class ChatService extends ChangeNotifier implements Disposable {
         type != ProjectBlockerType.taskFailed) {
       return;
     }
-    activeProject = await _projectService.clearTaskBlocker(
+    activeProject = await _projectOrchestrator.clearTaskBlocker(
       workspace: currentWorkspace,
       snapshot: project,
     );
@@ -2353,18 +2313,18 @@ class ChatService extends ChangeNotifier implements Disposable {
     final currentWorkspace = scopeWorkspace;
     if (currentWorkspace == null || currentWorkspace.missing) return;
 
-    final projects = await _projectService.listProjects(
+    final projects = await _projectOrchestrator.listProjects(
       currentWorkspace,
       chatSessionId: previousScopeId,
     );
     for (final project in projects) {
-      final snapshot = await _projectService.loadProject(
+      final snapshot = await _projectOrchestrator.loadProject(
         currentWorkspace,
         project.id,
         chatSessionId: previousScopeId,
       );
       if (snapshot == null) continue;
-      final updated = await _projectService.updateProjectChatSessionId(
+      final updated = await _projectOrchestrator.updateProjectChatSessionId(
         workspace: currentWorkspace,
         snapshot: snapshot,
         chatSessionId: savedChatId,
@@ -2374,7 +2334,7 @@ class ChatService extends ChangeNotifier implements Disposable {
         activeProject = updated;
       }
     }
-    final scopedProjects = await _projectService.listProjects(
+    final scopedProjects = await _projectOrchestrator.listProjects(
       currentWorkspace,
       chatSessionId: savedChatId,
     );
@@ -2757,19 +2717,6 @@ Workspace rules:
       return false;
     }
     return _taskHasTransportFailure(task);
-  }
-
-  bool _shouldContinueProjectAutomatically(
-    ProjectRunResult result, {
-    required bool boundedRun,
-  }) {
-    if (boundedRun) return false;
-    final project = result.project;
-    return project.status == ProjectStatus.paused &&
-        project.activeTaskId == null &&
-        project.pendingPlanApproval == null &&
-        project.openQuestions.isEmpty &&
-        project.blocker == null;
   }
 
   bool _taskNeedsInterventionBeforeContinuing(Task snapshot) {

@@ -319,7 +319,6 @@ class Task with TaskMappable {
   final String? chatSessionId;
   @MappableField(hook: JsonNullableStringHook())
   final String? projectId;
-  @MappableField(hook: OmitEmptyPlanningMetricsHook())
   final PlanningMetrics planningMetrics;
 
   @MappableField(hook: JsonDateHook())

@@ -8,7 +8,6 @@ import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/keyboard_shortcuts.dart';
 import 'package:hermes/core/services/preferences_service.dart';
-import 'package:hermes/core/services/project_system/project_service.dart';
 import 'package:hermes/core/services/project_system/project_orchestrator.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
@@ -85,7 +84,6 @@ class _AppState extends State<App> {
         Provider<ToolService>.value(value: dependencies.toolService),
         Provider<TaskService>.value(value: dependencies.taskService),
         Provider<TaskOrchestrator>.value(value: dependencies.taskOrchestrator),
-        Provider<ProjectService>.value(value: dependencies.projectService),
         Provider<ProjectOrchestrator>.value(
           value: dependencies.projectOrchestrator,
         ),
