@@ -222,6 +222,55 @@ void main() {
     expect(committed.task.gates, hasLength(1));
     expect(committed.task.gates.single.required, isTrue);
   });
+
+  test('rejects terminal-policy-blocked checks while adding them', () {
+    final builder = TaskPlanBuilder(task: _task(), maxSteps: 2);
+
+    expect(
+      () => builder.addCheck(
+        command: 'test -f output.txt && n=\$(grep -c pattern output.txt)',
+      ),
+      throwsA(
+        isA<TaskPlanBuilderException>()
+            .having((error) => error.code, 'code', 'blocked_command')
+            .having(
+              (error) => error.message,
+              'message',
+              contains('command substitution'),
+            ),
+      ),
+    );
+    expect(builder.taskGates, isEmpty);
+  });
+
+  test('reports blocked pre-existing checks during final validation', () {
+    final source = _task().copyWith(
+      gates: const [
+        TaskGate(
+          id: 'command_passes',
+          params: {
+            'command': 'echo "\$(cat secrets.txt)"',
+            'working_directory': '.',
+          },
+        ),
+      ],
+    );
+    final committed = TaskPlanBuilder(task: source, maxSteps: 2).commit();
+
+    expect(committed.valid, isFalse);
+    expect(
+      committed.issues,
+      contains(
+        isA<TaskPlanIssue>()
+            .having((issue) => issue.code, 'code', 'blocked_command')
+            .having(
+              (issue) => issue.message,
+              'message',
+              contains('command substitution'),
+            ),
+      ),
+    );
+  });
 }
 
 Task _task({List<TaskStep> steps = const []}) {

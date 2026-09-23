@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/task.dart';
+import 'package:hermes/core/services/terminal_command_classifier.dart';
+import 'package:hermes/core/services/terminal_command_parser.dart';
 
 /// A compact validation issue returned by the task planning tools.
 class TaskPlanIssue {
@@ -292,6 +294,7 @@ class TaskPlanBuilder {
           'A verification check needs a command.',
         );
       }
+      _throwIfCommandBlocked(commandText);
       final step = stepReference == null || stepReference.trim().isEmpty
           ? null
           : _stepFor(stepReference);
@@ -573,6 +576,21 @@ class TaskPlanBuilder {
           );
         }
       }
+      for (var gateIndex = 0; gateIndex < step.gates.length; gateIndex++) {
+        final gate = step.gates[gateIndex];
+        final issue = _commandGateIssue(
+          gate,
+          'steps[$index].gates[$gateIndex].params.command',
+        );
+        if (issue != null) issues.add(issue);
+      }
+    }
+    for (var gateIndex = 0; gateIndex < task.gates.length; gateIndex++) {
+      final issue = _commandGateIssue(
+        task.gates[gateIndex],
+        'gates[$gateIndex].params.command',
+      );
+      if (issue != null) issues.add(issue);
     }
     for (final gate in requiredGates) {
       if (!_hasMatchingGate(task, gate)) {
@@ -915,6 +933,37 @@ class TaskPlanBuilder {
       expectation.details['working_directory']?.toString() ??
       expectation.details['workingDirectory']?.toString() ??
       '.';
+
+  void _throwIfCommandBlocked(String command) {
+    final reason = TerminalCommandClassifier.blockedReasonForCommand(command);
+    if (reason == null) return;
+    throw _error(
+      'blocked_command',
+      'command',
+      'Verification command is rejected by terminal policy: $reason',
+    );
+  }
+
+  TaskPlanIssue? _commandGateIssue(TaskGate gate, String fieldPath) {
+    if (gate.id != 'command_passes') return null;
+    final command = TerminalCommandParser.commandTextFromParts(
+      gate.params['command']?.toString() ?? '',
+      _stringListValue(gate.params['args']),
+    );
+    if (command.isEmpty) return null;
+    final reason = TerminalCommandClassifier.blockedReasonForCommand(command);
+    if (reason == null) return null;
+    return TaskPlanIssue(
+      code: 'blocked_command',
+      path: fieldPath,
+      message: 'Verification command is rejected by terminal policy: $reason',
+    );
+  }
+
+  List<String> _stringListValue(Object? value) {
+    if (value is! List) return const [];
+    return [for (final item in value) item.toString()];
+  }
 
   bool _looksLikeWholeProject(String value, String goal) {
     final normalised = _normalise(value);
