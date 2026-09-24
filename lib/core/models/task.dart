@@ -321,6 +321,11 @@ class Task with TaskMappable {
   final String? projectId;
   final PlanningMetrics planningMetrics;
 
+  /// Non-null when a safe fallback was used because task planning did not
+  /// produce a committed executable plan.
+  @MappableField(hook: JsonNullableStringHook())
+  final String? planningError;
+
   @MappableField(hook: JsonDateHook())
   final DateTime createdAt;
   @MappableField(hook: JsonDateHook())
@@ -370,6 +375,7 @@ class Task with TaskMappable {
     this.chatSessionId,
     this.projectId,
     this.planningMetrics = const PlanningMetrics(),
+    this.planningError,
     this.completedAt,
   }) : originalPrompt = originalPrompt ?? objective ?? '',
        objective = objective ?? originalPrompt ?? '';
@@ -414,6 +420,7 @@ class Task with TaskMappable {
     Object? chatSessionId = kSentinel,
     Object? projectId = kSentinel,
     PlanningMetrics? planningMetrics,
+    Object? planningError = kSentinel,
     DateTime? createdAt,
     DateTime? updatedAt,
     Object? completedAt = kSentinel,
@@ -458,6 +465,7 @@ class Task with TaskMappable {
       chatSessionId: resolve(chatSessionId, this.chatSessionId),
       projectId: resolve(projectId, this.projectId),
       planningMetrics: planningMetrics ?? this.planningMetrics,
+      planningError: resolve(planningError, this.planningError),
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       completedAt: resolve(completedAt, this.completedAt),

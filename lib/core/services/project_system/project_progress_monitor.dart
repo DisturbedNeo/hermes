@@ -1,13 +1,17 @@
 import 'package:hermes/core/models/project.dart';
+import 'package:hermes/core/services/project_system/project_lifecycle_service.dart';
 
 /// Records project progress at task boundaries while evaluating stagnation at
 /// persisted batch boundaries. A successful task is allowed to be one part of
 /// a larger criterion implementation without consuming the stagnation budget.
 class ProjectProgressMonitor {
   final int stagnationThreshold;
+  final ProjectLifecycleService lifecycle;
 
-  const ProjectProgressMonitor({this.stagnationThreshold = 3})
-    : assert(stagnationThreshold > 0);
+  const ProjectProgressMonitor({
+    this.stagnationThreshold = 3,
+    this.lifecycle = const ProjectLifecycleService(),
+  }) : assert(stagnationThreshold > 0);
 
   ProjectDocument recordTaskResult({
     required ProjectDocument project,
@@ -124,21 +128,28 @@ class ProjectProgressMonitor {
         completed.blocker != null) {
       return completed;
     }
-    return completed.copyWith(
-      status: ProjectStatus.blocked,
-      blocker: ProjectBlocker(
-        type: ProjectBlockerType.stagnation,
-        message:
-            'Project stopped after $consecutive completed batches made no '
-            'criterion progress. Recent batches: ${recentBatchIds.join(', ')}. '
-            'Completed-without-progress total: '
-            '${nextDiagnostics.completedBatchesWithoutCriterionProgress}. '
-            'Request a manual replan with new direction before continuing.',
-        taskId: task.id,
-        createdAt: evaluatedAt,
-      ),
-      updatedAt: evaluatedAt,
+    final blocker = ProjectBlocker(
+      type: ProjectBlockerType.stagnation,
+      message:
+          'Project stopped after $consecutive completed batches made no '
+          'criterion progress. Recent batches: ${recentBatchIds.join(', ')}. '
+          'Completed-without-progress total: '
+          '${nextDiagnostics.completedBatchesWithoutCriterionProgress}. '
+          'Request a manual replan with new direction before continuing.',
+      taskId: task.id,
+      createdAt: evaluatedAt,
     );
+    return lifecycle
+        .transition(
+          snapshot: completed.copyWith(blocker: blocker),
+          to: ProjectStatus.blocked,
+          trigger: ProjectLifecycleTrigger.failure,
+          reason: blocker.message,
+          taskId: task.id,
+          blocker: blocker,
+          now: evaluatedAt,
+        )
+        .project;
   }
 
   String _batchId(ProjectDocument project, Task task) {

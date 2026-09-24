@@ -1662,6 +1662,13 @@ class TaskMapper extends ClassMapperBase<Task> {
     opt: true,
     def: const PlanningMetrics(),
   );
+  static String? _$planningError(Task v) => v.planningError;
+  static const Field<Task, String> _f$planningError = Field(
+    'planningError',
+    _$planningError,
+    opt: true,
+    hook: JsonNullableStringHook(),
+  );
   static DateTime? _$completedAt(Task v) => v.completedAt;
   static const Field<Task, DateTime> _f$completedAt = Field(
     'completedAt',
@@ -1713,6 +1720,7 @@ class TaskMapper extends ClassMapperBase<Task> {
     #chatSessionId: _f$chatSessionId,
     #projectId: _f$projectId,
     #planningMetrics: _f$planningMetrics,
+    #planningError: _f$planningError,
     #completedAt: _f$completedAt,
   };
   @override
@@ -1763,6 +1771,7 @@ class TaskMapper extends ClassMapperBase<Task> {
       chatSessionId: data.dec(_f$chatSessionId),
       projectId: data.dec(_f$projectId),
       planningMetrics: data.dec(_f$planningMetrics),
+      planningError: data.dec(_f$planningError),
       completedAt: data.dec(_f$completedAt),
     );
   }

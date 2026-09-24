@@ -411,7 +411,7 @@ void main() {
   );
 
   test(
-    'persists a fixed batch cursor and queues its boundary replan',
+    'persists a bounded execution frontier without a synthetic replan',
     () async {
       final scheduler = _CountingScheduler();
       final batchService = ProjectOrchestrator(
@@ -456,11 +456,8 @@ void main() {
       expect(result.project.tasks[2].status, TaskStatus.queued);
       expect(result.project.currentBatchTaskIds, ['task_1', 'task_2']);
       expect(result.project.currentBatchIndex, 2);
-      expect(
-        result.project.pendingReplanTriggers,
-        contains(ProjectPlanRevisionTrigger.batchComplete),
-      );
-      expect(result.project.pendingReplanReason, contains('batch'));
+      expect(result.project.pendingReplanTriggers, isEmpty);
+      expect(result.project.pendingReplanReason, isNull);
 
       final loaded = await batchService.loadProject(
         workspace,
@@ -468,10 +465,7 @@ void main() {
       );
       expect(loaded?.currentBatchTaskIds, ['task_1', 'task_2']);
       expect(loaded?.currentBatchIndex, 2);
-      expect(
-        loaded?.pendingReplanTriggers,
-        contains(ProjectPlanRevisionTrigger.batchComplete),
-      );
+      expect(loaded?.pendingReplanTriggers, isEmpty);
     },
   );
 

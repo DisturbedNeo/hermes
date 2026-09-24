@@ -18,6 +18,10 @@ class ProjectInitialisation {
   final List<ProjectMemoryEntry> memory;
   final PlanningMetrics planningMetrics;
 
+  /// Non-null when the planner could not produce a model-backed plan and the
+  /// caller is using a safe fallback instead.
+  final String? planningError;
+
   const ProjectInitialisation({
     required this.title,
     required this.refinedGoal,
@@ -28,6 +32,7 @@ class ProjectInitialisation {
     this.milestones = const [],
     this.memory = const [],
     this.planningMetrics = const PlanningMetrics(),
+    this.planningError,
   });
 }
 
@@ -186,7 +191,6 @@ abstract interface class ProjectPlanner {
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });
-
 }
 
 /// Domain-specific structured evaluator used by project completion.

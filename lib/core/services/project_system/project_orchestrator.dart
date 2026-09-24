@@ -19,6 +19,7 @@ import 'package:hermes/core/services/project_system/project_evidence_service.dar
 import 'package:hermes/core/services/project_system/project_memory_service.dart';
 import 'package:hermes/core/services/project_system/orchestration_contracts.dart';
 import 'package:hermes/core/services/project_system/project_completion_service.dart';
+import 'package:hermes/core/services/project_system/project_control_state_service.dart';
 import 'package:hermes/core/services/project_system/project_lifecycle_service.dart';
 import 'package:hermes/core/services/project_system/project_plan_revision_service.dart';
 import 'package:hermes/core/services/project_system/project_progress_monitor.dart';
@@ -30,6 +31,7 @@ import 'package:hermes/core/services/project_system/project_run_loop.dart';
 import 'package:hermes/core/services/project_system/project_planning_coordinator.dart';
 import 'package:hermes/core/services/project_system/project_recovery_service.dart';
 import 'package:hermes/core/services/project_system/project_scheduler.dart';
+import 'package:hermes/core/services/project_system/project_task_models.dart';
 import 'package:hermes/core/services/question_policy_service.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
@@ -406,6 +408,8 @@ class _ProjectRuntimeService {
       );
   final ProjectPlanRevisionService _planRevisionService =
       const ProjectPlanRevisionService();
+  final ProjectControlStateService _controlStateService =
+      const ProjectControlStateService();
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
 
   // A malformed model plan is a recoverable planning failure. Keep the
@@ -503,6 +507,7 @@ class _ProjectRuntimeService {
     ProjectDocument project, {
     _ProjectPersistenceContext? persistenceContext,
   }) async {
+    project = _controlStateService.synchronise(project);
     final refreshed = _scheduler
         .refreshReadiness(project)
         .project
@@ -566,6 +571,26 @@ class _ProjectRuntimeService {
     );
   }
 
+  ProjectDocument _transitionProject({
+    required ProjectDocument snapshot,
+    required ProjectStatus to,
+    required ProjectLifecycleTrigger trigger,
+    String reason = '',
+    String? taskId,
+    ProjectBlocker? blocker,
+    DateTime? now,
+  }) => lifecycleService
+      .transition(
+        snapshot: snapshot,
+        to: to,
+        trigger: trigger,
+        reason: reason,
+        taskId: taskId,
+        blocker: blocker,
+        now: now,
+      )
+      .project;
+
   int _currentPlanRevision(ProjectDocument project) {
     var revision = 0;
     for (final item in project.planHistory) {
@@ -581,23 +606,16 @@ class _ProjectRuntimeService {
     _ProjectPersistenceContext? persistenceContext,
   }) async {
     final scheduled = _scheduler.schedule(project);
-    final readyTasks = <Task>[];
-    final seen = <String>{};
-    final selected = scheduled.selectedTask;
-    if (selected != null && seen.add(selected.id)) readyTasks.add(selected);
-    for (final task in _scheduler.orderedReadyTasks(scheduled.project)) {
-      if (seen.add(task.id)) readyTasks.add(task);
-    }
-    final batchSize = maxNewTasks <= 0 ? readyTasks.length : maxNewTasks;
-    final batchTaskIds = [
-      for (final task in readyTasks.take(batchSize)) task.id,
-    ];
+    final frontier = _scheduler.executionFrontier(
+      scheduled.project,
+      limit: maxNewTasks,
+    );
     return _persistProject(
       workspaceRoot,
       scheduled.project.copyWith(
-        currentBatchTaskIds: batchTaskIds,
+        currentBatchTaskIds: frontier.taskIds,
         currentBatchIndex: 0,
-        currentBatchPlanRevision: _currentPlanRevision(scheduled.project),
+        currentBatchPlanRevision: frontier.planRevision,
         currentBatchProgressObserved: false,
         pendingReplanReason: null,
       ),
@@ -627,13 +645,6 @@ class _ProjectRuntimeService {
     final index = project.currentBatchTaskIds.indexOf(completedTaskId);
     if (index < project.currentBatchIndex) return project;
     return project.copyWith(currentBatchIndex: index + 1);
-  }
-
-  bool _hasWorkOutsideBatch(ProjectDocument project) {
-    final batchIds = project.currentBatchTaskIds.toSet();
-    return project.tasks.any(
-      (task) => !_isTerminalTask(task) && !batchIds.contains(task.id),
-    );
   }
 
   String _replanReasonForTriggers(
@@ -879,7 +890,7 @@ class _ProjectRuntimeService {
     if (planningMetrics.planningCalls > modelCallCount) {
       modelCallCount = planningMetrics.planningCalls;
     }
-    final project = ProjectDocument(
+    var project = ProjectDocument(
       id: _newProjectId(userPrompt),
       title: init.title.trim().isEmpty
           ? _titleFromPrompt(userPrompt)
@@ -925,11 +936,7 @@ class _ProjectRuntimeService {
         ),
       ],
       openQuestions: filteredQuestions.blocking,
-      status: planningBlocked
-          ? ProjectStatus.blocked
-          : filteredQuestions.blocking.isEmpty
-          ? ProjectStatus.active
-          : ProjectStatus.waitingForUser,
+      status: ProjectStatus.initializing,
       iterationCount: 0,
       maxIterations: _normaliseOptionalLimit(
         maxIterations,
@@ -961,6 +968,64 @@ class _ProjectRuntimeService {
       createdAt: now,
       updatedAt: now,
     );
+    if (!planningBlocked) {
+      // Initial planning and incremental planning converge here. The model
+      // edits a draft through ProjectPlanningToolRegistry; the real project
+      // is then committed through the same validate/risk/approval/reconcile
+      // transaction used by later revisions.
+      final transactionBase = project.copyWith(
+        criteria: const [],
+        milestones: const [],
+        tasks: const [],
+        memory: const [],
+        planHistory: const [],
+        openQuestions: const [],
+        blocker: null,
+        status: ProjectStatus.initializing,
+        updatedAt: now,
+      );
+      final initialProposal = ProjectDesiredPlan(
+        revision: 1,
+        triggers: const [ProjectPlanRevisionTrigger.initialization],
+        summary: 'Initial project roadmap.',
+        rationale:
+            'Created criteria, milestones, and the bounded near-term plan from discovery.',
+        criteria: initialCriteria,
+        milestones: initialMilestones,
+        tasks: initialBacklog,
+        memoryAdditions: initialMemory,
+        openQuestions: filteredQuestions.blocking,
+        createdAt: now,
+      );
+      final committed = await _planRevisionService.prepareAndApply(
+        project: transactionBase,
+        proposal: initialProposal,
+        workspaceRoot: workspace.rootPath,
+        approvalPolicy: ProjectPlanApprovalPolicy.never,
+      );
+      project = committed.project;
+    } else {
+      project = _transitionProject(
+        snapshot: project,
+        to: ProjectStatus.blocked,
+        trigger: ProjectLifecycleTrigger.initialization,
+        reason: project.blocker?.message ?? 'Initial planning was blocked.',
+        blocker: project.blocker,
+        now: now,
+      );
+    }
+    if (client == null || init.planningError != null) {
+      project = _controlStateService.withOutcome(
+        project,
+        outcome: ProjectControlOutcome.degradedPlanning,
+        message:
+            init.planningError ??
+            'Project was created from a safe fallback because no planning model was available.',
+        action: 'retry_planning',
+        reasonCode: client == null ? 'model_unavailable' : 'planning_failed',
+        now: now,
+      );
+    }
     return _persistProject(workspace.rootPath, project);
   }
 
@@ -1029,11 +1094,22 @@ class _ProjectRuntimeService {
 
     final now = DateTime.now();
     if (snapshot.activeTaskId == null) {
-      final recovered = snapshot.copyWith(
-        status: snapshot.openQuestions.isEmpty
+      final blocker = snapshot.openQuestions.isEmpty
+          ? null
+          : ProjectBlocker(
+              type: ProjectBlockerType.question,
+              message: snapshot.openQuestions.first.question,
+              createdAt: now,
+            );
+      final recovered = _transitionProject(
+        snapshot: snapshot.copyWith(blocker: blocker, updatedAt: now),
+        to: blocker == null
             ? ProjectStatus.active
             : ProjectStatus.waitingForUser,
-        updatedAt: now,
+        trigger: ProjectLifecycleTrigger.recovery,
+        reason: blocker?.message ?? 'Recovered project execution state.',
+        blocker: blocker,
+        now: now,
       );
       final persisted = await _persistProject(
         workspace.rootPath,
@@ -1144,24 +1220,29 @@ class _ProjectRuntimeService {
       updatedAt: now,
       resolvedAt: null,
     );
-    var updated = snapshot.copyWith(
-      status: ProjectStatus.active,
-      blocker: null,
-      tasks: [recoveryTask, ...snapshot.tasks],
-      recoveryIncidents: _upsertRecoveryIncident(
-        snapshot.recoveryIncidents,
-        reactivated,
-      ),
-      decisions: [
-        ...snapshot.decisions,
-        _decision(
-          ProjectDecisionType.retryRecovery,
-          'Granted one additional recovery attempt for ${incident.id}.',
-          incident.failureSummary,
-          task: recoveryTask,
+    var updated = _transitionProject(
+      snapshot: snapshot.copyWith(
+        blocker: null,
+        tasks: [recoveryTask, ...snapshot.tasks],
+        recoveryIncidents: _upsertRecoveryIncident(
+          snapshot.recoveryIncidents,
+          reactivated,
         ),
-      ],
-      updatedAt: now,
+        decisions: [
+          ...snapshot.decisions,
+          _decision(
+            ProjectDecisionType.retryRecovery,
+            'Granted one additional recovery attempt for ${incident.id}.',
+            incident.failureSummary,
+            task: recoveryTask,
+          ),
+        ],
+        updatedAt: now,
+      ),
+      to: ProjectStatus.active,
+      trigger: ProjectLifecycleTrigger.recovery,
+      reason: 'Recovery retry approved by the user.',
+      now: now,
     );
     updated = _memoryService
         .record(
@@ -1255,14 +1336,18 @@ class _ProjectRuntimeService {
         project.blocker?.type == ProjectBlockerType.validation &&
         project.activeTaskId == null;
     if (canAutomaticallyReplanValidationBlocker) {
-      project = project.copyWith(
-        status: ProjectStatus.active,
-        blocker: null,
-        pendingReplanTriggers: _appendTrigger(
-          project.pendingReplanTriggers,
-          ProjectPlanRevisionTrigger.noReadyTask,
+      project = _transitionProject(
+        snapshot: project.copyWith(
+          blocker: null,
+          pendingReplanTriggers: _appendTrigger(
+            project.pendingReplanTriggers,
+            ProjectPlanRevisionTrigger.noReadyTask,
+          ),
+          updatedAt: DateTime.now(),
         ),
-        updatedAt: DateTime.now(),
+        to: ProjectStatus.active,
+        trigger: ProjectLifecycleTrigger.planRevision,
+        reason: 'Retrying the blocked plan revision.',
       );
       project = await _persistProject(
         workspace.rootPath,
@@ -1276,10 +1361,11 @@ class _ProjectRuntimeService {
     if (project.blocker?.type == ProjectBlockerType.budget ||
         project.blocker?.type == ProjectBlockerType.duplicateTask ||
         canResumeValidationBlocker) {
-      project = project.copyWith(
-        status: ProjectStatus.active,
-        blocker: null,
-        updatedAt: DateTime.now(),
+      project = _transitionProject(
+        snapshot: project.copyWith(blocker: null, updatedAt: DateTime.now()),
+        to: ProjectStatus.active,
+        trigger: ProjectLifecycleTrigger.recovery,
+        reason: 'Resuming after the project blocker was resolved.',
       );
       project = await _persistProject(
         workspace.rootPath,
@@ -1320,7 +1406,7 @@ class _ProjectRuntimeService {
           autonomy: questionAutonomy,
         );
         if (filtered.assumptions.isNotEmpty) {
-          project = project.copyWith(
+          final boundary = project.copyWith(
             openQuestions: filtered.blocking,
             blocker: filtered.blocking.isEmpty
                 ? null
@@ -1329,10 +1415,19 @@ class _ProjectRuntimeService {
                     message: filtered.blocking.first.question,
                     createdAt: DateTime.now(),
                   ),
-            status: filtered.blocking.isEmpty
+            updatedAt: DateTime.now(),
+          );
+          project = _transitionProject(
+            snapshot: boundary,
+            to: filtered.blocking.isEmpty
                 ? ProjectStatus.active
                 : ProjectStatus.waitingForUser,
-            updatedAt: DateTime.now(),
+            trigger: ProjectLifecycleTrigger.userContext,
+            reason: filtered.blocking.isEmpty
+                ? 'Question policy resolved the pending assumptions.'
+                : filtered.blocking.first.question,
+            blocker: boundary.blocker,
+            now: DateTime.now(),
           );
           project = _recordAssumptions(
             project,
@@ -1385,9 +1480,12 @@ class _ProjectRuntimeService {
         );
       }
       if (allowedIterations != null && runIterations >= allowedIterations) {
-        project = project.copyWith(
-          status: ProjectStatus.paused,
-          updatedAt: DateTime.now(),
+        project = _transitionProject(
+          snapshot: project,
+          to: ProjectStatus.paused,
+          trigger: ProjectLifecycleTrigger.pause,
+          reason: 'The bounded command run reached its iteration budget.',
+          now: DateTime.now(),
         );
         project = await _persistProject(
           workspace.rootPath,
@@ -1424,24 +1522,15 @@ class _ProjectRuntimeService {
         }
         if (project.currentBatchTaskIds.isNotEmpty &&
             project.currentBatchIndex >= project.currentBatchTaskIds.length) {
-          if (_hasWorkOutsideBatch(project)) {
-            replanTriggers = _appendTrigger(
-              replanTriggers,
-              ProjectPlanRevisionTrigger.batchComplete,
-            );
-            project = project.copyWith(
-              pendingReplanTriggers: replanTriggers,
-              pendingReplanReason:
-                  project.pendingReplanReason ??
-                  _replanReasonForTriggers(replanTriggers),
-            );
-          } else {
-            project = await _persistProject(
-              workspace.rootPath,
-              _clearBatch(project),
-              persistenceContext: persistenceContext,
-            );
-          }
+          // A frontier is a bounded execution window, not a plan boundary.
+          // Continue selecting ready work from the current plan; only an
+          // actual dependency, scope, evidence, failure, or workspace change
+          // can request a plan transaction.
+          project = await _persistProject(
+            workspace.rootPath,
+            _clearBatch(project),
+            persistenceContext: persistenceContext,
+          );
         }
         if (replanTriggers.isEmpty && !project.hasCurrentBatch) {
           project = await _startBatch(
@@ -1662,10 +1751,15 @@ class _ProjectRuntimeService {
       }
 
       final now = DateTime.now();
-      project = project.copyWith(
-        status: ProjectStatus.reviewingTask,
-        updatedAt: now,
-      );
+      project = lifecycleService
+          .transition(
+            snapshot: project,
+            to: ProjectStatus.reviewingTask,
+            trigger: ProjectLifecycleTrigger.taskReview,
+            taskId: candidate.id,
+            now: now,
+          )
+          .project;
       project = await _persistProject(
         workspace.rootPath,
         project,
@@ -1766,19 +1860,6 @@ class _ProjectRuntimeService {
           pendingReplanReason: _replanReasonForTriggers(pendingTriggers),
         );
       }
-      if (pendingTriggers.isEmpty &&
-          project.currentBatchTaskIds.isNotEmpty &&
-          project.currentBatchIndex >= project.currentBatchTaskIds.length &&
-          _hasWorkOutsideBatch(project)) {
-        final batchTriggers = _appendTrigger(
-          pendingTriggers,
-          ProjectPlanRevisionTrigger.batchComplete,
-        );
-        project = project.copyWith(
-          pendingReplanTriggers: batchTriggers,
-          pendingReplanReason: _replanReasonForTriggers(batchTriggers),
-        );
-      }
       project = await _persistProject(
         workspace.rootPath,
         project,
@@ -1813,17 +1894,22 @@ class _ProjectRuntimeService {
     final remainingQuestions = snapshot.openQuestions
         .where((item) => item.id != question.id)
         .toList();
-    var updated = snapshot.copyWith(
-      status: ProjectStatus.active,
-      openQuestions: remainingQuestions,
-      blocker: null,
-      pendingReplanTriggers: _appendTrigger(
-        snapshot.pendingReplanTriggers,
-        ProjectPlanRevisionTrigger.scopeChanged,
+    var updated = _transitionProject(
+      snapshot: snapshot.copyWith(
+        openQuestions: remainingQuestions,
+        blocker: null,
+        pendingReplanTriggers: _appendTrigger(
+          snapshot.pendingReplanTriggers,
+          ProjectPlanRevisionTrigger.scopeChanged,
+        ),
+        pendingReplanReason:
+            'The project scope changed and the backlog must be reconciled.',
+        updatedAt: DateTime.now(),
       ),
-      pendingReplanReason:
-          'The project scope changed and the backlog must be reconciled.',
-      updatedAt: DateTime.now(),
+      to: ProjectStatus.active,
+      trigger: ProjectLifecycleTrigger.answerQuestion,
+      reason: 'The user answered an open project question.',
+      now: DateTime.now(),
     );
     updated = _memoryService
         .recordUserAnswer(project: updated, question: question, answer: trimmed)
@@ -1845,13 +1931,25 @@ class _ProjectRuntimeService {
         answer: trimmed,
       );
     }
-    var updated = snapshot.copyWith(
-      status: snapshot.isTerminal ? snapshot.status : ProjectStatus.active,
-      blocker: snapshot.blocker?.type == ProjectBlockerType.question
-          ? null
-          : snapshot.blocker,
-      updatedAt: DateTime.now(),
-    );
+    var updated = snapshot.isTerminal
+        ? snapshot.copyWith(
+            blocker: snapshot.blocker?.type == ProjectBlockerType.question
+                ? null
+                : snapshot.blocker,
+            updatedAt: DateTime.now(),
+          )
+        : _transitionProject(
+            snapshot: snapshot.copyWith(
+              blocker: snapshot.blocker?.type == ProjectBlockerType.question
+                  ? null
+                  : snapshot.blocker,
+              updatedAt: DateTime.now(),
+            ),
+            to: ProjectStatus.active,
+            trigger: ProjectLifecycleTrigger.userContext,
+            reason: 'The user added project context.',
+            now: DateTime.now(),
+          );
     updated = _memoryService
         .record(
           project: updated,
@@ -1876,25 +1974,30 @@ class _ProjectRuntimeService {
     }
     final now = DateTime.now();
     final trimmedReason = context.trim();
-    var updated = snapshot.copyWith(
-      status: ProjectStatus.active,
-      blocker:
-          snapshot.blocker?.type == ProjectBlockerType.planApproval ||
-              snapshot.blocker?.type == ProjectBlockerType.stagnation
-          ? null
-          : snapshot.blocker,
-      pendingReplanTriggers: _appendTrigger(
-        snapshot.pendingReplanTriggers,
-        ProjectPlanRevisionTrigger.scopeChanged,
+    var updated = _transitionProject(
+      snapshot: snapshot.copyWith(
+        blocker:
+            snapshot.blocker?.type == ProjectBlockerType.planApproval ||
+                snapshot.blocker?.type == ProjectBlockerType.stagnation
+            ? null
+            : snapshot.blocker,
+        pendingReplanTriggers: _appendTrigger(
+          snapshot.pendingReplanTriggers,
+          ProjectPlanRevisionTrigger.scopeChanged,
+        ),
+        pendingReplanReason: trimmedReason.isEmpty
+            ? 'The project scope changed and the backlog must be reconciled.'
+            : 'User changed project scope: $trimmedReason',
+        updatedAt: now,
+        diagnostics: snapshot.diagnostics.copyWith(
+          consecutiveNoProgressBatches: 0,
+          recentNoProgressBatchIds: const [],
+        ),
       ),
-      pendingReplanReason: trimmedReason.isEmpty
-          ? 'The project scope changed and the backlog must be reconciled.'
-          : 'User changed project scope: $trimmedReason',
-      updatedAt: now,
-      diagnostics: snapshot.diagnostics.copyWith(
-        consecutiveNoProgressBatches: 0,
-        recentNoProgressBatchIds: const [],
-      ),
+      to: ProjectStatus.active,
+      trigger: ProjectLifecycleTrigger.userContext,
+      reason: 'The user changed project scope.',
+      now: now,
     );
     if (trimmedReason.isNotEmpty) {
       updated = _memoryService
@@ -1931,9 +2034,12 @@ class _ProjectRuntimeService {
     required WorkspaceAttachment workspace,
     required ProjectDocument snapshot,
   }) async {
-    final updated = snapshot.copyWith(
-      status: ProjectStatus.paused,
-      updatedAt: DateTime.now(),
+    final updated = _transitionProject(
+      snapshot: snapshot,
+      to: ProjectStatus.paused,
+      trigger: ProjectLifecycleTrigger.pause,
+      reason: 'Project paused by the user.',
+      now: DateTime.now(),
     );
     return _persistProject(workspace.rootPath, updated);
   }
@@ -1948,10 +2054,12 @@ class _ProjectRuntimeService {
         type != ProjectBlockerType.taskFailed) {
       return snapshot;
     }
-    final updated = snapshot.copyWith(
-      status: ProjectStatus.active,
-      blocker: null,
-      updatedAt: DateTime.now(),
+    final updated = _transitionProject(
+      snapshot: snapshot.copyWith(blocker: null, updatedAt: DateTime.now()),
+      to: ProjectStatus.active,
+      trigger: ProjectLifecycleTrigger.answerQuestion,
+      reason: 'The task blocker was cleared by the user.',
+      now: DateTime.now(),
     );
     return _persistProject(workspace.rootPath, updated);
   }
@@ -1988,8 +2096,7 @@ class _ProjectRuntimeService {
     );
     final schedule = _scheduler.schedule(rejectionBase);
     final hasReadyWork = schedule.selectedTask != null;
-    var updated = schedule.project.copyWith(
-      status: hasReadyWork ? ProjectStatus.active : ProjectStatus.paused,
+    final boundary = schedule.project.copyWith(
       blocker: hasReadyWork
           ? null
           : ProjectBlocker(
@@ -2007,6 +2114,16 @@ class _ProjectRuntimeService {
         ),
       ],
       updatedAt: now,
+    );
+    var updated = _transitionProject(
+      snapshot: boundary,
+      to: hasReadyWork ? ProjectStatus.active : ProjectStatus.paused,
+      trigger: ProjectLifecycleTrigger.approval,
+      reason: hasReadyWork
+          ? 'Rejected plan approval; existing ready work remains.'
+          : boundary.blocker?.message ?? 'Plan approval was rejected.',
+      blocker: boundary.blocker,
+      now: now,
     );
     updated = _memoryService
         .record(
@@ -2029,8 +2146,7 @@ class _ProjectRuntimeService {
   }) async {
     final now = DateTime.now();
     final activeTask = _activeProjectTask(snapshot);
-    final updated = snapshot.copyWith(
-      status: ProjectStatus.cancelled,
+    final prepared = snapshot.copyWith(
       activeTaskId: null,
       tasks: [
         for (final task in snapshot.tasks)
@@ -2040,9 +2156,17 @@ class _ProjectRuntimeService {
       ],
       openQuestions: const [],
       blocker: null,
-      completedAt: now,
       updatedAt: now,
     );
+    final updated = lifecycleService
+        .transition(
+          snapshot: prepared,
+          to: ProjectStatus.cancelled,
+          trigger: ProjectLifecycleTrigger.cancel,
+          reason: 'Project cancelled by the user.',
+          now: now,
+        )
+        .project;
     return _persistProject(workspace.rootPath, updated);
   }
 
@@ -2141,6 +2265,9 @@ class _ProjectRuntimeService {
       currentBatchProgressObserved: false,
       pendingReplanReason: null,
       pendingReplanTriggers: const [],
+      boundary: planningError == null && !awaitingApproval
+          ? null
+          : revised.boundary,
       diagnostics: revised.diagnostics.copyWith(
         projectModelCalls: revised.diagnostics.projectModelCalls + modelCalls,
         planRevisionAttempts: revised.diagnostics.planRevisionAttempts + 1,
@@ -2164,15 +2291,24 @@ class _ProjectRuntimeService {
         revised.openQuestions,
         autonomy: questionAutonomy,
       );
-      revised = revised.copyWith(
+      final boundary = revised.copyWith(
         openQuestions: filtered.blocking,
-        status: filtered.blocking.isEmpty && !awaitingApproval
-            ? ProjectStatus.active
-            : revised.status,
         blocker: filtered.blocking.isEmpty && !awaitingApproval
             ? null
             : revised.blocker,
         updatedAt: DateTime.now(),
+      );
+      revised = _transitionProject(
+        snapshot: boundary,
+        to: filtered.blocking.isEmpty && !awaitingApproval
+            ? ProjectStatus.active
+            : boundary.status,
+        trigger: ProjectLifecycleTrigger.planRevision,
+        reason: filtered.blocking.isEmpty
+            ? 'Plan revision questions were resolved.'
+            : boundary.blocker?.message ?? 'Plan revision needs user input.',
+        blocker: boundary.blocker,
+        now: DateTime.now(),
       );
       revised = _recordAssumptions(
         revised,
@@ -2233,11 +2369,16 @@ class _ProjectRuntimeService {
       final now = DateTime.now();
       final duplicate = _duplicateMatchForTask(project, task);
       if (duplicate is _QueuedDuplicateProjectTask) {
-        return project.copyWith(
-          tasks: _upsertTask(project, duplicate.task, removeId: task.id),
-          status: ProjectStatus.active,
-          blocker: null,
-          updatedAt: now,
+        return _transitionProject(
+          snapshot: project.copyWith(
+            tasks: _upsertTask(project, duplicate.task, removeId: task.id),
+            blocker: null,
+            updatedAt: now,
+          ),
+          to: ProjectStatus.active,
+          trigger: ProjectLifecycleTrigger.planRevision,
+          reason: 'A duplicate task was reconciled into the existing task.',
+          now: now,
         );
       }
       if (duplicate is _FailedDuplicateProjectTask) {
@@ -2252,23 +2393,28 @@ class _ProjectRuntimeService {
           rejectionReason: violations.join('\n'),
           updatedAt: now,
         );
-        return project.copyWith(
-          tasks: _upsertTask(
-            project.copyWith(tasks: _upsertTask(project, rejected)),
-            retryTask,
-          ),
-          status: ProjectStatus.active,
-          blocker: null,
-          decisions: [
-            ...project.decisions,
-            _decision(
-              ProjectDecisionType.rejectTask,
-              'Rejected repeated failed project task: ${task.title}',
-              violations.join('\n'),
-              task: rejected,
+        return _transitionProject(
+          snapshot: project.copyWith(
+            tasks: _upsertTask(
+              project.copyWith(tasks: _upsertTask(project, rejected)),
+              retryTask,
             ),
-          ],
-          updatedAt: now,
+            blocker: null,
+            decisions: [
+              ...project.decisions,
+              _decision(
+                ProjectDecisionType.rejectTask,
+                'Rejected repeated failed project task: ${task.title}',
+                violations.join('\n'),
+                task: rejected,
+              ),
+            ],
+            updatedAt: now,
+          ),
+          to: ProjectStatus.active,
+          trigger: ProjectLifecycleTrigger.planRevision,
+          reason: 'A failed duplicate task was replaced with a retry.',
+          now: now,
         );
       }
       final rejected = task.copyWith(
@@ -2276,20 +2422,25 @@ class _ProjectRuntimeService {
         rejectionReason: violations.join('\n'),
         updatedAt: now,
       );
-      return project.copyWith(
-        tasks: _upsertTask(project, rejected),
-        status: ProjectStatus.active,
-        blocker: null,
-        decisions: [
-          ...project.decisions,
-          _decision(
-            ProjectDecisionType.rejectTask,
-            'Rejected repeated project task: ${task.title}',
-            violations.join('\n'),
-            task: rejected,
-          ),
-        ],
-        updatedAt: now,
+      return _transitionProject(
+        snapshot: project.copyWith(
+          tasks: _upsertTask(project, rejected),
+          blocker: null,
+          decisions: [
+            ...project.decisions,
+            _decision(
+              ProjectDecisionType.rejectTask,
+              'Rejected repeated project task: ${task.title}',
+              violations.join('\n'),
+              task: rejected,
+            ),
+          ],
+          updatedAt: now,
+        ),
+        to: ProjectStatus.active,
+        trigger: ProjectLifecycleTrigger.planRevision,
+        reason: 'A repeated task was rejected from the project plan.',
+        now: now,
       );
     }
 
@@ -2332,10 +2483,7 @@ class _ProjectRuntimeService {
       recoveryAttempts: incremental.planningMetrics.recoveryAttempts + 1,
       recoverySuccesses: incremental.planningMetrics.recoverySuccesses + 1,
     );
-    return incremental.project.copyWith(
-      status: incremental.awaitingApproval
-          ? incremental.project.status
-          : ProjectStatus.active,
+    final boundary = incremental.project.copyWith(
       blocker: incremental.awaitingApproval
           ? incremental.project.blocker
           : null,
@@ -2357,6 +2505,18 @@ class _ProjectRuntimeService {
         ),
       ),
       updatedAt: DateTime.now(),
+    );
+    return _transitionProject(
+      snapshot: boundary,
+      to: incremental.awaitingApproval ? boundary.status : ProjectStatus.active,
+      trigger: incremental.awaitingApproval
+          ? ProjectLifecycleTrigger.approval
+          : ProjectLifecycleTrigger.planRevision,
+      reason: incremental.awaitingApproval
+          ? boundary.blocker?.message ?? 'Plan revision approval is required.'
+          : 'Task split committed after invalid task recovery.',
+      blocker: boundary.blocker,
+      now: DateTime.now(),
     );
   }
 
@@ -2397,12 +2557,16 @@ class _ProjectRuntimeService {
         ),
       );
     }
-    final runningProjectTask = projectTask.copyWith(
-      status: TaskStatus.running,
-      updatedAt: now,
-    );
+    final runningProjectTask = taskLifecycleService
+        .transition(
+          snapshot: projectTask,
+          to: TaskStatus.running,
+          trigger: TaskLifecycleTrigger.scheduler,
+          reason: 'Selected by the project execution frontier.',
+          now: now,
+        )
+        .task;
     var workingProject = project.copyWith(
-      status: ProjectStatus.runningTask,
       activeTaskId: projectTask.id,
       tasks: _upsertTask(project, runningProjectTask),
       blocker: null,
@@ -2417,6 +2581,15 @@ class _ProjectRuntimeService {
       ],
       updatedAt: now,
     );
+    workingProject = lifecycleService
+        .transition(
+          snapshot: workingProject,
+          to: ProjectStatus.runningTask,
+          trigger: ProjectLifecycleTrigger.startTask,
+          taskId: projectTask.id,
+          now: now,
+        )
+        .project;
     final loadedTask = await _loadActiveTask(workspace, workingProject);
     // A queued Task record is the project definition, not yet an executable
     // plan. Only reuse a record once it contains executable steps.
@@ -2472,6 +2645,17 @@ class _ProjectRuntimeService {
       ),
       updatedAt: DateTime.now(),
     );
+    if (activeTask.planningError?.trim().isNotEmpty == true) {
+      workingProject = _controlStateService.withOutcome(
+        workingProject,
+        outcome: ProjectControlOutcome.degradedPlanning,
+        message: activeTask.planningError!,
+        action: 'retry_planning',
+        reasonCode: 'task_planning_failed',
+        taskId: activeTask.id,
+        now: DateTime.now(),
+      );
+    }
     workingProject = await _persistProject(
       workspace.rootPath,
       workingProject,
@@ -2512,26 +2696,41 @@ class _ProjectRuntimeService {
           latestRun?.status == TaskRunStatus.cancelled;
       var checkpoint = workingProject;
       if (activeTask.status == TaskStatus.paused && interrupted) {
-        checkpoint = checkpoint.copyWith(
-          status: ProjectStatus.paused,
-          blocker: null,
-          updatedAt: DateTime.now(),
+        checkpoint = _transitionProject(
+          snapshot: checkpoint.copyWith(blocker: null),
+          to: ProjectStatus.paused,
+          trigger: ProjectLifecycleTrigger.pause,
+          reason: 'The task run was interrupted and can be resumed.',
+          now: DateTime.now(),
         );
       } else if (cancellationToken?.isCancelled == true) {
-        checkpoint = checkpoint.copyWith(
-          status: ProjectStatus.paused,
-          updatedAt: DateTime.now(),
+        checkpoint = _transitionProject(
+          snapshot: checkpoint,
+          to: ProjectStatus.paused,
+          trigger: ProjectLifecycleTrigger.pause,
+          reason: 'The project run was cancelled before completion.',
+          now: DateTime.now(),
         );
       } else {
         final blocker = _taskBlocker(activeTask);
         if (blocker != null) {
-          checkpoint = _blockProject(
-            checkpoint,
-            blocker.$1,
-            blocker.$2,
-            DateTime.now(),
+          final blockerRecord = ProjectBlocker(
+            type: blocker.$1,
+            message: blocker.$2,
             taskId: activeTask.id,
-          ).copyWith(status: ProjectStatus.waitingForUser);
+            createdAt: DateTime.now(),
+          );
+          checkpoint = lifecycleService
+              .transition(
+                snapshot: checkpoint.copyWith(blocker: blockerRecord),
+                to: ProjectStatus.waitingForUser,
+                trigger: ProjectLifecycleTrigger.pause,
+                reason: blocker.$2,
+                taskId: activeTask.id,
+                blocker: blockerRecord,
+                now: DateTime.now(),
+              )
+              .project;
         }
       }
 
@@ -2679,7 +2878,36 @@ class _ProjectRuntimeService {
       final blockingFailure =
           failure.disposition == TaskGateFailureDisposition.blocking &&
           recoveryUpdate.incident == null;
-      var updated = project.copyWith(
+      final failureBlocker = exhaustedIncident != null
+          ? ProjectBlocker(
+              type: ProjectBlockerType.recoveryFailed,
+              message:
+                  'Recovery incident `${exhaustedIncident.id}` reached the maximum repair attempt limit of ${exhaustedIncident.maxAttempts}.',
+              taskId: failedTask.id,
+              createdAt: now,
+            )
+          : reachedFailureLimit
+          ? ProjectBlocker(
+              type: ProjectBlockerType.maxFailures,
+              message:
+                  'Project reached the maximum failed task limit of ${project.maxFailedTasks}.',
+              createdAt: now,
+            )
+          : blockingFailure
+          ? ProjectBlocker(
+              type: ProjectBlockerType.taskFailed,
+              message: failure.summary,
+              taskId: failedTask.id,
+              createdAt: now,
+            )
+          : filteredQuestions.blocking.isNotEmpty
+          ? ProjectBlocker(
+              type: ProjectBlockerType.question,
+              message: filteredQuestions.blocking.first.question,
+              createdAt: now,
+            )
+          : null;
+      final failureBase = project.copyWith(
         activeTaskId: null,
         tasks: [
           if (recoveryUpdate.recoveryTask != null) recoveryUpdate.recoveryTask!,
@@ -2687,34 +2915,7 @@ class _ProjectRuntimeService {
         ],
         recoveryIncidents: recoveryIncidents,
         openQuestions: filteredQuestions.blocking,
-        status: exhaustedIncident != null || blockingFailure
-            ? ProjectStatus.blocked
-            : reachedFailureLimit
-            ? ProjectStatus.blocked
-            : ProjectStatus.active,
-        blocker: exhaustedIncident != null
-            ? ProjectBlocker(
-                type: ProjectBlockerType.recoveryFailed,
-                message:
-                    'Recovery incident `${exhaustedIncident.id}` reached the maximum repair attempt limit of ${exhaustedIncident.maxAttempts}.',
-                taskId: failedTask.id,
-                createdAt: now,
-              )
-            : reachedFailureLimit
-            ? ProjectBlocker(
-                type: ProjectBlockerType.maxFailures,
-                message:
-                    'Project reached the maximum failed task limit of ${project.maxFailedTasks}.',
-                createdAt: now,
-              )
-            : blockingFailure
-            ? ProjectBlocker(
-                type: ProjectBlockerType.taskFailed,
-                message: failure.summary,
-                taskId: failedTask.id,
-                createdAt: now,
-              )
-            : null,
+        blocker: failureBlocker,
         decisions: [
           ...project.decisions,
           _decision(
@@ -2737,6 +2938,19 @@ class _ProjectRuntimeService {
               filteredQuestions.blocking.length,
         ),
         updatedAt: now,
+      );
+      var updated = _transitionProject(
+        snapshot: failureBase,
+        to: failureBlocker == null
+            ? ProjectStatus.active
+            : (failureBlocker.type == ProjectBlockerType.question
+                  ? ProjectStatus.waitingForUser
+                  : ProjectStatus.blocked),
+        trigger: ProjectLifecycleTrigger.taskReview,
+        reason: failureBlocker?.message ?? 'The failed task was recorded.',
+        taskId: failedTask.id,
+        blocker: failureBlocker,
+        now: now,
       );
       final incident = recoveryUpdate.incident;
       updated = _recordTaskMemory(
@@ -2774,7 +2988,14 @@ class _ProjectRuntimeService {
       completedTask,
       now,
     );
-    var updated = project.copyWith(
+    final completionBlocker = filteredQuestions.blocking.isEmpty
+        ? null
+        : ProjectBlocker(
+            type: ProjectBlockerType.question,
+            message: filteredQuestions.blocking.first.question,
+            createdAt: now,
+          );
+    final completionBase = project.copyWith(
       activeTaskId: null,
       tasks: [
         ...evaluation.taskAdditions,
@@ -2783,16 +3004,7 @@ class _ProjectRuntimeService {
       artifacts: _mergeArtifacts(project.artifacts, evaluation.artifacts),
       recoveryIncidents: recoveryIncidents,
       openQuestions: filteredQuestions.blocking,
-      status: filteredQuestions.blocking.isEmpty
-          ? ProjectStatus.active
-          : ProjectStatus.waitingForUser,
-      blocker: filteredQuestions.blocking.isEmpty
-          ? null
-          : ProjectBlocker(
-              type: ProjectBlockerType.question,
-              message: filteredQuestions.blocking.first.question,
-              createdAt: now,
-            ),
+      blocker: completionBlocker,
       decisions: [
         ...project.decisions,
         _decision(
@@ -2808,6 +3020,16 @@ class _ProjectRuntimeService {
             filteredQuestions.blocking.length,
       ),
       updatedAt: now,
+    );
+    var updated = _transitionProject(
+      snapshot: completionBase,
+      to: completionBlocker == null
+          ? ProjectStatus.active
+          : ProjectStatus.waitingForUser,
+      trigger: ProjectLifecycleTrigger.taskReview,
+      reason: completionBlocker?.message ?? 'The task completed successfully.',
+      blocker: completionBlocker,
+      now: now,
     );
     updated = _recordTaskMemory(
       project: updated,
@@ -2867,7 +3089,13 @@ class _ProjectRuntimeService {
       return _completeProjectFromEvidence(project, now);
     }
     if (reviewReason == null || !_hasReviewableCriterionEvidence(project)) {
-      return project.copyWith(status: ProjectStatus.active, updatedAt: now);
+      return _transitionProject(
+        snapshot: project,
+        to: ProjectStatus.active,
+        trigger: ProjectLifecycleTrigger.taskReview,
+        reason: 'No completion review is required at this boundary.',
+        now: now,
+      );
     }
 
     final evidenceFingerprint = _completionEvidenceFingerprint(project);
@@ -2875,7 +3103,13 @@ class _ProjectRuntimeService {
     if (checkpoint?.reason == reviewReason &&
         checkpoint?.evidenceFingerprint == evidenceFingerprint &&
         checkpoint?.milestoneId == reviewMilestoneId) {
-      return project.copyWith(status: ProjectStatus.active, updatedAt: now);
+      return _transitionProject(
+        snapshot: project,
+        to: ProjectStatus.active,
+        trigger: ProjectLifecycleTrigger.taskReview,
+        reason: 'Completion evidence is unchanged since the last review.',
+        now: now,
+      );
     }
 
     final assessment = await _completionEvaluator.evaluateCompletion(
@@ -2902,32 +3136,46 @@ class _ProjectRuntimeService {
         autonomy: questionAutonomy,
       );
       if (filtered.blocking.isEmpty) {
+        final resumed = _transitionProject(
+          snapshot: assessedProject.copyWith(blocker: null, updatedAt: now),
+          to: ProjectStatus.active,
+          trigger: ProjectLifecycleTrigger.taskReview,
+          reason: 'Completion review questions were resolved automatically.',
+          now: now,
+        );
         return _recordAssumptions(
-          assessedProject.copyWith(
-            status: ProjectStatus.active,
-            blocker: null,
-            updatedAt: now,
-          ),
+          resumed,
           filtered.assumptions,
           sourceId: 'completion_review',
         );
       }
-      return _recordAssumptions(
-        assessedProject.copyWith(
-          status: ProjectStatus.waitingForUser,
+      final waiting = _transitionProject(
+        snapshot: assessedProject.copyWith(
           openQuestions: filtered.blocking,
           blocker: ProjectBlocker(
             type: ProjectBlockerType.question,
             message: filtered.blocking.first.question,
             createdAt: now,
           ),
-          updatedAt: now,
           diagnostics: assessedProject.diagnostics.copyWith(
             userQuestions:
                 assessedProject.diagnostics.userQuestions +
                 filtered.blocking.length,
           ),
+          updatedAt: now,
         ),
+        to: ProjectStatus.waitingForUser,
+        trigger: ProjectLifecycleTrigger.taskReview,
+        reason: filtered.blocking.first.question,
+        blocker: ProjectBlocker(
+          type: ProjectBlockerType.question,
+          message: filtered.blocking.first.question,
+          createdAt: now,
+        ),
+        now: now,
+      );
+      return _recordAssumptions(
+        waiting,
         filtered.assumptions,
         sourceId: 'completion_review',
       );
@@ -2955,7 +3203,13 @@ class _ProjectRuntimeService {
         summary: assessment.finalSummary,
       );
     }
-    return reviewed.copyWith(status: ProjectStatus.active, updatedAt: now);
+    return _transitionProject(
+      snapshot: reviewed,
+      to: ProjectStatus.active,
+      trigger: ProjectLifecycleTrigger.taskReview,
+      reason: 'Completion review left criteria outstanding.',
+      now: now,
+    );
   }
 
   bool _hasReviewableCriterionEvidence(ProjectDocument project) {
@@ -3047,15 +3301,9 @@ class _ProjectRuntimeService {
     DateTime now, {
     String summary = '',
   }) {
-    return project.copyWith(
-      status: ProjectStatus.completed,
-      completionSummary: summary.trim().isEmpty
-          ? 'All required project criteria are satisfied by accepted evidence.'
-          : summary.trim(),
-      completedAt: now,
-      blocker: null,
-      updatedAt: now,
-    );
+    return completionService
+        .completeFromEvidence(project: project, summary: summary, now: now)
+        .project;
   }
 
   _ProjectTaskValidation _validateProjectTask(
@@ -3892,7 +4140,8 @@ class _ProjectRuntimeService {
   ) {
     final current = _activeProjectTask(project);
     if (current == null) return project;
-    final nextStatus = switch (task.status) {
+    final execution = TaskExecution.fromTask(task, observedAt: now);
+    final nextStatus = switch (execution.status) {
       TaskStatus.completed => TaskStatus.completed,
       TaskStatus.failed => TaskStatus.failed,
       TaskStatus.cancelled => TaskStatus.cancelled,
@@ -3903,8 +4152,8 @@ class _ProjectRuntimeService {
         project,
         current.copyWith(
           status: nextStatus,
-          persistenceRevision: task.persistenceRevision,
-          updatedAt: now,
+          persistenceRevision: execution.persistenceRevision,
+          updatedAt: execution.observedAt,
         ),
       ),
       activeTaskId: task.isTerminal ? null : current.id,
@@ -3913,19 +4162,26 @@ class _ProjectRuntimeService {
   }
 
   ProjectDocument _waitingForUser(ProjectDocument project, DateTime now) {
-    return project.copyWith(
-      status: ProjectStatus.waitingForUser,
-      blocker:
-          project.blocker ??
-          (project.openQuestions.isEmpty
-              ? null
-              : ProjectBlocker(
-                  type: ProjectBlockerType.question,
-                  message: project.openQuestions.first.question,
-                  createdAt: now,
-                )),
-      updatedAt: now,
-    );
+    final blocker =
+        project.blocker ??
+        (project.openQuestions.isEmpty
+            ? null
+            : ProjectBlocker(
+                type: ProjectBlockerType.question,
+                message: project.openQuestions.first.question,
+                createdAt: now,
+              ));
+    final prepared = project.copyWith(blocker: blocker, updatedAt: now);
+    return lifecycleService
+        .transition(
+          snapshot: prepared,
+          to: ProjectStatus.waitingForUser,
+          trigger: ProjectLifecycleTrigger.pause,
+          reason: blocker?.message ?? 'Project is waiting for user input.',
+          blocker: blocker,
+          now: now,
+        )
+        .project;
   }
 
   _FilteredProjectQuestions _filterProjectQuestions(
@@ -3958,16 +4214,23 @@ class _ProjectRuntimeService {
     DateTime now, {
     String? taskId,
   }) {
-    return project.copyWith(
-      status: ProjectStatus.blocked,
-      blocker: ProjectBlocker(
-        type: type,
-        message: message,
-        taskId: taskId,
-        createdAt: now,
-      ),
-      updatedAt: now,
+    final blocker = ProjectBlocker(
+      type: type,
+      message: message,
+      taskId: taskId,
+      createdAt: now,
     );
+    return lifecycleService
+        .transition(
+          snapshot: project,
+          to: ProjectStatus.blocked,
+          trigger: ProjectLifecycleTrigger.failure,
+          reason: message,
+          taskId: taskId,
+          blocker: blocker,
+          now: now,
+        )
+        .project;
   }
 
   List<String> _remainingCriteria(ProjectDocument project) {
@@ -4743,7 +5006,6 @@ class _ProjectRuntimeService {
     ProjectPlanRevisionTrigger.evidenceRejected,
     ProjectPlanRevisionTrigger.taskReplanRequested,
     ProjectPlanRevisionTrigger.workspaceChanged,
-    ProjectPlanRevisionTrigger.batchComplete,
     ProjectPlanRevisionTrigger.scopeChanged,
     ProjectPlanRevisionTrigger.milestoneRoadmapChanged,
   };

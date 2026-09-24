@@ -26,3 +26,22 @@ dart run build_runner build
 
 Application code should use `ModelJson` rather than calling generated mapper
 classes or per-model JSON methods directly.
+
+## Project system boundaries
+
+The project system has three deliberately separate concerns:
+
+- `ProjectLifecycleService` owns project status transitions and
+  `ProjectControlStateService` records the durable, application-facing
+  outcome and next action.
+- Project planning exchanges `ProjectTaskSpec` values and commits through
+  `ProjectPlanRevisionService`, which validates, evaluates risk, handles
+  approval, and reconciles a complete desired plan atomically.
+- The task system owns executable task documents, steps, runs, artifacts, and
+  planning fallback diagnostics. Projects retain task IDs and hydrated
+  compatibility views, while `ProjectScheduler` selects a dependency-aware
+  execution frontier.
+
+Frontier limits are bounded run budgets, not automatic replanning triggers.
+Plans are revised only for an explicit scope, dependency, evidence,
+workspace, failure, or roadmap change.

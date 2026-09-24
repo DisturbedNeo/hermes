@@ -89,8 +89,11 @@ class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
       rethrow;
     } on ChatTransportException {
       rethrow;
-    } catch (_) {
-      return _fallbackInitialisation(originalGoal);
+    } catch (error) {
+      return _fallbackInitialisation(
+        originalGoal,
+        planningError: 'Initial project planning failed: $error',
+      );
     }
   }
 
@@ -543,7 +546,7 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
         milestones: const [],
         memory: const [],
         planHistory: const [],
-        status: ProjectStatus.active,
+        status: ProjectStatus.initializing,
         activeTaskId: null,
         createdAt: now,
         updatedAt: now,
@@ -660,9 +663,13 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
     'tasks': value.tasks.map(ModelJson.encode).toList(),
     'milestones': value.milestones.map(ModelJson.encode).toList(),
     'memory': value.memory.map(ModelJson.encode).toList(),
+    if (value.planningError != null) 'planningError': value.planningError,
   };
 
-  ProjectInitialisation _fallbackInitialisation(String originalGoal) {
+  ProjectInitialisation _fallbackInitialisation(
+    String originalGoal, {
+    String? planningError,
+  }) {
     return ProjectInitialisation(
       title: _titleFromGoal(originalGoal),
       refinedGoal: originalGoal,
@@ -677,6 +684,7 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
       constraints: const ['Stay within the attached workspace.'],
       openQuestions: const [],
       tasks: const [],
+      planningError: planningError,
     );
   }
 

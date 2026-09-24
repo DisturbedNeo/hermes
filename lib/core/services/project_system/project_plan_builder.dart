@@ -5,6 +5,7 @@ import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/services/project_system/project_plan_revision_service.dart';
 import 'package:hermes/core/services/project_system/project_plan_validator.dart';
+import 'package:hermes/core/services/project_system/project_task_models.dart';
 
 /// A structured error returned by a draft command before commit.
 class ProjectPlanBuilderException implements Exception {
@@ -22,51 +23,8 @@ class ProjectPlanBuilderException implements Exception {
   String toString() => '$code${path.isEmpty ? '' : ' ($path)'}: $message';
 }
 
-/// The model-facing shape of a task creation request.
-///
-/// IDs, statuses, timestamps, fingerprints, gates, and evidence expectation
-/// IDs are intentionally absent. The builder owns those values.
-class ProjectPlanTaskSpec {
-  final String ref;
-  final String title;
-  final String objective;
-  final List<String> criterionRefs;
-  final List<String> dependencyRefs;
-  final String? milestoneRef;
-  final TaskPriority priority;
-  final TaskRisk risk;
-  final ProjectRiskReduction riskReduction;
-  final TaskEffort effort;
-  final String selectionRationale;
-  final List<String> constraints;
-  final List<String> readPaths;
-  final List<String> writePaths;
-  final List<String> doneCriteria;
-  final List<String> outOfScope;
-  final List<String> context;
-  final List<TaskArtifact> expectedArtifacts;
-
-  const ProjectPlanTaskSpec({
-    this.ref = '',
-    this.title = '',
-    this.objective = '',
-    this.criterionRefs = const [],
-    this.dependencyRefs = const [],
-    this.milestoneRef,
-    this.priority = TaskPriority.normal,
-    this.risk = TaskRisk.unknown,
-    this.riskReduction = ProjectRiskReduction.none,
-    this.effort = TaskEffort.small,
-    this.selectionRationale = '',
-    this.constraints = const [],
-    this.readPaths = const [],
-    this.writePaths = const [],
-    this.doneCriteria = const [],
-    this.outOfScope = const [],
-    this.context = const [],
-    this.expectedArtifacts = const [],
-  });
-}
+/// Backwards-compatible name for callers that used the older builder API.
+typedef ProjectPlanTaskSpec = ProjectTaskSpec;
 
 enum ProjectPlanTaskDisposition { deferred, obsolete }
 

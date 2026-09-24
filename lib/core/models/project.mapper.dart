@@ -1094,6 +1094,93 @@ extension ProjectDecisionTypeMapperExtension on ProjectDecisionType {
 
 /// @nodoc
 
+class ProjectControlOutcomeMapper extends EnumMapper<ProjectControlOutcome> {
+  ProjectControlOutcomeMapper._();
+
+  static ProjectControlOutcomeMapper? _instance;
+  static ProjectControlOutcomeMapper ensureInitialized() {
+    if (_instance == null) {
+      MapperContainer.globals.use(_instance = ProjectControlOutcomeMapper._());
+    }
+    return _instance!;
+  }
+
+  static ProjectControlOutcome fromValue(dynamic value) {
+    ensureInitialized();
+    return MapperContainer.globals.fromValue(value);
+  }
+
+  @override
+  ProjectControlOutcome decode(dynamic value) {
+    switch (value) {
+      case r'initializing':
+        return ProjectControlOutcome.initializing;
+      case r'running':
+        return ProjectControlOutcome.running;
+      case r'paused':
+        return ProjectControlOutcome.paused;
+      case r'awaitingUserInput':
+        return ProjectControlOutcome.awaitingUserInput;
+      case r'awaitingPlanApproval':
+        return ProjectControlOutcome.awaitingPlanApproval;
+      case r'blockedValidation':
+        return ProjectControlOutcome.blockedValidation;
+      case r'pausedByBudget':
+        return ProjectControlOutcome.pausedByBudget;
+      case r'degradedPlanning':
+        return ProjectControlOutcome.degradedPlanning;
+      case r'failed':
+        return ProjectControlOutcome.failed;
+      case r'cancelled':
+        return ProjectControlOutcome.cancelled;
+      case r'completed':
+        return ProjectControlOutcome.completed;
+      default:
+        return ProjectControlOutcome.values[1];
+    }
+  }
+
+  @override
+  dynamic encode(ProjectControlOutcome self) {
+    switch (self) {
+      case ProjectControlOutcome.initializing:
+        return r'initializing';
+      case ProjectControlOutcome.running:
+        return r'running';
+      case ProjectControlOutcome.paused:
+        return r'paused';
+      case ProjectControlOutcome.awaitingUserInput:
+        return r'awaitingUserInput';
+      case ProjectControlOutcome.awaitingPlanApproval:
+        return r'awaitingPlanApproval';
+      case ProjectControlOutcome.blockedValidation:
+        return r'blockedValidation';
+      case ProjectControlOutcome.pausedByBudget:
+        return r'pausedByBudget';
+      case ProjectControlOutcome.degradedPlanning:
+        return r'degradedPlanning';
+      case ProjectControlOutcome.failed:
+        return r'failed';
+      case ProjectControlOutcome.cancelled:
+        return r'cancelled';
+      case ProjectControlOutcome.completed:
+        return r'completed';
+    }
+  }
+}
+
+/// @nodoc
+
+extension ProjectControlOutcomeMapperExtension on ProjectControlOutcome {
+  String toValue() {
+    ProjectControlOutcomeMapper.ensureInitialized();
+    return MapperContainer.globals.toValue<ProjectControlOutcome>(this)
+        as String;
+  }
+}
+
+/// @nodoc
+
 class ProjectRecoveryIncidentStatusMapper
     extends EnumMapper<ProjectRecoveryIncidentStatus> {
   ProjectRecoveryIncidentStatusMapper._();
@@ -2613,6 +2700,110 @@ mixin ProjectCompletionReviewCheckpointMappable {
 }
 
 /// @nodoc
+class ProjectBoundaryMapper extends ClassMapperBase<ProjectBoundary> {
+  ProjectBoundaryMapper._();
+
+  static ProjectBoundaryMapper? _instance;
+  static ProjectBoundaryMapper ensureInitialized() {
+    if (_instance == null) {
+      MapperContainer.globals.use(_instance = ProjectBoundaryMapper._());
+      ProjectControlOutcomeMapper.ensureInitialized();
+    }
+    return _instance!;
+  }
+
+  @override
+  final String id = 'ProjectBoundary';
+
+  static ProjectControlOutcome _$outcome(ProjectBoundary v) => v.outcome;
+  static const Field<ProjectBoundary, ProjectControlOutcome> _f$outcome = Field(
+    'outcome',
+    _$outcome,
+  );
+  static String _$message(ProjectBoundary v) => v.message;
+  static const Field<ProjectBoundary, String> _f$message = Field(
+    'message',
+    _$message,
+    hook: JsonStringHook(),
+  );
+  static DateTime _$occurredAt(ProjectBoundary v) => v.occurredAt;
+  static const Field<ProjectBoundary, DateTime> _f$occurredAt = Field(
+    'occurredAt',
+    _$occurredAt,
+    hook: JsonDateHook(),
+  );
+  static String? _$action(ProjectBoundary v) => v.action;
+  static const Field<ProjectBoundary, String> _f$action = Field(
+    'action',
+    _$action,
+    opt: true,
+    hook: JsonNullableStringHook(),
+  );
+  static String? _$reasonCode(ProjectBoundary v) => v.reasonCode;
+  static const Field<ProjectBoundary, String> _f$reasonCode = Field(
+    'reasonCode',
+    _$reasonCode,
+    opt: true,
+    hook: JsonNullableStringHook(),
+  );
+  static String? _$taskId(ProjectBoundary v) => v.taskId;
+  static const Field<ProjectBoundary, String> _f$taskId = Field(
+    'taskId',
+    _$taskId,
+    opt: true,
+    hook: JsonNullableStringHook(),
+  );
+
+  @override
+  final MappableFields<ProjectBoundary> fields = const {
+    #outcome: _f$outcome,
+    #message: _f$message,
+    #occurredAt: _f$occurredAt,
+    #action: _f$action,
+    #reasonCode: _f$reasonCode,
+    #taskId: _f$taskId,
+  };
+  @override
+  final bool ignoreNull = true;
+
+  static ProjectBoundary _instantiate(DecodingData data) {
+    return ProjectBoundary(
+      outcome: data.dec(_f$outcome),
+      message: data.dec(_f$message),
+      occurredAt: data.dec(_f$occurredAt),
+      action: data.dec(_f$action),
+      reasonCode: data.dec(_f$reasonCode),
+      taskId: data.dec(_f$taskId),
+    );
+  }
+
+  @override
+  final Function instantiate = _instantiate;
+
+  static ProjectBoundary fromMap(Map<String, dynamic> map) {
+    return ensureInitialized().decodeMap<ProjectBoundary>(map);
+  }
+
+  static ProjectBoundary fromJson(String json) {
+    return ensureInitialized().decodeJson<ProjectBoundary>(json);
+  }
+}
+
+/// @nodoc
+mixin ProjectBoundaryMappable {
+  String toJson() {
+    return ProjectBoundaryMapper.ensureInitialized()
+        .encodeJson<ProjectBoundary>(this as ProjectBoundary);
+  }
+
+  Map<String, dynamic> toMap() {
+    return ProjectBoundaryMapper.ensureInitialized().encodeMap<ProjectBoundary>(
+      this as ProjectBoundary,
+    );
+  }
+}
+
+/// @nodoc
 class ProjectStateMapper extends ClassMapperBase<ProjectState> {
   ProjectStateMapper._();
 
@@ -2631,6 +2822,7 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
       PendingProjectPlanApprovalMapper.ensureInitialized();
       ProjectPlanRevisionTriggerMapper.ensureInitialized();
       ProjectCompletionReviewCheckpointMapper.ensureInitialized();
+      ProjectBoundaryMapper.ensureInitialized();
       PendingProjectQuestionMapper.ensureInitialized();
       ProjectStatusMapper.ensureInitialized();
       ProjectBlockerMapper.ensureInitialized();
@@ -2813,6 +3005,12 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
     _$completionReviewCheckpoint,
     opt: true,
   );
+  static ProjectBoundary? _$boundary(ProjectState v) => v.boundary;
+  static const Field<ProjectState, ProjectBoundary> _f$boundary = Field(
+    'boundary',
+    _$boundary,
+    opt: true,
+  );
   static List<PendingProjectQuestion> _$openQuestions(ProjectState v) =>
       v.openQuestions;
   static const Field<ProjectState, List<PendingProjectQuestion>>
@@ -2943,6 +3141,7 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
     #pendingPlanApproval: _f$pendingPlanApproval,
     #pendingReplanTriggers: _f$pendingReplanTriggers,
     #completionReviewCheckpoint: _f$completionReviewCheckpoint,
+    #boundary: _f$boundary,
     #openQuestions: _f$openQuestions,
     #status: _f$status,
     #iterationCount: _f$iterationCount,
@@ -2988,6 +3187,7 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
       pendingPlanApproval: data.dec(_f$pendingPlanApproval),
       pendingReplanTriggers: data.dec(_f$pendingReplanTriggers),
       completionReviewCheckpoint: data.dec(_f$completionReviewCheckpoint),
+      boundary: data.dec(_f$boundary),
       openQuestions: data.dec(_f$openQuestions),
       status: data.dec(_f$status),
       iterationCount: data.dec(_f$iterationCount),

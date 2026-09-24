@@ -17,6 +17,7 @@ enum ProjectCommandStopReason {
   paused,
   waitingForUser,
   blocked,
+  degradedPlanning,
   completed,
   failed,
   cancelled,
@@ -104,18 +105,21 @@ class ProjectCommandStopReasonFor {
   const ProjectCommandStopReasonFor._();
 
   static ProjectCommandStopReason project(ProjectDocument project) =>
-      switch (project.status) {
-        ProjectStatus.active ||
-        ProjectStatus.initializing ||
-        ProjectStatus.runningTask ||
-        ProjectStatus.reviewingTask => ProjectCommandStopReason.active,
-        ProjectStatus.paused => ProjectCommandStopReason.paused,
-        ProjectStatus.waitingForUser => ProjectCommandStopReason.waitingForUser,
-        ProjectStatus.blocked => ProjectCommandStopReason.blocked,
-        ProjectStatus.completed => ProjectCommandStopReason.completed,
-        ProjectStatus.failed => ProjectCommandStopReason.failed,
-        ProjectStatus.cancelled => ProjectCommandStopReason.cancelled,
-      };
+      project.boundary?.outcome == ProjectControlOutcome.degradedPlanning
+      ? ProjectCommandStopReason.degradedPlanning
+      : switch (project.status) {
+          ProjectStatus.active ||
+          ProjectStatus.initializing ||
+          ProjectStatus.runningTask ||
+          ProjectStatus.reviewingTask => ProjectCommandStopReason.active,
+          ProjectStatus.paused => ProjectCommandStopReason.paused,
+          ProjectStatus.waitingForUser =>
+            ProjectCommandStopReason.waitingForUser,
+          ProjectStatus.blocked => ProjectCommandStopReason.blocked,
+          ProjectStatus.completed => ProjectCommandStopReason.completed,
+          ProjectStatus.failed => ProjectCommandStopReason.failed,
+          ProjectStatus.cancelled => ProjectCommandStopReason.cancelled,
+        };
 }
 
 /// All inputs required to run one project command.

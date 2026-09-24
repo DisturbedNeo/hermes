@@ -1,4 +1,5 @@
 import 'package:hermes/core/models/project.dart';
+import 'package:hermes/core/services/project_system/project_task_models.dart';
 
 enum ProjectDependencyIssueCode {
   missingDependency,
@@ -176,6 +177,25 @@ class ProjectScheduleResult {
       readinessReasons[taskId] ?? const [];
 }
 
+/// A dependency-aware execution window.
+///
+/// The frontier is a bounded run cursor, not a planning transaction boundary.
+/// Reaching its end only means that the caller should select the next ready
+/// work; it does not imply that the project plan needs to be regenerated.
+class ProjectExecutionFrontier {
+  final int planRevision;
+  final List<ProjectTaskRef> taskRefs;
+
+  const ProjectExecutionFrontier({
+    required this.planRevision,
+    required this.taskRefs,
+  });
+
+  List<String> get taskIds => [for (final ref in taskRefs) ref.id];
+
+  bool get isEmpty => taskRefs.isEmpty;
+}
+
 /// Computes readiness and picks one task without mutating the project model.
 class ProjectScheduler {
   const ProjectScheduler({
@@ -238,6 +258,28 @@ class ProjectScheduler {
       for (final task in ready)
         if (task.id != recovery.id) task,
     ]);
+  }
+
+  /// Selects the next dependency-aware execution frontier.
+  ///
+  /// [limit] is a user/run budget only. It intentionally does not affect
+  /// planning triggers, so a frontier can be resumed or advanced without a
+  /// synthetic replan.
+  ProjectExecutionFrontier executionFrontier(
+    ProjectDocument project, {
+    int? limit,
+  }) {
+    final tasks = orderedReadyTasks(project);
+    final selected = limit == null || limit <= 0
+        ? tasks
+        : tasks.take(limit).toList();
+    return ProjectExecutionFrontier(
+      planRevision: project.nextRevision - 1,
+      taskRefs: [
+        for (final task in selected)
+          ProjectTaskRef(id: task.id, planRevision: task.revisionUpdated),
+      ],
+    );
   }
 
   _ComputedReadiness _computeReadiness(

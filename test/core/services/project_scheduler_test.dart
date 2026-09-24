@@ -101,6 +101,21 @@ void main() {
       );
     },
   );
+
+  test('builds a bounded frontier without turning its limit into a replan', () {
+    final frontier = scheduler.executionFrontier(
+      _project([
+        _task('done', status: TaskStatus.completed),
+        _task('ready_a', dependencies: const ['done']),
+        _task('ready_b', dependencies: const ['done']),
+        _task('waiting', dependencies: const ['ready_a']),
+      ]),
+      limit: 1,
+    );
+
+    expect(frontier.planRevision, 1);
+    expect(frontier.taskIds, ['ready_a']);
+  });
 }
 
 ProjectDocument _project(List<Task> tasks) {

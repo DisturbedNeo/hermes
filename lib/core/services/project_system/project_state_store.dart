@@ -2,6 +2,7 @@ import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/persistence_contracts.dart';
 import 'package:hermes/core/services/project_system/project_aggregate_repository.dart';
+import 'package:hermes/core/services/project_system/project_control_state_service.dart';
 import 'package:hermes/core/services/project_system/project_repository.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 
@@ -23,6 +24,8 @@ class ProjectStateStore {
   final ProjectRepository _projectRepository;
   final ProjectAggregateRepository _aggregateRepository;
   final TaskService _taskService;
+  final ProjectControlStateService _controlStateService =
+      const ProjectControlStateService();
 
   ProjectRepository get projectRepository => _projectRepository;
   ProjectAggregateRepository get aggregateRepository => _aggregateRepository;
@@ -50,7 +53,9 @@ class ProjectStateStore {
     return project == null
         ? result
         : ProjectLoadResult(
-            project: project.copyWith(tasks: result.canonicalTasks),
+            project: _controlStateService.synchronise(
+              project.copyWith(tasks: result.canonicalTasks),
+            ),
             diagnostics: result.diagnostics,
             canonicalTasks: result.canonicalTasks,
           );
@@ -87,7 +92,7 @@ class ProjectStateStore {
       final resolved = task ?? cached[taskId];
       if (resolved != null) tasks.add(resolved);
     }
-    return project.copyWith(tasks: tasks);
+    return _controlStateService.synchronise(project.copyWith(tasks: tasks));
   }
 
   Future<ProjectPersistenceDiagnostics> inspect(

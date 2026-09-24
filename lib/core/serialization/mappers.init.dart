@@ -34,6 +34,7 @@ void initializeMappers() {
   p5.ProjectPlanRevisionMapper.ensureInitialized();
   p5.PendingProjectPlanApprovalMapper.ensureInitialized();
   p5.ProjectCompletionReviewCheckpointMapper.ensureInitialized();
+  p5.ProjectBoundaryMapper.ensureInitialized();
   p5.ProjectStateMapper.ensureInitialized();
   p5.ProjectRecoveryIncidentMapper.ensureInitialized();
   p5.ProjectDecisionRecordMapper.ensureInitialized();
@@ -55,6 +56,7 @@ void initializeMappers() {
   p5.ProjectPlanRevisionApproverMapper.ensureInitialized();
   p5.ProjectBlockerTypeMapper.ensureInitialized();
   p5.ProjectDecisionTypeMapper.ensureInitialized();
+  p5.ProjectControlOutcomeMapper.ensureInitialized();
   p5.ProjectRecoveryIncidentStatusMapper.ensureInitialized();
   p6.PromptModuleMapper.ensureInitialized();
   p6.PromptPresetMapper.ensureInitialized();

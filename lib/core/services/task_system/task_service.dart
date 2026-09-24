@@ -51,11 +51,13 @@ class _IncrementalTaskPlanAttempt {
   final Task? task;
   final bool usedPlanningTools;
   final PlanningMetrics planningMetrics;
+  final String? planningError;
 
   const _IncrementalTaskPlanAttempt({
     this.task,
     this.usedPlanningTools = false,
     this.planningMetrics = const PlanningMetrics(),
+    this.planningError,
   });
 }
 
@@ -744,29 +746,37 @@ $userPrompt
         cancellationToken: cancellationToken,
       );
       planningMetrics = planningMetrics.add(incremental.planningMetrics);
-      task =
-          incremental.task ??
-          (planningContext == null
-              ? _fallbackTask(
-                  taskId: taskId,
-                  userPrompt: userPrompt,
-                  chatSessionId: chatSessionId,
-                  projectId: projectId,
-                  now: now,
-                )
-              : _fallbackProjectBoundedTask(
-                  taskId: taskId,
-                  userPrompt: userPrompt,
-                  chatSessionId: chatSessionId,
-                  projectId: projectId,
-                  planningContext: planningContext,
-                  now: now,
-                ));
+      final plannedTask = incremental.task;
+      if (plannedTask != null) {
+        task = plannedTask;
+      } else {
+        task = planningContext == null
+            ? _fallbackTask(
+                taskId: taskId,
+                userPrompt: userPrompt,
+                chatSessionId: chatSessionId,
+                projectId: projectId,
+                now: now,
+              )
+            : _fallbackProjectBoundedTask(
+                taskId: taskId,
+                userPrompt: userPrompt,
+                chatSessionId: chatSessionId,
+                projectId: projectId,
+                planningContext: planningContext,
+                now: now,
+              );
+        task = task.copyWith(
+          planningError:
+              incremental.planningError ??
+              'Task planner did not commit an executable plan; safe fallback used.',
+        );
+      }
     } on OperationCancelledException {
       rethrow;
     } on ChatTransportException {
       rethrow;
-    } catch (_) {
+    } catch (error) {
       task = planningContext == null
           ? _fallbackTask(
               taskId: taskId,
@@ -783,6 +793,9 @@ $userPrompt
               planningContext: planningContext,
               now: now,
             );
+      task = task.copyWith(
+        planningError: 'Task planning failed; safe fallback used: $error',
+      );
     }
 
     final firstExecutableAt = task.currentStepId == null
@@ -886,6 +899,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
       task: context.committedTask,
       usedPlanningTools: context.committedTask != null,
       planningMetrics: planningResult.planningMetrics,
+      planningError: planningResult.error,
     );
   }
 

@@ -1,4 +1,5 @@
 import 'package:hermes/core/models/project.dart';
+import 'package:hermes/core/services/project_system/project_lifecycle_service.dart';
 
 /// Reconciles an interrupted task back into its owning project.
 ///
@@ -6,7 +7,11 @@ import 'package:hermes/core/models/project.dart';
 /// task id, records the task's current persistence revision, and creates a
 /// durable blocker for approval/question/interruption states.
 class ProjectRecoveryService {
-  const ProjectRecoveryService();
+  const ProjectRecoveryService({
+    this.lifecycle = const ProjectLifecycleService(),
+  });
+
+  final ProjectLifecycleService lifecycle;
 
   ProjectDocument reconcile({
     required ProjectDocument project,
@@ -40,9 +45,26 @@ class ProjectRecoveryService {
     );
     final blocker = _blockerFor(recoveredTask, now, current.id);
     if (blocker == null) {
-      return synced.copyWith(status: ProjectStatus.active, blocker: null);
+      return lifecycle
+          .transition(
+            snapshot: synced.copyWith(blocker: null),
+            to: ProjectStatus.active,
+            trigger: ProjectLifecycleTrigger.recovery,
+            now: now,
+          )
+          .project;
     }
-    return synced.copyWith(status: ProjectStatus.blocked, blocker: blocker);
+    return lifecycle
+        .transition(
+          snapshot: synced,
+          to: ProjectStatus.blocked,
+          trigger: ProjectLifecycleTrigger.recovery,
+          reason: blocker.message,
+          taskId: blocker.taskId,
+          blocker: blocker,
+          now: now,
+        )
+        .project;
   }
 
   ProjectBlocker? _blockerFor(Task task, DateTime now, String taskId) {

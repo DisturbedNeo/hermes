@@ -1,6 +1,7 @@
 import 'package:hermes/core/helpers/sentinel.dart';
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/services/project_system/orchestration_contracts.dart';
+import 'package:hermes/core/services/project_system/project_control_state_service.dart';
 
 enum ProjectLifecycleTrigger {
   initialization,
@@ -30,7 +31,11 @@ class ProjectTransitionResult {
 
 /// Pure project state transition guards and transformations.
 class ProjectLifecycleService {
-  const ProjectLifecycleService();
+  const ProjectLifecycleService({
+    this.controlState = const ProjectControlStateService(),
+  });
+
+  final ProjectControlStateService controlState;
 
   ProjectTransitionResult transition({
     required ProjectDocument snapshot,
@@ -45,8 +50,9 @@ class ProjectLifecycleService {
     final timestamp = now ?? DateTime.now();
     final from = snapshot.status;
     if (from == to) {
+      final project = controlState.synchronise(snapshot, now: timestamp);
       return ProjectTransitionResult(
-        project: snapshot,
+        project: project,
         transition: ProjectLifecycleTransition(
           from: from,
           to: to,
@@ -97,6 +103,7 @@ class ProjectLifecycleService {
     if (to == ProjectStatus.waitingForUser && blocker != null) {
       project = project.copyWith(blocker: blocker);
     }
+    project = controlState.synchronise(project, now: timestamp);
     return ProjectTransitionResult(
       project: project,
       transition: ProjectLifecycleTransition(
@@ -125,7 +132,8 @@ class ProjectLifecycleService {
             from == ProjectStatus.paused ||
             from == ProjectStatus.blocked ||
             from == ProjectStatus.waitingForUser ||
-            from == ProjectStatus.reviewingTask,
+            from == ProjectStatus.reviewingTask ||
+            from == ProjectStatus.runningTask,
       ProjectStatus.runningTask =>
         (from == ProjectStatus.active || from == ProjectStatus.paused) &&
             _hasTask(snapshot, taskId),
@@ -135,15 +143,17 @@ class ProjectLifecycleService {
       ProjectStatus.waitingForUser =>
         !snapshot.isTerminal &&
             (snapshot.openQuestions.isNotEmpty ||
-                blocker?.type == ProjectBlockerType.question ||
-                snapshot.blocker?.type == ProjectBlockerType.question),
+                _isUserActionableBlocker(blocker?.type) ||
+                _isUserActionableBlocker(snapshot.blocker?.type)),
       ProjectStatus.blocked =>
         !snapshot.isTerminal && (blocker != null || snapshot.blocker != null),
       ProjectStatus.paused =>
         from == ProjectStatus.initializing ||
             from == ProjectStatus.active ||
             from == ProjectStatus.runningTask ||
-            from == ProjectStatus.reviewingTask,
+            from == ProjectStatus.reviewingTask ||
+            from == ProjectStatus.waitingForUser ||
+            from == ProjectStatus.blocked,
       ProjectStatus.completed =>
         (from == ProjectStatus.reviewingTask ||
                 from == ProjectStatus.active ||
@@ -172,6 +182,15 @@ class ProjectLifecycleService {
     return id != null && project.taskById(id) != null;
   }
 
+  bool _isUserActionableBlocker(ProjectBlockerType? type) => switch (type) {
+    ProjectBlockerType.question ||
+    ProjectBlockerType.taskEditApproval ||
+    ProjectBlockerType.taskBlocked ||
+    ProjectBlockerType.taskFailed ||
+    ProjectBlockerType.planApproval => true,
+    _ => false,
+  };
+
   String _reason({
     required ProjectDocument snapshot,
     required ProjectStatus to,
@@ -186,7 +205,7 @@ class ProjectLifecycleService {
       return 'A valid active task is required.';
     }
     if (to == ProjectStatus.waitingForUser) {
-      return 'A user question or question blocker is required.';
+      return 'A user question or user-actionable blocker is required.';
     }
     if (to == ProjectStatus.blocked) {
       return 'A blocker must be supplied.';

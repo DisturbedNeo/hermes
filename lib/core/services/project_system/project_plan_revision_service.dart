@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/services/project_system/project_memory_service.dart';
+import 'package:hermes/core/services/project_system/project_lifecycle_service.dart';
 import 'package:hermes/core/services/project_system/project_plan_validator.dart';
 
 typedef ProjectPlanRepair =
@@ -31,9 +32,11 @@ class ProjectPlanRevisionResult {
 class ProjectPlanRevisionService {
   const ProjectPlanRevisionService({
     ProjectPlanValidator validator = const ProjectPlanValidator(),
+    this.lifecycle = const ProjectLifecycleService(),
   }) : _validator = validator;
 
   final ProjectPlanValidator _validator;
+  final ProjectLifecycleService lifecycle;
   static const ProjectMemoryService _memoryService = ProjectMemoryService();
   static const _maxAutomaticRepairAttempts = 2;
 
@@ -91,17 +94,23 @@ class ProjectPlanRevisionService {
     final splitIds = {...splitTaskIds, ...candidate.splitTaskIds};
     if (!validation.valid) {
       final details = _validationDetails(validation);
+      final blocked = project.copyWith(
+        pendingReplanTriggers: const [],
+        blocker: ProjectBlocker(
+          type: ProjectBlockerType.validation,
+          message:
+              'Plan revision ${candidate.revision} was rejected after validation${repairAttempted ? ' and $repairAttempts automatic repair attempt${repairAttempts == 1 ? '' : 's'}' : ''}. Resolve: $details.',
+          createdAt: DateTime.now(),
+        ),
+        updatedAt: DateTime.now(),
+      );
       return ProjectPlanRevisionResult(
-        project: project.copyWith(
-          pendingReplanTriggers: const [],
-          status: ProjectStatus.blocked,
-          blocker: ProjectBlocker(
-            type: ProjectBlockerType.validation,
-            message:
-                'Plan revision ${candidate.revision} was rejected after validation${repairAttempted ? ' and $repairAttempts automatic repair attempt${repairAttempts == 1 ? '' : 's'}' : ''}. Resolve: $details.',
-            createdAt: DateTime.now(),
-          ),
-          updatedAt: DateTime.now(),
+        project: _transition(
+          snapshot: blocked,
+          to: ProjectStatus.blocked,
+          trigger: ProjectLifecycleTrigger.failure,
+          blocker: blocked.blocker,
+          reason: blocked.blocker?.message ?? details,
         ),
         validation: validation,
         repairAttempted: repairAttempted,
@@ -166,27 +175,33 @@ class ProjectPlanRevisionService {
           : highRiskChanges.isEmpty
           ? 'The current policy requires approval for every revision.'
           : 'The revision contains high-risk plan changes.';
+      final awaiting = project.copyWith(
+        pendingPlanApproval: PendingProjectPlanApproval(
+          revision: candidate.revision,
+          reason: reason,
+          summary: candidate.summary,
+          highRiskChanges: highRiskChanges,
+          highRiskReasonCodes: highRiskReasons
+              .map((item) => item.code)
+              .toList(),
+          createdAt: candidate.createdAt,
+          desiredPlan: candidate,
+        ),
+        pendingReplanTriggers: const [],
+        blocker: ProjectBlocker(
+          type: ProjectBlockerType.planApproval,
+          message: reason,
+          createdAt: DateTime.now(),
+        ),
+        updatedAt: DateTime.now(),
+      );
       return ProjectPlanRevisionResult(
-        project: project.copyWith(
-          pendingPlanApproval: PendingProjectPlanApproval(
-            revision: candidate.revision,
-            reason: reason,
-            summary: candidate.summary,
-            highRiskChanges: highRiskChanges,
-            highRiskReasonCodes: highRiskReasons
-                .map((item) => item.code)
-                .toList(),
-            createdAt: candidate.createdAt,
-            desiredPlan: candidate,
-          ),
-          pendingReplanTriggers: const [],
-          status: ProjectStatus.paused,
-          blocker: ProjectBlocker(
-            type: ProjectBlockerType.planApproval,
-            message: reason,
-            createdAt: DateTime.now(),
-          ),
-          updatedAt: DateTime.now(),
+        project: _transition(
+          snapshot: awaiting,
+          to: ProjectStatus.paused,
+          trigger: ProjectLifecycleTrigger.approval,
+          blocker: awaiting.blocker,
+          reason: reason,
         ),
         validation: validation,
         repairAttempted: repairAttempted,
@@ -248,18 +263,24 @@ class ProjectPlanRevisionService {
       workspaceRoot: workspaceRoot,
     );
     if (!validation.valid) {
+      final blocked = project.copyWith(
+        pendingPlanApproval: null,
+        blocker: ProjectBlocker(
+          type: ProjectBlockerType.validation,
+          message:
+              'The pending plan no longer validates against current state. '
+              'Resolve: ${_validationDetails(validation)}.',
+          createdAt: DateTime.now(),
+        ),
+        updatedAt: DateTime.now(),
+      );
       return ProjectPlanRevisionResult(
-        project: project.copyWith(
-          pendingPlanApproval: null,
-          status: ProjectStatus.blocked,
-          blocker: ProjectBlocker(
-            type: ProjectBlockerType.validation,
-            message:
-                'The pending plan no longer validates against current state. '
-                'Resolve: ${_validationDetails(validation)}.',
-            createdAt: DateTime.now(),
-          ),
-          updatedAt: DateTime.now(),
+        project: _transition(
+          snapshot: blocked,
+          to: ProjectStatus.blocked,
+          trigger: ProjectLifecycleTrigger.failure,
+          blocker: blocked.blocker,
+          reason: blocked.blocker?.message ?? 'Pending plan is invalid.',
         ),
         validation: validation,
         repairAttempted: false,
@@ -582,7 +603,7 @@ class ProjectPlanRevisionService {
       return item;
     }).toList();
     final normalizedMilestones = _normaliseMilestones(desiredMilestones.values);
-    return project.copyWith(
+    final revised = project.copyWith(
       criteria: desiredCriteria.values.toList(),
       milestones: normalizedMilestones,
       tasks: tasksById.values.toList(),
@@ -594,9 +615,6 @@ class ProjectPlanRevisionService {
           : project.planHistory,
       pendingPlanApproval: null,
       pendingReplanTriggers: const [],
-      status: questions.isEmpty
-          ? ProjectStatus.active
-          : ProjectStatus.waitingForUser,
       blocker: questions.isEmpty
           ? null
           : ProjectBlocker(
@@ -619,6 +637,17 @@ class ProjectPlanRevisionService {
             ]
           : project.decisions,
       updatedAt: now,
+    );
+    return _transition(
+      snapshot: revised,
+      to: questions.isEmpty
+          ? ProjectStatus.active
+          : ProjectStatus.waitingForUser,
+      trigger: ProjectLifecycleTrigger.planRevision,
+      blocker: revised.blocker,
+      reason: questions.isEmpty
+          ? 'Plan revision committed.'
+          : questions.first.question,
     );
   }
 
@@ -950,17 +979,23 @@ class ProjectPlanRevisionService {
       ...validation.issues,
       issue,
     ]);
+    final blocked = project.copyWith(
+      blocker: ProjectBlocker(
+        type: ProjectBlockerType.validation,
+        message:
+            'Plan revision $revision was rejected during reconciliation. '
+            'Resolve: ${_validationDetails(nextValidation)}.',
+        createdAt: DateTime.now(),
+      ),
+      updatedAt: DateTime.now(),
+    );
     return ProjectPlanRevisionResult(
-      project: project.copyWith(
-        status: ProjectStatus.blocked,
-        blocker: ProjectBlocker(
-          type: ProjectBlockerType.validation,
-          message:
-              'Plan revision $revision was rejected during reconciliation. '
-              'Resolve: ${_validationDetails(nextValidation)}.',
-          createdAt: DateTime.now(),
-        ),
-        updatedAt: DateTime.now(),
+      project: _transition(
+        snapshot: blocked,
+        to: ProjectStatus.blocked,
+        trigger: ProjectLifecycleTrigger.failure,
+        blocker: blocked.blocker,
+        reason: blocked.blocker?.message ?? 'Plan reconciliation failed.',
       ),
       validation: nextValidation,
       repairAttempted: repairAttempted,
@@ -973,6 +1008,23 @@ class ProjectPlanRevisionService {
       validation.errors
           .map((issue) => '${issue.code} (${issue.path}): ${issue.message}')
           .join(' | ');
+
+  ProjectDocument _transition({
+    required ProjectDocument snapshot,
+    required ProjectStatus to,
+    required ProjectLifecycleTrigger trigger,
+    ProjectBlocker? blocker,
+    String reason = '',
+  }) => lifecycle
+      .transition(
+        snapshot: snapshot,
+        to: to,
+        trigger: trigger,
+        blocker: blocker,
+        reason: reason,
+        now: DateTime.now(),
+      )
+      .project;
 }
 
 class _ProjectPlanRiskReason {

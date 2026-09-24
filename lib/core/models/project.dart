@@ -204,6 +204,38 @@ enum ProjectDecisionType {
   rejectPlanRevision,
 }
 
+/// The durable reason a project command stopped, paused, or completed.
+///
+/// [ProjectStatus] remains part of the compatibility surface and continues to
+/// describe the lifecycle phase. This value describes the actionable boundary
+/// presented to the application, so callers do not need to infer it from
+/// several nullable fields.
+@MappableEnum(defaultValue: ProjectControlOutcome.running)
+enum ProjectControlOutcome {
+  initializing,
+  running,
+  paused,
+  awaitingUserInput,
+  awaitingPlanApproval,
+  blockedValidation,
+  pausedByBudget,
+  degradedPlanning,
+  failed,
+  cancelled,
+  completed,
+}
+
+extension ProjectControlOutcomeWire on ProjectControlOutcome {
+  String get wire => switch (this) {
+    ProjectControlOutcome.awaitingUserInput => 'awaiting_user_input',
+    ProjectControlOutcome.awaitingPlanApproval => 'awaiting_plan_approval',
+    ProjectControlOutcome.blockedValidation => 'blocked_validation',
+    ProjectControlOutcome.pausedByBudget => 'paused_by_budget',
+    ProjectControlOutcome.degradedPlanning => 'degraded_planning',
+    _ => name,
+  };
+}
+
 extension ProjectStatusWire on ProjectStatus {
   String get wire => switch (this) {
     ProjectStatus.runningTask => 'running_task',
@@ -671,6 +703,30 @@ class ProjectCompletionReviewCheckpoint
   });
 }
 
+@MappableClass(ignoreNull: true)
+class ProjectBoundary with ProjectBoundaryMappable {
+  final ProjectControlOutcome outcome;
+  @MappableField(hook: JsonStringHook())
+  final String message;
+  @MappableField(hook: JsonNullableStringHook())
+  final String? action;
+  @MappableField(hook: JsonNullableStringHook())
+  final String? reasonCode;
+  @MappableField(hook: JsonNullableStringHook())
+  final String? taskId;
+  @MappableField(hook: JsonDateHook())
+  final DateTime occurredAt;
+
+  const ProjectBoundary({
+    required this.outcome,
+    required this.message,
+    required this.occurredAt,
+    this.action,
+    this.reasonCode,
+    this.taskId,
+  });
+}
+
 @MappableClass(ignoreNull: true, hook: ProjectStateJsonHook())
 class ProjectState with ProjectStateMappable {
   static const int defaultMaxIterations = 25;
@@ -692,6 +748,8 @@ class ProjectState with ProjectStateMappable {
   @MappableField(hook: JsonStringListHook())
   final List<String> constraints;
   @MappableField(hook: JsonStringListHook())
+  /// Project-owned task references. The canonical executable task document is
+  /// persisted by the task system and hydrated by ProjectStateStore.
   final List<String> taskIds;
   @MappableField(hook: JsonStringListHook())
   final List<String> currentBatchTaskIds;
@@ -704,6 +762,8 @@ class ProjectState with ProjectStateMappable {
   @MappableField(hook: JsonNullableStringHook())
   final String? pendingReplanReason;
   @MappableField(hook: JsonObjectListHook())
+  /// Hydrated planning/task compatibility view. This is omitted from the
+  /// durable project document; execution history belongs to the task store.
   final List<Task> tasks;
   @MappableField(hook: JsonObjectListHook())
   final List<TaskArtifact> artifacts;
@@ -720,6 +780,11 @@ class ProjectState with ProjectStateMappable {
   final PendingProjectPlanApproval? pendingPlanApproval;
   final List<ProjectPlanRevisionTrigger> pendingReplanTriggers;
   final ProjectCompletionReviewCheckpoint? completionReviewCheckpoint;
+
+  /// Durable, application-facing explanation of the current command boundary.
+  /// Older snapshots may omit this field; the control-state service derives it
+  /// from the compatibility fields when they are loaded.
+  final ProjectBoundary? boundary;
   @MappableField(hook: JsonObjectListHook())
   final List<PendingProjectQuestion> openQuestions;
   final ProjectStatus status;
@@ -778,6 +843,7 @@ class ProjectState with ProjectStateMappable {
     this.pendingPlanApproval,
     this.pendingReplanTriggers = const [],
     this.completionReviewCheckpoint,
+    this.boundary,
     this.openQuestions = const [],
     required this.status,
     int? iterationCount,
@@ -882,6 +948,7 @@ class ProjectState with ProjectStateMappable {
     Object? pendingPlanApproval = kSentinel,
     List<ProjectPlanRevisionTrigger>? pendingReplanTriggers,
     Object? completionReviewCheckpoint = kSentinel,
+    Object? boundary = kSentinel,
     List<PendingProjectQuestion>? openQuestions,
     ProjectStatus? status,
     int? iterationCount,
@@ -935,6 +1002,7 @@ class ProjectState with ProjectStateMappable {
         completionReviewCheckpoint,
         this.completionReviewCheckpoint,
       ),
+      boundary: resolve(boundary, this.boundary),
       openQuestions: openQuestions ?? this.openQuestions,
       status: status ?? this.status,
       iterationCount: iterationCount ?? this.iterationCount,
