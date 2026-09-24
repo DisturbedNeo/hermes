@@ -140,6 +140,22 @@ class ProjectRepository {
     );
   }
 
+  /// Reads only the snapshot envelope revision. The project document is not
+  /// decoded, so this is suitable for optimistic-concurrency checks.
+  Future<PersistedRevision?> revisionOf(
+    String workspaceRoot,
+    String projectId, {
+    bool assumeLocked = false,
+  }) async {
+    if (!assumeLocked) {
+      return _coordinator.synchronized(
+        workspaceRoot,
+        () => revisionOf(workspaceRoot, projectId, assumeLocked: true),
+      );
+    }
+    return revisionOfUnlocked(workspaceRoot, projectId);
+  }
+
   Future<PersistedSnapshot<ProjectDocument>?> _loadProjectSnapshotUnlocked(
     String workspaceRoot,
     String projectId, {
@@ -158,6 +174,22 @@ class ProjectRepository {
       return null;
     }
     return snapshot;
+  }
+
+  /// Internal revision-only read. The caller must hold the workspace lock.
+  Future<PersistedRevision?> revisionOfUnlocked(
+    String workspaceRoot,
+    String projectId,
+  ) async {
+    final dir = _validatedProjectDirectory(workspaceRoot, projectId);
+    final file = File(path.join(dir.path, documentFileName));
+    final raw = await _snapshots.readMapWithoutRepair(file);
+    if (raw == null) return null;
+    final envelope = SnapshotEnvelope.decode(raw.map);
+    return PersistedRevision(
+      revision: envelope.revision,
+      fromBackup: raw.fromBackup,
+    );
   }
 
   // ── Saving ───────────────────────────────────────────────────────────
@@ -184,10 +216,7 @@ class ProjectRepository {
     final dir = _validatedProjectDirectory(workspaceRoot, project.id);
     await dir.create(recursive: true);
     final file = File(path.join(dir.path, documentFileName));
-    final current = await _loadProjectSnapshotUnlocked(
-      workspaceRoot,
-      project.id,
-    );
+    final current = await revisionOfUnlocked(workspaceRoot, project.id);
     final actualRevision = current?.revision ?? 0;
     final requiredRevision = expectedRevision ?? project.persistenceRevision;
     if (requiredRevision != actualRevision) {

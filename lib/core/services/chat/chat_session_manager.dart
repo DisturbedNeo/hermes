@@ -21,7 +21,8 @@ import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/models/workspace.dart';
-import 'package:hermes/core/services/chat/chat_service.dart';
+import 'package:hermes/core/services/chat/chat_session_host.dart';
+import 'package:hermes/core/services/chat/chat_tool_execution_service.dart';
 
 import '../disposable.dart';
 
@@ -29,33 +30,34 @@ import '../disposable.dart';
 ///
 /// Handles all aspects of LLM interaction: streaming responses, tool execution,
 /// context compaction, token handling, and task model output rendering.
-/// Delegates business-logic callbacks (task/project updates, message insertion)
-/// directly to its owning [ChatService].
+/// Delegates state-policy callbacks through [ChatSessionHost], keeping the
+/// streaming engine independent from the UI-facing chat façade.
 class ChatSessionManager implements Disposable {
   final MessageStore _messageStore;
   final ChatStream<ChatToken> _chatStream;
   final LlamaServerManager _serverManager;
   final ToolService _toolService;
+  final ChatToolExecutionPort _toolExecution;
   final PreferencesService _preferencesService;
   late final BufferedTokenWriter _tokenWriter;
 
-  final ChatService _chatService;
+  final ChatSessionHost _host;
   CancellationToken? _activeGenerationToken;
   int _generationSerial = 0;
 
   // Session policy depends on mutable chat state. Read it from the owning
   // service so workspace attachment, model changes, and saved-chat loading
   // take effect on the next request without rebuilding the manager.
-  WorkspaceAttachment? get workspace => _chatService.workspace;
+  WorkspaceAttachment? get workspace => _host.workspace;
 
   ModelConfigurationSnapshot? get currentModelSnapshot =>
-      _chatService.currentModelSnapshot;
+      _host.currentModelSnapshot;
 
-  int? get diagnosticsContextLimit => _chatService.sessionDiagnosticsContextLimit;
+  int? get diagnosticsContextLimit => _host.sessionDiagnosticsContextLimit;
 
-  List<String> get defaultToolIds => _chatService.defaultToolIds;
+  List<String> get defaultToolIds => _host.defaultToolIds;
 
-  bool get workspaceToolsEnabled => _chatService.workspaceToolsEnabled;
+  bool get workspaceToolsEnabled => _host.workspaceToolsEnabled;
 
   // ── Construction ────────────────────────────────────────────────────────
 
@@ -64,14 +66,21 @@ class ChatSessionManager implements Disposable {
     required ChatStream<ChatToken> chatStream,
     required LlamaServerManager serverManager,
     required ToolService toolService,
+    ChatToolExecutionPort? toolExecution,
     required PreferencesService preferencesService,
-    required ChatService chatService,
+    required ChatSessionHost host,
   }) : _messageStore = messageStore,
        _chatStream = chatStream,
        _serverManager = serverManager,
        _toolService = toolService,
+       _toolExecution =
+           toolExecution ??
+           ChatToolExecutionService(
+             toolService: toolService,
+             messageStore: messageStore,
+           ),
        _preferencesService = preferencesService,
-       _chatService = chatService {
+       _host = host {
     _tokenWriter = BufferedTokenWriter(
       messageStore: _messageStore,
       onFlush: requestContextEstimateUpdate,
@@ -302,7 +311,7 @@ class ChatSessionManager implements Disposable {
 
   /// Updates workspace state and marks the session as dirty (triggers autosave).
   void markWorkspaceChanged() {
-    _chatService.markWorkspaceChanged();
+    _host.markWorkspaceChanged();
   }
 
   // ── Streaming internals ─────────────────────────────────────────────────
@@ -323,7 +332,7 @@ class ChatSessionManager implements Disposable {
       } else {
         _serverManager.diagnostics.recordCompactionStarted(message);
       }
-      _chatService.sessionNotifyListeners();
+      _host.sessionNotifyListeners();
     }
 
     final result = await manager.compactIfNeeded(
@@ -424,47 +433,12 @@ class ChatSessionManager implements Disposable {
     required CancellationToken token,
     required int generationId,
   }) async {
-    final assistantBubble = _messageStore.currentMessage;
-
-    if (assistantBubble == null) {
-      _messageStore.clearCurrentId();
-      return;
-    }
-
-    for (final entry in calls) {
-      token.throwIfCancelled();
-      final toolIndex = entry.key;
-      final toolCall = entry.value;
-
-      final toolName = toolCall.name;
-      final argsJson = toolCall.arguments;
-
-      if (toolName == null || argsJson == null) {
-        _persistToolResult(
-          assistantBubble.id,
-          toolIndex,
-          toolCall.copyWith(result: '{"error":"missing tool name or args"}'),
-        );
-        continue;
-      }
-
-      final resultJson = await _toolService.execute(
-        toolId: toolName,
-        argumentsJson: argsJson,
-        context: workspace != null && !workspace!.missing
-            ? WorkspaceToolContext(
-                workspace: workspace!,
-                cancellationToken: token,
-              )
-            : null,
-      );
-      token.throwIfCancelled();
-      _persistToolResult(
-        assistantBubble.id,
-        toolIndex,
-        toolCall.copyWith(result: resultJson),
-      );
-    }
+    final assistantBubble = await _toolExecution.executePendingCalls(
+      calls: calls,
+      workspace: workspace,
+      cancellationToken: token,
+    );
+    if (assistantBubble == null) return;
 
     token.throwIfCancelled();
     await _streamGenerationRequest(
@@ -481,19 +455,6 @@ class ChatSessionManager implements Disposable {
   bool _isActiveGeneration(CancellationToken token, int generationId) =>
       identical(_activeGenerationToken, token) &&
       generationId == _generationSerial;
-
-  void _persistToolResult(
-    String bubbleId,
-    int toolIndex,
-    BubbleToolCall result,
-  ) {
-    final index = _messageStore.messages.indexWhere((m) => m.id == bubbleId);
-    if (index < 0) return;
-    final bubble = _messageStore.messages[index];
-    final tools = Map<int, BubbleToolCall>.from(bubble.tools);
-    tools[toolIndex] = result;
-    _messageStore.upsert(bubble.copyWith(tools: tools));
-  }
 
   Bubble _withCancelledPendingTools(Bubble bubble) {
     if (bubble.tools.isEmpty) return bubble;
@@ -617,7 +578,7 @@ class ChatSessionManager implements Disposable {
 
   /// Requests that the service layer update context estimation.
   void requestContextEstimateUpdate({bool immediate = false}) {
-    _chatService.requestContextEstimateUpdate(immediate: immediate);
+    _host.requestContextEstimateUpdate(immediate: immediate);
   }
 
   // ── Message helpers ─────────────────────────────────────────────────────
@@ -644,7 +605,7 @@ class ChatSessionManager implements Disposable {
     List<Bubble> messages, {
     String? currentUserRequest,
   }) {
-    final promptText = _chatService.buildSystemPrompt(
+    final promptText = _host.buildSystemPrompt(
       currentUserRequest: currentUserRequest,
     );
     if (messages.isEmpty) {
@@ -680,37 +641,37 @@ class ChatSessionManager implements Disposable {
   // ── Task model output helpers ───────────────────────────────────────────
 
   void ensureTaskModelTextSection(String label, String section) {
-    if (_chatService.sessionTaskModelOutputLabel() != label) {
-      _chatService.setSessionTaskModelOutputLabel(label);
-      _chatService.setSessionTaskModelOutputTextSection(null);
-      _chatService.taskModelOutputText += '\n\n## $label\n';
+    if (_host.sessionTaskModelOutputLabel() != label) {
+      _host.setSessionTaskModelOutputLabel(label);
+      _host.setSessionTaskModelOutputTextSection(null);
+      _host.taskModelOutputText += '\n\n## $label\n';
     }
-    if (_chatService.sessionTaskModelOutputTextSection() == section) return;
-    _chatService.setSessionTaskModelOutputTextSection(section);
+    if (_host.sessionTaskModelOutputTextSection() == section) return;
+    _host.setSessionTaskModelOutputTextSection(section);
     switch (section) {
       case 'output':
       case 'tool-call':
       case 'tool-result':
       case 'error':
-        _chatService.taskModelOutputText += '\n';
+        _host.taskModelOutputText += '\n';
     }
   }
 
   void ensureTaskModelReasoningSection(String label) {
-    if (_chatService.sessionTaskModelOutputReasoningLabel() == label) return;
-    _chatService.setSessionTaskModelOutputReasoningLabel(label);
-    final current = _chatService.taskModelOutputReasoning;
-    _chatService.taskModelOutputReasoning =
+    if (_host.sessionTaskModelOutputReasoningLabel() == label) return;
+    _host.setSessionTaskModelOutputReasoningLabel(label);
+    final current = _host.taskModelOutputReasoning;
+    _host.taskModelOutputReasoning =
         '${current.trim().isEmpty ? '' : '\n\n'}## $label\n';
   }
 
   void appendTaskModelText(String text) {
-    _chatService.taskModelOutputText += text;
+    _host.taskModelOutputText += text;
   }
 
   void finishTaskModelOutputBubbleFromService({required bool clearCurrent}) {
-    // This method is called by ChatService to delegate bubble finishing.
-    // It's a pass-through; the actual logic lives in ChatSessionManager.
+    // This method is called by the façade to delegate bubble finishing.
+    // The session manager owns the actual bubble lifecycle.
     finishTaskModelOutputBubble(clearCurrent: clearCurrent);
   }
 

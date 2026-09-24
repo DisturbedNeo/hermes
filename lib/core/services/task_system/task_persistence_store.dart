@@ -1,0 +1,100 @@
+import 'package:hermes/core/models/task.dart';
+import 'package:hermes/core/models/workspace.dart';
+import 'package:hermes/core/services/persistence_contracts.dart';
+import 'package:hermes/core/services/task_system/task_repository.dart';
+import 'package:hermes/core/services/task_system/task_summary.dart';
+
+/// Owns all task-document and task-history storage access.
+///
+/// Task execution and planning deliberately depend on this small boundary
+/// instead of reaching into [TaskRepository] for individual writes. The
+/// repository remains the durable implementation and retains its optimistic
+/// concurrency and history semantics.
+class TaskPersistenceStore {
+  TaskPersistenceStore({required TaskRepository repository})
+    : _repository = repository;
+
+  final TaskRepository _repository;
+
+  TaskRepository get repository => _repository;
+
+  Future<PersistedSnapshot<Task>> save(
+    String workspaceRoot,
+    Task task, {
+    int? expectedRevision,
+  }) => _repository.saveSnapshot(
+    workspaceRoot,
+    task,
+    expectedRevision: expectedRevision,
+  );
+
+  Future<PersistedSnapshot<Task>?> load(
+    String workspaceRoot,
+    String taskId, {
+    String? chatSessionId,
+    String? projectId,
+    bool includeHistory = true,
+  }) => _repository.loadTask(
+    workspaceRoot,
+    taskId,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+    includeHistory: includeHistory,
+  );
+
+  Future<PersistedSnapshot<Task>?> loadLatest(
+    String workspaceRoot, {
+    String? chatSessionId,
+    String? projectId,
+  }) => _repository.loadLatestTask(
+    workspaceRoot,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+  );
+
+  Future<List<TaskSummary>> list(
+    String workspaceRoot, {
+    String? chatSessionId,
+    String? projectId,
+  }) => _repository.listTasks(
+    workspaceRoot,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+  );
+
+  Future<PersistedRevision?> revisionOf(String workspaceRoot, String taskId) =>
+      _repository.revisionOf(workspaceRoot, taskId);
+
+  Future<int> deleteForChatSession(
+    String workspaceRoot, {
+    required String chatSessionId,
+  }) => _repository.deleteTasksForChatSession(
+    workspaceRoot,
+    chatSessionId: chatSessionId,
+  );
+
+  Future<int> deleteOrphaned(
+    String workspaceRoot, {
+    required Set<String> retainedChatSessionIds,
+  }) => _repository.deleteOrphanedChatTasks(
+    workspaceRoot,
+    retainedChatSessionIds: retainedChatSessionIds,
+  );
+
+  Future<bool> delete(String workspaceRoot, Task task) =>
+      _repository.deleteTask(workspaceRoot, task.id);
+
+  Future<Task?> loadForWorkspace(
+    WorkspaceAttachment workspace,
+    String taskId, {
+    String? chatSessionId,
+    String? projectId,
+    bool includeHistory = true,
+  }) async => (await load(
+    workspace.rootPath,
+    taskId,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+    includeHistory: includeHistory,
+  ))?.value;
+}

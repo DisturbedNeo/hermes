@@ -6,12 +6,22 @@ import 'package:hermes/core/services/chat/chat_tabs_service.dart';
 import 'package:hermes/core/services/chat_library_repository.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/project_system/project_orchestrator.dart';
+import 'package:hermes/core/services/project_system/project_aggregate_repository.dart';
+import 'package:hermes/core/services/project_system/project_command_service.dart';
+import 'package:hermes/core/services/project_system/project_repository.dart';
+import 'package:hermes/core/services/project_system/project_state_store.dart';
+import 'package:hermes/core/services/project_system/project_recovery_service.dart';
 import 'package:hermes/core/services/planning_runtime.dart';
 import 'package:hermes/core/services/planning_structured_output.dart';
 import 'package:hermes/core/services/system_prompt_library_repository.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/core/services/task_system/task_repository.dart';
+import 'package:hermes/core/services/task_system/task_persistence_store.dart';
+import 'package:hermes/core/services/task_system/task_planning_coordinator.dart';
+import 'package:hermes/core/services/task_system/task_recovery_service.dart';
+import 'package:hermes/core/services/task_system/task_model_completion_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
+import 'package:hermes/core/services/task_system/task_tool_execution_service.dart';
 import 'package:hermes/core/services/task_system/task_planning_service.dart';
 import 'package:hermes/core/services/task_system/task_orchestrator.dart';
 import 'package:hermes/core/services/theme_manager.dart';
@@ -48,17 +58,56 @@ class AppDependencies {
     const planningRunner = PlanningToolCallRunner();
     const structuredOutput = StructuredPlanningOutputService();
     const taskPlanner = TaskPlanningService(runner: planningRunner);
+    const taskPlanningCoordinator = TaskPlanningCoordinator(
+      planner: taskPlanner,
+    );
+    const taskRecoveryService = TaskRecoveryService();
+    final taskModelCompletion = TaskModelCompletionService(
+      structuredOutput: structuredOutput,
+    );
+    final taskToolExecution = TaskToolExecutionService(
+      toolService: toolService,
+      sandbox: workspaceSandbox,
+    );
     final persistenceCoordinator = WorkspacePersistenceCoordinator();
     final taskRepository = TaskRepository(coordinator: persistenceCoordinator);
+    final taskPersistenceStore = TaskPersistenceStore(
+      repository: taskRepository,
+    );
     final taskService = TaskService(
       toolService: toolService,
       sandbox: workspaceSandbox,
-      repository: taskRepository,
-      planner: taskPlanner,
+      persistenceStore: taskPersistenceStore,
+      planningCoordinator: taskPlanningCoordinator,
+      recoveryService: taskRecoveryService,
+      modelCompletion: taskModelCompletion,
+      toolExecution: taskToolExecution,
       structuredOutput: structuredOutput,
+    );
+    final projectRepository = ProjectRepository(
+      coordinator: persistenceCoordinator,
+    );
+    final projectAggregateRepository = ProjectAggregateRepository(
+      projectRepository: projectRepository,
+      taskRepository: taskRepository,
+      coordinator: persistenceCoordinator,
+    );
+    final projectStateStore = ProjectStateStore(
+      projectRepository: projectRepository,
+      aggregateRepository: projectAggregateRepository,
+      taskService: taskService,
+    );
+    final projectCommandService = ProjectCommandService(
+      stateStore: projectStateStore,
+      persistenceCoordinator: persistenceCoordinator,
     );
     final projectOrchestrator = ProjectOrchestrator(
       taskService: taskService,
+      repository: projectRepository,
+      aggregateRepository: projectAggregateRepository,
+      stateStore: projectStateStore,
+      commandService: projectCommandService,
+      recoveryService: const ProjectRecoveryService(),
       persistenceCoordinator: persistenceCoordinator,
       planningRunner: planningRunner,
       structuredOutput: structuredOutput,

@@ -8,6 +8,7 @@ import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/persistence_contracts.dart';
 import 'package:hermes/core/services/project_system/orchestration_contracts.dart';
 import 'package:hermes/core/services/project_system/project_completion_service.dart';
+import 'package:hermes/core/services/project_system/project_command_service.dart';
 import 'package:hermes/core/services/project_system/project_lifecycle_service.dart';
 import 'package:hermes/core/services/project_system/project_orchestrator.dart';
 import 'package:hermes/core/services/task_system/task_lifecycle_service.dart';
@@ -117,10 +118,10 @@ void main() {
     var executionCalls = 0;
     final orchestrator = ProjectOrchestrator(
       taskService: taskService,
-      executionOverride: (request) async {
+      executionPort: CallbackProjectExecutionPort((request) async {
         executionCalls++;
         return ProjectCommandResult.fromSnapshot(project: request.snapshot);
-      },
+      }),
     );
     final saved = await orchestrator.repository.saveSnapshot(
       root.path,
@@ -142,14 +143,14 @@ void main() {
       var recoveryCalls = 0;
       final orchestrator = ProjectOrchestrator(
         taskService: taskService,
-        executionOverride: (request) async {
+        executionPort: CallbackProjectExecutionPort((request) async {
           executionCalls++;
           return ProjectCommandResult.fromSnapshot(project: request.snapshot);
-        },
-        recoveryOverride: (request) async {
+        }),
+        recoveryPort: CallbackProjectRecoveryPort((request) async {
           recoveryCalls++;
           return ProjectCommandResult.fromSnapshot(project: request.snapshot);
-        },
+        }),
       );
       final saved = await orchestrator.repository.saveSnapshot(
         root.path,
@@ -184,7 +185,9 @@ void main() {
       final release = Completer<ProjectCommandResult>();
       final orchestrator = ProjectOrchestrator(
         taskService: taskService,
-        executionOverride: (request) => release.future,
+        executionPort: CallbackProjectExecutionPort(
+          (request) => release.future,
+        ),
       );
       final saved = await orchestrator.repository.saveSnapshot(
         root.path,

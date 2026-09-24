@@ -146,6 +146,23 @@ class TaskRepository {
     );
   }
 
+  /// Reads only the snapshot envelope revision. The task document and run
+  /// history are not decoded, so this is suitable for optimistic-concurrency
+  /// checks.
+  Future<PersistedRevision?> revisionOf(
+    String workspaceRoot,
+    String taskId, {
+    bool assumeLocked = false,
+  }) async {
+    if (!assumeLocked) {
+      return _coordinator.synchronized(
+        workspaceRoot,
+        () => revisionOf(workspaceRoot, taskId, assumeLocked: true),
+      );
+    }
+    return revisionOfUnlocked(workspaceRoot, taskId);
+  }
+
   Future<PersistedSnapshot<Task>?> _loadTaskSnapshotUnlocked(
     String workspaceRoot,
     String taskId, {
@@ -202,6 +219,22 @@ class TaskRepository {
     );
   }
 
+  /// Internal revision-only read. The caller must hold the workspace lock.
+  Future<PersistedRevision?> revisionOfUnlocked(
+    String workspaceRoot,
+    String taskId,
+  ) async {
+    final dir = _validatedTaskDirectory(workspaceRoot, taskId);
+    final file = File(path.join(dir.path, documentFileName));
+    final raw = await _snapshots.readMapWithoutRepair(file);
+    if (raw == null) return null;
+    final envelope = SnapshotEnvelope.decode(raw.map);
+    return PersistedRevision(
+      revision: envelope.revision,
+      fromBackup: raw.fromBackup,
+    );
+  }
+
   Future<PersistedSnapshot<Task>> saveSnapshot(
     String workspaceRoot,
     Task task, {
@@ -234,11 +267,7 @@ class TaskRepository {
     final dir = _validatedTaskDirectory(workspaceRoot, task.id);
     await dir.create(recursive: true);
     final file = File(path.join(dir.path, documentFileName));
-    final current = await _loadTaskSnapshotUnlocked(
-      workspaceRoot,
-      task.id,
-      includeHistory: true,
-    );
+    final current = await revisionOfUnlocked(workspaceRoot, task.id);
     final actualRevision = current?.revision ?? 0;
     final requiredRevision = expectedRevision ?? task.persistenceRevision;
     if (requiredRevision != actualRevision) {

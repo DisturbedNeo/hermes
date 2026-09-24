@@ -21,6 +21,14 @@ class PersistedSnapshot<T> {
   }
 }
 
+/// The revision metadata for a persisted document without decoding its body.
+class PersistedRevision {
+  const PersistedRevision({required this.revision, this.fromBackup = false});
+
+  final int revision;
+  final bool fromBackup;
+}
+
 /// The persisted wrapper around a project or task document.
 class SnapshotEnvelope {
   const SnapshotEnvelope({required this.revision, required this.document});

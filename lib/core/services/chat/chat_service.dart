@@ -20,6 +20,9 @@ import 'package:hermes/core/helpers/chat/assistant_ops.dart';
 import 'package:hermes/core/helpers/chat/content_normaliser.dart';
 import 'package:hermes/core/services/chat/chat_library_service.dart';
 import 'package:hermes/core/services/chat/chat_session_manager.dart';
+import 'package:hermes/core/services/chat/chat_session_host.dart';
+import 'package:hermes/core/services/chat/chat_command_coordinator.dart';
+import 'package:hermes/core/services/chat/chat_tool_execution_service.dart';
 import 'package:hermes/core/services/chat/chat_stream.dart';
 import 'package:hermes/core/services/chat/message_store.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
@@ -38,7 +41,8 @@ import 'package:hermes/core/services/workspace_service.dart';
 
 import '../disposable.dart';
 
-class ChatService extends ChangeNotifier implements Disposable {
+class ChatService extends ChangeNotifier
+    implements Disposable, ChatSessionHost {
   static const String defaultSystemPromptName = 'Default';
   static const String defaultSystemPromptText = 'You are a helpful assistant.';
   static const Duration _contextEstimateThrottle = Duration(milliseconds: 500);
@@ -57,6 +61,7 @@ class ChatService extends ChangeNotifier implements Disposable {
   final ChatLibraryService _chatLibrary;
   final WorkspaceService _workspaceService;
   final PreferencesService _preferencesService;
+  final ChatCommandCoordinator _commandCoordinator;
   final PromptAssembler _promptAssembler = const PromptAssembler();
 
   late final Bubble systemPrompt = Bubble(
@@ -84,9 +89,11 @@ class ChatService extends ChangeNotifier implements Disposable {
 
   String? currentChatId;
   SavedChat? currentSavedChat;
+  @override
   ModelConfigurationSnapshot? currentModelSnapshot;
   ModelConfigurationSnapshot? pendingModelRestore;
   String? pendingModelRestoreIssue;
+  @override
   WorkspaceAttachment? workspace;
   SystemPromptSnapshot? currentSystemPromptSnapshot;
   ExecutionMode executionMode = ExecutionMode.chat;
@@ -101,7 +108,9 @@ class ChatService extends ChangeNotifier implements Disposable {
   String? taskStatusMessage;
   Object? taskError;
   String? taskModelOutputTitle;
+  @override
   String taskModelOutputText = '';
+  @override
   String taskModelOutputReasoning = '';
   bool taskModelOutputActive = false;
   ChatSaveFailure? saveFailure;
@@ -109,7 +118,6 @@ class ChatService extends ChangeNotifier implements Disposable {
   String? _taskModelOutputTextSection;
   String? _taskModelOutputReasoningLabel;
   int? _taskModelOutputContextEstimate;
-  CancellationToken? _taskCancellationToken;
   late final ThrottledScheduler _contextEstimateScheduler;
   late final ThrottledScheduler _taskModelOutputNotifier;
 
@@ -125,6 +133,8 @@ class ChatService extends ChangeNotifier implements Disposable {
     required ChatLibraryService chatLibrary,
     required WorkspaceService workspaceService,
     required PreferencesService preferencesService,
+    ChatCommandCoordinator? commandCoordinator,
+    ChatToolExecutionPort? toolExecution,
     SystemPromptSnapshot? initialSystemPromptSnapshot,
   }) : tabId = tabId ?? uuid.v7(),
        _toolService = toolService,
@@ -132,7 +142,8 @@ class ChatService extends ChangeNotifier implements Disposable {
        _workspaceService = workspaceService,
        _preferencesService = preferencesService,
        _taskService = taskService,
-       _projectOrchestrator = projectOrchestrator {
+       _projectOrchestrator = projectOrchestrator,
+       _commandCoordinator = commandCoordinator ?? ChatCommandCoordinator() {
     currentSystemPromptSnapshot = initialSystemPromptSnapshot;
     messageStore.setMessages([systemPrompt]);
 
@@ -159,39 +170,51 @@ class ChatService extends ChangeNotifier implements Disposable {
       serverManager: serverManager,
       toolService: _toolService,
       preferencesService: _preferencesService,
-      chatService: this,
+      host: this,
+      toolExecution: toolExecution,
     );
   }
 
   // Session hooks used by the streaming implementation.
+  @override
   int? get sessionDiagnosticsContextLimit => _diagnosticsContextLimit;
 
+  @override
   String? sessionTaskModelOutputLabel() => _taskModelOutputLabel;
+  @override
   void setSessionTaskModelOutputLabel(String? value) {
     _taskModelOutputLabel = value;
   }
 
+  @override
   String? sessionTaskModelOutputTextSection() => _taskModelOutputTextSection;
+  @override
   void setSessionTaskModelOutputTextSection(String? value) {
     _taskModelOutputTextSection = value;
   }
 
+  @override
   String? sessionTaskModelOutputReasoningLabel() =>
       _taskModelOutputReasoningLabel;
+  @override
   void setSessionTaskModelOutputReasoningLabel(String? value) {
     _taskModelOutputReasoningLabel = value;
   }
 
+  @override
   String buildSystemPrompt({String? currentUserRequest}) =>
       _buildSystemPrompt(currentUserRequest: currentUserRequest);
 
+  @override
   void markWorkspaceChanged() {
     _markPersistableChange();
     notifyListeners();
   }
 
+  @override
   void sessionNotifyListeners() => notifyListeners();
 
+  @override
   void requestContextEstimateUpdate({bool immediate = false}) {
     _requestContextEstimateUpdate(immediate: immediate);
   }
@@ -221,6 +244,7 @@ class ChatService extends ChangeNotifier implements Disposable {
   bool get hasActiveWorkspace =>
       workspace != null && workspace?.missing != true;
 
+  @override
   bool get workspaceToolsEnabled => hasActiveWorkspace;
 
   String? get activeTaskJson =>
@@ -230,6 +254,7 @@ class ChatService extends ChangeNotifier implements Disposable {
       ? null
       : _projectOrchestrator.encodeProject(activeProject!);
 
+  @override
   List<String> get defaultToolIds => workspaceToolsEnabled
       ? _toolService.defaultToolIds(includeWorkspaceTools: true)
       : const [];
@@ -655,12 +680,15 @@ class ChatService extends ChangeNotifier implements Disposable {
 
   Future<void> cancelTaskRun() async {
     if (!taskBusy) return;
-    final token = _taskCancellationToken;
+    final token = _commandCoordinator.activeToken;
     taskCancellationRequested = true;
     taskStatusMessage = 'Cancelling run...';
     notifyListeners();
-    if (token == null) return;
-    await token.cancel();
+    if (token == null) {
+      await _commandCoordinator.cancel();
+      return;
+    }
+    await _commandCoordinator.cancel();
   }
 
   Future<void> reloadTasks() async {
@@ -1942,19 +1970,13 @@ class ChatService extends ChangeNotifier implements Disposable {
   }
 
   CancellationToken _beginTaskCancellationScope({bool reuseExisting = false}) {
-    if (reuseExisting) {
-      final existing = _taskCancellationToken;
-      if (existing != null) return existing;
-    }
-    final token = CancellationToken();
-    _taskCancellationToken = token;
+    final token = _commandCoordinator.begin(reuseExisting: reuseExisting);
     taskCancellationRequested = false;
     return token;
   }
 
   void _endTaskCancellationScope(CancellationToken token) {
-    if (!identical(_taskCancellationToken, token)) return;
-    _taskCancellationToken = null;
+    _commandCoordinator.end(token);
     taskCancellationRequested = false;
   }
 

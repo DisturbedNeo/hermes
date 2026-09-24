@@ -18,6 +18,20 @@ class ProjectLoadResult {
   final ProjectPersistenceDiagnostics diagnostics;
 }
 
+/// Revision and storage-health information gathered without decoding task
+/// documents or loading task run history.
+class ProjectRevisionCheckResult {
+  const ProjectRevisionCheckResult({
+    required this.projectRevision,
+    required this.taskRevisions,
+    required this.diagnostics,
+  });
+
+  final PersistedRevision? projectRevision;
+  final Map<String, PersistedRevision?> taskRevisions;
+  final ProjectPersistenceDiagnostics diagnostics;
+}
+
 class ProjectAggregateCommitResult {
   const ProjectAggregateCommitResult({
     required this.project,
@@ -60,6 +74,20 @@ class ProjectAggregateRepository {
         projectId,
         chatSessionId: chatSessionId,
       ),
+    );
+  }
+
+  /// Checks aggregate health and revisions using only snapshot envelopes.
+  ///
+  /// This is the cheap path used before a command starts. Full aggregate
+  /// decoding remains available through [loadProject] and [inspect].
+  Future<ProjectRevisionCheckResult> checkRevisions(
+    String workspaceRoot,
+    ProjectDocument project,
+  ) {
+    return _coordinator.synchronized(
+      workspaceRoot,
+      () => _checkRevisionsUnlocked(workspaceRoot, project),
     );
   }
 
@@ -127,6 +155,79 @@ class ProjectAggregateRepository {
     );
   }
 
+  Future<ProjectRevisionCheckResult> _checkRevisionsUnlocked(
+    String workspaceRoot,
+    ProjectDocument project,
+  ) async {
+    var diagnostics = await _transactionDiagnostics(workspaceRoot);
+    PersistedRevision? projectRevision;
+    try {
+      projectRevision = await _projects.revisionOfUnlocked(
+        workspaceRoot,
+        project.id,
+      );
+      if (projectRevision?.fromBackup == true) {
+        diagnostics = diagnostics.merge(
+          ProjectPersistenceDiagnostics(
+            issues: ['Project primary snapshot is corrupt; loaded backup.'],
+            recoveredFromBackup: [project.id],
+          ),
+        );
+      }
+    } catch (error) {
+      diagnostics = diagnostics.merge(
+        ProjectPersistenceDiagnostics(
+          issues: ['Project ${project.id} could not be read: $error'],
+        ),
+      );
+    }
+
+    // A newly-created project may be passed to the runner before its first
+    // aggregate commit. There is no canonical task set to validate yet.
+    if (projectRevision == null) {
+      return ProjectRevisionCheckResult(
+        projectRevision: null,
+        taskRevisions: const {},
+        diagnostics: diagnostics,
+      );
+    }
+
+    final taskRevisions = <String, PersistedRevision?>{};
+    final taskIds = <String>{
+      ...project.taskIds,
+      ...project.tasks.map((task) => task.id),
+    };
+    for (final taskId in taskIds) {
+      try {
+        final revision = await _tasks.revisionOfUnlocked(workspaceRoot, taskId);
+        taskRevisions[taskId] = revision;
+        if (revision == null) {
+          diagnostics = diagnostics.merge(
+            ProjectPersistenceDiagnostics(missingTaskIds: [taskId]),
+          );
+        } else if (revision.fromBackup) {
+          diagnostics = diagnostics.merge(
+            ProjectPersistenceDiagnostics(recoveredFromBackup: [taskId]),
+          );
+        }
+      } catch (error) {
+        taskRevisions[taskId] = null;
+        diagnostics = diagnostics.merge(
+          ProjectPersistenceDiagnostics(
+            corruptTaskIds: [taskId],
+            issues: ['Task $taskId could not be read: $error'],
+          ),
+        );
+      }
+    }
+
+    return ProjectRevisionCheckResult(
+      projectRevision: projectRevision,
+      taskRevisions: taskRevisions,
+      diagnostics: diagnostics,
+    );
+  }
+
   Future<ProjectPersistenceDiagnostics> inspect(
     String workspaceRoot,
     ProjectDocument project,
@@ -143,6 +244,7 @@ class ProjectAggregateRepository {
     required ProjectDocument project,
     required Iterable<Task> tasks,
     Set<String> deletedTaskIds = const {},
+    ProjectPersistenceDiagnostics? knownHealth,
   }) {
     return _coordinator.synchronized(
       workspaceRoot,
@@ -151,6 +253,7 @@ class ProjectAggregateRepository {
         project: project,
         tasks: tasks.toList(growable: false),
         deletedTaskIds: deletedTaskIds,
+        knownHealth: knownHealth,
       ),
     );
   }
@@ -160,16 +263,16 @@ class ProjectAggregateRepository {
     required ProjectDocument project,
     required List<Task> tasks,
     required Set<String> deletedTaskIds,
+    ProjectPersistenceDiagnostics? knownHealth,
   }) async {
-    final health = (await _loadProjectUnlocked(
-      workspaceRoot,
-      project.id,
-    )).diagnostics;
+    final health =
+        knownHealth ??
+        (await _loadProjectUnlocked(workspaceRoot, project.id)).diagnostics;
     if (health.isReadOnly) {
       throw ProjectPersistenceBlockedException(health);
     }
 
-    final currentProject = await _projects.loadProjectSnapshotUnlocked(
+    final currentProject = await _projects.revisionOfUnlocked(
       workspaceRoot,
       project.id,
     );
@@ -190,11 +293,7 @@ class ProjectAggregateRepository {
     for (final task in tasks) {
       if (uniqueTasks.containsKey(task.id)) continue;
       uniqueTasks[task.id] = task;
-      final current = await _tasks.loadTaskSnapshotUnlocked(
-        workspaceRoot,
-        task.id,
-        includeHistory: true,
-      );
+      final current = await _tasks.revisionOfUnlocked(workspaceRoot, task.id);
       final actualRevision = current?.revision ?? 0;
       if (task.persistenceRevision != actualRevision) {
         throw StaleSnapshotException(
@@ -225,15 +324,11 @@ class ProjectAggregateRepository {
     try {
       final persistedTasks = <String, PersistedSnapshot<Task>>{};
       for (final task in uniqueTasks.values) {
-        await _tasks.saveSnapshot(workspaceRoot, task);
-        final persisted = await _tasks.loadTaskSnapshotUnlocked(
+        final persisted = await _tasks.saveSnapshot(
           workspaceRoot,
-          task.id,
-          includeHistory: true,
+          task,
+          expectedRevision: task.persistenceRevision,
         );
-        if (persisted == null) {
-          throw const FormatException('Task disappeared after aggregate write');
-        }
         persistedTasks[task.id] = persisted;
       }
       for (final taskId in deletedTaskIds) {

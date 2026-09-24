@@ -24,6 +24,11 @@ import 'package:hermes/core/services/project_system/project_plan_revision_servic
 import 'package:hermes/core/services/project_system/project_progress_monitor.dart';
 import 'package:hermes/core/services/project_system/project_repository.dart';
 import 'package:hermes/core/services/project_system/project_aggregate_repository.dart';
+import 'package:hermes/core/services/project_system/project_state_store.dart';
+import 'package:hermes/core/services/project_system/project_command_service.dart';
+import 'package:hermes/core/services/project_system/project_run_loop.dart';
+import 'package:hermes/core/services/project_system/project_planning_coordinator.dart';
+import 'package:hermes/core/services/project_system/project_recovery_service.dart';
 import 'package:hermes/core/services/project_system/project_scheduler.dart';
 import 'package:hermes/core/services/question_policy_service.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
@@ -44,6 +49,7 @@ int taskStepLimit(TaskEffort effort) => switch (effort) {
 };
 
 /// Application-facing project command and lifecycle boundary.
+/// Stable application façade retained for UI and command callers.
 class ProjectOrchestrator {
   ProjectOrchestrator({
     required TaskService taskService,
@@ -55,14 +61,253 @@ class ProjectOrchestrator {
     ProjectProgressMonitor? progressMonitor,
     WorkspacePersistenceCoordinator? persistenceCoordinator,
     ProjectAggregateRepository? aggregateRepository,
+    ProjectStateStore? stateStore,
+    ProjectCommandService? commandService,
+    ProjectExecutionPort? executionPort,
+    ProjectRecoveryPort? recoveryPort,
     PlanningToolCallRunner planningRunner = const PlanningToolCallRunner(),
     StructuredPlanningOutputService structuredOutput =
         const StructuredPlanningOutputService(),
     ProjectLifecycleService lifecycle = const ProjectLifecycleService(),
     TaskLifecycleService? taskLifecycle,
     ProjectCompletionService? completion,
-    ProjectExecutionDelegate? executionOverride,
-    ProjectRecoveryDelegate? recoveryOverride,
+    ProjectRecoveryService? recoveryService,
+  }) : _runtime = _ProjectRuntimeService(
+         taskService: taskService,
+         repository: repository,
+         planner: planner,
+         completionEvaluator: completionEvaluator,
+         scheduler: scheduler,
+         memoryService: memoryService,
+         progressMonitor: progressMonitor,
+         persistenceCoordinator: persistenceCoordinator,
+         aggregateRepository: aggregateRepository,
+         stateStore: stateStore,
+         commandService: commandService,
+         executionPort: executionPort,
+         recoveryPort: recoveryPort,
+         planningRunner: planningRunner,
+         structuredOutput: structuredOutput,
+         lifecycle: lifecycle,
+         taskLifecycle: taskLifecycle,
+         completion: completion,
+         recoveryService: recoveryService,
+       );
+
+  final _ProjectRuntimeService _runtime;
+
+  ProjectRepository get repository => _runtime.repository;
+
+  Future<ProjectCommandResult> execute(ProjectExecutionRequest request) =>
+      _runtime.execute(request);
+
+  Future<ProjectCommandResult> executeUntilStop(
+    ProjectExecutionRequest request, {
+    required bool boundedRun,
+  }) => _runtime.executeUntilStop(request, boundedRun: boundedRun);
+
+  Future<ProjectCommandResult> recover(ProjectRecoveryRequest request) =>
+      _runtime.recover(request);
+
+  Future<List<ProjectSummary>> listProjects(
+    WorkspaceAttachment workspace, {
+    String? chatSessionId,
+  }) => _runtime.listProjects(workspace, chatSessionId: chatSessionId);
+
+  Future<ProjectDocument?> loadLatestProject(
+    WorkspaceAttachment workspace, {
+    String? chatSessionId,
+  }) => _runtime.loadLatestProject(workspace, chatSessionId: chatSessionId);
+
+  Future<ProjectLoadResult> loadLatestProjectResult(
+    WorkspaceAttachment workspace, {
+    String? chatSessionId,
+  }) =>
+      _runtime.loadLatestProjectResult(workspace, chatSessionId: chatSessionId);
+
+  Future<ProjectDocument?> loadProject(
+    WorkspaceAttachment workspace,
+    String projectId, {
+    String? chatSessionId,
+  }) =>
+      _runtime.loadProject(workspace, projectId, chatSessionId: chatSessionId);
+
+  Future<ProjectLoadResult> loadProjectResult(
+    WorkspaceAttachment workspace,
+    String projectId, {
+    String? chatSessionId,
+  }) => _runtime.loadProjectResult(
+    workspace,
+    projectId,
+    chatSessionId: chatSessionId,
+  );
+
+  Future<int> deleteProjectsForChatSession(
+    WorkspaceAttachment workspace, {
+    required String chatSessionId,
+  }) => _runtime.deleteProjectsForChatSession(
+    workspace,
+    chatSessionId: chatSessionId,
+  );
+
+  Future<int> deleteOrphanedChatProjects(
+    WorkspaceAttachment workspace, {
+    required Set<String> retainedChatSessionIds,
+  }) => _runtime.deleteOrphanedChatProjects(
+    workspace,
+    retainedChatSessionIds: retainedChatSessionIds,
+  );
+
+  Future<ProjectDocument> updateProjectChatSessionId({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String chatSessionId,
+  }) => _runtime.updateProjectChatSessionId(
+    workspace: workspace,
+    snapshot: snapshot,
+    chatSessionId: chatSessionId,
+  );
+
+  String encodeProject(ProjectDocument project) =>
+      _runtime.encodeProject(project);
+
+  Future<ProjectDocument> createProject({
+    required WorkspaceAttachment workspace,
+    required String userPrompt,
+    String? chatSessionId,
+    ChatClient? client,
+    String baseSystemPrompt = '',
+    int? maxIterations,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+    QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
+  }) => _runtime.createProject(
+    workspace: workspace,
+    userPrompt: userPrompt,
+    chatSessionId: chatSessionId,
+    client: client,
+    baseSystemPrompt: baseSystemPrompt,
+    maxIterations: maxIterations,
+    onModelOutput: onModelOutput,
+    cancellationToken: cancellationToken,
+    questionAutonomy: questionAutonomy,
+  );
+
+  Future<ProjectDocument> updateProject({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String rawJson,
+  }) => _runtime.updateProject(
+    workspace: workspace,
+    snapshot: snapshot,
+    rawJson: rawJson,
+  );
+
+  Future<ProjectDocument> answerOpenQuestion({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String answer,
+  }) => _runtime.answerOpenQuestion(
+    workspace: workspace,
+    snapshot: snapshot,
+    answer: answer,
+  );
+
+  Future<ProjectDocument> addUserContext({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String text,
+  }) => _runtime.addUserContext(
+    workspace: workspace,
+    snapshot: snapshot,
+    text: text,
+  );
+
+  Future<ProjectDocument> requestScopeChange({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String context,
+  }) => _runtime.requestScopeChange(
+    workspace: workspace,
+    snapshot: snapshot,
+    context: context,
+  );
+
+  Future<ProjectDocument> compactMemory({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required List<String> coveredEntryIds,
+    required String summary,
+  }) => _runtime.compactMemory(
+    workspace: workspace,
+    snapshot: snapshot,
+    coveredEntryIds: coveredEntryIds,
+    summary: summary,
+  );
+
+  Future<ProjectDocument> pauseProject({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) => _runtime.pauseProject(workspace: workspace, snapshot: snapshot);
+
+  Future<ProjectDocument> clearTaskBlocker({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) => _runtime.clearTaskBlocker(workspace: workspace, snapshot: snapshot);
+
+  Future<ProjectDocument> approvePlanRevision({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) => _runtime.approvePlanRevision(workspace: workspace, snapshot: snapshot);
+
+  Future<ProjectDocument> rejectPlanRevision({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) => _runtime.rejectPlanRevision(workspace: workspace, snapshot: snapshot);
+
+  Future<ProjectDocument> cancelProject({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) => _runtime.cancelProject(workspace: workspace, snapshot: snapshot);
+
+  Future<ProjectDocument> stopProject({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) => _runtime.stopProject(workspace: workspace, snapshot: snapshot);
+
+  Future<ProjectDocument> retryRecoveryIncident({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String incidentId,
+  }) => _runtime.retryRecoveryIncident(
+    workspace: workspace,
+    snapshot: snapshot,
+    incidentId: incidentId,
+  );
+}
+
+class _ProjectRuntimeService {
+  _ProjectRuntimeService({
+    required TaskService taskService,
+    ProjectRepository? repository,
+    ProjectPlanner? planner,
+    ProjectCompletionEvaluator? completionEvaluator,
+    ProjectScheduler? scheduler,
+    ProjectMemoryService? memoryService,
+    ProjectProgressMonitor? progressMonitor,
+    WorkspacePersistenceCoordinator? persistenceCoordinator,
+    ProjectAggregateRepository? aggregateRepository,
+    ProjectStateStore? stateStore,
+    ProjectCommandService? commandService,
+    ProjectExecutionPort? executionPort,
+    ProjectRecoveryPort? recoveryPort,
+    PlanningToolCallRunner planningRunner = const PlanningToolCallRunner(),
+    StructuredPlanningOutputService structuredOutput =
+        const StructuredPlanningOutputService(),
+    ProjectLifecycleService lifecycle = const ProjectLifecycleService(),
+    TaskLifecycleService? taskLifecycle,
+    ProjectCompletionService? completion,
+    ProjectRecoveryService? recoveryService,
   }) : _taskService = taskService,
        _repository =
            repository ??
@@ -73,6 +318,10 @@ class ProjectOrchestrator {
        _persistenceCoordinator =
            persistenceCoordinator ?? taskService.repository.coordinator,
        _providedAggregateRepository = aggregateRepository,
+       _providedStateStore = stateStore,
+       _providedCommandService = commandService,
+       _providedExecutionPort = executionPort,
+       _providedRecoveryPort = recoveryPort,
        _planner =
            planner ??
            ProjectModelCalls(
@@ -94,8 +343,7 @@ class ProjectOrchestrator {
        taskLifecycleService = taskLifecycle ?? const TaskLifecycleService(),
        completionService =
            completion ?? ProjectCompletionService(lifecycle: lifecycle),
-       _executionOverride = executionOverride,
-       _recoveryOverride = recoveryOverride;
+       recoveryService = recoveryService ?? const ProjectRecoveryService();
 
   final TaskService _taskService;
   final ProjectRepository _repository;
@@ -108,11 +356,12 @@ class ProjectOrchestrator {
   final ProjectLifecycleService lifecycleService;
   final TaskLifecycleService taskLifecycleService;
   final ProjectCompletionService completionService;
-  final ProjectExecutionDelegate? _executionOverride;
-  final ProjectRecoveryDelegate? _recoveryOverride;
-  final Set<String> _busyProjects = <String>{};
-  final Object _commandZoneKey = Object();
+  final ProjectRecoveryService recoveryService;
+  final ProjectCommandService? _providedCommandService;
+  final ProjectExecutionPort? _providedExecutionPort;
+  final ProjectRecoveryPort? _providedRecoveryPort;
   final ProjectAggregateRepository? _providedAggregateRepository;
+  final ProjectStateStore? _providedStateStore;
   late final ProjectAggregateRepository _aggregateRepository =
       _providedAggregateRepository ??
       ProjectAggregateRepository(
@@ -120,6 +369,25 @@ class ProjectOrchestrator {
         taskRepository: _taskService.repository,
         coordinator: _persistenceCoordinator,
       );
+  late final ProjectStateStore _stateStore =
+      _providedStateStore ??
+      ProjectStateStore(
+        projectRepository: _repository,
+        aggregateRepository: _aggregateRepository,
+        taskService: _taskService,
+      );
+  late final ProjectCommandService _commandService =
+      _providedCommandService ??
+      ProjectCommandService(
+        stateStore: _stateStore,
+        persistenceCoordinator: _persistenceCoordinator,
+        runLoop: const ProjectRunLoop(),
+      );
+  late final ProjectExecutionPort _executionPort =
+      _providedExecutionPort ??
+      CallbackProjectExecutionPort(_runProjectForCommand);
+  late final ProjectRecoveryPort _recoveryPort =
+      _providedRecoveryPort ?? CallbackProjectRecoveryPort(_recoverForCommand);
   final QuestionPolicyService _questionPolicy = const QuestionPolicyService();
   final ProjectEvidenceService _evidenceService =
       const ProjectEvidenceService();
@@ -129,6 +397,12 @@ class ProjectOrchestrator {
       ProjectDiscoveryService(
         taskService: _taskService,
         memoryService: _memoryService,
+      );
+  late final ProjectPlanningCoordinator _planningCoordinator =
+      ProjectPlanningCoordinator(
+        discovery: _discoveryService,
+        planner: _planner,
+        maxAutomaticRepairs: _maxAutomaticInitialPlanRepairs,
       );
   final ProjectPlanRevisionService _planRevisionService =
       const ProjectPlanRevisionService();
@@ -141,13 +415,8 @@ class ProjectOrchestrator {
 
   ProjectRepository get repository => _repository;
 
-  Future<ProjectCommandResult> execute(ProjectExecutionRequest request) {
-    return _withProjectCommand(
-      request.workspace,
-      request.snapshot,
-      () => _executeOnce(request),
-    );
-  }
+  Future<ProjectCommandResult> execute(ProjectExecutionRequest request) =>
+      _commandService.execute(request, port: _executionPort);
 
   /// Executes successive bounded runs until the project reaches a user-facing
   /// boundary. The command gate is held for the whole sequence, so another
@@ -155,161 +424,42 @@ class ProjectOrchestrator {
   Future<ProjectCommandResult> executeUntilStop(
     ProjectExecutionRequest request, {
     required bool boundedRun,
-  }) {
-    return _withProjectCommand(request.workspace, request.snapshot, () async {
-      var current = request;
-      while (true) {
-        final result = await _executeOnce(current);
-        if (boundedRun || !_shouldContinue(result)) return result;
-        current = current.copyWith(snapshot: result.project);
-      }
-    });
-  }
+  }) => _commandService.executeUntilStop(
+    request,
+    boundedRun: boundedRun,
+    port: _executionPort,
+  );
 
-  Future<ProjectCommandResult> recover(ProjectRecoveryRequest request) {
-    return _withProjectCommand(request.workspace, request.snapshot, () async {
-      final readOnly = await _ensureCurrentSnapshot(
-        ProjectExecutionRequest(
-          client: _NoopChatClient(),
-          workspace: request.workspace,
-          snapshot: request.snapshot,
-          baseSystemPrompt: '',
-          maxNewTasks: 0,
-        ),
-      );
-      if (readOnly != null) {
-        return ProjectCommandResult(
-          project: request.snapshot,
-          stopReason: ProjectCommandStopReason.readOnly,
-          persistenceDiagnostics: readOnly,
-        );
-      }
-      final result =
-          await (_recoveryOverride?.call(request) ??
-              _recoverProjectCore(
-                workspace: request.workspace,
-                snapshot: request.snapshot,
-                onTaskUpdated: request.onTaskUpdated,
-              ));
-      return ProjectCommandResult.withTransition(
-        result: result,
-        before: request.snapshot,
-        trigger: 'recover',
-      );
-    });
-  }
+  Future<ProjectCommandResult> recover(ProjectRecoveryRequest request) =>
+      _commandService.recover(request, port: _recoveryPort);
 
-  Future<ProjectPersistenceDiagnostics?> _ensureCurrentSnapshot(
+  Future<ProjectCommandResult> _runProjectForCommand(
     ProjectExecutionRequest request,
-  ) async {
-    final loaded = await loadProjectResult(
-      request.workspace,
-      request.snapshot.id,
-      chatSessionId: request.snapshot.chatSessionId,
-    );
-    final diagnostics = loaded.diagnostics;
-    if (diagnostics.isReadOnly) return diagnostics;
-    final current = loaded.project;
-    if (current == null) return null;
-    if (current.persistenceRevision != request.snapshot.persistenceRevision) {
-      throw StaleSnapshotException(
-        path:
-            '${ProjectRepository.projectsRoot}/${request.snapshot.id}/'
-            '${ProjectRepository.documentFileName}',
-        expectedRevision: request.snapshot.persistenceRevision,
-        actualRevision: current.persistenceRevision,
-      );
-    }
-    final currentTasks = {for (final task in current.tasks) task.id: task};
-    for (final task in request.snapshot.tasks) {
-      final currentTask = currentTasks[task.id];
-      if (currentTask == null) {
-        throw StaleSnapshotException(
-          path: '.agent/tasks/${task.id}/task.json',
-          expectedRevision: task.persistenceRevision,
-          actualRevision: -1,
-        );
-      }
-      if (currentTask.persistenceRevision != task.persistenceRevision) {
-        throw StaleSnapshotException(
-          path: '.agent/tasks/${task.id}/task.json',
-          expectedRevision: task.persistenceRevision,
-          actualRevision: currentTask.persistenceRevision,
-        );
-      }
-    }
-    return null;
-  }
+  ) => _runProjectCore(
+    client: request.client,
+    workspace: request.workspace,
+    snapshot: request.snapshot,
+    baseSystemPrompt: request.baseSystemPrompt,
+    maxNewTasks: request.maxNewTasks,
+    maxIterations: request.maxIterations,
+    requirePhaseApproval: request.requirePhaseApproval,
+    compactionSettings: request.compactionSettings,
+    contextLimitTokens: request.contextLimitTokens,
+    onCompactionStatus: request.onCompactionStatus,
+    onModelOutput: request.onModelOutput,
+    onTaskUpdated: request.onTaskUpdated,
+    cancellationToken: request.cancellationToken,
+    questionAutonomy: request.questionAutonomy,
+    planApprovalPolicy: request.planApprovalPolicy,
+  );
 
-  Future<ProjectCommandResult> _executeOnce(
-    ProjectExecutionRequest request,
-  ) async {
-    final readOnly = await _ensureCurrentSnapshot(request);
-    if (readOnly != null) {
-      return ProjectCommandResult(
-        project: request.snapshot,
-        stopReason: ProjectCommandStopReason.readOnly,
-        persistenceDiagnostics: readOnly,
-      );
-    }
-    final result =
-        await (_executionOverride?.call(request) ??
-            _runProjectCore(
-              client: request.client,
-              workspace: request.workspace,
-              snapshot: request.snapshot,
-              baseSystemPrompt: request.baseSystemPrompt,
-              maxNewTasks: request.maxNewTasks,
-              maxIterations: request.maxIterations,
-              requirePhaseApproval: request.requirePhaseApproval,
-              compactionSettings: request.compactionSettings,
-              contextLimitTokens: request.contextLimitTokens,
-              onCompactionStatus: request.onCompactionStatus,
-              onModelOutput: request.onModelOutput,
-              onTaskUpdated: request.onTaskUpdated,
-              cancellationToken: request.cancellationToken,
-              questionAutonomy: request.questionAutonomy,
-              planApprovalPolicy: request.planApprovalPolicy,
-            ));
-    return ProjectCommandResult.withTransition(
-      result: result,
-      before: request.snapshot,
-      trigger: 'execute',
-    );
-  }
-
-  bool _shouldContinue(ProjectCommandResult result) {
-    final project = result.project;
-    return project.status == ProjectStatus.paused &&
-        project.activeTaskId == null &&
-        project.pendingPlanApproval == null &&
-        project.openQuestions.isEmpty &&
-        project.blocker == null;
-  }
-
-  Future<T> _withProjectCommand<T>(
-    WorkspaceAttachment workspace,
-    ProjectDocument project,
-    Future<T> Function() operation,
-  ) async {
-    if (Zone.current[_commandZoneKey] == true) return operation();
-    final key =
-        '${_persistenceCoordinator.canonicalWorkspacePath(workspace.rootPath)}'
-        ':${project.id}';
-    if (!_busyProjects.add(key)) {
-      throw ProjectBusyException(
-        workspaceRoot: workspace.rootPath,
-        projectId: project.id,
-      );
-    }
-    return await runZoned(() async {
-      try {
-        return await operation();
-      } finally {
-        _busyProjects.remove(key);
-      }
-    }, zoneValues: {_commandZoneKey: true});
-  }
+  Future<ProjectCommandResult> _recoverForCommand(
+    ProjectRecoveryRequest request,
+  ) => _recoverProjectCore(
+    workspace: request.workspace,
+    snapshot: request.snapshot,
+    onTaskUpdated: request.onTaskUpdated,
+  );
 
   Task? _activeProjectTask(ProjectDocument project) {
     final id = project.activeTaskId;
@@ -363,17 +513,24 @@ class ProjectOrchestrator {
         );
     final preparedTasks = <Task>[];
     for (final task in refreshed.tasks) {
-      final existingSnapshot = await _taskService.repository.loadTask(
+      final changed =
+          persistenceContext == null ||
+          persistenceContext.shouldPersistTask(task);
+      final existingRevision = await _taskService.repository.revisionOf(
         workspaceRoot,
         task.id,
-        includeHistory: false,
       );
-      final existing = existingSnapshot?.value;
-      if (persistenceContext != null &&
-          !persistenceContext.shouldPersistTask(task) &&
-          existing != null) {
+      if (persistenceContext != null && !changed && existingRevision != null) {
         continue;
       }
+      final existingSnapshot = existingRevision == null
+          ? null
+          : await _taskService.repository.loadTask(
+              workspaceRoot,
+              task.id,
+              includeHistory: false,
+            );
+      final existing = existingSnapshot?.value;
       final taskToSave = _taskForPersistence(
         task,
         existing,
@@ -381,17 +538,24 @@ class ProjectOrchestrator {
         chatSessionId: refreshed.chatSessionId,
       );
       preparedTasks.add(taskToSave);
-      persistenceContext?.markPersisted(task);
     }
     final committed = await _aggregateRepository.commit(
       workspaceRoot: workspaceRoot,
       project: refreshed,
       tasks: preparedTasks,
+      knownHealth: persistenceContext?.health,
     );
     final persistedTasks = {
       for (final task in refreshed.tasks)
         task.id: committed.tasks[task.id]?.value ?? task,
     };
+    if (persistenceContext != null) {
+      for (final task in preparedTasks) {
+        persistenceContext.markPersisted(
+          committed.tasks[task.id]?.value ?? task,
+        );
+      }
+    }
     return committed.project.value.copyWith(
       tasks: [for (final task in refreshed.tasks) persistedTasks[task.id]!],
     );
@@ -558,35 +722,13 @@ class ProjectOrchestrator {
   Future<ProjectDocument> _hydrateProjectTasks(
     WorkspaceAttachment workspace,
     ProjectDocument project,
-  ) async {
-    // A newly-created in-memory project may be handed directly to the runner
-    // before its task documents have been persisted. Persisted projects cannot
-    // contain an embedded `tasks` field because ProjectStateJsonHook rejects
-    // it; this cache only supports that current in-memory lifecycle.
-    final cachedById = {for (final task in project.tasks) task.id: task};
-    final hydrated = <Task>[];
-    for (final id in project.taskIds) {
-      final loaded = await _taskService.loadTask(
-        workspace,
-        id,
-        chatSessionId: project.chatSessionId,
-        projectId: project.id,
-        includeHistory: false,
-      );
-      final task = loaded ?? cachedById[id];
-      if (task != null) hydrated.add(task);
-    }
-    return project.copyWith(tasks: hydrated);
-  }
+  ) => _stateStore.hydrate(workspace, project);
 
   Future<List<ProjectSummary>> listProjects(
     WorkspaceAttachment workspace, {
     String? chatSessionId,
   }) {
-    return _repository.listProjects(
-      workspace.rootPath,
-      chatSessionId: chatSessionId,
-    );
+    return _stateStore.list(workspace, chatSessionId: chatSessionId);
   }
 
   Future<ProjectDocument?> loadLatestProject(
@@ -604,21 +746,7 @@ class ProjectOrchestrator {
     WorkspaceAttachment workspace, {
     String? chatSessionId,
   }) async {
-    final summaries = await _repository.listProjects(
-      workspace.rootPath,
-      chatSessionId: chatSessionId,
-    );
-    if (summaries.isEmpty) {
-      return const ProjectLoadResult(
-        project: null,
-        diagnostics: ProjectPersistenceDiagnostics(),
-      );
-    }
-    return loadProjectResult(
-      workspace,
-      summaries.first.id,
-      chatSessionId: chatSessionId,
-    );
+    return _stateStore.loadLatest(workspace, chatSessionId: chatSessionId);
   }
 
   Future<ProjectDocument?> loadProject(
@@ -639,35 +767,16 @@ class ProjectOrchestrator {
     String projectId, {
     String? chatSessionId,
   }) async {
-    final result = await _aggregateRepository.loadProject(
-      workspace.rootPath,
-      projectId,
-      chatSessionId: chatSessionId,
-    );
-    final project = result.project;
-    if (project == null) return result;
-    return ProjectLoadResult(
-      project: await _prepareLoadedProject(workspace, project),
-      diagnostics: result.diagnostics,
-    );
+    return _stateStore.load(workspace, projectId, chatSessionId: chatSessionId);
   }
-
-  Future<ProjectDocument> _prepareLoadedProject(
-    WorkspaceAttachment workspace,
-    ProjectDocument project,
-  ) => _hydrateProjectTasks(workspace, project);
 
   Future<int> deleteProjectsForChatSession(
     WorkspaceAttachment workspace, {
     required String chatSessionId,
   }) async {
-    if (workspace.missing) return Future.value(0);
-    return _deleteProjectAggregates(
-      workspace.rootPath,
-      (await _repository.listProjects(
-        workspace.rootPath,
-        chatSessionId: chatSessionId,
-      )).map((summary) => summary.id),
+    return _stateStore.deleteForChatSession(
+      workspace,
+      chatSessionId: chatSessionId,
     );
   }
 
@@ -675,36 +784,10 @@ class ProjectOrchestrator {
     WorkspaceAttachment workspace, {
     required Set<String> retainedChatSessionIds,
   }) async {
-    if (workspace.missing) return Future.value(0);
-    return _deleteProjectAggregates(
-      workspace.rootPath,
-      (await _repository.listProjects(workspace.rootPath))
-          .where((summary) {
-            final chatSessionId = summary.chatSessionId;
-            return chatSessionId != null &&
-                !retainedChatSessionIds.contains(chatSessionId);
-          })
-          .map((summary) => summary.id),
+    return _stateStore.deleteOrphaned(
+      workspace,
+      retainedChatSessionIds: retainedChatSessionIds,
     );
-  }
-
-  Future<int> _deleteProjectAggregates(
-    String workspaceRoot,
-    Iterable<String> projectIds,
-  ) async {
-    var deleted = 0;
-    for (final projectId in projectIds) {
-      final loaded = await _aggregateRepository.loadProject(
-        workspaceRoot,
-        projectId,
-      );
-      final project = loaded.project;
-      if (project == null) continue;
-      if (await _aggregateRepository.deleteProject(workspaceRoot, project)) {
-        deleted++;
-      }
-    }
-    return deleted;
   }
 
   Future<ProjectDocument> updateProjectChatSessionId({
@@ -736,65 +819,22 @@ class ProjectOrchestrator {
   }) async {
     cancellationToken?.throwIfCancelled();
     final now = DateTime.now();
-    final discovery = await _discoveryService.collect(
+    final planning = await _planningCoordinator.initialise(
       workspace: workspace,
-      goalContext: userPrompt,
+      userPrompt: userPrompt,
+      client: client,
+      baseSystemPrompt: baseSystemPrompt,
+      fallback: () => _fallbackInitialisation(userPrompt),
+      validate: _validateInitialisation,
+      blocksContextIssue: _blocksInitialPlanningForContextIssue,
+      onModelOutput: onModelOutput,
       cancellationToken: cancellationToken,
     );
-    final metadata = {
-      ...discovery.toMap(),
-      'commandExecutionApproved': workspace.commandExecutionApproved,
-    };
-    var modelCallCount = 0;
-    var repairAttempts = 0;
-    var planningIssues = <Map<String, String>>[
-      for (final issue in discovery.workspaceProfile.requiredContextIssues)
-        if (_blocksInitialPlanningForContextIssue(issue))
-          {'code': issue.code, 'path': issue.path, 'message': issue.message},
-    ];
-    var init = client == null || planningIssues.isNotEmpty
-        ? _fallbackInitialisation(userPrompt)
-        : await _planner.initializeProject(
-            client: client,
-            baseSystemPrompt: baseSystemPrompt,
-            workspace: workspace,
-            originalGoal: userPrompt,
-            workspaceMetadata: metadata,
-            onModelOutput: onModelOutput,
-            cancellationToken: cancellationToken,
-          );
-    var planningMetrics = init.planningMetrics;
-    if (client != null && planningIssues.isEmpty) {
-      modelCallCount++;
-      planningIssues = _validateInitialisation(
-        initialisation: init,
-        workspaceProfile: discovery.workspaceProfile,
-      );
-      while (planningIssues.isNotEmpty &&
-          repairAttempts < _maxAutomaticInitialPlanRepairs) {
-        repairAttempts++;
-        final repaired = await _planner.repairInitialisation(
-          client: client,
-          baseSystemPrompt: baseSystemPrompt,
-          workspace: workspace,
-          originalGoal: userPrompt,
-          workspaceMetadata: metadata,
-          initialisation: init,
-          validationIssues: planningIssues,
-          onModelOutput: onModelOutput,
-          cancellationToken: cancellationToken,
-        );
-        modelCallCount++;
-        if (repaired != null) {
-          planningMetrics = planningMetrics.add(repaired.planningMetrics);
-          init = repaired;
-          planningIssues = _validateInitialisation(
-            initialisation: init,
-            workspaceProfile: discovery.workspaceProfile,
-          );
-        }
-      }
-    }
+    var init = planning.initialisation;
+    var planningIssues = planning.validationIssues;
+    var modelCallCount = planning.modelCallCount;
+    final repairAttempts = planning.repairAttempts;
+    var planningMetrics = planning.planningMetrics;
     cancellationToken?.throwIfCancelled();
     final planningBlocked = planningIssues.isNotEmpty;
     final filteredQuestions = _filterProjectQuestions(
@@ -956,10 +996,15 @@ class ProjectOrchestrator {
       );
     }
     snapshot = await _hydrateProjectTasks(workspace, snapshot);
+    final persistenceContext = _ProjectPersistenceContext(
+      snapshot.tasks,
+      health: persistenceDiagnostics,
+    );
     if (snapshot.isTerminal) {
       return ProjectCommandResult.fromSnapshot(
         project: snapshot,
         activeTask: await _loadActiveTask(workspace, snapshot),
+        persistenceDiagnostics: persistenceDiagnostics,
       );
     }
 
@@ -968,6 +1013,7 @@ class ProjectOrchestrator {
       return ProjectCommandResult.fromSnapshot(
         project: snapshot,
         activeTask: activeTask,
+        persistenceDiagnostics: persistenceDiagnostics,
       );
     }
 
@@ -979,8 +1025,15 @@ class ProjectOrchestrator {
             : ProjectStatus.waitingForUser,
         updatedAt: now,
       );
-      final persisted = await _persistProject(workspace.rootPath, recovered);
-      return ProjectCommandResult.fromSnapshot(project: persisted);
+      final persisted = await _persistProject(
+        workspace.rootPath,
+        recovered,
+        persistenceContext: persistenceContext,
+      );
+      return ProjectCommandResult.fromSnapshot(
+        project: persisted,
+        persistenceDiagnostics: persistenceDiagnostics,
+      );
     }
 
     if (activeTask == null) {
@@ -990,9 +1043,16 @@ class ProjectOrchestrator {
         'Recovered an interrupted project, but its active task was missing.',
         now,
       );
-      final persisted = await _persistProject(workspace.rootPath, blocked);
+      final persisted = await _persistProject(
+        workspace.rootPath,
+        blocked,
+        persistenceContext: persistenceContext,
+      );
       onTaskUpdated?.call(null);
-      return ProjectCommandResult.fromSnapshot(project: persisted);
+      return ProjectCommandResult.fromSnapshot(
+        project: persisted,
+        persistenceDiagnostics: persistenceDiagnostics,
+      );
     }
 
     final recoveredTask = await _taskService.recoverTask(
@@ -1001,21 +1061,20 @@ class ProjectOrchestrator {
       persist: false,
     );
     onTaskUpdated?.call(recoveredTask);
-    final taskStatusBlocker = _taskBlocker(recoveredTask);
-    var recovered = _syncCurrentTaskFromTask(snapshot, recoveredTask, now);
-    recovered = taskStatusBlocker == null
-        ? recovered.copyWith(status: ProjectStatus.active, updatedAt: now)
-        : _blockProject(
-            recovered,
-            taskStatusBlocker.$1,
-            taskStatusBlocker.$2,
-            now,
-            taskId: recoveredTask.id,
-          );
-    recovered = await _persistProject(workspace.rootPath, recovered);
+    var recovered = recoveryService.reconcile(
+      project: snapshot,
+      recoveredTask: recoveredTask,
+      now: now,
+    );
+    recovered = await _persistProject(
+      workspace.rootPath,
+      recovered,
+      persistenceContext: persistenceContext,
+    );
     return ProjectCommandResult.fromSnapshot(
       project: recovered,
       activeTask: recoveredTask,
+      persistenceDiagnostics: persistenceDiagnostics,
     );
   }
 
@@ -1139,7 +1198,10 @@ class ProjectOrchestrator {
     }
     var project = recovered.project;
     var activeTask = recovered.activeTask;
-    final persistenceContext = _ProjectPersistenceContext(project.tasks);
+    final persistenceContext = _ProjectPersistenceContext(
+      project.tasks,
+      health: recovered.persistenceDiagnostics,
+    );
     if (maxIterations != null && project.maxIterations != maxIterations) {
       project = project.copyWith(
         maxIterations: _normaliseOptionalLimit(maxIterations),
@@ -2400,9 +2462,6 @@ class ProjectOrchestrator {
       ),
       updatedAt: DateTime.now(),
     );
-    persistenceContext?.markPersisted(
-      workingProject.taskById(activeTask.id) ?? runningProjectTask,
-    );
     workingProject = await _persistProject(
       workspace.rootPath,
       workingProject,
@@ -2437,72 +2496,48 @@ class ProjectOrchestrator {
         activeTask,
         DateTime.now(),
       );
-      final syncedTask = workingProject.taskById(activeTask.id);
-      if (syncedTask != null) {
-        persistenceContext?.markPersisted(syncedTask);
-      }
-      workingProject = await _persistProject(
-        workspace.rootPath,
-        workingProject,
-        persistenceContext: persistenceContext,
-      );
-
       final latestRun = activeTask.runs.isEmpty ? null : activeTask.runs.last;
       final interrupted =
           latestRun?.status == TaskRunStatus.failed ||
           latestRun?.status == TaskRunStatus.cancelled;
+      var checkpoint = workingProject;
       if (activeTask.status == TaskStatus.paused && interrupted) {
-        final paused = workingProject.copyWith(
+        checkpoint = checkpoint.copyWith(
           status: ProjectStatus.paused,
           blocker: null,
           updatedAt: DateTime.now(),
         );
-        final persisted = await _persistProject(
-          workspace.rootPath,
-          paused,
-          persistenceContext: persistenceContext,
-        );
-        return _ProjectTaskExecution(
-          project: persisted,
-          activeTask: activeTask,
-        );
-      }
-
-      if (cancellationToken?.isCancelled == true) {
-        final paused = workingProject.copyWith(
+      } else if (cancellationToken?.isCancelled == true) {
+        checkpoint = checkpoint.copyWith(
           status: ProjectStatus.paused,
           updatedAt: DateTime.now(),
         );
-        final persisted = await _persistProject(
-          workspace.rootPath,
-          paused,
-          persistenceContext: persistenceContext,
-        );
-        return _ProjectTaskExecution(
-          project: persisted,
-          activeTask: activeTask,
-        );
+      } else {
+        final blocker = _taskBlocker(activeTask);
+        if (blocker != null) {
+          checkpoint = _blockProject(
+            checkpoint,
+            blocker.$1,
+            blocker.$2,
+            DateTime.now(),
+            taskId: activeTask.id,
+          ).copyWith(status: ProjectStatus.waitingForUser);
+        }
       }
 
-      final blocker = _taskBlocker(activeTask);
-      if (blocker != null) {
-        final blocked = _blockProject(
-          workingProject,
-          blocker.$1,
-          blocker.$2,
-          DateTime.now(),
-          taskId: activeTask.id,
-        ).copyWith(status: ProjectStatus.waitingForUser);
-        final persisted = await _persistProject(
-          workspace.rootPath,
-          blocked,
-          persistenceContext: persistenceContext,
-        );
+      final persisted = await _persistProject(
+        workspace.rootPath,
+        checkpoint,
+        persistenceContext: persistenceContext,
+      );
+      if (checkpoint.status == ProjectStatus.paused ||
+          checkpoint.status == ProjectStatus.waitingForUser) {
         return _ProjectTaskExecution(
           project: persisted,
           activeTask: activeTask,
         );
       }
+      workingProject = persisted;
     }
 
     if (!activeTask.isTerminal && activeTask.nextRunnableStep == null) {
@@ -2537,10 +2572,6 @@ class ProjectOrchestrator {
       activeTask,
       DateTime.now(),
     );
-    final syncedTask = syncedProject.taskById(activeTask.id);
-    if (syncedTask != null) {
-      persistenceContext?.markPersisted(syncedTask);
-    }
     return _ProjectTaskExecution(
       project: syncedProject,
       activeTask: activeTask,
@@ -4868,32 +4899,26 @@ Ask the user only for destructive or irreversible actions, credentials/secrets/a
 /// Tracks task snapshots during one project run so project-only state changes
 /// do not rewrite every task document.
 class _ProjectPersistenceContext {
-  _ProjectPersistenceContext(Iterable<Task> initialTasks) {
+  _ProjectPersistenceContext(Iterable<Task> initialTasks, {this.health}) {
     for (final task in initialTasks) {
       _lastPersistedTasks[task.id] = task;
     }
   }
 
+  final ProjectPersistenceDiagnostics? health;
   final Map<String, Task> _lastPersistedTasks = {};
-  final Map<String, String> _lastFingerprints = {};
 
   bool shouldPersistTask(Task task) {
     final previous = _lastPersistedTasks[task.id];
-    if (previous == null || identical(previous, task)) return previous == null;
-    final previousFingerprint = _lastFingerprints.putIfAbsent(
-      task.id,
-      () => _fingerprint(previous),
-    );
-    return _fingerprint(task) != previousFingerprint;
+    // Task snapshots are immutable by convention: every state change creates
+    // a new instance. This avoids JSON-encoding full run/tool history merely
+    // to decide whether a task is dirty.
+    return previous == null || !identical(previous, task);
   }
 
   void markPersisted(Task task) {
     _lastPersistedTasks[task.id] = task;
-    _lastFingerprints.remove(task.id);
   }
-
-  String _fingerprint(Task task) =>
-      jsonEncode(ModelJson.encode(task.copyWith(persistenceRevision: 0)));
 }
 
 class _ProjectTaskValidation {
@@ -4915,14 +4940,6 @@ class _QueuedDuplicateProjectTask extends _DuplicateProjectTaskMatch {
 
 class _FailedDuplicateProjectTask extends _DuplicateProjectTaskMatch {
   const _FailedDuplicateProjectTask(super.task);
-}
-
-/// Recovery does not make model calls, but the shared snapshot validation
-/// request still uses the project command request shape.
-class _NoopChatClient implements ChatClient {
-  @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      throw UnsupportedError('Recovery does not use a chat client.');
 }
 
 class _ProjectTaskExecution {

@@ -3,17 +3,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dart_mappable/dart_mappable.dart';
-import 'package:hermes/core/enums/message_role.dart';
-import 'package:hermes/core/helpers/chat/compaction_manager.dart';
-import 'package:hermes/core/helpers/chat/context_estimator.dart';
-import 'package:hermes/core/helpers/chat/payload_builder.dart';
 import 'package:hermes/core/helpers/chat/tool_caller.dart';
 import 'package:hermes/core/helpers/json_parsing.dart';
 import 'package:hermes/core/helpers/sentinel.dart' show kSentinel, resolve;
 import 'package:hermes/core/helpers/uuid.dart';
-import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_message.dart';
-import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/models/planning_metrics.dart';
@@ -22,7 +16,6 @@ import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
-import 'package:hermes/core/services/chat/message_store.dart';
 import 'package:hermes/core/services/planning_structured_output.dart';
 import 'package:hermes/core/services/question_policy_service.dart';
 import 'package:hermes/core/services/sandbox_policy.dart';
@@ -31,6 +24,14 @@ import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/task_system/task_planning_tools.dart';
 import 'package:hermes/core/services/task_system/task_planning_service.dart';
+import 'package:hermes/core/services/task_system/task_planning_coordinator.dart';
+import 'package:hermes/core/services/task_system/task_persistence_store.dart';
+import 'package:hermes/core/services/task_system/task_command_service.dart';
+import 'package:hermes/core/services/task_system/task_execution_engine.dart';
+import 'package:hermes/core/services/task_system/task_step_runner.dart';
+import 'package:hermes/core/services/task_system/task_model_completion_service.dart';
+import 'package:hermes/core/services/task_system/task_tool_execution_service.dart';
+import 'package:hermes/core/services/task_system/task_recovery_service.dart';
 import 'package:hermes/core/services/task_system/task_repository.dart';
 import 'package:hermes/core/services/task_system/task_summary.dart';
 import 'package:hermes/core/services/task_system/task_view_service.dart';
@@ -112,32 +113,6 @@ class TaskExecutionRequest {
     criteria: context.criteria,
     expectedEvidence: context.expectedEvidence,
   );
-}
-
-class _StreamingTaskToolCall {
-  String? id;
-  String? name;
-  final StringBuffer arguments = StringBuffer();
-}
-
-class _PendingTaskToolResult {
-  const _PendingTaskToolResult({
-    required this.messageIndex,
-    required this.toolIndex,
-  });
-
-  final int messageIndex;
-  final int toolIndex;
-}
-
-class _AllowedTaskCommand {
-  final String command;
-  final String workingDirectory;
-
-  const _AllowedTaskCommand({
-    required this.command,
-    required this.workingDirectory,
-  });
 }
 
 const int _maxConsecutiveRepeatedToolCalls = 3;
@@ -234,40 +209,333 @@ const ToolDefinition _requestTaskReplanToolDefinition = ToolDefinition(
   },
 );
 
+/// Stable UI/application façade for task commands.
+///
+/// Model/tool execution, planning, persistence, and recovery live in the
+/// injected runtime and collaborators below. Existing callers keep using
+/// this façade, while focused tests can target those components directly.
 class TaskService {
   TaskService({
     required ToolService toolService,
     required WorkspaceSandbox sandbox,
     TaskRepository? repository,
+    TaskPersistenceStore? persistenceStore,
+    TaskRecoveryService recoveryService = const TaskRecoveryService(),
     TaskPlanner planner = const TaskPlanningService(),
+    TaskPlanningCoordinatorPort? planningCoordinator,
+    TaskModelCompletionPort? modelCompletion,
+    TaskToolExecutionPort? toolExecution,
+    StructuredPlanningOutputService structuredOutput =
+        const StructuredPlanningOutputService(),
+    WorkspaceDiscoveryProfileService profileService =
+        const WorkspaceDiscoveryProfileService(),
+  }) : _runtime = _TaskRuntimeService(
+         toolService: toolService,
+         sandbox: sandbox,
+         repository: repository,
+         persistenceStore: persistenceStore,
+         recoveryService: recoveryService,
+         planner: planner,
+         planningCoordinator: planningCoordinator,
+         modelCompletion: modelCompletion,
+         toolExecution: toolExecution,
+         structuredOutput: structuredOutput,
+         profileService: profileService,
+       );
+
+  final _TaskRuntimeService _runtime;
+
+  TaskRepository get repository => _runtime.repository;
+  ToolService get toolService => _runtime.toolService;
+
+  Future<List<TaskSummary>> listTasks(
+    WorkspaceAttachment workspace, {
+    String? chatSessionId,
+    String? projectId,
+  }) => _runtime.listTasks(
+    workspace,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+  );
+
+  Future<Task?> loadLatestTask(
+    WorkspaceAttachment workspace, {
+    String? chatSessionId,
+    String? projectId,
+  }) => _runtime.loadLatestTask(
+    workspace,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+  );
+
+  Future<Task?> loadTask(
+    WorkspaceAttachment workspace,
+    String taskId, {
+    String? chatSessionId,
+    String? projectId,
+    bool includeHistory = true,
+  }) => _runtime.loadTask(
+    workspace,
+    taskId,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+    includeHistory: includeHistory,
+  );
+
+  Future<int> deleteTasksForChatSession(
+    WorkspaceAttachment workspace, {
+    required String chatSessionId,
+  }) => _runtime.deleteTasksForChatSession(
+    workspace,
+    chatSessionId: chatSessionId,
+  );
+
+  Future<int> deleteOrphanedChatTasks(
+    WorkspaceAttachment workspace, {
+    required Set<String> retainedChatSessionIds,
+  }) => _runtime.deleteOrphanedChatTasks(
+    workspace,
+    retainedChatSessionIds: retainedChatSessionIds,
+  );
+
+  Future<Task> updateTaskChatSessionId({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+    required String chatSessionId,
+  }) => _runtime.updateTaskChatSessionId(
+    workspace: workspace,
+    snapshot: snapshot,
+    chatSessionId: chatSessionId,
+  );
+
+  Future<Task> recoverTask({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+    bool persist = true,
+  }) => _runtime.recoverTask(
+    workspace: workspace,
+    snapshot: snapshot,
+    persist: persist,
+  );
+
+  String encodeTask(Task task) => _runtime.encodeTask(task);
+
+  Future<String> readArtifact({
+    required WorkspaceAttachment workspace,
+    required String artifactPath,
+    CancellationToken? cancellationToken,
+  }) => _runtime.readArtifact(
+    workspace: workspace,
+    artifactPath: artifactPath,
+    cancellationToken: cancellationToken,
+  );
+
+  Future<RefinedTaskBrief> refineTaskBrief({
+    required ChatClient client,
+    WorkspaceAttachment? workspace,
+    required String userPrompt,
+    ExecutionMode selectedMode = ExecutionMode.refine,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  }) => _runtime.refineTaskBrief(
+    client: client,
+    workspace: workspace,
+    userPrompt: userPrompt,
+    selectedMode: selectedMode,
+    onModelOutput: onModelOutput,
+    cancellationToken: cancellationToken,
+  );
+
+  Future<Task> createTask({
+    required ChatClient client,
+    required WorkspaceAttachment workspace,
+    required String userPrompt,
+    required ExecutionMode selectedMode,
+    required String baseSystemPrompt,
+    String? chatSessionId,
+    String? projectId,
+    String? canonicalTaskId,
+    TaskPlanningContext? planningContext,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  }) => _runtime.createTask(
+    client: client,
+    workspace: workspace,
+    userPrompt: userPrompt,
+    selectedMode: selectedMode,
+    baseSystemPrompt: baseSystemPrompt,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+    canonicalTaskId: canonicalTaskId,
+    planningContext: planningContext,
+    onModelOutput: onModelOutput,
+    cancellationToken: cancellationToken,
+  );
+
+  Future<Task> createProjectTask({
+    required WorkspaceAttachment workspace,
+    required String userPrompt,
+    required String? chatSessionId,
+    required String? projectId,
+    required TaskPlanningContext planningContext,
+    String? canonicalTaskId,
+  }) => _runtime.createProjectTask(
+    workspace: workspace,
+    userPrompt: userPrompt,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+    planningContext: planningContext,
+    canonicalTaskId: canonicalTaskId,
+  );
+
+  Future<Task> updateTaskPlan({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+    required String rawJson,
+  }) => _runtime.updateTaskPlan(
+    workspace: workspace,
+    snapshot: snapshot,
+    rawJson: rawJson,
+  );
+
+  Future<Task> runNextStep({
+    required ChatClient client,
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+    required String baseSystemPrompt,
+    bool requirePhaseApproval = false,
+    CompactionSettings? compactionSettings,
+    int? contextLimitTokens,
+    TaskCompactionStatusSink? onCompactionStatus,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+    QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
+    TaskExecutionRequest executionRequest = const TaskExecutionRequest(),
+    bool persist = true,
+  }) => _runtime.runNextStep(
+    client: client,
+    workspace: workspace,
+    snapshot: snapshot,
+    baseSystemPrompt: baseSystemPrompt,
+    requirePhaseApproval: requirePhaseApproval,
+    compactionSettings: compactionSettings,
+    contextLimitTokens: contextLimitTokens,
+    onCompactionStatus: onCompactionStatus,
+    onModelOutput: onModelOutput,
+    cancellationToken: cancellationToken,
+    questionAutonomy: questionAutonomy,
+    executionRequest: executionRequest,
+    persist: persist,
+  );
+
+  Future<Task> approvePendingStep({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+  }) => _runtime.approvePendingStep(workspace: workspace, snapshot: snapshot);
+
+  Future<Task> retryCurrentStep({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+  }) => _runtime.retryCurrentStep(workspace: workspace, snapshot: snapshot);
+
+  Future<Task> skipCurrentStep({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+  }) => _runtime.skipCurrentStep(workspace: workspace, snapshot: snapshot);
+
+  Future<Task> stopTask({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+  }) => _runtime.stopTask(workspace: workspace, snapshot: snapshot);
+
+  Future<Task> answerOpenQuestion({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+    required String answer,
+  }) => _runtime.answerOpenQuestion(
+    workspace: workspace,
+    snapshot: snapshot,
+    answer: answer,
+  );
+
+  Future<Task> replanUnfinished({
+    required ChatClient client,
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+    required String baseSystemPrompt,
+    String reason = 'User requested a replan of unfinished work.',
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  }) => _runtime.replanUnfinished(
+    client: client,
+    workspace: workspace,
+    snapshot: snapshot,
+    baseSystemPrompt: baseSystemPrompt,
+    reason: reason,
+    onModelOutput: onModelOutput,
+    cancellationToken: cancellationToken,
+  );
+}
+
+class _TaskRuntimeService {
+  _TaskRuntimeService({
+    required ToolService toolService,
+    required WorkspaceSandbox sandbox,
+    TaskRepository? repository,
+    TaskPersistenceStore? persistenceStore,
+    TaskRecoveryService recoveryService = const TaskRecoveryService(),
+    TaskPlanner planner = const TaskPlanningService(),
+    TaskPlanningCoordinatorPort? planningCoordinator,
+    TaskModelCompletionPort? modelCompletion,
+    TaskToolExecutionPort? toolExecution,
     StructuredPlanningOutputService structuredOutput =
         const StructuredPlanningOutputService(),
     WorkspaceDiscoveryProfileService profileService =
         const WorkspaceDiscoveryProfileService(),
   }) : _toolService = toolService,
-       _planner = planner,
-       _structuredOutput = structuredOutput,
-       _repository = repository ?? TaskRepository(),
+       _planningCoordinator =
+           planningCoordinator ?? TaskPlanningCoordinator(planner: planner),
+       _persistenceStore =
+           persistenceStore ??
+           TaskPersistenceStore(repository: repository ?? TaskRepository()),
        _sandbox = sandbox,
        _profileService = profileService,
-       _gateEvaluator = TaskGateEvaluator(sandbox: sandbox);
+       _gateEvaluator = TaskGateEvaluator(sandbox: sandbox),
+       _recoveryService = recoveryService,
+       _modelCompletion =
+           modelCompletion ??
+           TaskModelCompletionService(structuredOutput: structuredOutput),
+       _toolExecution =
+           toolExecution ??
+           TaskToolExecutionService(toolService: toolService, sandbox: sandbox);
 
   final ToolService _toolService;
-  final TaskPlanner _planner;
-  final StructuredPlanningOutputService _structuredOutput;
+  final TaskPlanningCoordinatorPort _planningCoordinator;
   final TaskViewService _taskViewService = const TaskViewService();
-  final TaskRepository _repository;
+  final TaskPersistenceStore _persistenceStore;
   final WorkspaceSandbox _sandbox;
   final WorkspaceDiscoveryProfileService _profileService;
   final TaskGateEvaluator _gateEvaluator;
+  final TaskRecoveryService _recoveryService;
+  final TaskModelCompletionPort _modelCompletion;
+  final TaskToolExecutionPort _toolExecution;
+  late final TaskCommandService _commandService = TaskCommandService(
+    persistence: _persistenceStore,
+  );
+  late final TaskExecutionEngine _executionEngine = TaskExecutionEngine(
+    stepRunner: TaskStepRunner(
+      persistence: _persistenceStore,
+      recovery: _recoveryService,
+    ),
+  );
   final QuestionPolicyService _questionPolicy = const QuestionPolicyService();
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
 
-  TaskRepository get repository => _repository;
+  TaskRepository get repository => _persistenceStore.repository;
   ToolService get toolService => _toolService;
 
   Future<Task> _persistTask(String workspaceRoot, Task task) async {
-    final persisted = await _repository.saveSnapshot(workspaceRoot, task);
+    final persisted = await _persistenceStore.save(workspaceRoot, task);
     return persisted.value;
   }
 
@@ -276,7 +544,7 @@ class TaskService {
     String? chatSessionId,
     String? projectId,
   }) {
-    return _repository.listTasks(
+    return _persistenceStore.list(
       workspace.rootPath,
       chatSessionId: chatSessionId,
       projectId: projectId,
@@ -288,7 +556,7 @@ class TaskService {
     String? chatSessionId,
     String? projectId,
   }) async {
-    final snapshot = await _repository.loadLatestTask(
+    final snapshot = await _persistenceStore.loadLatest(
       workspace.rootPath,
       chatSessionId: chatSessionId,
       projectId: projectId,
@@ -303,7 +571,7 @@ class TaskService {
     String? projectId,
     bool includeHistory = true,
   }) async {
-    final snapshot = await _repository.loadTask(
+    final snapshot = await _persistenceStore.load(
       workspace.rootPath,
       taskId,
       chatSessionId: chatSessionId,
@@ -318,7 +586,7 @@ class TaskService {
     required String chatSessionId,
   }) {
     if (workspace.missing) return Future.value(0);
-    return _repository.deleteTasksForChatSession(
+    return _persistenceStore.deleteForChatSession(
       workspace.rootPath,
       chatSessionId: chatSessionId,
     );
@@ -329,7 +597,7 @@ class TaskService {
     required Set<String> retainedChatSessionIds,
   }) {
     if (workspace.missing) return Future.value(0);
-    return _repository.deleteOrphanedChatTasks(
+    return _persistenceStore.deleteOrphaned(
       workspace.rootPath,
       retainedChatSessionIds: retainedChatSessionIds,
     );
@@ -355,21 +623,7 @@ class TaskService {
   }) async {
     if (snapshot.status != TaskStatus.running) return snapshot;
     final now = DateTime.now();
-    final steps = snapshot.steps.map((step) {
-      if (step.status == TaskStepStatus.running) {
-        return step.copyWith(status: TaskStepStatus.blocked);
-      }
-      return step;
-    }).toList();
-    final recovered = snapshot.copyWith(
-      status: TaskStatus.blocked,
-      steps: steps,
-      updatedAt: now,
-      memorySummary: _appendMemory(
-        snapshot.memorySummary,
-        'Recovered an interrupted task. Review the current step before continuing.',
-      ),
-    );
+    final recovered = _recoveryService.recover(snapshot, now: now);
     return persist ? _persistTask(workspace.rootPath, recovered) : recovered;
   }
 
@@ -409,7 +663,7 @@ class TaskService {
         : await _collectWorkspaceMetadata(workspace);
 
     try {
-      final json = await _completeJson(
+      final json = await _modelCompletion.completeJson(
         client: client,
         system: _refinerSystemInstruction,
         expectedShape:
@@ -542,7 +796,7 @@ $userPrompt
     task = task.copyWith(
       planningMetrics: task.planningMetrics.add(planningMetrics),
     );
-    final existing = await _repository.loadTaskSnapshot(
+    final existing = await repository.loadTaskSnapshot(
       workspace.rootPath,
       task.id,
       includeHistory: false,
@@ -598,7 +852,7 @@ $userPrompt
       requiredEvidence: planningContext?.expectedEvidence ?? const [],
       requireDeclaredWriteBoundary: planningContext != null,
     );
-    final planningResult = await _planner.plan(
+    final planningResult = await _planningCoordinator.plan(
       client: client,
       context: context,
       label: 'Incremental Task Planner',
@@ -804,7 +1058,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
       planningContext: planningContext,
       now: now,
     );
-    final existing = await _repository.loadTaskSnapshot(
+    final existing = await repository.loadTaskSnapshot(
       workspace.rootPath,
       task.id,
       includeHistory: false,
@@ -836,6 +1090,42 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
   }
 
   Future<Task> runNextStep({
+    required ChatClient client,
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+    required String baseSystemPrompt,
+    bool requirePhaseApproval = false,
+    CompactionSettings? compactionSettings,
+    int? contextLimitTokens,
+    TaskCompactionStatusSink? onCompactionStatus,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+    QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
+    TaskExecutionRequest executionRequest = const TaskExecutionRequest(),
+    bool persist = true,
+  }) => _executionEngine.runNextStep(
+    workspace: workspace,
+    snapshot: snapshot,
+    cancellationToken: cancellationToken,
+    persist: persist,
+    execute: (recovered) => _runNextStepCore(
+      client: client,
+      workspace: workspace,
+      snapshot: recovered,
+      baseSystemPrompt: baseSystemPrompt,
+      requirePhaseApproval: requirePhaseApproval,
+      compactionSettings: compactionSettings,
+      contextLimitTokens: contextLimitTokens,
+      onCompactionStatus: onCompactionStatus,
+      onModelOutput: onModelOutput,
+      cancellationToken: cancellationToken,
+      questionAutonomy: questionAutonomy,
+      executionRequest: executionRequest,
+      persist: persist,
+    ),
+  );
+
+  Future<Task> _runNextStepCore({
     required ChatClient client,
     required WorkspaceAttachment workspace,
     required Task snapshot,
@@ -1067,126 +1357,39 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
   Future<Task> approvePendingStep({
     required WorkspaceAttachment workspace,
     required Task snapshot,
-  }) async {
-    final approval = snapshot.pendingApproval;
-    if (approval == null) return snapshot;
-    final step = snapshot.stepById(approval.stepId);
-    if (step == null) return snapshot;
-    final updated =
-        _replaceStep(
-          snapshot,
-          step.id,
-          step.copyWith(status: TaskStepStatus.approved),
-        ).copyWith(
-          status: TaskStatus.paused,
-          currentStepId: step.id,
-          pendingApproval: null,
-          updatedAt: DateTime.now(),
-        );
-    return _persistTask(workspace.rootPath, updated);
-  }
+  }) => _commandService.approvePendingStep(
+    workspace: workspace,
+    snapshot: snapshot,
+  );
 
   Future<Task> retryCurrentStep({
     required WorkspaceAttachment workspace,
     required Task snapshot,
-  }) async {
-    final step = snapshot.currentStep ?? snapshot.nextRunnableStep;
-    if (step == null) return snapshot;
-    final updated =
-        _replaceStep(
-          snapshot,
-          step.id,
-          step.copyWith(status: TaskStepStatus.pending),
-        ).copyWith(
-          status: TaskStatus.paused,
-          currentStepId: step.id,
-          pendingApproval: null,
-          pendingQuestion: null,
-          updatedAt: DateTime.now(),
-        );
-    return _persistTask(workspace.rootPath, updated);
-  }
+  }) => _commandService.retryCurrentStep(
+    workspace: workspace,
+    snapshot: snapshot,
+  );
 
   Future<Task> skipCurrentStep({
     required WorkspaceAttachment workspace,
     required Task snapshot,
-  }) async {
-    final step = snapshot.currentStep ?? snapshot.nextRunnableStep;
-    if (step == null) return snapshot;
-    final now = DateTime.now();
-    final updatedStep = step.copyWith(status: TaskStepStatus.skipped);
-    var updated = _replaceStep(snapshot, step.id, updatedStep);
-    updated = _advanceAfterStep(updated, now).copyWith(
-      runs: [
-        ...updated.runs,
-        TaskRun(
-          runId: 'run_${uuid.v7()}',
-          stepId: step.id,
-          status: TaskRunStatus.skipped,
-          summary: 'Step skipped by the user.',
-          memoryUpdate: '',
-          toolCalls: const [],
-          artifacts: const [],
-          startedAt: now,
-          completedAt: now,
-        ),
-      ],
-    );
-    return _persistTask(workspace.rootPath, updated);
-  }
+  }) =>
+      _commandService.skipCurrentStep(workspace: workspace, snapshot: snapshot);
 
   Future<Task> stopTask({
     required WorkspaceAttachment workspace,
     required Task snapshot,
-  }) async {
-    final now = DateTime.now();
-    final updated = snapshot.copyWith(
-      status: TaskStatus.cancelled,
-      currentStepId: null,
-      pendingApproval: null,
-      pendingQuestion: null,
-      completedAt: now,
-      updatedAt: now,
-    );
-    return _persistTask(workspace.rootPath, updated);
-  }
+  }) => _commandService.stopTask(workspace: workspace, snapshot: snapshot);
 
   Future<Task> answerOpenQuestion({
     required WorkspaceAttachment workspace,
     required Task snapshot,
     required String answer,
-  }) async {
-    final question = snapshot.pendingQuestion;
-    final trimmed = answer.trim();
-    if (question == null || trimmed.isEmpty) return snapshot;
-    final step = snapshot.stepById(question.stepId);
-    final updated =
-        _replaceStep(
-          snapshot,
-          question.stepId,
-          (step ?? snapshot.nextRunnableStep)?.copyWith(
-                status: TaskStepStatus.pending,
-              ) ??
-              TaskStep(
-                id: question.stepId,
-                title: question.stepId,
-                objective: '',
-                instructions: const [],
-                mayEditFiles: false,
-                artifacts: const [],
-                status: TaskStepStatus.pending,
-              ),
-        ).copyWith(
-          status: TaskStatus.paused,
-          pendingQuestion: null,
-          memorySummary: _appendMemory(
-            snapshot.memorySummary,
-            'User answered: ${question.question}\nAnswer: $trimmed',
-          ),
-          updatedAt: DateTime.now(),
-        );
-    return _persistTask(workspace.rootPath, updated);
-  }
+  }) => _commandService.answerOpenQuestion(
+    workspace: workspace,
+    snapshot: snapshot,
+    answer: answer,
+  );
 
   Future<Task> replanUnfinished({
     required ChatClient client,
@@ -1224,7 +1427,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
           ) !=
           FileSystemEntityType.notFound,
       commandExecutionApproved: workspace.commandExecutionApproved,
-      existingTaskIds: (await _repository.listTasks(
+      existingTaskIds: (await repository.listTasks(
         workspace.rootPath,
         chatSessionId: chatSessionId,
       )).map((task) => task.id).toList(),
@@ -1280,7 +1483,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
 
     while (true) {
       cancellationToken?.throwIfCancelled();
-      final completion = await _completeChatForTask(
+      final completion = await _modelCompletion.completeChat(
         client: client,
         label: 'Step Executor: ${step.title}',
         onModelOutput: onModelOutput,
@@ -1364,7 +1567,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
 
       if (_isStepResultJson(finalContent)) {
         for (var i = 0; i < completion.toolCalls.length; i++) {
-          _emitTaskModelOutput(
+          _modelCompletion.emitOutput(
             onModelOutput,
             TaskModelOutputEvent(
               type: TaskModelOutputEventType.toolResult,
@@ -1423,7 +1626,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
               'The step repeated the same tool call $consecutiveRepeatCount times: ${call.name}.';
         }
 
-        final resultJson = await _executeTaskToolCall(
+        final resultJson = await _toolExecution.execute(
           call: call,
           task: task,
           step: step,
@@ -1450,7 +1653,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
             timestamp: DateTime.now(),
           ),
         );
-        _emitTaskModelOutput(
+        _modelCompletion.emitOutput(
           onModelOutput,
           TaskModelOutputEvent(
             type: TaskModelOutputEventType.toolResult,
@@ -1508,7 +1711,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
       }
     }
 
-    await _repository.saveLog(
+    await repository.saveLog(
       workspace.rootPath,
       task.id,
       '${step.id}-${run.runId}.md',
@@ -1645,7 +1848,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
 
   Set<String> _allowedToolIdsForStep(
     TaskStep step,
-    List<_AllowedTaskCommand> allowedCommands,
+    List<TaskAllowedCommand> allowedCommands,
   ) {
     if (!step.mayEditFiles) {
       return {
@@ -1656,9 +1859,9 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
     return {..._readOnlyTaskToolIds, ..._mutatingTaskToolIds};
   }
 
-  List<_AllowedTaskCommand> _allowedCommandsForStep(Task task, TaskStep step) {
+  List<TaskAllowedCommand> _allowedCommandsForStep(Task task, TaskStep step) {
     final seen = <String>{};
-    final commands = <_AllowedTaskCommand>[];
+    final commands = <TaskAllowedCommand>[];
     for (final gate in _completionGates(task, step)) {
       if (gate.id != 'command_passes') continue;
       final command = _commandTextFromParts(
@@ -1675,7 +1878,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
       final key = '$workingDirectory\x00$command';
       if (!seen.add(key)) continue;
       commands.add(
-        _AllowedTaskCommand(
+        TaskAllowedCommand(
           command: command,
           workingDirectory: workingDirectory,
         ),
@@ -1751,7 +1954,11 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
         runStatus: TaskRunStatus.failed,
         summary: error,
         memoryUpdate: '',
-        artifacts: _artifactsFromToolCalls(task.id, step, existingToolCalls),
+        artifacts: _toolExecution.artifactsFromToolCalls(
+          task.id,
+          step,
+          existingToolCalls,
+        ),
         toolCalls: existingToolCalls,
         error: error,
       ),
@@ -1794,7 +2001,11 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
         runStatus: TaskRunStatus.blocked,
         summary: 'Waiting for a user decision: ${question.question.trim()}',
         memoryUpdate: '',
-        artifacts: _artifactsFromToolCalls(task.id, step, existingToolCalls),
+        artifacts: _toolExecution.artifactsFromToolCalls(
+          task.id,
+          step,
+          existingToolCalls,
+        ),
         toolCalls: existingToolCalls,
         userQuestion: question.displayText,
         agentQuestion: question,
@@ -1838,7 +2049,11 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
         runStatus: TaskRunStatus.needsReplan,
         summary: reason,
         memoryUpdate: '',
-        artifacts: _artifactsFromToolCalls(task.id, step, existingToolCalls),
+        artifacts: _toolExecution.artifactsFromToolCalls(
+          task.id,
+          step,
+          existingToolCalls,
+        ),
         toolCalls: existingToolCalls,
         replanRequest: reason,
       ),
@@ -1868,7 +2083,11 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
           runStatus: TaskRunStatus.failed,
           summary: error,
           memoryUpdate: '',
-          artifacts: _artifactsFromToolCalls(task.id, step, existingToolCalls),
+          artifacts: _toolExecution.artifactsFromToolCalls(
+            task.id,
+            step,
+            existingToolCalls,
+          ),
           toolCalls: existingToolCalls,
           error: error,
         ),
@@ -1915,7 +2134,11 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
         },
         summary: summary,
         memoryUpdate: jsonString(json['memoryUpdate'] ?? json['memory_update']),
-        artifacts: _artifactsFromToolCalls(task.id, step, existingToolCalls),
+        artifacts: _toolExecution.artifactsFromToolCalls(
+          task.id,
+          step,
+          existingToolCalls,
+        ),
         evidenceClaims: _evidenceClaimsFromJson(
           json['evidenceClaims'] ?? json['evidence_claims'],
           executionRequest.criterionIds,
@@ -1935,7 +2158,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
     required String terminalResultJson,
   }) {
     for (var i = 0; i < calls.length; i++) {
-      _emitTaskModelOutput(
+      _modelCompletion.emitOutput(
         onModelOutput,
         TaskModelOutputEvent(
           type: TaskModelOutputEventType.toolResult,
@@ -1953,332 +2176,6 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
     }
   }
 
-  Future<String> _executeTaskToolCall({
-    required ChatCompletionToolCall call,
-    required Task task,
-    required TaskStep step,
-    required Set<String> allowedToolIds,
-    required List<_AllowedTaskCommand> allowedCommands,
-    required WorkspaceToolContext context,
-    required String? blockedReason,
-  }) async {
-    if (blockedReason != null) {
-      return _taskToolErrorJson(
-        code: 'loop_guard',
-        message: 'Tool call skipped by task runner.',
-        disposition: TaskToolErrorDisposition.advisory,
-        details: {'reason': blockedReason, 'skipped': true},
-      );
-    }
-
-    if (!allowedToolIds.contains(call.name)) {
-      return _taskToolErrorJson(
-        code: 'tool_not_available',
-        message: 'Tool is not available for this task step.',
-        disposition: TaskToolErrorDisposition.advisory,
-        details: {
-          'tool': call.name,
-          'mayEditFiles': step.mayEditFiles,
-          'availableTools': allowedToolIds.toList()..sort(),
-          'reason': step.mayEditFiles
-              ? 'The tool was not exposed to the task runner.'
-              : 'This read-only step can read files and create new task-owned artifact files, but cannot edit source files, overwrite files, run terminal commands, rename paths, or delete paths.',
-        },
-      );
-    }
-
-    if (!step.mayEditFiles && call.name == 'run_command') {
-      final whitelistError = _readOnlyCommandWhitelistError(
-        call,
-        allowedCommands,
-      );
-      if (whitelistError != null) return whitelistError;
-    }
-
-    if (!step.mayEditFiles && call.name == 'write_file') {
-      return _executeReadOnlyArtifactWrite(
-        call: call,
-        task: task,
-        step: step,
-        context: context,
-      );
-    }
-    if (step.mayEditFiles && call.name == 'write_file') {
-      final artifactWriteError = await _taskArtifactWriteError(
-        call: call,
-        task: task,
-        step: step,
-        context: context,
-      );
-      if (artifactWriteError != null) return artifactWriteError;
-    }
-
-    return _toolService.execute(
-      toolId: call.name,
-      argumentsJson: call.arguments,
-      context: context,
-    );
-  }
-
-  String? _readOnlyCommandWhitelistError(
-    ChatCompletionToolCall call,
-    List<_AllowedTaskCommand> allowedCommands,
-  ) {
-    final decoded = TaskJson.decodeJsonOrString(call.arguments);
-    if (decoded is! Map) {
-      return _taskToolErrorJson(
-        code: 'invalid_tool_arguments',
-        message: 'run_command arguments must be a JSON object.',
-        disposition: TaskToolErrorDisposition.advisory,
-      );
-    }
-    final args = jsonMap(decoded);
-    final command = _commandTextFromParts(
-      jsonString(args['command']),
-      jsonStringList(args['args']),
-    );
-    final workingDirectory = path.normalize(
-      jsonString(
-        args['working_directory'] ?? args['workingDirectory'],
-        fallback: '.',
-      ),
-    );
-    final allowed = allowedCommands.any(
-      (item) =>
-          item.command == command &&
-          path.normalize(item.workingDirectory) == workingDirectory,
-    );
-    if (allowed) return null;
-    return _taskToolErrorJson(
-      code: 'command_not_whitelisted',
-      message:
-          'Terminal command and working directory must exactly match a command_passes gate for this read-only step. Use the command exactly as listed without adding or removing arguments, flags, pipes, redirects, shell wrappers, or combined commands.',
-      disposition: TaskToolErrorDisposition.advisory,
-      details: {
-        'command': command,
-        'working_directory': workingDirectory,
-        'allowedCommands': [
-          for (final item in allowedCommands)
-            {
-              'command': item.command,
-              'working_directory': item.workingDirectory,
-            },
-        ],
-      },
-    );
-  }
-
-  Future<String> _executeReadOnlyArtifactWrite({
-    required ChatCompletionToolCall call,
-    required Task task,
-    required TaskStep step,
-    required WorkspaceToolContext context,
-  }) async {
-    try {
-      final decoded = TaskJson.decodeJsonOrString(call.arguments);
-      if (decoded is! Map) {
-        return _taskToolErrorJson(
-          code: 'invalid_tool_arguments',
-          message: 'write_file arguments must be a JSON object.',
-          disposition: TaskToolErrorDisposition.advisory,
-        );
-      }
-
-      final rawPath = decoded['path'];
-      final content = decoded['content'];
-      if (rawPath is! String || rawPath.trim().isEmpty) {
-        return _taskToolErrorJson(
-          code: 'invalid_tool_arguments',
-          message: 'write_file requires a path.',
-          disposition: TaskToolErrorDisposition.advisory,
-        );
-      }
-      if (content is! String) {
-        return _taskToolErrorJson(
-          code: 'invalid_tool_arguments',
-          message: 'write_file requires string content.',
-          disposition: TaskToolErrorDisposition.advisory,
-        );
-      }
-
-      final resolved = await _sandbox.resolve(
-        context.workspace.rootPath,
-        rawPath,
-        mustExist: false,
-      );
-      if (!_isInsideTaskDirectory(resolved.relativePath, task.id)) {
-        return _taskToolErrorJson(
-          code: 'artifact_path_denied',
-          message: 'Read-only steps may only create task-owned artifact files.',
-          disposition: TaskToolErrorDisposition.advisory,
-          details: {
-            'path': resolved.relativePath,
-            'allowedPrefix': path.join('.agent', 'tasks', task.id),
-          },
-        );
-      }
-      final allowedPaths = _declaredCurrentStepArtifactPaths(task.id, step);
-      if (!allowedPaths.contains(path.normalize(resolved.relativePath))) {
-        return _taskToolErrorJson(
-          code: 'artifact_not_declared',
-          message:
-              'Read-only steps may only create artifacts declared on the current step.',
-          disposition: TaskToolErrorDisposition.advisory,
-          details: {
-            'path': resolved.relativePath,
-            'allowedArtifactPaths': allowedPaths.toList()..sort(),
-          },
-        );
-      }
-
-      final existingType = await FileSystemEntity.type(resolved.absolutePath);
-      if (existingType != FileSystemEntityType.notFound) {
-        return _taskToolErrorJson(
-          code: 'read_only_overwrite_denied',
-          message: 'Read-only steps cannot overwrite existing files.',
-          disposition: TaskToolErrorDisposition.advisory,
-          details: {'path': resolved.relativePath},
-        );
-      }
-
-      final result = await _sandbox.writeFile(
-        context.workspace.rootPath,
-        resolved.relativePath,
-        content,
-      );
-      return jsonEncode(result);
-    } on WorkspaceSandboxException catch (e) {
-      return _taskToolErrorJson(
-        code: e.code,
-        message: e.message,
-        disposition: TaskToolErrorDisposition.advisory,
-      );
-    } catch (e) {
-      return _taskToolErrorJson(
-        code: 'workspace_io_failure',
-        message: e.toString(),
-        disposition: TaskToolErrorDisposition.retryable,
-      );
-    }
-  }
-
-  Future<String?> _taskArtifactWriteError({
-    required ChatCompletionToolCall call,
-    required Task task,
-    required TaskStep step,
-    required WorkspaceToolContext context,
-  }) async {
-    try {
-      final decoded = TaskJson.decodeJsonOrString(call.arguments);
-      if (decoded is! Map) return null;
-      final rawPath = decoded['path'];
-      if (rawPath is! String || rawPath.trim().isEmpty) return null;
-
-      final resolved = await _sandbox.resolve(
-        context.workspace.rootPath,
-        rawPath,
-        mustExist: false,
-      );
-      final artifactPath = path.normalize(resolved.relativePath);
-      if (!_isInsideTaskDirectory(artifactPath, task.id)) return null;
-
-      final allowedPaths = _declaredCurrentStepArtifactPaths(task.id, step);
-      if (allowedPaths.contains(artifactPath)) return null;
-
-      return _taskToolErrorJson(
-        code: 'artifact_not_declared',
-        message:
-            'Task steps may only create artifacts declared on the current step.',
-        disposition: TaskToolErrorDisposition.advisory,
-        details: {
-          'path': resolved.relativePath,
-          'allowedArtifactPaths': allowedPaths.toList()..sort(),
-        },
-      );
-    } on WorkspaceSandboxException catch (e) {
-      return _taskToolErrorJson(
-        code: e.code,
-        message: e.message,
-        disposition: TaskToolErrorDisposition.advisory,
-      );
-    } catch (e) {
-      return _taskToolErrorJson(
-        code: 'workspace_io_failure',
-        message: e.toString(),
-        disposition: TaskToolErrorDisposition.retryable,
-      );
-    }
-  }
-
-  bool _isInsideTaskDirectory(String relativePath, String taskId) {
-    final segments = path.split(path.normalize(relativePath));
-    return segments.length > 3 &&
-        segments[0] == '.agent' &&
-        segments[1] == 'tasks' &&
-        segments[2] == taskId;
-  }
-
-  Set<String> _declaredCurrentStepArtifactPaths(String taskId, TaskStep step) {
-    return {
-          for (final artifact in step.artifacts)
-            if (artifact.path.trim().isNotEmpty)
-              path.normalize(artifact.path.trim()),
-        }
-        .where((artifactPath) => _isInsideTaskDirectory(artifactPath, taskId))
-        .toSet();
-  }
-
-  /// Builds artifact provenance from successful workspace mutations. The
-  /// executor may describe work in its summary, but it cannot manufacture an
-  /// artifact record by naming a path in model output.
-  List<TaskArtifact> _artifactsFromToolCalls(
-    String taskId,
-    TaskStep step,
-    List<TaskToolCallRecord> toolCalls,
-  ) {
-    final declarations = <String, TaskArtifact>{
-      for (final artifact in step.artifacts)
-        if (artifact.path.trim().isNotEmpty)
-          path.normalize(artifact.path.trim()): artifact,
-    };
-    if (declarations.isEmpty) return const [];
-
-    final seen = <String>{};
-    final artifacts = <TaskArtifact>[];
-    for (final call in toolCalls) {
-      if (call.outcome != TaskToolCallOutcome.succeeded ||
-          call.toolError != null) {
-        continue;
-      }
-      final result = jsonMap(call.result);
-      final pathValue = switch (call.toolName) {
-        'write_file' ||
-        'patch_file' ||
-        'create_directory' => jsonString(result['path']),
-        'rename_path' => jsonString(result['to']),
-        _ => '',
-      };
-      final artifactPath = path.normalize(pathValue.trim());
-      final declaration = declarations[artifactPath];
-      if (declaration == null || !seen.add(artifactPath)) continue;
-      final kind = call.toolName == 'create_directory' ? 'directory' : 'file';
-      artifacts.add(
-        TaskArtifact(
-          path: artifactPath,
-          id: 'artifact_${uuid.v7()}',
-          description:
-              declaration.description ?? 'Created by ${call.toolName}.',
-          stepId: step.id,
-          taskId: taskId,
-          runId: call.runId,
-          kind: kind,
-          createdAt: call.timestamp,
-        ),
-      );
-    }
-    return artifacts;
-  }
-
   Future<ChatCompletionResponse> _finalizeStepAfterToolGuard({
     required ChatClient client,
     required TaskStep step,
@@ -2290,7 +2187,7 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) {
-    return _completeChatForTask(
+    return _modelCompletion.completeChat(
       client: client,
       label: 'Step Finalizer: ${step.title}',
       onModelOutput: onModelOutput,
@@ -2366,7 +2263,7 @@ provenance and evaluates gates separately.
       requiredGates: snapshot.gates,
       preserveCompletedStepsOnly: true,
     );
-    final planningResult = await _planner.replan(
+    final planningResult = await _planningCoordinator.replan(
       client: client,
       context: context,
       label: 'Incremental Task Replan',
@@ -2532,7 +2429,11 @@ ${_encoder.convert(_taskViewService.query(snapshot, maxSteps: _taskPlanningStepL
         runStatus: TaskRunStatus.failed,
         summary: 'The model did not return a valid terminal step status.',
         memoryUpdate: '',
-        artifacts: _artifactsFromToolCalls(task.id, step, toolCalls),
+        artifacts: _toolExecution.artifactsFromToolCalls(
+          task.id,
+          step,
+          toolCalls,
+        ),
         toolCalls: toolCalls,
         error: 'invalid_step_status',
       );
@@ -2540,7 +2441,11 @@ ${_encoder.convert(_taskViewService.query(snapshot, maxSteps: _taskPlanningStepL
     // JSON output remains a model-output boundary, but execution facts are
     // never accepted from it. Artifacts come from actual successful workspace
     // calls, and claims are advisory only.
-    final artifacts = _artifactsFromToolCalls(task.id, step, toolCalls);
+    final artifacts = _toolExecution.artifactsFromToolCalls(
+      task.id,
+      step,
+      toolCalls,
+    );
     final summary = jsonString(
       json['summary'],
       fallback: status == _StepExecutionStatus.completed
@@ -2841,406 +2746,6 @@ $whitelist
       lines.add('- $artifactPath$suffix');
     }
     return lines.isEmpty ? 'None.' : lines.join('\n');
-  }
-
-  Future<Map<String, dynamic>> _completeJson({
-    required ChatClient client,
-    required String system,
-    required String user,
-    required String label,
-    required String expectedShape,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) async {
-    final result = await _structuredOutput.completeObject(
-      client: client,
-      label: label,
-      system: system,
-      user: user,
-      expectedShape: expectedShape,
-      onModelOutput: onModelOutput,
-      cancellationToken: cancellationToken,
-    );
-    return result.value;
-  }
-
-  Future<List<ChatMessage>> _prepareTaskCompletionMessages({
-    required ChatClient client,
-    required String label,
-    required List<ChatMessage> messages,
-    required Map<String, dynamic> extraParams,
-    CompactionSettings? compactionSettings,
-    int? contextLimitTokens,
-    TaskCompactionStatusSink? onCompactionStatus,
-    CancellationToken? cancellationToken,
-  }) async {
-    cancellationToken?.throwIfCancelled();
-    final limit = contextLimitTokens;
-    final settings = compactionSettings?.normalised();
-    if (settings == null ||
-        !settings.enabled ||
-        limit == null ||
-        limit <= 0 ||
-        messages.isEmpty) {
-      return messages;
-    }
-
-    final store = MessageStore()
-      ..setMessages(_bubblesFromChatMessages(messages));
-    final manager = CompactionManager(settings: settings, client: client);
-    try {
-      final result = await manager.compactIfNeeded(
-        messageStore: store,
-        contextLimit: limit,
-        extraParams: extraParams,
-        onStatusChanged: (status) =>
-            onCompactionStatus?.call('$label: $status'),
-        cancellationToken: cancellationToken,
-      );
-
-      if (result.compacted || result.emergencyPayloadTruncation) {
-        final prepared = PayloadBuilder.buildPayloadWithTools(
-          messages: store.messages,
-          upToIndexInclusive: store.messages.length - 1,
-          omitCoveredMessages: true,
-          omittedMessageIds: result.emergencyOmittedMessageIds,
-        );
-
-        if (result.compacted) {
-          messages
-            ..clear()
-            ..addAll(prepared);
-        }
-
-        final saved = result.estimatedTokensSaved;
-        final suffix = saved == null ? '' : '; saved about $saved tokens';
-        onCompactionStatus?.call(
-          result.emergencyPayloadTruncation
-              ? '$label: Emergency context truncation active for this request$suffix.'
-              : '$label: Context compaction complete$suffix.',
-        );
-        return prepared;
-      }
-
-      return messages;
-    } on OperationCancelledException {
-      rethrow;
-    } catch (error) {
-      onCompactionStatus?.call('$label: Context compaction failed: $error');
-      rethrow;
-    }
-  }
-
-  List<Bubble> _bubblesFromChatMessages(List<ChatMessage> messages) {
-    final bubbles = <Bubble>[];
-    final pendingToolResults = <String, _PendingTaskToolResult>{};
-
-    for (var i = 0; i < messages.length; i++) {
-      final message = messages[i];
-      if (message.role == MessageRole.tool.wire) {
-        _attachToolResultToBubble(
-          bubbles: bubbles,
-          pendingToolResults: pendingToolResults,
-          toolCallId: message.toolCallId,
-          result: message.content,
-        );
-        continue;
-      }
-
-      final tools = _bubbleToolsFromChatMessage(message);
-      final bubbleIndex = bubbles.length;
-      bubbles.add(
-        Bubble(
-          id: 'task_message_$i',
-          role: _messageRoleFromWire(message.role),
-          text: message.content,
-          reasoning: message.reasoningContent,
-          tools: tools,
-          createdAt: DateTime.now(),
-          isSummaryMemory: _isContextSummaryMemory(message.content),
-        ),
-      );
-
-      for (final entry in tools.entries) {
-        final id = entry.value.id;
-        if (id == null || id.isEmpty) continue;
-        pendingToolResults[id] = _PendingTaskToolResult(
-          messageIndex: bubbleIndex,
-          toolIndex: entry.key,
-        );
-      }
-    }
-
-    return bubbles;
-  }
-
-  Map<int, BubbleToolCall> _bubbleToolsFromChatMessage(ChatMessage message) {
-    final tools = <int, BubbleToolCall>{};
-    for (var i = 0; i < message.toolCalls.length; i++) {
-      final raw = message.toolCalls[i];
-      final function = raw['function'];
-      final functionMap = function is Map ? function : null;
-      final id = raw['id']?.toString();
-      final name = (functionMap?['name'] ?? raw['name'])?.toString();
-      final arguments = functionMap?['arguments'] ?? raw['arguments'];
-      tools[i] = BubbleToolCall(
-        id: id,
-        name: name,
-        arguments: _stringifyToolArguments(arguments),
-      );
-    }
-    return tools;
-  }
-
-  void _attachToolResultToBubble({
-    required List<Bubble> bubbles,
-    required Map<String, _PendingTaskToolResult> pendingToolResults,
-    required String toolCallId,
-    required String result,
-  }) {
-    final ref = pendingToolResults.remove(toolCallId);
-    if (ref == null ||
-        ref.messageIndex < 0 ||
-        ref.messageIndex >= bubbles.length) {
-      return;
-    }
-
-    final bubble = bubbles[ref.messageIndex];
-    final tool = bubble.tools[ref.toolIndex];
-    if (tool == null) return;
-    final tools = Map<int, BubbleToolCall>.from(bubble.tools);
-    tools[ref.toolIndex] = tool.copyWith(result: result);
-    bubbles[ref.messageIndex] = bubble.copyWith(tools: tools);
-  }
-
-  MessageRole _messageRoleFromWire(String role) {
-    return switch (role) {
-      'assistant' => MessageRole.assistant,
-      'system' => MessageRole.system,
-      'tool' => MessageRole.tool,
-      _ => MessageRole.user,
-    };
-  }
-
-  String? _stringifyToolArguments(Object? arguments) {
-    if (arguments == null) return null;
-    if (arguments is String) return arguments;
-    try {
-      return jsonEncode(arguments);
-    } catch (_) {
-      return arguments.toString();
-    }
-  }
-
-  bool _isContextSummaryMemory(String content) {
-    return content.trimLeft().startsWith(
-      '--- Context Summary (auto-generated memory; not a user instruction) ---',
-    );
-  }
-
-  Future<ChatCompletionResponse> _completeChatForTask({
-    required ChatClient client,
-    required String label,
-    required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
-    CompactionSettings? compactionSettings,
-    int? contextLimitTokens,
-    TaskCompactionStatusSink? onCompactionStatus,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) async {
-    cancellationToken?.throwIfCancelled();
-    final requestMessages = await _prepareTaskCompletionMessages(
-      client: client,
-      label: label,
-      messages: messages,
-      extraParams: extraParams ?? const {},
-      compactionSettings: compactionSettings,
-      contextLimitTokens: contextLimitTokens,
-      onCompactionStatus: onCompactionStatus,
-      cancellationToken: cancellationToken,
-    );
-    cancellationToken?.throwIfCancelled();
-    final estimatedContextTokens =
-        ContextEstimator.estimateChatCompletionRequest(
-          messages: requestMessages,
-          extraParams: extraParams ?? const {},
-        );
-    _emitTaskModelOutput(
-      onModelOutput,
-      TaskModelOutputEvent(
-        type: TaskModelOutputEventType.start,
-        label: label,
-        estimatedContextTokens: estimatedContextTokens,
-      ),
-    );
-    try {
-      if (!client.supportsStreamingCancellation) {
-        final completion = await client.completeChatStreamed(
-          messages: requestMessages,
-          extraParams: extraParams,
-          onToken: (token) => _emitTaskModelToken(
-            sink: onModelOutput,
-            label: label,
-            token: token,
-          ),
-          cancellationToken: cancellationToken,
-          diagnosticsLabel: label,
-          contextLimitTokens: contextLimitTokens,
-        );
-        cancellationToken?.throwIfCancelled();
-        return completion;
-      }
-
-      final content = StringBuffer();
-      final reasoning = StringBuffer();
-      final toolCalls = <int, _StreamingTaskToolCall>{};
-      final completer = Completer<ChatCompletionResponse>();
-      StreamSubscription<ChatToken>? sub;
-
-      void completeIfNeeded(ChatCompletionResponse response) {
-        if (!completer.isCompleted) completer.complete(response);
-      }
-
-      void failIfNeeded(Object error, [StackTrace? stackTrace]) {
-        if (!completer.isCompleted) {
-          completer.completeError(error, stackTrace);
-        }
-      }
-
-      void record(ChatToken token) {
-        cancellationToken?.throwIfCancelled();
-        _emitTaskModelToken(sink: onModelOutput, label: label, token: token);
-        final contentToken = token.content;
-        if (contentToken != null) content.write(contentToken);
-        final reasoningToken = token.reasoning;
-        if (reasoningToken != null) reasoning.write(reasoningToken);
-        final tool = token.tool;
-        if (tool != null) {
-          final call = toolCalls.putIfAbsent(
-            tool.index,
-            () => _StreamingTaskToolCall(),
-          );
-          if (tool.id != null) call.id = tool.id;
-          if (tool.name != null) call.name = tool.name;
-          if (tool.argumentsChunk != null) {
-            call.arguments.write(tool.argumentsChunk);
-          }
-        }
-      }
-
-      sub = client
-          .streamMessage(
-            messages: requestMessages,
-            extraParams: extraParams,
-            cancellationToken: cancellationToken,
-            diagnosticsLabel: label,
-            contextLimitTokens: contextLimitTokens,
-          )
-          .listen(
-            record,
-            onError: failIfNeeded,
-            onDone: () {
-              completeIfNeeded(
-                ChatCompletionResponse(
-                  content: content.toString(),
-                  reasoning: reasoning.toString(),
-                  toolCalls:
-                      (toolCalls.entries.toList()
-                            ..sort((a, b) => a.key.compareTo(b.key)))
-                          .where(
-                            (entry) =>
-                                entry.value.name?.trim().isNotEmpty == true,
-                          )
-                          .map(
-                            (entry) => ChatCompletionToolCall(
-                              id: entry.value.id,
-                              name: entry.value.name!,
-                              arguments: entry.value.arguments.isEmpty
-                                  ? '{}'
-                                  : entry.value.arguments.toString(),
-                            ),
-                          )
-                          .toList(),
-                ),
-              );
-            },
-            cancelOnError: true,
-          );
-
-      final unregister = cancellationToken?.onCancel(() async {
-        await sub?.cancel();
-        failIfNeeded(const OperationCancelledException());
-      });
-
-      try {
-        return await completer.future;
-      } finally {
-        unregister?.call();
-      }
-    } finally {
-      _emitTaskModelOutput(
-        onModelOutput,
-        TaskModelOutputEvent(type: TaskModelOutputEventType.done, label: label),
-      );
-    }
-  }
-
-  void _emitTaskModelToken({
-    required TaskModelOutputSink? sink,
-    required String label,
-    required ChatToken token,
-  }) {
-    final content = token.content;
-    if (content != null && content.isNotEmpty) {
-      _emitTaskModelOutput(
-        sink,
-        TaskModelOutputEvent(
-          type: TaskModelOutputEventType.content,
-          label: label,
-          text: content,
-          token: token,
-        ),
-      );
-    }
-    final reasoning = token.reasoning;
-    if (reasoning != null && reasoning.isNotEmpty) {
-      _emitTaskModelOutput(
-        sink,
-        TaskModelOutputEvent(
-          type: TaskModelOutputEventType.reasoning,
-          label: label,
-          text: reasoning,
-          token: token,
-        ),
-      );
-    }
-    final tool = token.tool;
-    if (tool != null) {
-      final text = [
-        if (tool.name != null) tool.name,
-        if (tool.argumentsChunk != null) tool.argumentsChunk,
-      ].whereType<String>().join(' ');
-      if (text.trim().isNotEmpty) {
-        _emitTaskModelOutput(
-          sink,
-          TaskModelOutputEvent(
-            type: TaskModelOutputEventType.toolCall,
-            label: label,
-            text: text,
-            token: token,
-            toolIndex: tool.index,
-          ),
-        );
-      }
-    }
-  }
-
-  void _emitTaskModelOutput(
-    TaskModelOutputSink? sink,
-    TaskModelOutputEvent event,
-  ) {
-    sink?.call(event);
   }
 
   Task _normaliseEditedTask(Task candidate, Task original, DateTime now) {
