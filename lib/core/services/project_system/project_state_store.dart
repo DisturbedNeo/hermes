@@ -44,13 +44,15 @@ class ProjectStateStore {
       workspace.rootPath,
       projectId,
       chatSessionId: chatSessionId,
+      includeHistory: false,
     );
     final project = result.project;
     return project == null
         ? result
         : ProjectLoadResult(
-            project: await hydrate(workspace, project),
+            project: project.copyWith(tasks: result.canonicalTasks),
             diagnostics: result.diagnostics,
+            canonicalTasks: result.canonicalTasks,
           );
   }
 

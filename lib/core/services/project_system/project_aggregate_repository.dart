@@ -12,10 +12,21 @@ import 'package:path/path.dart' as path;
 
 /// The result of loading a project together with storage health information.
 class ProjectLoadResult {
-  const ProjectLoadResult({required this.project, required this.diagnostics});
+  const ProjectLoadResult({
+    required this.project,
+    required this.diagnostics,
+    this.canonicalTasks = const [],
+  });
 
   final ProjectDocument? project;
   final ProjectPersistenceDiagnostics diagnostics;
+
+  /// Canonical task records read as part of the aggregate load.
+  ///
+  /// The persisted project document intentionally contains task IDs rather
+  /// than task bodies. Keeping these records beside the result lets the state
+  /// store hydrate the project without issuing a second read for every task.
+  final List<Task> canonicalTasks;
 }
 
 /// Revision and storage-health information gathered without decoding task
@@ -66,6 +77,7 @@ class ProjectAggregateRepository {
     String workspaceRoot,
     String projectId, {
     String? chatSessionId,
+    bool includeHistory = true,
   }) {
     return _coordinator.synchronized(
       workspaceRoot,
@@ -73,6 +85,7 @@ class ProjectAggregateRepository {
         workspaceRoot,
         projectId,
         chatSessionId: chatSessionId,
+        includeHistory: includeHistory,
       ),
     );
   }
@@ -95,6 +108,7 @@ class ProjectAggregateRepository {
     String workspaceRoot,
     String projectId, {
     String? chatSessionId,
+    bool includeHistory = true,
   }) async {
     final projectSnapshot = await _projects.loadProjectSnapshotUnlocked(
       workspaceRoot,
@@ -121,25 +135,25 @@ class ProjectAggregateRepository {
     final missing = <String>[];
     final corrupt = <String>[];
     final recovered = <String>[];
-    for (final taskId in projectSnapshot.value.taskIds) {
-      try {
-        final task = await _tasks.loadTaskSnapshotUnlocked(
-          workspaceRoot,
-          taskId,
-          includeHistory: true,
-        );
-        if (task == null) {
-          missing.add(taskId);
-        } else if (task.fromBackup) {
-          recovered.add(taskId);
-        }
-      } catch (error) {
-        corrupt.add(taskId);
+    final canonicalTasks = <Task>[];
+    final taskReads = await Future.wait<_TaskLoadRead>([
+      for (final taskId in projectSnapshot.value.taskIds)
+        _readTask(workspaceRoot, taskId, includeHistory: includeHistory),
+    ]);
+    for (final read in taskReads) {
+      final task = read.snapshot;
+      if (read.error != null) {
+        corrupt.add(read.taskId);
         diagnostics = diagnostics.merge(
           ProjectPersistenceDiagnostics(
-            issues: ['Task $taskId could not be decoded: $error'],
+            issues: ['Task ${read.taskId} could not be decoded: ${read.error}'],
           ),
         );
+      } else if (task == null) {
+        missing.add(read.taskId);
+      } else {
+        canonicalTasks.add(task.value);
+        if (task.fromBackup) recovered.add(read.taskId);
       }
     }
     diagnostics = diagnostics.merge(
@@ -152,7 +166,27 @@ class ProjectAggregateRepository {
     return ProjectLoadResult(
       project: projectSnapshot.value,
       diagnostics: diagnostics,
+      canonicalTasks: List.unmodifiable(canonicalTasks),
     );
+  }
+
+  Future<_TaskLoadRead> _readTask(
+    String workspaceRoot,
+    String taskId, {
+    required bool includeHistory,
+  }) async {
+    try {
+      return _TaskLoadRead(
+        taskId,
+        await _tasks.loadTaskSnapshotUnlocked(
+          workspaceRoot,
+          taskId,
+          includeHistory: includeHistory,
+        ),
+      );
+    } catch (error) {
+      return _TaskLoadRead(taskId, null, error);
+    }
   }
 
   Future<ProjectRevisionCheckResult> _checkRevisionsUnlocked(
@@ -192,31 +226,30 @@ class ProjectAggregateRepository {
       );
     }
 
-    final taskRevisions = <String, PersistedRevision?>{};
     final taskIds = <String>{
       ...project.taskIds,
       ...project.tasks.map((task) => task.id),
     };
-    for (final taskId in taskIds) {
-      try {
-        final revision = await _tasks.revisionOfUnlocked(workspaceRoot, taskId);
-        taskRevisions[taskId] = revision;
-        if (revision == null) {
-          diagnostics = diagnostics.merge(
-            ProjectPersistenceDiagnostics(missingTaskIds: [taskId]),
-          );
-        } else if (revision.fromBackup) {
-          diagnostics = diagnostics.merge(
-            ProjectPersistenceDiagnostics(recoveredFromBackup: [taskId]),
-          );
-        }
-      } catch (error) {
-        taskRevisions[taskId] = null;
+    final taskRevisions = <String, PersistedRevision?>{};
+    final revisionReads = await Future.wait<_TaskRevisionRead>([
+      for (final taskId in taskIds) _readTaskRevision(workspaceRoot, taskId),
+    ]);
+    for (final read in revisionReads) {
+      taskRevisions[read.taskId] = read.revision;
+      if (read.error != null) {
         diagnostics = diagnostics.merge(
           ProjectPersistenceDiagnostics(
-            corruptTaskIds: [taskId],
-            issues: ['Task $taskId could not be read: $error'],
+            corruptTaskIds: [read.taskId],
+            issues: ['Task ${read.taskId} could not be read: ${read.error}'],
           ),
+        );
+      } else if (read.revision == null) {
+        diagnostics = diagnostics.merge(
+          ProjectPersistenceDiagnostics(missingTaskIds: [read.taskId]),
+        );
+      } else if (read.revision!.fromBackup) {
+        diagnostics = diagnostics.merge(
+          ProjectPersistenceDiagnostics(recoveredFromBackup: [read.taskId]),
         );
       }
     }
@@ -226,6 +259,20 @@ class ProjectAggregateRepository {
       taskRevisions: taskRevisions,
       diagnostics: diagnostics,
     );
+  }
+
+  Future<_TaskRevisionRead> _readTaskRevision(
+    String workspaceRoot,
+    String taskId,
+  ) async {
+    try {
+      return _TaskRevisionRead(
+        taskId,
+        await _tasks.revisionOfUnlocked(workspaceRoot, taskId),
+      );
+    } catch (error) {
+      return _TaskRevisionRead(taskId, null, error);
+    }
   }
 
   Future<ProjectPersistenceDiagnostics> inspect(
@@ -293,7 +340,13 @@ class ProjectAggregateRepository {
     for (final task in tasks) {
       if (uniqueTasks.containsKey(task.id)) continue;
       uniqueTasks[task.id] = task;
-      final current = await _tasks.revisionOfUnlocked(workspaceRoot, task.id);
+    }
+    final taskRevisions = await _tasks.revisionOfManyUnlocked(
+      workspaceRoot,
+      uniqueTasks.keys,
+    );
+    for (final task in uniqueTasks.values) {
+      final current = taskRevisions[task.id];
       final actualRevision = current?.revision ?? 0;
       if (task.persistenceRevision != actualRevision) {
         throw StaleSnapshotException(
@@ -322,22 +375,27 @@ class ProjectAggregateRepository {
       deletedTaskIds: deletedTaskIds,
     );
     try {
-      final persistedTasks = <String, PersistedSnapshot<Task>>{};
-      for (final task in uniqueTasks.values) {
-        final persisted = await _tasks.saveSnapshot(
-          workspaceRoot,
-          task,
-          expectedRevision: task.persistenceRevision,
-        );
-        persistedTasks[task.id] = persisted;
-      }
-      for (final taskId in deletedTaskIds) {
-        await _tasks.deleteTaskUnlocked(workspaceRoot, taskId);
-      }
+      final persistedTaskEntries =
+          await Future.wait<MapEntry<String, PersistedSnapshot<Task>>>([
+            for (final task in uniqueTasks.values)
+              _saveTask(
+                workspaceRoot,
+                task,
+                currentRevision: taskRevisions[task.id],
+              ),
+          ]);
+      final persistedTasks = Map<String, PersistedSnapshot<Task>>.fromEntries(
+        persistedTaskEntries,
+      );
+      await Future.wait([
+        for (final taskId in deletedTaskIds)
+          _tasks.deleteTaskUnlocked(workspaceRoot, taskId),
+      ]);
       final persistedProject = await _projects.saveSnapshotUnlocked(
         workspaceRoot,
         project,
         expectedRevision: project.persistenceRevision,
+        currentRevision: currentProject,
       );
       await _markCommitted(transaction);
       await onTransactionPhase?.call('committed');
@@ -351,6 +409,20 @@ class ProjectAggregateRepository {
       // replay or repair is attempted here.
       rethrow;
     }
+  }
+
+  Future<MapEntry<String, PersistedSnapshot<Task>>> _saveTask(
+    String workspaceRoot,
+    Task task, {
+    required PersistedRevision? currentRevision,
+  }) async {
+    final persisted = await _tasks.saveSnapshotUnlocked(
+      workspaceRoot,
+      task,
+      expectedRevision: task.persistenceRevision,
+      currentRevision: currentRevision,
+    );
+    return MapEntry(task.id, persisted);
   }
 
   Future<bool> deleteProject(String workspaceRoot, ProjectDocument project) {
@@ -560,6 +632,22 @@ class ProjectAggregateRepository {
       interruptedTransactionIds: interrupted,
     );
   }
+}
+
+class _TaskLoadRead {
+  const _TaskLoadRead(this.taskId, this.snapshot, [this.error]);
+
+  final String taskId;
+  final PersistedSnapshot<Task>? snapshot;
+  final Object? error;
+}
+
+class _TaskRevisionRead {
+  const _TaskRevisionRead(this.taskId, this.revision, [this.error]);
+
+  final String taskId;
+  final PersistedRevision? revision;
+  final Object? error;
 }
 
 class _Transaction {

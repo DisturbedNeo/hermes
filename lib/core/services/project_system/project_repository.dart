@@ -200,6 +200,7 @@ class ProjectRepository {
     String workspaceRoot,
     ProjectDocument project, {
     int? expectedRevision,
+    PersistedRevision? currentRevision,
     bool assumeLocked = false,
   }) async {
     if (!assumeLocked) {
@@ -209,6 +210,7 @@ class ProjectRepository {
           workspaceRoot,
           project,
           expectedRevision: expectedRevision,
+          currentRevision: currentRevision,
           assumeLocked: true,
         ),
       );
@@ -216,7 +218,8 @@ class ProjectRepository {
     final dir = _validatedProjectDirectory(workspaceRoot, project.id);
     await dir.create(recursive: true);
     final file = File(path.join(dir.path, documentFileName));
-    final current = await revisionOfUnlocked(workspaceRoot, project.id);
+    final current =
+        currentRevision ?? await revisionOfUnlocked(workspaceRoot, project.id);
     final actualRevision = current?.revision ?? 0;
     final requiredRevision = expectedRevision ?? project.persistenceRevision;
     if (requiredRevision != actualRevision) {
@@ -252,10 +255,12 @@ class ProjectRepository {
     String workspaceRoot,
     ProjectDocument project, {
     required int expectedRevision,
+    PersistedRevision? currentRevision,
   }) => saveSnapshot(
     workspaceRoot,
     project,
     expectedRevision: expectedRevision,
+    currentRevision: currentRevision,
     assumeLocked: true,
   );
 

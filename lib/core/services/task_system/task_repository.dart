@@ -146,6 +146,59 @@ class TaskRepository {
     );
   }
 
+  /// Loads several task snapshots while holding the workspace lock once.
+  ///
+  /// The individual filesystem reads are allowed to overlap, but callers still
+  /// get one coordinated persistence operation. This is used by aggregate
+  /// project loads and commits to avoid one lock acquisition per task.
+  Future<Map<String, PersistedSnapshot<Task>?>> loadTaskSnapshots(
+    String workspaceRoot,
+    Iterable<String> taskIds, {
+    String? chatSessionId,
+    String? projectId,
+    bool includeHistory = true,
+  }) {
+    return _coordinator.synchronized(
+      workspaceRoot,
+      () => loadTaskSnapshotsUnlocked(
+        workspaceRoot,
+        taskIds,
+        chatSessionId: chatSessionId,
+        projectId: projectId,
+        includeHistory: includeHistory,
+      ),
+    );
+  }
+
+  /// Internal batch load. The caller must hold the workspace lock.
+  Future<Map<String, PersistedSnapshot<Task>?>> loadTaskSnapshotsUnlocked(
+    String workspaceRoot,
+    Iterable<String> taskIds, {
+    String? chatSessionId,
+    String? projectId,
+    bool includeHistory = true,
+  }) async {
+    final ids = <String>[];
+    final seen = <String>{};
+    for (final taskId in taskIds) {
+      if (seen.add(taskId)) ids.add(taskId);
+    }
+    final snapshots = await Future.wait<PersistedSnapshot<Task>?>([
+      for (final taskId in ids)
+        _loadTaskSnapshotUnlocked(
+          workspaceRoot,
+          taskId,
+          chatSessionId: chatSessionId,
+          projectId: projectId,
+          includeHistory: includeHistory,
+        ),
+    ]);
+    return {
+      for (var index = 0; index < ids.length; index++)
+        ids[index]: snapshots[index],
+    };
+  }
+
   /// Reads only the snapshot envelope revision. The task document and run
   /// history are not decoded, so this is suitable for optimistic-concurrency
   /// checks.
@@ -209,7 +262,11 @@ class TaskRepository {
     }
     if (projectId != null && task.projectId != projectId) return null;
     if (!includeHistory) {
-      return PersistedSnapshot(value: task, revision: envelope.revision);
+      return PersistedSnapshot(
+        value: task,
+        revision: envelope.revision,
+        fromBackup: raw.fromBackup,
+      );
     }
     final runs = await _loadRuns(dir);
     return PersistedSnapshot(
@@ -233,6 +290,25 @@ class TaskRepository {
       revision: envelope.revision,
       fromBackup: raw.fromBackup,
     );
+  }
+
+  /// Internal batch revision read. The caller must hold the workspace lock.
+  Future<Map<String, PersistedRevision?>> revisionOfManyUnlocked(
+    String workspaceRoot,
+    Iterable<String> taskIds,
+  ) async {
+    final ids = <String>[];
+    final seen = <String>{};
+    for (final taskId in taskIds) {
+      if (seen.add(taskId)) ids.add(taskId);
+    }
+    final revisions = await Future.wait<PersistedRevision?>([
+      for (final taskId in ids) revisionOfUnlocked(workspaceRoot, taskId),
+    ]);
+    return {
+      for (var index = 0; index < ids.length; index++)
+        ids[index]: revisions[index],
+    };
   }
 
   Future<PersistedSnapshot<Task>> saveSnapshot(
@@ -263,11 +339,13 @@ class TaskRepository {
     String workspaceRoot,
     Task task, {
     int? expectedRevision,
+    PersistedRevision? currentRevision,
   }) async {
     final dir = _validatedTaskDirectory(workspaceRoot, task.id);
     await dir.create(recursive: true);
     final file = File(path.join(dir.path, documentFileName));
-    final current = await revisionOfUnlocked(workspaceRoot, task.id);
+    final current =
+        currentRevision ?? await revisionOfUnlocked(workspaceRoot, task.id);
     final actualRevision = current?.revision ?? 0;
     final requiredRevision = expectedRevision ?? task.persistenceRevision;
     if (requiredRevision != actualRevision) {
@@ -322,10 +400,12 @@ class TaskRepository {
     String workspaceRoot,
     Task task, {
     required int expectedRevision,
+    PersistedRevision? currentRevision,
   }) => _saveSnapshotUnlocked(
     workspaceRoot,
     task,
     expectedRevision: expectedRevision,
+    currentRevision: currentRevision,
   );
 
   Future<bool> deleteTask(String workspaceRoot, String taskId) async {

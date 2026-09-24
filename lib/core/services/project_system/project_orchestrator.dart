@@ -511,26 +511,31 @@ class _ProjectRuntimeService {
               ? project.taskIds
               : [for (final task in project.tasks) task.id],
         );
-    final preparedTasks = <Task>[];
+    final dirtyTasks = <Task>[];
+    final taskIdsToLoad = <String>[];
     for (final task in refreshed.tasks) {
       final changed =
           persistenceContext == null ||
           persistenceContext.shouldPersistTask(task);
-      final existingRevision = await _taskService.repository.revisionOf(
-        workspaceRoot,
-        task.id,
-      );
-      if (persistenceContext != null && !changed && existingRevision != null) {
-        continue;
-      }
-      final existingSnapshot = existingRevision == null
-          ? null
-          : await _taskService.repository.loadTask(
-              workspaceRoot,
-              task.id,
-              includeHistory: false,
-            );
-      final existing = existingSnapshot?.value;
+      // A zero revision means the task has not yet been committed to the
+      // canonical task store, even if the project-side object is unchanged.
+      if (!changed && task.persistenceRevision > 0) continue;
+      dirtyTasks.add(task);
+      // Task execution can update the canonical task between project
+      // checkpoints, so always read dirty task metadata before merging it.
+      // The batch keeps this to one coordinated read pass.
+      taskIdsToLoad.add(task.id);
+    }
+    final loadedExisting = taskIdsToLoad.isEmpty
+        ? const <String, PersistedSnapshot<Task>?>{}
+        : await _taskService.repository.loadTaskSnapshots(
+            workspaceRoot,
+            taskIdsToLoad,
+            includeHistory: false,
+          );
+    final preparedTasks = <Task>[];
+    for (final task in dirtyTasks) {
+      final existing = loadedExisting[task.id]?.value;
       final taskToSave = _taskForPersistence(
         task,
         existing,
@@ -985,17 +990,22 @@ class _ProjectRuntimeService {
     required ProjectDocument snapshot,
     ProjectTaskSnapshotSink? onTaskUpdated,
   }) async {
-    final persistenceDiagnostics = await _aggregateRepository.inspect(
+    final loaded = await _aggregateRepository.loadProject(
       workspace.rootPath,
-      snapshot,
+      snapshot.id,
+      chatSessionId: snapshot.chatSessionId,
+      includeHistory: false,
     );
+    final persistenceDiagnostics = loaded.diagnostics;
     if (persistenceDiagnostics.isReadOnly) {
       return ProjectCommandResult.fromSnapshot(
         project: snapshot,
         persistenceDiagnostics: persistenceDiagnostics,
       );
     }
-    snapshot = await _hydrateProjectTasks(workspace, snapshot);
+    snapshot = loaded.project == null
+        ? await _hydrateProjectTasks(workspace, snapshot)
+        : snapshot.copyWith(tasks: loaded.canonicalTasks);
     final persistenceContext = _ProjectPersistenceContext(
       snapshot.tasks,
       health: persistenceDiagnostics,
