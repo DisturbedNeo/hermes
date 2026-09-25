@@ -45,3 +45,16 @@ The project system has three deliberately separate concerns:
 Frontier limits are bounded run budgets, not automatic replanning triggers.
 Plans are revised only for an explicit scope, dependency, evidence,
 workspace, failure, or roadmap change.
+
+The runtime keeps deterministic project decisions separate from effects. The
+`ProjectDecisionEngine` selects the next command boundary, while model calls,
+task execution, and persistence execute that decision. `ProjectState` exposes
+separate plan, execution, evidence, and control read models during the schema
+migration; the persisted document remains compatible with older snapshots.
+
+Every planning producer is adapted to a typed `ProjectPlanPatch`, which passes
+through the same validation, risk, approval, and reconciliation service.
+Aggregate transaction manifests record semantic persistence checkpoints.
+Interrupted transactions can be explicitly rolled back when snapshot
+revisions make that safe; unresolved transactions remain read-only and
+diagnostic.

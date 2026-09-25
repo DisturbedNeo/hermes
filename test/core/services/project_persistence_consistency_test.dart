@@ -6,6 +6,7 @@ import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/services/persistence_contracts.dart';
 import 'package:hermes/core/services/project_system/project_aggregate_repository.dart';
+import 'package:hermes/core/services/project_system/project_checkpoint.dart';
 import 'package:hermes/core/services/project_system/project_repository.dart';
 import 'package:hermes/core/services/task_system/task_repository.dart';
 import 'package:hermes/core/services/workspace_persistence_coordinator.dart';
@@ -153,7 +154,8 @@ void main() {
       final loaded = await aggregate.loadProject(root.path, project.id);
       expect(loaded.project, isNotNull);
       expect(loaded.diagnostics.recoveredFromBackup, contains('project_1'));
-      expect(loaded.diagnostics.isReadOnly, isTrue);
+      expect(loaded.diagnostics.isDegraded, isTrue);
+      expect(loaded.diagnostics.isReadOnly, isFalse);
       expect(await primary.readAsString(), '{}');
     },
   );
@@ -202,14 +204,39 @@ void main() {
           workspaceRoot: root.path,
           project: updatedProject,
           tasks: [updatedTask],
+          checkpoint: ProjectPersistenceCheckpoint.planRevision,
         ),
         throwsStateError,
       );
+
+      final transactionRoot = Directory(
+        path.join(root.path, '.agent/transactions'),
+      );
+      final transactionDirectories = await transactionRoot.list().toList();
+      expect(transactionDirectories, isNotEmpty);
+      final manifest = File(
+        path.join(
+          (transactionDirectories.single as Directory).path,
+          'manifest.json',
+        ),
+      );
+      final manifestMap = jsonDecode(await manifest.readAsString()) as Map;
+      expect(manifestMap['checkpoint'], 'plan_revision');
 
       final loaded = await aggregate.loadProject(root.path, project.id);
       expect(loaded.diagnostics.interruptedTransactionIds, isNotEmpty);
       expect(loaded.diagnostics.isReadOnly, isTrue);
       expect(loaded.project?.title, project.title);
+
+      final recovery = await aggregate.recoverInterruptedTransactions(
+        root.path,
+      );
+      expect(recovery.recoveredTransactionIds, isNotEmpty);
+      expect(recovery.unresolvedTransactionIds, isEmpty);
+
+      final recovered = await aggregate.loadProject(root.path, project.id);
+      expect(recovered.diagnostics.interruptedTransactionIds, isEmpty);
+      expect(recovered.diagnostics.isReadOnly, isFalse);
     },
   );
 

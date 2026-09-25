@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/services/project_system/project_plan_builder.dart';
+import 'package:hermes/core/services/project_system/project_plan_patch.dart';
 import 'package:hermes/core/services/project_system/project_plan_revision_service.dart';
 
 void main() {
@@ -49,6 +50,12 @@ void main() {
       );
 
       expect(committed.validation.valid, isTrue);
+      expect(committed.patch.revision, committed.proposal.revision);
+      expect(
+        committed.patch.source,
+        ProjectPlanPatchSource.incrementalRevision,
+      );
+      expect(committed.patch.plan.tasks, hasLength(1));
       final task = committed.project.taskById(taskId)!;
       expect(task.gates.single.id, 'command_passes');
       expect(task.gates.single.params['command'], 'dart test');

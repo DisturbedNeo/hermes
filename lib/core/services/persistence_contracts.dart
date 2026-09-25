@@ -101,6 +101,7 @@ class ProjectPersistenceBlockedException implements Exception {
 class ProjectPersistenceDiagnostics {
   const ProjectPersistenceDiagnostics({
     this.issues = const [],
+    this.warnings = const [],
     this.missingTaskIds = const [],
     this.corruptTaskIds = const [],
     this.interruptedTransactionIds = const [],
@@ -108,23 +109,29 @@ class ProjectPersistenceDiagnostics {
   });
 
   final List<String> issues;
+  final List<String> warnings;
   final List<String> missingTaskIds;
   final List<String> corruptTaskIds;
   final List<String> interruptedTransactionIds;
   final List<String> recoveredFromBackup;
 
+  /// A backup-only load is degraded but still safe to repair by writing a new
+  /// primary snapshot. Missing/corrupt documents and interrupted transactions
+  /// remain read-only until explicitly reconciled.
+  bool get isDegraded => recoveredFromBackup.isNotEmpty;
+
   bool get isReadOnly =>
       issues.isNotEmpty ||
       missingTaskIds.isNotEmpty ||
       corruptTaskIds.isNotEmpty ||
-      interruptedTransactionIds.isNotEmpty ||
-      recoveredFromBackup.isNotEmpty;
+      interruptedTransactionIds.isNotEmpty;
 
-  bool get isEmpty => !isReadOnly && recoveredFromBackup.isEmpty;
+  bool get isEmpty => !isReadOnly && !isDegraded;
 
   ProjectPersistenceDiagnostics merge(ProjectPersistenceDiagnostics other) {
     return ProjectPersistenceDiagnostics(
       issues: [...issues, ...other.issues],
+      warnings: [...warnings, ...other.warnings],
       missingTaskIds: [...missingTaskIds, ...other.missingTaskIds],
       corruptTaskIds: [...corruptTaskIds, ...other.corruptTaskIds],
       interruptedTransactionIds: [

@@ -5,6 +5,7 @@ import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/services/planning_runtime.dart';
 import 'package:hermes/core/services/project_system/project_plan_builder.dart';
 import 'package:hermes/core/services/project_system/project_plan_revision_service.dart';
+import 'package:hermes/core/services/project_system/project_plan_patch.dart';
 import 'package:hermes/core/services/project_system/project_planning_workspace_reader.dart';
 import 'package:hermes/core/services/project_system/project_view_service.dart';
 
@@ -55,6 +56,7 @@ class ProjectPlanningContext {
   String _draftRefinedGoal;
   List<String> _draftConstraints;
   ProjectDesiredPlan? committedProposal;
+  ProjectPlanPatch? committedPatch;
   ProjectState? committedProject;
 
   bool closed = false;
@@ -141,30 +143,30 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
     String? commandId,
   }) async {
     return switch (toolId) {
-        'plan_set_project_details' when includeProjectDetails =>
-          _setProjectDetails(arguments),
-        'planning_read_file' when context.workspaceReader != null =>
-          await _planningReadFile(arguments),
-        'project_view' => _view(arguments),
-        'plan_add_criteria' => _addCriteria(arguments, commandId),
-        'plan_add_milestones' => _addMilestones(arguments, commandId),
-        'plan_add_tasks' => _addTasks(arguments, commandId),
-        'plan_update_task' => _updateTask(arguments, commandId),
-        'plan_set_dependency' => _setDependency(arguments, commandId),
-        'plan_set_disposition' => _setDisposition(arguments, commandId),
-        'plan_split_task' => _splitTask(arguments, commandId),
-        'plan_retry_task' => _retryTask(arguments, commandId),
-        'plan_add_check' => _addCheck(arguments, commandId),
-        'plan_add_note' => _addNote(arguments, commandId),
-        'plan_request_user_decision' => _requestDecision(arguments, commandId),
-        'plan_preview' => _preview(arguments),
-        'plan_commit' => await _commit(arguments),
-        _ => throw _argument(
-          'unknown_tool',
-          'tool',
-          'Unknown project planning tool $toolId.',
-        ),
-      };
+      'plan_set_project_details' when includeProjectDetails =>
+        _setProjectDetails(arguments),
+      'planning_read_file' when context.workspaceReader != null =>
+        await _planningReadFile(arguments),
+      'project_view' => _view(arguments),
+      'plan_add_criteria' => _addCriteria(arguments, commandId),
+      'plan_add_milestones' => _addMilestones(arguments, commandId),
+      'plan_add_tasks' => _addTasks(arguments, commandId),
+      'plan_update_task' => _updateTask(arguments, commandId),
+      'plan_set_dependency' => _setDependency(arguments, commandId),
+      'plan_set_disposition' => _setDisposition(arguments, commandId),
+      'plan_split_task' => _splitTask(arguments, commandId),
+      'plan_retry_task' => _retryTask(arguments, commandId),
+      'plan_add_check' => _addCheck(arguments, commandId),
+      'plan_add_note' => _addNote(arguments, commandId),
+      'plan_request_user_decision' => _requestDecision(arguments, commandId),
+      'plan_preview' => _preview(arguments),
+      'plan_commit' => await _commit(arguments),
+      _ => throw _argument(
+        'unknown_tool',
+        'tool',
+        'Unknown project planning tool $toolId.',
+      ),
+    };
   }
 
   @override
@@ -743,6 +745,7 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
       );
     }
     context.committedProposal = committed.proposal;
+    context.committedPatch = committed.patch;
     context.committedProject = committed.project.copyWith(
       title: context.draftTitle,
       refinedGoal: context.draftRefinedGoal,
@@ -844,7 +847,8 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
         'steps',
         'currentStepId',
       },
-      message: 'Creation tools generate persistent fields; the field is not accepted.',
+      message:
+          'Creation tools generate persistent fields; the field is not accepted.',
     );
   }
 

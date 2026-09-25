@@ -22,6 +22,10 @@ import 'package:hermes/core/services/project_system/project_completion_service.d
 import 'package:hermes/core/services/project_system/project_control_state_service.dart';
 import 'package:hermes/core/services/project_system/project_lifecycle_service.dart';
 import 'package:hermes/core/services/project_system/project_plan_revision_service.dart';
+import 'package:hermes/core/services/project_system/project_decision_engine.dart';
+import 'package:hermes/core/services/project_system/project_checkpoint.dart';
+import 'package:hermes/core/services/project_system/project_plan_patch.dart';
+import 'package:hermes/core/services/project_system/project_state_models.dart';
 import 'package:hermes/core/services/project_system/project_progress_monitor.dart';
 import 'package:hermes/core/services/project_system/project_repository.dart';
 import 'package:hermes/core/services/project_system/project_aggregate_repository.dart';
@@ -110,6 +114,10 @@ class ProjectOrchestrator {
 
   Future<ProjectCommandResult> recover(ProjectRecoveryRequest request) =>
       _runtime.recover(request);
+
+  Future<ProjectTransactionRecoveryResult> recoverPersistence(
+    WorkspaceAttachment workspace,
+  ) => _runtime.recoverPersistence(workspace);
 
   Future<List<ProjectSummary>> listProjects(
     WorkspaceAttachment workspace, {
@@ -408,6 +416,7 @@ class _ProjectRuntimeService {
       );
   final ProjectPlanRevisionService _planRevisionService =
       const ProjectPlanRevisionService();
+  final ProjectDecisionEngine _decisionEngine = const ProjectDecisionEngine();
   final ProjectControlStateService _controlStateService =
       const ProjectControlStateService();
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
@@ -436,6 +445,10 @@ class _ProjectRuntimeService {
 
   Future<ProjectCommandResult> recover(ProjectRecoveryRequest request) =>
       _commandService.recover(request, port: _recoveryPort);
+
+  Future<ProjectTransactionRecoveryResult> recoverPersistence(
+    WorkspaceAttachment workspace,
+  ) => _stateStore.recoverInterruptedTransactions(workspace);
 
   Future<ProjectCommandResult> _runProjectForCommand(
     ProjectExecutionRequest request,
@@ -506,6 +519,8 @@ class _ProjectRuntimeService {
     String workspaceRoot,
     ProjectDocument project, {
     _ProjectPersistenceContext? persistenceContext,
+    ProjectPersistenceCheckpoint checkpoint =
+        ProjectPersistenceCheckpoint.runtime,
   }) async {
     project = _controlStateService.synchronise(project);
     final refreshed = _scheduler
@@ -554,6 +569,7 @@ class _ProjectRuntimeService {
       project: refreshed,
       tasks: preparedTasks,
       knownHealth: persistenceContext?.health,
+      checkpoint: checkpoint,
     );
     final persistedTasks = {
       for (final task in refreshed.tasks)
@@ -620,6 +636,7 @@ class _ProjectRuntimeService {
         pendingReplanReason: null,
       ),
       persistenceContext: persistenceContext,
+      checkpoint: ProjectPersistenceCheckpoint.frontierSelection,
     );
   }
 
@@ -997,9 +1014,9 @@ class _ProjectRuntimeService {
         openQuestions: filteredQuestions.blocking,
         createdAt: now,
       );
-      final committed = await _planRevisionService.prepareAndApply(
+      final committed = await _planRevisionService.prepareAndApplyPatch(
         project: transactionBase,
-        proposal: initialProposal,
+        patch: ProjectPlanPatch.initial(initialProposal),
         workspaceRoot: workspace.rootPath,
         approvalPolicy: ProjectPlanApprovalPolicy.never,
       );
@@ -1026,7 +1043,11 @@ class _ProjectRuntimeService {
         now: now,
       );
     }
-    return _persistProject(workspace.rootPath, project);
+    return _persistProject(
+      workspace.rootPath,
+      project,
+      checkpoint: ProjectPersistenceCheckpoint.initialization,
+    );
   }
 
   bool _blocksInitialPlanningForContextIssue(
@@ -1448,6 +1469,7 @@ class _ProjectRuntimeService {
           workspace.rootPath,
           project,
           persistenceContext: persistenceContext,
+          checkpoint: ProjectPersistenceCheckpoint.userBoundary,
         );
         return ProjectCommandResult.fromSnapshot(
           project: project,
@@ -1552,7 +1574,16 @@ class _ProjectRuntimeService {
         );
         continue;
       }
-      if (candidate == null && replanTriggers.isEmpty) {
+      var decision = _decisionEngine.decide(
+        ProjectDecisionInput(
+          project: project,
+          candidate: candidate,
+          replanTriggers: replanTriggers,
+          runIterations: runIterations,
+          allowedIterations: allowedIterations,
+        ),
+      );
+      if (decision.action == ProjectExecutionAction.evaluateCompletion) {
         project = await _applyCompletionEvaluation(
           client: client,
           project: project,
@@ -1587,13 +1618,18 @@ class _ProjectRuntimeService {
               project.pendingReplanReason ??
               _replanReasonForTriggers(replanTriggers),
         );
+        decision = _decisionEngine.decide(
+          ProjectDecisionInput(
+            project: project,
+            candidate: candidate,
+            replanTriggers: replanTriggers,
+            runIterations: runIterations,
+            allowedIterations: allowedIterations,
+          ),
+        );
       }
 
-      if (_shouldRevisePlan(
-        project: project,
-        candidate: candidate,
-        triggers: replanTriggers,
-      )) {
+      if (decision.action == ProjectExecutionAction.revisePlan) {
         project = await _revisePlan(
           client: client,
           workspace: workspace,
@@ -1609,6 +1645,7 @@ class _ProjectRuntimeService {
           workspace.rootPath,
           project,
           persistenceContext: persistenceContext,
+          checkpoint: ProjectPersistenceCheckpoint.planRevision,
         );
         if (project.pendingPlanApproval != null ||
             project.status == ProjectStatus.blocked ||
@@ -1621,7 +1658,8 @@ class _ProjectRuntimeService {
         continue;
       }
 
-      if (candidate == null) {
+      if (decision.action == ProjectExecutionAction.block ||
+          candidate == null) {
         project = _blockProject(
           project.copyWith(
             diagnostics: project.diagnostics.copyWith(
@@ -1764,6 +1802,7 @@ class _ProjectRuntimeService {
         workspace.rootPath,
         project,
         persistenceContext: persistenceContext,
+        checkpoint: ProjectPersistenceCheckpoint.taskReview,
       );
 
       final evaluatedProjectTask = _activeProjectTask(project) ?? candidate;
@@ -2600,6 +2639,7 @@ class _ProjectRuntimeService {
       workspace.rootPath,
       workingProject,
       persistenceContext: persistenceContext,
+      checkpoint: ProjectPersistenceCheckpoint.taskExecutionStarted,
     );
 
     final planningContext = _planningContext(workingProject, projectTask);
@@ -2660,6 +2700,7 @@ class _ProjectRuntimeService {
       workspace.rootPath,
       workingProject,
       persistenceContext: persistenceContext,
+      checkpoint: ProjectPersistenceCheckpoint.taskExecution,
     );
     onTaskUpdated?.call(activeTask);
 
@@ -2738,6 +2779,7 @@ class _ProjectRuntimeService {
         workspace.rootPath,
         checkpoint,
         persistenceContext: persistenceContext,
+        checkpoint: ProjectPersistenceCheckpoint.taskExecution,
       );
       if (checkpoint.status == ProjectStatus.paused ||
           checkpoint.status == ProjectStatus.waitingForUser) {
@@ -3487,12 +3529,13 @@ class _ProjectRuntimeService {
   }
 
   TaskPlanningContext _planningContext(ProjectDocument project, Task task) {
+    final plan = project.plan;
     final memoryContext = _memoryService.selectContext(
       project: project,
       task: task,
     );
     return TaskPlanningContext(
-      projectGoal: project.refinedGoal,
+      projectGoal: plan.refinedGoal,
       projectTaskTitle: task.title,
       projectTaskObjective: task.objective,
       knownFacts: [...memoryContext.lines, ...task.context],
@@ -3510,7 +3553,7 @@ class _ProjectRuntimeService {
       requiredGates: _requiredGatesForTask(project, task),
       criterionIds: task.criterionIds,
       criteria: [
-        for (final criterion in project.criteria)
+        for (final criterion in plan.criteria)
           if (task.criterionIds.contains(criterion.id))
             TaskProjectCriterion(
               id: criterion.id,
@@ -5017,19 +5060,6 @@ class _ProjectRuntimeService {
       for (final trigger in triggers)
         if (_runtimeReplanTriggers.contains(trigger)) trigger,
     }.toList();
-  }
-
-  bool _shouldRevisePlan({
-    required ProjectDocument project,
-    required Task? candidate,
-    required List<ProjectPlanRevisionTrigger> triggers,
-  }) {
-    if (_activeProjectTask(project) != null || triggers.isEmpty) return false;
-    if (triggers.length == 1 &&
-        triggers.single == ProjectPlanRevisionTrigger.noReadyTask) {
-      return candidate == null;
-    }
-    return true;
   }
 
   ProjectInitialisation _fallbackInitialisation(String originalGoal) {

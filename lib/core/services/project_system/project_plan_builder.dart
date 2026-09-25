@@ -5,6 +5,7 @@ import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/services/project_system/project_plan_revision_service.dart';
 import 'package:hermes/core/services/project_system/project_plan_validator.dart';
+import 'package:hermes/core/services/project_system/project_plan_patch.dart';
 import 'package:hermes/core/services/project_system/project_task_models.dart';
 
 /// A structured error returned by a draft command before commit.
@@ -39,6 +40,8 @@ class ProjectPlanBuilderCommit {
 
   ProjectState get project => result.project;
   ProjectPlanValidationResult get validation => result.validation;
+
+  ProjectPlanPatch get patch => ProjectPlanPatch.incremental(proposal);
 }
 
 class ProjectPlanBuilderPreview {
@@ -945,12 +948,11 @@ class ProjectPlanBuilder {
         ProjectPlanApprovalPolicy.highRiskOnly,
   }) async {
     final proposal = _materialize();
-    final result = await _revisionService.prepareAndApply(
+    final result = await _revisionService.prepareAndApplyPatch(
       project: _planningProject,
-      proposal: proposal,
+      patch: ProjectPlanPatch.incremental(proposal),
       workspaceRoot: workspaceRoot,
       approvalPolicy: approvalPolicy,
-      splitTaskIds: _splitTaskIds,
     );
     return ProjectPlanBuilderCommit(proposal: proposal, result: result);
   }

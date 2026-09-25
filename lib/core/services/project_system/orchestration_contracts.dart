@@ -104,22 +104,35 @@ class ProjectCommandResult {
 class ProjectCommandStopReasonFor {
   const ProjectCommandStopReasonFor._();
 
-  static ProjectCommandStopReason project(ProjectDocument project) =>
-      project.boundary?.outcome == ProjectControlOutcome.degradedPlanning
-      ? ProjectCommandStopReason.degradedPlanning
-      : switch (project.status) {
-          ProjectStatus.active ||
-          ProjectStatus.initializing ||
-          ProjectStatus.runningTask ||
-          ProjectStatus.reviewingTask => ProjectCommandStopReason.active,
-          ProjectStatus.paused => ProjectCommandStopReason.paused,
-          ProjectStatus.waitingForUser =>
-            ProjectCommandStopReason.waitingForUser,
-          ProjectStatus.blocked => ProjectCommandStopReason.blocked,
-          ProjectStatus.completed => ProjectCommandStopReason.completed,
-          ProjectStatus.failed => ProjectCommandStopReason.failed,
-          ProjectStatus.cancelled => ProjectCommandStopReason.cancelled,
-        };
+  static ProjectCommandStopReason project(
+    ProjectDocument project,
+  ) => switch (project.boundary?.outcome) {
+    ProjectControlOutcome.degradedPlanning =>
+      ProjectCommandStopReason.degradedPlanning,
+    ProjectControlOutcome.awaitingUserInput ||
+    ProjectControlOutcome.awaitingPlanApproval =>
+      ProjectCommandStopReason.waitingForUser,
+    ProjectControlOutcome.blockedValidation => ProjectCommandStopReason.blocked,
+    ProjectControlOutcome.paused ||
+    ProjectControlOutcome.pausedByBudget => ProjectCommandStopReason.paused,
+    ProjectControlOutcome.completed => ProjectCommandStopReason.completed,
+    ProjectControlOutcome.failed => ProjectCommandStopReason.failed,
+    ProjectControlOutcome.cancelled => ProjectCommandStopReason.cancelled,
+    ProjectControlOutcome.initializing ||
+    ProjectControlOutcome.running ||
+    null => switch (project.status) {
+      ProjectStatus.active ||
+      ProjectStatus.initializing ||
+      ProjectStatus.runningTask ||
+      ProjectStatus.reviewingTask => ProjectCommandStopReason.active,
+      ProjectStatus.paused => ProjectCommandStopReason.paused,
+      ProjectStatus.waitingForUser => ProjectCommandStopReason.waitingForUser,
+      ProjectStatus.blocked => ProjectCommandStopReason.blocked,
+      ProjectStatus.completed => ProjectCommandStopReason.completed,
+      ProjectStatus.failed => ProjectCommandStopReason.failed,
+      ProjectStatus.cancelled => ProjectCommandStopReason.cancelled,
+    },
+  };
 }
 
 /// All inputs required to run one project command.

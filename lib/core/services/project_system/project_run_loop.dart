@@ -27,7 +27,9 @@ class ProjectRunLoop {
 
   bool _canContinue(ProjectCommandResult result) {
     final project = result.project;
-    return project.status == ProjectStatus.paused &&
+    final outcome = project.boundary?.outcome;
+    return (outcome == ProjectControlOutcome.paused ||
+            (outcome == null && project.status == ProjectStatus.paused)) &&
         project.activeTaskId == null &&
         project.pendingPlanApproval == null &&
         project.openQuestions.isEmpty &&

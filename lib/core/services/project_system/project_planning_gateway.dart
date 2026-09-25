@@ -3,6 +3,7 @@ import 'package:hermes/core/models/planning_metrics.dart';
 import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/core/services/project_system/project_plan_patch.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/workspace_discovery_profile.dart';
 
@@ -129,6 +130,7 @@ class ProjectIncrementalPlanResult {
   final int modelCalls;
   final PlanningMetrics planningMetrics;
   final String? error;
+  final ProjectPlanPatch? patch;
 
   const ProjectIncrementalPlanResult({
     required this.project,
@@ -138,6 +140,7 @@ class ProjectIncrementalPlanResult {
     required this.modelCalls,
     this.planningMetrics = const PlanningMetrics(),
     this.error,
+    this.patch,
   });
 }
 

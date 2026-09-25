@@ -5,6 +5,7 @@ import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/services/project_system/project_memory_service.dart';
 import 'package:hermes/core/services/project_system/project_lifecycle_service.dart';
 import 'package:hermes/core/services/project_system/project_plan_validator.dart';
+import 'package:hermes/core/services/project_system/project_plan_patch.dart';
 
 typedef ProjectPlanRepair =
     Future<ProjectDesiredPlan?> Function(
@@ -55,6 +56,24 @@ class ProjectPlanRevisionService {
       workspaceRoot: workspaceRoot,
     );
   }
+
+  /// Applies the common plan-patch protocol used by initial, incremental,
+  /// split, and recovery planning adapters.
+  Future<ProjectPlanRevisionResult> prepareAndApplyPatch({
+    required ProjectState project,
+    required ProjectPlanPatch patch,
+    required String workspaceRoot,
+    ProjectPlanApprovalPolicy approvalPolicy =
+        ProjectPlanApprovalPolicy.highRiskOnly,
+    ProjectPlanRepair? repair,
+  }) => prepareAndApply(
+    project: project,
+    proposal: patch.plan,
+    workspaceRoot: workspaceRoot,
+    approvalPolicy: approvalPolicy,
+    repair: repair,
+    splitTaskIds: patch.plan.splitTaskIds,
+  );
 
   Future<ProjectPlanRevisionResult> prepareAndApply({
     required ProjectState project,

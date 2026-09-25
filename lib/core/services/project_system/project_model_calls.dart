@@ -303,6 +303,7 @@ ${_encoder.convert(_projectViewService.query(project, taskRef: oversizedTask.id)
         awaitingApproval: result['awaiting_approval'] == true,
         modelCalls: (result['model_calls'] as num?)?.toInt() ?? 1,
         planningMetrics: _planningMetricsFromResult(result),
+        patch: context.committedPatch,
       );
     }
     final code = result['code']?.toString().trim();

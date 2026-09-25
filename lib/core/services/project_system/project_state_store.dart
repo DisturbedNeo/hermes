@@ -100,6 +100,10 @@ class ProjectStateStore {
     ProjectDocument project,
   ) => _aggregateRepository.inspect(workspace.rootPath, project);
 
+  Future<ProjectTransactionRecoveryResult> recoverInterruptedTransactions(
+    WorkspaceAttachment workspace,
+  ) => _aggregateRepository.recoverInterruptedTransactions(workspace.rootPath);
+
   Future<ProjectRevisionCheckResult> checkRevisions(
     WorkspaceAttachment workspace,
     ProjectDocument project,
