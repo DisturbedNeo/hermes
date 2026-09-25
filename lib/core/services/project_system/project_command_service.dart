@@ -140,15 +140,8 @@ class ProjectCommandService {
       if (revision == null) {
         throw StaleSnapshotException(
           path: '.agent/tasks/${task.id}/task.json',
-          expectedRevision: task.persistenceRevision,
+          expectedRevision: 0,
           actualRevision: -1,
-        );
-      }
-      if (revision != task.persistenceRevision) {
-        throw StaleSnapshotException(
-          path: '.agent/tasks/${task.id}/task.json',
-          expectedRevision: task.persistenceRevision,
-          actualRevision: revision,
         );
       }
     }

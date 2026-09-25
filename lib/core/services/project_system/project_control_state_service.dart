@@ -9,8 +9,17 @@ class ProjectControlStateMachine {
   const ProjectControlStateMachine();
 
   ProjectBoundary read(ProjectDocument project, {DateTime? now}) {
+    final existing = project.boundary;
+    if (existing != null) return existing;
+    return readCompatibility(project, now: now);
+  }
+
+  /// Converts the legacy lifecycle fields at the deserialization boundary
+  /// only. Runtime decisions should use [read], which returns the canonical
+  /// persisted boundary once one exists.
+  ProjectBoundary readCompatibility(ProjectDocument project, {DateTime? now}) {
     final timestamp = now ?? project.updatedAt;
-    final outcome = outcomeFor(project);
+    final outcome = _compatibilityOutcomeFor(project);
     final blocker = project.blocker;
     final question = project.openQuestions.firstOrNull;
     return ProjectBoundary(
@@ -24,6 +33,12 @@ class ProjectControlStateMachine {
   }
 
   ProjectControlOutcome outcomeFor(ProjectDocument project) {
+    final boundary = project.boundary;
+    if (boundary != null) return boundary.outcome;
+    return _compatibilityOutcomeFor(project);
+  }
+
+  ProjectControlOutcome _compatibilityOutcomeFor(ProjectDocument project) {
     if (project.status == ProjectStatus.initializing) {
       return ProjectControlOutcome.initializing;
     }
@@ -89,17 +104,50 @@ class ProjectControlStateService {
   final ProjectControlStateMachine machine;
 
   ProjectDocument synchronise(ProjectDocument project, {DateTime? now}) {
-    // A degraded planning boundary is deliberately sticky until an explicit
-    // command resumes or retries planning. Otherwise a routine checkpoint
-    // would immediately erase the diagnostic that the caller needs to act on.
-    if (project.boundary?.outcome == ProjectControlOutcome.degradedPlanning &&
-        !project.isTerminal &&
-        project.blocker == null &&
-        project.pendingPlanApproval == null &&
-        project.openQuestions.isEmpty) {
+    // Once written, the boundary is canonical. A routine checkpoint must not
+    // reconstruct it from compatibility fields and accidentally erase an
+    // explicit stop reason or recovery action.
+    final boundary = project.boundary;
+    if (boundary != null && _boundaryMatchesLifecycle(project, boundary)) {
       return project;
     }
-    return project.copyWith(boundary: machine.read(project, now: now));
+    return migrateLegacy(project, now: now);
+  }
+
+  bool _boundaryMatchesLifecycle(
+    ProjectDocument project,
+    ProjectBoundary boundary,
+  ) => switch (boundary.outcome) {
+    // These outcomes are command-level decisions and must remain durable even
+    // when compatibility fields have not yet caught up with them.
+    ProjectControlOutcome.degradedPlanning ||
+    ProjectControlOutcome.awaitingUserInput ||
+    ProjectControlOutcome.awaitingPlanApproval ||
+    ProjectControlOutcome.blockedValidation => true,
+    ProjectControlOutcome.initializing =>
+      project.status == ProjectStatus.initializing,
+    ProjectControlOutcome.paused || ProjectControlOutcome.pausedByBudget =>
+      project.status == ProjectStatus.paused,
+    ProjectControlOutcome.completed =>
+      project.status == ProjectStatus.completed,
+    ProjectControlOutcome.failed => project.status == ProjectStatus.failed,
+    ProjectControlOutcome.cancelled =>
+      project.status == ProjectStatus.cancelled,
+    ProjectControlOutcome.running =>
+      project.status == ProjectStatus.active ||
+          project.status == ProjectStatus.runningTask ||
+          project.status == ProjectStatus.reviewingTask,
+  };
+
+  /// Materializes the canonical boundary from the pre-boundary fields.
+  ///
+  /// This is intentionally called only by deserialization and lifecycle
+  /// transition code. Ordinary persistence uses [synchronise], which preserves
+  /// an already-reduced boundary.
+  ProjectDocument migrateLegacy(ProjectDocument project, {DateTime? now}) {
+    return project.copyWith(
+      boundary: machine.readCompatibility(project, now: now),
+    );
   }
 
   ProjectDocument withOutcome(
@@ -111,17 +159,36 @@ class ProjectControlStateService {
     String? taskId,
     DateTime? now,
   }) {
-    return project.copyWith(
-      boundary: ProjectBoundary(
-        outcome: outcome,
-        message: message.trim(),
-        action: action,
-        reasonCode: reasonCode,
-        taskId: taskId,
-        occurredAt: now ?? DateTime.now(),
-      ),
+    return reduce(
+      project,
+      outcome: outcome,
+      message: message,
+      action: action,
+      reasonCode: reasonCode,
+      taskId: taskId,
+      now: now,
     );
   }
+
+  /// Canonical reducer entry point for explicit command outcomes.
+  ProjectDocument reduce(
+    ProjectDocument project, {
+    required ProjectControlOutcome outcome,
+    String message = '',
+    String? action,
+    String? reasonCode,
+    String? taskId,
+    DateTime? now,
+  }) => project.copyWith(
+    boundary: ProjectBoundary(
+      outcome: outcome,
+      message: message.trim(),
+      action: action,
+      reasonCode: reasonCode,
+      taskId: taskId,
+      occurredAt: now ?? DateTime.now(),
+    ),
+  );
 
   ProjectBoundary derive(ProjectDocument project, {DateTime? now}) {
     return machine.read(project, now: now);

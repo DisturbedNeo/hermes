@@ -447,10 +447,8 @@ class ProjectPlanRevisionService {
       }
     }
 
-    final desiredById = {
-      for (final task in proposal.taskDocuments) task.id: task,
-    };
-    final tasksById = <String, Task>{};
+    final desiredById = {for (final task in proposal.tasks) task.id: task};
+    final tasksById = <String, ProjectTaskNode>{};
     for (final existing in project.tasks) {
       final desired = desiredById[existing.id];
       if (splitTaskIds.contains(existing.id)) {
@@ -490,13 +488,13 @@ class ProjectPlanRevisionService {
         ).copyWith(status: _desiredTaskStatus(proposal, desired));
       }
     }
-    for (final desired in proposal.taskDocuments) {
+    for (final desired in proposal.tasks) {
       if (tasksById.containsKey(desired.id)) continue;
       tasksById[desired.id] = desired.copyWith(
         status: _desiredTaskStatus(proposal, desired),
         recoveryIncidentId: null,
         rejectionReason: null,
-        failure: null,
+        failureKey: null,
         revisionIntroduced: proposal.revision,
         revisionUpdated: proposal.revision,
         createdAt: now,
@@ -575,7 +573,7 @@ class ProjectPlanRevisionService {
       summary: proposal.summary,
       rationale: proposal.rationale,
       addedTaskIds: [
-        for (final task in proposal.taskDocuments)
+        for (final task in proposal.tasks)
           if (!project.tasks.any((existing) => existing.id == task.id)) task.id,
       ],
       updatedTaskIds: [
@@ -678,7 +676,10 @@ class ProjectPlanRevisionService {
     );
   }
 
-  static TaskStatus _desiredTaskStatus(ProjectDesiredPlan proposal, Task task) {
+  static TaskStatus _desiredTaskStatus(
+    ProjectDesiredPlan proposal,
+    ProjectTaskNode task,
+  ) {
     if (proposal.obsoleteTaskIds.contains(task.id)) {
       return TaskStatus.obsolete;
     }
@@ -744,7 +745,7 @@ class ProjectPlanRevisionService {
         : null,
   );
 
-  static bool _preserveTask(Task task) =>
+  static bool _preserveTask(ProjectTaskNode task) =>
       task.status == TaskStatus.running ||
       task.status == TaskStatus.completed ||
       task.status == TaskStatus.failed ||
@@ -752,9 +753,9 @@ class ProjectPlanRevisionService {
       task.status == TaskStatus.split ||
       task.status == TaskStatus.cancelled;
 
-  static Task _mergeTask(
-    Task existing,
-    Task desired,
+  static ProjectTaskNode _mergeTask(
+    ProjectTaskNode existing,
+    ProjectTaskNode desired,
     int revision,
     DateTime now,
   ) {
@@ -816,7 +817,7 @@ class ProjectPlanRevisionService {
       .join('||');
 
   static String _taskSignature(
-    List<Task> items,
+    List<ProjectTaskNode> items,
   ) => ([...items]..sort((a, b) => a.id.compareTo(b.id)))
       .map(
         (item) =>
@@ -960,7 +961,7 @@ class ProjectPlanRevisionService {
         ),
       );
     }
-    for (final task in proposal.taskDocuments) {
+    for (final task in proposal.tasks) {
       if (task.risk == TaskRisk.high) {
         changes.add(
           _ProjectPlanRiskReason(

@@ -105,7 +105,7 @@ class ProjectDiscoveryService {
           .toList(),
       recentTaskResults: [
         for (final task
-            in (project?.tasks ?? const <Task>[])
+            in (project?.tasks ?? const <ProjectTaskNode>[])
                 .where(
                   (task) =>
                       task.status == TaskStatus.completed ||
@@ -143,20 +143,20 @@ class ProjectDiscoveryService {
           '${question.id}: ${question.question}',
       ],
       readyTasks: [
-        for (final task in project?.tasks ?? const <Task>[])
+        for (final task in project?.tasks ?? const <ProjectTaskNode>[])
           if (task.status == TaskStatus.queued &&
               schedule?.readinessFor(task.id) == TaskReadiness.ready)
             '${task.id}: ${task.title}',
       ],
       blockedTasks: [
-        for (final task in project?.tasks ?? const <Task>[])
+        for (final task in project?.tasks ?? const <ProjectTaskNode>[])
           if (task.status == TaskStatus.queued &&
               schedule?.readinessFor(task.id) != TaskReadiness.ready)
             '${task.id}: ${schedule?.reasonsFor(task.id).join('; ')}',
       ],
       recentlyCompletedTasks: [
         for (final task
-            in (project?.tasks ?? const <Task>[])
+            in (project?.tasks ?? const <ProjectTaskNode>[])
                 .where((task) => task.status == TaskStatus.completed)
                 .toList()
                 .reversed

@@ -31,13 +31,13 @@ import 'package:hermes/core/services/project_system/project_progress_monitor.dar
 import 'package:hermes/core/services/project_system/project_repository.dart';
 import 'package:hermes/core/services/project_system/project_aggregate_repository.dart';
 import 'package:hermes/core/services/project_system/project_aggregate_store.dart';
+import 'package:hermes/core/services/project_system/project_handlers.dart';
 import 'package:hermes/core/services/project_system/project_state_store.dart';
 import 'package:hermes/core/services/project_system/project_command_service.dart';
 import 'package:hermes/core/services/project_system/project_run_loop.dart';
 import 'package:hermes/core/services/project_system/project_planning_coordinator.dart';
 import 'package:hermes/core/services/project_system/project_recovery_service.dart';
 import 'package:hermes/core/services/project_system/project_scheduler.dart';
-import 'package:hermes/core/services/project_system/project_task_models.dart';
 import 'package:hermes/core/services/question_policy_service.dart';
 import 'package:hermes/core/services/task_system/task_json.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
@@ -60,12 +60,13 @@ int taskStepLimit(TaskEffort effort) => switch (effort) {
   TaskEffort.large => 6,
 };
 
-/// Coordinates the public command boundary and shared project policies.
-/// Planning, execution, persistence, and recovery protocols live in the phase
-/// extensions included above; this class owns their dependencies and small
-/// cross-phase adapters.
-class ProjectWorkflowService {
-  ProjectWorkflowService({
+/// Owns the private runtime graph used by the project use cases.
+///
+/// This type is deliberately not the application-facing service. It contains
+/// the execution engine and its injected ports; callers use the thin
+/// [ProjectWorkflowService] façade below.
+class ProjectWorkflowRuntime {
+  ProjectWorkflowRuntime({
     required TaskService taskService,
     ProjectRepository? repository,
     ProjectPlanner? planner,
@@ -121,7 +122,9 @@ class ProjectWorkflowService {
        taskLifecycleService = taskLifecycle ?? const TaskLifecycleService(),
        completionService =
            completion ?? ProjectCompletionService(lifecycle: lifecycle),
-       recoveryService = recoveryService ?? const ProjectRecoveryService();
+       recoveryHandler = ProjectRecoveryHandler(
+         recoveryService ?? const ProjectRecoveryService(),
+       );
 
   final TaskService _taskService;
   final ProjectRepository _repository;
@@ -134,7 +137,7 @@ class ProjectWorkflowService {
   final ProjectLifecycleService lifecycleService;
   final TaskLifecycleService taskLifecycleService;
   final ProjectCompletionService completionService;
-  final ProjectRecoveryService recoveryService;
+  final ProjectRecoveryHandler recoveryHandler;
   final ProjectCommandService? _providedCommandService;
   final ProjectExecutionPort? _providedExecutionPort;
   final ProjectRecoveryPort? _providedRecoveryPort;
@@ -151,6 +154,12 @@ class ProjectWorkflowService {
     aggregateRepository: _aggregateRepository,
     taskRepository: _taskService.repository,
   );
+  late final ProjectPersistenceHandler _persistenceHandler =
+      ProjectPersistenceHandler(
+        aggregateStore: _aggregateStore,
+        scheduler: _scheduler,
+        controlState: _controlStateService,
+      );
   late final ProjectStateStore _stateStore =
       _providedStateStore ??
       ProjectStateStore(
@@ -180,14 +189,14 @@ class ProjectWorkflowService {
         taskService: _taskService,
         memoryService: _memoryService,
       );
-  late final ProjectPlanningCoordinator _planningCoordinator =
-      ProjectPlanningCoordinator(
-        discovery: _discoveryService,
-        planner: _planner,
-        maxAutomaticRepairs: _maxAutomaticInitialPlanRepairs,
-      );
-  final ProjectPlanRevisionService _planRevisionService =
-      const ProjectPlanRevisionService();
+  late final ProjectPlanningHandler _planningHandler = ProjectPlanningHandler(
+    coordinator: ProjectPlanningCoordinator(
+      discovery: _discoveryService,
+      planner: _planner,
+      maxAutomaticRepairs: _maxAutomaticInitialPlanRepairs,
+    ),
+    revisionService: const ProjectPlanRevisionService(),
+  );
   final ProjectDecisionEngine _decisionEngine = const ProjectDecisionEngine();
   final ProjectControlStateService _controlStateService =
       const ProjectControlStateService();
@@ -250,12 +259,12 @@ class ProjectWorkflowService {
     onTaskUpdated: request.onTaskUpdated,
   );
 
-  Task? _activeProjectTask(ProjectDocument project) {
+  ProjectTaskNode? _activeProjectTask(ProjectDocument project) {
     final id = project.activeTaskId;
     return id == null ? null : project.taskById(id);
   }
 
-  bool _isTerminalTask(Task task) => switch (task.status) {
+  bool _isTerminalTask(ProjectTaskNode task) => switch (task.status) {
     TaskStatus.completed ||
     TaskStatus.failed ||
     TaskStatus.rejected ||
@@ -264,15 +273,15 @@ class ProjectWorkflowService {
     _ => false,
   };
 
-  List<Task> _nonTerminalTasks(ProjectDocument project) =>
+  List<ProjectTaskNode> _nonTerminalTasks(ProjectDocument project) =>
       project.tasks.where((task) => !_isTerminalTask(task)).toList();
 
-  List<Task> _upsertTask(
+  List<ProjectTaskNode> _upsertTask(
     ProjectDocument project,
-    Task replacement, {
+    ProjectTaskNode replacement, {
     String? removeId,
   }) {
-    final replaced = <Task>[];
+    final replaced = <ProjectTaskNode>[];
     var found = false;
     for (final task in project.tasks) {
       if (task.id == removeId) continue;
@@ -350,7 +359,7 @@ class ProjectWorkflowService {
     );
   }
 
-  Task? _currentBatchTask(ProjectDocument project) {
+  ProjectTaskNode? _currentBatchTask(ProjectDocument project) {
     final id = project.currentBatchTaskId;
     return id == null ? null : project.taskById(id);
   }
@@ -666,7 +675,7 @@ class ProjectWorkflowService {
         _scheduler.schedule(project).selectedTask != null;
   }
 
-  bool _isSelectableTask(Task task) {
+  bool _isSelectableTask(ProjectTaskNode task) {
     return task.status == TaskStatus.queued;
   }
 
@@ -674,7 +683,7 @@ class ProjectWorkflowService {
     required ChatClient client,
     required WorkspaceAttachment workspace,
     required ProjectDocument project,
-    required Task task,
+    required ProjectTaskNode task,
     required List<String> violations,
     required String baseSystemPrompt,
     required ProjectPlanApprovalPolicy approvalPolicy,
@@ -842,7 +851,7 @@ class ProjectWorkflowService {
   }
 
   ProjectEvaluation _evaluateTaskResult(
-    Task projectTask,
+    ProjectTaskNode projectTask,
     TaskResult result,
     ProjectDocument project,
   ) {
@@ -877,7 +886,7 @@ class ProjectWorkflowService {
 
   ProjectDocument _applyTaskEvidence({
     required ProjectDocument project,
-    required Task task,
+    required ProjectTaskNode task,
     required TaskResult result,
     required DateTime evaluatedAt,
   }) {
@@ -910,7 +919,7 @@ class ProjectWorkflowService {
       var failedTask = task.copyWith(
         status: TaskStatus.failed,
         rejectionReason: evaluation.failureReason,
-        failure: failure,
+        failureKey: failure.failureKey,
         updatedAt: now,
       );
       final recoveryUpdate = _recoveryUpdateForFailedTask(
@@ -1360,7 +1369,7 @@ class ProjectWorkflowService {
   }
 
   _ProjectTaskValidation _validateProjectTask(
-    Task task,
+    ProjectTaskNode task,
     ProjectDocument project,
   ) {
     final violations = <String>[];
@@ -1442,7 +1451,7 @@ class ProjectWorkflowService {
 
   _DuplicateProjectTaskMatch? _duplicateMatchForTask(
     ProjectDocument project,
-    Task task,
+    ProjectTaskNode task,
   ) {
     if (task.recoveryIncidentId != null) return null;
     final fingerprint = task.fingerprint;
@@ -1472,9 +1481,9 @@ class ProjectWorkflowService {
     return null;
   }
 
-  Task _retryTaskForFailedDuplicate({
-    required Task failedTask,
-    required Task duplicateTask,
+  ProjectTaskNode _retryTaskForFailedDuplicate({
+    required ProjectTaskNode failedTask,
+    required ProjectTaskNode duplicateTask,
     required List<String> violations,
     required DateTime now,
   }) {
@@ -1484,7 +1493,7 @@ class ProjectWorkflowService {
     }.toList();
     final objective =
         'Retry failed project task after addressing the previous failure: ${failedTask.objective}';
-    return Task(
+    return ProjectTaskNode(
       id: 'project_retry_${uuid.v7()}',
       title: 'Retry ${failedTask.title}',
       objective: objective,
@@ -1539,7 +1548,10 @@ class ProjectWorkflowService {
         text.contains('end-to-end');
   }
 
-  TaskPlanningContext _planningContext(ProjectDocument project, Task task) {
+  TaskPlanningContext _planningContext(
+    ProjectDocument project,
+    ProjectTaskNode task,
+  ) {
     final plan = project.plan;
     final memoryContext = _memoryService.selectContext(
       project: project,
@@ -1593,7 +1605,7 @@ class ProjectWorkflowService {
 
   _RecoveryUpdate _recoveryUpdateForFailedTask({
     required ProjectDocument project,
-    required Task failedTask,
+    required ProjectTaskNode failedTask,
     required ProjectEvaluation evaluation,
     required DateTime now,
   }) {
@@ -1693,7 +1705,7 @@ class ProjectWorkflowService {
   }
 
   _RecoveryFailure? _recoveryFailureFor({
-    required Task failedTask,
+    required ProjectTaskNode failedTask,
     required ProjectEvaluation evaluation,
   }) {
     final failedGate = evaluation.gateResults
@@ -1916,9 +1928,9 @@ class ProjectWorkflowService {
     ].join('|');
   }
 
-  Task _recoveryTaskForIncident({
+  ProjectTaskNode _recoveryTaskForIncident({
     required String incidentId,
-    required Task sourceTask,
+    required ProjectTaskNode sourceTask,
     required _RecoveryFailure failure,
     required int attemptNumber,
     required DateTime now,
@@ -1947,7 +1959,7 @@ class ProjectWorkflowService {
       sourceRef: gateSourceRef,
       details: failure.gateResult.details,
     );
-    return Task(
+    return ProjectTaskNode(
       id: 'project_recovery_${uuid.v7()}',
       title: 'Recover project health',
       objective: objective,
@@ -2016,7 +2028,7 @@ class ProjectWorkflowService {
 
   List<ProjectRecoveryIncident> _resolveRecoveryIncidentForTask(
     List<ProjectRecoveryIncident> incidents,
-    Task completedTask,
+    ProjectTaskNode completedTask,
     DateTime now,
   ) {
     final incidentId = completedTask.recoveryIncidentId;
@@ -2034,7 +2046,10 @@ class ProjectWorkflowService {
     ];
   }
 
-  List<TaskGate> _requiredGatesForTask(ProjectDocument project, Task task) {
+  List<TaskGate> _requiredGatesForTask(
+    ProjectDocument project,
+    ProjectTaskNode task,
+  ) {
     final expectedGates = <TaskGate>[
       for (final expectation in task.expectedEvidence)
         if (expectation.required &&
@@ -2094,7 +2109,7 @@ class ProjectWorkflowService {
   }
 
   int _projectFailureBudgetCount(
-    List<Task> failedTasks,
+    List<ProjectTaskNode> failedTasks,
     List<ProjectRecoveryIncident> recoveryIncidents,
   ) {
     final nonRecoveryFailures = failedTasks
@@ -2105,7 +2120,7 @@ class ProjectWorkflowService {
         )
         .map(
           (task) =>
-              task.failure?.failureKey ??
+              task.failureKey ??
               '${task.fingerprint}|${_normalise(task.rejectionReason ?? '')}',
         )
         .toSet()
@@ -2124,7 +2139,7 @@ class ProjectWorkflowService {
     return [...current, value];
   }
 
-  TaskResult _taskResultFromTask(Task projectTask, Task task) {
+  TaskResult _taskResultFromTask(ProjectTaskNode projectTask, Task task) {
     final latestRun = task.runs.isEmpty ? null : task.runs.last;
     final artifacts = <TaskArtifact>[
       for (final run in task.runs)
@@ -2194,8 +2209,7 @@ class ProjectWorkflowService {
   ) {
     final current = _activeProjectTask(project);
     if (current == null) return project;
-    final execution = TaskExecution.fromTask(task, observedAt: now);
-    final nextStatus = switch (execution.status) {
+    final nextStatus = switch (task.status) {
       TaskStatus.completed => TaskStatus.completed,
       TaskStatus.failed => TaskStatus.failed,
       TaskStatus.cancelled => TaskStatus.cancelled,
@@ -2204,11 +2218,7 @@ class ProjectWorkflowService {
     return project.copyWith(
       tasks: _upsertTask(
         project,
-        current.copyWith(
-          status: nextStatus,
-          persistenceRevision: execution.persistenceRevision,
-          updatedAt: execution.observedAt,
-        ),
+        current.copyWith(status: nextStatus, updatedAt: now),
       ),
       activeTaskId: task.isTerminal ? null : current.id,
       updatedAt: now,
@@ -2338,7 +2348,7 @@ class ProjectWorkflowService {
 
   ProjectDocument _recordTaskMemory({
     required ProjectDocument project,
-    required Task task,
+    required ProjectTaskNode task,
     required ProjectEvaluation evaluation,
     required List<String> assumptions,
     required bool accepted,
@@ -2410,7 +2420,10 @@ class ProjectWorkflowService {
     );
   }
 
-  ProjectDocument _projectForModel(ProjectDocument project, {Task? task}) {
+  ProjectDocument _projectForModel(
+    ProjectDocument project, {
+    ProjectTaskNode? task,
+  }) {
     final selection = _memoryService.selectContext(
       project: project,
       task: task,
@@ -2438,7 +2451,7 @@ class ProjectWorkflowService {
     };
   }
 
-  List<Task> _normaliseBacklog(List<Task> tasks) {
+  List<ProjectTaskNode> _normaliseBacklog(List<ProjectTaskNode> tasks) {
     final seen = <String>{};
     return [
       for (final task in tasks)
@@ -2452,8 +2465,8 @@ class ProjectWorkflowService {
     ];
   }
 
-  List<Task> _normaliseInitialBacklog(
-    List<Task> tasks,
+  List<ProjectTaskNode> _normaliseInitialBacklog(
+    List<ProjectTaskNode> tasks,
     List<String> criterionIds,
   ) {
     final knownCriterionIds = criterionIds.toSet();
@@ -2652,7 +2665,7 @@ class ProjectWorkflowService {
     ProjectDecisionType type,
     String summary,
     String memoryUpdate, {
-    Task? task,
+    ProjectTaskNode? task,
     String? error,
   }) {
     return ProjectDecisionRecord(
@@ -2668,7 +2681,7 @@ class ProjectWorkflowService {
     );
   }
 
-  String _taskPrompt(ProjectDocument project, Task task) {
+  String _taskPrompt(ProjectDocument project, ProjectTaskNode task) {
     final memoryContext = _memoryService.selectContext(
       project: project,
       task: task,
@@ -2766,6 +2779,252 @@ Ask the user only for destructive or irreversible actions, credentials/secrets/a
   }
 }
 
+/// Thin application façade for the project use cases.
+///
+/// The façade contains no planning, execution, recovery, or persistence
+/// policy. It only exposes stable command/query methods and delegates them to
+/// the composed runtime. This keeps UI and orchestration wiring independent of
+/// the internal handlers and makes each boundary replaceable in tests.
+class ProjectWorkflowService {
+  ProjectWorkflowService({
+    required TaskService taskService,
+    ProjectRepository? repository,
+    ProjectPlanner? planner,
+    ProjectCompletionEvaluator? completionEvaluator,
+    ProjectScheduler? scheduler,
+    ProjectMemoryService? memoryService,
+    ProjectProgressMonitor? progressMonitor,
+    WorkspacePersistenceCoordinator? persistenceCoordinator,
+    ProjectAggregateRepository? aggregateRepository,
+    ProjectStateStore? stateStore,
+    ProjectCommandService? commandService,
+    ProjectExecutionPort? executionPort,
+    ProjectRecoveryPort? recoveryPort,
+    PlanningToolCallRunner planningRunner = const PlanningToolCallRunner(),
+    StructuredPlanningOutputService structuredOutput =
+        const StructuredPlanningOutputService(),
+    ProjectLifecycleService lifecycle = const ProjectLifecycleService(),
+    TaskLifecycleService? taskLifecycle,
+    ProjectCompletionService? completion,
+    ProjectRecoveryService? recoveryService,
+  }) : _runtime = ProjectWorkflowRuntime(
+         taskService: taskService,
+         repository: repository,
+         planner: planner,
+         completionEvaluator: completionEvaluator,
+         scheduler: scheduler,
+         memoryService: memoryService,
+         progressMonitor: progressMonitor,
+         persistenceCoordinator: persistenceCoordinator,
+         aggregateRepository: aggregateRepository,
+         stateStore: stateStore,
+         commandService: commandService,
+         executionPort: executionPort,
+         recoveryPort: recoveryPort,
+         planningRunner: planningRunner,
+         structuredOutput: structuredOutput,
+         lifecycle: lifecycle,
+         taskLifecycle: taskLifecycle,
+         completion: completion,
+         recoveryService: recoveryService,
+       );
+
+  final ProjectWorkflowRuntime _runtime;
+
+  ProjectRepository get repository => _runtime.repository;
+
+  Future<ProjectCommandResult> execute(ProjectExecutionRequest request) =>
+      _runtime.execute(request);
+
+  Future<ProjectCommandResult> executeUntilStop(
+    ProjectExecutionRequest request, {
+    required bool boundedRun,
+  }) => _runtime.executeUntilStop(request, boundedRun: boundedRun);
+
+  Future<ProjectCommandResult> recover(ProjectRecoveryRequest request) =>
+      _runtime.recover(request);
+
+  Future<ProjectTransactionRecoveryResult> recoverPersistence(
+    WorkspaceAttachment workspace,
+  ) => _runtime.recoverPersistence(workspace);
+
+  Future<List<ProjectSummary>> listProjects(
+    WorkspaceAttachment workspace, {
+    String? chatSessionId,
+  }) => _runtime.listProjects(workspace, chatSessionId: chatSessionId);
+
+  Future<ProjectDocument?> loadLatestProject(
+    WorkspaceAttachment workspace, {
+    String? chatSessionId,
+  }) => _runtime.loadLatestProject(workspace, chatSessionId: chatSessionId);
+
+  Future<ProjectLoadResult> loadLatestProjectResult(
+    WorkspaceAttachment workspace, {
+    String? chatSessionId,
+  }) =>
+      _runtime.loadLatestProjectResult(workspace, chatSessionId: chatSessionId);
+
+  Future<ProjectDocument?> loadProject(
+    WorkspaceAttachment workspace,
+    String projectId, {
+    String? chatSessionId,
+  }) =>
+      _runtime.loadProject(workspace, projectId, chatSessionId: chatSessionId);
+
+  Future<ProjectLoadResult> loadProjectResult(
+    WorkspaceAttachment workspace,
+    String projectId, {
+    String? chatSessionId,
+  }) => _runtime.loadProjectResult(
+    workspace,
+    projectId,
+    chatSessionId: chatSessionId,
+  );
+
+  Future<int> deleteProjectsForChatSession(
+    WorkspaceAttachment workspace, {
+    required String chatSessionId,
+  }) => _runtime.deleteProjectsForChatSession(
+    workspace,
+    chatSessionId: chatSessionId,
+  );
+
+  Future<int> deleteOrphanedChatProjects(
+    WorkspaceAttachment workspace, {
+    required Set<String> retainedChatSessionIds,
+  }) => _runtime.deleteOrphanedChatProjects(
+    workspace,
+    retainedChatSessionIds: retainedChatSessionIds,
+  );
+
+  Future<ProjectDocument> updateProjectChatSessionId({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String chatSessionId,
+  }) => _runtime.updateProjectChatSessionId(
+    workspace: workspace,
+    snapshot: snapshot,
+    chatSessionId: chatSessionId,
+  );
+
+  String encodeProject(ProjectDocument project) =>
+      _runtime.encodeProject(project);
+
+  Future<ProjectDocument> updateProject({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String rawJson,
+  }) => _runtime.updateProject(
+    workspace: workspace,
+    snapshot: snapshot,
+    rawJson: rawJson,
+  );
+
+  Future<ProjectDocument> createProject({
+    required WorkspaceAttachment workspace,
+    required String userPrompt,
+    String? chatSessionId,
+    ChatClient? client,
+    String baseSystemPrompt = '',
+    int? maxIterations,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+    QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
+  }) => _runtime.createProject(
+    workspace: workspace,
+    userPrompt: userPrompt,
+    chatSessionId: chatSessionId,
+    client: client,
+    baseSystemPrompt: baseSystemPrompt,
+    maxIterations: maxIterations,
+    onModelOutput: onModelOutput,
+    cancellationToken: cancellationToken,
+    questionAutonomy: questionAutonomy,
+  );
+
+  Future<ProjectDocument> retryRecoveryIncident({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String incidentId,
+  }) => _runtime.retryRecoveryIncident(
+    workspace: workspace,
+    snapshot: snapshot,
+    incidentId: incidentId,
+  );
+
+  Future<ProjectDocument> answerOpenQuestion({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String answer,
+  }) => _runtime.answerOpenQuestion(
+    workspace: workspace,
+    snapshot: snapshot,
+    answer: answer,
+  );
+
+  Future<ProjectDocument> addUserContext({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String text,
+  }) => _runtime.addUserContext(
+    workspace: workspace,
+    snapshot: snapshot,
+    text: text,
+  );
+
+  Future<ProjectDocument> requestScopeChange({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String context,
+  }) => _runtime.requestScopeChange(
+    workspace: workspace,
+    snapshot: snapshot,
+    context: context,
+  );
+
+  Future<ProjectDocument> compactMemory({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required List<String> coveredEntryIds,
+    required String summary,
+  }) => _runtime.compactMemory(
+    workspace: workspace,
+    snapshot: snapshot,
+    coveredEntryIds: coveredEntryIds,
+    summary: summary,
+  );
+
+  Future<ProjectDocument> pauseProject({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) => _runtime.pauseProject(workspace: workspace, snapshot: snapshot);
+
+  Future<ProjectDocument> clearTaskBlocker({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) => _runtime.clearTaskBlocker(workspace: workspace, snapshot: snapshot);
+
+  Future<ProjectDocument> approvePlanRevision({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) => _runtime.approvePlanRevision(workspace: workspace, snapshot: snapshot);
+
+  Future<ProjectDocument> rejectPlanRevision({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) => _runtime.rejectPlanRevision(workspace: workspace, snapshot: snapshot);
+
+  Future<ProjectDocument> cancelProject({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) => _runtime.cancelProject(workspace: workspace, snapshot: snapshot);
+
+  Future<ProjectDocument> stopProject({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) => _runtime.stopProject(workspace: workspace, snapshot: snapshot);
+}
+
 class _ProjectTaskValidation {
   final bool valid;
   final List<String> violations;
@@ -2774,7 +3033,7 @@ class _ProjectTaskValidation {
 }
 
 sealed class _DuplicateProjectTaskMatch {
-  final Task task;
+  final ProjectTaskNode task;
 
   const _DuplicateProjectTaskMatch(this.task);
 }
@@ -2814,11 +3073,11 @@ class _RecoveryFailure {
 }
 
 class _RecoveryUpdate {
-  final Task failedTask;
+  final ProjectTaskNode failedTask;
   final List<ProjectRecoveryIncident> recoveryIncidents;
   final ProjectRecoveryIncident? incident;
   final ProjectRecoveryIncident? exhaustedIncident;
-  final Task? recoveryTask;
+  final ProjectTaskNode? recoveryTask;
 
   const _RecoveryUpdate({
     required this.failedTask,

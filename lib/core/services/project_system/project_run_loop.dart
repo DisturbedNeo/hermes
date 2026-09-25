@@ -1,5 +1,6 @@
 import 'package:hermes/core/services/project_system/orchestration_contracts.dart';
 import 'package:hermes/core/models/project.dart';
+import 'package:hermes/core/services/project_system/project_control_state_service.dart';
 
 typedef ProjectRunIteration =
     Future<ProjectCommandResult> Function(ProjectExecutionRequest request);
@@ -27,9 +28,9 @@ class ProjectRunLoop {
 
   bool _canContinue(ProjectCommandResult result) {
     final project = result.project;
-    final outcome = project.boundary?.outcome;
+    final outcome = const ProjectControlStateMachine().read(project).outcome;
     return (outcome == ProjectControlOutcome.paused ||
-            (outcome == null && project.status == ProjectStatus.paused)) &&
+            outcome == ProjectControlOutcome.pausedByBudget) &&
         project.activeTaskId == null &&
         project.pendingPlanApproval == null &&
         project.openQuestions.isEmpty &&

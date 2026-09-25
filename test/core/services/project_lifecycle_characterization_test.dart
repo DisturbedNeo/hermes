@@ -110,6 +110,30 @@ void main() {
         expect(decoded.boundary?.reasonCode, 'model_unavailable');
       },
     );
+
+    test('preserves the canonical boundary across compatibility drift', () {
+      final service = const ProjectControlStateService();
+      final reduced = service.withOutcome(
+        _project(const []),
+        outcome: ProjectControlOutcome.degradedPlanning,
+        message: 'Planner unavailable.',
+        action: 'retry_planning',
+        reasonCode: 'model_unavailable',
+      );
+      final drifted = reduced.copyWith(
+        status: ProjectStatus.active,
+        blocker: null,
+        openQuestions: const [],
+      );
+
+      final synchronized = service.synchronise(drifted);
+
+      expect(
+        synchronized.boundary?.outcome,
+        ProjectControlOutcome.degradedPlanning,
+      );
+      expect(synchronized.boundary?.reasonCode, 'model_unavailable');
+    });
   });
 }
 
@@ -135,7 +159,7 @@ ProjectDocument _project(
       ),
     ],
     constraints: const [],
-    tasks: tasks,
+    tasks: [for (final task in tasks) ProjectTaskNode.fromTask(task)],
     status: status,
     activeTaskId: activeTaskId,
     openQuestions: openQuestions,

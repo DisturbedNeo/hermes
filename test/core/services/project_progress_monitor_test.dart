@@ -265,14 +265,15 @@ ProjectDocument _batchedProject(
   );
 }
 
-Task _task(String id, DateTime now) {
-  return Task(
+ProjectTaskNode _task(String id, DateTime now) {
+  return ProjectTaskNode(
     id: id,
     title: id,
     objective: 'Implement bounded slice $id.',
     criterionIds: const ['criterion_1'],
     doneCriteria: const ['The bounded slice is complete.'],
     outOfScope: const ['Unrelated work.'],
+    status: TaskStatus.queued,
     createdAt: now,
     updatedAt: now,
   );

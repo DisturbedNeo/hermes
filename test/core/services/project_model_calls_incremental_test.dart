@@ -141,7 +141,7 @@ ProjectState _project({List<Task> tasks = const []}) {
       ),
     ],
     constraints: const ['Stay within the attached workspace.'],
-    tasks: tasks,
+    tasks: [for (final task in tasks) ProjectTaskNode.fromTask(task)],
     milestones: const [],
     memory: const [],
     planHistory: const [],

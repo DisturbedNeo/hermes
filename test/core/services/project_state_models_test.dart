@@ -21,7 +21,7 @@ void main() {
       refinedGoal: 'Build it safely',
       criteria: const [],
       constraints: const [],
-      tasks: [task],
+      tasks: [ProjectTaskNode.fromTask(task)],
       status: ProjectStatus.runningTask,
       activeTaskId: task.id,
       createdAt: now,

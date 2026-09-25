@@ -50,7 +50,7 @@ class ProjectLifecycleService {
     final timestamp = now ?? DateTime.now();
     final from = snapshot.status;
     if (from == to) {
-      final project = controlState.synchronise(snapshot, now: timestamp);
+      final project = controlState.migrateLegacy(snapshot, now: timestamp);
       return ProjectTransitionResult(
         project: project,
         transition: ProjectLifecycleTransition(
@@ -103,7 +103,7 @@ class ProjectLifecycleService {
     if (to == ProjectStatus.waitingForUser && blocker != null) {
       project = project.copyWith(blocker: blocker);
     }
-    project = controlState.synchronise(project, now: timestamp);
+    project = controlState.migrateLegacy(project, now: timestamp);
     return ProjectTransitionResult(
       project: project,
       transition: ProjectLifecycleTransition(

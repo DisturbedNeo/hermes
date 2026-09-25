@@ -7,7 +7,7 @@ import 'package:hermes/core/services/project_system/project_planning_gateway.dar
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/workspace_discovery_profile.dart';
 
-typedef ProjectInitialisationValidator =
+typedef ProjectInitialPlanValidator =
     List<Map<String, String>> Function({
       required ProjectInitialPlanResult initialPlan,
       required WorkspaceDiscoveryProfile workspaceProfile,
@@ -32,8 +32,6 @@ class ProjectPlanningResult {
   final int modelCallCount;
   final int repairAttempts;
   final PlanningMetrics planningMetrics;
-
-  ProjectInitialisation get initialisation => initialPlan.toLegacy();
 }
 
 /// Coordinates discovery, bounded initial-plan repair, and validation.
@@ -59,7 +57,7 @@ class ProjectPlanningCoordinator {
     required ChatClient? client,
     required String baseSystemPrompt,
     required ProjectInitialPlanResult Function() fallback,
-    required ProjectInitialisationValidator validate,
+    required ProjectInitialPlanValidator validate,
     required ProjectContextIssuePolicy blocksContextIssue,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
@@ -83,8 +81,7 @@ class ProjectPlanningCoordinator {
     var repairAttempts = 0;
     var initialPlan = client == null || issues.isNotEmpty
         ? fallback()
-        : _planner is ProjectInitialPlanPlanner
-        ? await (_planner as ProjectInitialPlanPlanner).initializePlan(
+        : await _planner.initializePlan(
             client: client,
             baseSystemPrompt: baseSystemPrompt,
             workspace: workspace,
@@ -92,17 +89,6 @@ class ProjectPlanningCoordinator {
             workspaceMetadata: metadata,
             onModelOutput: onModelOutput,
             cancellationToken: cancellationToken,
-          )
-        : ProjectInitialPlanResult.fromLegacy(
-            await _planner.initializeProject(
-              client: client,
-              baseSystemPrompt: baseSystemPrompt,
-              workspace: workspace,
-              originalGoal: userPrompt,
-              workspaceMetadata: metadata,
-              onModelOutput: onModelOutput,
-              cancellationToken: cancellationToken,
-            ),
           );
     var planningMetrics = initialPlan.planningMetrics;
 
@@ -114,36 +100,17 @@ class ProjectPlanningCoordinator {
       );
       while (issues.isNotEmpty && repairAttempts < maxAutomaticRepairs) {
         repairAttempts++;
-        final ProjectInitialPlanResult? repaired;
-        if (_planner is ProjectInitialPlanPlanner) {
-          repaired = await (_planner as ProjectInitialPlanPlanner)
-              .repairInitialPlan(
-                client: client,
-                baseSystemPrompt: baseSystemPrompt,
-                workspace: workspace,
-                originalGoal: userPrompt,
-                workspaceMetadata: metadata,
-                initialPlan: initialPlan,
-                validationIssues: issues,
-                onModelOutput: onModelOutput,
-                cancellationToken: cancellationToken,
-              );
-        } else {
-          final repairedLegacy = await _planner.repairInitialisation(
-            client: client,
-            baseSystemPrompt: baseSystemPrompt,
-            workspace: workspace,
-            originalGoal: userPrompt,
-            workspaceMetadata: metadata,
-            initialisation: initialPlan.toLegacy(),
-            validationIssues: issues,
-            onModelOutput: onModelOutput,
-            cancellationToken: cancellationToken,
-          );
-          repaired = repairedLegacy == null
-              ? null
-              : ProjectInitialPlanResult.fromLegacy(repairedLegacy);
-        }
+        final repaired = await _planner.repairInitialPlan(
+          client: client,
+          baseSystemPrompt: baseSystemPrompt,
+          workspace: workspace,
+          originalGoal: userPrompt,
+          workspaceMetadata: metadata,
+          initialPlan: initialPlan,
+          validationIssues: issues,
+          onModelOutput: onModelOutput,
+          cancellationToken: cancellationToken,
+        );
         modelCallCount++;
         if (repaired == null) continue;
         planningMetrics = planningMetrics.add(repaired.planningMetrics);

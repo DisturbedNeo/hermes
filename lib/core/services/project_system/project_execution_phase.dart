@@ -1,7 +1,7 @@
 part of 'project_workflow_service.dart';
 
 /// Executes bounded project runs and owns the task execution protocol.
-extension ProjectExecutionPhase on ProjectWorkflowService {
+extension ProjectExecutionPhase on ProjectWorkflowRuntime {
   Future<ProjectCommandResult> _runProjectCore({
     required ChatClient client,
     required WorkspaceAttachment workspace,
@@ -31,8 +31,38 @@ extension ProjectExecutionPhase on ProjectWorkflowService {
     }
     var project = recovered.project;
     var activeTask = recovered.activeTask;
+    // A paused, empty shell is the persisted shape used while a project is
+    // waiting for its first plan. Continuing that project is an explicit
+    // resume command, so reduce it to an active planning boundary and request
+    // one no-ready-task revision before ordinary scheduling begins.
+    if (project.status == ProjectStatus.paused &&
+        project.activeTaskId == null &&
+        project.tasks.isEmpty &&
+        project.criteria.isEmpty &&
+        project.blocker == null &&
+        project.openQuestions.isEmpty &&
+        project.pendingPlanApproval == null) {
+      project = _transitionProject(
+        snapshot: project.copyWith(
+          pendingReplanTriggers: _appendTrigger(
+            project.pendingReplanTriggers,
+            ProjectPlanRevisionTrigger.noReadyTask,
+          ),
+          pendingReplanReason: 'The project has no initial bounded plan.',
+        ),
+        to: ProjectStatus.active,
+        trigger: ProjectLifecycleTrigger.recovery,
+        reason: 'Resuming the project to create its initial bounded plan.',
+      );
+    }
+    final initialAggregate = await _aggregateRepository.loadProject(
+      workspace.rootPath,
+      project.id,
+      chatSessionId: project.chatSessionId,
+      includeHistory: false,
+    );
     final persistenceContext = ProjectPersistenceContext(
-      project.tasks,
+      initialAggregate.canonicalTasks,
       health: recovered.persistenceDiagnostics,
     );
     if (maxIterations != null && project.maxIterations != maxIterations) {
@@ -54,7 +84,7 @@ extension ProjectExecutionPhase on ProjectWorkflowService {
     }
     final pendingProposal = project.pendingPlanApproval?.desiredPlan;
     if (pendingProposal != null) {
-      final reconsidered = await _planRevisionService.prepareAndApply(
+      final reconsidered = await _planningHandler.prepareAndApply(
         project: project,
         proposal: pendingProposal,
         workspaceRoot: workspace.rootPath,
@@ -647,7 +677,7 @@ extension ProjectExecutionPhase on ProjectWorkflowService {
     required ChatClient client,
     required WorkspaceAttachment workspace,
     required ProjectDocument project,
-    required Task projectTask,
+    required ProjectTaskNode projectTask,
     required String baseSystemPrompt,
     required bool requirePhaseApproval,
     CompactionSettings? compactionSettings,
@@ -680,15 +710,10 @@ extension ProjectExecutionPhase on ProjectWorkflowService {
         ),
       );
     }
-    final runningProjectTask = taskLifecycleService
-        .transition(
-          snapshot: projectTask,
-          to: TaskStatus.running,
-          trigger: TaskLifecycleTrigger.scheduler,
-          reason: 'Selected by the project execution frontier.',
-          now: now,
-        )
-        .task;
+    final runningProjectTask = projectTask.copyWith(
+      status: TaskStatus.running,
+      updatedAt: now,
+    );
     var workingProject = project.copyWith(
       activeTaskId: projectTask.id,
       tasks: _upsertTask(project, runningProjectTask),
@@ -758,6 +783,7 @@ extension ProjectExecutionPhase on ProjectWorkflowService {
               cancellationToken: cancellationToken,
             );
     }
+    persistenceContext?.stageTask(activeTask);
     final executionRequest = TaskExecutionRequest.fromPlanningContext(
       planningContext,
     );
@@ -810,6 +836,7 @@ extension ProjectExecutionPhase on ProjectWorkflowService {
         persist: false,
       );
       onTaskUpdated?.call(activeTask);
+      persistenceContext?.stageTask(activeTask);
       workingProject = _syncCurrentTaskFromTask(
         workingProject,
         activeTask,
@@ -896,7 +923,10 @@ extension ProjectExecutionPhase on ProjectWorkflowService {
         persist: false,
       );
       onTaskUpdated?.call(activeTask);
+      persistenceContext?.stageTask(activeTask);
     }
+
+    persistenceContext?.stageTask(activeTask);
 
     final result = _taskResultFromTask(
       _activeProjectTask(workingProject) ?? projectTask,

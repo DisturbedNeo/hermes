@@ -240,7 +240,7 @@ ProjectDocument _project({
           ),
         ],
     constraints: const [],
-    tasks: tasks,
+    tasks: [for (final task in tasks) ProjectTaskNode.fromTask(task)],
     status: ProjectStatus.active,
     activeTaskId: null,
     createdAt: now,

@@ -9,7 +9,7 @@ class ProjectEvidenceService {
 
   List<ProjectEvidence> normalizeTaskResult({
     required ProjectDocument project,
-    required Task task,
+    required ProjectTaskNode task,
     required TaskResult result,
     required DateTime evaluatedAt,
   }) {
@@ -23,7 +23,7 @@ class ProjectEvidenceService {
 
   List<ProjectEvidence> _gateEvidence(
     ProjectDocument project,
-    Task task,
+    ProjectTaskNode task,
     TaskResult result,
     DateTime evaluatedAt,
   ) {
@@ -100,7 +100,7 @@ class ProjectEvidenceService {
 
   List<ProjectEvidence> _artifactEvidence(
     ProjectDocument project,
-    Task task,
+    ProjectTaskNode task,
     TaskResult result,
     DateTime evaluatedAt,
   ) {
@@ -156,7 +156,7 @@ class ProjectEvidenceService {
 
   List<ProjectEvidence> _claimEvidence(
     ProjectDocument project,
-    Task task,
+    ProjectTaskNode task,
     TaskResult result,
     DateTime evaluatedAt,
   ) {
@@ -214,7 +214,7 @@ class ProjectEvidenceService {
 
   List<String> _criterionIdsFor(
     ProjectDocument project,
-    Task task,
+    ProjectTaskNode task,
     ProjectEvidenceType type, {
     required List<TaskEvidenceExpectation> matchedExpectations,
   }) {
@@ -243,7 +243,7 @@ class ProjectEvidenceService {
   }
 
   List<TaskEvidenceExpectation> _matchingExpectations(
-    Task task,
+    ProjectTaskNode task,
     ProjectEvidenceType type, {
     required List<String> sourceRefs,
   }) {
@@ -267,7 +267,7 @@ class ProjectEvidenceService {
     return ids;
   }
 
-  String? _claimExpectationId(Task task, TaskEvidenceClaim claim) {
+  String? _claimExpectationId(ProjectTaskNode task, TaskEvidenceClaim claim) {
     const type = ProjectEvidenceType.taskClaim;
     final explicit = claim.expectationId?.trim();
     if (explicit != null && explicit.isNotEmpty) {
@@ -288,7 +288,7 @@ class ProjectEvidenceService {
   }
 
   String? _uniqueClaimExpectationId(
-    Task task,
+    ProjectTaskNode task,
     String criterionId,
     TaskEvidenceClaimType type,
     String sourceRef,

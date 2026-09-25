@@ -31,11 +31,7 @@ class ProjectRecoveryService {
     final tasks = [
       for (final task in project.tasks)
         task.id == current.id
-            ? current.copyWith(
-                status: nextStatus,
-                persistenceRevision: recoveredTask.persistenceRevision,
-                updatedAt: now,
-              )
+            ? current.copyWith(status: nextStatus, updatedAt: now)
             : task,
     ];
     final synced = project.copyWith(

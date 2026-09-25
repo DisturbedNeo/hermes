@@ -3,6 +3,7 @@ import 'package:hermes/core/services/persistence_contracts.dart';
 import 'package:hermes/core/services/project_system/project_aggregate_repository.dart';
 import 'package:hermes/core/services/project_system/project_checkpoint.dart';
 import 'package:hermes/core/services/task_system/task_repository.dart';
+import 'package:hermes/core/services/task_system/task_plan_materializer.dart';
 
 /// Tracks the last task snapshots included in one project command.
 ///
@@ -13,11 +14,37 @@ class ProjectPersistenceContext {
   ProjectPersistenceContext(Iterable<Task> initialTasks, {this.health}) {
     for (final task in initialTasks) {
       _lastPersistedTasks[task.id] = task;
+      _expectedTaskRevisions[task.id] = task.persistenceRevision;
     }
   }
 
   final ProjectPersistenceDiagnostics? health;
   final Map<String, Task> _lastPersistedTasks = {};
+  final Map<String, int> _expectedTaskRevisions = {};
+  final Map<String, Task> _stagedTasks = {};
+
+  void stageTask(Task task) {
+    final expected = _expectedTaskRevisions[task.id];
+    final effective = expected != null && task.persistenceRevision < expected
+        ? task.copyWith(persistenceRevision: expected)
+        : task;
+    _stagedTasks[task.id] = effective;
+    // Task-system services may persist a task while carrying out the same
+    // command (for example, when recovering a run).  Staging the returned
+    // canonical document advances this command's expected revision; a later
+    // unrelated writer still fails the commit check.
+    if (expected == null || effective.persistenceRevision >= expected) {
+      _expectedTaskRevisions[task.id] = effective.persistenceRevision;
+    }
+  }
+
+  Iterable<Task> get stagedTasks => _stagedTasks.values;
+
+  int? expectedTaskRevision(String taskId) => _expectedTaskRevisions[taskId];
+
+  void observeTaskRevision(String taskId, int revision) {
+    _expectedTaskRevisions[taskId] = revision;
+  }
 
   bool shouldPersistTask(Task task) {
     final previous = _lastPersistedTasks[task.id];
@@ -26,7 +53,28 @@ class ProjectPersistenceContext {
 
   void markPersisted(Task task) {
     _lastPersistedTasks[task.id] = task;
+    _expectedTaskRevisions[task.id] = task.persistenceRevision;
+    _stagedTasks[task.id] = task;
   }
+}
+
+/// Explicit command-level unit of work for one project checkpoint.
+///
+/// Handlers produce this intent; the aggregate store is the only component
+/// that turns it into repository writes, transaction manifests, and
+/// optimistic-revision checks.
+class ProjectCommitIntent {
+  const ProjectCommitIntent({
+    required this.workspaceRoot,
+    required this.project,
+    this.context,
+    this.checkpoint = ProjectPersistenceCheckpoint.runtime,
+  });
+
+  final String workspaceRoot;
+  final ProjectDocument project;
+  final ProjectPersistenceContext? context;
+  final ProjectPersistenceCheckpoint checkpoint;
 }
 
 /// The sole write boundary for a hydrated project aggregate.
@@ -43,24 +91,18 @@ class ProjectAggregateStore {
 
   final ProjectAggregateRepository _aggregateRepository;
   final TaskRepository _taskRepository;
+  final TaskPlanMaterializer _materializer = const TaskPlanMaterializer();
 
-  Future<ProjectDocument> commit({
-    required String workspaceRoot,
-    required ProjectDocument project,
-    ProjectPersistenceContext? context,
-    ProjectPersistenceCheckpoint checkpoint =
-        ProjectPersistenceCheckpoint.runtime,
-  }) async {
-    final dirtyTasks = <Task>[];
-    final taskIdsToLoad = <String>[];
-    for (final task in project.tasks) {
-      final changed = context == null || context.shouldPersistTask(task);
-      // A zero revision means the record has never reached the canonical task
-      // store, even if the hydrated object itself is unchanged.
-      if (!changed && task.persistenceRevision > 0) continue;
-      dirtyTasks.add(task);
-      taskIdsToLoad.add(task.id);
-    }
+  Future<ProjectDocument> commit(ProjectCommitIntent intent) async {
+    final workspaceRoot = intent.workspaceRoot;
+    final project = intent.project;
+    final context = intent.context;
+    final checkpoint = intent.checkpoint;
+    final dirtyTasks = <Task>[...(context?.stagedTasks ?? const <Task>[])];
+    final taskIdsToLoad = <String>{
+      ...dirtyTasks.map((task) => task.id),
+      ...project.tasks.map((task) => task.id),
+    }.toList();
 
     final loadedExisting = taskIdsToLoad.isEmpty
         ? const <String, PersistedSnapshot<Task>?>{}
@@ -69,15 +111,64 @@ class ProjectAggregateStore {
             taskIdsToLoad,
             includeHistory: false,
           );
-    final preparedTasks = [
+    final stagedById = <String, Task>{
+      for (final task in dirtyTasks) task.id: task,
+    };
+    for (final taskId in taskIdsToLoad) {
+      final expected = context?.expectedTaskRevision(taskId);
+      final actual = loadedExisting[taskId]?.revision;
+      if (expected != null && (actual == null || expected != actual)) {
+        final staged = stagedById[taskId];
+        if (staged != null &&
+            actual != null &&
+            staged.persistenceRevision == actual) {
+          // A task-system operation performed by this same command may have
+          // committed a newer canonical revision before the aggregate
+          // checkpoint. Its returned snapshot is authoritative for this
+          // write-set; an unrelated writer still fails below when the staged
+          // revision no longer matches the loaded envelope.
+          context?.observeTaskRevision(taskId, actual);
+          continue;
+        }
+        throw StaleSnapshotException(
+          path: _taskRepository.taskRelativePath(
+            taskId,
+            TaskRepository.documentFileName,
+          ),
+          expectedRevision: expected,
+          actualRevision: actual ?? 0,
+        );
+      }
+    }
+    final preparedById = <String, Task>{
       for (final task in dirtyTasks)
-        _mergeTask(
-          task,
-          loadedExisting[task.id]?.value,
+        task.id: task.copyWith(
           projectId: project.id,
           chatSessionId: project.chatSessionId,
         ),
-    ];
+    };
+    // A new plan node is materialized exactly once. Existing executable
+    // records are updated through the task-system materializer, never by
+    // merging a second Task copy stored on the project.
+    for (final node in project.tasks) {
+      final existing = loadedExisting[node.id]?.value;
+      if (existing == null) {
+        preparedById[node.id] = _materializer.create(
+          node,
+          projectId: project.id,
+          chatSessionId: project.chatSessionId,
+        );
+      } else if (!_materializer.matches(node, existing) &&
+          !preparedById.containsKey(node.id)) {
+        preparedById[node.id] = _materializer.apply(
+          node,
+          existing,
+          projectId: project.id,
+          chatSessionId: project.chatSessionId,
+        );
+      }
+    }
+    final preparedTasks = preparedById.values.toList();
     final committed = await _aggregateRepository.commit(
       workspaceRoot: workspaceRoot,
       project: project,
@@ -87,69 +178,16 @@ class ProjectAggregateStore {
     );
     if (context != null) {
       for (final task in preparedTasks) {
-        context.markPersisted(committed.tasks[task.id]?.value ?? task);
+        final persisted = committed.tasks[task.id];
+        context.markPersisted(
+          persisted == null
+              ? task
+              : persisted.value.copyWith(
+                  persistenceRevision: persisted.revision,
+                ),
+        );
       }
     }
-    return committed.project.value.copyWith(
-      tasks: [
-        for (final task in project.tasks)
-          committed.tasks[task.id]?.value ?? task,
-      ],
-    );
-  }
-
-  Task _mergeTask(
-    Task projectTask,
-    Task? existing, {
-    required String projectId,
-    required String? chatSessionId,
-  }) {
-    if (existing == null || projectTask.steps.isNotEmpty) {
-      return projectTask.copyWith(
-        persistenceRevision:
-            existing?.persistenceRevision ?? projectTask.persistenceRevision,
-        projectId: projectId,
-        chatSessionId: chatSessionId,
-      );
-    }
-    // Project planning may update metadata for an existing task, but must not
-    // erase executable steps, runs, or task history owned by the task system.
-    return existing.copyWith(
-      id: projectTask.id,
-      title: projectTask.title,
-      originalPrompt: projectTask.originalPrompt,
-      objective: projectTask.objective,
-      constraints: projectTask.constraints,
-      successCriteria: projectTask.successCriteria,
-      gates: projectTask.gates.isEmpty ? existing.gates : projectTask.gates,
-      criterionIds: projectTask.criterionIds,
-      milestoneId: projectTask.milestoneId,
-      dependsOnTaskIds: projectTask.dependsOnTaskIds,
-      priority: projectTask.priority,
-      risk: projectTask.risk,
-      riskReduction: projectTask.riskReduction,
-      effort: projectTask.effort,
-      selectionRationale: projectTask.selectionRationale,
-      revisionIntroduced: projectTask.revisionIntroduced,
-      revisionUpdated: projectTask.revisionUpdated,
-      expectedEvidence: projectTask.expectedEvidence.isEmpty
-          ? existing.expectedEvidence
-          : projectTask.expectedEvidence,
-      readPaths: projectTask.readPaths,
-      writePaths: projectTask.writePaths,
-      doneCriteria: projectTask.doneCriteria,
-      outOfScope: projectTask.outOfScope,
-      context: projectTask.context,
-      expectedArtifacts: projectTask.expectedArtifacts.isEmpty
-          ? existing.expectedArtifacts
-          : projectTask.expectedArtifacts,
-      status: projectTask.status,
-      recoveryIncidentId: projectTask.recoveryIncidentId,
-      fingerprint: projectTask.fingerprint,
-      rejectionReason: projectTask.rejectionReason,
-      failure: projectTask.failure ?? existing.failure,
-      projectId: projectId,
-      chatSessionId: chatSessionId,
-    );
+    return committed.project.value.copyWith(tasks: project.tasks);
   }
 }

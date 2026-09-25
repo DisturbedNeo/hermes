@@ -6,7 +6,6 @@ import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/services/project_system/project_plan_revision_service.dart';
 import 'package:hermes/core/services/project_system/project_plan_validator.dart';
 import 'package:hermes/core/services/project_system/project_plan_patch.dart';
-import 'package:hermes/core/services/project_system/project_task_models.dart';
 
 /// A structured error returned by a draft command before commit.
 class ProjectPlanBuilderException implements Exception {
@@ -101,8 +100,8 @@ class ProjectPlanBuilder {
   final ProjectPlanRevisionService _revisionService;
   final Map<String, ProjectCriterion> _criteria = {};
   final Map<String, ProjectMilestone> _milestones = {};
-  final Map<String, Task> _tasks = {};
-  final Map<String, Task> _taskCatalog = {};
+  final Map<String, ProjectTaskNode> _tasks = {};
+  final Map<String, ProjectTaskNode> _taskCatalog = {};
   final Map<String, String> _criterionRefs = {};
   final Map<String, String> _milestoneRefs = {};
   final Map<String, String> _taskRefs = {};
@@ -272,7 +271,7 @@ class ProjectPlanBuilder {
     });
   }
 
-  Task updateTask(
+  ProjectTaskNode updateTask(
     String taskReference, {
     String? title,
     String? objective,
@@ -409,7 +408,7 @@ class ProjectPlanBuilder {
     });
   }
 
-  Task setDependency({
+  ProjectTaskNode setDependency({
     required String taskReference,
     required String dependencyReference,
     bool enabled = true,
@@ -456,7 +455,7 @@ class ProjectPlanBuilder {
     });
   }
 
-  Task setDisposition({
+  ProjectTaskNode setDisposition({
     required String taskReference,
     required ProjectPlanTaskDisposition disposition,
     String? commandId,
@@ -488,7 +487,7 @@ class ProjectPlanBuilder {
     });
   }
 
-  Task clearDisposition(String taskReference, {String? commandId}) {
+  ProjectTaskNode clearDisposition(String taskReference, {String? commandId}) {
     final fingerprint = _encode({
       'op': 'clear_disposition',
       'task': taskReference.trim(),
@@ -812,7 +811,7 @@ class ProjectPlanBuilder {
   }
 
   ProjectPlanTaskSpec _splitChildSpec({
-    required Task source,
+    required ProjectTaskNode source,
     required ProjectPlanTaskSpec child,
     required List<String> sourceContext,
     required List<String> inheritedCriteria,
@@ -905,7 +904,7 @@ class ProjectPlanBuilder {
         final retryObjective =
             'Retry failed task after addressing the previous failure: '
             '$baseObjective';
-        final failureContext = source.failure?.summary.trim();
+        final failureContext = source.failureKey?.trim();
         final spec = ProjectPlanTaskSpec(
           ref: ref,
           title: title?.trim().isNotEmpty == true
@@ -1023,7 +1022,7 @@ class ProjectPlanBuilder {
       ids.add(id);
     }
 
-    final created = <Task>[];
+    final created = <ProjectTaskNode>[];
     final reservedExpectationIds = <String>{};
     final reservedArtifactIds = <String>{};
     for (var index = 0; index < specs.length; index++) {
@@ -1092,10 +1091,9 @@ class ProjectPlanBuilder {
       reservedArtifactIds.addAll(
         expectedArtifacts.map((artifact) => artifact.id),
       );
-      final task = Task(
+      final task = ProjectTaskNode(
         id: id,
         title: title,
-        originalPrompt: objective,
         objective: objective,
         constraints: _cleanStrings(spec.constraints),
         status: TaskStatus.queued,
@@ -1117,8 +1115,6 @@ class ProjectPlanBuilder {
         fingerprint: projectTaskFingerprint(objective, criterionIds),
         createdAt: _now,
         updatedAt: _now,
-        chatSessionId: _project.chatSessionId,
-        projectId: _project.id,
       );
       created.add(task);
     }
@@ -1134,7 +1130,7 @@ class ProjectPlanBuilder {
     return ids;
   }
 
-  Task _editableTask(String id) {
+  ProjectTaskNode _editableTask(String id) {
     final task = _tasks[id];
     if (task == null) {
       final known = _taskCatalog[id];
@@ -1387,8 +1383,8 @@ class ProjectPlanBuilder {
   T _atomic<T>(T Function() action) {
     final criteria = Map<String, ProjectCriterion>.from(_criteria);
     final milestones = Map<String, ProjectMilestone>.from(_milestones);
-    final tasks = Map<String, Task>.from(_tasks);
-    final catalog = Map<String, Task>.from(_taskCatalog);
+    final tasks = Map<String, ProjectTaskNode>.from(_tasks);
+    final catalog = Map<String, ProjectTaskNode>.from(_taskCatalog);
     final criterionRefs = Map<String, String>.from(_criterionRefs);
     final milestoneRefs = Map<String, String>.from(_milestoneRefs);
     final taskRefs = Map<String, String>.from(_taskRefs);
@@ -1444,7 +1440,7 @@ class ProjectPlanBuilder {
     }
   }
 
-  static bool _isTerminal(Task task) => switch (task.status) {
+  static bool _isTerminal(ProjectTaskNode task) => switch (task.status) {
     TaskStatus.completed ||
     TaskStatus.failed ||
     TaskStatus.rejected ||

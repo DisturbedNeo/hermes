@@ -1,5 +1,4 @@
 import 'package:hermes/core/models/project.dart';
-import 'package:hermes/core/services/project_system/project_task_models.dart';
 import 'package:hermes/core/services/project_system/project_control_state_service.dart';
 
 /// Planning-owned view of a project.
@@ -37,7 +36,7 @@ class ProjectPlan {
     refinedGoal: project.refinedGoal,
     criteria: List.unmodifiable(project.criteria),
     constraints: List.unmodifiable(project.constraints),
-    tasks: List.unmodifiable(project.tasks.map(ProjectTaskNode.fromTask)),
+    tasks: List.unmodifiable(project.tasks),
     milestones: List.unmodifiable(project.milestones),
     planHistory: List.unmodifiable(project.planHistory),
   );

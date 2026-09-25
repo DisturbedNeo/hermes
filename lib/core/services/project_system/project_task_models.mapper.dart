@@ -189,6 +189,56 @@ class ProjectTaskNodeMapper extends ClassMapperBase<ProjectTaskNode> {
       v.expectedArtifacts;
   static const Field<ProjectTaskNode, List<TaskArtifact>> _f$expectedArtifacts =
       Field('expectedArtifacts', _$expectedArtifacts, opt: true, def: const []);
+  static String? _$recoveryIncidentId(ProjectTaskNode v) =>
+      v.recoveryIncidentId;
+  static const Field<ProjectTaskNode, String> _f$recoveryIncidentId = Field(
+    'recoveryIncidentId',
+    _$recoveryIncidentId,
+    opt: true,
+  );
+  static String _$fingerprint(ProjectTaskNode v) => v.fingerprint;
+  static const Field<ProjectTaskNode, String> _f$fingerprint = Field(
+    'fingerprint',
+    _$fingerprint,
+    opt: true,
+    def: '',
+  );
+  static String? _$rejectionReason(ProjectTaskNode v) => v.rejectionReason;
+  static const Field<ProjectTaskNode, String> _f$rejectionReason = Field(
+    'rejectionReason',
+    _$rejectionReason,
+    opt: true,
+  );
+  static String? _$failureKey(ProjectTaskNode v) => v.failureKey;
+  static const Field<ProjectTaskNode, String> _f$failureKey = Field(
+    'failureKey',
+    _$failureKey,
+    opt: true,
+  );
+  static String? _$failureGateId(ProjectTaskNode v) => v.failureGateId;
+  static const Field<ProjectTaskNode, String> _f$failureGateId = Field(
+    'failureGateId',
+    _$failureGateId,
+    opt: true,
+  );
+  static List<String> _$failureErrorCodes(ProjectTaskNode v) =>
+      v.failureErrorCodes;
+  static const Field<ProjectTaskNode, List<String>> _f$failureErrorCodes =
+      Field('failureErrorCodes', _$failureErrorCodes, opt: true, def: const []);
+  static int _$unresolvedErrorCount(ProjectTaskNode v) =>
+      v.unresolvedErrorCount;
+  static const Field<ProjectTaskNode, int> _f$unresolvedErrorCount = Field(
+    'unresolvedErrorCount',
+    _$unresolvedErrorCount,
+    opt: true,
+    def: 0,
+  );
+  static String? _$planningError(ProjectTaskNode v) => v.planningError;
+  static const Field<ProjectTaskNode, String> _f$planningError = Field(
+    'planningError',
+    _$planningError,
+    opt: true,
+  );
   static DateTime _$createdAt(ProjectTaskNode v) => v.createdAt;
   static const Field<ProjectTaskNode, DateTime> _f$createdAt = Field(
     'createdAt',
@@ -226,6 +276,14 @@ class ProjectTaskNodeMapper extends ClassMapperBase<ProjectTaskNode> {
     #outOfScope: _f$outOfScope,
     #context: _f$context,
     #expectedArtifacts: _f$expectedArtifacts,
+    #recoveryIncidentId: _f$recoveryIncidentId,
+    #fingerprint: _f$fingerprint,
+    #rejectionReason: _f$rejectionReason,
+    #failureKey: _f$failureKey,
+    #failureGateId: _f$failureGateId,
+    #failureErrorCodes: _f$failureErrorCodes,
+    #unresolvedErrorCount: _f$unresolvedErrorCount,
+    #planningError: _f$planningError,
     #createdAt: _f$createdAt,
     #updatedAt: _f$updatedAt,
   };
@@ -258,6 +316,14 @@ class ProjectTaskNodeMapper extends ClassMapperBase<ProjectTaskNode> {
       outOfScope: data.dec(_f$outOfScope),
       context: data.dec(_f$context),
       expectedArtifacts: data.dec(_f$expectedArtifacts),
+      recoveryIncidentId: data.dec(_f$recoveryIncidentId),
+      fingerprint: data.dec(_f$fingerprint),
+      rejectionReason: data.dec(_f$rejectionReason),
+      failureKey: data.dec(_f$failureKey),
+      failureGateId: data.dec(_f$failureGateId),
+      failureErrorCodes: data.dec(_f$failureErrorCodes),
+      unresolvedErrorCount: data.dec(_f$unresolvedErrorCount),
+      planningError: data.dec(_f$planningError),
       createdAt: data.dec(_f$createdAt),
       updatedAt: data.dec(_f$updatedAt),
     );

@@ -94,9 +94,9 @@ ProjectDocument _project({
   );
 }
 
-Task _task() {
+ProjectTaskNode _task() {
   final now = DateTime(2026, 1, 1);
-  return Task(
+  return ProjectTaskNode(
     id: 'task_1',
     title: 'Task',
     objective: 'Do the task',

@@ -7,36 +7,6 @@ import 'package:hermes/core/services/project_system/project_plan_patch.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/workspace_discovery_profile.dart';
 
-/// Pure result of creating the initial planning state for a project.
-class ProjectInitialisation {
-  final String title;
-  final String refinedGoal;
-  final List<ProjectCriterion> criteria;
-  final List<String> constraints;
-  final List<PendingProjectQuestion> openQuestions;
-  final List<Task> tasks;
-  final List<ProjectMilestone> milestones;
-  final List<ProjectMemoryEntry> memory;
-  final PlanningMetrics planningMetrics;
-
-  /// Non-null when the planner could not produce a model-backed plan and the
-  /// caller is using a safe fallback instead.
-  final String? planningError;
-
-  const ProjectInitialisation({
-    required this.title,
-    required this.refinedGoal,
-    required this.criteria,
-    required this.constraints,
-    required this.openQuestions,
-    required this.tasks,
-    this.milestones = const [],
-    this.memory = const [],
-    this.planningMetrics = const PlanningMetrics(),
-    this.planningError,
-  });
-}
-
 /// Canonical result of initial planning.
 ///
 /// The patch is ready for application to the real project. Core project
@@ -52,49 +22,6 @@ class ProjectInitialPlanResult {
   final ProjectPlanPatch patch;
   final PlanningMetrics planningMetrics;
   final String? planningError;
-
-  factory ProjectInitialPlanResult.fromLegacy(ProjectInitialisation value) {
-    final plan = ProjectDesiredPlan(
-      revision: 1,
-      triggers: const [ProjectPlanRevisionTrigger.initialization],
-      summary: 'Initial project roadmap.',
-      rationale: 'Created from the legacy initial planning result.',
-      criteria: value.criteria,
-      milestones: value.milestones,
-      tasks: value.tasks,
-      memoryAdditions: value.memory,
-      openQuestions: value.openQuestions,
-      createdAt: DateTime.now(),
-    );
-    return ProjectInitialPlanResult(
-      patch: ProjectPlanPatch.initial(
-        plan,
-        title: value.title,
-        refinedGoal: value.refinedGoal,
-        constraints: value.constraints,
-      ),
-      planningMetrics: value.planningMetrics,
-      planningError: value.planningError,
-    );
-  }
-
-  /// Compatibility view for old planner callers. Core creation does not use
-  /// this conversion path.
-  ProjectInitialisation toLegacy() {
-    final plan = patch.plan;
-    return ProjectInitialisation(
-      title: patch.title ?? '',
-      refinedGoal: patch.refinedGoal ?? '',
-      criteria: plan.criteria,
-      constraints: patch.constraints ?? const [],
-      openQuestions: plan.openQuestions,
-      tasks: plan.taskDocuments,
-      milestones: plan.milestones,
-      memory: plan.memoryAdditions,
-      planningMetrics: planningMetrics,
-      planningError: planningError,
-    );
-  }
 }
 
 /// Bounded, read-only planning context collected before a plan model call.
@@ -205,8 +132,9 @@ class ProjectIncrementalPlanResult {
 }
 
 /// Boundary between deterministic project orchestration and model-backed
-/// project planning decisions.
-abstract interface class ProjectInitialPlanPlanner {
+/// project planning decisions. All planning modes return the same typed patch
+/// protocol; there is no legacy initial-plan branch.
+abstract interface class ProjectPlanner {
   Future<ProjectInitialPlanResult> initializePlan({
     required ChatClient client,
     required String baseSystemPrompt,
@@ -228,33 +156,6 @@ abstract interface class ProjectInitialPlanPlanner {
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });
-}
-
-abstract interface class ProjectPlanner {
-  Future<ProjectInitialisation> initializeProject({
-    required ChatClient client,
-    required String baseSystemPrompt,
-    required WorkspaceAttachment workspace,
-    required String originalGoal,
-    required Map<String, dynamic> workspaceMetadata,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  });
-
-  /// Repairs an invalid initial plan. The orchestrator may call this a small,
-  /// bounded number of times before surfacing a validation blocker.
-  Future<ProjectInitialisation?> repairInitialisation({
-    required ChatClient client,
-    required String baseSystemPrompt,
-    required WorkspaceAttachment workspace,
-    required String originalGoal,
-    required Map<String, dynamic> workspaceMetadata,
-    required ProjectInitialisation initialisation,
-    required List<Map<String, String>> validationIssues,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  });
-
   Future<ProjectIncrementalPlanResult> revisePlanWithCommands({
     required ChatClient client,
     required String baseSystemPrompt,
@@ -272,7 +173,7 @@ abstract interface class ProjectPlanner {
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required ProjectState project,
-    required Task oversizedTask,
+    required ProjectTaskNode oversizedTask,
     required List<String> violations,
     required ProjectPlanApprovalPolicy approvalPolicy,
     TaskModelOutputSink? onModelOutput,

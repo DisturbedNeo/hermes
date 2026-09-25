@@ -1,7 +1,7 @@
 part of 'project_workflow_service.dart';
 
 /// Owns project creation and initial-plan validation policy.
-extension ProjectPlanningPhase on ProjectWorkflowService {
+extension ProjectPlanningPhase on ProjectWorkflowRuntime {
   Future<ProjectDocument> createProject({
     required WorkspaceAttachment workspace,
     required String userPrompt,
@@ -15,7 +15,7 @@ extension ProjectPlanningPhase on ProjectWorkflowService {
   }) async {
     cancellationToken?.throwIfCancelled();
     final now = DateTime.now();
-    final planning = await _planningCoordinator.initialise(
+    final planning = await _planningHandler.initialise(
       workspace: workspace,
       userPrompt: userPrompt,
       client: client,
@@ -42,8 +42,8 @@ extension ProjectPlanningPhase on ProjectWorkflowService {
     final initialCriteria = proposal.criteria;
     final initialCriterionIds = initialCriteria.map((item) => item.id).toList();
     final initialBacklog = planningBlocked
-        ? const <Task>[]
-        : _normaliseInitialBacklog(proposal.taskDocuments, initialCriterionIds);
+        ? const <ProjectTaskNode>[]
+        : _normaliseInitialBacklog(proposal.tasks, initialCriterionIds);
     final initialMilestones = _initialMilestones(
       milestones: proposal.milestones,
       refinedGoal: initialPlan.patch.refinedGoal ?? userPrompt,
@@ -135,7 +135,7 @@ extension ProjectPlanningPhase on ProjectWorkflowService {
     );
 
     if (!planningBlocked) {
-      final committed = await _planRevisionService.prepareAndApplyPatch(
+      final committed = await _planningHandler.prepareAndApplyPatch(
         project: project,
         patch: ProjectPlanPatch.initial(
           proposal,

@@ -174,7 +174,7 @@ ProjectDocument _project({
         updatedAt: now,
       ),
     ],
-    tasks: tasks,
+    tasks: [for (final task in tasks) ProjectTaskNode.fromTask(task)],
     status: status,
     activeTaskId: activeTaskId,
     createdAt: now,

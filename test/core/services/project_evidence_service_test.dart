@@ -910,7 +910,7 @@ ProjectDocument _project(
     refinedGoal: 'Create a correct report',
     criteria: [criterion],
     constraints: const [],
-    tasks: [task],
+    tasks: [ProjectTaskNode.fromTask(task)],
     status: ProjectStatus.active,
     activeTaskId: null,
     createdAt: timestamp,

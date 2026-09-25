@@ -15,7 +15,7 @@ class ProjectProgressMonitor {
 
   ProjectDocument recordTaskResult({
     required ProjectDocument project,
-    required Task task,
+    required ProjectTaskNode task,
     required bool taskAccepted,
     bool excludeFromStagnation = false,
     required Map<String, ProjectCriterionStatus> criterionStatusesBefore,
@@ -152,7 +152,7 @@ class ProjectProgressMonitor {
         .project;
   }
 
-  String _batchId(ProjectDocument project, Task task) {
+  String _batchId(ProjectDocument project, ProjectTaskNode task) {
     if (project.currentBatchTaskIds.isEmpty) return 'single:${task.id}';
     return '${project.currentBatchPlanRevision}:'
         '${project.currentBatchTaskIds.join(',')}';

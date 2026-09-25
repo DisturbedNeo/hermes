@@ -54,7 +54,12 @@ class ProjectStateStore {
         ? result
         : ProjectLoadResult(
             project: _controlStateService.synchronise(
-              project.copyWith(tasks: result.canonicalTasks),
+              project.copyWith(
+                tasks: [
+                  for (final task in result.canonicalTasks)
+                    ProjectTaskNode.fromTask(task),
+                ],
+              ),
             ),
             diagnostics: result.diagnostics,
             canonicalTasks: result.canonicalTasks,
@@ -80,7 +85,7 @@ class ProjectStateStore {
     ProjectDocument project,
   ) async {
     final cached = {for (final task in project.tasks) task.id: task};
-    final tasks = <Task>[];
+    final tasks = <ProjectTaskNode>[];
     for (final taskId in project.taskIds) {
       final task = await _taskService.loadTask(
         workspace,
@@ -89,7 +94,9 @@ class ProjectStateStore {
         projectId: project.id,
         includeHistory: false,
       );
-      final resolved = task ?? cached[taskId];
+      final resolved = task == null
+          ? cached[taskId]
+          : ProjectTaskNode.fromTask(task);
       if (resolved != null) tasks.add(resolved);
     }
     return _controlStateService.synchronise(project.copyWith(tasks: tasks));

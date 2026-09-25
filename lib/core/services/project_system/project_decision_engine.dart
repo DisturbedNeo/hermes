@@ -28,7 +28,7 @@ class ProjectDecisionInput {
   });
 
   final ProjectDocument project;
-  final Task? candidate;
+  final ProjectTaskNode? candidate;
   final List<ProjectPlanRevisionTrigger> replanTriggers;
   final int runIterations;
   final int? allowedIterations;
@@ -45,7 +45,7 @@ class ProjectDecision {
 
   final ProjectExecutionAction action;
   final String reason;
-  final Task? task;
+  final ProjectTaskNode? task;
   final ProjectBlockerType? blockerType;
 }
 

@@ -10,6 +10,7 @@ import 'package:hermes/core/services/project_system/project_checkpoint.dart';
 import 'package:hermes/core/services/project_system/project_repository.dart';
 import 'package:hermes/core/services/task_system/task_repository.dart';
 import 'package:hermes/core/services/workspace_persistence_coordinator.dart';
+import 'package:hermes/core/serialization/model_json.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
@@ -130,6 +131,49 @@ void main() {
   );
 
   test(
+    'migrates legacy embedded tasks into canonical task documents',
+    () async {
+      final task = _task('legacy_task');
+      final project = _project('legacy_project');
+      final document = ModelJson.encode(project)
+        ..['tasks'] = [ModelJson.encode(task)]
+        ..['taskIds'] = <String>[];
+      final file = File(
+        path.join(
+          root.path,
+          ProjectRepository.projectsRoot,
+          project.id,
+          ProjectRepository.documentFileName,
+        ),
+      );
+      await file.parent.create(recursive: true);
+      await file.writeAsString(
+        jsonEncode(SnapshotEnvelope.encode(document, 1)),
+      );
+
+      final loaded = await aggregate.loadProject(root.path, project.id);
+
+      expect(loaded.project?.taskIds, ['legacy_task']);
+      expect(loaded.canonicalTasks.single.id, 'legacy_task');
+      expect(loaded.canonicalTasks.single.title, task.title);
+      final normalized = jsonDecode(await file.readAsString()) as Map;
+      final normalizedDocument = normalized['document'] as Map;
+      expect(normalizedDocument, isNot(contains('tasks')));
+      expect(
+        await File(
+          path.join(
+            root.path,
+            TaskRepository.tasksRoot,
+            'legacy_task',
+            TaskRepository.documentFileName,
+          ),
+        ).exists(),
+        isTrue,
+      );
+    },
+  );
+
+  test(
     'backup fallback is diagnostic and does not repair the primary',
     () async {
       final task = _task('task_1');
@@ -197,7 +241,7 @@ void main() {
       );
       final updatedProject = committed.project.value.copyWith(
         title: 'changed project',
-        tasks: [updatedTask],
+        tasks: [ProjectTaskNode.fromTask(updatedTask)],
       );
       await expectLater(
         failing.commit(
@@ -270,7 +314,7 @@ ProjectDocument _project(String id, {List<Task> tasks = const []}) {
     refinedGoal: 'Goal',
     criteria: const [],
     constraints: const [],
-    tasks: tasks,
+    tasks: [for (final task in tasks) ProjectTaskNode.fromTask(task)],
     status: ProjectStatus.active,
     activeTaskId: null,
     createdAt: now,

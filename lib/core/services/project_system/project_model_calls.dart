@@ -23,17 +23,12 @@ export 'package:hermes/core/services/project_system/project_planning_gateway.dar
     show
         ProjectCompletionAssessment,
         ProjectEvidenceSnapshot,
-        ProjectInitialisation,
         ProjectInitialPlanResult,
         ProjectIncrementalPlanResult,
         ProjectPlanner,
         ProjectCompletionEvaluator;
 
-class ProjectModelCalls
-    implements
-        ProjectPlanner,
-        ProjectInitialPlanPlanner,
-        ProjectCompletionEvaluator {
+class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
   ProjectModelCalls({
     required ToolService toolService,
     ProjectViewService projectViewService = const ProjectViewService(),
@@ -147,50 +142,6 @@ ${_encoder.convert(_initialPlanToMap(initialPlan))}
     }
   }
 
-  /// Compatibility entry point for integrations that still consume the old
-  /// initialisation DTO. New project creation uses [initializePlan].
-  @override
-  Future<ProjectInitialisation> initializeProject({
-    required ChatClient client,
-    required String baseSystemPrompt,
-    required WorkspaceAttachment workspace,
-    required String originalGoal,
-    required Map<String, dynamic> workspaceMetadata,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) async => (await initializePlan(
-    client: client,
-    baseSystemPrompt: baseSystemPrompt,
-    workspace: workspace,
-    originalGoal: originalGoal,
-    workspaceMetadata: workspaceMetadata,
-    onModelOutput: onModelOutput,
-    cancellationToken: cancellationToken,
-  )).toLegacy();
-
-  @override
-  Future<ProjectInitialisation?> repairInitialisation({
-    required ChatClient client,
-    required String baseSystemPrompt,
-    required WorkspaceAttachment workspace,
-    required String originalGoal,
-    required Map<String, dynamic> workspaceMetadata,
-    required ProjectInitialisation initialisation,
-    required List<Map<String, String>> validationIssues,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) async => (await repairInitialPlan(
-    client: client,
-    baseSystemPrompt: baseSystemPrompt,
-    workspace: workspace,
-    originalGoal: originalGoal,
-    workspaceMetadata: workspaceMetadata,
-    initialPlan: ProjectInitialPlanResult.fromLegacy(initialisation),
-    validationIssues: validationIssues,
-    onModelOutput: onModelOutput,
-    cancellationToken: cancellationToken,
-  ))?.toLegacy();
-
   @override
   Future<ProjectIncrementalPlanResult> revisePlanWithCommands({
     required ChatClient client,
@@ -276,7 +227,7 @@ ${_encoder.convert(_projectViewService.query(project))}
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required ProjectState project,
-    required Task oversizedTask,
+    required ProjectTaskNode oversizedTask,
     required List<String> violations,
     required ProjectPlanApprovalPolicy approvalPolicy,
     TaskModelOutputSink? onModelOutput,
@@ -631,7 +582,7 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
     }
     final defaultMilestoneId = milestones.firstOrNull?.id;
     final tasks = [
-      for (final task in proposal.taskDocuments)
+      for (final task in proposal.tasks)
         task.copyWith(milestoneId: task.milestoneId ?? defaultMilestoneId),
     ];
     final title = context.draftTitle.trim().isEmpty
@@ -715,37 +666,34 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
     if (value.planningError != null) 'planningError': value.planningError,
   };
 
-  ProjectInitialisation _fallbackInitialisation(
-    String originalGoal, {
-    String? planningError,
-  }) {
-    return ProjectInitialisation(
-      title: _titleFromGoal(originalGoal),
-      refinedGoal: originalGoal,
-      criteria: [
-        ProjectCriterion(
-          id: 'criterion_001',
-          statement: 'Complete the stated project goal.',
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-        ),
-      ],
-      constraints: const ['Stay within the attached workspace.'],
-      openQuestions: const [],
-      tasks: const [],
-      planningError: planningError,
-    );
-  }
-
   ProjectInitialPlanResult _fallbackInitialPlan(
     String originalGoal, {
     String? planningError,
   }) {
-    final legacy = _fallbackInitialisation(
-      originalGoal,
+    final now = DateTime.now();
+    return ProjectInitialPlanResult(
+      patch: ProjectPlanPatch.initial(
+        ProjectDesiredPlan(
+          revision: 1,
+          triggers: const [ProjectPlanRevisionTrigger.initialization],
+          summary: 'Initial project roadmap.',
+          rationale: 'Created from the safe project fallback.',
+          criteria: [
+            ProjectCriterion(
+              id: 'criterion_001',
+              statement: 'Complete the stated project goal.',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          ],
+          createdAt: now,
+        ),
+        title: _titleFromGoal(originalGoal),
+        refinedGoal: originalGoal,
+        constraints: const ['Stay within the attached workspace.'],
+      ),
       planningError: planningError,
     );
-    return ProjectInitialPlanResult.fromLegacy(legacy);
   }
 
   List<PendingProjectQuestion> _questionsFromJson(Object? value) {

@@ -83,8 +83,11 @@ void main() {
 
     expect(result.validation.valid, isFalse);
     expect(result.changed, isFalse);
-    expect(result.project.tasks, same(project.tasks));
-    expect(result.project.taskById('existing'), same(existing));
+    expect(
+      result.project.tasks.map((task) => task.id),
+      project.tasks.map((task) => task.id),
+    );
+    expect(result.project.taskById('existing')?.id, existing.id);
     expect(result.project.criteria, same(project.criteria));
     expect(result.project.milestones, same(project.milestones));
     expect(result.project.memory, same(project.memory));
@@ -109,7 +112,7 @@ void main() {
       );
 
       expect(result.changed, isFalse);
-      expect(result.project.tasks, [existing]);
+      expect(result.project.tasks.map((task) => task.id), ['existing']);
       expect(result.project.planHistory, hasLength(1));
       expect(
         result.validation.errors.map((issue) => issue.code),
@@ -131,7 +134,7 @@ void main() {
       );
 
       expect(unchanged.changed, isFalse);
-      expect(unchanged.project.taskById('existing'), existing);
+      expect(unchanged.project.taskById('existing')?.id, existing.id);
 
       final disposed = await service.prepareAndApply(
         project: project,
@@ -660,7 +663,7 @@ ProjectState _project(
       ),
     ],
     constraints: const [],
-    tasks: tasks,
+    tasks: [for (final task in tasks) ProjectTaskNode.fromTask(task)],
     milestones: milestones,
     memory: memory,
     openQuestions: openQuestions,
@@ -692,7 +695,7 @@ ProjectDesiredPlan _desired(
     hasCompleteCollections: hasCompleteCollections,
     criteria: criteria ?? project.criteria,
     milestones: milestones ?? project.milestones,
-    tasks: tasks,
+    tasks: [for (final task in tasks) ProjectTaskNode.fromTask(task)],
     deferredTaskIds: deferredTaskIds,
     obsoleteTaskIds: obsoleteTaskIds,
     memoryAdditions: memoryAdditions,

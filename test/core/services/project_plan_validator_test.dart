@@ -437,7 +437,9 @@ ProjectState _project({List<ProjectMemoryEntry> memory = const []}) {
 
 ProjectState _projectWithTasks(List<Task> tasks) {
   final project = _project();
-  return project.copyWith(tasks: tasks);
+  return project.copyWith(
+    tasks: [for (final task in tasks) ProjectTaskNode.fromTask(task)],
+  );
 }
 
 ProjectDesiredPlan _desired(
@@ -458,7 +460,7 @@ ProjectDesiredPlan _desired(
     hasCompleteCollections: hasCompleteCollections,
     criteria: includeCriteria ? project.criteria : const [],
     milestones: project.milestones,
-    tasks: tasks,
+    tasks: [for (final task in tasks) ProjectTaskNode.fromTask(task)],
     deferredTaskIds: deferredTaskIds,
     obsoleteTaskIds: obsoleteTaskIds,
     memoryAdditions: memoryAdditions,

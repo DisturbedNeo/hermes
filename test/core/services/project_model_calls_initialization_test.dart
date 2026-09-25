@@ -45,7 +45,7 @@ void main() {
       }),
       _call('plan_commit', const {}),
     ]);
-    final initialisation = await calls.initializeProject(
+    final initialPlan = await calls.initializePlan(
       client: client,
       baseSystemPrompt: 'system',
       workspace: WorkspaceAttachment(
@@ -63,20 +63,21 @@ void main() {
       },
     );
 
-    expect(initialisation.title, 'Bounded Project');
-    expect(initialisation.refinedGoal, 'Deliver one verified bounded outcome.');
-    expect(initialisation.criteria.single.id, startsWith('criterion_'));
-    expect(initialisation.milestones.single.id, startsWith('milestone_'));
-    expect(initialisation.tasks.single.id, startsWith('task_'));
+    final plan = initialPlan.patch.plan;
+    expect(initialPlan.patch.title, 'Bounded Project');
     expect(
-      initialisation.tasks.single.milestoneId,
-      initialisation.milestones.single.id,
+      initialPlan.patch.refinedGoal,
+      'Deliver one verified bounded outcome.',
     );
-    expect(initialisation.tasks.single.gates.single.id, 'command_passes');
-    expect(initialisation.tasks.single.expectedEvidence.length, 2);
-    expect(initialisation.planningMetrics.planningCalls, 5);
-    expect(initialisation.planningMetrics.planningCommandCount, 5);
-    expect(initialisation.planningMetrics.promptTokenEstimate, greaterThan(0));
+    expect(plan.criteria.single.id, startsWith('criterion_'));
+    expect(plan.milestones.single.id, startsWith('milestone_'));
+    expect(plan.tasks.single.id, startsWith('task_'));
+    expect(plan.tasks.single.milestoneId, plan.milestones.single.id);
+    expect(plan.tasks.single.gates.single.id, 'command_passes');
+    expect(plan.tasks.single.expectedEvidence.length, 2);
+    expect(initialPlan.planningMetrics.planningCalls, 5);
+    expect(initialPlan.planningMetrics.planningCommandCount, 5);
+    expect(initialPlan.planningMetrics.promptTokenEstimate, greaterThan(0));
     final toolNames = [
       for (final item in (client.lastExtraParams?['tools'] as List))
         ((item as Map)['function'] as Map)['name'],
@@ -127,7 +128,7 @@ void main() {
         _call('plan_commit', const {}),
       ]);
 
-      final initialisation = await calls.initializeProject(
+      final initialPlan = await calls.initializePlan(
         client: client,
         baseSystemPrompt: 'system',
         workspace: WorkspaceAttachment(
@@ -151,7 +152,7 @@ void main() {
         },
       );
 
-      expect(initialisation.tasks, hasLength(1));
+      expect(initialPlan.patch.plan.tasks, hasLength(1));
       expect(
         client.seenMessages.first.last.content,
         isNot(contains('Authoritative design...')),

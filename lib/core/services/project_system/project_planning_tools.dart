@@ -243,7 +243,7 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
                   rejectionReason: 'Split in the current planning draft.',
                 )
               : task,
-      ...preview.proposal.taskDocuments,
+      ...preview.proposal.tasks,
     ];
     return context.project.copyWith(
       title: context.draftTitle,
@@ -938,7 +938,7 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
           if (!existingTasks.contains(item.id)) item.id,
       ],
       'updated_tasks': [
-        for (final item in proposal.taskDocuments)
+        for (final item in proposal.tasks)
           if (existingTasks.contains(item.id) &&
               _taskChanged(context.project.taskById(item.id)!, item))
             item.id,
@@ -961,10 +961,10 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
     }
   }
 
-  static bool _taskChanged(Task existing, Task desired) =>
+  static bool _taskChanged(ProjectTaskNode existing, ProjectTaskNode desired) =>
       _taskSignature(existing) != _taskSignature(desired);
 
-  static String _taskSignature(Task task) => jsonEncode({
+  static String _taskSignature(ProjectTaskNode task) => jsonEncode({
     'title': task.title,
     'objective': task.objective,
     'constraints': task.constraints,

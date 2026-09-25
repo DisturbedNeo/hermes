@@ -332,6 +332,13 @@ class ProjectRepository {
     return path.posix.join(projectsRoot, projectId, fileName);
   }
 
+  /// Returns the validated absolute path of a project's snapshot. Aggregate
+  /// migration code uses this only at the persistence boundary.
+  File projectSnapshotFile(String workspaceRoot, String projectId) {
+    final dir = _validatedProjectDirectory(workspaceRoot, projectId);
+    return File(path.join(dir.path, documentFileName));
+  }
+
   /// Writes [content] to a log file named [name] inside the given
   /// project's `logs/` directory. Throws [ArgumentError] if [name] is
   /// not a plain filename (contains slashes or is absolute).

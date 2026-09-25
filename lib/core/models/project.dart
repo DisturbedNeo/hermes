@@ -18,6 +18,8 @@ export 'task.dart'
         TaskStatus,
         TaskEvidenceExpectation,
         TaskStatusWire;
+export '../services/project_system/project_task_models.dart'
+    show ProjectTaskNode, ProjectTaskRef, ProjectTaskSpec;
 
 part 'project.mapper.dart';
 part 'project_json_hooks.dart';
@@ -614,7 +616,7 @@ class ProjectDesiredPlan with ProjectDesiredPlanMappable {
     this.assumptions = const [],
     this.criteria = const [],
     this.milestones = const [],
-    Iterable<Object> tasks = const [],
+    List<ProjectTaskNode> tasks = const [],
     this.splitTaskIds = const [],
     this.deferredTaskIds = const [],
     this.obsoleteTaskIds = const [],
@@ -624,12 +626,7 @@ class ProjectDesiredPlan with ProjectDesiredPlanMappable {
     this.requiresApproval = false,
     this.approvalReason = '',
     required this.createdAt,
-  }) : tasks = [
-         for (final task in tasks)
-           task is ProjectTaskNode
-               ? task
-               : ProjectTaskNode.fromTask(task as Task),
-       ];
+  }) : tasks = List.unmodifiable(tasks);
 
   ProjectDesiredPlan copyWith({
     int? revision,
@@ -640,7 +637,7 @@ class ProjectDesiredPlan with ProjectDesiredPlanMappable {
     List<String>? assumptions,
     List<ProjectCriterion>? criteria,
     List<ProjectMilestone>? milestones,
-    Iterable<Object>? tasks,
+    List<ProjectTaskNode>? tasks,
     List<String>? splitTaskIds,
     List<String>? deferredTaskIds,
     List<String>? obsoleteTaskIds,
@@ -671,8 +668,6 @@ class ProjectDesiredPlan with ProjectDesiredPlanMappable {
     approvalReason: approvalReason ?? this.approvalReason,
     createdAt: createdAt ?? this.createdAt,
   );
-
-  List<Task> get taskDocuments => [for (final task in tasks) task.toTask()];
 }
 
 @MappableClass(ignoreNull: true)
@@ -814,9 +809,9 @@ class ProjectState with ProjectStateMappable {
   @MappableField(hook: JsonNullableStringHook())
   final String? pendingReplanReason;
   @MappableField(hook: JsonObjectListHook())
-  /// Hydrated planning/task compatibility view. This is omitted from the
-  /// durable project document; execution history belongs to the task store.
-  final List<Task> tasks;
+  /// Planner-owned task projections. Full executable task documents are
+  /// resolved from the task system and are never part of project state.
+  final List<ProjectTaskNode> tasks;
   @MappableField(hook: JsonObjectListHook())
   final List<TaskArtifact> artifacts;
   @MappableField(hook: JsonObjectListHook())
@@ -879,7 +874,7 @@ class ProjectState with ProjectStateMappable {
     required this.refinedGoal,
     required this.criteria,
     required this.constraints,
-    List<Task>? tasks,
+    List<ProjectTaskNode>? tasks,
     List<String>? taskIds,
     this.currentBatchTaskIds = const [],
     this.currentBatchIndex = 0,
@@ -910,8 +905,10 @@ class ProjectState with ProjectStateMappable {
     required this.createdAt,
     required this.updatedAt,
     this.completedAt,
-  }) : tasks = tasks ?? const [],
-       taskIds = taskIds ?? tasks?.map((task) => task.id).toList() ?? const [],
+  }) : tasks = List.unmodifiable(tasks ?? const <ProjectTaskNode>[]),
+       taskIds =
+           taskIds ??
+           [for (final task in tasks ?? const <ProjectTaskNode>[]) task.id],
        artifacts = artifacts ?? const [],
        recoveryIncidents = recoveryIncidents ?? const [],
        evidence = evidence ?? const [],
@@ -957,12 +954,12 @@ class ProjectState with ProjectStateMappable {
     return criterionId;
   }
 
-  List<String> criterionStatementsFor(Task task) => [
+  List<String> criterionStatementsFor(ProjectTaskNode task) => [
     for (final criterionId in task.criterionIds)
       criterionStatement(criterionId),
   ];
 
-  Task? taskById(String id) {
+  ProjectTaskNode? taskById(String id) {
     for (final task in tasks) {
       if (task.id == id) return task;
     }
@@ -984,7 +981,7 @@ class ProjectState with ProjectStateMappable {
     String? refinedGoal,
     List<ProjectCriterion>? criteria,
     List<String>? constraints,
-    List<Task>? tasks,
+    List<ProjectTaskNode>? tasks,
     List<String>? taskIds,
     List<String>? currentBatchTaskIds,
     int? currentBatchIndex,
@@ -1205,7 +1202,7 @@ class ProjectEvaluation {
   final List<String> newKnownFacts;
   final List<TaskArtifact> artifacts;
   final List<TaskGateResult> gateResults;
-  final List<Task> taskAdditions;
+  final List<ProjectTaskNode> taskAdditions;
   final List<PendingProjectQuestion> openQuestions;
   final String? failureReason;
   final bool projectReplanRequested;

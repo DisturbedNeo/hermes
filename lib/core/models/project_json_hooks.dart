@@ -10,11 +10,9 @@ class ProjectStateJsonHook extends JsonModelHook {
     final normalized = super.beforeDecode(value);
     if (normalized is! Map) return normalized;
     final json = Map<String, dynamic>.from(normalized);
-    if (json.containsKey('tasks')) {
-      throw const FormatException(
-        'Embedded project tasks are not supported; use taskIds.',
-      );
-    }
+    // Legacy embedded tasks are normalized by ProjectAggregateRepository at
+    // the load boundary. The mapper must still tolerate the old field while
+    // direct project decoding is used by migration and diagnostics.
     return json;
   }
 }

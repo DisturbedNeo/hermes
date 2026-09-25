@@ -62,10 +62,12 @@ class ProjectTaskRef {
   const ProjectTaskRef({required this.id, required this.planRevision});
 }
 
-/// Planning-only task node used by project read models and scheduling policy.
+/// Planning-only task node used by project state and scheduling policy.
 ///
 /// It is deliberately constructed from the canonical Task at the read/write
-/// boundary, but it does not expose steps, runs, or tool history.
+/// boundary, but it does not expose steps, runs, or tool history.  This is the
+/// authoritative project-side task representation; the full [Task] document
+/// remains owned by the task system.
 @MappableClass(ignoreNull: true)
 class ProjectTaskNode with ProjectTaskNodeMappable {
   const ProjectTaskNode({
@@ -93,6 +95,14 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
     this.outOfScope = const [],
     this.context = const [],
     this.expectedArtifacts = const [],
+    this.recoveryIncidentId,
+    this.fingerprint = '',
+    this.rejectionReason,
+    this.failureKey,
+    this.failureGateId,
+    this.failureErrorCodes = const [],
+    this.unresolvedErrorCount = 0,
+    this.planningError,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -121,6 +131,14 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
   final List<String> outOfScope;
   final List<String> context;
   final List<TaskArtifact> expectedArtifacts;
+  final String? recoveryIncidentId;
+  final String fingerprint;
+  final String? rejectionReason;
+  final String? failureKey;
+  final String? failureGateId;
+  final List<String> failureErrorCodes;
+  final int unresolvedErrorCount;
+  final String? planningError;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -149,11 +167,106 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
     outOfScope: List.unmodifiable(task.outOfScope),
     context: List.unmodifiable(task.context),
     expectedArtifacts: List.unmodifiable(task.expectedArtifacts),
+    recoveryIncidentId: task.recoveryIncidentId,
+    fingerprint: task.fingerprint,
+    rejectionReason: task.rejectionReason,
+    failureKey: task.failure?.failureKey,
+    failureGateId: task.failure?.gateId,
+    failureErrorCodes: List.unmodifiable(task.failure?.errorCodes ?? const []),
+    unresolvedErrorCount: task.failure?.unresolvedErrorCount ?? 0,
+    planningError: task.planningError,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
   );
 
-  Task toTask() => Task(
+  ProjectTaskNode copyWith({
+    String? id,
+    String? title,
+    String? objective,
+    TaskStatus? status,
+    List<TaskGate>? gates,
+    List<String>? constraints,
+    List<String>? successCriteria,
+    List<String>? criterionIds,
+    Object? milestoneId = _unset,
+    List<String>? dependsOnTaskIds,
+    TaskPriority? priority,
+    TaskRisk? risk,
+    ProjectRiskReduction? riskReduction,
+    TaskEffort? effort,
+    String? selectionRationale,
+    int? revisionIntroduced,
+    int? revisionUpdated,
+    List<TaskEvidenceExpectation>? expectedEvidence,
+    List<String>? readPaths,
+    List<String>? writePaths,
+    List<String>? doneCriteria,
+    List<String>? outOfScope,
+    List<String>? context,
+    List<TaskArtifact>? expectedArtifacts,
+    Object? recoveryIncidentId = _unset,
+    String? fingerprint,
+    Object? rejectionReason = _unset,
+    Object? failureKey = _unset,
+    Object? failureGateId = _unset,
+    List<String>? failureErrorCodes,
+    int? unresolvedErrorCount,
+    Object? planningError = _unset,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => ProjectTaskNode(
+    id: id ?? this.id,
+    title: title ?? this.title,
+    objective: objective ?? this.objective,
+    status: status ?? this.status,
+    gates: gates ?? this.gates,
+    constraints: constraints ?? this.constraints,
+    successCriteria: successCriteria ?? this.successCriteria,
+    criterionIds: criterionIds ?? this.criterionIds,
+    milestoneId: identical(milestoneId, _unset)
+        ? this.milestoneId
+        : milestoneId as String?,
+    dependsOnTaskIds: dependsOnTaskIds ?? this.dependsOnTaskIds,
+    priority: priority ?? this.priority,
+    risk: risk ?? this.risk,
+    riskReduction: riskReduction ?? this.riskReduction,
+    effort: effort ?? this.effort,
+    selectionRationale: selectionRationale ?? this.selectionRationale,
+    revisionIntroduced: revisionIntroduced ?? this.revisionIntroduced,
+    revisionUpdated: revisionUpdated ?? this.revisionUpdated,
+    expectedEvidence: expectedEvidence ?? this.expectedEvidence,
+    readPaths: readPaths ?? this.readPaths,
+    writePaths: writePaths ?? this.writePaths,
+    doneCriteria: doneCriteria ?? this.doneCriteria,
+    outOfScope: outOfScope ?? this.outOfScope,
+    context: context ?? this.context,
+    expectedArtifacts: expectedArtifacts ?? this.expectedArtifacts,
+    recoveryIncidentId: identical(recoveryIncidentId, _unset)
+        ? this.recoveryIncidentId
+        : recoveryIncidentId as String?,
+    fingerprint: fingerprint ?? this.fingerprint,
+    rejectionReason: identical(rejectionReason, _unset)
+        ? this.rejectionReason
+        : rejectionReason as String?,
+    failureKey: identical(failureKey, _unset)
+        ? this.failureKey
+        : failureKey as String?,
+    failureGateId: identical(failureGateId, _unset)
+        ? this.failureGateId
+        : failureGateId as String?,
+    failureErrorCodes: failureErrorCodes ?? this.failureErrorCodes,
+    unresolvedErrorCount: unresolvedErrorCount ?? this.unresolvedErrorCount,
+    planningError: identical(planningError, _unset)
+        ? this.planningError
+        : planningError as String?,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+
+  /// Materializes a planning node at the task-system boundary. The returned
+  /// document is a definition only; it deliberately contains no steps, runs,
+  /// or execution history.
+  Task toTaskDefinition() => Task(
     id: id,
     title: title,
     originalPrompt: objective,
@@ -179,9 +292,14 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
     outOfScope: outOfScope,
     context: context,
     expectedArtifacts: expectedArtifacts,
-    fingerprint: _fingerprint(objective, criterionIds),
+    recoveryIncidentId: recoveryIncidentId,
+    fingerprint: fingerprint.isEmpty
+        ? _fingerprint(objective, criterionIds)
+        : fingerprint,
+    rejectionReason: rejectionReason,
     createdAt: createdAt,
     updatedAt: updatedAt,
+    planningError: planningError,
   );
 
   bool get isTerminal => switch (status) {
@@ -195,6 +313,8 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
     _ => false,
   };
 }
+
+const Object _unset = Object();
 
 String _fingerprint(String objective, List<String> criteria) =>
     [objective.trim().toLowerCase(), ...criteria].join('|');

@@ -11,6 +11,7 @@ import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/project_system/orchestration_contracts.dart';
 import 'package:hermes/core/services/project_system/project_planning_gateway.dart';
+import 'package:hermes/core/services/project_system/project_plan_patch.dart';
 import 'package:hermes/core/services/project_system/project_scheduler.dart';
 import 'package:hermes/core/services/project_system/project_orchestrator.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
@@ -186,10 +187,7 @@ void main() {
     () async {
       final gateway = _InitialisationGateway(
         _invalidInitialisation(),
-        repairedInitialisations: [
-          _invalidInitialisation(),
-          _validInitialisation(),
-        ],
+        repairedPlans: [_invalidInitialisation(), _validInitialisation()],
       );
       final planningService = ProjectOrchestrator(
         taskService: taskService,
@@ -336,7 +334,7 @@ void main() {
     );
     await countedTaskService.repository.saveSnapshot(
       workspace.rootPath,
-      secondTask,
+      secondTask.toTaskDefinition(),
     );
     countingRepository.savedTaskIds.clear();
 
@@ -475,11 +473,7 @@ void main() {
       taskService: taskService,
       scheduler: scheduler,
     );
-    final now = DateTime(2026, 1, 1);
-    final task1 = _task().copyWith(
-      status: TaskStatus.completed,
-      completedAt: now,
-    );
+    final task1 = _task().copyWith(status: TaskStatus.completed);
     final task2 = _task().copyWith(
       id: 'task_2',
       title: 'Second bounded task',
@@ -629,7 +623,11 @@ void main() {
     await taskService.repository.saveSnapshot(root.path, terminalTask);
 
     final project = _project(
-      tasks: [terminalTask.copyWith(status: TaskStatus.running)],
+      tasks: [
+        ProjectTaskNode.fromTask(
+          terminalTask.copyWith(status: TaskStatus.running),
+        ),
+      ],
       activeTaskId: terminalTask.id,
       status: ProjectStatus.reviewingTask,
     );
@@ -791,7 +789,7 @@ void main() {
 }
 
 ProjectDocument _project({
-  List<Task> tasks = const [],
+  List<ProjectTaskNode> tasks = const [],
   String? activeTaskId,
   ProjectStatus status = ProjectStatus.active,
   List<PendingProjectQuestion> openQuestions = const [],
@@ -825,9 +823,9 @@ ProjectDocument _project({
   );
 }
 
-Task _task() {
+ProjectTaskNode _task() {
   final now = DateTime(2026, 1, 1);
-  return Task(
+  return ProjectTaskNode(
     id: 'task_1',
     title: 'Bounded task',
     objective: 'Complete one bounded project slice.',
@@ -901,20 +899,20 @@ class _CountingTaskRepository extends TaskRepository {
 class _InitialisationGateway
     implements ProjectPlanner, ProjectCompletionEvaluator {
   _InitialisationGateway(
-    this.initialisation, {
-    this.repairedInitialisations = const [],
+    this.initialPlan, {
+    this.repairedPlans = const [],
     this.revisedProject,
   });
 
-  final ProjectInitialisation initialisation;
-  final List<ProjectInitialisation> repairedInitialisations;
+  final ProjectInitialPlanResult initialPlan;
+  final List<ProjectInitialPlanResult> repairedPlans;
   final ProjectDocument? revisedProject;
   List<Map<String, String>>? validationIssues;
   var repairCalls = 0;
   var revisePlanCalls = 0;
 
   @override
-  Future<ProjectInitialisation> initializeProject({
+  Future<ProjectInitialPlanResult> initializePlan({
     required ChatClient client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
@@ -922,24 +920,24 @@ class _InitialisationGateway
     required Map<String, dynamic> workspaceMetadata,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
-  }) async => initialisation;
+  }) async => initialPlan;
 
   @override
-  Future<ProjectInitialisation?> repairInitialisation({
+  Future<ProjectInitialPlanResult?> repairInitialPlan({
     required ChatClient client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
     required Map<String, dynamic> workspaceMetadata,
-    required ProjectInitialisation initialisation,
+    required ProjectInitialPlanResult initialPlan,
     required List<Map<String, String>> validationIssues,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     repairCalls++;
     this.validationIssues = validationIssues;
-    if (repairCalls <= repairedInitialisations.length) {
-      return repairedInitialisations[repairCalls - 1];
+    if (repairCalls <= repairedPlans.length) {
+      return repairedPlans[repairCalls - 1];
     }
     return null;
   }
@@ -974,7 +972,7 @@ class _InitialisationGateway
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required ProjectState project,
-    required Task oversizedTask,
+    required ProjectTaskNode oversizedTask,
     required List<String> violations,
     required ProjectPlanApprovalPolicy approvalPolicy,
     TaskModelOutputSink? onModelOutput,
@@ -1018,7 +1016,7 @@ class _CountingScheduler extends ProjectScheduler {
   }
 }
 
-ProjectInitialisation _invalidInitialisation() {
+ProjectInitialPlanResult _invalidInitialisation() {
   final now = DateTime(2026, 1, 1);
   final criterion = ProjectCriterion(
     id: 'criterion_1',
@@ -1037,7 +1035,7 @@ ProjectInitialisation _invalidInitialisation() {
     updatedAt: now,
   );
 
-  Task task(String id, String dependencyId) => Task(
+  ProjectTaskNode task(String id, String dependencyId) => ProjectTaskNode(
     id: id,
     title: id,
     objective: 'Implement $id.',
@@ -1071,18 +1069,26 @@ ProjectInitialisation _invalidInitialisation() {
     updatedAt: now,
   );
 
-  return ProjectInitialisation(
-    title: 'Reporting screen',
-    refinedGoal: 'Deliver the reporting screen.',
-    criteria: [criterion],
-    constraints: const [],
-    openQuestions: const [],
-    tasks: [task('task_a', 'task_b'), task('task_b', 'task_a')],
-    milestones: [milestone],
+  return ProjectInitialPlanResult(
+    patch: ProjectPlanPatch.initial(
+      ProjectDesiredPlan(
+        revision: 1,
+        triggers: const [ProjectPlanRevisionTrigger.initialization],
+        summary: 'Initial plan.',
+        rationale: 'Test plan.',
+        criteria: [criterion],
+        tasks: [task('task_a', 'task_b'), task('task_b', 'task_a')],
+        milestones: [milestone],
+        createdAt: now,
+      ),
+      title: 'Reporting screen',
+      refinedGoal: 'Deliver the reporting screen.',
+      constraints: const [],
+    ),
   );
 }
 
-ProjectInitialisation _validInitialisation() {
+ProjectInitialPlanResult _validInitialisation() {
   final now = DateTime(2026, 1, 1);
   final criterion = ProjectCriterion(
     id: 'criterion_1',
@@ -1100,7 +1106,7 @@ ProjectInitialisation _validInitialisation() {
     createdAt: now,
     updatedAt: now,
   );
-  final task = Task(
+  final task = ProjectTaskNode(
     id: 'task_1',
     title: 'Implement reporting screen',
     objective: 'Implement the reporting screen.',
@@ -1125,13 +1131,21 @@ ProjectInitialisation _validInitialisation() {
     createdAt: now,
     updatedAt: now,
   );
-  return ProjectInitialisation(
-    title: 'Reporting screen',
-    refinedGoal: 'Deliver the reporting screen.',
-    criteria: [criterion],
-    constraints: const [],
-    openQuestions: const [],
-    tasks: [task],
-    milestones: [milestone],
+  return ProjectInitialPlanResult(
+    patch: ProjectPlanPatch.initial(
+      ProjectDesiredPlan(
+        revision: 1,
+        triggers: const [ProjectPlanRevisionTrigger.initialization],
+        summary: 'Initial plan.',
+        rationale: 'Test plan.',
+        criteria: [criterion],
+        tasks: [task],
+        milestones: [milestone],
+        createdAt: now,
+      ),
+      title: 'Reporting screen',
+      refinedGoal: 'Deliver the reporting screen.',
+      constraints: const [],
+    ),
   );
 }

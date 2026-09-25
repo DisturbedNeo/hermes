@@ -132,6 +132,7 @@ class ProjectAggregateRepository {
     String? chatSessionId,
     bool includeHistory = true,
   }) async {
+    await _normalizeLegacyEmbeddedTasksUnlocked(workspaceRoot, projectId);
     final projectSnapshot = await _projects.loadProjectSnapshotUnlocked(
       workspaceRoot,
       projectId,
@@ -189,6 +190,74 @@ class ProjectAggregateRepository {
       project: projectSnapshot.value,
       diagnostics: diagnostics,
       canonicalTasks: List.unmodifiable(canonicalTasks),
+    );
+  }
+
+  /// One-time compatibility migration for snapshots written before project
+  /// and task ownership was separated. The migration reads embedded task
+  /// definitions, creates missing canonical task documents, and rewrites the
+  /// project document to contain only task IDs. Existing canonical task
+  /// documents always win, so loading cannot overwrite executable history.
+  Future<void> _normalizeLegacyEmbeddedTasksUnlocked(
+    String workspaceRoot,
+    String projectId,
+  ) async {
+    final file = _projects.projectSnapshotFile(workspaceRoot, projectId);
+    late final SnapshotEnvelope envelope;
+    try {
+      final raw = await _snapshots.readMapWithoutRepair(file);
+      if (raw == null) return;
+      envelope = SnapshotEnvelope.decode(raw.map);
+    } on FormatException {
+      // Leave corruption handling to the repository, which can fall back to
+      // the backup snapshot and report diagnostics consistently.
+      return;
+    } on SnapshotCorruptionException {
+      return;
+    }
+    final embedded = envelope.document['tasks'];
+    if (embedded is! List || embedded.isEmpty) return;
+
+    final document = Map<String, dynamic>.from(envelope.document);
+    final existingIds = <String>{
+      for (final value
+          in document['taskIds'] is List
+              ? document['taskIds'] as List
+              : const [])
+        if (value is String && value.trim().isNotEmpty) value,
+    };
+    final migratedTasks = <Task>[];
+    for (final value in embedded) {
+      if (value is! Map) continue;
+      try {
+        final task = ModelJson.decode<Task>(Map<String, dynamic>.from(value));
+        if (task.id.trim().isEmpty) continue;
+        existingIds.add(task.id);
+        final current = await _tasks.revisionOfUnlocked(workspaceRoot, task.id);
+        if (current == null) {
+          migratedTasks.add(
+            task.copyWith(persistenceRevision: 0, projectId: projectId),
+          );
+        }
+      } catch (_) {
+        // A malformed legacy task is omitted and will be reported as a
+        // missing/corrupt task by the normal aggregate load diagnostics.
+      }
+    }
+    for (final task in migratedTasks) {
+      await _tasks.saveSnapshotUnlocked(
+        workspaceRoot,
+        task,
+        expectedRevision: 0,
+        currentRevision: null,
+      );
+    }
+    document
+      ..remove('tasks')
+      ..['taskIds'] = existingIds.toList(growable: false);
+    await _snapshots.writeMap(
+      file,
+      SnapshotEnvelope.encode(document, envelope.revision),
     );
   }
 

@@ -1220,7 +1220,7 @@ class _RunList extends StatelessWidget {
 }
 
 class _ProjectTaskBoardList extends StatelessWidget {
-  final List<Task> tasks;
+  final List<ProjectTaskNode> tasks;
   final String empty;
 
   const _ProjectTaskBoardList({required this.tasks, required this.empty});
@@ -1256,53 +1256,31 @@ class _ProjectTaskBoardList extends StatelessWidget {
                   ),
                   isThreeLine: true,
                 ),
-                if (task.failure != null)
+                if (task.failureKey != null)
                   Padding(
                     padding: const EdgeInsets.only(left: 40, bottom: 8),
-                    child: _ProjectFailureDetails(failure: task.failure!),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Failure: ${task.failureKey}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        if (task.failureKey!.contains('|'))
+                          Text(
+                            task.failureKey!.split('|').last,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        if (task.unresolvedErrorCount > 0)
+                          Text(
+                            'unresolved: ${task.unresolvedErrorCount}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                      ],
+                    ),
                   ),
               ],
             ),
-          ),
-      ],
-    );
-  }
-}
-
-class _ProjectFailureDetails extends StatelessWidget {
-  final TaskFailure failure;
-
-  const _ProjectFailureDetails({required this.failure});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Wrap(
-          spacing: 6,
-          runSpacing: 4,
-          children: [
-            if (failure.gateId != null)
-              _StatusChip(label: 'gate: ${failure.gateId}'),
-            _StatusChip(label: 'failure: ${failure.disposition.wire}'),
-            if (failure.advisoryErrorCount > 0)
-              _StatusChip(label: 'advisory: ${failure.advisoryErrorCount}'),
-            if (failure.resolvedErrorCount > 0)
-              _StatusChip(label: 'resolved: ${failure.resolvedErrorCount}'),
-            if (failure.unresolvedErrorCount > 0)
-              _StatusChip(label: 'unresolved: ${failure.unresolvedErrorCount}'),
-            for (final code in failure.errorCodes.take(4))
-              _StatusChip(label: code),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(failure.summary, style: theme.textTheme.bodySmall),
-        if (failure.toolCallIds.isNotEmpty)
-          Text(
-            'Related calls: ${failure.toolCallIds.join(', ')}',
-            style: theme.textTheme.bodySmall,
           ),
       ],
     );

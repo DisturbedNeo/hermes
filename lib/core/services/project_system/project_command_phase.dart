@@ -1,7 +1,7 @@
 part of 'project_workflow_service.dart';
 
 /// Owns user-facing project commands and interrupted-run recovery.
-extension ProjectCommandPhase on ProjectWorkflowService {
+extension ProjectCommandPhase on ProjectWorkflowRuntime {
   Future<ProjectCommandResult> _recoverProjectCore({
     required WorkspaceAttachment workspace,
     required ProjectDocument snapshot,
@@ -22,9 +22,11 @@ extension ProjectCommandPhase on ProjectWorkflowService {
     }
     snapshot = loaded.project == null
         ? await _hydrateProjectTasks(workspace, snapshot)
-        : snapshot.copyWith(tasks: loaded.canonicalTasks);
+        : snapshot.copyWith(
+            tasks: loaded.canonicalTasks.map(ProjectTaskNode.fromTask).toList(),
+          );
     final persistenceContext = ProjectPersistenceContext(
-      snapshot.tasks,
+      loaded.canonicalTasks,
       health: persistenceDiagnostics,
     );
     if (snapshot.isTerminal) {
@@ -98,8 +100,9 @@ extension ProjectCommandPhase on ProjectWorkflowService {
       snapshot: activeTask,
       persist: false,
     );
+    persistenceContext.stageTask(recoveredTask);
     onTaskUpdated?.call(recoveredTask);
-    var recovered = recoveryService.reconcile(
+    var recovered = recoveryHandler.reconcile(
       project: snapshot,
       recoveredTask: recoveredTask,
       now: now,
@@ -397,7 +400,7 @@ extension ProjectCommandPhase on ProjectWorkflowService {
     required WorkspaceAttachment workspace,
     required ProjectDocument snapshot,
   }) async {
-    final result = _planRevisionService.approvePending(
+    final result = _planningHandler.approvePending(
       project: snapshot,
       workspaceRoot: workspace.rootPath,
     );

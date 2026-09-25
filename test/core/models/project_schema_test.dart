@@ -34,7 +34,7 @@ void main() {
         ),
       ],
       constraints: const [],
-      tasks: [task],
+      tasks: [ProjectTaskNode.fromTask(task)],
       status: ProjectStatus.active,
       activeTaskId: null,
       createdAt: now,

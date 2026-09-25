@@ -360,7 +360,7 @@ class _MilestoneTile extends StatelessWidget {
 
 class _TaskGroup extends StatelessWidget {
   final String title;
-  final List<Task> tasks;
+  final List<ProjectTaskNode> tasks;
   final ProjectScheduleResult schedule;
   final String empty;
 
@@ -388,7 +388,7 @@ class _TaskGroup extends StatelessWidget {
 }
 
 class _RoadmapTaskTile extends StatelessWidget {
-  final Task task;
+  final ProjectTaskNode task;
   final bool showRationale;
   final ProjectScheduleResult schedule;
 

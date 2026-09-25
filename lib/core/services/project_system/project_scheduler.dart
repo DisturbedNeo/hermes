@@ -1,5 +1,4 @@
 import 'package:hermes/core/models/project.dart';
-import 'package:hermes/core/services/project_system/project_task_models.dart';
 
 enum ProjectDependencyIssueCode {
   missingDependency,
@@ -39,7 +38,7 @@ class ProjectDependencyGraphValidator {
   const ProjectDependencyGraphValidator();
 
   ProjectDependencyValidationResult validate(ProjectDocument project) {
-    final taskById = <String, Task>{
+    final taskById = <String, ProjectTaskNode>{
       for (final task in project.tasks) task.id: task,
     };
     final issues = <ProjectDependencyIssue>[];
@@ -155,7 +154,7 @@ class ProjectScheduleResult {
   /// the selected task's derived rationale persisted; readiness refreshes
   /// continue to return the original project unchanged.
   final ProjectDocument project;
-  final Task? selectedTask;
+  final ProjectTaskNode? selectedTask;
   final String? selectionRationale;
   final ProjectDependencyValidationResult dependencyValidation;
   final Map<String, TaskReadiness> readiness;
@@ -248,7 +247,7 @@ class ProjectScheduler {
     );
   }
 
-  List<Task> orderedReadyTasks(ProjectDocument project) {
+  List<ProjectTaskNode> orderedReadyTasks(ProjectDocument project) {
     final refreshed = refreshReadiness(project);
     final ready = _orderedNormalTasks(refreshed);
     final recovery = _selectRecoveryTask(refreshed)?.task;
@@ -284,7 +283,7 @@ class ProjectScheduler {
 
   _ComputedReadiness _computeReadiness(
     ProjectDocument project,
-    Task task,
+    ProjectTaskNode task,
     ProjectDependencyValidationResult validation,
   ) {
     final ineligibleReason = _ineligibleReason(task.status);
@@ -331,7 +330,7 @@ class ProjectScheduler {
     ]);
   }
 
-  List<String> _inputReasons(ProjectDocument project, Task task) {
+  List<String> _inputReasons(ProjectDocument project, ProjectTaskNode task) {
     final reasons = <String>[];
     final approval = project.pendingPlanApproval;
     if (approval != null) {
@@ -436,7 +435,7 @@ class ProjectScheduler {
     );
   }
 
-  List<Task> _orderedNormalTasks(ProjectScheduleResult result) {
+  List<ProjectTaskNode> _orderedNormalTasks(ProjectScheduleResult result) {
     final tasks = result.project.tasks;
     final ready = tasks.where((task) => _isReady(result, task)).toList();
     if (ready.isEmpty) return ready;
@@ -463,7 +462,7 @@ class ProjectScheduler {
     return ready;
   }
 
-  static int _downstreamCount(List<Task> tasks, String taskId) {
+  static int _downstreamCount(List<ProjectTaskNode> tasks, String taskId) {
     final dependents = <String, Set<String>>{};
     for (final task in tasks) {
       for (final dependencyId in task.dependsOnTaskIds) {
@@ -481,7 +480,7 @@ class ProjectScheduler {
     return seen.length;
   }
 
-  static int _milestoneRank(ProjectDocument project, Task task) {
+  static int _milestoneRank(ProjectDocument project, ProjectTaskNode task) {
     if (task.milestoneId == null) return 1000000;
     final milestone = project.milestones
         .where((item) => item.id == task.milestoneId)
@@ -505,14 +504,17 @@ class ProjectScheduler {
         '(order ${milestone.order})';
   }
 
-  static Task? _readyTaskById(ProjectScheduleResult result, String id) {
+  static ProjectTaskNode? _readyTaskById(
+    ProjectScheduleResult result,
+    String id,
+  ) {
     for (final task in result.project.tasks) {
       if (task.id == id && _isReady(result, task)) return task;
     }
     return null;
   }
 
-  static bool _isReady(ProjectScheduleResult result, Task task) =>
+  static bool _isReady(ProjectScheduleResult result, ProjectTaskNode task) =>
       task.status == TaskStatus.queued &&
       result.readinessFor(task.id) == TaskReadiness.ready;
 
@@ -558,7 +560,7 @@ class ProjectScheduler {
     ];
   }
 
-  static int _compareStableAgeAndId(Task a, Task b) {
+  static int _compareStableAgeAndId(ProjectTaskNode a, ProjectTaskNode b) {
     final created = a.createdAt.compareTo(b.createdAt);
     return created != 0 ? created : a.id.compareTo(b.id);
   }
@@ -572,7 +574,7 @@ class _ComputedReadiness {
 }
 
 class _TaskSelection {
-  final Task task;
+  final ProjectTaskNode task;
   final String rationale;
 
   const _TaskSelection(this.task, this.rationale);

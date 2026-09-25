@@ -81,7 +81,7 @@ void main() {
         ),
       ],
       constraints: const [],
-      tasks: [task],
+      tasks: [ProjectTaskNode.fromTask(task)],
       status: ProjectStatus.runningTask,
       activeTaskId: task.id,
       createdAt: now,
@@ -89,6 +89,6 @@ void main() {
     );
 
     expect(project.activeTaskId, task.id);
-    expect(project.taskById(project.activeTaskId!), same(task));
+    expect(project.taskById(project.activeTaskId!)?.id, task.id);
   });
 }

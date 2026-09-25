@@ -80,7 +80,6 @@ class ProjectStatusMapper extends EnumMapper<ProjectStatus> {
     }
   }
 }
-
 /// @nodoc
 
 extension ProjectStatusMapperExtension on ProjectStatus {
@@ -2118,14 +2117,8 @@ class ProjectDesiredPlanMapper extends ClassMapperBase<ProjectDesiredPlan> {
   static const Field<ProjectDesiredPlan, List<ProjectMilestone>> _f$milestones =
       Field('milestones', _$milestones, opt: true, def: const []);
   static List<ProjectTaskNode> _$tasks(ProjectDesiredPlan v) => v.tasks;
-  static dynamic _arg$tasks(f) => f<List<ProjectTaskNode>>();
-  static const Field<ProjectDesiredPlan, Iterable<Object>> _f$tasks = Field(
-    'tasks',
-    _$tasks,
-    opt: true,
-    def: const [],
-    arg: _arg$tasks,
-  );
+  static const Field<ProjectDesiredPlan, List<ProjectTaskNode>> _f$tasks =
+      Field('tasks', _$tasks, opt: true, def: const []);
   static List<String> _$splitTaskIds(ProjectDesiredPlan v) => v.splitTaskIds;
   static const Field<ProjectDesiredPlan, List<String>> _f$splitTaskIds = Field(
     'splitTaskIds',
@@ -2814,7 +2807,7 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
     if (_instance == null) {
       MapperContainer.globals.use(_instance = ProjectStateMapper._());
       ProjectCriterionMapper.ensureInitialized();
-      TaskMapper.ensureInitialized();
+      ProjectTaskNodeMapper.ensureInitialized();
       TaskArtifactMapper.ensureInitialized();
       ProjectRecoveryIncidentMapper.ensureInitialized();
       ProjectEvidenceMapper.ensureInitialized();
@@ -2881,8 +2874,8 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
     _$constraints,
     hook: JsonStringListHook(),
   );
-  static List<Task> _$tasks(ProjectState v) => v.tasks;
-  static const Field<ProjectState, List<Task>> _f$tasks = Field(
+  static List<ProjectTaskNode> _$tasks(ProjectState v) => v.tasks;
+  static const Field<ProjectState, List<ProjectTaskNode>> _f$tasks = Field(
     'tasks',
     _$tasks,
     opt: true,

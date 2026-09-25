@@ -131,7 +131,7 @@ class ProjectViewService {
     return result;
   }
 
-  List<Task> _boundedTasks(ProjectState project, int limit) {
+  List<ProjectTaskNode> _boundedTasks(ProjectState project, int limit) {
     final relevant = _plannerRelevantTasks(project);
     final active = relevant.where((task) => !_isTerminal(task)).toList();
     final recent = relevant.toList()
@@ -139,7 +139,7 @@ class ProjectViewService {
         final updated = b.updatedAt.compareTo(a.updatedAt);
         return updated != 0 ? updated : a.id.compareTo(b.id);
       });
-    final selected = <Task>[];
+    final selected = <ProjectTaskNode>[];
     for (final task in [...active, ...recent]) {
       if (selected.any((item) => item.id == task.id)) continue;
       selected.add(task);
@@ -148,7 +148,7 @@ class ProjectViewService {
     return selected;
   }
 
-  List<Task> _plannerRelevantTasks(ProjectState project) => [
+  List<ProjectTaskNode> _plannerRelevantTasks(ProjectState project) => [
     for (final task in project.tasks)
       if (!_isTerminal(task) || task.status == TaskStatus.completed) task,
   ];
@@ -186,7 +186,7 @@ class ProjectViewService {
   };
 
   Map<String, dynamic> _taskSummary(
-    Task task,
+    ProjectTaskNode task,
     ProjectScheduleResult schedule,
     int limit,
   ) => {
@@ -206,7 +206,7 @@ class ProjectViewService {
   };
 
   Map<String, dynamic> _taskDetail(
-    Task task,
+    ProjectTaskNode task,
     ProjectScheduleResult schedule,
     int limit,
   ) => {
@@ -238,14 +238,16 @@ class ProjectViewService {
     'rejection_reason': task.rejectionReason == null
         ? null
         : _text(task.rejectionReason!),
-    'failure': task.failure == null
+    'failure': task.failureKey == null
         ? null
         : {
-            'gate_ref': task.failure!.gateId,
-            'disposition': task.failure!.disposition.name,
-            'summary': _text(task.failure!.summary),
-            'error_codes': task.failure!.errorCodes.take(limit).toList(),
-            'unresolved_error_count': task.failure!.unresolvedErrorCount,
+            'key': _text(task.failureKey!),
+            'gate_ref': task.failureGateId,
+            'error_codes': [
+              for (final code in task.failureErrorCodes.take(limit))
+                _text(code),
+            ],
+            'unresolved_error_count': task.unresolvedErrorCount,
           },
     'checks': [
       for (final gate in task.gates.take(limit))
@@ -280,7 +282,7 @@ class ProjectViewService {
   List<Map<String, dynamic>> _recentFailures(ProjectState project, int limit) {
     final failures = <_FailureSummary>[];
     for (final task in project.tasks) {
-      final summary = task.failure?.summary.trim();
+      final summary = task.failureKey?.trim();
       final rejection = task.rejectionReason?.trim();
       if ((task.status == TaskStatus.failed ||
               task.status == TaskStatus.rejected) &&
@@ -350,9 +352,9 @@ class ProjectViewService {
     return '${text.substring(0, maxTextLength - 1).trimRight()}…';
   }
 
-  static bool _isPlannerRelevant(Task task) => !_isTerminal(task);
+  static bool _isPlannerRelevant(ProjectTaskNode task) => !_isTerminal(task);
 
-  static bool _isTerminal(Task task) => switch (task.status) {
+  static bool _isTerminal(ProjectTaskNode task) => switch (task.status) {
     TaskStatus.completed ||
     TaskStatus.failed ||
     TaskStatus.rejected ||
