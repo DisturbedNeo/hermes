@@ -15,17 +15,37 @@ enum ProjectPlanPatchSource {
 /// producers one application protocol without making model output authoritative
 /// over execution state.
 class ProjectPlanPatch {
-  const ProjectPlanPatch({required this.plan, required this.source});
+  const ProjectPlanPatch({
+    required this.plan,
+    required this.source,
+    this.title,
+    this.refinedGoal,
+    this.constraints,
+  });
 
   final ProjectDesiredPlan plan;
   final ProjectPlanPatchSource source;
 
+  /// Initial planning edits the project header in the same transaction as the
+  /// plan. Incremental patches leave these null.
+  final String? title;
+  final String? refinedGoal;
+  final List<String>? constraints;
+
   int get revision => plan.revision;
   List<ProjectPlanRevisionTrigger> get triggers => plan.triggers;
 
-  factory ProjectPlanPatch.initial(ProjectDesiredPlan plan) => ProjectPlanPatch(
+  factory ProjectPlanPatch.initial(
+    ProjectDesiredPlan plan, {
+    String? title,
+    String? refinedGoal,
+    List<String>? constraints,
+  }) => ProjectPlanPatch(
     plan: plan,
     source: ProjectPlanPatchSource.initialization,
+    title: title,
+    refinedGoal: refinedGoal,
+    constraints: constraints,
   );
 
   factory ProjectPlanPatch.incremental(ProjectDesiredPlan plan) =>

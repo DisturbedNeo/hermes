@@ -12,10 +12,11 @@ import '../models/planning_metrics.dart' as p4;
 import '../models/project.dart' as p5;
 import '../models/system_prompt.dart' as p6;
 import '../models/task.dart' as p7;
-import '../services/question_policy_service.dart' as p8;
-import '../services/task_system/task_service.dart' as p9;
-import '../services/workspace_discovery_profile.dart' as p10;
-import '../tools/calculator_tool.dart' as p11;
+import '../services/project_system/project_task_models.dart' as p8;
+import '../services/question_policy_service.dart' as p9;
+import '../services/task_system/task_service.dart' as p10;
+import '../services/workspace_discovery_profile.dart' as p11;
+import '../tools/calculator_tool.dart' as p12;
 
 /// @nodoc
 void initializeMappers() {
@@ -91,13 +92,14 @@ void initializeMappers() {
   p7.TaskGateFailureDispositionMapper.ensureInitialized();
   p7.TaskEvidenceClaimTypeMapper.ensureInitialized();
   p7.TaskEvidenceClaimStrengthMapper.ensureInitialized();
-  p8.AgentQuestionMapper.ensureInitialized();
-  p8.QuestionKindMapper.ensureInitialized();
-  p9.TaskPlanningContextMapper.ensureInitialized();
-  p9.WorkspaceMetadataMapper.ensureInitialized();
-  p10.WorkspaceDiscoveryProfileMapper.ensureInitialized();
-  p10.WorkspaceRequiredContextIssueMapper.ensureInitialized();
-  p10.WorkspaceFileExcerptMapper.ensureInitialized();
-  p11.CalculatorOperationMapper.ensureInitialized();
+  p8.ProjectTaskNodeMapper.ensureInitialized();
+  p9.AgentQuestionMapper.ensureInitialized();
+  p9.QuestionKindMapper.ensureInitialized();
+  p10.TaskPlanningContextMapper.ensureInitialized();
+  p10.WorkspaceMetadataMapper.ensureInitialized();
+  p11.WorkspaceDiscoveryProfileMapper.ensureInitialized();
+  p11.WorkspaceRequiredContextIssueMapper.ensureInitialized();
+  p11.WorkspaceFileExcerptMapper.ensureInitialized();
+  p12.CalculatorOperationMapper.ensureInitialized();
 }
 

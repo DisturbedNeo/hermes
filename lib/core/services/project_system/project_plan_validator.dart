@@ -92,7 +92,11 @@ class ProjectPlanValidator {
       'milestones',
       issues,
     );
-    _validateUniqueIds(proposal.tasks.map((item) => item.id), 'tasks', issues);
+    _validateUniqueIds(
+      proposal.taskDocuments.map((item) => item.id),
+      'tasks',
+      issues,
+    );
     _validateUniqueIds(
       proposal.memoryAdditions.map((item) => item.id),
       'memoryAdditions',
@@ -243,7 +247,9 @@ class ProjectPlanValidator {
     }
 
     final existingTasks = {for (final task in project.tasks) task.id: task};
-    final desiredTasks = {for (final task in proposal.tasks) task.id: task};
+    final desiredTasks = {
+      for (final task in proposal.taskDocuments) task.id: task,
+    };
     final mutableTaskIds = {
       for (final task in project.tasks)
         if (task.status == TaskStatus.queued ||
@@ -304,8 +310,9 @@ class ProjectPlanValidator {
     final desiredFingerprints = <String, String>{};
     final allExpectationIds = <String>{};
     final expectationSignatures = <String, String>{};
-    for (var index = 0; index < proposal.tasks.length; index++) {
-      final task = proposal.tasks[index];
+    final desiredTaskDocuments = proposal.taskDocuments;
+    for (var index = 0; index < desiredTaskDocuments.length; index++) {
+      final task = desiredTaskDocuments[index];
       final fieldPath = 'tasks[$index]';
       final existing = existingTasks[task.id];
       if (existing != null &&
@@ -550,7 +557,7 @@ class ProjectPlanValidator {
           criterion.verificationMode != ProjectVerificationMode.deterministic) {
         continue;
       }
-      final hasConclusiveExpectation = proposal.tasks.any(
+      final hasConclusiveExpectation = proposal.taskDocuments.any(
         (task) =>
             !proposal.deferredTaskIds.contains(task.id) &&
             !proposal.obsoleteTaskIds.contains(task.id) &&
@@ -576,7 +583,7 @@ class ProjectPlanValidator {
         entry.key:
             desiredTasks[entry.key]?.dependsOnTaskIds ??
             entry.value.dependsOnTaskIds,
-      for (final task in proposal.tasks) task.id: task.dependsOnTaskIds,
+      for (final task in proposal.taskDocuments) task.id: task.dependsOnTaskIds,
     };
     if (_hasCycle(graph)) {
       issue(
@@ -586,7 +593,7 @@ class ProjectPlanValidator {
       );
     }
 
-    final readyCount = proposal.tasks
+    final readyCount = proposal.taskDocuments
         .where(
           (task) =>
               task.status == TaskStatus.queued &&

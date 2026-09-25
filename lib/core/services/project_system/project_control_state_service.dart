@@ -1,65 +1,29 @@
 import 'package:hermes/core/models/project.dart';
 
-/// Owns the durable, application-facing command boundary for a project.
+/// The single deterministic reducer for project command boundaries.
 ///
-/// The older status/blocker/question fields remain readable for persistence
-/// compatibility, but new callers can use [ProjectBoundary] without knowing
-/// which combination of those fields represents a stop condition.
-class ProjectControlStateService {
-  const ProjectControlStateService();
+/// Persistence still carries the legacy status/blocker/question fields, but
+/// every new control decision is derived here. Callers should not duplicate
+/// this precedence order.
+class ProjectControlStateMachine {
+  const ProjectControlStateMachine();
 
-  ProjectDocument synchronise(ProjectDocument project, {DateTime? now}) {
-    // A degraded planning boundary is deliberately sticky until an explicit
-    // command resumes or retries planning. Otherwise a routine checkpoint
-    // would immediately erase the diagnostic that the caller needs to act on.
-    if (project.boundary?.outcome == ProjectControlOutcome.degradedPlanning &&
-        !project.isTerminal &&
-        project.blocker == null &&
-        project.pendingPlanApproval == null &&
-        project.openQuestions.isEmpty) {
-      return project;
-    }
-    return project.copyWith(boundary: derive(project, now: now));
-  }
-
-  ProjectDocument withOutcome(
-    ProjectDocument project, {
-    required ProjectControlOutcome outcome,
-    String message = '',
-    String? action,
-    String? reasonCode,
-    String? taskId,
-    DateTime? now,
-  }) {
-    return project.copyWith(
-      boundary: ProjectBoundary(
-        outcome: outcome,
-        message: message.trim(),
-        action: action,
-        reasonCode: reasonCode,
-        taskId: taskId,
-        occurredAt: now ?? DateTime.now(),
-      ),
-    );
-  }
-
-  ProjectBoundary derive(ProjectDocument project, {DateTime? now}) {
+  ProjectBoundary read(ProjectDocument project, {DateTime? now}) {
     final timestamp = now ?? project.updatedAt;
-    final outcome = _outcomeFor(project);
+    final outcome = outcomeFor(project);
     final blocker = project.blocker;
     final question = project.openQuestions.firstOrNull;
-    final message = blocker?.message ?? question?.question ?? '';
     return ProjectBoundary(
       outcome: outcome,
-      message: message,
-      action: _actionFor(outcome),
+      message: blocker?.message ?? question?.question ?? '',
+      action: actionFor(outcome),
       reasonCode: blocker?.type.wire,
       taskId: blocker?.taskId ?? project.activeTaskId,
       occurredAt: timestamp,
     );
   }
 
-  ProjectControlOutcome _outcomeFor(ProjectDocument project) {
+  ProjectControlOutcome outcomeFor(ProjectDocument project) {
     if (project.status == ProjectStatus.initializing) {
       return ProjectControlOutcome.initializing;
     }
@@ -92,7 +56,7 @@ class ProjectControlStateService {
     return ProjectControlOutcome.running;
   }
 
-  String? _actionFor(ProjectControlOutcome outcome) => switch (outcome) {
+  String? actionFor(ProjectControlOutcome outcome) => switch (outcome) {
     ProjectControlOutcome.awaitingUserInput => 'answer_question',
     ProjectControlOutcome.awaitingPlanApproval => 'approve_or_reject_plan',
     ProjectControlOutcome.blockedValidation => 'revise_plan',
@@ -110,4 +74,56 @@ class ProjectControlStateService {
     ProjectBlockerType.planApproval => true,
     _ => false,
   };
+}
+
+/// Owns the durable, application-facing command boundary for a project.
+///
+/// The older status/blocker/question fields remain readable for persistence
+/// compatibility, but new callers can use [ProjectBoundary] without knowing
+/// which combination of those fields represents a stop condition.
+class ProjectControlStateService {
+  const ProjectControlStateService({
+    this.machine = const ProjectControlStateMachine(),
+  });
+
+  final ProjectControlStateMachine machine;
+
+  ProjectDocument synchronise(ProjectDocument project, {DateTime? now}) {
+    // A degraded planning boundary is deliberately sticky until an explicit
+    // command resumes or retries planning. Otherwise a routine checkpoint
+    // would immediately erase the diagnostic that the caller needs to act on.
+    if (project.boundary?.outcome == ProjectControlOutcome.degradedPlanning &&
+        !project.isTerminal &&
+        project.blocker == null &&
+        project.pendingPlanApproval == null &&
+        project.openQuestions.isEmpty) {
+      return project;
+    }
+    return project.copyWith(boundary: machine.read(project, now: now));
+  }
+
+  ProjectDocument withOutcome(
+    ProjectDocument project, {
+    required ProjectControlOutcome outcome,
+    String message = '',
+    String? action,
+    String? reasonCode,
+    String? taskId,
+    DateTime? now,
+  }) {
+    return project.copyWith(
+      boundary: ProjectBoundary(
+        outcome: outcome,
+        message: message.trim(),
+        action: action,
+        reasonCode: reasonCode,
+        taskId: taskId,
+        occurredAt: now ?? DateTime.now(),
+      ),
+    );
+  }
+
+  ProjectBoundary derive(ProjectDocument project, {DateTime? now}) {
+    return machine.read(project, now: now);
+  }
 }

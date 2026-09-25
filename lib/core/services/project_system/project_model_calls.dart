@@ -11,6 +11,7 @@ import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/planning_runtime.dart';
 import 'package:hermes/core/services/planning_structured_output.dart';
 import 'package:hermes/core/services/project_system/project_planning_gateway.dart';
+import 'package:hermes/core/services/project_system/project_plan_patch.dart';
 import 'package:hermes/core/services/project_system/project_planning_tools.dart';
 import 'package:hermes/core/services/project_system/project_planning_workspace_reader.dart';
 import 'package:hermes/core/services/project_system/project_view_service.dart';
@@ -23,11 +24,16 @@ export 'package:hermes/core/services/project_system/project_planning_gateway.dar
         ProjectCompletionAssessment,
         ProjectEvidenceSnapshot,
         ProjectInitialisation,
+        ProjectInitialPlanResult,
         ProjectIncrementalPlanResult,
         ProjectPlanner,
         ProjectCompletionEvaluator;
 
-class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
+class ProjectModelCalls
+    implements
+        ProjectPlanner,
+        ProjectInitialPlanPlanner,
+        ProjectCompletionEvaluator {
   ProjectModelCalls({
     required ToolService toolService,
     ProjectViewService projectViewService = const ProjectViewService(),
@@ -66,7 +72,7 @@ class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
   )).toMap();
 
   @override
-  Future<ProjectInitialisation> initializeProject({
+  Future<ProjectInitialPlanResult> initializePlan({
     required ChatClient client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
@@ -90,7 +96,7 @@ class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
     } on ChatTransportException {
       rethrow;
     } catch (error) {
-      return _fallbackInitialisation(
+      return _fallbackInitialPlan(
         originalGoal,
         planningError: 'Initial project planning failed: $error',
       );
@@ -98,13 +104,13 @@ class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
   }
 
   @override
-  Future<ProjectInitialisation?> repairInitialisation({
+  Future<ProjectInitialPlanResult?> repairInitialPlan({
     required ChatClient client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
     required Map<String, dynamic> workspaceMetadata,
-    required ProjectInitialisation initialisation,
+    required ProjectInitialPlanResult initialPlan,
     required List<Map<String, String>> validationIssues,
     TaskModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
@@ -129,7 +135,7 @@ Validation issues:
 ${_encoder.convert(validationIssues)}
 
 Previous draft:
-${_encoder.convert(_initialisationToMap(initialisation))}
+${_encoder.convert(_initialPlanToMap(initialPlan))}
 ''',
       );
     } on OperationCancelledException {
@@ -140,6 +146,50 @@ ${_encoder.convert(_initialisationToMap(initialisation))}
       return null;
     }
   }
+
+  /// Compatibility entry point for integrations that still consume the old
+  /// initialisation DTO. New project creation uses [initializePlan].
+  @override
+  Future<ProjectInitialisation> initializeProject({
+    required ChatClient client,
+    required String baseSystemPrompt,
+    required WorkspaceAttachment workspace,
+    required String originalGoal,
+    required Map<String, dynamic> workspaceMetadata,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  }) async => (await initializePlan(
+    client: client,
+    baseSystemPrompt: baseSystemPrompt,
+    workspace: workspace,
+    originalGoal: originalGoal,
+    workspaceMetadata: workspaceMetadata,
+    onModelOutput: onModelOutput,
+    cancellationToken: cancellationToken,
+  )).toLegacy();
+
+  @override
+  Future<ProjectInitialisation?> repairInitialisation({
+    required ChatClient client,
+    required String baseSystemPrompt,
+    required WorkspaceAttachment workspace,
+    required String originalGoal,
+    required Map<String, dynamic> workspaceMetadata,
+    required ProjectInitialisation initialisation,
+    required List<Map<String, String>> validationIssues,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  }) async => (await repairInitialPlan(
+    client: client,
+    baseSystemPrompt: baseSystemPrompt,
+    workspace: workspace,
+    originalGoal: originalGoal,
+    workspaceMetadata: workspaceMetadata,
+    initialPlan: ProjectInitialPlanResult.fromLegacy(initialisation),
+    validationIssues: validationIssues,
+    onModelOutput: onModelOutput,
+    cancellationToken: cancellationToken,
+  ))?.toLegacy();
 
   @override
   Future<ProjectIncrementalPlanResult> revisePlanWithCommands({
@@ -448,7 +498,7 @@ ${_encoder.convert(ModelJson.encode(project))}
     return result.value;
   }
 
-  Future<ProjectInitialisation> _completeInitialPlanning({
+  Future<ProjectInitialPlanResult> _completeInitialPlanning({
     required ChatClient client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
@@ -460,10 +510,11 @@ ${_encoder.convert(ModelJson.encode(project))}
   }) async {
     final now = DateTime.now();
     final context = ProjectPlanningContext(
-      project: _initialPlanningSeed(originalGoal, now),
+      project: _initialPlanDraft(originalGoal, now),
       workspaceRoot: workspace.rootPath,
       now: now,
       approvalPolicy: ProjectPlanApprovalPolicy.never,
+      deferRevision: true,
       summary: 'Create the initial project roadmap.',
       rationale:
           'Create a bounded, executable plan from the supplied goal and workspace profile.',
@@ -527,7 +578,7 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
         'Initial planning did not commit a valid draft: ${result['message'] ?? result['code'] ?? 'unknown error'}.',
       );
     }
-    return _initialisationFromPlanningContext(
+    return _initialPlanFromPlanningContext(
       context,
       context.committedProposal!,
       originalGoal: originalGoal,
@@ -535,9 +586,9 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
     );
   }
 
-  ProjectState _initialPlanningSeed(String originalGoal, DateTime now) =>
+  ProjectState _initialPlanDraft(String originalGoal, DateTime now) =>
       ProjectState(
-        id: 'planning_${uuid.v7()}',
+        id: 'initial-plan-draft',
         title: _titleFromGoal(originalGoal),
         originalGoal: originalGoal,
         refinedGoal: originalGoal,
@@ -553,7 +604,7 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
         updatedAt: now,
       );
 
-  ProjectInitialisation _initialisationFromPlanningContext(
+  ProjectInitialPlanResult _initialPlanFromPlanningContext(
     ProjectPlanningContext context,
     ProjectDesiredPlan proposal, {
     required String originalGoal,
@@ -580,22 +631,23 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
     }
     final defaultMilestoneId = milestones.firstOrNull?.id;
     final tasks = [
-      for (final task in proposal.tasks)
+      for (final task in proposal.taskDocuments)
         task.copyWith(milestoneId: task.milestoneId ?? defaultMilestoneId),
     ];
-    return ProjectInitialisation(
-      title: context.draftTitle.trim().isEmpty
-          ? _titleFromGoal(originalGoal)
-          : context.draftTitle,
-      refinedGoal: context.draftRefinedGoal.trim().isEmpty
-          ? originalGoal
-          : context.draftRefinedGoal,
-      criteria: proposal.criteria,
-      constraints: context.draftConstraints,
-      openQuestions: proposal.openQuestions,
-      tasks: tasks,
-      milestones: milestones,
-      memory: proposal.memoryAdditions,
+    final title = context.draftTitle.trim().isEmpty
+        ? _titleFromGoal(originalGoal)
+        : context.draftTitle;
+    final refinedGoal = context.draftRefinedGoal.trim().isEmpty
+        ? originalGoal
+        : context.draftRefinedGoal;
+    final plan = proposal.copyWith(tasks: tasks, milestones: milestones);
+    return ProjectInitialPlanResult(
+      patch: ProjectPlanPatch.initial(
+        plan,
+        title: title,
+        refinedGoal: refinedGoal,
+        constraints: context.draftConstraints,
+      ),
       planningMetrics: planningMetrics,
     );
   }
@@ -655,15 +707,11 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
     ];
   }
 
-  Map<String, dynamic> _initialisationToMap(ProjectInitialisation value) => {
-    'title': value.title,
-    'refinedGoal': value.refinedGoal,
-    'criteria': value.criteria.map(ModelJson.encode).toList(),
-    'constraints': value.constraints,
-    'openQuestions': value.openQuestions.map(ModelJson.encode).toList(),
-    'tasks': value.tasks.map(ModelJson.encode).toList(),
-    'milestones': value.milestones.map(ModelJson.encode).toList(),
-    'memory': value.memory.map(ModelJson.encode).toList(),
+  Map<String, dynamic> _initialPlanToMap(ProjectInitialPlanResult value) => {
+    'title': value.patch.title,
+    'refinedGoal': value.patch.refinedGoal,
+    'constraints': value.patch.constraints,
+    'plan': ModelJson.encode(value.patch.plan),
     if (value.planningError != null) 'planningError': value.planningError,
   };
 
@@ -687,6 +735,17 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
       tasks: const [],
       planningError: planningError,
     );
+  }
+
+  ProjectInitialPlanResult _fallbackInitialPlan(
+    String originalGoal, {
+    String? planningError,
+  }) {
+    final legacy = _fallbackInitialisation(
+      originalGoal,
+      planningError: planningError,
+    );
+    return ProjectInitialPlanResult.fromLegacy(legacy);
   }
 
   List<PendingProjectQuestion> _questionsFromJson(Object? value) {

@@ -37,6 +37,66 @@ class ProjectInitialisation {
   });
 }
 
+/// Canonical result of initial planning.
+///
+/// The patch is ready for application to the real project. Core project
+/// creation consumes this result directly and does not first materialize a
+/// temporary project or convert the plan into a second DTO.
+class ProjectInitialPlanResult {
+  const ProjectInitialPlanResult({
+    required this.patch,
+    this.planningMetrics = const PlanningMetrics(),
+    this.planningError,
+  });
+
+  final ProjectPlanPatch patch;
+  final PlanningMetrics planningMetrics;
+  final String? planningError;
+
+  factory ProjectInitialPlanResult.fromLegacy(ProjectInitialisation value) {
+    final plan = ProjectDesiredPlan(
+      revision: 1,
+      triggers: const [ProjectPlanRevisionTrigger.initialization],
+      summary: 'Initial project roadmap.',
+      rationale: 'Created from the legacy initial planning result.',
+      criteria: value.criteria,
+      milestones: value.milestones,
+      tasks: value.tasks,
+      memoryAdditions: value.memory,
+      openQuestions: value.openQuestions,
+      createdAt: DateTime.now(),
+    );
+    return ProjectInitialPlanResult(
+      patch: ProjectPlanPatch.initial(
+        plan,
+        title: value.title,
+        refinedGoal: value.refinedGoal,
+        constraints: value.constraints,
+      ),
+      planningMetrics: value.planningMetrics,
+      planningError: value.planningError,
+    );
+  }
+
+  /// Compatibility view for old planner callers. Core creation does not use
+  /// this conversion path.
+  ProjectInitialisation toLegacy() {
+    final plan = patch.plan;
+    return ProjectInitialisation(
+      title: patch.title ?? '',
+      refinedGoal: patch.refinedGoal ?? '',
+      criteria: plan.criteria,
+      constraints: patch.constraints ?? const [],
+      openQuestions: plan.openQuestions,
+      tasks: plan.taskDocuments,
+      milestones: plan.milestones,
+      memory: plan.memoryAdditions,
+      planningMetrics: planningMetrics,
+      planningError: planningError,
+    );
+  }
+}
+
 /// Bounded, read-only planning context collected before a plan model call.
 class ProjectEvidenceSnapshot {
   final String workspaceName;
@@ -146,6 +206,30 @@ class ProjectIncrementalPlanResult {
 
 /// Boundary between deterministic project orchestration and model-backed
 /// project planning decisions.
+abstract interface class ProjectInitialPlanPlanner {
+  Future<ProjectInitialPlanResult> initializePlan({
+    required ChatClient client,
+    required String baseSystemPrompt,
+    required WorkspaceAttachment workspace,
+    required String originalGoal,
+    required Map<String, dynamic> workspaceMetadata,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  });
+
+  Future<ProjectInitialPlanResult?> repairInitialPlan({
+    required ChatClient client,
+    required String baseSystemPrompt,
+    required WorkspaceAttachment workspace,
+    required String originalGoal,
+    required Map<String, dynamic> workspaceMetadata,
+    required ProjectInitialPlanResult initialPlan,
+    required List<Map<String, String>> validationIssues,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  });
+}
+
 abstract interface class ProjectPlanner {
   Future<ProjectInitialisation> initializeProject({
     required ChatClient client,

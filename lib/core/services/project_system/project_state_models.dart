@@ -1,5 +1,6 @@
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/services/project_system/project_task_models.dart';
+import 'package:hermes/core/services/project_system/project_control_state_service.dart';
 
 /// Planning-owned view of a project.
 ///
@@ -125,14 +126,16 @@ class ProjectControlState {
   final List<PendingProjectQuestion> openQuestions;
   final PendingProjectPlanApproval? pendingPlanApproval;
 
-  factory ProjectControlState.fromProject(ProjectDocument project) =>
-      ProjectControlState(
-        boundary: project.boundary,
-        status: project.status,
-        blocker: project.blocker,
-        openQuestions: List.unmodifiable(project.openQuestions),
-        pendingPlanApproval: project.pendingPlanApproval,
-      );
+  factory ProjectControlState.fromProject(
+    ProjectDocument project, {
+    ProjectControlStateMachine machine = const ProjectControlStateMachine(),
+  }) => ProjectControlState(
+    boundary: machine.read(project),
+    status: project.status,
+    blocker: project.blocker,
+    openQuestions: List.unmodifiable(project.openQuestions),
+    pendingPlanApproval: project.pendingPlanApproval,
+  );
 }
 
 extension ProjectStateBoundaries on ProjectDocument {

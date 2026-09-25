@@ -2064,7 +2064,7 @@ class ProjectDesiredPlanMapper extends ClassMapperBase<ProjectDesiredPlan> {
       ProjectPlanRevisionTriggerMapper.ensureInitialized();
       ProjectCriterionMapper.ensureInitialized();
       ProjectMilestoneMapper.ensureInitialized();
-      TaskMapper.ensureInitialized();
+      ProjectTaskNodeMapper.ensureInitialized();
       ProjectMemoryEntryMapper.ensureInitialized();
       ProjectMemorySupersessionMapper.ensureInitialized();
       PendingProjectQuestionMapper.ensureInitialized();
@@ -2117,12 +2117,14 @@ class ProjectDesiredPlanMapper extends ClassMapperBase<ProjectDesiredPlan> {
       v.milestones;
   static const Field<ProjectDesiredPlan, List<ProjectMilestone>> _f$milestones =
       Field('milestones', _$milestones, opt: true, def: const []);
-  static List<Task> _$tasks(ProjectDesiredPlan v) => v.tasks;
-  static const Field<ProjectDesiredPlan, List<Task>> _f$tasks = Field(
+  static List<ProjectTaskNode> _$tasks(ProjectDesiredPlan v) => v.tasks;
+  static dynamic _arg$tasks(f) => f<List<ProjectTaskNode>>();
+  static const Field<ProjectDesiredPlan, Iterable<Object>> _f$tasks = Field(
     'tasks',
     _$tasks,
     opt: true,
     def: const [],
+    arg: _arg$tasks,
   );
   static List<String> _$splitTaskIds(ProjectDesiredPlan v) => v.splitTaskIds;
   static const Field<ProjectDesiredPlan, List<String>> _f$splitTaskIds = Field(
@@ -3620,4 +3622,3 @@ mixin ProjectDecisionRecordMappable {
         .encodeMap<ProjectDecisionRecord>(this as ProjectDecisionRecord);
   }
 }
-

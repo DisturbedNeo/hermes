@@ -25,6 +25,7 @@ class ProjectPlanningContext {
     bool requiresApproval = false,
     String approvalReason = '',
     this.approvalPolicy = ProjectPlanApprovalPolicy.highRiskOnly,
+    this.deferRevision = false,
     ProjectPlanRevisionService revisionService =
         const ProjectPlanRevisionService(),
     this.viewService = const ProjectViewService(),
@@ -48,6 +49,7 @@ class ProjectPlanningContext {
   final String workspaceRoot;
   final int baseRevision;
   final ProjectPlanApprovalPolicy approvalPolicy;
+  final bool deferRevision;
   final ProjectPlanBuilder builder;
   final ProjectViewService viewService;
   final ProjectPlanningWorkspaceReader? workspaceReader;
@@ -241,7 +243,7 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
                   rejectionReason: 'Split in the current planning draft.',
                 )
               : task,
-      ...preview.proposal.tasks,
+      ...preview.proposal.taskDocuments,
     ];
     return context.project.copyWith(
       title: context.draftTitle,
@@ -714,17 +716,16 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
     _validateOptionalText(rationale, 'rationale');
     if (summary != null) context.builder.setSummary(summary);
     if (rationale != null) context.builder.setRationale(rationale);
-    final committed = await context.builder.commit(
+    final preview = context.builder.preview(
       workspaceRoot: context.workspaceRoot,
-      approvalPolicy: context.approvalPolicy,
     );
-    final validation = committed.validation;
+    final validation = preview.validation;
     final response = <String, dynamic>{
-      'revision': committed.proposal.revision,
-      'changed': committed.result.changed,
-      'awaiting_approval': committed.result.awaitingApproval,
+      'revision': preview.proposal.revision,
+      'changed': true,
+      'awaiting_approval': false,
       'validation': [for (final issue in validation.issues) issue.toMap()],
-      'diff': _draftDiff(committed.proposal),
+      'diff': _draftDiff(preview.proposal),
     };
     if (!validation.valid) {
       final issue =
@@ -744,13 +745,37 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
         extra: response,
       );
     }
-    context.committedProposal = committed.proposal;
-    context.committedPatch = committed.patch;
-    context.committedProject = committed.project.copyWith(
-      title: context.draftTitle,
-      refinedGoal: context.draftRefinedGoal,
-      constraints: context.draftConstraints,
-    );
+    if (context.deferRevision) {
+      // Initial planning only produces a validated draft. Applying the
+      // revision service here would create a synthetic first commit and make
+      // project creation reconcile the same plan a second time.
+      context.committedProposal = preview.proposal;
+      context.committedPatch = ProjectPlanPatch.initial(
+        preview.proposal,
+        title: context.draftTitle,
+        refinedGoal: context.draftRefinedGoal,
+        constraints: context.draftConstraints,
+      );
+      context.committedProject = context.project.copyWith(
+        title: context.draftTitle,
+        refinedGoal: context.draftRefinedGoal,
+        constraints: context.draftConstraints,
+      );
+    } else {
+      final committed = await context.builder.commit(
+        workspaceRoot: context.workspaceRoot,
+        approvalPolicy: context.approvalPolicy,
+      );
+      context.committedProposal = committed.proposal;
+      context.committedPatch = committed.patch;
+      context.committedProject = committed.project.copyWith(
+        title: context.draftTitle,
+        refinedGoal: context.draftRefinedGoal,
+        constraints: context.draftConstraints,
+      );
+      response['changed'] = committed.result.changed;
+      response['awaiting_approval'] = committed.result.awaitingApproval;
+    }
     context.closed = true;
     return response;
   }
@@ -913,7 +938,7 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
           if (!existingTasks.contains(item.id)) item.id,
       ],
       'updated_tasks': [
-        for (final item in proposal.tasks)
+        for (final item in proposal.taskDocuments)
           if (existingTasks.contains(item.id) &&
               _taskChanged(context.project.taskById(item.id)!, item))
             item.id,

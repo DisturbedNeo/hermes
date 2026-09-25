@@ -9,7 +9,7 @@ import 'package:hermes/core/services/workspace_discovery_profile.dart';
 
 typedef ProjectInitialisationValidator =
     List<Map<String, String>> Function({
-      required ProjectInitialisation initialisation,
+      required ProjectInitialPlanResult initialPlan,
       required WorkspaceDiscoveryProfile workspaceProfile,
     });
 
@@ -19,7 +19,7 @@ typedef ProjectContextIssuePolicy =
 class ProjectPlanningResult {
   const ProjectPlanningResult({
     required this.discovery,
-    required this.initialisation,
+    required this.initialPlan,
     required this.validationIssues,
     required this.modelCallCount,
     required this.repairAttempts,
@@ -27,18 +27,20 @@ class ProjectPlanningResult {
   });
 
   final ProjectEvidenceSnapshot discovery;
-  final ProjectInitialisation initialisation;
+  final ProjectInitialPlanResult initialPlan;
   final List<Map<String, String>> validationIssues;
   final int modelCallCount;
   final int repairAttempts;
   final PlanningMetrics planningMetrics;
+
+  ProjectInitialisation get initialisation => initialPlan.toLegacy();
 }
 
 /// Coordinates discovery, bounded initial-plan repair, and validation.
 ///
-/// Project creation remains responsible for turning the approved planning
-/// result into a domain document. This component owns only the model-planning
-/// protocol and its bounded retry policy.
+/// This component owns only the model-planning protocol and its bounded retry
+/// policy. The returned patch is later applied once by the planning phase to
+/// the real project aggregate.
 class ProjectPlanningCoordinator {
   const ProjectPlanningCoordinator({
     required ProjectDiscoveryService discovery,
@@ -56,7 +58,7 @@ class ProjectPlanningCoordinator {
     required String userPrompt,
     required ChatClient? client,
     required String baseSystemPrompt,
-    required ProjectInitialisation Function() fallback,
+    required ProjectInitialPlanResult Function() fallback,
     required ProjectInitialisationValidator validate,
     required ProjectContextIssuePolicy blocksContextIssue,
     TaskModelOutputSink? onModelOutput,
@@ -79,9 +81,10 @@ class ProjectPlanningCoordinator {
     ];
     var modelCallCount = 0;
     var repairAttempts = 0;
-    var initialisation = client == null || issues.isNotEmpty
+    var initialPlan = client == null || issues.isNotEmpty
         ? fallback()
-        : await _planner.initializeProject(
+        : _planner is ProjectInitialPlanPlanner
+        ? await (_planner as ProjectInitialPlanPlanner).initializePlan(
             client: client,
             baseSystemPrompt: baseSystemPrompt,
             workspace: workspace,
@@ -89,34 +92,64 @@ class ProjectPlanningCoordinator {
             workspaceMetadata: metadata,
             onModelOutput: onModelOutput,
             cancellationToken: cancellationToken,
+          )
+        : ProjectInitialPlanResult.fromLegacy(
+            await _planner.initializeProject(
+              client: client,
+              baseSystemPrompt: baseSystemPrompt,
+              workspace: workspace,
+              originalGoal: userPrompt,
+              workspaceMetadata: metadata,
+              onModelOutput: onModelOutput,
+              cancellationToken: cancellationToken,
+            ),
           );
-    var planningMetrics = initialisation.planningMetrics;
+    var planningMetrics = initialPlan.planningMetrics;
 
     if (client != null && issues.isEmpty) {
       modelCallCount++;
       issues = validate(
-        initialisation: initialisation,
+        initialPlan: initialPlan,
         workspaceProfile: discovery.workspaceProfile,
       );
       while (issues.isNotEmpty && repairAttempts < maxAutomaticRepairs) {
         repairAttempts++;
-        final repaired = await _planner.repairInitialisation(
-          client: client,
-          baseSystemPrompt: baseSystemPrompt,
-          workspace: workspace,
-          originalGoal: userPrompt,
-          workspaceMetadata: metadata,
-          initialisation: initialisation,
-          validationIssues: issues,
-          onModelOutput: onModelOutput,
-          cancellationToken: cancellationToken,
-        );
+        final ProjectInitialPlanResult? repaired;
+        if (_planner is ProjectInitialPlanPlanner) {
+          repaired = await (_planner as ProjectInitialPlanPlanner)
+              .repairInitialPlan(
+                client: client,
+                baseSystemPrompt: baseSystemPrompt,
+                workspace: workspace,
+                originalGoal: userPrompt,
+                workspaceMetadata: metadata,
+                initialPlan: initialPlan,
+                validationIssues: issues,
+                onModelOutput: onModelOutput,
+                cancellationToken: cancellationToken,
+              );
+        } else {
+          final repairedLegacy = await _planner.repairInitialisation(
+            client: client,
+            baseSystemPrompt: baseSystemPrompt,
+            workspace: workspace,
+            originalGoal: userPrompt,
+            workspaceMetadata: metadata,
+            initialisation: initialPlan.toLegacy(),
+            validationIssues: issues,
+            onModelOutput: onModelOutput,
+            cancellationToken: cancellationToken,
+          );
+          repaired = repairedLegacy == null
+              ? null
+              : ProjectInitialPlanResult.fromLegacy(repairedLegacy);
+        }
         modelCallCount++;
         if (repaired == null) continue;
         planningMetrics = planningMetrics.add(repaired.planningMetrics);
-        initialisation = repaired;
+        initialPlan = repaired;
         issues = validate(
-          initialisation: initialisation,
+          initialPlan: initialPlan,
           workspaceProfile: discovery.workspaceProfile,
         );
       }
@@ -124,7 +157,7 @@ class ProjectPlanningCoordinator {
     cancellationToken?.throwIfCancelled();
     return ProjectPlanningResult(
       discovery: discovery,
-      initialisation: initialisation,
+      initialPlan: initialPlan,
       validationIssues: issues,
       modelCallCount: modelCallCount,
       repairAttempts: repairAttempts,

@@ -67,7 +67,13 @@ class ProjectPlanRevisionService {
         ProjectPlanApprovalPolicy.highRiskOnly,
     ProjectPlanRepair? repair,
   }) => prepareAndApply(
-    project: project,
+    project: patch.source == ProjectPlanPatchSource.initialization
+        ? project.copyWith(
+            title: patch.title ?? project.title,
+            refinedGoal: patch.refinedGoal ?? project.refinedGoal,
+            constraints: patch.constraints ?? project.constraints,
+          )
+        : project,
     proposal: patch.plan,
     workspaceRoot: workspaceRoot,
     approvalPolicy: approvalPolicy,
@@ -441,7 +447,9 @@ class ProjectPlanRevisionService {
       }
     }
 
-    final desiredById = {for (final task in proposal.tasks) task.id: task};
+    final desiredById = {
+      for (final task in proposal.taskDocuments) task.id: task,
+    };
     final tasksById = <String, Task>{};
     for (final existing in project.tasks) {
       final desired = desiredById[existing.id];
@@ -482,7 +490,7 @@ class ProjectPlanRevisionService {
         ).copyWith(status: _desiredTaskStatus(proposal, desired));
       }
     }
-    for (final desired in proposal.tasks) {
+    for (final desired in proposal.taskDocuments) {
       if (tasksById.containsKey(desired.id)) continue;
       tasksById[desired.id] = desired.copyWith(
         status: _desiredTaskStatus(proposal, desired),
@@ -567,7 +575,7 @@ class ProjectPlanRevisionService {
       summary: proposal.summary,
       rationale: proposal.rationale,
       addedTaskIds: [
-        for (final task in proposal.tasks)
+        for (final task in proposal.taskDocuments)
           if (!project.tasks.any((existing) => existing.id == task.id)) task.id,
       ],
       updatedTaskIds: [
@@ -952,7 +960,7 @@ class ProjectPlanRevisionService {
         ),
       );
     }
-    for (final task in proposal.tasks) {
+    for (final task in proposal.taskDocuments) {
       if (task.risk == TaskRisk.high) {
         changes.add(
           _ProjectPlanRiskReason(

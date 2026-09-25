@@ -1,4 +1,7 @@
+import 'package:dart_mappable/dart_mappable.dart';
 import 'package:hermes/core/models/task.dart';
+
+part 'project_task_models.mapper.dart';
 
 /// Planner-owned description of a task.
 ///
@@ -61,14 +64,18 @@ class ProjectTaskRef {
 
 /// Planning-only task node used by project read models and scheduling policy.
 ///
-/// It is deliberately constructed from the canonical Task as an adapter
-/// during the migration, but it does not expose steps, runs, or tool history.
-class ProjectTaskNode {
+/// It is deliberately constructed from the canonical Task at the read/write
+/// boundary, but it does not expose steps, runs, or tool history.
+@MappableClass(ignoreNull: true)
+class ProjectTaskNode with ProjectTaskNodeMappable {
   const ProjectTaskNode({
     required this.id,
     required this.title,
     required this.objective,
     required this.status,
+    this.gates = const [],
+    this.constraints = const [],
+    this.successCriteria = const [],
     this.criterionIds = const [],
     this.milestoneId,
     this.dependsOnTaskIds = const [],
@@ -94,6 +101,9 @@ class ProjectTaskNode {
   final String title;
   final String objective;
   final TaskStatus status;
+  final List<TaskGate> gates;
+  final List<String> constraints;
+  final List<String> successCriteria;
   final List<String> criterionIds;
   final String? milestoneId;
   final List<String> dependsOnTaskIds;
@@ -119,6 +129,9 @@ class ProjectTaskNode {
     title: task.title,
     objective: task.objective,
     status: task.status,
+    gates: List.unmodifiable(task.gates),
+    constraints: List.unmodifiable(task.constraints),
+    successCriteria: List.unmodifiable(task.successCriteria),
     criterionIds: List.unmodifiable(task.criterionIds),
     milestoneId: task.milestoneId,
     dependsOnTaskIds: List.unmodifiable(task.dependsOnTaskIds),
@@ -140,6 +153,37 @@ class ProjectTaskNode {
     updatedAt: task.updatedAt,
   );
 
+  Task toTask() => Task(
+    id: id,
+    title: title,
+    originalPrompt: objective,
+    objective: objective,
+    status: status,
+    gates: gates,
+    constraints: constraints,
+    successCriteria: successCriteria,
+    criterionIds: criterionIds,
+    milestoneId: milestoneId,
+    dependsOnTaskIds: dependsOnTaskIds,
+    priority: priority,
+    risk: risk,
+    riskReduction: riskReduction,
+    effort: effort,
+    selectionRationale: selectionRationale,
+    revisionIntroduced: revisionIntroduced,
+    revisionUpdated: revisionUpdated,
+    expectedEvidence: expectedEvidence,
+    readPaths: readPaths,
+    writePaths: writePaths,
+    doneCriteria: doneCriteria,
+    outOfScope: outOfScope,
+    context: context,
+    expectedArtifacts: expectedArtifacts,
+    fingerprint: _fingerprint(objective, criterionIds),
+    createdAt: createdAt,
+    updatedAt: updatedAt,
+  );
+
   bool get isTerminal => switch (status) {
     TaskStatus.completed ||
     TaskStatus.failed ||
@@ -151,6 +195,9 @@ class ProjectTaskNode {
     _ => false,
   };
 }
+
+String _fingerprint(String objective, List<String> criteria) =>
+    [objective.trim().toLowerCase(), ...criteria].join('|');
 
 /// Execution-owned observation of a canonical task document.
 ///

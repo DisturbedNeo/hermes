@@ -1,4 +1,5 @@
 import 'package:hermes/core/models/project.dart';
+import 'package:hermes/core/services/project_system/project_control_state_service.dart';
 
 /// The deterministic action selected by the project runtime.
 ///
@@ -54,44 +55,62 @@ class ProjectDecision {
 /// but it no longer needs to rediscover the main command boundary from a
 /// mixture of nullable fields and loop-local counters.
 class ProjectDecisionEngine {
-  const ProjectDecisionEngine();
+  const ProjectDecisionEngine({
+    this.controlMachine = const ProjectControlStateMachine(),
+  });
+
+  final ProjectControlStateMachine controlMachine;
 
   ProjectDecision decide(ProjectDecisionInput input) {
     final project = input.project;
-    if (project.status == ProjectStatus.completed) {
-      return const ProjectDecision(
-        action: ProjectExecutionAction.complete,
-        reason: 'The project is already complete.',
-      );
-    }
-    if (project.status == ProjectStatus.cancelled ||
-        project.status == ProjectStatus.failed) {
-      return ProjectDecision(
-        action: ProjectExecutionAction.block,
-        reason: 'The project is terminal with status ${project.status.name}.',
-      );
-    }
-    if (project.pendingPlanApproval != null ||
-        project.blocker?.type == ProjectBlockerType.planApproval) {
-      return const ProjectDecision(
-        action: ProjectExecutionAction.awaitPlanApproval,
-        reason: 'A plan revision is waiting for approval.',
-      );
-    }
-    if (project.openQuestions.isNotEmpty || _needsUserInput(project.blocker)) {
-      return const ProjectDecision(
-        action: ProjectExecutionAction.awaitUserInput,
-        reason: 'The project is waiting for user input.',
-      );
-    }
-    if (project.status == ProjectStatus.blocked) {
-      return ProjectDecision(
-        action: project.blocker?.type == ProjectBlockerType.budget
-            ? ProjectExecutionAction.pause
-            : ProjectExecutionAction.block,
-        reason: project.blocker?.message ?? 'The project is blocked.',
-        blockerType: project.blocker?.type,
-      );
+    final control = controlMachine.read(project);
+    switch (control.outcome) {
+      case ProjectControlOutcome.completed:
+        return const ProjectDecision(
+          action: ProjectExecutionAction.complete,
+          reason: 'The project is already complete.',
+        );
+      case ProjectControlOutcome.cancelled:
+      case ProjectControlOutcome.failed:
+        return ProjectDecision(
+          action: ProjectExecutionAction.block,
+          reason: 'The project is terminal with status ${project.status.name}.',
+        );
+      case ProjectControlOutcome.awaitingPlanApproval:
+        return const ProjectDecision(
+          action: ProjectExecutionAction.awaitPlanApproval,
+          reason: 'A plan revision is waiting for approval.',
+        );
+      case ProjectControlOutcome.awaitingUserInput:
+        return const ProjectDecision(
+          action: ProjectExecutionAction.awaitUserInput,
+          reason: 'The project is waiting for user input.',
+        );
+      case ProjectControlOutcome.pausedByBudget:
+        return ProjectDecision(
+          action: ProjectExecutionAction.pause,
+          reason: project.blocker?.message ?? 'The project is blocked.',
+          blockerType: project.blocker?.type,
+        );
+      case ProjectControlOutcome.blockedValidation:
+        return ProjectDecision(
+          action: ProjectExecutionAction.block,
+          reason: project.blocker?.message ?? 'The project is blocked.',
+          blockerType: project.blocker?.type,
+        );
+      case ProjectControlOutcome.paused:
+        return const ProjectDecision(
+          action: ProjectExecutionAction.pause,
+          reason: 'The project is paused.',
+        );
+      case ProjectControlOutcome.initializing:
+        return const ProjectDecision(
+          action: ProjectExecutionAction.block,
+          reason: 'The project is still initializing.',
+        );
+      case ProjectControlOutcome.degradedPlanning:
+      case ProjectControlOutcome.running:
+        break;
     }
     if (project.maxIterations > 0 &&
         project.iterationCount >= project.maxIterations) {
@@ -134,12 +153,4 @@ class ProjectDecisionEngine {
       reason: 'There is no selected task; completion should be evaluated.',
     );
   }
-
-  bool _needsUserInput(ProjectBlocker? blocker) => switch (blocker?.type) {
-    ProjectBlockerType.question ||
-    ProjectBlockerType.taskEditApproval ||
-    ProjectBlockerType.taskBlocked ||
-    ProjectBlockerType.taskFailed => true,
-    _ => false,
-  };
 }

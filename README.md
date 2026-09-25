@@ -32,25 +32,29 @@ classes or per-model JSON methods directly.
 The project system has three deliberately separate concerns:
 
 - `ProjectLifecycleService` owns project status transitions and
-  `ProjectControlStateService` records the durable, application-facing
-  outcome and next action.
-- Project planning exchanges `ProjectTaskSpec` values and commits through
-  `ProjectPlanRevisionService`, which validates, evaluates risk, handles
-  approval, and reconciles a complete desired plan atomically.
+  `ProjectControlStateMachine` is the single reducer for the durable,
+  application-facing outcome and next action.
+- `ProjectPlanningPhase` produces one canonical `ProjectPlanPatch` for a new
+  project or a revision. `ProjectPlanRevisionService` validates, evaluates
+  risk, handles approval, and reconciles the complete desired plan atomically.
+- `ProjectExecutionPhase` owns bounded frontier selection and task execution;
+  `ProjectPersistencePhase` delegates every write to `ProjectAggregateStore`.
 - The task system owns executable task documents, steps, runs, artifacts, and
-  planning fallback diagnostics. Projects retain task IDs and hydrated
-  compatibility views, while `ProjectScheduler` selects a dependency-aware
-  execution frontier.
+  planning fallback diagnostics. Project plans exchange `ProjectTaskNode`
+  projections and retain task IDs; executable `Task` documents are materialized
+  only at the revision/task persistence boundary. `ProjectScheduler` selects a
+  dependency-aware execution frontier.
 
 Frontier limits are bounded run budgets, not automatic replanning triggers.
 Plans are revised only for an explicit scope, dependency, evidence,
 workspace, failure, or roadmap change.
 
 The runtime keeps deterministic project decisions separate from effects. The
-`ProjectDecisionEngine` selects the next command boundary, while model calls,
-task execution, and persistence execute that decision. `ProjectState` exposes
-separate plan, execution, evidence, and control read models during the schema
-migration; the persisted document remains compatible with older snapshots.
+`ProjectDecisionEngine` consumes the control machine and selects the next
+command boundary, while model calls, task execution, and persistence execute
+that decision. `ProjectState` exposes separate plan, execution, evidence, and
+control read models; the persisted document remains compatible with older
+snapshots without making embedded task documents authoritative.
 
 Every planning producer is adapted to a typed `ProjectPlanPatch`, which passes
 through the same validation, risk, approval, and reconciliation service.

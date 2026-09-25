@@ -2,6 +2,7 @@ import 'package:dart_mappable/dart_mappable.dart';
 import 'package:hermes/core/helpers/sentinel.dart' show kSentinel, resolve;
 import 'package:hermes/core/models/planning_metrics.dart';
 import 'package:hermes/core/models/task.dart';
+import 'package:hermes/core/services/project_system/project_task_models.dart';
 import 'package:hermes/core/serialization/json_hooks.dart';
 
 export 'task.dart'
@@ -586,7 +587,10 @@ class ProjectDesiredPlan with ProjectDesiredPlanMappable {
   final List<String> assumptions;
   final List<ProjectCriterion> criteria;
   final List<ProjectMilestone> milestones;
-  final List<Task> tasks;
+
+  /// Planner-owned task nodes. Executable Task documents are materialized only
+  /// by the plan revision/task persistence boundary.
+  final List<ProjectTaskNode> tasks;
 
   /// Source task IDs that the builder is replacing with fresh child tasks.
   /// This is persisted with pending approvals so approving a split applies the
@@ -601,7 +605,7 @@ class ProjectDesiredPlan with ProjectDesiredPlanMappable {
   final String approvalReason;
   final DateTime createdAt;
 
-  const ProjectDesiredPlan({
+  ProjectDesiredPlan({
     required this.revision,
     this.triggers = const [],
     required this.summary,
@@ -610,7 +614,7 @@ class ProjectDesiredPlan with ProjectDesiredPlanMappable {
     this.assumptions = const [],
     this.criteria = const [],
     this.milestones = const [],
-    this.tasks = const [],
+    Iterable<Object> tasks = const [],
     this.splitTaskIds = const [],
     this.deferredTaskIds = const [],
     this.obsoleteTaskIds = const [],
@@ -620,7 +624,55 @@ class ProjectDesiredPlan with ProjectDesiredPlanMappable {
     this.requiresApproval = false,
     this.approvalReason = '',
     required this.createdAt,
-  });
+  }) : tasks = [
+         for (final task in tasks)
+           task is ProjectTaskNode
+               ? task
+               : ProjectTaskNode.fromTask(task as Task),
+       ];
+
+  ProjectDesiredPlan copyWith({
+    int? revision,
+    List<ProjectPlanRevisionTrigger>? triggers,
+    String? summary,
+    String? rationale,
+    bool? hasCompleteCollections,
+    List<String>? assumptions,
+    List<ProjectCriterion>? criteria,
+    List<ProjectMilestone>? milestones,
+    Iterable<Object>? tasks,
+    List<String>? splitTaskIds,
+    List<String>? deferredTaskIds,
+    List<String>? obsoleteTaskIds,
+    List<ProjectMemoryEntry>? memoryAdditions,
+    List<ProjectMemorySupersession>? memorySupersessions,
+    List<PendingProjectQuestion>? openQuestions,
+    bool? requiresApproval,
+    String? approvalReason,
+    DateTime? createdAt,
+  }) => ProjectDesiredPlan(
+    revision: revision ?? this.revision,
+    triggers: triggers ?? this.triggers,
+    summary: summary ?? this.summary,
+    rationale: rationale ?? this.rationale,
+    hasCompleteCollections:
+        hasCompleteCollections ?? this.hasCompleteCollections,
+    assumptions: assumptions ?? this.assumptions,
+    criteria: criteria ?? this.criteria,
+    milestones: milestones ?? this.milestones,
+    tasks: tasks ?? this.tasks,
+    splitTaskIds: splitTaskIds ?? this.splitTaskIds,
+    deferredTaskIds: deferredTaskIds ?? this.deferredTaskIds,
+    obsoleteTaskIds: obsoleteTaskIds ?? this.obsoleteTaskIds,
+    memoryAdditions: memoryAdditions ?? this.memoryAdditions,
+    memorySupersessions: memorySupersessions ?? this.memorySupersessions,
+    openQuestions: openQuestions ?? this.openQuestions,
+    requiresApproval: requiresApproval ?? this.requiresApproval,
+    approvalReason: approvalReason ?? this.approvalReason,
+    createdAt: createdAt ?? this.createdAt,
+  );
+
+  List<Task> get taskDocuments => [for (final task in tasks) task.toTask()];
 }
 
 @MappableClass(ignoreNull: true)
