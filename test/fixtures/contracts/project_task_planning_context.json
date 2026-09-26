@@ -5,6 +5,8 @@
   "knownFacts": [
     "The application uses Flutter."
   ],
+  "workspaceOrientation": "",
+  "workspaceContext": [],
   "doneCriteria": [
     "Every report-dialog action is keyboard reachable."
   ],

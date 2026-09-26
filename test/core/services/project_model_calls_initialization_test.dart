@@ -170,6 +170,16 @@ void main() {
       expect([
         for (final item in tools) ((item as Map)['function'] as Map)['name'],
       ], contains('planning_read_file'));
+
+      final prompt = client.seenMessages
+          .expand((messages) => messages)
+          .map((message) => message.content)
+          .join('\n');
+      expect(prompt, contains('domain-neutral'));
+      expect(
+        prompt,
+        contains('Task agents must not mutate the workspace context graph'),
+      );
     },
   );
 }

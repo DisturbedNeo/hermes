@@ -191,6 +191,13 @@ blocking user decision only when they are needed.
 
 Make the smallest safe diff that addresses all supplied triggers. Preserve
 the original goal, accepted evidence, protected memory, and completed work.
+The workspace context graph is domain-neutral: it may describe code, writing,
+research, design, people, sources, requirements, or workflow structure.
+Keep it current when a task or workspace change reveals durable structure.
+Do not duplicate graph entries into project memory
+and do not alter protected user-authored nodes or relationships.
+Task agents must not mutate the workspace context graph directly; only this
+project planning flow or an explicit user command may change it.
 Use plan_preview if it helps inspect the diff or validation before the final
 plan_commit. A successful plan_commit is the only completion signal.
 ''',
@@ -508,6 +515,17 @@ Use plan_add_tasks for a small batch of bounded near-term tasks, normally no mor
 Add command checks with plan_add_check when a task needs verification. Add notes with plan_add_note for sourced facts, assumptions, risks, or decisions. Ask a user decision only for genuinely irreversible, high-risk, credential, scope, or otherwise unsafe-to-assume ambiguity.
 When a note is based on a workspace file, set source_id to workspace:<relative-path>.
 Use project_view when you need a bounded summary or detail. Use plan_preview to inspect the compact diff, then call plan_commit when the plan is complete. Do not supply IDs, statuses, timestamps, revisions, gates, evidence IDs, or runtime execution fields.
+
+Build a durable workspace context graph when the goal reveals stable project
+structure. The graph is domain-neutral and is not merely a code repository map.
+Set a concise orientation, add typed nodes for important concepts
+or artifacts, and connect them with labeled relationships. Nodes may represent
+code components, characters, sources, requirements, design artifacts, or
+workflow stages. References are opaque descriptions such as paths, URLs,
+chapters, or document names; do not assume the workspace is a code repository.
+Only record durable structure, not temporary task progress.
+Task agents must not mutate the workspace context graph directly; only the
+project planner or an explicit user command may change it.
 '''
               .trim(),
       user:

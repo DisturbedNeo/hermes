@@ -6,6 +6,7 @@ import 'package:hermes/core/models/planning_metrics.dart';
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/services/chat/chat_service.dart';
 import 'package:hermes/core/services/project_system/project_scheduler.dart';
+import 'package:hermes/core/services/project_system/project_workspace_context_service.dart';
 import 'package:hermes/ui/chat/task_panel_dialogs.dart';
 
 class ProjectOutcomeSection extends StatelessWidget {
@@ -171,6 +172,130 @@ class _CriterionTile extends StatelessWidget {
             if (criterion.notes.trim().isNotEmpty) criterion.notes,
           ].join('\n'),
         ),
+      ),
+    );
+  }
+}
+
+class ProjectWorkspaceContextSection extends StatelessWidget {
+  final ProjectDocument project;
+
+  const ProjectWorkspaceContextSection({super.key, required this.project});
+
+  @override
+  Widget build(BuildContext context) {
+    final graph = project.workspaceGraph;
+    final selection = const ProjectWorkspaceContextService().selectContext(
+      project: project,
+    );
+    final nodes = selection.nodes;
+    final edges = selection.edges.take(24).toList();
+    final nodeTitles = {for (final node in nodes) node.id: node.title};
+    final visibleNodes = nodes.take(24).toList();
+    final groupedNodes = <String, List<ProjectWorkspaceNode>>{};
+    for (final node in visibleNodes) {
+      groupedNodes.putIfAbsent(node.type, () => []).add(node);
+    }
+
+    return _ProjectSectionCard(
+      key: const ValueKey('project-workspace-context-section'),
+      icon: Icons.hub_outlined,
+      title: 'Workspace Context',
+      semanticLabel: 'Workspace context graph',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (graph.orientation.trim().isNotEmpty) Text(graph.orientation),
+          if (graph.orientation.trim().isNotEmpty) const SizedBox(height: 8),
+          _LabelValue(
+            label: 'Graph',
+            value:
+                '${graph.nodes.length} nodes · ${graph.edges.length} relationships',
+          ),
+          if (graph.nodes.isEmpty)
+            const Text('No durable workspace nodes have been recorded yet.')
+          else ...[
+            const SizedBox(height: 8),
+            if (nodes.isEmpty)
+              const Text(
+                'No workspace nodes fit the current display budget; the graph is truncated.',
+              ),
+            for (final group in groupedNodes.entries) ...[
+              _Subheading(_humanize(group.key)),
+              for (final node in group.value)
+                AccessibleWidget(
+                  label:
+                      'Workspace node ${node.title}, type ${_humanize(node.type)}, '
+                      'source ${_humanize(node.sourceType.name)}, '
+                      'confidence ${_humanize(node.confidence.name)}'
+                      '${node.protected ? ', protected' : ''}',
+                  child: ListTile(
+                    key: ValueKey('workspace-node-${node.id}'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      node.protected
+                          ? Icons.lock_outline
+                          : Icons.circle_outlined,
+                    ),
+                    title: Text(node.title),
+                    subtitle: Text(
+                      '${node.type} · ${node.sourceType.name} · '
+                      '${node.confidence.name} · '
+                      '${node.protected ? 'protected · ' : ''}'
+                      '${node.description}',
+                    ),
+                  ),
+                ),
+            ],
+            if (graph.nodes.length > nodes.length)
+              Semantics(
+                label:
+                    'Workspace nodes truncated. Showing ${nodes.length} of ${graph.nodes.length}.',
+                child: Text(
+                  'Showing ${nodes.length} of ${graph.nodes.length} workspace nodes.',
+                ),
+              ),
+            if (edges.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              const _Subheading('Relationships'),
+              for (final edge in edges)
+                AccessibleWidget(
+                  label:
+                      'Workspace relationship ${nodeTitles[edge.sourceNodeId] ?? edge.sourceNodeId} '
+                      '${edge.label} '
+                      '${nodeTitles[edge.targetNodeId] ?? edge.targetNodeId}, '
+                      'confidence ${_humanize(edge.confidence.name)}',
+                  child: ListTile(
+                    key: ValueKey('workspace-edge-${edge.id}'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      '${nodeTitles[edge.sourceNodeId] ?? edge.sourceNodeId} '
+                      '${edge.label} '
+                      '${nodeTitles[edge.targetNodeId] ?? edge.targetNodeId}',
+                    ),
+                    subtitle: Text(
+                      [
+                        if (edge.description.trim().isNotEmpty)
+                          edge.description,
+                        '${edge.sourceType.name} · ${edge.confidence.name}'
+                            '${edge.protected ? ' · protected' : ''}',
+                      ].join('\n'),
+                    ),
+                  ),
+                ),
+            ],
+            if (graph.edges.length > edges.length)
+              Semantics(
+                label:
+                    'Workspace relationships truncated. Showing ${edges.length} of ${graph.edges.length}.',
+                child: Text(
+                  'Showing ${edges.length} of ${graph.edges.length} relationships.',
+                ),
+              ),
+          ],
+        ],
       ),
     );
   }

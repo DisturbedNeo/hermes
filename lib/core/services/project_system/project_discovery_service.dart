@@ -7,6 +7,7 @@ import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/project_system/project_memory_service.dart';
 import 'package:hermes/core/services/project_system/project_planning_gateway.dart';
 import 'package:hermes/core/services/project_system/project_scheduler.dart';
+import 'package:hermes/core/services/project_system/project_workspace_context_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
 import 'package:hermes/core/services/workspace_discovery_profile.dart';
 import 'package:path/path.dart' as path;
@@ -18,9 +19,12 @@ class ProjectDiscoveryService {
     ProjectMemoryService memoryService = const ProjectMemoryService(),
     WorkspaceDiscoveryProfileService profileService =
         const WorkspaceDiscoveryProfileService(),
+    ProjectWorkspaceContextService workspaceContextService =
+        const ProjectWorkspaceContextService(),
   }) : _taskService = taskService,
        _memoryService = memoryService,
-       _profileService = profileService;
+       _profileService = profileService,
+       _workspaceContextService = workspaceContextService;
 
   static const int _maxRootEntries = 80;
   static const int _maxRecentItems = 12;
@@ -28,6 +32,7 @@ class ProjectDiscoveryService {
   final TaskService _taskService;
   final ProjectMemoryService _memoryService;
   final WorkspaceDiscoveryProfileService _profileService;
+  final ProjectWorkspaceContextService _workspaceContextService;
   static const ProjectScheduler _scheduler = ProjectScheduler();
 
   Future<ProjectEvidenceSnapshot> collect({
@@ -89,6 +94,16 @@ class ProjectDiscoveryService {
     final schedule = project == null
         ? null
         : _scheduler.refreshReadiness(project);
+    final workspaceContext = project == null
+        ? const ProjectWorkspaceContextSelection(
+            orientation: '',
+            nodes: [],
+            edges: [],
+            maxCharacters: 0,
+            usedCharacters: 0,
+            truncated: false,
+          )
+        : _workspaceContextService.selectContext(project: project);
     return ProjectEvidenceSnapshot(
       workspaceName: workspace.displayName,
       workspaceProfile: workspaceProfile,
@@ -164,6 +179,8 @@ class ProjectDiscoveryService {
           '${task.id}: ${task.title}',
       ],
       verificationCommands: verificationCommands.toList()..sort(),
+      workspaceGraph: project?.workspaceGraph ?? ProjectWorkspaceGraph.empty(),
+      workspaceContext: workspaceContext,
       collectedAt: DateTime.now(),
     );
   }

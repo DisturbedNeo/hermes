@@ -188,6 +188,50 @@ class ProjectOrchestrator {
     rawJson: rawJson,
   );
 
+  Future<ProjectDocument> upsertUserWorkspaceNode({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    String? id,
+    required String type,
+    required String title,
+    String description = '',
+    List<String> aliases = const [],
+    List<String> tags = const [],
+    List<String> references = const [],
+    String? sourceId,
+  }) => _runtime.upsertUserWorkspaceNode(
+    workspace: workspace,
+    snapshot: snapshot,
+    id: id,
+    type: type,
+    title: title,
+    description: description,
+    aliases: aliases,
+    tags: tags,
+    references: references,
+    sourceId: sourceId,
+  );
+
+  Future<ProjectDocument> upsertUserWorkspaceEdge({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    String? id,
+    required String sourceNodeId,
+    required String targetNodeId,
+    required String label,
+    String description = '',
+    String? sourceId,
+  }) => _runtime.upsertUserWorkspaceEdge(
+    workspace: workspace,
+    snapshot: snapshot,
+    id: id,
+    sourceNodeId: sourceNodeId,
+    targetNodeId: targetNodeId,
+    label: label,
+    description: description,
+    sourceId: sourceId,
+  );
+
   Future<ProjectDocument> answerOpenQuestion({
     required WorkspaceAttachment workspace,
     required ProjectDocument snapshot,

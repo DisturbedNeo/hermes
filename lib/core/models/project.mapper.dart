@@ -2066,6 +2066,7 @@ class ProjectDesiredPlanMapper extends ClassMapperBase<ProjectDesiredPlan> {
       ProjectTaskNodeMapper.ensureInitialized();
       ProjectMemoryEntryMapper.ensureInitialized();
       ProjectMemorySupersessionMapper.ensureInitialized();
+      ProjectWorkspaceGraphMapper.ensureInitialized();
       PendingProjectQuestionMapper.ensureInitialized();
     }
     return _instance!;
@@ -2153,6 +2154,10 @@ class ProjectDesiredPlanMapper extends ClassMapperBase<ProjectDesiredPlan> {
     opt: true,
     def: const [],
   );
+  static ProjectWorkspaceGraph _$workspaceGraph(ProjectDesiredPlan v) =>
+      v.workspaceGraph;
+  static const Field<ProjectDesiredPlan, ProjectWorkspaceGraph>
+  _f$workspaceGraph = Field('workspaceGraph', _$workspaceGraph, opt: true);
   static List<PendingProjectQuestion> _$openQuestions(ProjectDesiredPlan v) =>
       v.openQuestions;
   static const Field<ProjectDesiredPlan, List<PendingProjectQuestion>>
@@ -2198,6 +2203,7 @@ class ProjectDesiredPlanMapper extends ClassMapperBase<ProjectDesiredPlan> {
     #obsoleteTaskIds: _f$obsoleteTaskIds,
     #memoryAdditions: _f$memoryAdditions,
     #memorySupersessions: _f$memorySupersessions,
+    #workspaceGraph: _f$workspaceGraph,
     #openQuestions: _f$openQuestions,
     #requiresApproval: _f$requiresApproval,
     #approvalReason: _f$approvalReason,
@@ -2222,6 +2228,7 @@ class ProjectDesiredPlanMapper extends ClassMapperBase<ProjectDesiredPlan> {
       obsoleteTaskIds: data.dec(_f$obsoleteTaskIds),
       memoryAdditions: data.dec(_f$memoryAdditions),
       memorySupersessions: data.dec(_f$memorySupersessions),
+      workspaceGraph: data.dec(_f$workspaceGraph),
       openQuestions: data.dec(_f$openQuestions),
       requiresApproval: data.dec(_f$requiresApproval),
       approvalReason: data.dec(_f$approvalReason),
@@ -2813,6 +2820,7 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
       ProjectEvidenceMapper.ensureInitialized();
       ProjectMilestoneMapper.ensureInitialized();
       ProjectMemoryEntryMapper.ensureInitialized();
+      ProjectWorkspaceGraphMapper.ensureInitialized();
       ProjectPlanRevisionMapper.ensureInitialized();
       PendingProjectPlanApprovalMapper.ensureInitialized();
       ProjectPlanRevisionTriggerMapper.ensureInitialized();
@@ -2964,6 +2972,10 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
     opt: true,
     hook: JsonObjectListHook(),
   );
+  static ProjectWorkspaceGraph _$workspaceGraph(ProjectState v) =>
+      v.workspaceGraph;
+  static const Field<ProjectState, ProjectWorkspaceGraph> _f$workspaceGraph =
+      Field('workspaceGraph', _$workspaceGraph, opt: true);
   static List<ProjectPlanRevision> _$planHistory(ProjectState v) =>
       v.planHistory;
   static const Field<ProjectState, List<ProjectPlanRevision>> _f$planHistory =
@@ -3132,6 +3144,7 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
     #evidence: _f$evidence,
     #milestones: _f$milestones,
     #memory: _f$memory,
+    #workspaceGraph: _f$workspaceGraph,
     #planHistory: _f$planHistory,
     #pendingPlanApproval: _f$pendingPlanApproval,
     #pendingReplanTriggers: _f$pendingReplanTriggers,
@@ -3178,6 +3191,7 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
       evidence: data.dec(_f$evidence),
       milestones: data.dec(_f$milestones),
       memory: data.dec(_f$memory),
+      workspaceGraph: data.dec(_f$workspaceGraph),
       planHistory: data.dec(_f$planHistory),
       pendingPlanApproval: data.dec(_f$pendingPlanApproval),
       pendingReplanTriggers: data.dec(_f$pendingReplanTriggers),

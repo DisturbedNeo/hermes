@@ -67,6 +67,8 @@ class TaskPlanningContext with TaskPlanningContextMappable {
   final String projectTaskTitle;
   final String projectTaskObjective;
   final List<String> knownFacts;
+  final String workspaceOrientation;
+  final List<String> workspaceContext;
   final List<String> doneCriteria;
   final List<String> outOfScope;
   final List<TaskArtifact> expectedArtifacts;
@@ -83,6 +85,8 @@ class TaskPlanningContext with TaskPlanningContextMappable {
     this.projectTaskTitle = '',
     required this.projectTaskObjective,
     this.knownFacts = const [],
+    this.workspaceOrientation = '',
+    this.workspaceContext = const [],
     this.doneCriteria = const [],
     this.outOfScope = const [],
     this.expectedArtifacts = const [],
@@ -890,6 +894,10 @@ Bounded workspace profile:
 ${_encoder.convert(_compactTaskMetadata(metadata))}
 
       ${planningContext == null ? '' : 'Bounded Project task context:\n${_encoder.convert(_taskPlanningContextMap(planningContext, taskId: taskId))}'}
+
+Workspace context is read-only task context. Do not mutate the project
+workspace graph directly; durable graph changes belong to the project planner
+or an explicit user command. Task memories remain separate from that graph.
 ''',
       onModelOutput: onModelOutput,
       cancellationToken: cancellationToken,
@@ -959,6 +967,8 @@ ${_encoder.convert(_compactTaskMetadata(metadata))}
     'task_title': context.projectTaskTitle,
     'task_objective': context.projectTaskObjective,
     'known_facts': context.knownFacts,
+    'workspace_orientation': context.workspaceOrientation,
+    'workspace_context': context.workspaceContext,
     'done_criteria': context.doneCriteria,
     'out_of_scope': context.outOfScope,
     'criterion_ids': context.criterionIds,

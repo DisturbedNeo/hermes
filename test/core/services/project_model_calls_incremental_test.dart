@@ -44,6 +44,15 @@ void main() {
         hasLength(1),
       );
       expect(client.toolNames, contains('plan_update_task'));
+      final prompt = client.seenMessages
+          .expand((messages) => messages)
+          .map((message) => message.content)
+          .join('\n');
+      expect(prompt, contains('workspace context graph'));
+      expect(
+        prompt,
+        contains('Task agents must not mutate the workspace context graph'),
+      );
     },
   );
 
@@ -181,6 +190,7 @@ class _Client extends ChatClient {
 
   final List<ChatCompletionToolCall> _responses;
   final List<String> toolNames = [];
+  final List<List<ChatMessage>> seenMessages = [];
   var _index = 0;
 
   @override
@@ -192,6 +202,7 @@ class _Client extends ChatClient {
     int? contextLimitTokens,
     int? inputTokensHint,
   }) async {
+    seenMessages.add(List<ChatMessage>.from(messages));
     if (_index < _responses.length) toolNames.add(_responses[_index].name);
     return ChatCompletionResponse(
       content: '',

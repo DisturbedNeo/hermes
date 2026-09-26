@@ -4,6 +4,7 @@ import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/project_system/project_plan_patch.dart';
+import 'package:hermes/core/services/project_system/project_workspace_context_service.dart';
 import 'package:hermes/core/services/task_system/task_model_output.dart';
 import 'package:hermes/core/services/workspace_discovery_profile.dart';
 
@@ -43,6 +44,8 @@ class ProjectEvidenceSnapshot {
   final List<String> blockedTasks;
   final List<String> recentlyCompletedTasks;
   final List<String> verificationCommands;
+  final ProjectWorkspaceGraph workspaceGraph;
+  final ProjectWorkspaceContextSelection workspaceContext;
   final DateTime collectedAt;
 
   ProjectEvidenceSnapshot({
@@ -63,10 +66,23 @@ class ProjectEvidenceSnapshot {
     this.blockedTasks = const [],
     this.recentlyCompletedTasks = const [],
     this.verificationCommands = const [],
+    ProjectWorkspaceGraph? workspaceGraph,
+    ProjectWorkspaceContextSelection? workspaceContext,
     required this.collectedAt,
   }) : workspaceProfile =
            workspaceProfile ??
-           WorkspaceDiscoveryProfile(workspaceName: workspaceName);
+           WorkspaceDiscoveryProfile(workspaceName: workspaceName),
+       workspaceGraph = workspaceGraph ?? ProjectWorkspaceGraph.empty(),
+       workspaceContext =
+           workspaceContext ??
+           const ProjectWorkspaceContextSelection(
+             orientation: '',
+             nodes: [],
+             edges: [],
+             maxCharacters: 0,
+             usedCharacters: 0,
+             truncated: false,
+           );
 
   Map<String, dynamic> toMap() => {
     'workspaceName': workspaceName,
@@ -86,6 +102,8 @@ class ProjectEvidenceSnapshot {
     'blockedTasks': blockedTasks,
     'recentlyCompletedTasks': recentlyCompletedTasks,
     'verificationCommands': verificationCommands,
+    'workspaceGraph': workspaceGraph.toMap(),
+    'workspaceContext': workspaceContext.toMap(),
     'collectedAt': collectedAt.toIso8601String(),
   };
 }

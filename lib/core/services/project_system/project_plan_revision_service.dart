@@ -628,12 +628,18 @@ class ProjectPlanRevisionService {
       return item;
     }).toList();
     final normalizedMilestones = _normaliseMilestones(desiredMilestones.values);
+    final workspaceGraph = _applyWorkspaceGraph(
+      project.workspaceGraph,
+      proposal.workspaceGraph,
+      now,
+    );
     final revised = project.copyWith(
       criteria: desiredCriteria.values.toList(),
       milestones: normalizedMilestones,
       tasks: tasksById.values.toList(),
       evidence: revisedEvidence,
       memory: memoryProject.memory,
+      workspaceGraph: workspaceGraph,
       openQuestions: questions,
       planHistory: recordRevision
           ? [...project.planHistory, revision]
@@ -673,6 +679,33 @@ class ProjectPlanRevisionService {
       reason: questions.isEmpty
           ? 'Plan revision committed.'
           : questions.first.question,
+    );
+  }
+
+  static ProjectWorkspaceGraph _applyWorkspaceGraph(
+    ProjectWorkspaceGraph existing,
+    ProjectWorkspaceGraph desired,
+    DateTime now,
+  ) {
+    final existingNodes = {for (final node in existing.nodes) node.id: node};
+    final existingEdges = {for (final edge in existing.edges) edge.id: edge};
+    return ProjectWorkspaceGraph(
+      orientation: desired.orientation,
+      nodes: [
+        for (final node in desired.nodes)
+          node.copyWith(
+            createdAt: existingNodes[node.id]?.createdAt ?? now,
+            updatedAt: now,
+          ),
+      ],
+      edges: [
+        for (final edge in desired.edges)
+          edge.copyWith(
+            createdAt: existingEdges[edge.id]?.createdAt ?? now,
+            updatedAt: now,
+          ),
+      ],
+      updatedAt: now,
     );
   }
 
@@ -795,6 +828,8 @@ class ProjectPlanRevisionService {
           _milestoneSignature(after.milestones) ||
       _taskSignature(before.tasks) != _taskSignature(after.tasks) ||
       _memorySignature(before.memory) != _memorySignature(after.memory) ||
+      _workspaceGraphSignature(before.workspaceGraph) !=
+          _workspaceGraphSignature(after.workspaceGraph) ||
       _questionSignature(before.openQuestions) !=
           _questionSignature(after.openQuestions);
 
@@ -870,6 +905,20 @@ class ProjectPlanRevisionService {
             '${item.id}|${item.kind.name}|${item.content}|${item.sourceType.name}|${item.sourceId}|${item.confidence.name}|${item.protected}|${item.active}|${item.supersedesId}|${item.coveredEntryIds.join(',')}',
       )
       .join('||');
+
+  static String _workspaceGraphSignature(ProjectWorkspaceGraph graph) {
+    final nodes = [...graph.nodes]
+      ..sort((a, b) => a.id.compareTo(b.id));
+    final edges = [...graph.edges]
+      ..sort((a, b) => a.id.compareTo(b.id));
+    return [
+      graph.orientation,
+      for (final node in nodes)
+        'node|${node.id}|${node.type}|${node.title}|${node.description}|${node.aliases.join(',')}|${node.tags.join(',')}|${node.references.join(',')}|${node.sourceType.name}|${node.sourceId}|${node.confidence.name}|${node.protected}',
+      for (final edge in edges)
+        'edge|${edge.id}|${edge.sourceNodeId}|${edge.targetNodeId}|${edge.label}|${edge.description}|${edge.sourceType.name}|${edge.sourceId}|${edge.confidence.name}|${edge.protected}',
+    ].join('||');
+  }
 
   static List<String> _criterionChanges(
     List<ProjectCriterion> before,

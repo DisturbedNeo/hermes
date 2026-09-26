@@ -26,6 +26,8 @@ import 'package:hermes/core/services/project_system/project_decision_engine.dart
 import 'package:hermes/core/services/project_system/project_checkpoint.dart';
 import 'package:hermes/core/services/project_system/project_plan_patch.dart';
 import 'package:hermes/core/services/project_system/project_plan_validator.dart';
+import 'package:hermes/core/services/project_system/project_workspace_context_service.dart';
+import 'package:hermes/core/services/project_system/project_workspace_graph_service.dart';
 import 'package:hermes/core/services/project_system/project_state_models.dart';
 import 'package:hermes/core/services/project_system/project_progress_monitor.dart';
 import 'package:hermes/core/services/project_system/project_repository.dart';
@@ -505,6 +507,62 @@ class ProjectWorkflowRuntime {
       updatedAt: DateTime.now(),
     );
     return _persistProject(workspace.rootPath, updated);
+  }
+
+  Future<ProjectDocument> upsertUserWorkspaceNode({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    String? id,
+    required String type,
+    required String title,
+    String description = '',
+    List<String> aliases = const [],
+    List<String> tags = const [],
+    List<String> references = const [],
+    String? sourceId,
+  }) async {
+    final updated = const ProjectWorkspaceGraphService().upsertUserNode(
+      project: snapshot,
+      id: id,
+      type: type,
+      title: title,
+      description: description,
+      aliases: aliases,
+      tags: tags,
+      references: references,
+      sourceId: sourceId,
+    );
+    return _persistProject(
+      workspace.rootPath,
+      updated,
+      checkpoint: ProjectPersistenceCheckpoint.userBoundary,
+    );
+  }
+
+  Future<ProjectDocument> upsertUserWorkspaceEdge({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    String? id,
+    required String sourceNodeId,
+    required String targetNodeId,
+    required String label,
+    String description = '',
+    String? sourceId,
+  }) async {
+    final updated = const ProjectWorkspaceGraphService().upsertUserEdge(
+      project: snapshot,
+      id: id,
+      sourceNodeId: sourceNodeId,
+      targetNodeId: targetNodeId,
+      label: label,
+      description: description,
+      sourceId: sourceId,
+    );
+    return _persistProject(
+      workspace.rootPath,
+      updated,
+      checkpoint: ProjectPersistenceCheckpoint.userBoundary,
+    );
   }
 
   Future<Task?> _loadActiveTask(
@@ -1557,11 +1615,17 @@ class ProjectWorkflowRuntime {
       project: project,
       task: task,
     );
+    final workspaceContext = const ProjectWorkspaceContextService().selectContext(
+      project: project,
+      task: task,
+    );
     return TaskPlanningContext(
       projectGoal: plan.refinedGoal,
       projectTaskTitle: task.title,
       projectTaskObjective: task.objective,
       knownFacts: [...memoryContext.lines, ...task.context],
+      workspaceOrientation: workspaceContext.orientation,
+      workspaceContext: workspaceContext.lines,
       doneCriteria: task.doneCriteria,
       outOfScope: task.outOfScope,
       expectedArtifacts: task.expectedArtifacts
@@ -2686,6 +2750,10 @@ class ProjectWorkflowRuntime {
       project: project,
       task: task,
     );
+    final workspaceContext = const ProjectWorkspaceContextService().selectContext(
+      project: project,
+      task: task,
+    );
     final buffer = StringBuffer()
       ..writeln('Project goal:')
       ..writeln(project.refinedGoal)
@@ -2704,6 +2772,18 @@ class ProjectWorkflowRuntime {
       ..writeln()
       ..writeln('Known project facts:')
       ..writeln(_bulletList([...memoryContext.lines, ...task.context]));
+    if (workspaceContext.orientation.trim().isNotEmpty ||
+        workspaceContext.lines.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Workspace orientation:')
+        ..writeln(workspaceContext.orientation.trim().isEmpty
+            ? '- None specified.'
+            : workspaceContext.orientation)
+        ..writeln()
+        ..writeln('Relevant workspace context:')
+        ..writeln(_bulletList(workspaceContext.lines));
+    }
     return buffer.toString().trim();
   }
 
@@ -2918,6 +2998,50 @@ class ProjectWorkflowService {
     workspace: workspace,
     snapshot: snapshot,
     rawJson: rawJson,
+  );
+
+  Future<ProjectDocument> upsertUserWorkspaceNode({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    String? id,
+    required String type,
+    required String title,
+    String description = '',
+    List<String> aliases = const [],
+    List<String> tags = const [],
+    List<String> references = const [],
+    String? sourceId,
+  }) => _runtime.upsertUserWorkspaceNode(
+    workspace: workspace,
+    snapshot: snapshot,
+    id: id,
+    type: type,
+    title: title,
+    description: description,
+    aliases: aliases,
+    tags: tags,
+    references: references,
+    sourceId: sourceId,
+  );
+
+  Future<ProjectDocument> upsertUserWorkspaceEdge({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    String? id,
+    required String sourceNodeId,
+    required String targetNodeId,
+    required String label,
+    String description = '',
+    String? sourceId,
+  }) => _runtime.upsertUserWorkspaceEdge(
+    workspace: workspace,
+    snapshot: snapshot,
+    id: id,
+    sourceNodeId: sourceNodeId,
+    targetNodeId: targetNodeId,
+    label: label,
+    description: description,
+    sourceId: sourceId,
   );
 
   Future<ProjectDocument> createProject({

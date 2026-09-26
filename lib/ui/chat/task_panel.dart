@@ -283,6 +283,8 @@ class _ProjectBody extends StatelessWidget {
         const SizedBox(height: 12),
         ProjectOutcomeSection(project: project),
         const SizedBox(height: 10),
+        ProjectWorkspaceContextSection(project: project),
+        const SizedBox(height: 10),
         ProjectRevisionSection(project: project, chat: chat),
         const SizedBox(height: 10),
         ProjectRoadmapSection(project: project),

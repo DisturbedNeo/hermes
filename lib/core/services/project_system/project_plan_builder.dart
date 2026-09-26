@@ -75,6 +75,7 @@ class ProjectPlanBuilder {
            : [...triggers],
        _summary = _requiredText(summary, 'summary'),
        _rationale = _requiredText(rationale, 'rationale'),
+       _workspaceOrientation = project.workspaceGraph.orientation,
        _requiresApproval = requiresApproval,
        _approvalReason = approvalReason.trim(),
        _revisionService = revisionService {
@@ -91,6 +92,14 @@ class ProjectPlanBuilder {
       _taskRefs[task.id] = task.id;
       if (!_isTerminal(task)) _tasks[task.id] = task;
     }
+    for (final node in project.workspaceGraph.nodes) {
+      _workspaceNodes[node.id] = node;
+      _workspaceNodeRefs[node.id] = node.id;
+    }
+    for (final edge in project.workspaceGraph.edges) {
+      _workspaceEdges[edge.id] = edge;
+      _workspaceEdgeRefs[edge.id] = edge.id;
+    }
   }
 
   final ProjectState _project;
@@ -102,15 +111,20 @@ class ProjectPlanBuilder {
   final Map<String, ProjectMilestone> _milestones = {};
   final Map<String, ProjectTaskNode> _tasks = {};
   final Map<String, ProjectTaskNode> _taskCatalog = {};
+  final Map<String, ProjectWorkspaceNode> _workspaceNodes = {};
+  final Map<String, ProjectWorkspaceEdge> _workspaceEdges = {};
   final Map<String, String> _criterionRefs = {};
   final Map<String, String> _milestoneRefs = {};
   final Map<String, String> _taskRefs = {};
+  final Map<String, String> _workspaceNodeRefs = {};
+  final Map<String, String> _workspaceEdgeRefs = {};
   final Set<String> _deferredTaskIds = {};
   final Set<String> _obsoleteTaskIds = {};
   final Set<String> _splitTaskIds = {};
   final List<ProjectMemoryEntry> _memoryAdditions = [];
   final List<PendingProjectQuestion> _openQuestions = [];
   final Map<String, _AppliedCommand> _commands = {};
+  String _workspaceOrientation;
   String _summary;
   String _rationale;
   final bool _requiresApproval;
@@ -138,6 +152,330 @@ class ProjectPlanBuilder {
   String milestoneIdFor(String reference) => _resolveMilestone(reference);
 
   String taskIdFor(String reference) => _resolveTask(reference);
+
+  String workspaceNodeIdFor(String reference) =>
+      _resolveWorkspaceNode(reference);
+
+  String workspaceEdgeIdFor(String reference) =>
+      _resolveWorkspaceEdge(reference);
+
+  void setWorkspaceOrientation(String orientation, {String? commandId}) {
+    final fingerprint = _encode({
+      'op': 'set_workspace_orientation',
+      'orientation': orientation.trim(),
+    });
+    _idempotent(commandId, fingerprint, () {
+      _workspaceOrientation = _boundedText(
+        orientation,
+        'orientation',
+        maxLength: 4000,
+        allowEmpty: true,
+      );
+    });
+  }
+
+  List<String> addWorkspaceNodes(
+    Iterable<ProjectWorkspaceNodeSpec> specs, {
+    String? commandId,
+  }) {
+    final values = [...specs];
+    if (values.isEmpty) {
+      throw _error(
+        'missing_workspace_nodes',
+        'nodes',
+        'At least one workspace node is required.',
+      );
+    }
+    final fingerprint = _encode({
+      'op': 'add_workspace_nodes',
+      'nodes': [for (final spec in values) _workspaceNodeSpecMap(spec)],
+    });
+    return _idempotent(
+      commandId,
+      fingerprint,
+      () => _atomic(() {
+        final ids = <String>[];
+        for (var index = 0; index < values.length; index++) {
+          final spec = values[index];
+          final type = _boundedText(spec.type, 'nodes[$index].type');
+          final title = _boundedText(spec.title, 'nodes[$index].title');
+          final id = _newId('workspace_node', _workspaceNodes.keys);
+          final reference = _claimWorkspaceReference(
+            spec.ref,
+            namespace: 'workspace_node',
+            fallback: _slug(title),
+          );
+          final now = _now;
+          _workspaceNodes[id] = ProjectWorkspaceNode(
+            id: id,
+            type: type.toLowerCase(),
+            title: title,
+            description: _boundedText(
+              spec.description,
+              'nodes[$index].description',
+              maxLength: 2000,
+              allowEmpty: true,
+            ),
+            aliases: _boundedList(spec.aliases, 'nodes[$index].aliases'),
+            tags: _boundedList(spec.tags, 'nodes[$index].tags'),
+            references: _boundedList(
+              spec.references,
+              'nodes[$index].references',
+            ),
+            sourceType: ProjectWorkspaceSourceType.planner,
+            sourceId: 'plan_revision_${_project.nextRevision}',
+            confidence: ProjectWorkspaceConfidence.inferred,
+            createdAt: now,
+            updatedAt: now,
+          );
+          ids.add(id);
+          _workspaceNodeRefs[reference] = id;
+          _workspaceNodeRefs[id] = id;
+        }
+        return ids;
+      }),
+    );
+  }
+
+  String updateWorkspaceNode(
+    String reference, {
+    String? type,
+    String? title,
+    String? description,
+    List<String>? aliases,
+    List<String>? tags,
+    List<String>? references,
+    String? commandId,
+  }) {
+    final id = _resolveWorkspaceNode(reference);
+    final existing = _workspaceNodes[id]!;
+    if (existing.protected) {
+      throw _error(
+        'protected_workspace_node',
+        'node',
+        'Protected workspace node $id cannot be changed by the planner.',
+      );
+    }
+    final fingerprint = _encode({
+      'op': 'update_workspace_node',
+      'id': id,
+      'type': type,
+      'title': title,
+      'description': description,
+      'aliases': aliases,
+      'tags': tags,
+      'references': references,
+    });
+    return _idempotent(commandId, fingerprint, () {
+      _workspaceNodes[id] = existing.copyWith(
+        type: type == null
+            ? existing.type
+            : _boundedText(type, 'type').toLowerCase(),
+        title: title == null ? existing.title : _boundedText(title, 'title'),
+        description: description == null
+            ? existing.description
+            : _boundedText(
+                description,
+                'description',
+                maxLength: 2000,
+                allowEmpty: true,
+              ),
+        aliases: aliases == null
+            ? existing.aliases
+            : _boundedList(aliases, 'aliases'),
+        tags: tags == null ? existing.tags : _boundedList(tags, 'tags'),
+        references: references == null
+            ? existing.references
+            : _boundedList(references, 'references'),
+        updatedAt: _now,
+      );
+      return id;
+    });
+  }
+
+  List<String> addWorkspaceEdges(
+    Iterable<ProjectWorkspaceEdgeSpec> specs, {
+    String? commandId,
+  }) {
+    final values = [...specs];
+    if (values.isEmpty) {
+      throw _error(
+        'missing_workspace_edges',
+        'edges',
+        'At least one workspace edge is required.',
+      );
+    }
+    final fingerprint = _encode({
+      'op': 'add_workspace_edges',
+      'edges': [for (final spec in values) _workspaceEdgeSpecMap(spec)],
+    });
+    return _idempotent(
+      commandId,
+      fingerprint,
+      () => _atomic(() {
+        final ids = <String>[];
+        for (var index = 0; index < values.length; index++) {
+          final spec = values[index];
+          final source = _resolveWorkspaceNode(spec.sourceRef);
+          final target = _resolveWorkspaceNode(spec.targetRef);
+          if (source == target) {
+            throw _error(
+              'self_workspace_edge',
+              'edges[$index]',
+              'A workspace edge cannot point from a node to itself.',
+            );
+          }
+          final label = _boundedText(
+            spec.label,
+            'edges[$index].label',
+            maxLength: 200,
+          );
+          final id = _newId('workspace_edge', _workspaceEdges.keys);
+          final reference = _claimWorkspaceReference(
+            spec.ref,
+            namespace: 'workspace_edge',
+            fallback: _slug(label),
+            existing: _workspaceEdgeRefs,
+          );
+          final now = _now;
+          _workspaceEdges[id] = ProjectWorkspaceEdge(
+            id: id,
+            sourceNodeId: source,
+            targetNodeId: target,
+            label: label,
+            description: _boundedText(
+              spec.description,
+              'edges[$index].description',
+              maxLength: 1000,
+              allowEmpty: true,
+            ),
+            sourceType: ProjectWorkspaceSourceType.planner,
+            sourceId: 'plan_revision_${_project.nextRevision}',
+            confidence: ProjectWorkspaceConfidence.inferred,
+            createdAt: now,
+            updatedAt: now,
+          );
+          ids.add(id);
+          _workspaceEdgeRefs[reference] = id;
+          _workspaceEdgeRefs[id] = id;
+        }
+        return ids;
+      }),
+    );
+  }
+
+  String updateWorkspaceEdge(
+    String reference, {
+    String? sourceReference,
+    String? targetReference,
+    String? label,
+    String? description,
+    String? commandId,
+  }) {
+    final id = _resolveWorkspaceEdge(reference);
+    final existing = _workspaceEdges[id]!;
+    if (existing.protected) {
+      throw _error(
+        'protected_workspace_edge',
+        'edge',
+        'Protected workspace edge $id cannot be changed by the planner.',
+      );
+    }
+    final fingerprint = _encode({
+      'op': 'update_workspace_edge',
+      'id': id,
+      'source': sourceReference,
+      'target': targetReference,
+      'label': label,
+      'description': description,
+    });
+    return _idempotent(commandId, fingerprint, () {
+      final source = sourceReference == null
+          ? existing.sourceNodeId
+          : _resolveWorkspaceNode(sourceReference);
+      final target = targetReference == null
+          ? existing.targetNodeId
+          : _resolveWorkspaceNode(targetReference);
+      if (source == target) {
+        throw _error(
+          'self_workspace_edge',
+          'edge',
+          'A workspace edge cannot point from a node to itself.',
+        );
+      }
+      _workspaceEdges[id] = existing.copyWith(
+        sourceNodeId: source,
+        targetNodeId: target,
+        label: label == null
+            ? existing.label
+            : _boundedText(label, 'label', maxLength: 200),
+        description: description == null
+            ? existing.description
+            : _boundedText(
+                description,
+                'description',
+                maxLength: 1000,
+                allowEmpty: true,
+              ),
+        updatedAt: _now,
+      );
+      return id;
+    });
+  }
+
+  void removeWorkspaceNode(String reference, {String? commandId}) {
+    final fingerprint = _encode({
+      'op': 'remove_workspace_node',
+      'reference': reference.trim(),
+    });
+    _idempotent(commandId, fingerprint, () {
+      final id = _resolveWorkspaceNode(reference);
+      final node = _workspaceNodes[id]!;
+      if (node.protected) {
+        throw _error(
+          'protected_workspace_node',
+          'node',
+          'Protected workspace node $id cannot be removed by the planner.',
+        );
+      }
+      final related = _workspaceEdges.values
+          .where((edge) => edge.sourceNodeId == id || edge.targetNodeId == id)
+          .toList();
+      if (related.any((edge) => edge.protected)) {
+        throw _error(
+          'protected_workspace_edge',
+          'node',
+          'A node with protected relationships cannot be removed by the planner.',
+        );
+      }
+      _workspaceNodes.remove(id);
+      _workspaceNodeRefs.removeWhere((key, value) => value == id);
+      for (final edge in related) {
+        _workspaceEdges.remove(edge.id);
+        _workspaceEdgeRefs.removeWhere((key, value) => value == edge.id);
+      }
+    });
+  }
+
+  void removeWorkspaceEdge(String reference, {String? commandId}) {
+    final fingerprint = _encode({
+      'op': 'remove_workspace_edge',
+      'reference': reference.trim(),
+    });
+    _idempotent(commandId, fingerprint, () {
+      final id = _resolveWorkspaceEdge(reference);
+      final edge = _workspaceEdges[id]!;
+      if (edge.protected) {
+        throw _error(
+          'protected_workspace_edge',
+          'edge',
+          'Protected workspace edge $id cannot be removed by the planner.',
+        );
+      }
+      _workspaceEdges.remove(id);
+      _workspaceEdgeRefs.removeWhere((key, value) => value == id);
+    });
+  }
 
   /// Runs several draft operations as one atomic command. Batch planning
   /// tools use this so a later invalid item cannot leave earlier items from
@@ -987,6 +1325,12 @@ class ProjectPlanBuilder {
     deferredTaskIds: _deferredTaskIds.toList(),
     obsoleteTaskIds: _obsoleteTaskIds.toList(),
     memoryAdditions: [..._memoryAdditions],
+    workspaceGraph: ProjectWorkspaceGraph(
+      orientation: _workspaceOrientation,
+      nodes: _workspaceNodes.values.toList(),
+      edges: _workspaceEdges.values.toList(),
+      updatedAt: _now,
+    ),
     openQuestions: [..._project.openQuestions, ..._openQuestions],
     requiresApproval: _requiresApproval,
     approvalReason: _approvalReason,
@@ -1206,6 +1550,57 @@ class ProjectPlanBuilder {
     return id;
   }
 
+  String _resolveWorkspaceNode(String reference) {
+    final key = reference.trim();
+    final id = _workspaceNodeRefs[key];
+    if (id == null || !_workspaceNodes.containsKey(id)) {
+      throw _error(
+        'unknown_reference',
+        'workspace_node',
+        'Workspace node reference $reference does not exist.',
+      );
+    }
+    return id;
+  }
+
+  String _resolveWorkspaceEdge(String reference) {
+    final key = reference.trim();
+    final id = _workspaceEdgeRefs[key];
+    if (id == null || !_workspaceEdges.containsKey(id)) {
+      throw _error(
+        'unknown_reference',
+        'workspace_edge',
+        'Workspace edge reference $reference does not exist.',
+      );
+    }
+    return id;
+  }
+
+  String _claimWorkspaceReference(
+    String reference, {
+    required String namespace,
+    required String fallback,
+    Map<String, String>? existing,
+  }) {
+    final occupied =
+        existing ??
+        (namespace == 'workspace_edge'
+            ? _workspaceEdgeRefs
+            : _workspaceNodeRefs);
+    var candidate = reference.trim();
+    if (candidate.isEmpty) {
+      candidate = _uniqueReference(_slug(fallback), occupied.keys);
+    }
+    if (occupied.containsKey(candidate)) {
+      throw _error(
+        'duplicate_reference',
+        '$namespace.ref',
+        '$namespace reference $candidate already exists.',
+      );
+    }
+    return candidate;
+  }
+
   void _ensureDependencyCanComplete(String dependencyId, String field) {
     final dependency = _taskCatalog[dependencyId];
     if (dependency == null) return;
@@ -1385,14 +1780,23 @@ class ProjectPlanBuilder {
     final milestones = Map<String, ProjectMilestone>.from(_milestones);
     final tasks = Map<String, ProjectTaskNode>.from(_tasks);
     final catalog = Map<String, ProjectTaskNode>.from(_taskCatalog);
+    final workspaceNodes = Map<String, ProjectWorkspaceNode>.from(
+      _workspaceNodes,
+    );
+    final workspaceEdges = Map<String, ProjectWorkspaceEdge>.from(
+      _workspaceEdges,
+    );
     final criterionRefs = Map<String, String>.from(_criterionRefs);
     final milestoneRefs = Map<String, String>.from(_milestoneRefs);
     final taskRefs = Map<String, String>.from(_taskRefs);
+    final workspaceNodeRefs = Map<String, String>.from(_workspaceNodeRefs);
+    final workspaceEdgeRefs = Map<String, String>.from(_workspaceEdgeRefs);
     final deferred = {..._deferredTaskIds};
     final obsolete = {..._obsoleteTaskIds};
     final split = {..._splitTaskIds};
     final memories = [..._memoryAdditions];
     final questions = [..._openQuestions];
+    final workspaceOrientation = _workspaceOrientation;
     final commands = Map<String, _AppliedCommand>.from(_commands);
     try {
       return action();
@@ -1409,6 +1813,12 @@ class ProjectPlanBuilder {
       _taskCatalog
         ..clear()
         ..addAll(catalog);
+      _workspaceNodes
+        ..clear()
+        ..addAll(workspaceNodes);
+      _workspaceEdges
+        ..clear()
+        ..addAll(workspaceEdges);
       _criterionRefs
         ..clear()
         ..addAll(criterionRefs);
@@ -1418,6 +1828,12 @@ class ProjectPlanBuilder {
       _taskRefs
         ..clear()
         ..addAll(taskRefs);
+      _workspaceNodeRefs
+        ..clear()
+        ..addAll(workspaceNodeRefs);
+      _workspaceEdgeRefs
+        ..clear()
+        ..addAll(workspaceEdgeRefs);
       _deferredTaskIds
         ..clear()
         ..addAll(deferred);
@@ -1433,6 +1849,7 @@ class ProjectPlanBuilder {
       _openQuestions
         ..clear()
         ..addAll(questions);
+      _workspaceOrientation = workspaceOrientation;
       _commands
         ..clear()
         ..addAll(commands);
@@ -1499,6 +1916,47 @@ class ProjectPlanBuilder {
     return text;
   }
 
+  static String _boundedText(
+    String value,
+    String field, {
+    int maxLength = 200,
+    bool allowEmpty = false,
+  }) {
+    final text = value.trim();
+    if (!allowEmpty && text.isEmpty) {
+      throw _error('missing_$field', field, 'A non-empty $field is required.');
+    }
+    if (text.length > maxLength) {
+      throw _error(
+        'workspace_field_too_long',
+        field,
+        '$field must be at most $maxLength characters.',
+      );
+    }
+    return text;
+  }
+
+  static List<String> _boundedList(Iterable<String> values, String field) {
+    final result = _cleanStrings(values);
+    if (result.length > 20) {
+      throw _error(
+        'workspace_collection_too_large',
+        field,
+        '$field may contain at most 20 values.',
+      );
+    }
+    for (final value in result) {
+      if (value.length > 200) {
+        throw _error(
+          'workspace_field_too_long',
+          field,
+          'Values in $field must be at most 200 characters.',
+        );
+      }
+    }
+    return result;
+  }
+
   static ProjectPlanBuilderException _error(
     String code,
     String path,
@@ -1532,6 +1990,28 @@ class ProjectPlanBuilder {
           'kind': artifact.kind,
         },
     ],
+  };
+
+  static Map<String, dynamic> _workspaceNodeSpecMap(
+    ProjectWorkspaceNodeSpec spec,
+  ) => {
+    'ref': spec.ref,
+    'type': spec.type,
+    'title': spec.title,
+    'description': spec.description,
+    'aliases': spec.aliases,
+    'tags': spec.tags,
+    'references': spec.references,
+  };
+
+  static Map<String, dynamic> _workspaceEdgeSpecMap(
+    ProjectWorkspaceEdgeSpec spec,
+  ) => {
+    'ref': spec.ref,
+    'sourceRef': spec.sourceRef,
+    'targetRef': spec.targetRef,
+    'label': spec.label,
+    'description': spec.description,
   };
 
   static String _workingDirectory(Map<String, dynamic> values) {

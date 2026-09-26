@@ -1,5 +1,6 @@
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/services/project_system/project_scheduler.dart';
+import 'package:hermes/core/services/project_system/project_workspace_context_service.dart';
 
 /// A bounded read model for project planning.
 ///
@@ -11,22 +12,33 @@ class ProjectViewService {
     this.defaultMaxItems = 20,
     this.maxTextLength = 600,
     ProjectScheduler scheduler = const ProjectScheduler(),
-  }) : _scheduler = scheduler;
+    ProjectWorkspaceContextService workspaceContextService =
+        const ProjectWorkspaceContextService(),
+  }) : _scheduler = scheduler,
+       _workspaceContextService = workspaceContextService;
 
   final int defaultMaxItems;
   final int maxTextLength;
   final ProjectScheduler _scheduler;
+  final ProjectWorkspaceContextService _workspaceContextService;
 
   Map<String, dynamic> query(
     ProjectState project, {
     String? taskRef,
     String? criterionRef,
     String? memoryQuery,
+    String? workspaceQuery,
     int? maxItems,
   }) {
     final limit = _limit(maxItems ?? defaultMaxItems);
     final schedule = _scheduler.refreshReadiness(project);
     final tasks = _boundedTasks(project, limit);
+    final workspace = _workspaceContextService.selectContext(
+      project: project,
+      maxCharacters: 6000,
+      maxSelectedNodes: limit,
+      maxSelectedEdges: limit * 2,
+    );
     final result = <String, dynamic>{
       'project': {
         'id': project.id,
@@ -53,6 +65,11 @@ class ProjectViewService {
                 .take(limit))
           _milestoneSummary(milestone, limit),
       ],
+      'workspaceGraph': {
+        ...workspace.toMap(maxItems: limit),
+        'node_count': project.workspaceGraph.nodes.length,
+        'edge_count': project.workspaceGraph.edges.length,
+      },
       'tasks': [for (final task in tasks) _taskSummary(task, schedule, limit)],
       'ready_tasks': [
         for (final task in _scheduler.orderedReadyTasks(project).take(limit))
@@ -128,6 +145,27 @@ class ProjectViewService {
       ].take(limit).toList();
     }
 
+    final workspaceSearch = workspaceQuery?.trim();
+    if (workspaceSearch != null && workspaceSearch.isNotEmpty) {
+      final query = workspaceSearch.toLowerCase();
+      final matchingNodes = [
+        for (final node in project.workspaceGraph.nodes)
+          if ('${node.id} ${node.type} ${node.title} ${node.description} '
+                  '${node.aliases.join(' ')} ${node.tags.join(' ')} '
+                  '${node.references.join(' ')}'
+              .toLowerCase()
+              .contains(query))
+            node,
+      ]..sort((a, b) => a.id.compareTo(b.id));
+      result['workspace_detail'] = [
+        for (final node in matchingNodes.take(limit))
+          {
+            ..._workspaceNodeSummary(node, limit),
+            'relationships': _workspaceRelationships(project, node.id, limit),
+          },
+      ];
+    }
+
     return result;
   }
 
@@ -160,6 +198,54 @@ class ProjectViewService {
     'status': criterion.status.name,
     'verification_mode': criterion.verificationMode.name,
   };
+
+  Map<String, dynamic> _workspaceNodeSummary(
+    ProjectWorkspaceNode node,
+    int limit,
+  ) => {
+    'id': node.id,
+    'type': _text(node.type),
+    'title': _text(node.title),
+    'description': _text(node.description),
+    'aliases': [for (final item in node.aliases.take(limit)) _text(item)],
+    'tags': [for (final item in node.tags.take(limit)) _text(item)],
+    'references': [for (final item in node.references.take(limit)) _text(item)],
+    'source': node.sourceType.name,
+    'source_id': node.sourceId == null ? null : _text(node.sourceId!),
+    'confidence': node.confidence.name,
+    'protected': node.protected,
+  };
+
+  Map<String, dynamic> _workspaceEdgeSummary(ProjectWorkspaceEdge edge) => {
+    'id': edge.id,
+    'source_node_id': edge.sourceNodeId,
+    'target_node_id': edge.targetNodeId,
+    'label': _text(edge.label),
+    'description': _text(edge.description),
+    'source': edge.sourceType.name,
+    'source_id': edge.sourceId == null ? null : _text(edge.sourceId!),
+    'confidence': edge.confidence.name,
+    'protected': edge.protected,
+  };
+
+  List<Map<String, dynamic>> _workspaceRelationships(
+    ProjectState project,
+    String nodeId,
+    int limit,
+  ) {
+    final relationships = [
+      for (final edge in project.workspaceGraph.edges)
+        if (edge.sourceNodeId == nodeId || edge.targetNodeId == nodeId)
+          _workspaceEdgeSummary(edge),
+    ];
+    relationships.sort((a, b) {
+      final label = (a['label'] as String).compareTo(b['label'] as String);
+      return label != 0
+          ? label
+          : (a['id'] as String).compareTo(b['id'] as String);
+    });
+    return relationships.take(limit * 2).toList();
+  }
 
   Map<String, dynamic> _criterionDetail(
     ProjectState project,

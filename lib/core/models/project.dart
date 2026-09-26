@@ -1,6 +1,7 @@
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:hermes/core/helpers/sentinel.dart' show kSentinel, resolve;
 import 'package:hermes/core/models/planning_metrics.dart';
+import 'package:hermes/core/models/project_workspace_graph.dart';
 import 'package:hermes/core/models/task.dart';
 import 'package:hermes/core/services/project_system/project_task_models.dart';
 import 'package:hermes/core/serialization/json_hooks.dart';
@@ -20,6 +21,15 @@ export 'task.dart'
         TaskStatusWire;
 export '../services/project_system/project_task_models.dart'
     show ProjectTaskNode, ProjectTaskRef, ProjectTaskSpec;
+export 'project_workspace_graph.dart'
+    show
+        ProjectWorkspaceConfidence,
+        ProjectWorkspaceEdge,
+        ProjectWorkspaceEdgeSpec,
+        ProjectWorkspaceGraph,
+        ProjectWorkspaceNode,
+        ProjectWorkspaceNodeSpec,
+        ProjectWorkspaceSourceType;
 
 part 'project.mapper.dart';
 part 'project_json_hooks.dart';
@@ -602,6 +612,7 @@ class ProjectDesiredPlan with ProjectDesiredPlanMappable {
   final List<String> obsoleteTaskIds;
   final List<ProjectMemoryEntry> memoryAdditions;
   final List<ProjectMemorySupersession> memorySupersessions;
+  final ProjectWorkspaceGraph workspaceGraph;
   final List<PendingProjectQuestion> openQuestions;
   final bool requiresApproval;
   final String approvalReason;
@@ -622,11 +633,13 @@ class ProjectDesiredPlan with ProjectDesiredPlanMappable {
     this.obsoleteTaskIds = const [],
     this.memoryAdditions = const [],
     this.memorySupersessions = const [],
+    ProjectWorkspaceGraph? workspaceGraph,
     this.openQuestions = const [],
     this.requiresApproval = false,
     this.approvalReason = '',
     required this.createdAt,
-  }) : tasks = List.unmodifiable(tasks);
+  }) : tasks = List.unmodifiable(tasks),
+       workspaceGraph = workspaceGraph ?? ProjectWorkspaceGraph.empty();
 
   ProjectDesiredPlan copyWith({
     int? revision,
@@ -643,6 +656,7 @@ class ProjectDesiredPlan with ProjectDesiredPlanMappable {
     List<String>? obsoleteTaskIds,
     List<ProjectMemoryEntry>? memoryAdditions,
     List<ProjectMemorySupersession>? memorySupersessions,
+    ProjectWorkspaceGraph? workspaceGraph,
     List<PendingProjectQuestion>? openQuestions,
     bool? requiresApproval,
     String? approvalReason,
@@ -663,6 +677,7 @@ class ProjectDesiredPlan with ProjectDesiredPlanMappable {
     obsoleteTaskIds: obsoleteTaskIds ?? this.obsoleteTaskIds,
     memoryAdditions: memoryAdditions ?? this.memoryAdditions,
     memorySupersessions: memorySupersessions ?? this.memorySupersessions,
+    workspaceGraph: workspaceGraph ?? this.workspaceGraph,
     openQuestions: openQuestions ?? this.openQuestions,
     requiresApproval: requiresApproval ?? this.requiresApproval,
     approvalReason: approvalReason ?? this.approvalReason,
@@ -822,6 +837,7 @@ class ProjectState with ProjectStateMappable {
   final List<ProjectMilestone> milestones;
   @MappableField(hook: JsonObjectListHook())
   final List<ProjectMemoryEntry> memory;
+  final ProjectWorkspaceGraph workspaceGraph;
   @MappableField(hook: JsonObjectListHook())
   final List<ProjectPlanRevision> planHistory;
   final PendingProjectPlanApproval? pendingPlanApproval;
@@ -886,6 +902,7 @@ class ProjectState with ProjectStateMappable {
     List<ProjectEvidence>? evidence,
     List<ProjectMilestone>? milestones,
     List<ProjectMemoryEntry>? memory,
+    ProjectWorkspaceGraph? workspaceGraph,
     List<ProjectPlanRevision>? planHistory,
     this.pendingPlanApproval,
     this.pendingReplanTriggers = const [],
@@ -914,6 +931,7 @@ class ProjectState with ProjectStateMappable {
        evidence = evidence ?? const [],
        milestones = milestones ?? const [],
        memory = memory ?? const [],
+       workspaceGraph = workspaceGraph ?? ProjectWorkspaceGraph.empty(),
        planHistory =
            planHistory ??
            [
@@ -993,6 +1011,7 @@ class ProjectState with ProjectStateMappable {
     List<ProjectEvidence>? evidence,
     List<ProjectMilestone>? milestones,
     List<ProjectMemoryEntry>? memory,
+    ProjectWorkspaceGraph? workspaceGraph,
     List<ProjectPlanRevision>? planHistory,
     Object? pendingPlanApproval = kSentinel,
     List<ProjectPlanRevisionTrigger>? pendingReplanTriggers,
@@ -1040,6 +1059,7 @@ class ProjectState with ProjectStateMappable {
       evidence: evidence ?? this.evidence,
       milestones: milestones ?? this.milestones,
       memory: memory ?? this.memory,
+      workspaceGraph: workspaceGraph ?? this.workspaceGraph,
       planHistory: planHistory ?? this.planHistory,
       pendingPlanApproval: resolve(
         pendingPlanApproval,

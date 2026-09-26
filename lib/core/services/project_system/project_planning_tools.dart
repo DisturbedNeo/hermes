@@ -129,6 +129,12 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
     _retryTaskDefinition,
     _addCheckDefinition,
     _addNoteDefinition,
+    _setWorkspaceOrientationDefinition,
+    _addWorkspaceNodesDefinition,
+    _updateWorkspaceNodeDefinition,
+    _addWorkspaceEdgesDefinition,
+    _updateWorkspaceEdgeDefinition,
+    _removeWorkspaceItemDefinition,
     _requestDecisionDefinition,
     _previewDefinition,
     _commitDefinition,
@@ -160,6 +166,24 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
       'plan_retry_task' => _retryTask(arguments, commandId),
       'plan_add_check' => _addCheck(arguments, commandId),
       'plan_add_note' => _addNote(arguments, commandId),
+      'plan_set_workspace_orientation' => _setWorkspaceOrientation(
+        arguments,
+        commandId,
+      ),
+      'plan_add_workspace_nodes' => _addWorkspaceNodes(arguments, commandId),
+      'plan_update_workspace_node' => _updateWorkspaceNode(
+        arguments,
+        commandId,
+      ),
+      'plan_add_workspace_edges' => _addWorkspaceEdges(arguments, commandId),
+      'plan_update_workspace_edge' => _updateWorkspaceEdge(
+        arguments,
+        commandId,
+      ),
+      'plan_remove_workspace_item' => _removeWorkspaceItem(
+        arguments,
+        commandId,
+      ),
       'plan_request_user_decision' => _requestDecision(arguments, commandId),
       'plan_preview' => _preview(arguments),
       'plan_commit' => await _commit(arguments),
@@ -187,6 +211,7 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
       'task_ref',
       'criterion_ref',
       'memory_query',
+      'workspace_query',
       'max_items',
     });
     final preview = context.builder.preview(
@@ -201,6 +226,10 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
       arguments['memory_query'],
       'memory_query',
     );
+    final workspaceQuery = _optionalString(
+      arguments['workspace_query'],
+      'workspace_query',
+    );
     final view = context.viewService.query(
       _projectForDetail(preview),
       taskRef: _draftTaskReference(
@@ -212,6 +241,7 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
         preview.proposal.criteria.map((item) => item.id),
       ),
       memoryQuery: memoryQuery,
+      workspaceQuery: workspaceQuery,
       maxItems: _optionalInt(arguments['max_items'], 'max_items'),
     );
     return {...view, 'draft': _draftSummary(preview)};
@@ -253,6 +283,7 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
       milestones: preview.proposal.milestones,
       tasks: tasks,
       memory: [...context.project.memory, ...preview.proposal.memoryAdditions],
+      workspaceGraph: preview.proposal.workspaceGraph,
       openQuestions: preview.proposal.openQuestions,
     );
   }
@@ -676,6 +707,205 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
     };
   }
 
+  Map<String, dynamic> _setWorkspaceOrientation(
+    Map<String, dynamic> arguments,
+    String? commandId,
+  ) {
+    _ensureOpen();
+    _keys(arguments, const {'orientation'});
+    context.builder.setWorkspaceOrientation(
+      _optionalString(arguments['orientation'], 'orientation') ?? '',
+      commandId: commandId,
+    );
+    return {
+      'orientation': context.builder
+          .preview(workspaceRoot: context.workspaceRoot)
+          .proposal
+          .workspaceGraph
+          .orientation,
+    };
+  }
+
+  Map<String, dynamic> _addWorkspaceNodes(
+    Map<String, dynamic> arguments,
+    String? commandId,
+  ) {
+    _ensureOpen();
+    _keys(arguments, const {'nodes'});
+    final values = _maps(arguments['nodes'], 'nodes', required: true);
+    final specs = <ProjectWorkspaceNodeSpec>[];
+    for (var index = 0; index < values.length; index++) {
+      final value = values[index];
+      _rejectPersistentFields(value, 'nodes[$index]');
+      _keys(value, const {
+        'ref',
+        'type',
+        'title',
+        'description',
+        'aliases',
+        'tags',
+        'references',
+      });
+      specs.add(
+        ProjectWorkspaceNodeSpec(
+          ref: _optionalString(value['ref'], 'nodes[$index].ref') ?? '',
+          type: _optionalString(value['type'], 'nodes[$index].type') ?? '',
+          title: _optionalString(value['title'], 'nodes[$index].title') ?? '',
+          description:
+              _optionalString(
+                value['description'],
+                'nodes[$index].description',
+              ) ??
+              '',
+          aliases: _stringList(value['aliases'], 'nodes[$index].aliases'),
+          tags: _stringList(value['tags'], 'nodes[$index].tags'),
+          references: _stringList(
+            value['references'],
+            'nodes[$index].references',
+          ),
+        ),
+      );
+    }
+    final ids = context.builder.addWorkspaceNodes(specs, commandId: commandId);
+    return {
+      'nodes': [
+        for (final id in ids) {'id': id},
+      ],
+    };
+  }
+
+  Map<String, dynamic> _updateWorkspaceNode(
+    Map<String, dynamic> arguments,
+    String? commandId,
+  ) {
+    _ensureOpen();
+    _keys(arguments, const {
+      'node',
+      'type',
+      'title',
+      'description',
+      'aliases',
+      'tags',
+      'references',
+    });
+    final id = context.builder.updateWorkspaceNode(
+      _requiredString(arguments['node'], 'node'),
+      type: _optionalString(arguments['type'], 'type'),
+      title: _optionalString(arguments['title'], 'title'),
+      description: _optionalString(arguments['description'], 'description'),
+      aliases: arguments.containsKey('aliases')
+          ? _stringList(arguments['aliases'], 'aliases')
+          : null,
+      tags: arguments.containsKey('tags')
+          ? _stringList(arguments['tags'], 'tags')
+          : null,
+      references: arguments.containsKey('references')
+          ? _stringList(arguments['references'], 'references')
+          : null,
+      commandId: commandId,
+    );
+    return {
+      'node': {'id': id},
+    };
+  }
+
+  Map<String, dynamic> _addWorkspaceEdges(
+    Map<String, dynamic> arguments,
+    String? commandId,
+  ) {
+    _ensureOpen();
+    _keys(arguments, const {'edges'});
+    final values = _maps(arguments['edges'], 'edges', required: true);
+    final specs = <ProjectWorkspaceEdgeSpec>[];
+    for (var index = 0; index < values.length; index++) {
+      final value = values[index];
+      _rejectPersistentFields(value, 'edges[$index]');
+      _keys(value, const {
+        'ref',
+        'source_ref',
+        'target_ref',
+        'label',
+        'description',
+      });
+      specs.add(
+        ProjectWorkspaceEdgeSpec(
+          ref: _optionalString(value['ref'], 'edges[$index].ref') ?? '',
+          sourceRef: _requiredString(
+            value['source_ref'],
+            'edges[$index].source_ref',
+          ),
+          targetRef: _requiredString(
+            value['target_ref'],
+            'edges[$index].target_ref',
+          ),
+          label: _requiredString(value['label'], 'edges[$index].label'),
+          description:
+              _optionalString(
+                value['description'],
+                'edges[$index].description',
+              ) ??
+              '',
+        ),
+      );
+    }
+    final ids = context.builder.addWorkspaceEdges(specs, commandId: commandId);
+    return {
+      'edges': [
+        for (final id in ids) {'id': id},
+      ],
+    };
+  }
+
+  Map<String, dynamic> _updateWorkspaceEdge(
+    Map<String, dynamic> arguments,
+    String? commandId,
+  ) {
+    _ensureOpen();
+    _keys(arguments, const {
+      'edge',
+      'source_ref',
+      'target_ref',
+      'label',
+      'description',
+    });
+    final id = context.builder.updateWorkspaceEdge(
+      _requiredString(arguments['edge'], 'edge'),
+      sourceReference: _optionalString(arguments['source_ref'], 'source_ref'),
+      targetReference: _optionalString(arguments['target_ref'], 'target_ref'),
+      label: _optionalString(arguments['label'], 'label'),
+      description: _optionalString(arguments['description'], 'description'),
+      commandId: commandId,
+    );
+    return {
+      'edge': {'id': id},
+    };
+  }
+
+  Map<String, dynamic> _removeWorkspaceItem(
+    Map<String, dynamic> arguments,
+    String? commandId,
+  ) {
+    _ensureOpen();
+    _keys(arguments, const {'kind', 'ref'});
+    final kind = _requiredString(arguments['kind'], 'kind');
+    final reference = _requiredString(arguments['ref'], 'ref');
+    switch (kind) {
+      case 'node':
+        context.builder.removeWorkspaceNode(reference, commandId: commandId);
+      case 'edge':
+        context.builder.removeWorkspaceEdge(reference, commandId: commandId);
+      default:
+        throw _argument(
+          'invalid_argument',
+          'kind',
+          'kind must be either node or edge.',
+        );
+    }
+    return {
+      'removed': {'kind': kind, 'ref': reference},
+    };
+  }
+
   Map<String, dynamic> _requestDecision(
     Map<String, dynamic> arguments,
     String? commandId,
@@ -760,6 +990,7 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
         title: context.draftTitle,
         refinedGoal: context.draftRefinedGoal,
         constraints: context.draftConstraints,
+        workspaceGraph: preview.proposal.workspaceGraph,
       );
     } else {
       final committed = await context.builder.commit(
@@ -772,6 +1003,7 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
         title: context.draftTitle,
         refinedGoal: context.draftRefinedGoal,
         constraints: context.draftConstraints,
+        workspaceGraph: committed.project.workspaceGraph,
       );
       response['changed'] = committed.result.changed;
       response['awaiting_approval'] = committed.result.awaitingApproval;
@@ -947,6 +1179,11 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
       'obsolete_tasks': proposal.obsoleteTaskIds,
       'split_tasks': context.builder.splitTaskIds,
       'added_notes': [for (final item in proposal.memoryAdditions) item.id],
+      'workspace': {
+        'orientation': proposal.workspaceGraph.orientation,
+        'node_count': proposal.workspaceGraph.nodes.length,
+        'edge_count': proposal.workspaceGraph.edges.length,
+      },
       'pending_questions': [for (final item in proposal.openQuestions) item.id],
     };
   }
@@ -1195,6 +1432,12 @@ Map<String, dynamic> _stringArraySchema() => {
   'items': {'type': 'string'},
 };
 
+Map<String, dynamic> _workspaceStringArraySchema() => {
+  'type': 'array',
+  'maxItems': 20,
+  'items': {'type': 'string', 'maxLength': 200},
+};
+
 Map<String, dynamic> _enumSchema(Iterable<String> values) => {
   'type': 'string',
   'enum': values.toList(),
@@ -1260,6 +1503,7 @@ final _projectViewDefinition = ToolDefinition(
       'task_ref': {'type': 'string'},
       'criterion_ref': {'type': 'string'},
       'memory_query': {'type': 'string'},
+      'workspace_query': {'type': 'string'},
       'max_items': {'type': 'integer', 'minimum': 1, 'maximum': 100},
     },
   ),
@@ -1497,6 +1741,124 @@ final _addNoteDefinition = ToolDefinition(
       'source_id': {'type': 'string'},
     },
     required: const ['kind', 'content'],
+  ),
+);
+
+final _setWorkspaceOrientationDefinition = ToolDefinition(
+  id: 'plan_set_workspace_orientation',
+  name: 'Set workspace orientation',
+  description:
+      'Set a concise, domain-neutral explanation of how the project workspace fits together.',
+  schema: _schema(
+    properties: {
+      'orientation': {'type': 'string', 'maxLength': 4000},
+    },
+    required: const ['orientation'],
+  ),
+);
+
+final _addWorkspaceNodesDefinition = ToolDefinition(
+  id: 'plan_add_workspace_nodes',
+  name: 'Add workspace nodes',
+  description:
+      'Add conceptual or artifact nodes such as components, characters, sources, requirements, or workflow stages.',
+  schema: _schema(
+    properties: {
+      'nodes': {
+        'type': 'array',
+        'minItems': 1,
+        'maxItems': 20,
+        'items': _schema(
+          properties: {
+            'ref': {'type': 'string', 'maxLength': 200},
+            'type': {'type': 'string', 'maxLength': 200},
+            'title': {'type': 'string', 'maxLength': 200},
+            'description': {'type': 'string', 'maxLength': 2000},
+            'aliases': _workspaceStringArraySchema(),
+            'tags': _workspaceStringArraySchema(),
+            'references': _workspaceStringArraySchema(),
+          },
+          required: const ['type', 'title'],
+        ),
+      },
+    },
+    required: const ['nodes'],
+  ),
+);
+
+final _updateWorkspaceNodeDefinition = ToolDefinition(
+  id: 'plan_update_workspace_node',
+  name: 'Update workspace node',
+  description: 'Update one existing, non-protected workspace node.',
+  schema: _schema(
+    properties: {
+      'node': {'type': 'string'},
+      'type': {'type': 'string', 'maxLength': 200},
+      'title': {'type': 'string', 'maxLength': 200},
+      'description': {'type': 'string', 'maxLength': 2000},
+      'aliases': _workspaceStringArraySchema(),
+      'tags': _workspaceStringArraySchema(),
+      'references': _workspaceStringArraySchema(),
+    },
+    required: const ['node'],
+  ),
+);
+
+final _addWorkspaceEdgesDefinition = ToolDefinition(
+  id: 'plan_add_workspace_edges',
+  name: 'Add workspace edges',
+  description: 'Add labeled relationships between workspace node references.',
+  schema: _schema(
+    properties: {
+      'edges': {
+        'type': 'array',
+        'minItems': 1,
+        'maxItems': 40,
+        'items': _schema(
+          properties: {
+            'ref': {'type': 'string', 'maxLength': 200},
+            'source_ref': {'type': 'string', 'maxLength': 200},
+            'target_ref': {'type': 'string', 'maxLength': 200},
+            'label': {'type': 'string', 'maxLength': 200},
+            'description': {'type': 'string', 'maxLength': 1000},
+          },
+          required: const ['source_ref', 'target_ref', 'label'],
+        ),
+      },
+    },
+    required: const ['edges'],
+  ),
+);
+
+final _updateWorkspaceEdgeDefinition = ToolDefinition(
+  id: 'plan_update_workspace_edge',
+  name: 'Update workspace edge',
+  description: 'Update one existing, non-protected workspace relationship.',
+  schema: _schema(
+    properties: {
+      'edge': {'type': 'string'},
+      'source_ref': {'type': 'string'},
+      'target_ref': {'type': 'string'},
+      'label': {'type': 'string', 'maxLength': 200},
+      'description': {'type': 'string', 'maxLength': 1000},
+    },
+    required: const ['edge'],
+  ),
+);
+
+final _removeWorkspaceItemDefinition = ToolDefinition(
+  id: 'plan_remove_workspace_item',
+  name: 'Remove workspace item',
+  description: 'Remove one non-protected workspace node or edge.',
+  schema: _schema(
+    properties: {
+      'kind': {
+        'type': 'string',
+        'enum': const ['node', 'edge'],
+      },
+      'ref': {'type': 'string'},
+    },
+    required: const ['kind', 'ref'],
   ),
 );
 

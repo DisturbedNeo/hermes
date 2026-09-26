@@ -50,6 +50,14 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
     opt: true,
     def: const [],
   );
+  static String _$workspaceOrientation(TaskPlanningContext v) =>
+      v.workspaceOrientation;
+  static const Field<TaskPlanningContext, String> _f$workspaceOrientation =
+      Field('workspaceOrientation', _$workspaceOrientation, opt: true, def: '');
+  static List<String> _$workspaceContext(TaskPlanningContext v) =>
+      v.workspaceContext;
+  static const Field<TaskPlanningContext, List<String>> _f$workspaceContext =
+      Field('workspaceContext', _$workspaceContext, opt: true, def: const []);
   static List<String> _$doneCriteria(TaskPlanningContext v) => v.doneCriteria;
   static const Field<TaskPlanningContext, List<String>> _f$doneCriteria = Field(
     'doneCriteria',
@@ -126,6 +134,8 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
     #projectTaskTitle: _f$projectTaskTitle,
     #projectTaskObjective: _f$projectTaskObjective,
     #knownFacts: _f$knownFacts,
+    #workspaceOrientation: _f$workspaceOrientation,
+    #workspaceContext: _f$workspaceContext,
     #doneCriteria: _f$doneCriteria,
     #outOfScope: _f$outOfScope,
     #expectedArtifacts: _f$expectedArtifacts,
@@ -144,6 +154,8 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
       projectTaskTitle: data.dec(_f$projectTaskTitle),
       projectTaskObjective: data.dec(_f$projectTaskObjective),
       knownFacts: data.dec(_f$knownFacts),
+      workspaceOrientation: data.dec(_f$workspaceOrientation),
+      workspaceContext: data.dec(_f$workspaceContext),
       doneCriteria: data.dec(_f$doneCriteria),
       outOfScope: data.dec(_f$outOfScope),
       expectedArtifacts: data.dec(_f$expectedArtifacts),

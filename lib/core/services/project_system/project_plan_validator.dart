@@ -1,5 +1,6 @@
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/task.dart';
+import 'package:hermes/core/services/project_system/project_workspace_context_service.dart';
 import 'package:path/path.dart' as path;
 
 enum ProjectPlanValidationSeverity { warning, error }
@@ -96,6 +97,11 @@ class ProjectPlanValidator {
     _validateUniqueIds(
       proposal.memoryAdditions.map((item) => item.id),
       'memoryAdditions',
+      issues,
+    );
+    _validateWorkspaceGraph(
+      project.workspaceGraph,
+      proposal.workspaceGraph,
       issues,
     );
 
@@ -638,6 +644,275 @@ class ProjectPlanValidator {
       }
       index++;
     }
+  }
+
+  static void _validateWorkspaceGraph(
+    ProjectWorkspaceGraph existing,
+    ProjectWorkspaceGraph desired,
+    List<ProjectPlanValidationIssue> issues,
+  ) {
+    void issue(String code, String fieldPath, String message) {
+      issues.add(
+        ProjectPlanValidationIssue(
+          code: code,
+          path: fieldPath,
+          message: message,
+        ),
+      );
+    }
+
+    if (desired.nodes.length > ProjectWorkspaceContextService.maxNodes) {
+      issue(
+        'workspace_node_limit',
+        'workspaceGraph.nodes',
+        'A workspace graph may contain at most ${ProjectWorkspaceContextService.maxNodes} nodes.',
+      );
+    }
+    if (desired.edges.length > ProjectWorkspaceContextService.maxEdges) {
+      issue(
+        'workspace_edge_limit',
+        'workspaceGraph.edges',
+        'A workspace graph may contain at most ${ProjectWorkspaceContextService.maxEdges} edges.',
+      );
+    }
+    if (desired.orientation.length > 4000) {
+      issue(
+        'workspace_orientation_too_long',
+        'workspaceGraph.orientation',
+        'Workspace orientation must be at most 4000 characters.',
+      );
+    }
+    _validateUniqueIds(
+      desired.nodes.map((node) => node.id),
+      'workspaceGraph.nodes',
+      issues,
+    );
+    _validateUniqueIds(
+      desired.edges.map((edge) => edge.id),
+      'workspaceGraph.edges',
+      issues,
+    );
+
+    final nodeIds = desired.nodes.map((node) => node.id).toSet();
+    for (var index = 0; index < desired.nodes.length; index++) {
+      final node = desired.nodes[index];
+      final fieldPath = 'workspaceGraph.nodes[$index]';
+      if (node.id.trim().isEmpty || node.id.length > 200) {
+        issue(
+          'workspace_node_id_invalid',
+          '$fieldPath.id',
+          'Workspace node IDs are required and limited to 200 characters.',
+        );
+      }
+      if (node.type.trim().isEmpty) {
+        issue(
+          'missing_workspace_node_type',
+          '$fieldPath.type',
+          'Node type is required.',
+        );
+      }
+      if (node.title.trim().isEmpty) {
+        issue(
+          'missing_workspace_node_title',
+          '$fieldPath.title',
+          'Node title is required.',
+        );
+      }
+      if (node.type.length > 200 ||
+          node.title.length > 200 ||
+          node.description.length > 2000) {
+        issue(
+          'workspace_node_field_too_long',
+          fieldPath,
+          'Workspace node type and title must be at most 200 characters and description at most 2000 characters.',
+        );
+      }
+      if (node.aliases.length > 20 ||
+          node.tags.length > 20 ||
+          node.references.length > 20) {
+        issue(
+          'workspace_node_collection_too_large',
+          fieldPath,
+          'Workspace node aliases, tags, and references may contain at most 20 values each.',
+        );
+      }
+      if (node.sourceId != null && node.sourceId!.length > 200) {
+        issue(
+          'workspace_node_source_id_too_long',
+          '$fieldPath.sourceId',
+          'Workspace node source IDs must be at most 200 characters.',
+        );
+      }
+      for (final values in <(String, List<String>)>[
+        ('aliases', node.aliases),
+        ('tags', node.tags),
+        ('references', node.references),
+      ]) {
+        if (values.$2.any((value) => value.length > 200)) {
+          issue(
+            'workspace_node_collection_value_too_long',
+            '$fieldPath.${values.$1}',
+            'Workspace ${values.$1} values must be at most 200 characters.',
+          );
+        }
+      }
+    }
+    for (var index = 0; index < desired.edges.length; index++) {
+      final edge = desired.edges[index];
+      final fieldPath = 'workspaceGraph.edges[$index]';
+      if (edge.id.trim().isEmpty || edge.id.length > 200) {
+        issue(
+          'workspace_edge_id_invalid',
+          '$fieldPath.id',
+          'Workspace edge IDs are required and limited to 200 characters.',
+        );
+      }
+      if (!nodeIds.contains(edge.sourceNodeId)) {
+        issue(
+          'workspace_edge_missing_source',
+          '$fieldPath.sourceNodeId',
+          'Workspace edge source ${edge.sourceNodeId} does not exist.',
+        );
+      }
+      if (!nodeIds.contains(edge.targetNodeId)) {
+        issue(
+          'workspace_edge_missing_target',
+          '$fieldPath.targetNodeId',
+          'Workspace edge target ${edge.targetNodeId} does not exist.',
+        );
+      }
+      if (edge.sourceNodeId == edge.targetNodeId) {
+        issue(
+          'workspace_edge_self_reference',
+          fieldPath,
+          'A workspace edge cannot point from a node to itself.',
+        );
+      }
+      if (edge.label.trim().isEmpty ||
+          edge.label.length > 200 ||
+          edge.description.length > 1000) {
+        issue(
+          'workspace_edge_field_invalid',
+          fieldPath,
+          'Workspace edge labels are required and limited to 200 characters; descriptions are limited to 1000 characters.',
+        );
+      }
+      if (edge.sourceId != null && edge.sourceId!.length > 200) {
+        issue(
+          'workspace_edge_source_id_too_long',
+          '$fieldPath.sourceId',
+          'Workspace edge source IDs must be at most 200 characters.',
+        );
+      }
+    }
+
+    final existingNodes = {for (final node in existing.nodes) node.id: node};
+    final desiredNodes = {for (final node in desired.nodes) node.id: node};
+    for (final node in existing.nodes.where((node) => node.protected)) {
+      final replacement = desiredNodes[node.id];
+      if (replacement == null) {
+        issue(
+          'protected_workspace_node_removed',
+          'workspaceGraph.nodes',
+          'Protected workspace node ${node.id} cannot be removed by the planner.',
+        );
+      } else if (!_sameWorkspaceNodeContent(node, replacement)) {
+        issue(
+          'protected_workspace_node_changed',
+          'workspaceGraph.nodes',
+          'Protected workspace node ${node.id} cannot be changed by the planner.',
+        );
+      }
+    }
+    final existingEdges = {for (final edge in existing.edges) edge.id: edge};
+    final desiredEdges = {for (final edge in desired.edges) edge.id: edge};
+    for (final edge in existing.edges.where((edge) => edge.protected)) {
+      final replacement = desiredEdges[edge.id];
+      if (replacement == null) {
+        issue(
+          'protected_workspace_edge_removed',
+          'workspaceGraph.edges',
+          'Protected workspace edge ${edge.id} cannot be removed by the planner.',
+        );
+      } else if (!_sameWorkspaceEdgeContent(edge, replacement)) {
+        issue(
+          'protected_workspace_edge_changed',
+          'workspaceGraph.edges',
+          'Protected workspace edge ${edge.id} cannot be changed by the planner.',
+        );
+      }
+    }
+    for (final node in desired.nodes) {
+      final previous = existingNodes[node.id];
+      if (previous == null && node.protected) {
+        issue(
+          'planner_protected_workspace_node',
+          'workspaceGraph.nodes',
+          'Planner-created workspace nodes cannot be marked protected.',
+        );
+      } else if (previous != null && !previous.protected && node.protected) {
+        issue(
+          'planner_protected_workspace_node',
+          'workspaceGraph.nodes',
+          'Planner cannot promote inferred workspace node ${node.id} to protected.',
+        );
+      }
+    }
+    for (final edge in desired.edges) {
+      final previous = existingEdges[edge.id];
+      if (previous == null && edge.protected) {
+        issue(
+          'planner_protected_workspace_edge',
+          'workspaceGraph.edges',
+          'Planner-created workspace edges cannot be marked protected.',
+        );
+      } else if (previous != null && !previous.protected && edge.protected) {
+        issue(
+          'planner_protected_workspace_edge',
+          'workspaceGraph.edges',
+          'Planner cannot promote inferred workspace edge ${edge.id} to protected.',
+        );
+      }
+    }
+  }
+
+  static bool _sameWorkspaceNodeContent(
+    ProjectWorkspaceNode first,
+    ProjectWorkspaceNode second,
+  ) =>
+      first.id == second.id &&
+      first.type == second.type &&
+      first.title == second.title &&
+      first.description == second.description &&
+      _sameStringLists(first.aliases, second.aliases) &&
+      _sameStringLists(first.tags, second.tags) &&
+      _sameStringLists(first.references, second.references) &&
+      first.sourceType == second.sourceType &&
+      first.sourceId == second.sourceId &&
+      first.confidence == second.confidence &&
+      first.protected == second.protected;
+
+  static bool _sameWorkspaceEdgeContent(
+    ProjectWorkspaceEdge first,
+    ProjectWorkspaceEdge second,
+  ) =>
+      first.id == second.id &&
+      first.sourceNodeId == second.sourceNodeId &&
+      first.targetNodeId == second.targetNodeId &&
+      first.label == second.label &&
+      first.description == second.description &&
+      first.sourceType == second.sourceType &&
+      first.sourceId == second.sourceId &&
+      first.confidence == second.confidence &&
+      first.protected == second.protected;
+
+  static bool _sameStringLists(
+    Iterable<String> first,
+    Iterable<String> second,
+  ) {
+    final left = first.toSet();
+    final right = second.toSet();
+    return left.length == right.length && left.containsAll(right);
   }
 
   static bool _isInsideWorkspace(String workspaceRoot, String value) {
