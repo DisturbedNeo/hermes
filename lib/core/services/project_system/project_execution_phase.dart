@@ -1,7 +1,8 @@
 part of 'project_workflow_service.dart';
 
 /// Executes bounded project runs and owns the task execution protocol.
-extension ProjectExecutionPhase on ProjectWorkflowRuntime {
+mixin ProjectExecutionPhase on ProjectWorkflowRuntime {
+  @override
   Future<ProjectCommandResult> _runProjectCore({
     required ChatClient client,
     required WorkspaceAttachment workspace,

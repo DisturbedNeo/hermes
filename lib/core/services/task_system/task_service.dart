@@ -214,28 +214,8 @@ const ToolDefinition _requestTaskReplanToolDefinition = ToolDefinition(
   },
 );
 
-/// Stable UI/application boundary for task commands.
-///
-/// The implementation lives in the private runtime below; inheritance keeps
-/// the public service name without an object that forwards every operation.
-class TaskService extends _TaskRuntimeService {
+class TaskService {
   TaskService({
-    required super.toolService,
-    required super.sandbox,
-    super.repository,
-    super.persistenceStore,
-    super.recoveryService = const TaskRecoveryService(),
-    super.planner = const TaskPlanningService(),
-    super.planningCoordinator,
-    super.modelCompletion,
-    super.toolExecution,
-    super.structuredOutput = const StructuredPlanningOutputService(),
-    super.profileService = const WorkspaceDiscoveryProfileService(),
-  });
-}
-
-class _TaskRuntimeService {
-  _TaskRuntimeService({
     required ToolService toolService,
     required WorkspaceSandbox sandbox,
     TaskRepository? repository,

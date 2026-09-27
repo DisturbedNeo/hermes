@@ -1,7 +1,8 @@
 part of 'project_workflow_service.dart';
 
 /// Coordinates readiness refresh with the aggregate write boundary.
-extension ProjectPersistencePhase on ProjectWorkflowRuntime {
+mixin ProjectPersistencePhase on ProjectWorkflowRuntime {
+  @override
   Future<ProjectDocument> _persistProject(
     String workspaceRoot,
     ProjectDocument project, {

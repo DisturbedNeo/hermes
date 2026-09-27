@@ -77,25 +77,6 @@ class ProjectRepository {
     return summaries;
   }
 
-  /// Loads the most recently updated project in [workspaceRoot],
-  /// optionally filtered by [chatSessionId]. Returns `null` when no
-  /// matching project exists.
-  Future<PersistedSnapshot<ProjectDocument>?> loadLatestProject(
-    String workspaceRoot, {
-    String? chatSessionId,
-  }) async {
-    final projects = await listProjects(
-      workspaceRoot,
-      chatSessionId: chatSessionId,
-    );
-    if (projects.isEmpty) return null;
-    return loadProject(
-      workspaceRoot,
-      projects.first.id,
-      chatSessionId: chatSessionId,
-    );
-  }
-
   // ── Loading ──────────────────────────────────────────────────────────
 
   /// Loads a single project by [projectId] from the given workspace root.
@@ -136,22 +117,6 @@ class ProjectRepository {
       projectId,
       chatSessionId: chatSessionId,
     );
-  }
-
-  /// Reads only the snapshot envelope revision. The project document is not
-  /// decoded, so this is suitable for optimistic-concurrency checks.
-  Future<PersistedRevision?> revisionOf(
-    String workspaceRoot,
-    String projectId, {
-    bool assumeLocked = false,
-  }) async {
-    if (!assumeLocked) {
-      return _coordinator.synchronized(
-        workspaceRoot,
-        () => revisionOf(workspaceRoot, projectId, assumeLocked: true),
-      );
-    }
-    return revisionOfUnlocked(workspaceRoot, projectId);
   }
 
   Future<PersistedSnapshot<ProjectDocument>?> _loadProjectSnapshotUnlocked(

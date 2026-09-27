@@ -1,7 +1,7 @@
 part of 'project_workflow_service.dart';
 
 /// Owns project creation and initial-plan validation policy.
-extension ProjectPlanningPhase on ProjectWorkflowRuntime {
+mixin ProjectPlanningPhase on ProjectWorkflowRuntime {
   Future<ProjectDocument> createProject({
     required WorkspaceAttachment workspace,
     required String userPrompt,
@@ -457,6 +457,7 @@ extension ProjectPlanningPhase on ProjectWorkflowRuntime {
     return issues;
   }
 
+  @override
   String _initialPlanningBlockerMessage(List<Map<String, String>> issues) {
     final details = issues
         .map((issue) {

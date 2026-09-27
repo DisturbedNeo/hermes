@@ -63,11 +63,7 @@ int taskStepLimit(TaskEffort effort) => switch (effort) {
 };
 
 /// Owns the runtime graph used by the project use cases.
-///
-/// The implementation is kept separate from the application-facing
-/// [ProjectWorkflowService] name so phase extensions can remain grouped by
-/// concern.
-class ProjectWorkflowRuntime {
+abstract class ProjectWorkflowRuntime {
   ProjectWorkflowRuntime({
     required TaskService taskService,
     ProjectRepository? repository,
@@ -127,6 +123,41 @@ class ProjectWorkflowRuntime {
        recoveryHandler = ProjectRecoveryHandler(
          recoveryService ?? const ProjectRecoveryService(),
        );
+
+  Future<ProjectCommandResult> _runProjectCore({
+    required ChatClient client,
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String baseSystemPrompt,
+    required int maxNewTasks,
+    int? maxIterations,
+    bool requirePhaseApproval = false,
+    CompactionSettings? compactionSettings,
+    int? contextLimitTokens,
+    ProjectCompactionStatusSink? onCompactionStatus,
+    TaskModelOutputSink? onModelOutput,
+    ProjectTaskSnapshotSink? onTaskUpdated,
+    CancellationToken? cancellationToken,
+    QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
+    ProjectPlanApprovalPolicy planApprovalPolicy =
+        ProjectPlanApprovalPolicy.highRiskOnly,
+  });
+
+  Future<ProjectCommandResult> _recoverProjectCore({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    ProjectTaskSnapshotSink? onTaskUpdated,
+  });
+
+  Future<ProjectDocument> _persistProject(
+    String workspaceRoot,
+    ProjectDocument project, {
+    ProjectPersistenceContext? persistenceContext,
+    ProjectPersistenceCheckpoint checkpoint =
+        ProjectPersistenceCheckpoint.runtime,
+  });
+
+  String _initialPlanningBlockerMessage(List<Map<String, String>> issues);
 
   final TaskService _taskService;
   final ProjectRepository _repository;
@@ -1615,10 +1646,8 @@ class ProjectWorkflowRuntime {
       project: project,
       task: task,
     );
-    final workspaceContext = const ProjectWorkspaceContextService().selectContext(
-      project: project,
-      task: task,
-    );
+    final workspaceContext = const ProjectWorkspaceContextService()
+        .selectContext(project: project, task: task);
     return TaskPlanningContext(
       projectGoal: plan.refinedGoal,
       projectTaskTitle: task.title,
@@ -2750,10 +2779,8 @@ class ProjectWorkflowRuntime {
       project: project,
       task: task,
     );
-    final workspaceContext = const ProjectWorkspaceContextService().selectContext(
-      project: project,
-      task: task,
-    );
+    final workspaceContext = const ProjectWorkspaceContextService()
+        .selectContext(project: project, task: task);
     final buffer = StringBuffer()
       ..writeln('Project goal:')
       ..writeln(project.refinedGoal)
@@ -2777,9 +2804,11 @@ class ProjectWorkflowRuntime {
       buffer
         ..writeln()
         ..writeln('Workspace orientation:')
-        ..writeln(workspaceContext.orientation.trim().isEmpty
-            ? '- None specified.'
-            : workspaceContext.orientation)
+        ..writeln(
+          workspaceContext.orientation.trim().isEmpty
+              ? '- None specified.'
+              : workspaceContext.orientation,
+        )
         ..writeln()
         ..writeln('Relevant workspace context:')
         ..writeln(_bulletList(workspaceContext.lines));
@@ -2860,10 +2889,12 @@ Ask the user only for destructive or irreversible actions, credentials/secrets/a
 }
 
 /// Application-facing project use-case boundary.
-///
-/// The runtime owns the implementation; this named subclass preserves the
-/// public service type without adding a forwarding object around it.
-class ProjectWorkflowService extends ProjectWorkflowRuntime {
+class ProjectWorkflowService extends ProjectWorkflowRuntime
+    with
+        ProjectExecutionPhase,
+        ProjectPlanningPhase,
+        ProjectPersistencePhase,
+        ProjectCommandPhase {
   ProjectWorkflowService({
     required super.taskService,
     super.repository,
@@ -2885,131 +2916,6 @@ class ProjectWorkflowService extends ProjectWorkflowRuntime {
     super.completion,
     super.recoveryService,
   });
-
-  // Phase operations are extensions on the runtime so they can stay split by
-  // concern. These small adapters make that extension-based implementation
-  // available through the public service type as ordinary methods.
-  Future<ProjectDocument> createProject({
-    required WorkspaceAttachment workspace,
-    required String userPrompt,
-    String? chatSessionId,
-    ChatClient? client,
-    String baseSystemPrompt = '',
-    int? maxIterations,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-    QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
-  }) => (this as ProjectWorkflowRuntime).createProject(
-    workspace: workspace,
-    userPrompt: userPrompt,
-    chatSessionId: chatSessionId,
-    client: client,
-    baseSystemPrompt: baseSystemPrompt,
-    maxIterations: maxIterations,
-    onModelOutput: onModelOutput,
-    cancellationToken: cancellationToken,
-    questionAutonomy: questionAutonomy,
-  );
-
-  Future<ProjectDocument> retryRecoveryIncident({
-    required WorkspaceAttachment workspace,
-    required ProjectDocument snapshot,
-    required String incidentId,
-  }) => (this as ProjectWorkflowRuntime).retryRecoveryIncident(
-    workspace: workspace,
-    snapshot: snapshot,
-    incidentId: incidentId,
-  );
-
-  Future<ProjectDocument> answerOpenQuestion({
-    required WorkspaceAttachment workspace,
-    required ProjectDocument snapshot,
-    required String answer,
-  }) => (this as ProjectWorkflowRuntime).answerOpenQuestion(
-    workspace: workspace,
-    snapshot: snapshot,
-    answer: answer,
-  );
-
-  Future<ProjectDocument> addUserContext({
-    required WorkspaceAttachment workspace,
-    required ProjectDocument snapshot,
-    required String text,
-  }) => (this as ProjectWorkflowRuntime).addUserContext(
-    workspace: workspace,
-    snapshot: snapshot,
-    text: text,
-  );
-
-  Future<ProjectDocument> requestScopeChange({
-    required WorkspaceAttachment workspace,
-    required ProjectDocument snapshot,
-    required String context,
-  }) => (this as ProjectWorkflowRuntime).requestScopeChange(
-    workspace: workspace,
-    snapshot: snapshot,
-    context: context,
-  );
-
-  Future<ProjectDocument> compactMemory({
-    required WorkspaceAttachment workspace,
-    required ProjectDocument snapshot,
-    required List<String> coveredEntryIds,
-    required String summary,
-  }) => (this as ProjectWorkflowRuntime).compactMemory(
-    workspace: workspace,
-    snapshot: snapshot,
-    coveredEntryIds: coveredEntryIds,
-    summary: summary,
-  );
-
-  Future<ProjectDocument> pauseProject({
-    required WorkspaceAttachment workspace,
-    required ProjectDocument snapshot,
-  }) => (this as ProjectWorkflowRuntime).pauseProject(
-    workspace: workspace,
-    snapshot: snapshot,
-  );
-
-  Future<ProjectDocument> clearTaskBlocker({
-    required WorkspaceAttachment workspace,
-    required ProjectDocument snapshot,
-  }) => (this as ProjectWorkflowRuntime).clearTaskBlocker(
-    workspace: workspace,
-    snapshot: snapshot,
-  );
-
-  Future<ProjectDocument> approvePlanRevision({
-    required WorkspaceAttachment workspace,
-    required ProjectDocument snapshot,
-  }) => (this as ProjectWorkflowRuntime).approvePlanRevision(
-    workspace: workspace,
-    snapshot: snapshot,
-  );
-
-  Future<ProjectDocument> rejectPlanRevision({
-    required WorkspaceAttachment workspace,
-    required ProjectDocument snapshot,
-  }) => (this as ProjectWorkflowRuntime).rejectPlanRevision(
-    workspace: workspace,
-    snapshot: snapshot,
-  );
-
-  Future<ProjectDocument> cancelProject({
-    required WorkspaceAttachment workspace,
-    required ProjectDocument snapshot,
-  }) => (this as ProjectWorkflowRuntime).cancelProject(
-    workspace: workspace,
-    snapshot: snapshot,
-  );
-
-  Future<ProjectDocument> stopProject({
-    required WorkspaceAttachment workspace,
-    required ProjectDocument snapshot,
-  }) => (this as ProjectWorkflowRuntime).stopProject(
-    workspace: workspace,
-    snapshot: snapshot,
-  );
 }
 
 class _ProjectTaskValidation {

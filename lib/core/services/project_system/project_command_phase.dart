@@ -1,7 +1,8 @@
 part of 'project_workflow_service.dart';
 
 /// Owns user-facing project commands and interrupted-run recovery.
-extension ProjectCommandPhase on ProjectWorkflowRuntime {
+mixin ProjectCommandPhase on ProjectWorkflowRuntime {
+  @override
   Future<ProjectCommandResult> _recoverProjectCore({
     required WorkspaceAttachment workspace,
     required ProjectDocument snapshot,

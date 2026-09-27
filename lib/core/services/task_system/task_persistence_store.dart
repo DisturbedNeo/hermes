@@ -1,5 +1,4 @@
 import 'package:hermes/core/models/task.dart';
-import 'package:hermes/core/models/workspace.dart';
 import 'package:hermes/core/services/persistence_contracts.dart';
 import 'package:hermes/core/services/task_system/task_repository.dart';
 import 'package:hermes/core/services/task_system/task_summary.dart';
@@ -62,9 +61,6 @@ class TaskPersistenceStore {
     projectId: projectId,
   );
 
-  Future<PersistedRevision?> revisionOf(String workspaceRoot, String taskId) =>
-      _repository.revisionOf(workspaceRoot, taskId);
-
   Future<int> deleteForChatSession(
     String workspaceRoot, {
     required String chatSessionId,
@@ -83,18 +79,4 @@ class TaskPersistenceStore {
 
   Future<bool> delete(String workspaceRoot, Task task) =>
       _repository.deleteTask(workspaceRoot, task.id);
-
-  Future<Task?> loadForWorkspace(
-    WorkspaceAttachment workspace,
-    String taskId, {
-    String? chatSessionId,
-    String? projectId,
-    bool includeHistory = true,
-  }) async => (await load(
-    workspace.rootPath,
-    taskId,
-    chatSessionId: chatSessionId,
-    projectId: projectId,
-    includeHistory: includeHistory,
-  ))?.value;
 }

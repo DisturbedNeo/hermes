@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:hermes/core/models/project.dart';
 import 'package:hermes/core/models/workspace.dart';
-import 'package:hermes/core/services/chat/chat_client.dart';
 import 'package:hermes/core/services/persistence_contracts.dart';
 import 'package:hermes/core/services/project_system/orchestration_contracts.dart';
 import 'package:hermes/core/services/project_system/project_run_loop.dart';
@@ -61,7 +60,10 @@ class ProjectCommandService {
     ProjectExecutionRequest request, {
     required ProjectExecutionPort port,
   }) => _withProjectCommand(request.workspace, request.snapshot, () async {
-    final readOnly = await _ensureCurrentSnapshot(request);
+    final readOnly = await _ensureCurrentSnapshot(
+      request.workspace,
+      request.snapshot,
+    );
     if (readOnly != null) {
       return ProjectCommandResult(
         project: request.snapshot,
@@ -94,13 +96,8 @@ class ProjectCommandService {
     required ProjectRecoveryPort port,
   }) => _withProjectCommand(request.workspace, request.snapshot, () async {
     final readOnly = await _ensureCurrentSnapshot(
-      ProjectExecutionRequest(
-        client: _NoopChatClient(),
-        workspace: request.workspace,
-        snapshot: request.snapshot,
-        baseSystemPrompt: '',
-        maxNewTasks: 0,
-      ),
+      request.workspace,
+      request.snapshot,
     );
     if (readOnly != null) {
       return ProjectCommandResult(
@@ -118,24 +115,22 @@ class ProjectCommandService {
   });
 
   Future<ProjectPersistenceDiagnostics?> _ensureCurrentSnapshot(
-    ProjectExecutionRequest request,
+    WorkspaceAttachment workspace,
+    ProjectDocument snapshot,
   ) async {
-    final checked = await _stateStore.checkRevisions(
-      request.workspace,
-      request.snapshot,
-    );
+    final checked = await _stateStore.checkRevisions(workspace, snapshot);
     final diagnostics = checked.diagnostics;
     if (diagnostics.isReadOnly) return diagnostics;
     if (checked.projectRevision == null) return null;
     final currentProjectRevision = checked.projectRevision!.revision;
-    if (currentProjectRevision != request.snapshot.persistenceRevision) {
+    if (currentProjectRevision != snapshot.persistenceRevision) {
       throw StaleSnapshotException(
-        path: '.agent/projects/${request.snapshot.id}/project.json',
-        expectedRevision: request.snapshot.persistenceRevision,
+        path: '.agent/projects/${snapshot.id}/project.json',
+        expectedRevision: snapshot.persistenceRevision,
         actualRevision: currentProjectRevision,
       );
     }
-    for (final task in request.snapshot.tasks) {
+    for (final task in snapshot.tasks) {
       final revision = checked.taskRevisions[task.id]?.revision;
       if (revision == null) {
         throw StaleSnapshotException(
@@ -171,9 +166,4 @@ class ProjectCommandService {
       }
     }, zoneValues: {_zoneKey: true});
   }
-}
-
-class _NoopChatClient implements ChatClient {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

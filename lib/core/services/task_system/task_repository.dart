@@ -199,23 +199,6 @@ class TaskRepository {
     };
   }
 
-  /// Reads only the snapshot envelope revision. The task document and run
-  /// history are not decoded, so this is suitable for optimistic-concurrency
-  /// checks.
-  Future<PersistedRevision?> revisionOf(
-    String workspaceRoot,
-    String taskId, {
-    bool assumeLocked = false,
-  }) async {
-    if (!assumeLocked) {
-      return _coordinator.synchronized(
-        workspaceRoot,
-        () => revisionOf(workspaceRoot, taskId, assumeLocked: true),
-      );
-    }
-    return revisionOfUnlocked(workspaceRoot, taskId);
-  }
-
   Future<PersistedSnapshot<Task>?> _loadTaskSnapshotUnlocked(
     String workspaceRoot,
     String taskId, {
