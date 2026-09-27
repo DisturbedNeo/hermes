@@ -19,8 +19,6 @@ class ProjectRepository {
   final AtomicJsonSnapshotStore _snapshots = const AtomicJsonSnapshotStore();
   final WorkspacePersistenceCoordinator _coordinator;
 
-  WorkspacePersistenceCoordinator get coordinator => _coordinator;
-
   // ── Listing ──────────────────────────────────────────────────────────
 
   /// Lists project summaries in the given workspace root, optionally

@@ -27,7 +27,6 @@ import 'package:hermes/core/services/task_system/task_planning_service.dart';
 import 'package:hermes/core/services/task_system/task_planning_coordinator.dart';
 import 'package:hermes/core/services/task_system/task_persistence_store.dart';
 import 'package:hermes/core/services/task_system/task_command_service.dart';
-import 'package:hermes/core/services/task_system/task_execution_engine.dart';
 import 'package:hermes/core/services/task_system/task_step_runner.dart';
 import 'package:hermes/core/services/task_system/task_model_completion_service.dart';
 import 'package:hermes/core/services/task_system/task_tool_execution_service.dart';
@@ -215,272 +214,24 @@ const ToolDefinition _requestTaskReplanToolDefinition = ToolDefinition(
   },
 );
 
-/// Stable UI/application façade for task commands.
+/// Stable UI/application boundary for task commands.
 ///
-/// Model/tool execution, planning, persistence, and recovery live in the
-/// injected runtime and collaborators below. Existing callers keep using
-/// this façade, while focused tests can target those components directly.
-class TaskService {
+/// The implementation lives in the private runtime below; inheritance keeps
+/// the public service name without an object that forwards every operation.
+class TaskService extends _TaskRuntimeService {
   TaskService({
-    required ToolService toolService,
-    required WorkspaceSandbox sandbox,
-    TaskRepository? repository,
-    TaskPersistenceStore? persistenceStore,
-    TaskRecoveryService recoveryService = const TaskRecoveryService(),
-    TaskPlanner planner = const TaskPlanningService(),
-    TaskPlanningCoordinatorPort? planningCoordinator,
-    TaskModelCompletionPort? modelCompletion,
-    TaskToolExecutionPort? toolExecution,
-    StructuredPlanningOutputService structuredOutput =
-        const StructuredPlanningOutputService(),
-    WorkspaceDiscoveryProfileService profileService =
-        const WorkspaceDiscoveryProfileService(),
-  }) : _runtime = _TaskRuntimeService(
-         toolService: toolService,
-         sandbox: sandbox,
-         repository: repository,
-         persistenceStore: persistenceStore,
-         recoveryService: recoveryService,
-         planner: planner,
-         planningCoordinator: planningCoordinator,
-         modelCompletion: modelCompletion,
-         toolExecution: toolExecution,
-         structuredOutput: structuredOutput,
-         profileService: profileService,
-       );
-
-  final _TaskRuntimeService _runtime;
-
-  TaskRepository get repository => _runtime.repository;
-  ToolService get toolService => _runtime.toolService;
-
-  Future<List<TaskSummary>> listTasks(
-    WorkspaceAttachment workspace, {
-    String? chatSessionId,
-    String? projectId,
-  }) => _runtime.listTasks(
-    workspace,
-    chatSessionId: chatSessionId,
-    projectId: projectId,
-  );
-
-  Future<Task?> loadLatestTask(
-    WorkspaceAttachment workspace, {
-    String? chatSessionId,
-    String? projectId,
-  }) => _runtime.loadLatestTask(
-    workspace,
-    chatSessionId: chatSessionId,
-    projectId: projectId,
-  );
-
-  Future<Task?> loadTask(
-    WorkspaceAttachment workspace,
-    String taskId, {
-    String? chatSessionId,
-    String? projectId,
-    bool includeHistory = true,
-  }) => _runtime.loadTask(
-    workspace,
-    taskId,
-    chatSessionId: chatSessionId,
-    projectId: projectId,
-    includeHistory: includeHistory,
-  );
-
-  Future<int> deleteTasksForChatSession(
-    WorkspaceAttachment workspace, {
-    required String chatSessionId,
-  }) => _runtime.deleteTasksForChatSession(
-    workspace,
-    chatSessionId: chatSessionId,
-  );
-
-  Future<int> deleteOrphanedChatTasks(
-    WorkspaceAttachment workspace, {
-    required Set<String> retainedChatSessionIds,
-  }) => _runtime.deleteOrphanedChatTasks(
-    workspace,
-    retainedChatSessionIds: retainedChatSessionIds,
-  );
-
-  Future<Task> updateTaskChatSessionId({
-    required WorkspaceAttachment workspace,
-    required Task snapshot,
-    required String chatSessionId,
-  }) => _runtime.updateTaskChatSessionId(
-    workspace: workspace,
-    snapshot: snapshot,
-    chatSessionId: chatSessionId,
-  );
-
-  Future<Task> recoverTask({
-    required WorkspaceAttachment workspace,
-    required Task snapshot,
-    bool persist = true,
-  }) => _runtime.recoverTask(
-    workspace: workspace,
-    snapshot: snapshot,
-    persist: persist,
-  );
-
-  String encodeTask(Task task) => _runtime.encodeTask(task);
-
-  Future<String> readArtifact({
-    required WorkspaceAttachment workspace,
-    required String artifactPath,
-    CancellationToken? cancellationToken,
-  }) => _runtime.readArtifact(
-    workspace: workspace,
-    artifactPath: artifactPath,
-    cancellationToken: cancellationToken,
-  );
-
-  Future<RefinedTaskBrief> refineTaskBrief({
-    required ChatClient client,
-    WorkspaceAttachment? workspace,
-    required String userPrompt,
-    ExecutionMode selectedMode = ExecutionMode.refine,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) => _runtime.refineTaskBrief(
-    client: client,
-    workspace: workspace,
-    userPrompt: userPrompt,
-    selectedMode: selectedMode,
-    onModelOutput: onModelOutput,
-    cancellationToken: cancellationToken,
-  );
-
-  Future<Task> createTask({
-    required ChatClient client,
-    required WorkspaceAttachment workspace,
-    required String userPrompt,
-    required ExecutionMode selectedMode,
-    required String baseSystemPrompt,
-    String? chatSessionId,
-    String? projectId,
-    String? canonicalTaskId,
-    TaskPlanningContext? planningContext,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) => _runtime.createTask(
-    client: client,
-    workspace: workspace,
-    userPrompt: userPrompt,
-    selectedMode: selectedMode,
-    baseSystemPrompt: baseSystemPrompt,
-    chatSessionId: chatSessionId,
-    projectId: projectId,
-    canonicalTaskId: canonicalTaskId,
-    planningContext: planningContext,
-    onModelOutput: onModelOutput,
-    cancellationToken: cancellationToken,
-  );
-
-  Future<Task> createProjectTask({
-    required WorkspaceAttachment workspace,
-    required String userPrompt,
-    required String? chatSessionId,
-    required String? projectId,
-    required TaskPlanningContext planningContext,
-    String? canonicalTaskId,
-  }) => _runtime.createProjectTask(
-    workspace: workspace,
-    userPrompt: userPrompt,
-    chatSessionId: chatSessionId,
-    projectId: projectId,
-    planningContext: planningContext,
-    canonicalTaskId: canonicalTaskId,
-  );
-
-  Future<Task> updateTaskPlan({
-    required WorkspaceAttachment workspace,
-    required Task snapshot,
-    required String rawJson,
-  }) => _runtime.updateTaskPlan(
-    workspace: workspace,
-    snapshot: snapshot,
-    rawJson: rawJson,
-  );
-
-  Future<Task> runNextStep({
-    required ChatClient client,
-    required WorkspaceAttachment workspace,
-    required Task snapshot,
-    required String baseSystemPrompt,
-    bool requirePhaseApproval = false,
-    CompactionSettings? compactionSettings,
-    int? contextLimitTokens,
-    TaskCompactionStatusSink? onCompactionStatus,
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-    QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
-    TaskExecutionRequest executionRequest = const TaskExecutionRequest(),
-    bool persist = true,
-  }) => _runtime.runNextStep(
-    client: client,
-    workspace: workspace,
-    snapshot: snapshot,
-    baseSystemPrompt: baseSystemPrompt,
-    requirePhaseApproval: requirePhaseApproval,
-    compactionSettings: compactionSettings,
-    contextLimitTokens: contextLimitTokens,
-    onCompactionStatus: onCompactionStatus,
-    onModelOutput: onModelOutput,
-    cancellationToken: cancellationToken,
-    questionAutonomy: questionAutonomy,
-    executionRequest: executionRequest,
-    persist: persist,
-  );
-
-  Future<Task> approvePendingStep({
-    required WorkspaceAttachment workspace,
-    required Task snapshot,
-  }) => _runtime.approvePendingStep(workspace: workspace, snapshot: snapshot);
-
-  Future<Task> retryCurrentStep({
-    required WorkspaceAttachment workspace,
-    required Task snapshot,
-  }) => _runtime.retryCurrentStep(workspace: workspace, snapshot: snapshot);
-
-  Future<Task> skipCurrentStep({
-    required WorkspaceAttachment workspace,
-    required Task snapshot,
-  }) => _runtime.skipCurrentStep(workspace: workspace, snapshot: snapshot);
-
-  Future<Task> stopTask({
-    required WorkspaceAttachment workspace,
-    required Task snapshot,
-  }) => _runtime.stopTask(workspace: workspace, snapshot: snapshot);
-
-  Future<Task> answerOpenQuestion({
-    required WorkspaceAttachment workspace,
-    required Task snapshot,
-    required String answer,
-  }) => _runtime.answerOpenQuestion(
-    workspace: workspace,
-    snapshot: snapshot,
-    answer: answer,
-  );
-
-  Future<Task> replanUnfinished({
-    required ChatClient client,
-    required WorkspaceAttachment workspace,
-    required Task snapshot,
-    required String baseSystemPrompt,
-    String reason = 'User requested a replan of unfinished work.',
-    TaskModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) => _runtime.replanUnfinished(
-    client: client,
-    workspace: workspace,
-    snapshot: snapshot,
-    baseSystemPrompt: baseSystemPrompt,
-    reason: reason,
-    onModelOutput: onModelOutput,
-    cancellationToken: cancellationToken,
-  );
+    required super.toolService,
+    required super.sandbox,
+    super.repository,
+    super.persistenceStore,
+    super.recoveryService = const TaskRecoveryService(),
+    super.planner = const TaskPlanningService(),
+    super.planningCoordinator,
+    super.modelCompletion,
+    super.toolExecution,
+    super.structuredOutput = const StructuredPlanningOutputService(),
+    super.profileService = const WorkspaceDiscoveryProfileService(),
+  });
 }
 
 class _TaskRuntimeService {
@@ -528,11 +279,9 @@ class _TaskRuntimeService {
   late final TaskCommandService _commandService = TaskCommandService(
     persistence: _persistenceStore,
   );
-  late final TaskExecutionEngine _executionEngine = TaskExecutionEngine(
-    stepRunner: TaskStepRunner(
-      persistence: _persistenceStore,
-      recovery: _recoveryService,
-    ),
+  late final TaskStepRunner _stepRunner = TaskStepRunner(
+    persistence: _persistenceStore,
+    recovery: _recoveryService,
   );
   final QuestionPolicyService _questionPolicy = const QuestionPolicyService();
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
@@ -1127,7 +876,7 @@ or an explicit user command. Task memories remain separate from that graph.
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
     TaskExecutionRequest executionRequest = const TaskExecutionRequest(),
     bool persist = true,
-  }) => _executionEngine.runNextStep(
+  }) => _stepRunner.run(
     workspace: workspace,
     snapshot: snapshot,
     cancellationToken: cancellationToken,

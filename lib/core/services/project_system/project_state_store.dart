@@ -27,9 +27,6 @@ class ProjectStateStore {
   final ProjectControlStateService _controlStateService =
       const ProjectControlStateService();
 
-  ProjectRepository get projectRepository => _projectRepository;
-  ProjectAggregateRepository get aggregateRepository => _aggregateRepository;
-
   Future<List<ProjectSummary>> list(
     WorkspaceAttachment workspace, {
     String? chatSessionId,

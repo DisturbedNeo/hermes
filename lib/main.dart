@@ -11,7 +11,6 @@ import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/project_system/project_orchestrator.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/core/services/task_system/task_service.dart';
-import 'package:hermes/core/services/task_system/task_orchestrator.dart';
 import 'package:hermes/core/services/theme_manager.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
@@ -83,7 +82,6 @@ class _AppState extends State<App> {
         ),
         Provider<ToolService>.value(value: dependencies.toolService),
         Provider<TaskService>.value(value: dependencies.taskService),
-        Provider<TaskOrchestrator>.value(value: dependencies.taskOrchestrator),
         Provider<ProjectOrchestrator>.value(
           value: dependencies.projectOrchestrator,
         ),
