@@ -178,6 +178,82 @@ void main() {
   );
 
   test(
+    'application entrypoints wire focused operation parts instead of private implementations',
+    () async {
+      final expectedParts = <String, List<String>>{
+        'lib/features/chat/application/chat_controller.dart': [
+          'chat_session_operations.dart',
+          'chat_work_operations.dart',
+          'chat_persistence_operations.dart',
+          'chat_prompt_operations.dart',
+          'chat_lifecycle_operations.dart',
+        ],
+        'lib/features/task/application/task_application/task_controller.dart': [
+          'task_storage_operations.dart',
+          'task_planning_operations.dart',
+          'task_execution_operations.dart',
+          'task_state_operations.dart',
+        ],
+        'lib/features/project/application/project_application/project_application.dart':
+            [
+              'project_access_operations.dart',
+              'project_evaluation_operations.dart',
+              'project_execution_operations.dart',
+              'project_planning_recovery_operations.dart',
+            ],
+      };
+
+      for (final entry in expectedParts.entries) {
+        final source = await File(entry.key).readAsString();
+        for (final part in entry.value) {
+          expect(
+            source,
+            contains("part '$part';"),
+            reason: '${entry.key} does not compose $part',
+          );
+          final partFile = File(
+            '${entry.key.substring(0, entry.key.lastIndexOf('/'))}/$part',
+          );
+          expect(partFile.existsSync(), isTrue, reason: partFile.path);
+          final partSource = await partFile.readAsString();
+          expect(partSource, contains('extension '), reason: partFile.path);
+        }
+
+        expect(
+          RegExp(r'^(abstract )?class _', multiLine: true).hasMatch(source),
+          isFalse,
+          reason: '${entry.key} declares a private implementation class',
+        );
+      }
+
+      final ownership = <String, List<String>>{
+        'lib/features/chat/application/chat_work_operations.dart': [
+          'generateOrContinue',
+          'runProject',
+        ],
+        'lib/features/task/application/task_application/task_planning_operations.dart':
+            ['createTask', 'createProjectTask'],
+        'lib/features/task/application/task_application/task_execution_operations.dart':
+            ['runNextStep', '_executeStep'],
+        'lib/features/project/application/project_application/project_execution_operations.dart':
+            ['_runProjectCore', '_executeProjectTask', 'createProject'],
+        'lib/features/project/application/project_application/project_planning_recovery_operations.dart':
+            ['_recoverProjectCore'],
+      };
+      for (final entry in ownership.entries) {
+        final source = await File(entry.key).readAsString();
+        for (final operation in entry.value) {
+          expect(
+            source,
+            contains(operation),
+            reason: '${entry.key} no longer owns $operation',
+          );
+        }
+      }
+    },
+  );
+
+  test(
     'application implementation files stay below the monolith threshold',
     () async {
       const maxLines = 2100;
