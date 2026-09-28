@@ -122,33 +122,109 @@ void main() {
     expect(workspaceController, contains('ProjectApplicationPort'));
   });
 
-  test('application facades delegate to focused coordinators', () async {
-    final chat = await File(
-      'lib/features/chat/application/chat_controller.dart',
-    ).readAsString();
-    final task = await File(
-      'lib/features/task/application/task_application/task_controller.dart',
-    ).readAsString();
-    final project = await File(
-      'lib/features/project/application/project_application/project_application.dart',
-    ).readAsString();
+  test(
+    'application entrypoints stay below the orchestration line budget',
+    () async {
+      const maxLines = 500;
+      final entrypoints = [
+        'lib/features/chat/application/chat_controller.dart',
+        'lib/features/task/application/task_application/task_controller.dart',
+        'lib/features/project/application/project_application/project_application.dart',
+      ];
+      final violations = <String>[];
 
-    expect(chat, contains('class _ChatControllerRuntime'));
-    expect(chat, contains('class ChatController extends ChangeNotifier'));
-    expect(chat, contains('final _ChatControllerRuntime _delegate'));
-    expect(task, contains('class _TaskApplicationCoordinator'));
-    expect(
-      task,
-      contains('class TaskController implements TaskApplicationPort'),
-    );
-    expect(task, contains('final _TaskApplicationCoordinator _delegate'));
-    expect(project, contains('class _ProjectApplicationCoordinator'));
-    expect(
-      project,
-      contains('class ProjectApplication implements ProjectApplicationPort'),
-    );
-    expect(project, contains('final _ProjectApplicationCoordinator _delegate'));
-  });
+      for (final path in entrypoints) {
+        final lines = await File(path).readAsLines();
+        if (lines.length > maxLines) {
+          violations.add(
+            '$path contains ${lines.length} lines; expected at most $maxLines',
+          );
+        }
+      }
+
+      expect(violations, isEmpty, reason: violations.join('\n'));
+    },
+  );
+
+  test(
+    'application entrypoints contain no monolithic runtime or coordinator',
+    () async {
+      const applicationRoots = [
+        'lib/features/chat/application',
+        'lib/features/task/application',
+        'lib/features/project/application',
+      ];
+      const forbiddenDeclarations = [
+        'class _ChatControllerRuntime',
+        'class _TaskApplicationCoordinator',
+        'abstract class ProjectApplicationRuntime',
+        'class _ProjectApplicationCoordinator',
+      ];
+      final violations = <String>[];
+
+      for (final root in applicationRoots) {
+        for (final file in await _dartFiles(root)) {
+          final source = await file.readAsString();
+          for (final declaration in forbiddenDeclarations) {
+            if (source.contains(declaration)) {
+              violations.add('${file.path} still contains $declaration');
+            }
+          }
+        }
+      }
+
+      expect(violations, isEmpty, reason: violations.join('\n'));
+    },
+  );
+
+  test(
+    'application implementation files stay below the monolith threshold',
+    () async {
+      const maxLines = 2100;
+      const applicationRoots = [
+        'lib/features/chat/application',
+        'lib/features/task/application',
+        'lib/features/project/application',
+      ];
+      final violations = <String>[];
+
+      for (final root in applicationRoots) {
+        for (final file in await _dartFiles(root)) {
+          final lines = await file.readAsLines();
+          if (lines.length > maxLines) {
+            violations.add(
+              '${file.path} contains ${lines.length} lines; expected at most $maxLines',
+            );
+          }
+        }
+      }
+
+      expect(violations, isEmpty, reason: violations.join('\n'));
+    },
+  );
+
+  test(
+    'application entrypoints expose their public application contracts',
+    () async {
+      final contracts = <String, String>{
+        'lib/features/chat/application/chat_controller.dart':
+            'class ChatController extends ChangeNotifier',
+        'lib/features/task/application/task_application/task_controller.dart':
+            'class TaskController implements TaskApplicationPort',
+        'lib/features/project/application/project_application/project_application.dart':
+            'class ProjectApplication implements ProjectApplicationPort',
+      };
+
+      for (final entry in contracts.entries) {
+        final source = await File(entry.key).readAsString();
+        expect(
+          source,
+          contains(entry.value),
+          reason: '${entry.key} no longer exposes ${entry.value}',
+        );
+      }
+    },
+  );
 
   test('infrastructure adapters implement typed ports', () async {
     final workspace = await File(
