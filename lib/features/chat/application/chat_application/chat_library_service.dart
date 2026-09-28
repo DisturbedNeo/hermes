@@ -8,7 +8,7 @@ import 'package:hermes/core/models/saved_chat.dart';
 import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/features/workspace/domain/workspace.dart';
 import 'package:hermes/core/serialization/model_json.dart';
-import 'package:hermes/core/services/chat_library_repository.dart';
+import 'package:hermes/core/services/chat_library_port.dart';
 
 import 'package:hermes/core/services/disposable.dart';
 
@@ -19,12 +19,11 @@ import 'package:hermes/core/services/disposable.dart';
 /// responsibility: coordinating high-level service methods while maintaining
 /// reactive state.
 class ChatLibraryService extends ChangeNotifier implements Disposable {
-  final ChatLibraryRepository _repository;
+  final ChatLibraryPort _repository;
   bool _disposed = false;
 
-  ChatLibraryService({
-    required ChatLibraryRepository repository,
-  }) : _repository = repository;
+  ChatLibraryService({required ChatLibraryPort repository})
+    : _repository = repository;
 
   // ── Public API (delegated to repository) ───────────────────────────────
 

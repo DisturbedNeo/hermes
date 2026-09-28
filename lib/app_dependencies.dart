@@ -3,25 +3,27 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:hermes/features/chat/application/chat_application/chat_library_service.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
-import 'package:hermes/core/services/chat_library_repository.dart';
-import 'package:hermes/core/services/preferences_service.dart';
+import 'package:hermes/features/chat/infrastructure/chat_library_repository.dart';
+import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/features/project/application/project_application/project_application.dart';
-import 'package:hermes/features/project/application/project_application/project_aggregate_repository.dart';
+import 'package:hermes/features/project/infrastructure/project_aggregate_repository.dart';
 import 'package:hermes/features/project/application/project_application/project_command_service.dart';
-import 'package:hermes/features/project/application/project_application/project_repository.dart';
+import 'package:hermes/features/project/infrastructure/project_repository.dart';
 import 'package:hermes/features/project/application/project_application/project_state_store.dart';
 import 'package:hermes/features/project/application/project_application/project_recovery_service.dart';
 import 'package:hermes/core/services/planning_runtime.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/planning_structured_output.dart';
-import 'package:hermes/core/services/system_prompt_library_repository.dart';
+import 'package:hermes/features/chat/infrastructure/system_prompt_library_repository.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
-import 'package:hermes/features/task/application/task_application/task_repository.dart';
+import 'package:hermes/features/task/infrastructure/task_repository.dart';
 import 'package:hermes/features/task/application/task_application/task_persistence_store.dart';
 import 'package:hermes/features/task/application/task_application/task_planning_coordinator.dart';
 import 'package:hermes/features/task/application/task_application/task_recovery_service.dart';
 import 'package:hermes/features/task/application/task_application/task_model_completion_service.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
+import 'package:hermes/features/model/infrastructure/chat_client.dart';
+import 'package:hermes/core/models/chat_persistence.dart';
 import 'package:hermes/features/task/application/task_application/task_tool_execution_service.dart';
 import 'package:hermes/features/task/application/task_application/task_planning_service.dart';
 import 'package:hermes/core/services/theme_manager.dart';
@@ -29,12 +31,13 @@ import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/services/workspace_service.dart';
 import 'package:hermes/core/services/workspace_persistence_coordinator.dart';
+import 'package:hermes/shared_kernel/application_lifecycle.dart';
 
 /// The eagerly-created, application-scoped dependency graph.
 ///
 /// This class owns service lifetimes but intentionally has no type-based lookup
 /// API. Dependencies are exposed as typed fields and injected explicitly.
-class AppDependencies {
+class AppDependencies implements ApplicationLifecycle {
   AppDependencies._({
     required this.preferencesService,
     required this.themeManager,
@@ -55,7 +58,14 @@ class AppDependencies {
     final themeManager = ThemeManager(preferencesService: preferencesService);
     final workspaceService = WorkspaceService(sandbox: workspaceSandbox);
     final toolService = ToolService(workspaceSandbox: workspaceSandbox);
-    final modelManager = LlamaServerManager();
+    final modelManager = LlamaServerManager(
+      clientFactory: ({required baseUrl, required model, onDiagnostics}) =>
+          ChatClient(
+            baseUrl: baseUrl,
+            model: model,
+            onDiagnostics: onDiagnostics,
+          ),
+    );
     const planningRunner = PlanningToolCallRunner();
     const structuredOutput = StructuredPlanningOutputService();
     const taskPlanner = TaskPlanningService(runner: planningRunner);
@@ -165,6 +175,32 @@ class AppDependencies {
 
   bool _disposed = false;
   Future<void>? _disposeFuture;
+  ApplicationLifecycleState _lifecycleState = ApplicationLifecycleState.created;
+
+  @override
+  ApplicationLifecycleState get lifecycleState => _lifecycleState;
+
+  @override
+  Future<void> start() async {
+    if (_disposed) throw StateError('Application dependencies are disposed.');
+    _lifecycleState = ApplicationLifecycleState.running;
+  }
+
+  @override
+  Future<void> quiesce() async {
+    if (_disposed) return;
+    _lifecycleState = ApplicationLifecycleState.quiescing;
+    await chatWorkspaceController.prepareForExit(NewChatExitPolicy.discard);
+    _lifecycleState = ApplicationLifecycleState.running;
+  }
+
+  @override
+  Future<void> flush() async {
+    if (_disposed) return;
+    _lifecycleState = ApplicationLifecycleState.flushing;
+    await chatWorkspaceController.prepareForExit(NewChatExitPolicy.save);
+    _lifecycleState = ApplicationLifecycleState.running;
+  }
 
   /// Disposes owned dependencies once, in reverse construction order.
   Future<void> dispose() => _startDispose(discardChanges: false);
@@ -187,6 +223,7 @@ class AppDependencies {
   }
 
   Future<void> _dispose({required bool discardChanges}) async {
+    _lifecycleState = ApplicationLifecycleState.quiescing;
     if (discardChanges) {
       await _disposeSafely(chatWorkspaceController.disposeWithoutSaving);
     } else {
@@ -199,6 +236,7 @@ class AppDependencies {
     await _disposeSafely(themeManager.dispose);
     await _disposeSafely(preferencesService.dispose);
     _disposed = true;
+    _lifecycleState = ApplicationLifecycleState.disposed;
   }
 
   Future<void> _disposeSafely(FutureOr<void> Function() dispose) async {

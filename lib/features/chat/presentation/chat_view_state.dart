@@ -37,9 +37,9 @@ class ChatViewState {
   final bool taskModelOutputActive;
   final ChatSaveFailure? saveFailure;
 
-  const ChatViewState({
+  ChatViewState({
     required this.tabId,
-    required this.messages,
+    required List<Bubble> messages,
     required this.historyRevision,
     required this.currentChatId,
     required this.currentSavedChat,
@@ -50,9 +50,9 @@ class ChatViewState {
     required this.systemPrompt,
     required this.executionMode,
     required this.activeProject,
-    required this.availableProjects,
+    required List<ProjectSummary> availableProjects,
     required this.activeTask,
-    required this.availableTasks,
+    required List<TaskSummary> availableTasks,
     required this.taskSystemSettings,
     required this.taskBusy,
     required this.taskCancellationRequested,
@@ -63,5 +63,7 @@ class ChatViewState {
     required this.taskModelOutputReasoning,
     required this.taskModelOutputActive,
     required this.saveFailure,
-  });
+  }) : messages = List.unmodifiable(messages),
+       availableProjects = List.unmodifiable(availableProjects),
+       availableTasks = List.unmodifiable(availableTasks);
 }

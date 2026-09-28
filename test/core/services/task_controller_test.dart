@@ -13,6 +13,7 @@ import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/host_command_runner.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
+import 'package:hermes/features/task/infrastructure/task_repository.dart';
 import 'package:hermes/features/task/domain/task_planning_models.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
@@ -35,6 +36,7 @@ void main() {
       service = TaskController(
         toolService: ToolService(workspaceSandbox: sandbox),
         sandbox: sandbox,
+        repository: TaskRepository(),
       );
     });
 

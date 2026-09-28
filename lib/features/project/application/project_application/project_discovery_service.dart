@@ -8,14 +8,14 @@ import 'package:hermes/features/project/application/project_application/project_
 import 'package:hermes/features/project/application/project_application/project_planning_gateway.dart';
 import 'package:hermes/features/project/application/project_application/project_scheduler.dart';
 import 'package:hermes/features/project/application/project_application/project_workspace_context_service.dart';
-import 'package:hermes/features/task/application/task_application/task_controller.dart';
+import 'package:hermes/features/task/application/task_application/task_ports.dart';
 import 'package:hermes/core/services/workspace_discovery_profile.dart';
 import 'package:path/path.dart' as path;
 
 /// Collects bounded, read-only context for initialization and replanning.
 class ProjectDiscoveryService {
   const ProjectDiscoveryService({
-    required TaskController taskController,
+    required TaskApplicationPort taskController,
     ProjectMemoryService memoryService = const ProjectMemoryService(),
     WorkspaceDiscoveryProfileService profileService =
         const WorkspaceDiscoveryProfileService(),
@@ -29,7 +29,7 @@ class ProjectDiscoveryService {
   static const int _maxRootEntries = 80;
   static const int _maxRecentItems = 12;
 
-  final TaskController _taskController;
+  final TaskApplicationPort _taskController;
   final ProjectMemoryService _memoryService;
   final WorkspaceDiscoveryProfileService _profileService;
   final ProjectWorkspaceContextService _workspaceContextService;

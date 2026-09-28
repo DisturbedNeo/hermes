@@ -3,9 +3,9 @@ import 'package:hermes/core/helpers/chat/content_normaliser.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_token.dart';
-import 'package:hermes/features/chat/application/chat_application/message_store.dart';
+import 'package:hermes/core/helpers/chat/message_store_port.dart';
 
-extension AssistantOps on MessageStore {
+extension AssistantOps on MessageStorePort {
   void appendToken(ChatToken token) => appendTokens([token]);
 
   void appendTokens(Iterable<ChatToken> tokens) {

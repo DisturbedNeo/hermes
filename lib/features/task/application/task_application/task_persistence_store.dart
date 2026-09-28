@@ -1,6 +1,6 @@
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/services/persistence_contracts.dart';
-import 'package:hermes/features/task/application/task_application/task_repository.dart';
+import 'package:hermes/features/task/application/task_application/task_ports.dart';
 import 'package:hermes/features/task/application/task_application/task_summary.dart';
 
 /// Owns all task-document and task-history storage access.
@@ -10,12 +10,12 @@ import 'package:hermes/features/task/application/task_application/task_summary.d
 /// repository remains the durable implementation and retains its optimistic
 /// concurrency and history semantics.
 class TaskPersistenceStore {
-  TaskPersistenceStore({required TaskRepository repository})
+  TaskPersistenceStore({required TaskRepositoryPort repository})
     : _repository = repository;
 
-  final TaskRepository _repository;
+  final TaskRepositoryPort _repository;
 
-  TaskRepository get repository => _repository;
+  TaskRepositoryPort get repository => _repository;
 
   Future<PersistedSnapshot<Task>> save(
     String workspaceRoot,

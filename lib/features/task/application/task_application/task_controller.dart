@@ -11,7 +11,7 @@ import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/domain/task_planning_models.dart';
 import 'package:hermes/core/models/planning_metrics.dart';
-import 'package:hermes/features/task/domain/task_system_settings.dart';
+import 'package:hermes/shared_kernel/task_system_settings.dart';
 import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/features/workspace/domain/workspace.dart';
 import 'package:hermes/features/model/domain/model_provider.dart';
@@ -33,8 +33,9 @@ import 'package:hermes/features/task/application/task_application/task_step_runn
 import 'package:hermes/features/task/application/task_application/task_model_completion_service.dart';
 import 'package:hermes/features/task/application/task_application/task_tool_execution_service.dart';
 import 'package:hermes/features/task/application/task_application/task_recovery_service.dart';
-import 'package:hermes/features/task/application/task_application/task_repository.dart';
+import 'package:hermes/features/task/application/task_application/in_memory_task_repository.dart';
 import 'package:hermes/features/task/application/task_application/task_summary.dart';
+import 'package:hermes/features/task/application/task_application/task_ports.dart';
 import 'package:hermes/features/task/application/task_application/task_view_service.dart';
 import 'package:hermes/core/services/terminal_command_parser.dart';
 import 'package:hermes/core/services/tool_service.dart';
@@ -43,10 +44,6 @@ import 'package:hermes/core/services/workspace_discovery_profile.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/tools/tool_error.dart';
 import 'package:path/path.dart' as path;
-
-
-
-typedef TaskCompactionStatusSink = void Function(String status);
 
 class _IncrementalTaskPlanAttempt {
   final Task? task;
@@ -156,11 +153,11 @@ const ToolDefinition _requestTaskReplanToolDefinition = ToolDefinition(
   },
 );
 
-class TaskController {
-  TaskController({
+class _TaskApplicationCoordinator implements TaskApplicationPort {
+  _TaskApplicationCoordinator({
     required ToolService toolService,
     required WorkspaceSandbox sandbox,
-    TaskRepository? repository,
+    TaskRepositoryPort? repository,
     TaskPersistenceStore? persistenceStore,
     TaskRecoveryService recoveryService = const TaskRecoveryService(),
     TaskPlanner planner = const TaskPlanningService(),
@@ -176,7 +173,9 @@ class TaskController {
            planningCoordinator ?? TaskPlanningCoordinator(planner: planner),
        _persistenceStore =
            persistenceStore ??
-           TaskPersistenceStore(repository: repository ?? TaskRepository()),
+           TaskPersistenceStore(
+             repository: repository ?? InMemoryTaskRepository(),
+           ),
        _sandbox = sandbox,
        _profileService = profileService,
        _gateEvaluator = TaskGateEvaluator(sandbox: sandbox),
@@ -208,7 +207,7 @@ class TaskController {
   final QuestionPolicyService _questionPolicy = const QuestionPolicyService();
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
 
-  TaskRepository get repository => _persistenceStore.repository;
+  TaskRepositoryPort get repository => _persistenceStore.repository;
   ToolService get toolService => _toolService;
 
   Future<Task> _persistTask(String workspaceRoot, Task task) async {
@@ -2989,6 +2988,296 @@ $whitelist
     if (value.length <= maxChars) return value;
     return '${value.substring(0, maxChars)}...';
   }
+}
+
+/// Thin application facade for task use cases.
+///
+/// The coordinator owns planning, execution, persistence, and recovery
+/// details; this boundary keeps callers coupled to the narrow task port.
+class TaskController implements TaskApplicationPort {
+  TaskController({
+    required ToolService toolService,
+    required WorkspaceSandbox sandbox,
+    TaskRepositoryPort? repository,
+    TaskPersistenceStore? persistenceStore,
+    TaskRecoveryService recoveryService = const TaskRecoveryService(),
+    TaskPlanner planner = const TaskPlanningService(),
+    TaskPlanningCoordinatorPort? planningCoordinator,
+    TaskModelCompletionPort? modelCompletion,
+    TaskToolExecutionPort? toolExecution,
+    StructuredPlanningOutputService structuredOutput =
+        const StructuredPlanningOutputService(),
+    WorkspaceDiscoveryProfileService profileService =
+        const WorkspaceDiscoveryProfileService(),
+  }) : _delegate = _TaskApplicationCoordinator(
+         toolService: toolService,
+         sandbox: sandbox,
+         repository: repository,
+         persistenceStore: persistenceStore,
+         recoveryService: recoveryService,
+         planner: planner,
+         planningCoordinator: planningCoordinator,
+         modelCompletion: modelCompletion,
+         toolExecution: toolExecution,
+         structuredOutput: structuredOutput,
+         profileService: profileService,
+       );
+
+  final _TaskApplicationCoordinator _delegate;
+
+  @override
+  TaskRepositoryPort get repository => _delegate.repository;
+
+  @override
+  ToolService get toolService => _delegate.toolService;
+
+  @override
+  Future<List<TaskSummary>> listTasks(
+    WorkspaceAttachment workspace, {
+    String? chatSessionId,
+    String? projectId,
+  }) => _delegate.listTasks(
+    workspace,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+  );
+
+  @override
+  Future<Task?> loadLatestTask(
+    WorkspaceAttachment workspace, {
+    String? chatSessionId,
+    String? projectId,
+  }) => _delegate.loadLatestTask(
+    workspace,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+  );
+
+  @override
+  Future<Task?> loadTask(
+    WorkspaceAttachment workspace,
+    String taskId, {
+    String? chatSessionId,
+    String? projectId,
+    bool includeHistory = true,
+  }) => _delegate.loadTask(
+    workspace,
+    taskId,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+    includeHistory: includeHistory,
+  );
+
+  @override
+  Future<int> deleteTasksForChatSession(
+    WorkspaceAttachment workspace, {
+    required String chatSessionId,
+  }) => _delegate.deleteTasksForChatSession(
+    workspace,
+    chatSessionId: chatSessionId,
+  );
+
+  @override
+  Future<int> deleteOrphanedChatTasks(
+    WorkspaceAttachment workspace, {
+    required Set<String> retainedChatSessionIds,
+  }) => _delegate.deleteOrphanedChatTasks(
+    workspace,
+    retainedChatSessionIds: retainedChatSessionIds,
+  );
+
+  @override
+  Future<Task> updateTaskChatSessionId({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+    required String chatSessionId,
+  }) => _delegate.updateTaskChatSessionId(
+    workspace: workspace,
+    snapshot: snapshot,
+    chatSessionId: chatSessionId,
+  );
+
+  @override
+  Future<Task> recoverTask({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+    bool persist = true,
+  }) => _delegate.recoverTask(
+    workspace: workspace,
+    snapshot: snapshot,
+    persist: persist,
+  );
+
+  @override
+  String encodeTask(Task task) => _delegate.encodeTask(task);
+
+  @override
+  Future<String> readArtifact({
+    required WorkspaceAttachment workspace,
+    required String artifactPath,
+    CancellationToken? cancellationToken,
+  }) => _delegate.readArtifact(
+    workspace: workspace,
+    artifactPath: artifactPath,
+    cancellationToken: cancellationToken,
+  );
+
+  @override
+  Future<RefinedTaskBrief> refineTaskBrief({
+    required ModelProvider client,
+    WorkspaceAttachment? workspace,
+    required String userPrompt,
+    ExecutionMode selectedMode = ExecutionMode.refine,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  }) => _delegate.refineTaskBrief(
+    client: client,
+    workspace: workspace,
+    userPrompt: userPrompt,
+    selectedMode: selectedMode,
+    onModelOutput: onModelOutput,
+    cancellationToken: cancellationToken,
+  );
+
+  @override
+  Future<Task> createTask({
+    required ModelProvider client,
+    required WorkspaceAttachment workspace,
+    required String userPrompt,
+    required ExecutionMode selectedMode,
+    required String baseSystemPrompt,
+    String? chatSessionId,
+    String? projectId,
+    String? canonicalTaskId,
+    TaskPlanningContext? planningContext,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  }) => _delegate.createTask(
+    client: client,
+    workspace: workspace,
+    userPrompt: userPrompt,
+    selectedMode: selectedMode,
+    baseSystemPrompt: baseSystemPrompt,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+    canonicalTaskId: canonicalTaskId,
+    planningContext: planningContext,
+    onModelOutput: onModelOutput,
+    cancellationToken: cancellationToken,
+  );
+
+  @override
+  Future<Task> createProjectTask({
+    required WorkspaceAttachment workspace,
+    required String userPrompt,
+    required String? chatSessionId,
+    required String? projectId,
+    required TaskPlanningContext planningContext,
+    String? canonicalTaskId,
+  }) => _delegate.createProjectTask(
+    workspace: workspace,
+    userPrompt: userPrompt,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+    planningContext: planningContext,
+    canonicalTaskId: canonicalTaskId,
+  );
+
+  @override
+  Future<Task> updateTaskPlan({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+    required String rawJson,
+  }) => _delegate.updateTaskPlan(
+    workspace: workspace,
+    snapshot: snapshot,
+    rawJson: rawJson,
+  );
+
+  @override
+  Future<Task> runNextStep({
+    required ModelProvider client,
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+    required String baseSystemPrompt,
+    bool requirePhaseApproval = false,
+    CompactionSettings? compactionSettings,
+    int? contextLimitTokens,
+    TaskCompactionStatusSink? onCompactionStatus,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+    QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
+    TaskExecutionRequest executionRequest = const TaskExecutionRequest(),
+    bool persist = true,
+  }) => _delegate.runNextStep(
+    client: client,
+    workspace: workspace,
+    snapshot: snapshot,
+    baseSystemPrompt: baseSystemPrompt,
+    requirePhaseApproval: requirePhaseApproval,
+    compactionSettings: compactionSettings,
+    contextLimitTokens: contextLimitTokens,
+    onCompactionStatus: onCompactionStatus,
+    onModelOutput: onModelOutput,
+    cancellationToken: cancellationToken,
+    questionAutonomy: questionAutonomy,
+    executionRequest: executionRequest,
+    persist: persist,
+  );
+
+  @override
+  Future<Task> approvePendingStep({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+  }) => _delegate.approvePendingStep(workspace: workspace, snapshot: snapshot);
+
+  @override
+  Future<Task> retryCurrentStep({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+  }) => _delegate.retryCurrentStep(workspace: workspace, snapshot: snapshot);
+
+  @override
+  Future<Task> skipCurrentStep({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+  }) => _delegate.skipCurrentStep(workspace: workspace, snapshot: snapshot);
+
+  @override
+  Future<Task> stopTask({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+  }) => _delegate.stopTask(workspace: workspace, snapshot: snapshot);
+
+  @override
+  Future<Task> answerOpenQuestion({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+    required String answer,
+  }) => _delegate.answerOpenQuestion(
+    workspace: workspace,
+    snapshot: snapshot,
+    answer: answer,
+  );
+
+  @override
+  Future<Task> replanUnfinished({
+    required ModelProvider client,
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+    required String baseSystemPrompt,
+    String reason = 'User requested a replan of unfinished work.',
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  }) => _delegate.replanUnfinished(
+    client: client,
+    workspace: workspace,
+    snapshot: snapshot,
+    baseSystemPrompt: baseSystemPrompt,
+    reason: reason,
+    onModelOutput: onModelOutput,
+    cancellationToken: cancellationToken,
+  );
 }
 
 enum _StepExecutionStatus { completed, blocked, needsReplan, failed }

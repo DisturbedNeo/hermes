@@ -4,7 +4,7 @@ import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/planning_metrics.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/features/model/domain/model_provider.dart';
-import 'package:hermes/features/task/application/task_application/task_model_output.dart';
+import 'package:hermes/shared_kernel/model_output.dart';
 
 class StructuredPlanningOutputException implements Exception {
   final String message;

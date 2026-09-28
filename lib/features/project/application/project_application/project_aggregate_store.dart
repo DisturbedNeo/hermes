@@ -1,8 +1,9 @@
 import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/services/persistence_contracts.dart';
-import 'package:hermes/features/project/application/project_application/project_aggregate_repository.dart';
+import 'package:hermes/features/project/application/project_application/project_aggregate_repository_port.dart';
 import 'package:hermes/features/project/application/project_application/project_checkpoint.dart';
-import 'package:hermes/features/task/application/task_application/task_repository.dart';
+import 'package:hermes/features/task/application/task_application/task_ports.dart';
 import 'package:hermes/features/task/application/task_application/task_plan_materializer.dart';
 
 /// Tracks the last task snapshots included in one project command.
@@ -83,15 +84,15 @@ class ProjectCommitIntent {
 /// submit a project snapshot and receive the committed hydrated snapshot; they
 /// do not coordinate task revisions or repository transactions themselves.
 class ProjectAggregateStore {
-  const ProjectAggregateStore({
-    required ProjectAggregateRepository aggregateRepository,
-    required TaskRepository taskRepository,
+  ProjectAggregateStore({
+    required ProjectAggregateRepositoryPort aggregateRepository,
+    required TaskRepositoryPort taskRepository,
   }) : _aggregateRepository = aggregateRepository,
        _taskRepository = taskRepository;
 
-  final ProjectAggregateRepository _aggregateRepository;
-  final TaskRepository _taskRepository;
-  final TaskPlanMaterializer _materializer = const TaskPlanMaterializer();
+  final ProjectAggregateRepositoryPort _aggregateRepository;
+  final TaskRepositoryPort _taskRepository;
+  final TaskPlanMaterializer _materializer = TaskPlanMaterializer();
 
   Future<ProjectDocument> commit(ProjectCommitIntent intent) async {
     final workspaceRoot = intent.workspaceRoot;
@@ -133,7 +134,7 @@ class ProjectAggregateStore {
         throw StaleSnapshotException(
           path: _taskRepository.taskRelativePath(
             taskId,
-            TaskRepository.documentFileName,
+            TaskStorageLayout.documentFileName,
           ),
           expectedRevision: expected,
           actualRevision: actual ?? 0,

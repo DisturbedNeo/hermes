@@ -1057,7 +1057,10 @@ class _Subheading extends StatelessWidget {
   }
 }
 
-Future<void> _showProjectEditor(BuildContext context, ChatController chat) async {
+Future<void> _showProjectEditor(
+  BuildContext context,
+  ChatController chat,
+) async {
   final initial = chat.activeProjectJson;
   if (initial == null) return;
   final saved = await EditProjectDialog.show(

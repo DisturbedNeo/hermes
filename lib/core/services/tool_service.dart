@@ -8,6 +8,8 @@ import 'package:hermes/core/tools/tool.dart';
 import 'package:hermes/core/tools/tool_error.dart';
 import 'package:hermes/core/tools/workspace_tools.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
+import 'package:hermes/core/services/cancellation_token.dart';
+import 'package:hermes/shared_kernel/tool_contracts.dart';
 import 'package:hermes/core/services/subagent_service.dart';
 
 class ToolService {
@@ -73,6 +75,81 @@ class ToolService {
       includeWorkspaceTools: includeWorkspaceTools,
     ).map((tool) => tool.id).toList();
   }
+
+  /// Typed application boundary for tool execution.
+  ///
+  /// [execute] remains as the protocol compatibility adapter for model JSON.
+  /// New application code should pass [ToolRequest] and receive [ToolResult]
+  /// so malformed JSON cannot leak through the feature graph.
+  Future<ToolResult> executeTyped(ToolRequest request) async {
+    final context = request.context;
+    final requiredPermission = _requiredPermission(request.toolId);
+    if (requiredPermission != ToolPermission.none && context == null) {
+      return const ToolFailure(
+        code: 'permission_denied',
+        message: 'This tool requires an authorised workspace context.',
+      );
+    }
+    if (context != null && !context.allows(requiredPermission)) {
+      return ToolFailure(
+        code: 'permission_denied',
+        message:
+            'Permission ${requiredPermission.name} is required for ${request.toolId}.',
+      );
+    }
+    if (requiredPermission != ToolPermission.none &&
+        context?.workspace == null) {
+      return const ToolFailure(
+        code: 'workspace_required',
+        message: 'A workspace is required for this tool.',
+      );
+    }
+    try {
+      context?.cancellationToken?.throwIfCancelled();
+      final raw = await execute(
+        toolId: request.toolId,
+        argumentsJson: jsonEncode(request.arguments),
+        context: context == null
+            ? null
+            : WorkspaceToolContext(
+                workspace: WorkspaceAttachment(
+                  rootPath: context.workspace!.rootPath,
+                  displayName: context.workspace!.displayName,
+                  lastOpenedAt: DateTime.now(),
+                  missing: context.workspace!.missing,
+                  commandExecutionApproved:
+                      context.workspace!.commandExecutionApproved,
+                ),
+                cancellationToken: context.cancellationToken,
+              ),
+      );
+      context?.cancellationToken?.throwIfCancelled();
+      return ToolResult.decode(raw);
+    } on OperationCancelledException {
+      return const ToolFailure(
+        code: 'cancelled',
+        message: 'Tool execution was cancelled.',
+      );
+    } catch (error) {
+      return ToolFailure(
+        code: 'tool_execution_failed',
+        message: error.toString(),
+      );
+    }
+  }
+
+  ToolPermission _requiredPermission(String toolId) => switch (toolId) {
+    'run_command' => ToolPermission.executeCommand,
+    'write_file' ||
+    'patch_file' ||
+    'create_directory' ||
+    'rename_path' ||
+    'delete_path' => ToolPermission.writeWorkspace,
+    'list_directory' ||
+    'read_file' ||
+    'search_files' => ToolPermission.readWorkspace,
+    _ => ToolPermission.none,
+  };
 
   Future<String> execute({
     String toolId = '',

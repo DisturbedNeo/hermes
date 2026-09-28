@@ -47,9 +47,7 @@ abstract interface class TaskPlanner {
 }
 
 class TaskPlanningService implements TaskPlanner {
-  const TaskPlanningService({
-    this.runner = const PlanningToolCallRunner(),
-  });
+  const TaskPlanningService({this.runner = const PlanningToolCallRunner()});
 
   final PlanningToolCallRunner runner;
 

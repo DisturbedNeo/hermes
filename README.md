@@ -1,64 +1,70 @@
-# hermes
+# Hermes
 
-A new Flutter project.
+Hermes is a modular Flutter application for chat, workspace tools, and
+bounded task/project execution.
 
-## Getting Started
+## Architecture
 
-This project is a starting point for a Flutter application.
+Hermes is a modular monolith with dependency flow toward the shared kernel:
 
-A few resources to get you started if this is your first Flutter project:
+```text
+presentation -> feature application -> feature domain
+                         |                 ^
+                         v                 |
+                 infrastructure adapters --+
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
-
-## Generated serialization
-
-Typed JSON mapping is generated with `dart_mappable`. After changing an
-annotated DTO, regenerate and commit the mapper outputs:
-
-```sh
-dart run build_runner build
+composition root -> all feature ports and infrastructure implementations
+shared kernel -> contracts, immutable values, cancellation, serialization
 ```
 
-Application code should use `ModelJson` rather than calling generated mapper
-classes or per-model JSON methods directly.
+Feature application code consumes narrow ports. Chat depends on
+`TaskApplicationPort` and `ProjectApplicationPort`; it does not construct or
+call task/project implementations directly. Project planning stores immutable
+`ProjectTaskNode` values and materializes executable task documents only in the
+task boundary adapter.
 
-## Project system boundaries
+`ChatController`, `TaskController`, and `ProjectApplication` are stable thin
+facades over focused runtime/coordinator implementations. Concrete persistence
+adapters live under feature `infrastructure/` directories and implement typed
+ports; compatibility exports preserve existing import paths during migration.
 
-The project system has three deliberately separate concerns:
+The main state and ownership boundaries are:
 
-- `ProjectLifecycleService` owns project status transitions and
-  `ProjectControlStateMachine` is the single reducer for the durable,
-  application-facing outcome and next action.
-- `ProjectPlanningPhase` produces one canonical `ProjectPlanPatch` for a new
-  project or a revision. `ProjectPlanRevisionService` validates, evaluates
-  risk, handles approval, and reconciles the complete desired plan atomically.
-- `ProjectExecutionPhase` owns bounded frontier selection and task execution;
-  `ProjectPersistencePhase` delegates every write to `ProjectAggregateStore`.
-- The task system owns executable task documents, steps, runs, artifacts, and
-  planning fallback diagnostics. Project plans exchange `ProjectTaskNode`
-  projections and retain task IDs; executable `Task` documents are materialized
-  only at the revision/task persistence boundary. `ProjectScheduler` selects a
-  dependency-aware execution frontier.
+- `ChatState` is the authoritative immutable chat session state and
+  `ChatViewState` is only its presentation projection.
+- Project plan, execution, evidence, and control views are separated in
+  `project_state_models.dart`.
+- Project and task persistence expose application repository ports, retain
+  optimistic revisions, and use atomic snapshot writes with backup recovery.
+- `WorkspacePersistenceCoordinator` combines a cross-process lock file with
+  process-local serialization and revision checks. Lock ownership, timeout,
+  stale-lock recovery, and diagnostics are described in
+  [`docs/architecture.md`](docs/architecture.md).
+- `ApplicationLifecycle` owns startup, quiescing, flushing, cancellation, and
+  reverse-order idempotent disposal.
 
-Frontier limits are bounded run budgets, not automatic replanning triggers.
-Plans are revised only for an explicit scope, dependency, evidence,
-workspace, failure, or roadmap change.
+The generated mapper files are build artifacts and must be regenerated rather
+than edited manually.
 
-The runtime keeps deterministic project decisions separate from effects. The
-`ProjectDecisionEngine` consumes the control machine and selects the next
-command boundary, while model calls, task execution, and persistence execute
-that decision. `ProjectState` exposes separate plan, execution, evidence, and
-control read models; the persisted document remains compatible with older
-snapshots without making embedded task documents authoritative.
+## Development
 
-Every planning producer is adapted to a typed `ProjectPlanPatch`, which passes
-through the same validation, risk, approval, and reconciliation service.
-Aggregate transaction manifests record semantic persistence checkpoints.
-Interrupted transactions can be explicitly rolled back when snapshot
-revisions make that safe; unresolved transactions remain read-only and
-diagnostic.
+Run the complete local verification workflow with:
+
+```sh
+bash tool/verify.sh
+```
+
+The workflow regenerates mappers, checks formatting, analyzes Dart, runs the
+architecture/import tests and the full Flutter test suite, and checks the
+final diff. For an individual change, use the narrowest relevant command,
+then run the complete workflow before handoff.
+
+## Persistence and compatibility
+
+Project, task, chat, prompt-library, and settings data retain compatibility
+with existing snapshots. `shared_kernel/schema_migrations.dart` contains
+explicit versioned migration registries; missing optional fields remain
+compatible with legacy documents, while newer unsupported versions fail with
+an actionable diagnostic. Transaction manifests, backup recovery, unknown
+fields, and optimistic revision conflicts remain part of the persistence
+contract.

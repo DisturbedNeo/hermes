@@ -6,10 +6,10 @@ import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/core/models/chat_persistence.dart';
 import 'package:hermes/features/chat/application/chat_application/chat_library_service.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
-import 'package:hermes/features/project/application/project_application/project_application.dart';
-import 'package:hermes/features/task/application/task_application/task_controller.dart';
+import 'package:hermes/features/project/application/project_application/project_ports.dart';
+import 'package:hermes/features/task/application/task_application/task_ports.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
-import 'package:hermes/core/services/preferences_service.dart';
+import 'package:hermes/shared_kernel/preferences_port.dart';
 import 'package:hermes/core/services/subagent_service.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
@@ -26,10 +26,10 @@ class ChatWorkspaceController extends ChangeNotifier implements Disposable {
   final ChatLibraryService _chatLibrary;
   final SystemPromptLibraryService _systemPromptLibrary;
   final ToolService _toolService;
-  final TaskController _taskController;
-  final ProjectApplication _projectApplication;
+  final TaskApplicationPort _taskController;
+  final ProjectApplicationPort _projectApplication;
   final WorkspaceService _workspaceService;
-  final PreferencesService _preferencesService;
+  final PreferencesPort _preferencesService;
 
   final LlamaServerManager serverManager;
   SubagentService? _subagentService;
@@ -44,10 +44,10 @@ class ChatWorkspaceController extends ChangeNotifier implements Disposable {
     required ChatLibraryService chatLibrary,
     required SystemPromptLibraryService systemPromptLibrary,
     required ToolService toolService,
-    required TaskController taskController,
-    required ProjectApplication projectApplication,
+    required TaskApplicationPort taskController,
+    required ProjectApplicationPort projectApplication,
     required WorkspaceService workspaceService,
-    required PreferencesService preferencesService,
+    required PreferencesPort preferencesService,
   }) : _chatLibrary = chatLibrary,
        _systemPromptLibrary = systemPromptLibrary,
        _toolService = toolService,

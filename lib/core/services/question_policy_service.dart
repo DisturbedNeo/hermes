@@ -1,6 +1,6 @@
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:hermes/core/helpers/json_parsing.dart';
-import 'package:hermes/features/task/domain/task_system_settings.dart';
+import 'package:hermes/shared_kernel/task_system_settings.dart';
 import 'package:hermes/core/serialization/json_hooks.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 

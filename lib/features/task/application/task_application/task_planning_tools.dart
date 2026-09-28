@@ -94,21 +94,21 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     String? commandId,
   }) async {
     return switch (toolId) {
-        'task_view' => _view(arguments),
-        'task_set_brief' => _setBrief(arguments),
-        'task_reset_plan' => _resetPlan(arguments, commandId),
-        'task_add_step' => _addStep(arguments, commandId),
-        'task_add_check' => _addCheck(arguments, commandId),
-        'task_preview_plan' => _preview(arguments),
-        'task_commit_plan' => _commit(arguments),
-        'task_request_replan' => _requestReplan(arguments),
-        'task_request_user_decision' => _requestDecision(arguments, commandId),
-        _ => throw _argument(
-          'unknown_tool',
-          'tool',
-          'Unknown task planning tool $toolId.',
-        ),
-      };
+      'task_view' => _view(arguments),
+      'task_set_brief' => _setBrief(arguments),
+      'task_reset_plan' => _resetPlan(arguments, commandId),
+      'task_add_step' => _addStep(arguments, commandId),
+      'task_add_check' => _addCheck(arguments, commandId),
+      'task_preview_plan' => _preview(arguments),
+      'task_commit_plan' => _commit(arguments),
+      'task_request_replan' => _requestReplan(arguments),
+      'task_request_user_decision' => _requestDecision(arguments, commandId),
+      _ => throw _argument(
+        'unknown_tool',
+        'tool',
+        'Unknown task planning tool $toolId.',
+      ),
+    };
   }
 
   @override

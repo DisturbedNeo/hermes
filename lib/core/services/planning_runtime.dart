@@ -10,7 +10,7 @@ import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/features/model/domain/model_provider.dart';
 import 'package:hermes/features/model/domain/model_completion.dart';
 import 'package:hermes/core/services/planner_message_compactor.dart';
-import 'package:hermes/features/task/application/task_application/task_model_output.dart';
+import 'package:hermes/shared_kernel/model_output.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 
 /// The common model-facing contract for project and task planning registries.
@@ -179,7 +179,8 @@ abstract class PlanningToolRegistryBase implements PlanningToolRegistry {
     Map<String, dynamic> value,
     String fieldPath, {
     Set<String> additional = const {},
-    String message = 'Planning commands generate persistent fields; the field is not accepted.',
+    String message =
+        'Planning commands generate persistent fields; the field is not accepted.',
   }) {
     const common = {
       'id',
@@ -400,7 +401,8 @@ class PlanningToolCallRunner {
             );
           }
           return _result(
-            payload: result ??
+            payload:
+                result ??
                 {
                   'ok': false,
                   'code': 'planning_tool_failed',
@@ -438,7 +440,8 @@ class PlanningToolCallRunner {
         : await request.client.completeChatStreamed(
             messages: messages,
             extraParams: extraParams,
-            onToken: (token) => _emitToken(request.onModelOutput, request.label, token),
+            onToken: (token) =>
+                _emitToken(request.onModelOutput, request.label, token),
             cancellationToken: request.cancellationToken,
             diagnosticsLabel: request.label,
           );
@@ -477,7 +480,9 @@ class PlanningToolCallRunner {
       );
       if (tool.id != null) call.id = tool.id;
       if (tool.name != null) call.name = tool.name;
-      if (tool.argumentsChunk != null) call.arguments.write(tool.argumentsChunk);
+      if (tool.argumentsChunk != null) {
+        call.arguments.write(tool.argumentsChunk);
+      }
     }
     return ModelCompletion(
       content: content.toString(),
@@ -605,7 +610,8 @@ class PlanningToolCallRunner {
     return metrics.copyWith(
       planningCommandCount: metrics.planningCommandCount + 1,
       toolResultTokenEstimate:
-          metrics.toolResultTokenEstimate + ContextEstimator.estimateText(resultJson),
+          metrics.toolResultTokenEstimate +
+          ContextEstimator.estimateText(resultJson),
       invalidCommandCount:
           metrics.invalidCommandCount + (result?['ok'] == false ? 1 : 0),
       validationBlockerCount:

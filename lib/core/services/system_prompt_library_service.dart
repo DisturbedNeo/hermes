@@ -7,7 +7,7 @@ import 'package:hermes/features/workspace/domain/workspace.dart';
 import 'package:hermes/core/services/prompt_assembler.dart';
 
 import 'disposable.dart';
-import 'system_prompt_library_repository.dart';
+import 'prompt_library_port.dart';
 
 /// Business-logic orchestrator for the system prompt library.
 ///
@@ -23,13 +23,13 @@ class SystemPromptLibraryService extends ChangeNotifier implements Disposable {
       BuiltInPromptIds.workspaceMissingModule;
   static const String defaultPresetId = BuiltInPromptIds.defaultPreset;
 
-  final SystemPromptLibraryRepository _repository;
+  final PromptLibraryPort _repository;
   final PromptAssembler _assembler;
 
   bool _disposed = false;
 
   SystemPromptLibraryService({
-    required SystemPromptLibraryRepository repository,
+    required PromptLibraryPort repository,
     PromptAssembler assembler = const PromptAssembler(),
   }) : _repository = repository,
        _assembler = assembler;

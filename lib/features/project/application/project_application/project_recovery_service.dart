@@ -1,4 +1,5 @@
 import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/application/project_application/project_lifecycle_service.dart';
 
 /// Reconciles an interrupted task back into its owning project.

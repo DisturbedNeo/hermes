@@ -1,10 +1,10 @@
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/workspace/domain/workspace.dart';
 import 'package:hermes/core/services/persistence_contracts.dart';
-import 'package:hermes/features/project/application/project_application/project_aggregate_repository.dart';
+import 'package:hermes/features/project/application/project_application/project_aggregate_repository_port.dart';
 import 'package:hermes/features/project/application/project_application/project_control_state_service.dart';
-import 'package:hermes/features/project/application/project_application/project_repository.dart';
-import 'package:hermes/features/task/application/task_application/task_controller.dart';
+import 'package:hermes/features/project/application/project_application/project_repository_port.dart';
+import 'package:hermes/features/task/application/task_application/task_ports.dart';
 
 /// The project aggregate's persistence and hydration boundary.
 ///
@@ -14,16 +14,16 @@ import 'package:hermes/features/task/application/task_application/task_controlle
 /// ordinary domain objects instead of repository details.
 class ProjectStateStore {
   ProjectStateStore({
-    required ProjectRepository projectRepository,
-    required ProjectAggregateRepository aggregateRepository,
-    required TaskController taskController,
+    required ProjectRepositoryPort projectRepository,
+    required ProjectAggregateRepositoryPort aggregateRepository,
+    required TaskApplicationPort taskController,
   }) : _projectRepository = projectRepository,
        _aggregateRepository = aggregateRepository,
        _taskController = taskController;
 
-  final ProjectRepository _projectRepository;
-  final ProjectAggregateRepository _aggregateRepository;
-  final TaskController _taskController;
+  final ProjectRepositoryPort _projectRepository;
+  final ProjectAggregateRepositoryPort _aggregateRepository;
+  final TaskApplicationPort _taskController;
   final ProjectControlStateService _controlStateService =
       const ProjectControlStateService();
 

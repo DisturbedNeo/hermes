@@ -1,6 +1,49 @@
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/domain/project_task_models.dart';
 
+void _registerProjectTaskMaterializer() {
+  registerProjectTaskDefinitionFactory(
+    (node) => Task(
+      id: node.id,
+      title: node.title,
+      originalPrompt: node.objective,
+      objective: node.objective,
+      status: node.status,
+      gates: node.gates,
+      constraints: node.constraints,
+      successCriteria: node.successCriteria,
+      criterionIds: node.criterionIds,
+      milestoneId: node.milestoneId,
+      dependsOnTaskIds: node.dependsOnTaskIds,
+      priority: node.priority,
+      risk: node.risk,
+      riskReduction: node.riskReduction,
+      effort: node.effort,
+      selectionRationale: node.selectionRationale,
+      revisionIntroduced: node.revisionIntroduced,
+      revisionUpdated: node.revisionUpdated,
+      expectedEvidence: node.expectedEvidence,
+      readPaths: node.readPaths,
+      writePaths: node.writePaths,
+      doneCriteria: node.doneCriteria,
+      outOfScope: node.outOfScope,
+      context: node.context,
+      expectedArtifacts: node.expectedArtifacts,
+      recoveryIncidentId: node.recoveryIncidentId,
+      fingerprint: node.fingerprint.isEmpty
+          ? [
+              node.objective.trim().toLowerCase(),
+              ...node.criterionIds,
+            ].join('|')
+          : node.fingerprint,
+      rejectionReason: node.rejectionReason,
+      createdAt: node.createdAt,
+      updatedAt: node.updatedAt,
+      planningError: node.planningError,
+    ),
+  );
+}
+
 /// The only boundary that turns a project planning node into task metadata.
 ///
 /// Project planning never owns a Task document. This adapter applies the
@@ -8,7 +51,9 @@ import 'package:hermes/features/project/domain/project_task_models.dart';
 /// executable steps, runs, and all other execution history on an existing
 /// task.
 class TaskPlanMaterializer {
-  const TaskPlanMaterializer();
+  TaskPlanMaterializer() {
+    _registerProjectTaskMaterializer();
+  }
 
   Task create(
     ProjectTaskNode node, {

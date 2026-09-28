@@ -28,7 +28,10 @@ void main() {
 
     final sandbox = WorkspaceSandbox();
     toolService = ToolService(workspaceSandbox: sandbox);
-    final taskController = TaskController(toolService: toolService, sandbox: sandbox);
+    final taskController = TaskController(
+      toolService: toolService,
+      sandbox: sandbox,
+    );
 
     preferences = PreferencesService();
     final chatLibraryRepository = ChatLibraryRepository(

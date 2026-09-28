@@ -31,7 +31,10 @@ void main() {
     preferences = PreferencesService();
     final sandbox = WorkspaceSandbox();
     final toolService = ToolService(workspaceSandbox: sandbox);
-    final taskController = TaskController(toolService: toolService, sandbox: sandbox);
+    final taskController = TaskController(
+      toolService: toolService,
+      sandbox: sandbox,
+    );
     chatLibrary = _FakeChatLibraryService();
     promptLibraryRepository = SystemPromptLibraryRepository(
       preferencesService: preferences,

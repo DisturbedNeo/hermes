@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/domain/task.dart';
 
 /// Converts task output into durable, deduplicated Project evidence.
 class ProjectEvidenceService {

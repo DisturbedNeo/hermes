@@ -1,4 +1,5 @@
 import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/workspace/domain/workspace.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/features/model/domain/model_provider.dart';

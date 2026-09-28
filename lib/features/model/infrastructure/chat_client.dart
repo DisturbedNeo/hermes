@@ -18,7 +18,6 @@ import 'package:http/http.dart' as http;
 export 'package:hermes/features/model/domain/model_completion.dart';
 export 'package:hermes/features/model/domain/model_errors.dart';
 
-
 /// Parses SSE (Server-Sent Events) stream payloads into [ChatToken]s.
 ///
 /// Handles line buffering, event aggregation, `[DONE]` detection, and JSON

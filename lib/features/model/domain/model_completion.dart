@@ -28,11 +28,7 @@ class ModelToolCall {
   final String name;
   final String arguments;
 
-  const ModelToolCall({
-    required this.name,
-    this.id,
-    this.arguments = '{}',
-  });
+  const ModelToolCall({required this.name, this.id, this.arguments = '{}'});
 }
 
 typedef ChatCompletionResponse = ModelCompletion;

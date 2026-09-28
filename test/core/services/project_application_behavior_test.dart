@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/domain/task_system_settings.dart';
 import 'package:hermes/features/workspace/domain/workspace.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
@@ -15,6 +16,8 @@ import 'package:hermes/features/project/application/project_application/project_
 import 'package:hermes/features/project/application/project_application/project_plan_patch.dart';
 import 'package:hermes/features/project/application/project_application/project_scheduler.dart';
 import 'package:hermes/features/project/application/project_application/project_application.dart';
+import 'package:hermes/features/project/infrastructure/project_repository.dart';
+import 'package:hermes/features/project/infrastructure/project_aggregate_repository.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/features/task/domain/task_planning_models.dart';
 import 'package:hermes/features/task/application/task_application/task_model_output.dart';
@@ -22,6 +25,7 @@ import 'package:hermes/features/task/application/task_application/task_repositor
 import 'package:hermes/core/services/persistence_contracts.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
+import 'package:hermes/core/services/workspace_persistence_coordinator.dart';
 
 extension _ProjectApplicationTestCommands on ProjectApplication {
   Future<ProjectCommandResult> executeProject({
@@ -69,9 +73,7 @@ void main() {
   late ProjectApplication service;
 
   setUp(() async {
-    root = await Directory.systemTemp.createTemp(
-      'hermes_project_application_',
-    );
+    root = await Directory.systemTemp.createTemp('hermes_project_application_');
     workspace = WorkspaceAttachment(
       rootPath: root.path,
       displayName: 'Workspace',
@@ -81,8 +83,12 @@ void main() {
     taskController = TaskController(
       toolService: ToolService(workspaceSandbox: sandbox),
       sandbox: sandbox,
+      repository: TaskRepository(),
     );
-    service = ProjectApplication(taskController: taskController);
+    service = ProjectApplication(
+      taskController: taskController,
+      repository: ProjectRepository(),
+    );
   });
 
   tearDown(() async {
@@ -325,8 +331,17 @@ void main() {
       sandbox: WorkspaceSandbox(),
       repository: countingRepository,
     );
+    final persistence = WorkspacePersistenceCoordinator();
+    final projectRepository = ProjectRepository(coordinator: persistence);
     final countedProjectApplication = ProjectApplication(
       taskController: countedTaskController,
+      repository: projectRepository,
+      aggregateRepository: ProjectAggregateRepository(
+        projectRepository: projectRepository,
+        taskRepository: countingRepository,
+        coordinator: persistence,
+      ),
+      persistenceCoordinator: persistence,
     );
     final secondTask = _task().copyWith(
       id: 'task_2',

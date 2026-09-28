@@ -30,8 +30,10 @@ import 'package:hermes/features/project/application/project_application/project_
 import 'package:hermes/features/project/application/project_application/project_workspace_graph_service.dart';
 import 'package:hermes/features/project/application/project_application/project_state_models.dart';
 import 'package:hermes/features/project/application/project_application/project_progress_monitor.dart';
-import 'package:hermes/features/project/application/project_application/project_repository.dart';
-import 'package:hermes/features/project/application/project_application/project_aggregate_repository.dart';
+import 'package:hermes/features/project/application/project_application/in_memory_project_repository.dart';
+import 'package:hermes/features/project/application/project_application/project_repository_port.dart';
+import 'package:hermes/features/project/application/project_application/project_aggregate_repository_port.dart';
+import 'package:hermes/features/project/application/project_application/in_memory_project_aggregate_repository.dart';
 import 'package:hermes/features/project/application/project_application/project_aggregate_store.dart';
 import 'package:hermes/features/project/application/project_application/project_handlers.dart';
 import 'package:hermes/features/project/application/project_application/project_state_store.dart';
@@ -44,14 +46,14 @@ import 'package:hermes/core/services/question_policy_service.dart';
 import 'package:hermes/features/task/application/task_application/task_json.dart';
 import 'package:hermes/features/task/application/task_application/task_model_output.dart';
 import 'package:hermes/features/task/application/task_application/task_lifecycle_service.dart';
-import 'package:hermes/features/task/application/task_application/task_controller.dart';
+import 'package:hermes/features/task/application/task_application/task_ports.dart';
+import 'package:hermes/features/project/application/project_application/project_ports.dart';
 import 'package:hermes/features/task/domain/task_planning_models.dart';
 import 'package:hermes/core/services/workspace_discovery_profile.dart';
 import 'package:hermes/core/services/planning_runtime.dart';
 import 'package:hermes/core/services/planning_structured_output.dart';
 import 'package:hermes/features/workspace/application/workspace_ports.dart';
 import 'package:path/path.dart' as path;
-
 
 int taskStepLimit(TaskEffort effort) => switch (effort) {
   TaskEffort.small => 1,
@@ -62,15 +64,15 @@ int taskStepLimit(TaskEffort effort) => switch (effort) {
 /// Owns the runtime graph used by the project use cases.
 abstract class ProjectApplicationRuntime {
   ProjectApplicationRuntime({
-    required TaskController taskController,
-    ProjectRepository? repository,
+    required TaskApplicationPort taskController,
+    ProjectRepositoryPort? repository,
     ProjectPlanner? planner,
     ProjectCompletionEvaluator? completionEvaluator,
     ProjectScheduler? scheduler,
     ProjectMemoryService? memoryService,
     ProjectProgressMonitor? progressMonitor,
     PersistencePort? persistenceCoordinator,
-    ProjectAggregateRepository? aggregateRepository,
+    ProjectAggregateRepositoryPort? aggregateRepository,
     ProjectStateStore? stateStore,
     ProjectCommandService? commandService,
     ProjectExecutionPort? executionPort,
@@ -83,12 +85,7 @@ abstract class ProjectApplicationRuntime {
     ProjectCompletionService? completion,
     ProjectRecoveryService? recoveryService,
   }) : _taskController = taskController,
-       _repository =
-           repository ??
-           ProjectRepository(
-             coordinator:
-                 persistenceCoordinator ?? taskController.repository.coordinator,
-           ),
+       _repository = repository ?? InMemoryProjectRepository(),
        _persistenceCoordinator =
            persistenceCoordinator ?? taskController.repository.coordinator,
        _providedAggregateRepository = aggregateRepository,
@@ -156,8 +153,8 @@ abstract class ProjectApplicationRuntime {
 
   String _initialPlanningBlockerMessage(List<Map<String, String>> issues);
 
-  final TaskController _taskController;
-  final ProjectRepository _repository;
+  final TaskApplicationPort _taskController;
+  final ProjectRepositoryPort _repository;
   final ProjectPlanner _planner;
   final ProjectCompletionEvaluator _completionEvaluator;
   final ProjectScheduler _scheduler;
@@ -171,14 +168,13 @@ abstract class ProjectApplicationRuntime {
   final ProjectCommandService? _providedCommandService;
   final ProjectExecutionPort? _providedExecutionPort;
   final ProjectRecoveryPort? _providedRecoveryPort;
-  final ProjectAggregateRepository? _providedAggregateRepository;
+  final ProjectAggregateRepositoryPort? _providedAggregateRepository;
   final ProjectStateStore? _providedStateStore;
-  late final ProjectAggregateRepository _aggregateRepository =
+  late final ProjectAggregateRepositoryPort _aggregateRepository =
       _providedAggregateRepository ??
-      ProjectAggregateRepository(
+      InMemoryProjectAggregateRepository(
         projectRepository: _repository,
         taskRepository: _taskController.repository,
-        coordinator: _persistenceCoordinator,
       );
   late final ProjectAggregateStore _aggregateStore = ProjectAggregateStore(
     aggregateRepository: _aggregateRepository,
@@ -237,7 +233,7 @@ abstract class ProjectApplicationRuntime {
   // durable, actionable blocker rather than an unbounded model-call loop.
   static const _maxAutomaticInitialPlanRepairs = 2;
 
-  ProjectRepository get repository => _repository;
+  ProjectRepositoryPort get repository => _repository;
 
   Future<ProjectCommandResult> execute(ProjectExecutionRequest request) =>
       _commandService.execute(request, port: _executionPort);
@@ -2886,8 +2882,8 @@ Ask the user only for destructive or irreversible actions, credentials/secrets/a
 }
 
 /// Application-facing project use-case boundary.
-class ProjectApplication extends ProjectApplicationRuntime {
-  ProjectApplication({
+class _ProjectApplicationCoordinator extends ProjectApplicationRuntime {
+  _ProjectApplicationCoordinator({
     required super.taskController,
     super.repository,
     super.planner,
@@ -2909,7 +2905,7 @@ class ProjectApplication extends ProjectApplicationRuntime {
     super.recoveryService,
   });
 
-/// Executes bounded project runs and owns the task execution protocol.
+  /// Executes bounded project runs and owns the task execution protocol.
   @override
   Future<ProjectCommandResult> _runProjectCore({
     required ModelProvider client,
@@ -3852,7 +3848,8 @@ class ProjectApplication extends ProjectApplicationRuntime {
       result: result,
     );
   }
-/// Owns project creation and initial-plan validation policy.
+
+  /// Owns project creation and initial-plan validation policy.
   Future<ProjectDocument> createProject({
     required WorkspaceAttachment workspace,
     required String userPrompt,
@@ -4489,7 +4486,8 @@ class ProjectApplication extends ProjectApplicationRuntime {
       ),
     );
   }
-/// Coordinates readiness refresh with the aggregate write boundary.
+
+  /// Coordinates readiness refresh with the aggregate write boundary.
   @override
   Future<ProjectDocument> _persistProject(
     String workspaceRoot,
@@ -4505,7 +4503,8 @@ class ProjectApplication extends ProjectApplicationRuntime {
       checkpoint: checkpoint,
     );
   }
-/// Owns user-facing project commands and interrupted-run recovery.
+
+  /// Owns user-facing project commands and interrupted-run recovery.
   @override
   Future<ProjectCommandResult> _recoverProjectCore({
     required WorkspaceAttachment workspace,
@@ -5013,7 +5012,243 @@ class ProjectApplication extends ProjectApplicationRuntime {
   }) {
     return cancelProject(workspace: workspace, snapshot: snapshot);
   }
+}
 
+/// Thin application facade for project use cases.
+///
+/// The runtime coordinator below owns the internal project command pipeline;
+/// this boundary only composes it and exposes the stable port methods used by
+/// chat, UI, and the composition root.
+class ProjectApplication implements ProjectApplicationPort {
+  ProjectApplication({
+    required TaskApplicationPort taskController,
+    ProjectRepositoryPort? repository,
+    ProjectPlanner? planner,
+    ProjectCompletionEvaluator? completionEvaluator,
+    ProjectScheduler? scheduler,
+    ProjectMemoryService? memoryService,
+    ProjectProgressMonitor? progressMonitor,
+    PersistencePort? persistenceCoordinator,
+    ProjectAggregateRepositoryPort? aggregateRepository,
+    ProjectStateStore? stateStore,
+    ProjectCommandService? commandService,
+    ProjectExecutionPort? executionPort,
+    ProjectRecoveryPort? recoveryPort,
+    PlanningToolCallRunner planningRunner = const PlanningToolCallRunner(),
+    StructuredPlanningOutputService structuredOutput =
+        const StructuredPlanningOutputService(),
+    ProjectLifecycleService lifecycle = const ProjectLifecycleService(),
+    TaskLifecycleService? taskLifecycle,
+    ProjectCompletionService? completion,
+    ProjectRecoveryService? recoveryService,
+  }) : _delegate = _ProjectApplicationCoordinator(
+         taskController: taskController,
+         repository: repository,
+         planner: planner,
+         completionEvaluator: completionEvaluator,
+         scheduler: scheduler,
+         memoryService: memoryService,
+         progressMonitor: progressMonitor,
+         persistenceCoordinator: persistenceCoordinator,
+         aggregateRepository: aggregateRepository,
+         stateStore: stateStore,
+         commandService: commandService,
+         executionPort: executionPort,
+         recoveryPort: recoveryPort,
+         planningRunner: planningRunner,
+         structuredOutput: structuredOutput,
+         lifecycle: lifecycle,
+         taskLifecycle: taskLifecycle,
+         completion: completion,
+         recoveryService: recoveryService,
+       );
+
+  final _ProjectApplicationCoordinator _delegate;
+
+  ProjectRepositoryPort get repository => _delegate.repository;
+
+  Future<ProjectCommandResult> execute(ProjectExecutionRequest request) =>
+      _delegate.execute(request);
+
+  @override
+  Future<ProjectCommandResult> executeUntilStop(
+    ProjectExecutionRequest request, {
+    required bool boundedRun,
+  }) => _delegate.executeUntilStop(request, boundedRun: boundedRun);
+
+  @override
+  Future<ProjectCommandResult> recover(ProjectRecoveryRequest request) =>
+      _delegate.recover(request);
+
+  Future<ProjectTransactionRecoveryResult> recoverPersistence(
+    WorkspaceAttachment workspace,
+  ) => _delegate.recoverPersistence(workspace);
+
+  @override
+  Future<List<ProjectSummary>> listProjects(
+    WorkspaceAttachment workspace, {
+    String? chatSessionId,
+  }) => _delegate.listProjects(workspace, chatSessionId: chatSessionId);
+
+  @override
+  Future<ProjectDocument?> loadLatestProject(
+    WorkspaceAttachment workspace, {
+    String? chatSessionId,
+  }) => _delegate.loadLatestProject(workspace, chatSessionId: chatSessionId);
+
+  @override
+  Future<ProjectDocument?> loadProject(
+    WorkspaceAttachment workspace,
+    String projectId, {
+    String? chatSessionId,
+  }) =>
+      _delegate.loadProject(workspace, projectId, chatSessionId: chatSessionId);
+
+  @override
+  Future<int> deleteProjectsForChatSession(
+    WorkspaceAttachment workspace, {
+    required String chatSessionId,
+  }) => _delegate.deleteProjectsForChatSession(
+    workspace,
+    chatSessionId: chatSessionId,
+  );
+
+  @override
+  Future<int> deleteOrphanedChatProjects(
+    WorkspaceAttachment workspace, {
+    required Set<String> retainedChatSessionIds,
+  }) => _delegate.deleteOrphanedChatProjects(
+    workspace,
+    retainedChatSessionIds: retainedChatSessionIds,
+  );
+
+  @override
+  Future<ProjectDocument> updateProjectChatSessionId({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String chatSessionId,
+  }) => _delegate.updateProjectChatSessionId(
+    workspace: workspace,
+    snapshot: snapshot,
+    chatSessionId: chatSessionId,
+  );
+
+  @override
+  String encodeProject(ProjectDocument project) =>
+      _delegate.encodeProject(project);
+
+  @override
+  Future<ProjectDocument> createProject({
+    required WorkspaceAttachment workspace,
+    required String userPrompt,
+    String? chatSessionId,
+    ModelProvider? client,
+    String baseSystemPrompt = '',
+    int? maxIterations,
+    TaskModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+    QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
+  }) => _delegate.createProject(
+    workspace: workspace,
+    userPrompt: userPrompt,
+    chatSessionId: chatSessionId,
+    client: client,
+    baseSystemPrompt: baseSystemPrompt,
+    maxIterations: maxIterations,
+    onModelOutput: onModelOutput,
+    cancellationToken: cancellationToken,
+    questionAutonomy: questionAutonomy,
+  );
+
+  @override
+  Future<ProjectDocument> updateProject({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String rawJson,
+  }) => _delegate.updateProject(
+    workspace: workspace,
+    snapshot: snapshot,
+    rawJson: rawJson,
+  );
+
+  @override
+  Future<ProjectDocument> answerOpenQuestion({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String answer,
+  }) => _delegate.answerOpenQuestion(
+    workspace: workspace,
+    snapshot: snapshot,
+    answer: answer,
+  );
+
+  @override
+  Future<ProjectDocument> addUserContext({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String text,
+  }) => _delegate.addUserContext(
+    workspace: workspace,
+    snapshot: snapshot,
+    text: text,
+  );
+
+  @override
+  Future<ProjectDocument> requestScopeChange({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String context,
+  }) => _delegate.requestScopeChange(
+    workspace: workspace,
+    snapshot: snapshot,
+    context: context,
+  );
+
+  @override
+  Future<ProjectDocument> pauseProject({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) => _delegate.pauseProject(workspace: workspace, snapshot: snapshot);
+
+  @override
+  Future<ProjectDocument> clearTaskBlocker({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) => _delegate.clearTaskBlocker(workspace: workspace, snapshot: snapshot);
+
+  @override
+  Future<ProjectDocument> approvePlanRevision({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) => _delegate.approvePlanRevision(workspace: workspace, snapshot: snapshot);
+
+  @override
+  Future<ProjectDocument> rejectPlanRevision({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) => _delegate.rejectPlanRevision(workspace: workspace, snapshot: snapshot);
+
+  @override
+  Future<ProjectDocument> retryRecoveryIncident({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+    required String incidentId,
+  }) => _delegate.retryRecoveryIncident(
+    workspace: workspace,
+    snapshot: snapshot,
+    incidentId: incidentId,
+  );
+
+  @override
+  Future<ProjectDocument> stopProject({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) => _delegate.stopProject(workspace: workspace, snapshot: snapshot);
+
+  Future<ProjectDocument> cancelProject({
+    required WorkspaceAttachment workspace,
+    required ProjectDocument snapshot,
+  }) => _delegate.cancelProject(workspace: workspace, snapshot: snapshot);
 }
 
 class _ProjectTaskValidation {

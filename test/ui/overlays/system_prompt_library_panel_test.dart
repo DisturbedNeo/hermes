@@ -36,7 +36,10 @@ void main() {
     promptLibrary = _FakeSystemPromptLibraryService();
     final sandbox = WorkspaceSandbox();
     final toolService = ToolService(workspaceSandbox: sandbox);
-    final taskController = TaskController(toolService: toolService, sandbox: sandbox);
+    final taskController = TaskController(
+      toolService: toolService,
+      sandbox: sandbox,
+    );
     tabs = ChatWorkspaceController(
       serverManager: LlamaServerManager(),
       chatLibrary: chatLibrary,

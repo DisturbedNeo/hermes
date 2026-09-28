@@ -1,5 +1,6 @@
 import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/domain/task_system_settings.dart';
 import 'package:hermes/features/workspace/domain/workspace.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
@@ -222,22 +223,6 @@ class InvalidProjectTransitionException implements Exception {
   @override
   String toString() =>
       'InvalidProjectTransitionException: ${from.name} -> ${to.name}: $reason';
-}
-
-class InvalidTaskTransitionException implements Exception {
-  final TaskStatus from;
-  final TaskStatus to;
-  final String reason;
-
-  const InvalidTaskTransitionException({
-    required this.from,
-    required this.to,
-    required this.reason,
-  });
-
-  @override
-  String toString() =>
-      'InvalidTaskTransitionException: ${from.name} -> ${to.name}: $reason';
 }
 
 class ProjectReadOnlyException implements Exception {

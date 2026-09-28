@@ -1,7 +1,20 @@
 import 'package:dart_mappable/dart_mappable.dart';
-import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/shared_kernel/task_planning_types.dart';
+import 'package:hermes/shared_kernel/task_execution_contracts.dart';
 
 part 'project_task_models.mapper.dart';
+
+typedef ProjectTaskDefinitionFactory = Object Function(ProjectTaskNode node);
+
+ProjectTaskDefinitionFactory? _taskDefinitionFactory;
+
+/// Registers the one-way project-to-task materializer owned by the task
+/// application boundary. The project domain keeps no executable Task import.
+void registerProjectTaskDefinitionFactory(
+  ProjectTaskDefinitionFactory factory,
+) {
+  _taskDefinitionFactory = factory;
+}
 
 /// Planner-owned description of a task.
 ///
@@ -142,42 +155,47 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
   final DateTime createdAt;
   final DateTime updatedAt;
 
-  factory ProjectTaskNode.fromTask(Task task) => ProjectTaskNode(
-    id: task.id,
-    title: task.title,
-    objective: task.objective,
-    status: task.status,
-    gates: List.unmodifiable(task.gates),
-    constraints: List.unmodifiable(task.constraints),
-    successCriteria: List.unmodifiable(task.successCriteria),
-    criterionIds: List.unmodifiable(task.criterionIds),
-    milestoneId: task.milestoneId,
-    dependsOnTaskIds: List.unmodifiable(task.dependsOnTaskIds),
-    priority: task.priority,
-    risk: task.risk,
-    riskReduction: task.riskReduction,
-    effort: task.effort,
-    selectionRationale: task.selectionRationale,
-    revisionIntroduced: task.revisionIntroduced,
-    revisionUpdated: task.revisionUpdated,
-    expectedEvidence: List.unmodifiable(task.expectedEvidence),
-    readPaths: List.unmodifiable(task.readPaths),
-    writePaths: List.unmodifiable(task.writePaths),
-    doneCriteria: List.unmodifiable(task.doneCriteria),
-    outOfScope: List.unmodifiable(task.outOfScope),
-    context: List.unmodifiable(task.context),
-    expectedArtifacts: List.unmodifiable(task.expectedArtifacts),
-    recoveryIncidentId: task.recoveryIncidentId,
-    fingerprint: task.fingerprint,
-    rejectionReason: task.rejectionReason,
-    failureKey: task.failure?.failureKey,
-    failureGateId: task.failure?.gateId,
-    failureErrorCodes: List.unmodifiable(task.failure?.errorCodes ?? const []),
-    unresolvedErrorCount: task.failure?.unresolvedErrorCount ?? 0,
-    planningError: task.planningError,
-    createdAt: task.createdAt,
-    updatedAt: task.updatedAt,
-  );
+  factory ProjectTaskNode.fromTask(Object task) {
+    final source = task as dynamic;
+    return ProjectTaskNode(
+      id: source.id,
+      title: source.title,
+      objective: source.objective,
+      status: source.status,
+      gates: List.unmodifiable(source.gates),
+      constraints: List.unmodifiable(source.constraints),
+      successCriteria: List.unmodifiable(source.successCriteria),
+      criterionIds: List.unmodifiable(source.criterionIds),
+      milestoneId: source.milestoneId,
+      dependsOnTaskIds: List.unmodifiable(source.dependsOnTaskIds),
+      priority: source.priority,
+      risk: source.risk,
+      riskReduction: source.riskReduction,
+      effort: source.effort,
+      selectionRationale: source.selectionRationale,
+      revisionIntroduced: source.revisionIntroduced,
+      revisionUpdated: source.revisionUpdated,
+      expectedEvidence: List.unmodifiable(source.expectedEvidence),
+      readPaths: List.unmodifiable(source.readPaths),
+      writePaths: List.unmodifiable(source.writePaths),
+      doneCriteria: List.unmodifiable(source.doneCriteria),
+      outOfScope: List.unmodifiable(source.outOfScope),
+      context: List.unmodifiable(source.context),
+      expectedArtifacts: List.unmodifiable(source.expectedArtifacts),
+      recoveryIncidentId: source.recoveryIncidentId,
+      fingerprint: source.fingerprint,
+      rejectionReason: source.rejectionReason,
+      failureKey: source.failure?.failureKey,
+      failureGateId: source.failure?.gateId,
+      failureErrorCodes: List.unmodifiable(
+        source.failure?.errorCodes ?? const [],
+      ),
+      unresolvedErrorCount: source.failure?.unresolvedErrorCount ?? 0,
+      planningError: source.planningError,
+      createdAt: source.createdAt,
+      updatedAt: source.updatedAt,
+    );
+  }
 
   ProjectTaskNode copyWith({
     String? id,
@@ -266,41 +284,9 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
   /// Materializes a planning node at the task-system boundary. The returned
   /// document is a definition only; it deliberately contains no steps, runs,
   /// or execution history.
-  Task toTaskDefinition() => Task(
-    id: id,
-    title: title,
-    originalPrompt: objective,
-    objective: objective,
-    status: status,
-    gates: gates,
-    constraints: constraints,
-    successCriteria: successCriteria,
-    criterionIds: criterionIds,
-    milestoneId: milestoneId,
-    dependsOnTaskIds: dependsOnTaskIds,
-    priority: priority,
-    risk: risk,
-    riskReduction: riskReduction,
-    effort: effort,
-    selectionRationale: selectionRationale,
-    revisionIntroduced: revisionIntroduced,
-    revisionUpdated: revisionUpdated,
-    expectedEvidence: expectedEvidence,
-    readPaths: readPaths,
-    writePaths: writePaths,
-    doneCriteria: doneCriteria,
-    outOfScope: outOfScope,
-    context: context,
-    expectedArtifacts: expectedArtifacts,
-    recoveryIncidentId: recoveryIncidentId,
-    fingerprint: fingerprint.isEmpty
-        ? _fingerprint(objective, criterionIds)
-        : fingerprint,
-    rejectionReason: rejectionReason,
-    createdAt: createdAt,
-    updatedAt: updatedAt,
-    planningError: planningError,
-  );
+  dynamic toTaskDefinition() =>
+      _taskDefinitionFactory?.call(this) ??
+      (throw StateError('Task materializer has not been registered.'));
 
   bool get isTerminal => switch (status) {
     TaskStatus.completed ||
@@ -316,9 +302,6 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
 
 const Object _unset = Object();
 
-String _fingerprint(String objective, List<String> criteria) =>
-    [objective.trim().toLowerCase(), ...criteria].join('|');
-
 /// Execution-owned observation of a canonical task document.
 ///
 /// It is intentionally an adapter rather than a second persisted task model;
@@ -329,7 +312,7 @@ class TaskExecution {
   final TaskStatus status;
   final String? currentStepId;
   final int persistenceRevision;
-  final TaskRun? latestRun;
+  final Object? latestRun;
   final DateTime observedAt;
 
   const TaskExecution({
@@ -341,13 +324,15 @@ class TaskExecution {
     this.latestRun,
   });
 
-  factory TaskExecution.fromTask(Task task, {DateTime? observedAt}) =>
-      TaskExecution(
-        taskId: task.id,
-        status: task.status,
-        currentStepId: task.currentStepId,
-        persistenceRevision: task.persistenceRevision,
-        latestRun: task.runs.isEmpty ? null : task.runs.last,
-        observedAt: observedAt ?? DateTime.now(),
-      );
+  factory TaskExecution.fromTask(Object task, {DateTime? observedAt}) {
+    final source = task as dynamic;
+    return TaskExecution(
+      taskId: source.id,
+      status: source.status,
+      currentStepId: source.currentStepId,
+      persistenceRevision: source.persistenceRevision,
+      latestRun: source.runs.isEmpty ? null : source.runs.last,
+      observedAt: observedAt ?? DateTime.now(),
+    );
+  }
 }

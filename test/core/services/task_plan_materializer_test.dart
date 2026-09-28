@@ -41,7 +41,7 @@ void main() {
       existing,
     ).copyWith(title: 'Revised title', objective: 'Revised objective');
 
-    final updated = const TaskPlanMaterializer().apply(
+    final updated = TaskPlanMaterializer().apply(
       node,
       existing,
       projectId: 'project_1',

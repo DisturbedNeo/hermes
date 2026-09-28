@@ -1,5 +1,4 @@
 import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/application/project_application/project_workspace_context_service.dart';
 import 'package:path/path.dart' as path;
 

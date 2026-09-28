@@ -2,17 +2,17 @@ import 'dart:async';
 
 import 'package:hermes/core/helpers/chat/assistant_ops.dart';
 import 'package:hermes/core/models/chat_token.dart';
-import 'package:hermes/features/chat/application/chat_application/message_store.dart';
+import 'package:hermes/core/helpers/chat/message_store_port.dart';
 
 /// Publishes streamed tokens in small batches to bound UI notification work.
 class BufferedTokenWriter {
   BufferedTokenWriter({
-    required MessageStore messageStore,
+    required MessageStorePort messageStore,
     this.interval = const Duration(milliseconds: 50),
     this.onFlush,
   }) : _messageStore = messageStore;
 
-  final MessageStore _messageStore;
+  final MessageStorePort _messageStore;
   final Duration interval;
   final void Function()? onFlush;
   final List<ChatToken> _pending = [];

@@ -10,21 +10,15 @@ void main() {
   test('shared registry owns idempotency and terminal closure', () async {
     final registry = _Registry();
 
-    final first = await registry.invoke(
-      'add',
-      {'value': 'one'},
-      commandId: 'command-1',
-    );
-    final repeated = await registry.invoke(
-      'add',
-      {'value': 'one'},
-      commandId: 'command-1',
-    );
-    final conflicting = await registry.invoke(
-      'add',
-      {'value': 'two'},
-      commandId: 'command-1',
-    );
+    final first = await registry.invoke('add', {
+      'value': 'one',
+    }, commandId: 'command-1');
+    final repeated = await registry.invoke('add', {
+      'value': 'one',
+    }, commandId: 'command-1');
+    final conflicting = await registry.invoke('add', {
+      'value': 'two',
+    }, commandId: 'command-1');
 
     expect(repeated, same(first));
     expect(conflicting['code'], 'duplicate_command');
@@ -35,34 +29,37 @@ void main() {
     expect(afterCommit['code'], 'planning_closed');
   });
 
-  test('shared runner retries an invalid terminal command without closing', () async {
-    final registry = _Registry(failFirstCommit: true);
-    final client = _QueueClient([
-      ChatCompletionResponse(
-        content: '',
-        toolCalls: [_tool('commit', '{}', id: 'commit-1')],
-      ),
-      ChatCompletionResponse(
-        content: '',
-        toolCalls: [_tool('commit', '{}', id: 'commit-2')],
-      ),
-    ]);
+  test(
+    'shared runner retries an invalid terminal command without closing',
+    () async {
+      final registry = _Registry(failFirstCommit: true);
+      final client = _QueueClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [_tool('commit', '{}', id: 'commit-1')],
+        ),
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [_tool('commit', '{}', id: 'commit-2')],
+        ),
+      ]);
 
-    final result = await const PlanningToolCallRunner().complete(
-      PlanningRunRequest(
-        client: client,
-        registry: registry,
-        label: 'Test planner',
-        system: 'system',
-        user: 'plan',
-      ),
-    );
+      final result = await const PlanningToolCallRunner().complete(
+        PlanningRunRequest(
+          client: client,
+          registry: registry,
+          label: 'Test planner',
+          system: 'system',
+          user: 'plan',
+        ),
+      );
 
-    expect(result.ok, isTrue);
-    expect(result.committed, isTrue);
-    expect(result.modelCalls, 2);
-    expect(registry.commitAttempts, 2);
-  });
+      expect(result.ok, isTrue);
+      expect(result.committed, isTrue);
+      expect(result.modelCalls, 2);
+      expect(registry.commitAttempts, 2);
+    },
+  );
 
   test('shared runner enforces the configured safety ceiling', () async {
     final registry = _Registry();
@@ -133,8 +130,11 @@ void main() {
   });
 }
 
-ChatCompletionToolCall _tool(String name, String arguments, {required String id}) =>
-    ChatCompletionToolCall(id: id, name: name, arguments: arguments);
+ChatCompletionToolCall _tool(
+  String name,
+  String arguments, {
+  required String id,
+}) => ChatCompletionToolCall(id: id, name: name, arguments: arguments);
 
 class _Registry extends PlanningToolRegistryBase {
   _Registry({this.failFirstCommit = false});

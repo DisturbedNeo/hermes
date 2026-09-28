@@ -2,23 +2,13 @@ import 'package:dart_mappable/dart_mappable.dart';
 import 'package:hermes/core/helpers/sentinel.dart' show kSentinel, resolve;
 import 'package:hermes/core/models/planning_metrics.dart';
 import 'package:hermes/core/models/project_workspace_graph.dart';
-import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/domain/project_task_models.dart';
 import 'package:hermes/core/serialization/json_hooks.dart';
+import 'package:hermes/shared_kernel/task_planning_types.dart';
+import 'package:hermes/shared_kernel/task_execution_contracts.dart';
 
-export 'package:hermes/features/task/domain/task.dart'
-    show
-        ProjectEvidenceType,
-        ProjectRiskReduction,
-        TaskEffort,
-        TaskPriority,
-        TaskRisk,
-        Task,
-        TaskArtifact,
-        TaskFailure,
-        TaskStatus,
-        TaskEvidenceExpectation,
-        TaskStatusWire;
+export 'package:hermes/shared_kernel/task_planning_types.dart';
+export 'package:hermes/shared_kernel/task_execution_contracts.dart';
 export 'project_task_models.dart'
     show ProjectTaskNode, ProjectTaskRef, ProjectTaskSpec;
 export 'package:hermes/core/models/project_workspace_graph.dart'
@@ -30,6 +20,8 @@ export 'package:hermes/core/models/project_workspace_graph.dart'
         ProjectWorkspaceNode,
         ProjectWorkspaceNodeSpec,
         ProjectWorkspaceSourceType;
+export 'package:hermes/shared_kernel/project_planning_contracts.dart'
+    show ProjectPlanApprovalPolicy;
 
 part 'project.mapper.dart';
 part 'project_json_hooks.dart';
@@ -138,31 +130,6 @@ enum ProjectCompletionReviewReason {
   batchEnded,
   @MappableValue('final_criterion_evidence')
   finalCriterionEvidence,
-}
-
-@MappableEnum(defaultValue: ProjectPlanApprovalPolicy.highRiskOnly)
-enum ProjectPlanApprovalPolicy {
-  never,
-  highRiskOnly,
-  everyRevision;
-
-  String get wire => name;
-
-  String get label => switch (this) {
-    ProjectPlanApprovalPolicy.never => 'Never (autonomous)',
-    ProjectPlanApprovalPolicy.highRiskOnly => 'High risk only',
-    ProjectPlanApprovalPolicy.everyRevision => 'Every revision',
-  };
-
-  static ProjectPlanApprovalPolicy parse(Object? value) {
-    final raw = value?.toString().trim().toLowerCase();
-    return switch (raw) {
-      'never' => ProjectPlanApprovalPolicy.never,
-      'everyrevision' ||
-      'every_revision' => ProjectPlanApprovalPolicy.everyRevision,
-      _ => ProjectPlanApprovalPolicy.highRiskOnly,
-    };
-  }
 }
 
 @MappableEnum(defaultValue: ProjectPlanRevisionApprover.automatic)

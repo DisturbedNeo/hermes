@@ -56,12 +56,13 @@ class TaskExecutionRequest {
     this.expectedEvidence = const [],
   });
 
-  factory TaskExecutionRequest.fromPlanningContext(TaskPlanningContext context) =>
-      TaskExecutionRequest(
-        criterionIds: context.criterionIds,
-        criteria: context.criteria,
-        expectedEvidence: context.expectedEvidence,
-      );
+  factory TaskExecutionRequest.fromPlanningContext(
+    TaskPlanningContext context,
+  ) => TaskExecutionRequest(
+    criterionIds: context.criterionIds,
+    criteria: context.criteria,
+    expectedEvidence: context.expectedEvidence,
+  );
 }
 
 /// Immutable workspace facts captured for task planning and recovery.

@@ -17,7 +17,7 @@ import 'package:hermes/core/helpers/chat/payload_builder.dart';
 import 'package:hermes/core/helpers/chat/assistant_ops.dart';
 import 'package:hermes/core/helpers/chat/buffered_token_writer.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
-import 'package:hermes/core/services/preferences_service.dart';
+import 'package:hermes/shared_kernel/preferences_port.dart';
 import 'package:hermes/features/task/application/task_application/task_model_output.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/features/workspace/domain/workspace.dart';
@@ -38,7 +38,7 @@ class ChatSessionManager implements Disposable {
   final LlamaServerManager _serverManager;
   final ToolService _toolService;
   final ChatToolExecutionPort _toolExecution;
-  final PreferencesService _preferencesService;
+  final PreferencesPort _preferencesService;
   late final BufferedTokenWriter _tokenWriter;
 
   final ChatSessionHost _host;
@@ -67,7 +67,7 @@ class ChatSessionManager implements Disposable {
     required LlamaServerManager serverManager,
     required ToolService toolService,
     ChatToolExecutionPort? toolExecution,
-    required PreferencesService preferencesService,
+    required PreferencesPort preferencesService,
     required ChatSessionHost host,
   }) : _messageStore = messageStore,
        _chatStream = chatStream,

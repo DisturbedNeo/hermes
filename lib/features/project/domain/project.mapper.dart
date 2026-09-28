@@ -80,6 +80,7 @@ class ProjectStatusMapper extends EnumMapper<ProjectStatus> {
     }
   }
 }
+
 /// @nodoc
 
 extension ProjectStatusMapperExtension on ProjectStatus {
@@ -794,65 +795,6 @@ extension ProjectCompletionReviewReasonMapperExtension
   dynamic toValue() {
     ProjectCompletionReviewReasonMapper.ensureInitialized();
     return MapperContainer.globals.toValue<ProjectCompletionReviewReason>(this);
-  }
-}
-
-/// @nodoc
-
-class ProjectPlanApprovalPolicyMapper
-    extends EnumMapper<ProjectPlanApprovalPolicy> {
-  ProjectPlanApprovalPolicyMapper._();
-
-  static ProjectPlanApprovalPolicyMapper? _instance;
-  static ProjectPlanApprovalPolicyMapper ensureInitialized() {
-    if (_instance == null) {
-      MapperContainer.globals.use(
-        _instance = ProjectPlanApprovalPolicyMapper._(),
-      );
-    }
-    return _instance!;
-  }
-
-  static ProjectPlanApprovalPolicy fromValue(dynamic value) {
-    ensureInitialized();
-    return MapperContainer.globals.fromValue(value);
-  }
-
-  @override
-  ProjectPlanApprovalPolicy decode(dynamic value) {
-    switch (value) {
-      case r'never':
-        return ProjectPlanApprovalPolicy.never;
-      case r'highRiskOnly':
-        return ProjectPlanApprovalPolicy.highRiskOnly;
-      case r'everyRevision':
-        return ProjectPlanApprovalPolicy.everyRevision;
-      default:
-        return ProjectPlanApprovalPolicy.values[1];
-    }
-  }
-
-  @override
-  dynamic encode(ProjectPlanApprovalPolicy self) {
-    switch (self) {
-      case ProjectPlanApprovalPolicy.never:
-        return r'never';
-      case ProjectPlanApprovalPolicy.highRiskOnly:
-        return r'highRiskOnly';
-      case ProjectPlanApprovalPolicy.everyRevision:
-        return r'everyRevision';
-    }
-  }
-}
-
-/// @nodoc
-
-extension ProjectPlanApprovalPolicyMapperExtension
-    on ProjectPlanApprovalPolicy {
-  String toValue() {
-    ProjectPlanApprovalPolicyMapper.ensureInitialized();
-    return MapperContainer.globals.toValue<ProjectPlanApprovalPolicy>(this)
-        as String;
   }
 }
 
@@ -3629,3 +3571,4 @@ mixin ProjectDecisionRecordMappable {
         .encodeMap<ProjectDecisionRecord>(this as ProjectDecisionRecord);
   }
 }
+

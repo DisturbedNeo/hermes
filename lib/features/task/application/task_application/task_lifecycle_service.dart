@@ -1,5 +1,4 @@
 import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/features/project/application/project_application/orchestration_contracts.dart';
 
 enum TaskLifecycleTrigger {
   planning,
@@ -12,6 +11,22 @@ enum TaskLifecycleTrigger {
   planManagement,
   cancel,
   system,
+}
+
+class InvalidTaskTransitionException implements Exception {
+  final TaskStatus from;
+  final TaskStatus to;
+  final String reason;
+
+  const InvalidTaskTransitionException({
+    required this.from,
+    required this.to,
+    required this.reason,
+  });
+
+  @override
+  String toString() =>
+      'InvalidTaskTransitionException: ${from.name} -> ${to.name}: $reason';
 }
 
 class TaskTransitionResult {

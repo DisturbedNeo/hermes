@@ -907,10 +907,8 @@ class ProjectPlanRevisionService {
       .join('||');
 
   static String _workspaceGraphSignature(ProjectWorkspaceGraph graph) {
-    final nodes = [...graph.nodes]
-      ..sort((a, b) => a.id.compareTo(b.id));
-    final edges = [...graph.edges]
-      ..sort((a, b) => a.id.compareTo(b.id));
+    final nodes = [...graph.nodes]..sort((a, b) => a.id.compareTo(b.id));
+    final edges = [...graph.edges]..sort((a, b) => a.id.compareTo(b.id));
     return [
       graph.orientation,
       for (final node in nodes)

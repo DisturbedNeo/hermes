@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:http/http.dart' as http;
 
 import 'package:flutter/foundation.dart';
 import 'package:hermes/core/helpers/llama_server_finder.dart';
@@ -9,7 +10,7 @@ import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/model_session_diagnostics.dart';
 import 'package:hermes/features/model/domain/model_provider.dart';
-import 'package:hermes/features/model/infrastructure/chat_client.dart';
+import 'package:hermes/core/models/model_call_diagnostics.dart';
 import 'package:hermes/core/services/model_diagnostic_bundle_writer.dart';
 
 export 'package:hermes/core/helpers/server_health_checker.dart'
@@ -30,6 +31,12 @@ typedef LlamaHealthWaiter =
       required Process process,
       required String Function() recentOutput,
       required bool Function() isCancelled,
+    });
+typedef LlamaModelProviderFactory =
+    ModelProvider Function({
+      required String baseUrl,
+      required String model,
+      void Function(ModelCallDiagnostics value)? onDiagnostics,
     });
 
 @visibleForTesting
@@ -151,10 +158,10 @@ List<String> buildLlamaServerArguments({
 }
 
 class LlamaServerManager implements Disposable {
-  final ModelDiagnosticBundleWriter _diagnosticBundleWriter;
   final LlamaProcessLauncher _processLauncher;
   final LlamaPortAllocator _portAllocator;
   final LlamaHealthWaiter _healthWaiter;
+  final LlamaModelProviderFactory _clientFactory;
   final ValueNotifier<LlamaServerHandle?> handle = ValueNotifier(null);
   final ModelSessionDiagnostics diagnostics = ModelSessionDiagnostics();
   ModelProvider? chatClient;
@@ -167,11 +174,11 @@ class LlamaServerManager implements Disposable {
     LlamaProcessLauncher? processLauncher,
     LlamaPortAllocator? portAllocator,
     LlamaHealthWaiter? healthWaiter,
-  }) : _diagnosticBundleWriter =
-           diagnosticBundleWriter ?? ModelDiagnosticBundleWriter(),
-       _processLauncher = processLauncher ?? _launchProcess,
+    LlamaModelProviderFactory? clientFactory,
+  }) : _processLauncher = processLauncher ?? _launchProcess,
        _portAllocator = portAllocator ?? _getFreePort,
-       _healthWaiter = healthWaiter ?? _waitForHealth;
+       _healthWaiter = healthWaiter ?? _waitForHealth,
+       _clientFactory = clientFactory ?? _defaultModelProviderFactory;
 
   Future<void> startWithSnapshot(ModelConfigurationSnapshot snapshot) {
     return start(
@@ -351,16 +358,14 @@ class LlamaServerManager implements Disposable {
         );
         _throwIfCancelled(generation);
 
-        final newClient = ChatClient(
+        final newClient = _clientFactory(
           baseUrl: baseUrl,
           model: modelName,
-          onTransportEvent: _recordTransportEvent,
           onDiagnostics: (value) {
             if (generation == _startGeneration) {
               diagnostics.recordCallDiagnostics(value);
             }
           },
-          liveDiagnosticsEnabled: () => diagnostics.liveTelemetryEnabled,
         );
         if (generation != _startGeneration) {
           newClient.dispose();
@@ -400,7 +405,10 @@ class LlamaServerManager implements Disposable {
     }
   }
 
-  Future<void> _loadServerProperties(ModelProvider client, int generation) async {
+  Future<void> _loadServerProperties(
+    ModelProvider client,
+    int generation,
+  ) async {
     final properties = await client.fetchServerProperties();
     if (properties == null ||
         generation != _startGeneration ||
@@ -499,44 +507,6 @@ class LlamaServerManager implements Disposable {
     await checker.waitForReady(isCancelled: isCancelled);
   }
 
-  void _recordTransportEvent(ChatTransportEvent event) {
-    diagnostics.recordTransportEvent(
-      kind: event.kind.name,
-      attempt: event.attempt,
-      willRetry: event.willRetry,
-      outputStarted: event.outputStarted,
-      error: event.error,
-    );
-    if (event.willRetry) return;
-
-    final currentHandle = handle.value;
-    unawaited(
-      _diagnosticBundleWriter.writeTransportFailure(
-        timestamp: event.timestamp,
-        modelName:
-            currentModelName ?? diagnostics.modelSnapshot?.modelName ?? '',
-        baseUrl: diagnostics.baseUrl ?? event.uri.origin,
-        serverState: diagnostics.state.name,
-        processRunning: currentHandle != null,
-        processId: currentHandle?.process.pid,
-        failureKind: event.kind.name,
-        attempt: event.attempt,
-        outputStarted: event.outputStarted,
-        error: event.error,
-        stackTrace: event.stackTrace,
-        latestTelemetry: diagnostics.lastCall?.toSafeJson(),
-        serverProperties: diagnostics.serverProperties?.toSafeJson(),
-        recentLogs: diagnostics.logs.map(
-          (entry) => {
-            'timestamp': entry.timestamp.toUtc().toIso8601String(),
-            'source': entry.source,
-            'message': entry.message,
-          },
-        ),
-      ),
-    );
-  }
-
   @override
   Future<void> dispose() async {
     if (_isDisposed) return;
@@ -545,6 +515,67 @@ class LlamaServerManager implements Disposable {
     await stop();
     diagnostics.dispose();
   }
+}
+
+LlamaModelProviderFactory get _defaultModelProviderFactory =>
+    ({required String baseUrl, required String model, onDiagnostics}) =>
+        _PropertiesOnlyModelProvider(baseUrl);
+
+/// Compatibility provider used when a manager is constructed outside the
+/// composition root (for example in lifecycle tests). The real chat provider
+/// is injected by the application composition root; this adapter only reads
+/// `/props` so startup diagnostics remain useful without importing the HTTP
+/// chat implementation into the shared service.
+class _PropertiesOnlyModelProvider implements ModelProvider {
+  _PropertiesOnlyModelProvider(this._baseUrl);
+
+  final String _baseUrl;
+  bool _disposed = false;
+
+  @override
+  bool get supportsStreamingCancellation => false;
+
+  @override
+  void dispose() => _disposed = true;
+
+  @override
+  Future<LlamaServerProperties?> fetchServerProperties() async {
+    if (_disposed) return null;
+    try {
+      final response = await http.get(Uri.parse('$_baseUrl/props'));
+      if (response.statusCode < 200 || response.statusCode >= 300) return null;
+      final raw = jsonDecode(response.body);
+      if (raw is! Map) return null;
+      final defaults = raw['default_generation_settings'];
+      final model = raw['model'];
+      final defaultMap = defaults is Map ? defaults : const {};
+      final modelMap = model is Map ? model : const {};
+      int? integer(Object? value) =>
+          value is num ? value.toInt() : int.tryParse(value?.toString() ?? '');
+      return LlamaServerProperties(
+        effectiveContextSize:
+            integer(raw['n_ctx']) ??
+            integer(defaultMap['n_ctx']) ??
+            integer(modelMap['n_ctx_train']),
+        totalSlots: integer(raw['total_slots']) ?? integer(raw['n_slots']),
+        modelPath:
+            raw['model_path']?.toString() ?? modelMap['path']?.toString(),
+        buildInfo: raw['build_info']?.toString() ?? raw['build']?.toString(),
+        chatTemplateCapabilities: raw['chat_template_caps'] is Map
+            ? Map<String, dynamic>.from(raw['chat_template_caps'] as Map)
+            : const {},
+        modalities: raw['modalities'] is Map
+            ? Map<String, dynamic>.from(raw['modalities'] as Map)
+            : const {},
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('The compatibility model provider is read-only.');
 }
 
 class _StartupOutput {
