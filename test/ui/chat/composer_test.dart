@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/enums/message_role.dart';
-import 'package:hermes/core/services/chat/chat_library_service.dart';
+import 'package:hermes/features/chat/application/chat_application/chat_library_service.dart';
 import 'package:hermes/core/services/chat_library_repository.dart';
-import 'package:hermes/core/services/chat/chat_service.dart';
+import 'package:hermes/features/chat/application/chat_controller.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/preferences_service.dart';
-import 'package:hermes/core/services/project_system/project_orchestrator.dart';
-import 'package:hermes/core/services/task_system/task_service.dart';
+import 'package:hermes/features/project/application/project_application/project_application.dart';
+import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/services/workspace_service.dart';
@@ -21,14 +21,14 @@ void main() {
   late ChatLibraryService chatLibrary;
   late LlamaServerManager serverManager;
   late ToolService toolService;
-  late ChatService chat;
+  late ChatController chat;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
 
     final sandbox = WorkspaceSandbox();
     toolService = ToolService(workspaceSandbox: sandbox);
-    final taskService = TaskService(toolService: toolService, sandbox: sandbox);
+    final taskController = TaskController(toolService: toolService, sandbox: sandbox);
 
     preferences = PreferencesService();
     final chatLibraryRepository = ChatLibraryRepository(
@@ -37,11 +37,11 @@ void main() {
     );
     chatLibrary = ChatLibraryService(repository: chatLibraryRepository);
     serverManager = LlamaServerManager();
-    chat = ChatService(
+    chat = ChatController(
       serverManager: serverManager,
       toolService: toolService,
-      taskService: taskService,
-      projectOrchestrator: ProjectOrchestrator(taskService: taskService),
+      taskController: taskController,
+      projectApplication: ProjectApplication(taskController: taskController),
       chatLibrary: chatLibrary,
       workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,

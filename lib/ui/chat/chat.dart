@@ -4,9 +4,9 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:hermes/core/helpers/responsive.dart';
-import 'package:hermes/core/services/chat/chat_library_service.dart';
-import 'package:hermes/core/services/chat/chat_service.dart';
-import 'package:hermes/core/services/chat/chat_tabs_service.dart';
+import 'package:hermes/features/chat/application/chat_application/chat_library_service.dart';
+import 'package:hermes/features/chat/application/chat_controller.dart';
+import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 import 'package:hermes/core/services/keyboard_shortcuts.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
@@ -32,7 +32,7 @@ class Chat extends StatefulWidget {
     required this.toolService,
   });
 
-  final ChatTabsService tabs;
+  final ChatWorkspaceController tabs;
   final ChatLibraryService chatLibrary;
   final SystemPromptLibraryService systemPromptLibrary;
   final WorkspaceService workspaceService;
@@ -50,7 +50,7 @@ class _ChatState extends State<Chat> {
 
   final _shortcuts = KeyboardShortcutsService();
 
-  ChatTabsService get _tabs => widget.tabs;
+  ChatWorkspaceController get _tabs => widget.tabs;
 
   var isChatListOpen = false;
   var isSettingsOpen = false;
@@ -486,7 +486,7 @@ class _ChatState extends State<Chat> {
     unawaited(_closeTab(activeChat));
   }
 
-  Future<void> _closeTab(ChatService tab) async {
+  Future<void> _closeTab(ChatController tab) async {
     if (tab.isUnsavedNonEmpty) {
       final choice = await showDialog<_UnsavedTabAction>(
         context: context,
@@ -519,10 +519,10 @@ class _ChatState extends State<Chat> {
 }
 
 class _ChatTabStrip extends StatelessWidget {
-  final List<ChatService> tabs;
+  final List<ChatController> tabs;
   final String? activeTabId;
-  final ValueChanged<ChatService> onSelect;
-  final ValueChanged<ChatService> onClose;
+  final ValueChanged<ChatController> onSelect;
+  final ValueChanged<ChatController> onClose;
 
   const _ChatTabStrip({
     required this.tabs,
@@ -562,7 +562,7 @@ class _ChatTabStrip extends StatelessWidget {
 }
 
 class _ChatTab extends StatelessWidget {
-  final ChatService tab;
+  final ChatController tab;
   final bool selected;
   final VoidCallback onSelect;
   final VoidCallback onClose;

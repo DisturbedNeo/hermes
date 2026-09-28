@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/saved_chat.dart';
-import 'package:hermes/core/services/chat/chat_library_service.dart';
+import 'package:hermes/features/chat/application/chat_application/chat_library_service.dart';
 import 'package:hermes/core/services/chat_library_repository.dart';
-import 'package:hermes/core/services/chat/chat_tabs_service.dart';
-import 'package:hermes/core/services/project_system/project_orchestrator.dart';
-import 'package:hermes/core/services/task_system/task_service.dart';
+import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
+import 'package:hermes/core/services/llama_server_manager.dart';
+import 'package:hermes/features/project/application/project_application/project_application.dart';
+import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/system_prompt_library_repository.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
@@ -22,7 +23,7 @@ void main() {
   late _FakeChatLibraryService chatLibrary;
   late SystemPromptLibraryRepository promptLibraryRepository;
   late SystemPromptLibraryService promptLibrary;
-  late ChatTabsService tabs;
+  late ChatWorkspaceController tabs;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
@@ -30,7 +31,7 @@ void main() {
     preferences = PreferencesService();
     final sandbox = WorkspaceSandbox();
     final toolService = ToolService(workspaceSandbox: sandbox);
-    final taskService = TaskService(toolService: toolService, sandbox: sandbox);
+    final taskController = TaskController(toolService: toolService, sandbox: sandbox);
     chatLibrary = _FakeChatLibraryService();
     promptLibraryRepository = SystemPromptLibraryRepository(
       preferencesService: preferences,
@@ -39,12 +40,13 @@ void main() {
     promptLibrary = SystemPromptLibraryService(
       repository: promptLibraryRepository,
     );
-    tabs = ChatTabsService(
+    tabs = ChatWorkspaceController(
+      serverManager: LlamaServerManager(),
       chatLibrary: chatLibrary,
       systemPromptLibrary: promptLibrary,
       toolService: toolService,
-      taskService: taskService,
-      projectOrchestrator: ProjectOrchestrator(taskService: taskService),
+      taskController: taskController,
+      projectApplication: ProjectApplication(taskController: taskController),
       workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,
     );
@@ -86,7 +88,7 @@ void main() {
 Widget _panelApp({
   required double width,
   required double height,
-  required ChatTabsService tabs,
+  required ChatWorkspaceController tabs,
   required ChatLibraryService library,
 }) {
   return MaterialApp(

@@ -4,13 +4,13 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:hermes/app_dependencies.dart';
 import 'package:hermes/core/models/chat_persistence.dart';
-import 'package:hermes/core/services/chat/chat_library_service.dart';
-import 'package:hermes/core/services/chat/chat_tabs_service.dart';
+import 'package:hermes/features/chat/application/chat_application/chat_library_service.dart';
+import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 import 'package:hermes/core/services/keyboard_shortcuts.dart';
 import 'package:hermes/core/services/preferences_service.dart';
-import 'package:hermes/core/services/project_system/project_orchestrator.dart';
+import 'package:hermes/features/project/application/project_application/project_application.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
-import 'package:hermes/core/services/task_system/task_service.dart';
+import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/core/services/theme_manager.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
@@ -81,9 +81,9 @@ class _AppState extends State<App> {
           value: dependencies.workspaceService,
         ),
         Provider<ToolService>.value(value: dependencies.toolService),
-        Provider<TaskService>.value(value: dependencies.taskService),
-        Provider<ProjectOrchestrator>.value(
-          value: dependencies.projectOrchestrator,
+        Provider<TaskController>.value(value: dependencies.taskController),
+        Provider<ProjectApplication>.value(
+          value: dependencies.projectApplication,
         ),
         ChangeNotifierProvider<ChatLibraryService>.value(
           value: dependencies.chatLibraryService,
@@ -91,14 +91,14 @@ class _AppState extends State<App> {
         ChangeNotifierProvider<SystemPromptLibraryService>.value(
           value: dependencies.systemPromptLibraryService,
         ),
-        ChangeNotifierProvider<ChatTabsService>.value(
-          value: dependencies.chatTabsService,
+        ChangeNotifierProvider<ChatWorkspaceController>.value(
+          value: dependencies.chatWorkspaceController,
         ),
       ],
       child: Builder(
         builder: (context) => _AppShell(
           themeManager: context.read<ThemeManager>(),
-          tabs: context.read<ChatTabsService>(),
+          tabs: context.read<ChatWorkspaceController>(),
           chatLibrary: context.read<ChatLibraryService>(),
           systemPromptLibrary: context.read<SystemPromptLibraryService>(),
           workspaceService: context.read<WorkspaceService>(),
@@ -109,7 +109,7 @@ class _AppState extends State<App> {
               widget.exitApplication ?? WidgetsBinding.instance.exitApplication,
           prepareForExit:
               widget.prepareForExit ??
-              dependencies.chatTabsService.prepareForExit,
+              dependencies.chatWorkspaceController.prepareForExit,
         ),
       ),
     );
@@ -131,7 +131,7 @@ class _AppShell extends StatefulWidget {
   });
 
   final ThemeManager themeManager;
-  final ChatTabsService tabs;
+  final ChatWorkspaceController tabs;
   final ChatLibraryService chatLibrary;
   final SystemPromptLibraryService systemPromptLibrary;
   final WorkspaceService workspaceService;

@@ -2,10 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/chat_message.dart';
-import 'package:hermes/core/models/project.dart';
-import 'package:hermes/core/models/workspace.dart';
-import 'package:hermes/core/services/chat/chat_client.dart';
-import 'package:hermes/core/services/project_system/project_model_calls.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/features/model/infrastructure/chat_client.dart';
+import 'package:hermes/features/project/application/project_application/project_model_calls.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 

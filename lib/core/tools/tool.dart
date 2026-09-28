@@ -1,4 +1,4 @@
-import 'package:hermes/core/models/workspace.dart';
+import 'package:hermes/features/workspace/domain/workspace.dart';
 
 abstract class Tool {
   abstract final String id;

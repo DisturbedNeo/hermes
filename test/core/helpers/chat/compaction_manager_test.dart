@@ -7,14 +7,15 @@ import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/helpers/chat/compaction_manager.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
-import 'package:hermes/core/services/chat/chat_client.dart';
-import 'package:hermes/core/services/chat/message_store.dart';
+import 'package:hermes/features/model/infrastructure/chat_client.dart';
+import 'package:hermes/features/model/domain/model_provider.dart';
+import 'package:hermes/features/chat/application/chat_application/message_store.dart';
 
 void main() {
   group('CompactionManager', () {
     late HttpServer server;
     late StreamSubscription<HttpRequest> serverSub;
-    late ChatClient client;
+    late ModelProvider client;
     late List<Map<String, dynamic>> requests;
 
     setUp(() async {

@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:hermes/core/helpers/uuid.dart';
 import 'package:hermes/core/models/system_prompt.dart';
-import 'package:hermes/core/models/workspace.dart';
+import 'package:hermes/features/workspace/domain/workspace.dart';
 import 'package:hermes/core/services/prompt_assembler.dart';
 
 import 'disposable.dart';

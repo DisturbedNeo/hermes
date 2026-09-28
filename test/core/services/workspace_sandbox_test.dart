@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/models/workspace.dart';
+import 'package:hermes/features/workspace/domain/workspace.dart';
 import 'package:hermes/core/services/sandbox_policy.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';

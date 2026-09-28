@@ -8,12 +8,12 @@ void main() {
       'lib/core/models/chat_message.dart',
       'lib/core/models/model_configuration_snapshot.dart',
       'lib/core/models/model_load_configuration.dart',
-      'lib/core/models/project.dart',
+      'lib/features/project/domain/project.dart',
       'lib/core/models/system_prompt.dart',
-      'lib/core/models/task.dart',
+      'lib/features/task/domain/task.dart',
       'lib/core/helpers/chat/context_summary_prompt.dart',
       'lib/core/services/question_policy_service.dart',
-      'lib/core/services/task_system/task_service.dart',
+      'lib/features/task/domain/task_planning_models.dart',
       'lib/core/tools/calculator_tool.dart',
     ];
 
@@ -47,8 +47,8 @@ void main() {
 
   test('committed mapper outputs and package initializer exist', () {
     for (final path in [
-      'lib/core/models/task.mapper.dart',
-      'lib/core/models/project.mapper.dart',
+      'lib/features/task/domain/task.mapper.dart',
+      'lib/features/project/domain/project.mapper.dart',
       'lib/core/models/system_prompt.mapper.dart',
       'lib/core/models/model_configuration_snapshot.mapper.dart',
       'lib/core/models/model_load_configuration.mapper.dart',

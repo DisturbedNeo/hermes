@@ -1,0 +1,2754 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hermes/core/helpers/chat/context_estimator.dart';
+import 'package:hermes/core/models/chat_message.dart';
+import 'package:hermes/core/models/compaction_settings.dart';
+import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/features/task/domain/task_system_settings.dart';
+import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/core/serialization/model_json.dart';
+import 'package:hermes/features/model/infrastructure/chat_client.dart';
+import 'package:hermes/core/services/cancellation_token.dart';
+import 'package:hermes/core/services/host_command_runner.dart';
+import 'package:hermes/features/task/application/task_application/task_controller.dart';
+import 'package:hermes/features/task/domain/task_planning_models.dart';
+import 'package:hermes/core/services/tool_service.dart';
+import 'package:hermes/core/services/workspace_sandbox.dart';
+import 'package:path/path.dart' as path;
+
+void main() {
+  group('TaskController linear runner', () {
+    late Directory root;
+    late WorkspaceAttachment workspace;
+    late TaskController service;
+
+    setUp(() async {
+      root = await Directory.systemTemp.createTemp('hermes_task_controller_');
+      workspace = WorkspaceAttachment(
+        rootPath: root.path,
+        displayName: 'Workspace',
+        lastOpenedAt: DateTime(2026, 1, 1),
+      );
+      final sandbox = WorkspaceSandbox();
+      service = TaskController(
+        toolService: ToolService(workspaceSandbox: sandbox),
+        sandbox: sandbox,
+      );
+    });
+
+    tearDown(() async {
+      if (await root.exists()) {
+        await root.delete(recursive: true);
+      }
+    });
+
+    test('creates a persisted paused multi-step task', () async {
+      final client = _QueueChatClient([
+        jsonEncode(_planJson(title: 'Planned task')),
+      ]);
+
+      final task = await service.createTask(
+        client: client,
+        workspace: workspace,
+        userPrompt: 'Build the reporting screen',
+        selectedMode: ExecutionMode.task,
+        baseSystemPrompt: 'system',
+        chatSessionId: 'chat_1',
+      );
+
+      expect(task.title, 'Planned task');
+      expect(task.status, TaskStatus.paused);
+      expect(task.currentStepId, startsWith('step_'));
+      expect(task.steps, hasLength(2));
+      expect(
+        File(
+          path.join(root.path, '.agent', 'tasks', task.id, 'task.json'),
+        ).existsSync(),
+        isTrue,
+      );
+    });
+
+    test(
+      'planner receives deterministic profile without discovery tools',
+      () async {
+        await File(
+          path.join(root.path, 'README.md'),
+        ).writeAsString('# Design\nBuild the analytics screen.\n');
+        final client = _QueueCompletionClient([
+          _planResponse(_planJson(title: 'Design-informed task')),
+        ]);
+
+        final task = await service.createTask(
+          client: client,
+          workspace: workspace,
+          userPrompt: 'Plan from the design document',
+          selectedMode: ExecutionMode.task,
+          baseSystemPrompt: 'system',
+          chatSessionId: 'chat_1',
+        );
+
+        expect(task.title, 'Design-informed task');
+        expect(client.requestCount, 1);
+        expect(client.seenToolNames.first, contains('task_add_step'));
+        expect(client.seenToolNames.first, isNot(contains('read_file')));
+        expect(
+          client.seenMessages.single.last.content,
+          contains('Build the analytics screen'),
+        );
+      },
+    );
+
+    test(
+      'planner falls back when it returns JSON instead of commands',
+      () async {
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: jsonEncode(_planJson(title: 'Plain JSON task')),
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode(_planJson(title: 'Repaired JSON task')),
+          ),
+        ]);
+
+        final task = await service.createTask(
+          client: client,
+          workspace: workspace,
+          userPrompt: 'Build the reporting screen',
+          selectedMode: ExecutionMode.task,
+          baseSystemPrompt: 'system',
+          chatSessionId: 'chat_1',
+        );
+
+        expect(task.title, 'Build the reporting screen');
+        expect(client.requestCount, 1);
+        expect(client.seenToolNames.first, contains('task_add_step'));
+      },
+    );
+
+    test('passes terminal approval into task planner metadata', () async {
+      workspace = workspace.copyWith(commandExecutionApproved: true);
+      final client = _QueueChatClient([
+        jsonEncode(_planJson(title: 'Planned task')),
+      ]);
+
+      await service.createTask(
+        client: client,
+        workspace: workspace,
+        userPrompt: 'Inspect the design document',
+        selectedMode: ExecutionMode.task,
+        baseSystemPrompt: 'system',
+        chatSessionId: 'chat_1',
+      );
+
+      final plannerRequest = client.seenMessages.first.last.content;
+      expect(plannerRequest, contains('"commandExecutionApproved": true'));
+    });
+
+    test(
+      'passes bounded project planning context into planner prompt',
+      () async {
+        final client = _QueueChatClient([
+          jsonEncode(_projectBoundedPlanJson(title: 'Bounded task')),
+        ]);
+
+        await service.createTask(
+          client: client,
+          workspace: workspace,
+          userPrompt: 'Implement the settings toggle',
+          selectedMode: ExecutionMode.task,
+          baseSystemPrompt: 'system',
+          chatSessionId: 'chat_1',
+          projectId: 'project_1',
+          planningContext: const TaskPlanningContext(
+            projectGoal: 'Build the whole app',
+            projectTaskObjective: 'Implement the settings toggle',
+            doneCriteria: ['The settings toggle works.'],
+            outOfScope: ['Do not build the whole app.'],
+            criterionIds: ['criterion_accessibility'],
+            criteria: [
+              TaskProjectCriterion(
+                id: 'criterion_accessibility',
+                statement: 'The settings flow is keyboard accessible.',
+                verificationMode: 'deterministic',
+              ),
+            ],
+            expectedEvidence: [
+              TaskProjectEvidenceExpectation(
+                id: 'keyboard_tests',
+                type: 'command',
+                criterionIds: ['criterion_accessibility'],
+                description: 'The keyboard widget tests pass.',
+                sourceRef: 'flutter test',
+              ),
+            ],
+            maxSteps: 3,
+          ),
+        );
+
+        final plannerRequest = client.seenMessages.first.last.content;
+        final normalisedPlannerRequest = plannerRequest
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .toLowerCase();
+        expect(plannerRequest, contains('Bounded Project task context'));
+        expect(
+          normalisedPlannerRequest,
+          contains('do not plan or perform the whole project'),
+        );
+        expect(plannerRequest, contains('Implement the settings toggle'));
+        expect(plannerRequest, contains('Do not build the whole app.'));
+        expect(plannerRequest, contains('keyboard accessible'));
+        expect(plannerRequest, contains('keyboard widget tests pass'));
+        final task = await service.loadLatestTask(
+          workspace,
+          chatSessionId: 'chat_1',
+        );
+        final persisted =
+            jsonDecode(
+                  await File(
+                    path.join(
+                      root.path,
+                      '.agent',
+                      'tasks',
+                      task!.id,
+                      'task.json',
+                    ),
+                  ).readAsString(),
+                )
+                as Map<String, dynamic>;
+        expect(persisted.containsKey('projectCriterionIds'), isFalse);
+        expect(persisted.containsKey('projectCriteria'), isFalse);
+        expect(persisted.containsKey('projectEvidenceExpectations'), isFalse);
+      },
+    );
+
+    test('converts a small Project task directly into one step', () async {
+      final task = await service.createProjectTask(
+        workspace: workspace,
+        userPrompt: 'Implement the settings toggle',
+        chatSessionId: 'chat_1',
+        projectId: 'project_1',
+        planningContext: const TaskPlanningContext(
+          projectGoal: 'Build the whole app',
+          projectTaskTitle: 'Implement settings toggle',
+          projectTaskObjective: 'Implement the settings toggle',
+          knownFacts: ['The application uses Flutter.'],
+          doneCriteria: ['The settings toggle works.'],
+          outOfScope: ['Do not redesign settings.'],
+          readPaths: ['lib/settings/'],
+          writePaths: ['lib/settings/toggle.dart'],
+          criterionIds: ['criterion_settings'],
+          criteria: [
+            TaskProjectCriterion(
+              id: 'criterion_settings',
+              statement: 'Settings can be changed.',
+            ),
+          ],
+          expectedEvidence: [
+            TaskProjectEvidenceExpectation(
+              id: 'settings_tests',
+              type: 'command',
+              criterionIds: ['criterion_settings'],
+              description: 'Settings tests pass.',
+            ),
+          ],
+        ),
+      );
+
+      expect(task.title, 'Implement settings toggle');
+      expect(task.steps, hasLength(1));
+      expect(task.steps.single.id, 'execute_project_task');
+      expect(task.steps.single.mayEditFiles, isTrue);
+      expect(
+        task.steps.single.instructions.join('\n'),
+        contains('toggle.dart'),
+      );
+    });
+
+    test(
+      'direct small Project task is read-only without write paths',
+      () async {
+        final task = await service.createProjectTask(
+          workspace: workspace,
+          userPrompt: 'Inspect settings',
+          chatSessionId: 'chat_1',
+          projectId: 'project_1',
+          planningContext: const TaskPlanningContext(
+            projectGoal: 'Build the whole app',
+            projectTaskObjective: 'Inspect settings',
+            doneCriteria: ['Document the current settings behavior.'],
+          ),
+        );
+
+        expect(task.steps, hasLength(1));
+        expect(task.steps.single.mayEditFiles, isFalse);
+        expect(task.steps.single.instructions, contains(contains('read-only')));
+      },
+    );
+
+    test(
+      'repairs a project plan that exceeds its effort-derived limit',
+      () async {
+        final oversized = _projectBoundedPlanJson(title: 'Oversized task');
+        oversized['successCriteria'] = <String>[];
+        oversized['steps'] = [
+          for (var index = 0; index < 3; index++)
+            {
+              'id': 'step_$index',
+              'title': 'Step $index',
+              'objective': 'Implement one part of the settings toggle.',
+              'instructions': ['Stay inside the bounded objective.'],
+              'mayEditFiles': true,
+            },
+        ];
+        final client = _QueueChatClient([
+          jsonEncode(oversized),
+          jsonEncode(_projectBoundedPlanJson(title: 'Repaired bounded task')),
+        ]);
+
+        final task = await service.createTask(
+          client: client,
+          workspace: workspace,
+          userPrompt: 'Implement the settings toggle',
+          selectedMode: ExecutionMode.task,
+          baseSystemPrompt: 'system',
+          chatSessionId: 'chat_1',
+          projectId: 'project_1',
+          planningContext: const TaskPlanningContext(
+            projectGoal: 'Build the whole app',
+            projectTaskObjective: 'Implement the settings toggle',
+            doneCriteria: ['The settings toggle works.'],
+            writePaths: ['lib'],
+            maxSteps: 2,
+          ),
+        );
+
+        expect(client.seenMessages, hasLength(2));
+        expect(task.steps, hasLength(1));
+        expect(task.title, 'Repaired bounded task');
+      },
+    );
+
+    test('planning context encoding matches the prompt contract fixture', () {
+      final expected = jsonDecode(
+        File(
+          'test/fixtures/contracts/project_task_planning_context.json',
+        ).readAsStringSync(),
+      );
+      const context = TaskPlanningContext(
+        projectGoal: 'Ship an accessible reporting workflow.',
+        projectTaskObjective:
+            'Implement keyboard navigation for the report dialog.',
+        knownFacts: ['The application uses Flutter.'],
+        doneCriteria: ['Every report-dialog action is keyboard reachable.'],
+        outOfScope: ['Do not redesign report visuals.'],
+        criterionIds: ['criterion_accessibility'],
+        criteria: [
+          TaskProjectCriterion(
+            id: 'criterion_accessibility',
+            statement: 'The reporting workflow is keyboard accessible.',
+            verificationMode: 'deterministic',
+          ),
+        ],
+        expectedEvidence: [
+          TaskProjectEvidenceExpectation(
+            id: 'keyboard_tests',
+            type: 'command',
+            criterionIds: ['criterion_accessibility'],
+            description: 'The keyboard widget tests pass.',
+            sourceRef: 'flutter test test/ui/report_dialog_test.dart',
+          ),
+        ],
+        maxSteps: 4,
+      );
+
+      expect(ModelJson.encode(context), expected);
+    });
+
+    test(
+      'falls back when project task planner expands to whole project',
+      () async {
+        final broadPlan = jsonEncode(_wholeProjectPlanJson());
+        final client = _QueueChatClient([broadPlan, broadPlan]);
+
+        final task = await service.createTask(
+          client: client,
+          workspace: workspace,
+          userPrompt: 'Implement the settings toggle',
+          selectedMode: ExecutionMode.task,
+          baseSystemPrompt: 'system',
+          chatSessionId: 'chat_1',
+          projectId: 'project_1',
+          planningContext: const TaskPlanningContext(
+            projectGoal: 'Build the whole app',
+            projectTaskObjective: 'Implement the settings toggle',
+            doneCriteria: ['The settings toggle works.'],
+            outOfScope: ['Do not build the whole app.'],
+            maxSteps: 3,
+          ),
+        );
+
+        expect(task.objective, 'Implement the settings toggle');
+        expect(task.steps, hasLength(1));
+        expect(task.steps.single.id, 'execute_project_task');
+        expect(task.successCriteria, contains('The settings toggle works.'));
+      },
+    );
+
+    test('fallback task adds conservative default gates', () async {
+      final client = _QueueChatClient(['not json']);
+
+      final task = await service.createTask(
+        client: client,
+        workspace: workspace,
+        userPrompt: 'Implement a code fix',
+        selectedMode: ExecutionMode.task,
+        baseSystemPrompt: 'system',
+        chatSessionId: 'chat_1',
+      );
+
+      expect(task.gates.map((gate) => gate.id), contains('no_tool_errors'));
+      expect(task.gates.map((gate) => gate.id), contains('no_failed_commands'));
+      expect(
+        task.steps.single.gates.map((gate) => gate.id),
+        contains('artifact_exists'),
+      );
+    });
+
+    test('runs one step and records structured memory and history', () async {
+      final task = _task(
+        step: const TaskStep(
+          id: 'step_1',
+          title: 'Step 1',
+          objective: 'Do the work',
+          instructions: ['Work carefully'],
+          mayEditFiles: false,
+          artifacts: [TaskArtifact(path: '.agent/tasks/task_test/notes.md')],
+          status: TaskStepStatus.pending,
+        ),
+      );
+      final persisted = await service.repository.saveSnapshot(root.path, task);
+      final client = _QueueChatClient([
+        jsonEncode({
+          'status': 'completed',
+          'summary': 'Inspected the workspace.',
+          'memoryUpdate': 'Found a Flutter app.',
+          'artifacts': [
+            {'path': '.agent/tasks/task_test/notes.md'},
+          ],
+        }),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: persisted.value,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(updated.status, TaskStatus.completed);
+      expect(updated.steps.single.status, TaskStepStatus.completed);
+      expect(updated.runs.single.status, TaskRunStatus.completed);
+      expect(updated.memorySummary, contains('Found a Flutter app.'));
+      expect(updated.runs.single.artifacts, isEmpty);
+      expect(updated.steps.single.artifacts.single.path, contains('notes.md'));
+    });
+
+    test('runs one step from finish task step tool call', () async {
+      final task = _task();
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'finish_task_step',
+              arguments: jsonEncode({
+                'status': 'completed',
+                'summary': 'Inspected the workspace.',
+                'memoryUpdate': 'Found a Flutter app.',
+              }),
+            ),
+          ],
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(client.requestCount, 1);
+      expect(client.seenToolNames.single, contains('finish_task_step'));
+      expect(
+        client.seenMessages.single.where((message) => message.role == 'system'),
+        hasLength(1),
+      );
+      expect(
+        client.seenMessages.single.first.content,
+        contains('You execute one step of a larger linear task.'),
+      );
+      expect(updated.status, TaskStatus.completed);
+      expect(updated.runs.single.status, TaskRunStatus.completed);
+      expect(updated.runs.single.summary, 'Inspected the workspace.');
+      expect(updated.memorySummary, contains('Found a Flutter app.'));
+      expect(updated.runs.single.toolCalls.single.toolName, 'finish_task_step');
+    });
+
+    test('does not accept an unknown finish status as completion', () async {
+      final task = _task();
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'finish_task_step',
+              arguments: jsonEncode({
+                'status': 'done',
+                'summary': 'This must not be accepted as completed.',
+              }),
+            ),
+          ],
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(updated.status, TaskStatus.failed);
+      expect(updated.runs.single.status, TaskRunStatus.failed);
+      expect(updated.runs.single.error, contains('status'));
+    });
+
+    test(
+      'does not treat unstructured model output as completed work',
+      () async {
+        final task = _task();
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(content: 'The work is complete.'),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(updated.status, TaskStatus.failed);
+        expect(updated.runs.single.status, TaskRunStatus.failed);
+        expect(updated.runs.single.error, 'invalid_step_result');
+      },
+    );
+
+    test('uses an explicit tool for a blocking user decision', () async {
+      final task = _task();
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'task_request_user_decision',
+              arguments: jsonEncode({
+                'question': 'Which production account should be used?',
+                'reason': 'Credentials and account selection require the user.',
+                'riskOfAssuming':
+                    'The wrong account could receive the deployment.',
+              }),
+            ),
+          ],
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(client.seenToolNames.single, contains('finish_task_step'));
+      expect(
+        client.seenToolNames.single,
+        contains('task_request_user_decision'),
+      );
+      expect(client.seenToolNames.single, contains('task_request_replan'));
+      expect(updated.status, TaskStatus.blocked);
+      expect(
+        updated.pendingQuestion?.question,
+        contains('Which production account should be used?'),
+      );
+      expect(
+        updated.runs.single.toolCalls.single.toolName,
+        'task_request_user_decision',
+      );
+    });
+
+    test('uses an explicit tool to request a replan', () async {
+      final task = _task(
+        steps: const [
+          TaskStep(
+            id: 'done',
+            title: 'Done',
+            objective: 'Already complete.',
+            instructions: [],
+            mayEditFiles: false,
+            artifacts: [],
+            status: TaskStepStatus.completed,
+          ),
+          TaskStep(
+            id: 'stale',
+            title: 'Stale step',
+            objective: 'The old approach.',
+            instructions: [],
+            mayEditFiles: false,
+            artifacts: [],
+            status: TaskStepStatus.pending,
+          ),
+        ],
+        currentStepId: 'stale',
+      );
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'task_request_replan',
+              arguments: jsonEncode({
+                'reason': 'The old approach is no longer valid.',
+              }),
+            ),
+          ],
+        ),
+        _replanResponse({
+          'title': 'Test task',
+          'goal': 'Use the corrected approach.',
+          'steps': [
+            {
+              'id': 'replacement',
+              'title': 'Replacement',
+              'objective': 'Use the corrected approach.',
+              'instructions': ['Continue with the corrected plan.'],
+              'mayEditFiles': false,
+            },
+          ],
+        }),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(updated.steps.map((step) => step.id), [
+        'done',
+        startsWith('step_'),
+      ]);
+      expect(updated.currentStepId, startsWith('step_'));
+      expect(updated.runs.map((run) => run.status), [
+        TaskRunStatus.needsReplan,
+        TaskRunStatus.replanned,
+      ]);
+    });
+
+    test(
+      'records declared artifacts only from successful workspace writes',
+      () async {
+        final task = _task(
+          step: const TaskStep(
+            id: 'write',
+            title: 'Write report',
+            objective: 'Write the report artifact.',
+            instructions: ['Create the report.'],
+            mayEditFiles: true,
+            artifacts: [
+              TaskArtifact(
+                path: '.agent/tasks/task_test/report.md',
+                description: 'Generated report',
+              ),
+            ],
+            gates: [
+              TaskGate(
+                id: 'artifact_exists',
+                params: {
+                  'paths': ['.agent/tasks/task_test/report.md'],
+                },
+              ),
+              TaskGate(
+                id: 'artifact_nonempty',
+                params: {
+                  'paths': ['.agent/tasks/task_test/report.md'],
+                },
+              ),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'write_file',
+                arguments: jsonEncode({
+                  'path': '.agent/tasks/task_test/report.md',
+                  'content': '# Report\n',
+                }),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'finish_task_step',
+                arguments: jsonEncode({
+                  'status': 'completed',
+                  'summary': 'The report was written.',
+                  'artifacts': [
+                    {'path': 'invented.md'},
+                  ],
+                }),
+              ),
+            ],
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(updated.status, TaskStatus.completed);
+        expect(updated.runs.single.artifacts, hasLength(1));
+        expect(
+          updated.runs.single.artifacts.single.path,
+          contains('report.md'),
+        );
+        expect(
+          updated.runs.single.artifacts.single.runId,
+          updated.runs.single.runId,
+        );
+        expect(
+          updated.runs.single.gateResults.map((result) => result.status),
+          everyElement(TaskGateStatus.passed),
+        );
+        expect(
+          updated.steps.single.artifacts.single.path,
+          contains('report.md'),
+        );
+        expect(
+          updated.runs.single.artifacts.map((item) => item.path),
+          isNot(contains('invented.md')),
+        );
+      },
+    );
+
+    test(
+      'persists validated project evidence claims from a finished step',
+      () async {
+        final task = _task();
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'finish_task_step',
+                arguments: jsonEncode({
+                  'status': 'completed',
+                  'summary': 'Verified the report.',
+                  'evidenceClaims': [
+                    {
+                      'criterionId': 'criterion_001',
+                      'expectationId': 'report_tests',
+                      'claim': 'The report passed its verification command.',
+                      'evidenceType': 'command',
+                      'sourceRef': 'dart test',
+                      'suggestedStrength': 'conclusive',
+                    },
+                    {
+                      'criterionId': 'unknown_criterion',
+                      'claim': 'This claim must be ignored.',
+                      'evidenceType': 'task_claim',
+                      'sourceRef': 'run',
+                      'suggestedStrength': 'advisory',
+                    },
+                  ],
+                }),
+              ),
+            ],
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+          executionRequest: const TaskExecutionRequest(
+            criterionIds: ['criterion_001'],
+            criteria: [
+              TaskProjectCriterion(
+                id: 'criterion_001',
+                statement: 'The report passes verification.',
+                verificationMode: 'deterministic',
+              ),
+            ],
+            expectedEvidence: [
+              TaskProjectEvidenceExpectation(
+                id: 'report_tests',
+                type: 'command',
+                criterionIds: ['criterion_001'],
+                description: 'The report verification command passes.',
+                sourceRef: 'dart test',
+              ),
+            ],
+          ),
+        );
+
+        expect(updated.runs.single.evidenceClaims, hasLength(1));
+        expect(
+          updated.runs.single.evidenceClaims.single.evidenceType,
+          TaskEvidenceClaimType.command,
+        );
+        expect(
+          updated.runs.single.evidenceClaims.single.expectationId,
+          'report_tests',
+        );
+        expect(
+          updated.runs.single.evidenceClaims.single.suggestedStrength,
+          TaskEvidenceClaimStrength.advisory,
+        );
+        expect(
+          updated.runs.single.evidenceClaims.single.runId,
+          updated.runs.single.runId,
+        );
+        final executionPrompt = client.seenMessages.single.last.content;
+        expect(executionPrompt, contains('The report passes verification.'));
+        expect(executionPrompt, contains('final planned task step'));
+        expect(
+          executionPrompt,
+          contains(
+            'Project evidence is derived from successful workspace calls',
+          ),
+        );
+      },
+    );
+
+    test(
+      'finish task step tool call skips sibling workspace tool calls',
+      () async {
+        final task = _task();
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'read_file',
+                arguments: jsonEncode({'path': 'missing.txt'}),
+              ),
+              ChatCompletionToolCall(
+                name: 'finish_task_step',
+                arguments: jsonEncode({
+                  'status': 'completed',
+                  'summary': 'Finished without more reads.',
+                  'memoryUpdate': 'Existing context was sufficient.',
+                }),
+              ),
+            ],
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(client.requestCount, 1);
+        expect(updated.status, TaskStatus.completed);
+        expect(updated.runs.single.summary, 'Finished without more reads.');
+        expect(updated.runs.single.toolCalls, hasLength(1));
+        expect(
+          updated.runs.single.toolCalls.single.toolName,
+          'finish_task_step',
+        );
+        expect(updated.runs.single.toolCalls.single.toolError, isNull);
+      },
+    );
+
+    test('pauses for phase approval before mutating steps', () async {
+      final task = _task(
+        step: const TaskStep(
+          id: 'edit',
+          title: 'Edit files',
+          objective: 'Edit files',
+          instructions: ['Patch files'],
+          mayEditFiles: true,
+          artifacts: [],
+          status: TaskStepStatus.pending,
+        ),
+      );
+
+      final blocked = await service.runNextStep(
+        client: _QueueChatClient([
+          jsonEncode({'status': 'completed'}),
+        ]),
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+        requirePhaseApproval: true,
+      );
+
+      expect(blocked.status, TaskStatus.blocked);
+      expect(blocked.pendingApproval?.stepId, 'edit');
+      expect(blocked.steps.single.status, TaskStepStatus.blocked);
+
+      final approved = await service.approvePendingStep(
+        workspace: workspace,
+        snapshot: blocked,
+      );
+
+      expect(approved.status, TaskStatus.paused);
+      expect(approved.pendingApproval, isNull);
+      expect(approved.steps.single.status, TaskStepStatus.approved);
+    });
+
+    test('records blocked user questions and resumes after answer', () async {
+      final task = _task();
+      final blocked = await service.runNextStep(
+        client: _QueueChatClient([
+          jsonEncode({
+            'status': 'blocked',
+            'summary': 'Need a target platform.',
+            'userQuestion': 'Which platform should this target?',
+          }),
+        ]),
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(blocked.status, TaskStatus.blocked);
+      expect(blocked.pendingQuestion?.question, contains('platform'));
+
+      final answered = await service.answerOpenQuestion(
+        workspace: workspace,
+        snapshot: blocked,
+        answer: 'Desktop first.',
+      );
+
+      expect(answered.status, TaskStatus.paused);
+      expect(answered.pendingQuestion, isNull);
+      expect(answered.steps.single.status, TaskStepStatus.pending);
+      expect(answered.memorySummary, contains('Desktop first.'));
+    });
+
+    test(
+      'downgrades low-risk priority questions under balanced autonomy',
+      () async {
+        final task = _task();
+        final updated = await service.runNextStep(
+          client: _QueueChatClient([
+            jsonEncode({
+              'status': 'blocked',
+              'summary': 'Need a UI priority.',
+              'userQuestion': {
+                'question': 'Which UI component should I prioritise?',
+                'reason': 'This only affects implementation order.',
+                'defaultIfUnanswered':
+                    'prioritize the first reasonable component, then continue with the rest.',
+                'riskOfAssuming': 'Low; the choice is reversible.',
+                'kind': 'preference',
+              },
+            }),
+          ]),
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+          questionAutonomy: QuestionAutonomy.balanced,
+        );
+
+        expect(updated.status, TaskStatus.completed);
+        expect(updated.pendingQuestion, isNull);
+        expect(updated.runs.single.status, TaskRunStatus.completed);
+        expect(updated.runs.single.summary, contains('Question policy'));
+        expect(updated.memorySummary, contains('Assumed: prioritize'));
+      },
+    );
+
+    test('still blocks credential questions under autonomous mode', () async {
+      final task = _task();
+      final blocked = await service.runNextStep(
+        client: _QueueChatClient([
+          jsonEncode({
+            'status': 'blocked',
+            'summary': 'Need credentials.',
+            'userQuestion': 'What API key should I use?',
+          }),
+        ]),
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+        questionAutonomy: QuestionAutonomy.autonomous,
+      );
+
+      expect(blocked.status, TaskStatus.blocked);
+      expect(blocked.pendingQuestion?.question, contains('API key'));
+    });
+
+    test('automatically replans unfinished work when requested', () async {
+      final task = _task(
+        steps: const [
+          TaskStep(
+            id: 'done',
+            title: 'Done',
+            objective: 'Already done',
+            instructions: [],
+            mayEditFiles: false,
+            artifacts: [],
+            status: TaskStepStatus.completed,
+          ),
+          TaskStep(
+            id: 'next',
+            title: 'Next',
+            objective: 'Next work',
+            instructions: [],
+            mayEditFiles: false,
+            artifacts: [],
+            status: TaskStepStatus.pending,
+          ),
+        ],
+        currentStepId: 'next',
+      );
+      final client = _QueueChatClient([
+        jsonEncode({
+          'status': 'needs_replan',
+          'summary': 'Plan is stale.',
+          'replanRequest': 'Add a verification step.',
+        }),
+        jsonEncode({
+          'steps': [
+            {
+              'id': 'verify',
+              'title': 'Verify',
+              'objective': 'Verify the result',
+              'instructions': ['Run checks'],
+              'mayEditFiles': false,
+            },
+          ],
+        }),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(updated.steps.map((step) => step.id), [
+        'done',
+        startsWith('step_'),
+      ]);
+      expect(updated.currentStepId, startsWith('step_'));
+      expect(updated.runs.map((run) => run.status), [
+        TaskRunStatus.needsReplan,
+        TaskRunStatus.replanned,
+      ]);
+      expect(updated.memorySummary, contains('Add a verification step.'));
+    });
+
+    test('read-only steps reject writes outside the task folder', () async {
+      final task = _task();
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'write_file',
+              arguments: jsonEncode({
+                'path': 'should-not-exist.txt',
+                'content': 'bad',
+              }),
+            ),
+          ],
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Stayed read-only.',
+            'memoryUpdate': 'No files were changed.',
+          }),
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(
+        File(path.join(root.path, 'should-not-exist.txt')).existsSync(),
+        isFalse,
+      );
+      expect(client.seenToolNames.first, contains('write_file'));
+      expect(client.seenToolNames.first, isNot(contains('run_command')));
+      expect(client.seenToolNames.first, isNot(contains('patch_file')));
+      expect(updated.runs.single.toolCalls.single.toolName, 'write_file');
+      expect(
+        updated.runs.single.toolCalls.single.toolError?.message,
+        contains('task-owned artifact'),
+      );
+      expect(updated.status, TaskStatus.completed);
+    });
+
+    test(
+      'required gate prevents completion after unresolved tool error',
+      () async {
+        final task = _task(
+          step: const TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Do the work',
+            instructions: ['Work carefully'],
+            mayEditFiles: false,
+            artifacts: [],
+            gates: [TaskGate(id: 'no_tool_errors')],
+            status: TaskStepStatus.pending,
+          ),
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'read_file',
+                arguments: jsonEncode({
+                  'path': 'README.md',
+                  'request': 'Summarize this file.',
+                }),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Stayed read-only.',
+              'memoryUpdate': 'No files were changed.',
+            }),
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(updated.status, TaskStatus.failed);
+        expect(updated.runs.single.status, TaskRunStatus.failed);
+        expect(updated.runs.single.gateResults.single.gateId, 'no_tool_errors');
+        expect(
+          updated.runs.single.gateResults.single.status,
+          TaskGateStatus.failed,
+        );
+      },
+    );
+
+    test('command_passes gate accepts matching successful command', () async {
+      workspace = workspace.copyWith(commandExecutionApproved: true);
+      final task = _task(
+        step: const TaskStep(
+          id: 'step_1',
+          title: 'Step 1',
+          objective: 'Verify toolchain',
+          instructions: ['Run dart --version.'],
+          mayEditFiles: true,
+          artifacts: [],
+          gates: [
+            TaskGate(
+              id: 'command_passes',
+              params: {'command': 'dart --version', 'working_directory': '.'},
+            ),
+          ],
+          status: TaskStepStatus.pending,
+        ),
+      );
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'run_command',
+              arguments: jsonEncode({'command': 'dart --version'}),
+            ),
+          ],
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Verified dart.',
+            'memoryUpdate': 'dart is available.',
+          }),
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      final executorPrompt = client.seenMessages.first.last.content;
+      expect(executorPrompt, contains('Exact-command requirement'));
+      expect(
+        executorPrompt,
+        contains(
+          'A variation may be available through this step\'s broader terminal permission, but it will not satisfy the gate.',
+        ),
+      );
+      expect(updated.status, TaskStatus.completed);
+      expect(
+        updated.runs.single.gateResults.single.status,
+        TaskGateStatus.passed,
+      );
+      expect(updated.runs.single.toolCalls.single.result, {
+        'command': 'dart --version',
+        'working_directory': '.',
+        'exit_code': 0,
+      });
+    });
+
+    test(
+      'malformed command results cannot be recorded as successful',
+      () async {
+        workspace = workspace.copyWith(commandExecutionApproved: true);
+        final runner = _RecordingHostCommandRunner(includeExitCode: false);
+        final sandbox = WorkspaceSandbox(hostCommandRunner: runner);
+        service = TaskController(
+          toolService: ToolService(workspaceSandbox: sandbox),
+          sandbox: sandbox,
+        );
+        final task = _task(
+          step: const TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Run the check',
+            instructions: ['Run the check.'],
+            mayEditFiles: true,
+            artifacts: [],
+            status: TaskStepStatus.pending,
+          ),
+          gates: const [TaskGate(id: 'no_tool_errors')],
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({'command': 'dart --version'}),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({'status': 'completed', 'summary': 'Done.'}),
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(updated.status, TaskStatus.failed);
+        expect(
+          updated.runs.single.toolCalls.single.outcome,
+          TaskToolCallOutcome.failed,
+        );
+        expect(
+          updated.runs.single.toolCalls.single.toolError?.code,
+          'invalid_command_result',
+        );
+        expect(
+          updated.runs.single.gateResults.single.status,
+          TaskGateStatus.failed,
+        );
+      },
+    );
+
+    test(
+      'read-only command_passes gate exposes only the required command',
+      () async {
+        workspace = workspace.copyWith(commandExecutionApproved: true);
+        final task = _task(
+          step: const TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Verify toolchain',
+            instructions: ['Run dart --version.'],
+            mayEditFiles: false,
+            artifacts: [],
+            gates: [
+              TaskGate(
+                id: 'command_passes',
+                params: {'command': 'dart --version', 'working_directory': '.'},
+              ),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({'command': 'dart --version'}),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Verified dart.',
+              'memoryUpdate': 'dart is available.',
+            }),
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        final executorPrompt = client.seenMessages.first.last.content;
+        expect(client.seenToolNames.first, contains('run_command'));
+        expect(executorPrompt, contains('Whitelisted terminal commands'));
+        expect(executorPrompt, contains('Exact-command requirement'));
+        expect(
+          executorPrompt,
+          contains('Do not add or remove arguments, flags, pipes, redirects'),
+        );
+        expect(updated.status, TaskStatus.completed);
+        expect(updated.runs.single.toolCalls.single.toolError, isNull);
+        expect(
+          updated.runs.single.gateResults.single.status,
+          TaskGateStatus.passed,
+        );
+      },
+    );
+
+    test(
+      'read-only build gate exposes and runs the exact classified build command',
+      () async {
+        workspace = workspace.copyWith(commandExecutionApproved: true);
+        final runner = _RecordingHostCommandRunner();
+        final sandbox = WorkspaceSandbox(hostCommandRunner: runner);
+        service = TaskController(
+          toolService: ToolService(workspaceSandbox: sandbox),
+          sandbox: sandbox,
+        );
+        final task = _task(
+          step: const TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Verify the solution build',
+            instructions: ['Run dotnet build Observability.sln exactly.'],
+            mayEditFiles: false,
+            artifacts: [],
+            gates: [
+              TaskGate(
+                id: 'command_passes',
+                params: {
+                  'command': 'dotnet build Observability.sln',
+                  'working_directory': '.',
+                },
+              ),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({
+                  'command': 'dotnet build Observability.sln',
+                  'working_directory': '.',
+                }),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Verified the solution build.',
+              'memoryUpdate': '',
+            }),
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(client.seenToolNames.first, contains('run_command'));
+        expect(runner.commands, ['dotnet build Observability.sln']);
+        expect(updated.status, TaskStatus.completed);
+        expect(
+          updated.runs.single.gateResults.single.status,
+          TaskGateStatus.passed,
+        );
+      },
+    );
+
+    test(
+      'read-only advisory command gate exposes and evaluates its command',
+      () async {
+        workspace = workspace.copyWith(commandExecutionApproved: true);
+        final task = _task(
+          step: const TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Inspect the toolchain',
+            instructions: ['Run dart --version for advisory evidence.'],
+            mayEditFiles: false,
+            artifacts: [],
+            gates: [
+              TaskGate(
+                id: 'command_passes',
+                required: false,
+                params: {'command': 'dart --version'},
+              ),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({'command': 'dart --version'}),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Collected advisory evidence.',
+              'memoryUpdate': '',
+            }),
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(client.seenToolNames.first, contains('run_command'));
+        expect(updated.status, TaskStatus.completed);
+        expect(
+          updated.runs.single.gateResults.single.status,
+          TaskGateStatus.advisory,
+        );
+      },
+    );
+
+    test(
+      'read-only step exposes multiple advisory verification commands',
+      () async {
+        workspace = workspace.copyWith(commandExecutionApproved: true);
+        final runner = _RecordingHostCommandRunner();
+        final sandbox = WorkspaceSandbox(hostCommandRunner: runner);
+        service = TaskController(
+          toolService: ToolService(workspaceSandbox: sandbox),
+          sandbox: sandbox,
+        );
+        final task = _task(
+          step: const TaskStep(
+            id: 'analyze_codebase',
+            title: 'Analyze codebase',
+            objective: 'Collect analyzer and test evidence.',
+            instructions: ['Run dart analyze and flutter test.'],
+            mayEditFiles: false,
+            artifacts: [],
+            gates: [
+              TaskGate(
+                id: 'command_passes',
+                required: false,
+                params: {'command': 'dart analyze', 'working_directory': '.'},
+              ),
+              TaskGate(
+                id: 'command_passes',
+                required: false,
+                params: {'command': 'flutter test', 'working_directory': '.'},
+              ),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({'command': 'dart analyze'}),
+              ),
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({'command': 'flutter test'}),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Collected analyzer and test evidence.',
+              'memoryUpdate': '',
+            }),
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(runner.commands, ['dart analyze', 'flutter test']);
+        expect(
+          updated.runs.single.gateResults.map((result) => result.status),
+          everyElement(TaskGateStatus.advisory),
+        );
+        expect(updated.status, TaskStatus.completed);
+      },
+    );
+
+    test('command classification does not hide exact gated commands', () async {
+      workspace = workspace.copyWith(commandExecutionApproved: true);
+      final task = _task(
+        step: const TaskStep(
+          id: 'step_1',
+          title: 'Step 1',
+          objective: 'Inspect safely',
+          instructions: ['Do not mutate files.'],
+          mayEditFiles: false,
+          artifacts: [],
+          gates: [
+            TaskGate(
+              id: 'command_passes',
+              required: false,
+              params: {'command': 'rm generated.txt'},
+            ),
+            TaskGate(
+              id: 'command_passes',
+              required: false,
+              params: {'command': 'custom-check'},
+            ),
+          ],
+          status: TaskStepStatus.pending,
+        ),
+      );
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Skipped unsafe commands.',
+            'memoryUpdate': '',
+          }),
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(client.seenToolNames.single, contains('run_command'));
+      expect(updated.status, TaskStatus.completed);
+      expect(
+        updated.runs.single.gateResults.map((result) => result.status),
+        everyElement(TaskGateStatus.pending),
+      );
+    });
+
+    test(
+      'required unsafe read-only command gate triggers replanning',
+      () async {
+        workspace = workspace.copyWith(commandExecutionApproved: true);
+        final task = _task(
+          step: const TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Run an unsafe verification command',
+            instructions: ['Run rm generated.txt.'],
+            mayEditFiles: false,
+            artifacts: [],
+            gates: [
+              TaskGate(
+                id: 'command_passes',
+                params: {'command': 'rm generated.txt'},
+              ),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'The unsafe command was unavailable.',
+              'memoryUpdate': '',
+            }),
+          ),
+          _replanResponse({
+            'steps': [
+              {
+                'id': 'safe_verification',
+                'title': 'Verify safely',
+                'objective': 'Use read-only inspection instead.',
+                'instructions': ['Inspect without mutation.'],
+                'mayEditFiles': false,
+              },
+            ],
+          }),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(client.seenToolNames.first, contains('run_command'));
+        expect(updated.status, TaskStatus.paused);
+        expect(updated.currentStepId, startsWith('step_'));
+        expect(updated.runs.map((run) => run.status), [
+          TaskRunStatus.needsReplan,
+          TaskRunStatus.replanned,
+        ]);
+      },
+    );
+
+    test(
+      'advisory command still requires workspace terminal approval',
+      () async {
+        final task = _task(
+          step: const TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Inspect the toolchain',
+            instructions: [
+              'Run dart --version if terminal access is approved.',
+            ],
+            mayEditFiles: false,
+            artifacts: [],
+            gates: [
+              TaskGate(
+                id: 'command_passes',
+                required: false,
+                params: {'command': 'dart --version'},
+              ),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({'command': 'dart --version'}),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Terminal access was unavailable.',
+              'memoryUpdate': '',
+            }),
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(updated.status, TaskStatus.completed);
+        expect(
+          updated.runs.single.toolCalls.single.toolError?.message,
+          contains('terminal access is disabled'),
+        );
+      },
+    );
+
+    test(
+      'read-only command_passes gate rejects non-whitelisted command variants',
+      () async {
+        workspace = workspace.copyWith(commandExecutionApproved: true);
+        final task = _task(
+          step: const TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Verify toolchain',
+            instructions: ['Run dart --version.'],
+            mayEditFiles: false,
+            artifacts: [],
+            gates: [
+              TaskGate(
+                id: 'command_passes',
+                params: {'command': 'dart --version', 'working_directory': '.'},
+              ),
+              TaskGate(id: 'no_tool_errors'),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({
+                  'command': 'dart --version > version.txt',
+                }),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Tried a redirected command.',
+              'memoryUpdate': '',
+            }),
+          ),
+          _replanResponse({
+            'steps': [
+              {
+                'id': 'verify_command',
+                'title': 'Verify command',
+                'objective': 'Run the exact required command.',
+                'instructions': ['Run dart --version exactly.'],
+                'mayEditFiles': false,
+              },
+            ],
+          }),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(updated.status, TaskStatus.paused);
+        expect(updated.currentStepId, startsWith('step_'));
+        expect(updated.runs.map((run) => run.status), [
+          TaskRunStatus.needsReplan,
+          TaskRunStatus.replanned,
+        ]);
+        expect(
+          updated.runs.first.toolCalls.single.toolError?.message,
+          contains('must exactly match'),
+        );
+        expect(
+          updated.runs.first.gateResults
+              .singleWhere((result) => result.gateId == 'command_passes')
+              .status,
+          TaskGateStatus.pending,
+        );
+        expect(
+          updated.runs.first.gateResults
+              .singleWhere((result) => result.gateId == 'no_tool_errors')
+              .status,
+          TaskGateStatus.passed,
+        );
+        expect(File(path.join(root.path, 'version.txt')).existsSync(), isFalse);
+      },
+    );
+
+    test(
+      'read-only task-level command gate exposes required command',
+      () async {
+        workspace = workspace.copyWith(commandExecutionApproved: true);
+        final task = _task(
+          gates: const [
+            TaskGate(
+              id: 'command_passes',
+              scope: 'task',
+              params: {'command': 'dart --version', 'working_directory': '.'},
+            ),
+          ],
+          step: const TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Verify toolchain',
+            instructions: ['Run dart --version.'],
+            mayEditFiles: false,
+            artifacts: [],
+            status: TaskStepStatus.pending,
+          ),
+        );
+        final client = _QueueCompletionClient([
+          ChatCompletionResponse(
+            content: '',
+            toolCalls: [
+              ChatCompletionToolCall(
+                name: 'run_command',
+                arguments: jsonEncode({'command': 'dart --version'}),
+              ),
+            ],
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Verified dart.',
+              'memoryUpdate': 'dart is available.',
+            }),
+          ),
+        ]);
+
+        final updated = await service.runNextStep(
+          client: client,
+          workspace: workspace,
+          snapshot: task,
+          baseSystemPrompt: 'system',
+        );
+
+        expect(client.seenToolNames.first, contains('run_command'));
+        expect(updated.status, TaskStatus.completed);
+        expect(
+          updated.runs.single.gateResults.single.status,
+          TaskGateStatus.passed,
+        );
+      },
+    );
+
+    test('mutating steps expose approved terminal state to executor', () async {
+      workspace = workspace.copyWith(commandExecutionApproved: true);
+      final task = _task(
+        step: const TaskStep(
+          id: 'inspect_binary',
+          title: 'Inspect binary document',
+          objective: 'Extract readable text from a binary document.',
+          instructions: ['Use terminal extraction if needed.'],
+          mayEditFiles: true,
+          artifacts: [],
+          status: TaskStepStatus.pending,
+        ),
+      );
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Inspected the document.',
+            'memoryUpdate': 'Document text was available.',
+          }),
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      final executorPrompt = client.seenMessages.single.last.content;
+      expect(client.seenToolNames.single, contains('run_command'));
+      expect(executorPrompt, contains('Host terminal access is approved'));
+      expect(executorPrompt, contains('Tools exposed to this step'));
+      expect(executorPrompt, contains('run_command'));
+      expect(updated.status, TaskStatus.completed);
+    });
+
+    test('read-only steps can create new task artifacts', () async {
+      final task = _task(
+        step: const TaskStep(
+          id: 'step_1',
+          title: 'Step 1',
+          objective: 'Write a report artifact',
+          instructions: ['Write report'],
+          mayEditFiles: false,
+          artifacts: [
+            TaskArtifact(
+              path: '.agent/tasks/task_test/report.md',
+              description: 'Report',
+            ),
+          ],
+          status: TaskStepStatus.pending,
+        ),
+      );
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'write_file',
+              arguments: jsonEncode({
+                'path': '.agent/tasks/task_test/report.md',
+                'content': '# Report\n',
+              }),
+            ),
+          ],
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Report written.',
+            'memoryUpdate': 'Created the report artifact.',
+            'artifacts': [
+              {
+                'path': '.agent/tasks/task_test/report.md',
+                'description': 'Report',
+              },
+            ],
+          }),
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      final report = File(
+        path.join(root.path, '.agent', 'tasks', 'task_test', 'report.md'),
+      );
+      expect(report.existsSync(), isTrue);
+      expect(report.readAsStringSync(), '# Report\n');
+      expect(updated.runs.single.toolCalls.single.toolError, isNull);
+      expect(updated.status, TaskStatus.completed);
+    });
+
+    test('read-only steps reject future step artifact writes', () async {
+      final task = _task(
+        steps: const [
+          TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Write overview',
+            instructions: ['Write overview'],
+            mayEditFiles: false,
+            artifacts: [
+              TaskArtifact(path: '.agent/tasks/task_test/overview.md'),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+          TaskStep(
+            id: 'step_2',
+            title: 'Step 2',
+            objective: 'Write final report',
+            instructions: ['Write final report'],
+            mayEditFiles: false,
+            artifacts: [
+              TaskArtifact(path: '.agent/tasks/task_test/final_report.md'),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+        ],
+      );
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'write_file',
+              arguments: jsonEncode({
+                'path': '.agent/tasks/task_test/final_report.md',
+                'content': '# Final\n',
+              }),
+            ),
+          ],
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Stayed on current step.',
+            'memoryUpdate': 'No future artifacts were written.',
+          }),
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(
+        File(
+          path.join(
+            root.path,
+            '.agent',
+            'tasks',
+            'task_test',
+            'final_report.md',
+          ),
+        ).existsSync(),
+        isFalse,
+      );
+      expect(
+        updated.runs.single.toolCalls.single.toolError?.message,
+        contains('current step'),
+      );
+      expect(updated.runs.single.artifacts, isEmpty);
+      expect(updated.status, TaskStatus.paused);
+      expect(updated.currentStepId, 'step_2');
+    });
+
+    test('mutating steps reject future step artifact writes', () async {
+      final task = _task(
+        steps: const [
+          TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Edit files',
+            instructions: ['Edit files'],
+            mayEditFiles: true,
+            artifacts: [
+              TaskArtifact(path: '.agent/tasks/task_test/edit_summary.md'),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+          TaskStep(
+            id: 'step_2',
+            title: 'Step 2',
+            objective: 'Write final report',
+            instructions: ['Write final report'],
+            mayEditFiles: false,
+            artifacts: [
+              TaskArtifact(path: '.agent/tasks/task_test/final_report.md'),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+        ],
+      );
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'write_file',
+              arguments: jsonEncode({
+                'path': '.agent/tasks/task_test/final_report.md',
+                'content': '# Final\n',
+              }),
+            ),
+          ],
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Did not write a future artifact.',
+            'memoryUpdate': 'Future artifact write was rejected.',
+          }),
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(
+        File(
+          path.join(
+            root.path,
+            '.agent',
+            'tasks',
+            'task_test',
+            'final_report.md',
+          ),
+        ).existsSync(),
+        isFalse,
+      );
+      expect(
+        updated.runs.single.toolCalls.single.toolError?.message,
+        contains('current step'),
+      );
+      expect(updated.status, TaskStatus.paused);
+      expect(updated.currentStepId, 'step_2');
+    });
+
+    test('step output ignores model artifact claims', () async {
+      final task = _task(
+        steps: const [
+          TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Write overview',
+            instructions: ['Write overview'],
+            mayEditFiles: false,
+            artifacts: [
+              TaskArtifact(path: '.agent/tasks/task_test/overview.md'),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+          TaskStep(
+            id: 'step_2',
+            title: 'Step 2',
+            objective: 'Write final report',
+            instructions: ['Write final report'],
+            mayEditFiles: false,
+            artifacts: [
+              TaskArtifact(path: '.agent/tasks/task_test/final_report.md'),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+        ],
+      );
+      final client = _QueueChatClient([
+        jsonEncode({
+          'status': 'completed',
+          'summary': 'Overview complete.',
+          'memoryUpdate': 'Created overview only.',
+          'artifacts': [
+            {'path': '.agent/tasks/task_test/overview.md'},
+            {'path': '.agent/tasks/task_test/final_report.md'},
+          ],
+        }),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(updated.runs.single.artifacts, isEmpty);
+      expect(updated.steps.first.artifacts, hasLength(1));
+      expect(
+        updated.steps.first.artifacts.single.path,
+        contains('overview.md'),
+      );
+      expect(
+        updated.steps.last.artifacts.single.path,
+        contains('final_report'),
+      );
+    });
+
+    test('later steps can read artifacts from earlier steps', () async {
+      final artifact = File(
+        path.join(root.path, '.agent', 'tasks', 'task_test', 'overview.md'),
+      );
+      await artifact.create(recursive: true);
+      await artifact.writeAsString('Prior analysis');
+
+      final task = _task(
+        steps: const [
+          TaskStep(
+            id: 'step_1',
+            title: 'Step 1',
+            objective: 'Write overview',
+            instructions: ['Write overview'],
+            mayEditFiles: false,
+            artifacts: [
+              TaskArtifact(path: '.agent/tasks/task_test/overview.md'),
+            ],
+            status: TaskStepStatus.completed,
+          ),
+          TaskStep(
+            id: 'step_2',
+            title: 'Step 2',
+            objective: 'Use overview',
+            instructions: ['Read overview'],
+            mayEditFiles: false,
+            artifacts: [
+              TaskArtifact(path: '.agent/tasks/task_test/final_report.md'),
+            ],
+            status: TaskStepStatus.pending,
+          ),
+        ],
+        currentStepId: 'step_2',
+      );
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'read_file',
+              arguments: jsonEncode({
+                'path': '.agent/tasks/task_test/overview.md',
+              }),
+            ),
+          ],
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Read prior artifact.',
+            'memoryUpdate': 'Used prior analysis.',
+          }),
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(updated.runs.single.toolCalls.single.toolError, isNull);
+      expect(
+        updated.runs.single.toolCalls.single.resultSummary,
+        contains('Prior analysis'),
+      );
+      expect(updated.status, TaskStatus.completed);
+    });
+
+    test('planned artifacts are not marked produced when omitted', () async {
+      final task = _task(
+        step: const TaskStep(
+          id: 'step_1',
+          title: 'Step 1',
+          objective: 'Write report',
+          instructions: ['Write report'],
+          mayEditFiles: false,
+          artifacts: [TaskArtifact(path: '.agent/tasks/task_test/report.md')],
+          status: TaskStepStatus.pending,
+        ),
+      );
+      final client = _QueueChatClient([
+        jsonEncode({
+          'status': 'completed',
+          'summary': 'No artifact was produced.',
+          'memoryUpdate': 'Finished without writing report.',
+        }),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(updated.runs.single.artifacts, isEmpty);
+      expect(updated.steps.single.artifacts.single.path, contains('report.md'));
+    });
+
+    test('compacts long step executor context before continuing', () async {
+      final largeFile = File(path.join(root.path, 'large.txt'));
+      await largeFile.writeAsString(List.filled(1200, 'old context').join(' '));
+
+      final task = _task();
+      final statuses = <String>[];
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'read_file',
+              arguments: jsonEncode({'path': 'large.txt'}),
+            ),
+          ],
+        ),
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'read_file',
+              arguments: jsonEncode({'path': 'missing_2.txt'}),
+            ),
+          ],
+        ),
+        ChatCompletionResponse(
+          content: '',
+          toolCalls: [
+            ChatCompletionToolCall(
+              name: 'read_file',
+              arguments: jsonEncode({'path': 'missing_3.txt'}),
+            ),
+          ],
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'task': 'Continue the task step.',
+            'current_state': 'A large file was inspected earlier.',
+          }),
+        ),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Finished after compacting older context.',
+            'memoryUpdate': 'Large file context was summarized.',
+          }),
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+        compactionSettings: const CompactionSettings(
+          triggerThreshold: 0.60,
+          hardLimitThreshold: 0.95,
+          recentWindowUnits: 2,
+        ),
+        contextLimitTokens: 256,
+        onCompactionStatus: statuses.add,
+      );
+
+      final finalRequest = jsonEncode(
+        client.seenMessages.last.map(ModelJson.encode).toList(),
+      );
+
+      expect(updated.status, TaskStatus.completed);
+      expect(client.requestCount, 5);
+      expect(
+        statuses.any((status) => status.contains('Compacting context')),
+        isTrue,
+      );
+      expect(finalRequest, contains('Context Summary'));
+      expect(finalRequest, contains('missing_2.txt'));
+      expect(finalRequest, contains('missing_3.txt'));
+      expect(finalRequest, isNot(contains('old context old context')));
+    });
+
+    test('finalizes instead of looping on repeated tool calls', () async {
+      final task = _task();
+      final repeatedCall = ChatCompletionToolCall(
+        name: 'read_file',
+        arguments: jsonEncode({'path': 'missing.txt'}),
+      );
+      final client = _QueueCompletionClient([
+        ChatCompletionResponse(content: '', toolCalls: [repeatedCall]),
+        ChatCompletionResponse(content: '', toolCalls: [repeatedCall]),
+        ChatCompletionResponse(content: '', toolCalls: [repeatedCall]),
+        ChatCompletionResponse(
+          content: jsonEncode({
+            'status': 'completed',
+            'summary': 'Stopped repeating and finalized.',
+            'memoryUpdate': 'Loop guard fired.',
+          }),
+        ),
+      ]);
+
+      final updated = await service.runNextStep(
+        client: client,
+        workspace: workspace,
+        snapshot: task,
+        baseSystemPrompt: 'system',
+      );
+
+      expect(client.requestCount, 4);
+      expect(updated.status, TaskStatus.completed);
+      expect(updated.runs.single.status, TaskRunStatus.completed);
+      expect(updated.runs.single.summary, 'Stopped repeating and finalized.');
+      expect(updated.runs.single.toolCalls, hasLength(3));
+      expect(
+        updated.runs.single.toolCalls.last.toolError?.message,
+        contains('skipped'),
+      );
+    });
+
+    test(
+      'pauses and preserves a step after transport retry is exhausted',
+      () async {
+        final updated = await service.runNextStep(
+          client: _TransportFailureClient(),
+          workspace: workspace,
+          snapshot: _task(),
+          baseSystemPrompt: 'system',
+        );
+
+        expect(updated.status, TaskStatus.paused);
+        expect(updated.currentStep?.status, TaskStepStatus.pending);
+        expect(updated.runs.single.status, TaskRunStatus.failed);
+        expect(updated.runs.single.error, contains('Model transport failed'));
+        expect(updated.runs.single.summary, contains('Resume the task'));
+      },
+    );
+  });
+}
+
+Task _task({
+  TaskStep? step,
+  List<TaskStep>? steps,
+  String? currentStepId,
+  List<TaskGate> gates = const [],
+}) {
+  final now = DateTime(2026, 1, 1);
+  final resolvedSteps = steps ?? [step ?? _step()];
+  return Task(
+    id: 'task_test',
+    title: 'Test task',
+    originalPrompt: 'Run the task',
+    objective: 'Run the task',
+    constraints: const ['Stay inside workspace.'],
+    successCriteria: const ['Finish the task.'],
+    gates: gates,
+    steps: resolvedSteps,
+    status: TaskStatus.paused,
+    currentStepId: currentStepId ?? resolvedSteps.first.id,
+    memorySummary: '',
+    runs: const [],
+    createdAt: now,
+    updatedAt: now,
+  );
+}
+
+TaskStep _step() {
+  return const TaskStep(
+    id: 'step_1',
+    title: 'Step 1',
+    objective: 'Do the work',
+    instructions: ['Work carefully'],
+    mayEditFiles: false,
+    artifacts: [],
+    status: TaskStepStatus.pending,
+  );
+}
+
+Map<String, dynamic> _planJson({required String title}) {
+  return {
+    'title': title,
+    'goal': 'Build the reporting screen',
+    'constraints': ['Stay inside workspace.'],
+    'successCriteria': ['The reporting screen is planned.'],
+    'steps': [
+      {
+        'id': 'inspect',
+        'title': 'Inspect',
+        'objective': 'Inspect the existing app.',
+        'instructions': ['Read relevant files.'],
+        'mayEditFiles': false,
+      },
+      {
+        'id': 'implement',
+        'title': 'Implement',
+        'objective': 'Implement the screen.',
+        'instructions': ['Patch the UI.'],
+        'mayEditFiles': true,
+      },
+    ],
+  };
+}
+
+ChatCompletionResponse _planResponse(
+  Map<String, dynamic> plan, {
+  String idSuffix = '',
+  bool resetFirst = false,
+}) {
+  String callId(String base) => idSuffix.isEmpty ? base : '${base}_$idSuffix';
+
+  final calls = <ChatCompletionToolCall>[
+    if (resetFirst)
+      ChatCompletionToolCall(
+        id: callId('call_task_reset_plan'),
+        name: 'task_reset_plan',
+        arguments: '{}',
+      ),
+    ChatCompletionToolCall(
+      id: callId('call_task_set_brief'),
+      name: 'task_set_brief',
+      arguments: jsonEncode({
+        'title': plan['title'] ?? 'Task',
+        'objective': plan['objective'] ?? plan['goal'] ?? '',
+        'constraints': plan['constraints'] ?? const [],
+        'success_criteria': plan['successCriteria'] ?? const [],
+      }),
+    ),
+    for (final raw in (plan['steps'] as List? ?? const []))
+      if (raw is Map)
+        ChatCompletionToolCall(
+          id: callId('call_task_add_step_${raw['id'] ?? raw['title']}'),
+          name: 'task_add_step',
+          arguments: jsonEncode({
+            'ref': raw['id'] ?? '',
+            'title': raw['title'] ?? '',
+            'objective': raw['objective'] ?? '',
+            'instructions': raw['instructions'] ?? const [],
+            'may_edit_files': raw['mayEditFiles'] ?? false,
+            'artifacts': raw['artifacts'] ?? const [],
+          }),
+        ),
+    ChatCompletionToolCall(
+      id: callId('call_task_commit_plan'),
+      name: 'task_commit_plan',
+      arguments: '{}',
+    ),
+  ];
+  return ChatCompletionResponse(content: '', toolCalls: calls);
+}
+
+ChatCompletionResponse _replanResponse(
+  Map<String, dynamic> plan, {
+  String idSuffix = '',
+}) {
+  String callId(String base) => idSuffix.isEmpty ? base : '${base}_$idSuffix';
+
+  final calls = <ChatCompletionToolCall>[
+    for (final raw in (plan['steps'] as List? ?? const []))
+      if (raw is Map)
+        ChatCompletionToolCall(
+          id: callId('call_task_add_step_${raw['id'] ?? raw['title']}'),
+          name: 'task_add_step',
+          arguments: jsonEncode({
+            'ref': raw['id'] ?? '',
+            'title': raw['title'] ?? '',
+            'objective': raw['objective'] ?? '',
+            'instructions': raw['instructions'] ?? const [],
+            'may_edit_files': raw['mayEditFiles'] ?? false,
+            'artifacts': raw['artifacts'] ?? const [],
+          }),
+        ),
+    ChatCompletionToolCall(
+      id: callId('call_task_commit_replan'),
+      name: 'task_commit_plan',
+      arguments: '{}',
+    ),
+  ];
+  return ChatCompletionResponse(content: '', toolCalls: calls);
+}
+
+Map<String, dynamic> _projectBoundedPlanJson({required String title}) {
+  return {
+    'title': title,
+    'goal': 'Implement the settings toggle',
+    'constraints': ['Do not build the whole app.'],
+    'successCriteria': ['The settings toggle works.'],
+    'steps': [
+      {
+        'id': 'implement_toggle',
+        'title': 'Implement toggle',
+        'objective': 'Implement the settings toggle.',
+        'instructions': ['Make only the bounded change.'],
+        'mayEditFiles': true,
+      },
+    ],
+  };
+}
+
+Map<String, dynamic> _wholeProjectPlanJson() {
+  return {
+    'title': 'Whole app',
+    'goal': 'Build the whole app',
+    'constraints': ['Stay inside workspace.'],
+    'successCriteria': ['The whole app is complete.'],
+    'steps': [
+      for (var i = 1; i <= 4; i++)
+        {
+          'id': 'step_$i',
+          'title': 'Whole project step $i',
+          'objective': 'Complete the project end-to-end.',
+          'instructions': ['Do everything.'],
+          'mayEditFiles': true,
+        },
+    ],
+  };
+}
+
+class _QueueChatClient extends ChatClient {
+  _QueueChatClient(this._responses)
+    : super(baseUrl: 'http://localhost', model: 'test');
+
+  final List<String> _responses;
+  final List<List<ChatMessage>> seenMessages = [];
+  final Set<String> _convertedPlans = {};
+  var _index = 0;
+
+  @override
+  Future<int> countInputTokens({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+    CancellationToken? cancellationToken,
+  }) async => 0;
+
+  @override
+  Future<ChatCompletionResponse> completeChat({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+    Object? cancellationToken,
+    String diagnosticsLabel = 'Model call',
+    int? contextLimitTokens,
+    int? inputTokensHint,
+  }) async {
+    seenMessages.add(List<ChatMessage>.of(messages));
+    final index = _index >= _responses.length ? _responses.length - 1 : _index;
+    _index++;
+    final response = _responses[index];
+    try {
+      final decoded = jsonDecode(response);
+      if (decoded is Map &&
+          decoded['steps'] is List &&
+          _convertedPlans.add(response)) {
+        final plan = Map<String, dynamic>.from(decoded);
+        return plan['title'] == null && plan['goal'] == null
+            ? _replanResponse(plan, idSuffix: '$_index')
+            : _planResponse(plan, idSuffix: '$_index', resetFirst: _index > 1);
+      }
+    } on FormatException {
+      // Keep malformed responses as plain model output for fallback tests.
+    }
+    return ChatCompletionResponse(content: response);
+  }
+
+  @override
+  void dispose() {}
+}
+
+class _QueueCompletionClient extends ChatClient {
+  _QueueCompletionClient(this._responses)
+    : super(baseUrl: 'http://localhost', model: 'test');
+
+  final List<ChatCompletionResponse> _responses;
+  final List<Set<String>> seenToolNames = [];
+  final List<List<ChatMessage>> seenMessages = [];
+  var _index = 0;
+
+  int get requestCount => _index;
+
+  @override
+  Future<int> countInputTokens({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+    CancellationToken? cancellationToken,
+  }) async => ContextEstimator.estimateChatCompletionRequest(
+    messages: messages,
+    extraParams: extraParams ?? const {},
+  );
+
+  @override
+  Future<ChatCompletionResponse> completeChat({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+    Object? cancellationToken,
+    String diagnosticsLabel = 'Model call',
+    int? contextLimitTokens,
+    int? inputTokensHint,
+  }) async {
+    seenMessages.add(List<ChatMessage>.of(messages));
+    seenToolNames.add(_toolNames(extraParams));
+    final index = _index >= _responses.length ? _responses.length - 1 : _index;
+    _index++;
+    return _responses[index];
+  }
+
+  Set<String> _toolNames(Map<String, dynamic>? extraParams) {
+    final tools = extraParams?['tools'];
+    if (tools is! List) return const {};
+    return {
+      for (final tool in tools.whereType<Map>())
+        if (tool['function'] is Map)
+          ((tool['function'] as Map)['name'] ?? '').toString(),
+    }..remove('');
+  }
+
+  @override
+  void dispose() {}
+}
+
+class _TransportFailureClient extends ChatClient {
+  _TransportFailureClient() : super(baseUrl: 'http://localhost', model: 'test');
+
+  @override
+  Future<int> countInputTokens({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+    CancellationToken? cancellationToken,
+  }) async => 0;
+
+  @override
+  Future<ChatCompletionResponse> completeChat({
+    required List<ChatMessage> messages,
+    Map<String, dynamic>? extraParams,
+    Object? cancellationToken,
+    String diagnosticsLabel = 'Model call',
+    int? contextLimitTokens,
+    int? inputTokensHint,
+  }) {
+    throw _transportFailure();
+  }
+
+  @override
+  void dispose() {}
+}
+
+class _RecordingHostCommandRunner extends HostCommandRunner {
+  _RecordingHostCommandRunner({this.includeExitCode = true});
+
+  final bool includeExitCode;
+  final List<String> commands = [];
+
+  @override
+  Future<Map<String, dynamic>> run({
+    required String commandLine,
+    required String workingDirectory,
+    required String relativeWorkingDirectory,
+    CancellationToken? cancellationToken,
+  }) async {
+    commands.add(commandLine);
+    return {
+      'command': commandLine,
+      'working_directory': relativeWorkingDirectory,
+      if (includeExitCode) 'exit_code': 0,
+      'stdout': '',
+      'stderr': '',
+    };
+  }
+}
+
+ChatTransportException _transportFailure() => ChatTransportException(
+  kind: ChatTransportFailureKind.brokenPipe,
+  uri: Uri.parse('http://localhost/v1/chat/completions'),
+  attempts: 2,
+  outputStarted: false,
+  cause: const SocketException(
+    'Write failed',
+    osError: OSError('Broken pipe', 32),
+  ),
+  causeStackTrace: StackTrace.empty,
+);

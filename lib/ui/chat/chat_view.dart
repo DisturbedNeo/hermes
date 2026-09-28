@@ -5,7 +5,8 @@ import 'package:hermes/core/helpers/responsive.dart';
 import 'package:hermes/core/helpers/scroll.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/llama_server_handle.dart';
-import 'package:hermes/core/services/chat/chat_service.dart';
+import 'package:hermes/features/chat/application/chat_controller.dart';
+import 'package:hermes/features/chat/presentation/chat_view_state.dart';
 import 'package:hermes/core/services/keyboard_shortcuts.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
@@ -16,7 +17,7 @@ import 'package:hermes/ui/chat/workspace_bar.dart';
 import 'package:hermes/ui/chat/chat_view_presenter.dart';
 
 class ChatView extends StatefulWidget {
-  final ChatService chat;
+  final ChatController chat;
   final PreferencesService preferencesService;
   final ToolService toolService;
   final VoidCallback onOpenWorkspace;
@@ -126,7 +127,8 @@ class _ChatViewState extends State<ChatView> {
           child: AnimatedBuilder(
             animation: Listenable.merge([chat, chat.chatStream]),
             builder: (_, _) {
-              final showTaskPanel = _showTaskPanel(chat);
+              final state = chat.viewState;
+              final showTaskPanel = _showTaskPanel(state);
 
               return LayoutBuilder(
                 builder: (context, constraints) {
@@ -153,6 +155,7 @@ class _ChatViewState extends State<ChatView> {
 
                   final mainColumn = _buildMainColumn(
                     chat: chat,
+                    state: state,
                     showTaskPanel: showTaskPanel,
                     includeInlineTaskPanel:
                         !(isNarrow && _taskPanelExpanded && showTaskPanel),
@@ -197,7 +200,8 @@ class _ChatViewState extends State<ChatView> {
   }
 
   Widget _buildMainColumn({
-    required ChatService chat,
+    required ChatController chat,
+    required ChatViewState state,
     required bool showTaskPanel,
     required bool includeInlineTaskPanel,
     required bool useScrollableFooter,
@@ -205,12 +209,13 @@ class _ChatViewState extends State<ChatView> {
   }) {
     return Column(
       children: [
-        if (chat.saveFailure != null)
+        if (state.saveFailure != null)
           SaveFailureBannerWidget(
-            error: chat.saveFailure!.error,
+            error: state.saveFailure!.error,
             onRetry: () => unawaited(_retrySave(chat)),
           ),
-        if (chat.pendingModelRestore != null) _buildModelRestoreBanner(chat),
+        if (state.pendingModelRestore != null)
+          _buildModelRestoreBanner(chat, state),
         WorkspaceBar(chat: chat, onOpenWorkspace: widget.onOpenWorkspace),
         if (includeInlineTaskPanel && showTaskPanel && !_taskPanelExpanded)
           TaskPanel(
@@ -237,7 +242,7 @@ class _ChatViewState extends State<ChatView> {
     );
   }
 
-  Future<void> _retrySave(ChatService chat) async {
+  Future<void> _retrySave(ChatController chat) async {
     try {
       await chat.retrySave();
     } catch (error) {
@@ -248,9 +253,9 @@ class _ChatViewState extends State<ChatView> {
     }
   }
 
-  Widget _buildModelRestoreBanner(ChatService chat) {
-    final snapshot = chat.pendingModelRestore!;
-    final issue = chat.pendingModelRestoreIssue;
+  Widget _buildModelRestoreBanner(ChatController chat, ChatViewState state) {
+    final snapshot = state.pendingModelRestore!;
+    final issue = state.pendingModelRestoreIssue;
 
     return ModelRestoreBannerWidget(
       issue: issue,
@@ -269,7 +274,7 @@ class _ChatViewState extends State<ChatView> {
     );
   }
 
-  Widget _buildMessageList(ChatService chat) {
+  Widget _buildMessageList(ChatController chat) {
     return _MessageListPresenter(
       scroll: _scroll,
       chat: chat,
@@ -278,7 +283,7 @@ class _ChatViewState extends State<ChatView> {
   }
 
   Widget _buildFooter({
-    required ChatService chat,
+    required ChatController chat,
     required bool scrollable,
     required double? maxHeight,
   }) {
@@ -312,7 +317,7 @@ class _ChatViewState extends State<ChatView> {
   }
 
   void _toggleTaskPanel() {
-    if (!_showTaskPanel(widget.chat)) return;
+    if (!_showTaskPanel(widget.chat.viewState)) return;
     setState(() => _taskPanelExpanded = !_taskPanelExpanded);
   }
 
@@ -321,12 +326,12 @@ class _ChatViewState extends State<ChatView> {
     _composerFocusNode.requestFocus();
   }
 
-  bool _showTaskPanel(ChatService chat) {
-    return chat.activeProject != null ||
-        chat.availableProjects.isNotEmpty ||
-        chat.activeTask != null ||
-        chat.availableTasks.isNotEmpty ||
-        chat.taskBusy;
+  bool _showTaskPanel(ChatViewState state) {
+    return state.activeProject != null ||
+        state.availableProjects.isNotEmpty ||
+        state.activeTask != null ||
+        state.availableTasks.isNotEmpty ||
+        state.taskBusy;
   }
 }
 
@@ -363,7 +368,7 @@ class _SummaryDisplayItem extends _DisplayItem {
 /// UI rendering to [MessageListWidget] from the presenter module.
 class _MessageListPresenter extends StatefulWidget {
   final ChatScrollController scroll;
-  final ChatService chat;
+  final ChatController chat;
   final VoidCallback onScrollToBottom;
 
   const _MessageListPresenter({

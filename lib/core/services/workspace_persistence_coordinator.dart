@@ -1,16 +1,19 @@
 import 'dart:async';
 
 import 'package:path/path.dart' as path;
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
 
 /// Coordinates all persistence operations for a workspace within this Dart
 /// process. It intentionally does not provide cross-process locking.
-class WorkspacePersistenceCoordinator {
+class WorkspacePersistenceCoordinator implements PersistencePort {
   final Map<String, Future<void>> _tails = {};
   final Object _zoneKey = Object();
 
+  @override
   String canonicalWorkspacePath(String workspaceRoot) =>
       path.normalize(path.absolute(workspaceRoot));
 
+  @override
   Future<T> synchronized<T>(
     String workspaceRoot,
     Future<T> Function() operation,

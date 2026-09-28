@@ -7,9 +7,10 @@ import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/models/planning_metrics.dart';
 import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
-import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/features/model/domain/model_provider.dart';
+import 'package:hermes/features/model/domain/model_completion.dart';
 import 'package:hermes/core/services/planner_message_compactor.dart';
-import 'package:hermes/core/services/task_system/task_model_output.dart';
+import 'package:hermes/features/task/application/task_application/task_model_output.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 
 /// The common model-facing contract for project and task planning registries.
@@ -219,7 +220,7 @@ abstract class PlanningToolRegistryBase implements PlanningToolRegistry {
 }
 
 class PlanningRunRequest {
-  final ChatClient client;
+  final ModelProvider client;
   final PlanningToolRegistry registry;
   final String label;
   final String system;
@@ -416,7 +417,7 @@ class PlanningToolCallRunner {
     }
   }
 
-  Future<ChatCompletionResponse> _complete({
+  Future<ModelCompletion> _complete({
     required PlanningRunRequest request,
     required List<ChatMessage> messages,
     required Map<String, dynamic> extraParams,
@@ -451,7 +452,7 @@ class PlanningToolCallRunner {
     return completion;
   }
 
-  Future<ChatCompletionResponse> _completeFromStream({
+  Future<ModelCompletion> _completeFromStream({
     required PlanningRunRequest request,
     required List<ChatMessage> messages,
     required Map<String, dynamic> extraParams,
@@ -478,14 +479,14 @@ class PlanningToolCallRunner {
       if (tool.name != null) call.name = tool.name;
       if (tool.argumentsChunk != null) call.arguments.write(tool.argumentsChunk);
     }
-    return ChatCompletionResponse(
+    return ModelCompletion(
       content: content.toString(),
       reasoning: reasoning.toString(),
       toolCalls:
           (toolCalls.entries.toList()..sort((a, b) => a.key.compareTo(b.key)))
               .where((entry) => entry.value.name?.trim().isNotEmpty == true)
               .map(
-                (entry) => ChatCompletionToolCall(
+                (entry) => ModelToolCall(
                   id: entry.value.id,
                   name: entry.value.name!,
                   arguments: entry.value.arguments.isEmpty
@@ -557,7 +558,7 @@ class PlanningToolCallRunner {
   }
 
   static String _commandId(
-    ChatCompletionToolCall call,
+    ModelToolCall call,
     int turn,
     int index,
     String label,
@@ -581,7 +582,7 @@ class PlanningToolCallRunner {
     PlanningMetrics metrics, {
     required List<ChatMessage> messages,
     required Map<String, dynamic> extraParams,
-    required ChatCompletionResponse completion,
+    required ModelCompletion completion,
   }) {
     final promptTokens =
         completion.diagnostics?.promptTokens ??

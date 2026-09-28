@@ -1,4 +1,4 @@
-import 'package:hermes/core/models/task.dart';
+import 'package:hermes/features/task/domain/task.dart';
 
 Map<String, dynamic> toolErrorPayload({
   required String code,

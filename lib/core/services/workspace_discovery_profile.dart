@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dart_mappable/dart_mappable.dart';
-import 'package:hermes/core/models/workspace.dart';
+import 'package:hermes/features/workspace/domain/workspace.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:path/path.dart' as path;
 import 'package:yaml/yaml.dart';

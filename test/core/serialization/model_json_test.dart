@@ -4,12 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/helpers/chat/context_summary_prompt.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
-import 'package:hermes/core/models/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/core/models/system_prompt.dart';
-import 'package:hermes/core/models/task.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/services/question_policy_service.dart';
-import 'package:hermes/core/services/task_system/task_service.dart';
+import 'package:hermes/features/task/domain/task_planning_models.dart';
 import 'package:hermes/core/tools/calculator_tool.dart';
 
 void main() {

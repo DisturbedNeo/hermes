@@ -33,7 +33,7 @@ void main() {
                 'function': {
                   'name': 'read_file',
                   'arguments': jsonEncode({
-                    'path': 'lib/core/services/chat/chat_service.dart',
+                    'path': 'lib/core/services/chat/chat_controller.dart',
                   }),
                 },
               },

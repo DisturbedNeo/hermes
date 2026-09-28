@@ -8,7 +8,8 @@ import 'package:hermes/core/helpers/server_health_checker.dart';
 import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/model_session_diagnostics.dart';
-import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/features/model/domain/model_provider.dart';
+import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/core/services/model_diagnostic_bundle_writer.dart';
 
 export 'package:hermes/core/helpers/server_health_checker.dart'
@@ -156,7 +157,7 @@ class LlamaServerManager implements Disposable {
   final LlamaHealthWaiter _healthWaiter;
   final ValueNotifier<LlamaServerHandle?> handle = ValueNotifier(null);
   final ModelSessionDiagnostics diagnostics = ModelSessionDiagnostics();
-  ChatClient? chatClient;
+  ModelProvider? chatClient;
   String? currentModelName;
 
   LlamaServerHandle? get current => handle.value;
@@ -399,7 +400,7 @@ class LlamaServerManager implements Disposable {
     }
   }
 
-  Future<void> _loadServerProperties(ChatClient client, int generation) async {
+  Future<void> _loadServerProperties(ModelProvider client, int generation) async {
     final properties = await client.fetchServerProperties();
     if (properties == null ||
         generation != _startGeneration ||

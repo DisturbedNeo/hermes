@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/models/model_call_diagnostics.dart';
-import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:http/http.dart' as http;
 

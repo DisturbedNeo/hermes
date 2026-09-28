@@ -1,28 +1,29 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:hermes/core/services/chat/chat_library_service.dart';
-import 'package:hermes/core/services/chat/chat_tabs_service.dart';
+import 'package:hermes/features/chat/application/chat_application/chat_library_service.dart';
+import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 import 'package:hermes/core/services/chat_library_repository.dart';
 import 'package:hermes/core/services/preferences_service.dart';
-import 'package:hermes/core/services/project_system/project_orchestrator.dart';
-import 'package:hermes/core/services/project_system/project_aggregate_repository.dart';
-import 'package:hermes/core/services/project_system/project_command_service.dart';
-import 'package:hermes/core/services/project_system/project_repository.dart';
-import 'package:hermes/core/services/project_system/project_state_store.dart';
-import 'package:hermes/core/services/project_system/project_recovery_service.dart';
+import 'package:hermes/features/project/application/project_application/project_application.dart';
+import 'package:hermes/features/project/application/project_application/project_aggregate_repository.dart';
+import 'package:hermes/features/project/application/project_application/project_command_service.dart';
+import 'package:hermes/features/project/application/project_application/project_repository.dart';
+import 'package:hermes/features/project/application/project_application/project_state_store.dart';
+import 'package:hermes/features/project/application/project_application/project_recovery_service.dart';
 import 'package:hermes/core/services/planning_runtime.dart';
+import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/planning_structured_output.dart';
 import 'package:hermes/core/services/system_prompt_library_repository.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
-import 'package:hermes/core/services/task_system/task_repository.dart';
-import 'package:hermes/core/services/task_system/task_persistence_store.dart';
-import 'package:hermes/core/services/task_system/task_planning_coordinator.dart';
-import 'package:hermes/core/services/task_system/task_recovery_service.dart';
-import 'package:hermes/core/services/task_system/task_model_completion_service.dart';
-import 'package:hermes/core/services/task_system/task_service.dart';
-import 'package:hermes/core/services/task_system/task_tool_execution_service.dart';
-import 'package:hermes/core/services/task_system/task_planning_service.dart';
+import 'package:hermes/features/task/application/task_application/task_repository.dart';
+import 'package:hermes/features/task/application/task_application/task_persistence_store.dart';
+import 'package:hermes/features/task/application/task_application/task_planning_coordinator.dart';
+import 'package:hermes/features/task/application/task_application/task_recovery_service.dart';
+import 'package:hermes/features/task/application/task_application/task_model_completion_service.dart';
+import 'package:hermes/features/task/application/task_application/task_controller.dart';
+import 'package:hermes/features/task/application/task_application/task_tool_execution_service.dart';
+import 'package:hermes/features/task/application/task_application/task_planning_service.dart';
 import 'package:hermes/core/services/theme_manager.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
@@ -40,11 +41,12 @@ class AppDependencies {
     required this.workspaceSandbox,
     required this.workspaceService,
     required this.toolService,
-    required this.taskService,
-    required this.projectOrchestrator,
+    required this.modelManager,
+    required this.taskController,
+    required this.projectApplication,
     required this.chatLibraryService,
     required this.systemPromptLibraryService,
-    required this.chatTabsService,
+    required this.chatWorkspaceController,
   });
 
   factory AppDependencies.create() {
@@ -53,6 +55,7 @@ class AppDependencies {
     final themeManager = ThemeManager(preferencesService: preferencesService);
     final workspaceService = WorkspaceService(sandbox: workspaceSandbox);
     final toolService = ToolService(workspaceSandbox: workspaceSandbox);
+    final modelManager = LlamaServerManager();
     const planningRunner = PlanningToolCallRunner();
     const structuredOutput = StructuredPlanningOutputService();
     const taskPlanner = TaskPlanningService(runner: planningRunner);
@@ -72,7 +75,7 @@ class AppDependencies {
     final taskPersistenceStore = TaskPersistenceStore(
       repository: taskRepository,
     );
-    final taskService = TaskService(
+    final taskController = TaskController(
       toolService: toolService,
       sandbox: workspaceSandbox,
       persistenceStore: taskPersistenceStore,
@@ -93,14 +96,14 @@ class AppDependencies {
     final projectStateStore = ProjectStateStore(
       projectRepository: projectRepository,
       aggregateRepository: projectAggregateRepository,
-      taskService: taskService,
+      taskController: taskController,
     );
     final projectCommandService = ProjectCommandService(
       stateStore: projectStateStore,
       persistenceCoordinator: persistenceCoordinator,
     );
-    final projectOrchestrator = ProjectOrchestrator(
-      taskService: taskService,
+    final projectApplication = ProjectApplication(
+      taskController: taskController,
       repository: projectRepository,
       aggregateRepository: projectAggregateRepository,
       stateStore: projectStateStore,
@@ -122,12 +125,13 @@ class AppDependencies {
     final systemPromptLibraryService = SystemPromptLibraryService(
       repository: systemPromptLibraryRepository,
     );
-    final chatTabsService = ChatTabsService(
+    final chatWorkspaceController = ChatWorkspaceController(
+      serverManager: modelManager,
       chatLibrary: chatLibraryService,
       systemPromptLibrary: systemPromptLibraryService,
       toolService: toolService,
-      taskService: taskService,
-      projectOrchestrator: projectOrchestrator,
+      taskController: taskController,
+      projectApplication: projectApplication,
       workspaceService: workspaceService,
       preferencesService: preferencesService,
     );
@@ -138,11 +142,12 @@ class AppDependencies {
       workspaceSandbox: workspaceSandbox,
       workspaceService: workspaceService,
       toolService: toolService,
-      taskService: taskService,
-      projectOrchestrator: projectOrchestrator,
+      modelManager: modelManager,
+      taskController: taskController,
+      projectApplication: projectApplication,
       chatLibraryService: chatLibraryService,
       systemPromptLibraryService: systemPromptLibraryService,
-      chatTabsService: chatTabsService,
+      chatWorkspaceController: chatWorkspaceController,
     );
   }
 
@@ -151,11 +156,12 @@ class AppDependencies {
   final WorkspaceSandbox workspaceSandbox;
   final WorkspaceService workspaceService;
   final ToolService toolService;
-  final TaskService taskService;
-  final ProjectOrchestrator projectOrchestrator;
+  final LlamaServerManager modelManager;
+  final TaskController taskController;
+  final ProjectApplication projectApplication;
   final ChatLibraryService chatLibraryService;
   final SystemPromptLibraryService systemPromptLibraryService;
-  final ChatTabsService chatTabsService;
+  final ChatWorkspaceController chatWorkspaceController;
 
   bool _disposed = false;
   Future<void>? _disposeFuture;
@@ -182,10 +188,10 @@ class AppDependencies {
 
   Future<void> _dispose({required bool discardChanges}) async {
     if (discardChanges) {
-      await _disposeSafely(chatTabsService.disposeWithoutSaving);
+      await _disposeSafely(chatWorkspaceController.disposeWithoutSaving);
     } else {
       // A failed tab preflight must stop disposal before repositories close.
-      await chatTabsService.dispose();
+      await chatWorkspaceController.dispose();
     }
     await _disposeSafely(systemPromptLibraryService.dispose);
     await _disposeSafely(chatLibraryService.dispose);

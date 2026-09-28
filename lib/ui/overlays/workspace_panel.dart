@@ -1,15 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:hermes/core/models/project.dart';
-import 'package:hermes/core/models/workspace.dart';
-import 'package:hermes/core/services/chat/chat_service.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/features/chat/application/chat_controller.dart';
 import 'package:hermes/core/services/workspace_service.dart';
 import 'package:hermes/ui/common/state_display.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class WorkspacePanel extends StatefulWidget {
-  final ChatService? chat;
+  final ChatController? chat;
   final WorkspaceService workspaceService;
   final FutureOr<void> Function() onSelectWorkspace;
 
@@ -198,7 +198,7 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
   }
 
   Widget _buildActions(
-    ChatService? chat,
+    ChatController? chat,
     WorkspaceAttachment? workspace,
     bool canMutate,
   ) {

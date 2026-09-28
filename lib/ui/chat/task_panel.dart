@@ -2,15 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:hermes/core/helpers/a11y.dart';
-import 'package:hermes/core/models/project.dart';
-import 'package:hermes/core/models/task.dart';
-import 'package:hermes/core/services/chat/chat_service.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/features/chat/application/chat_controller.dart';
 import 'package:hermes/ui/common/state_display.dart';
 import 'package:hermes/ui/chat/project_panel_sections.dart';
 import 'package:hermes/ui/chat/task_panel_dialogs.dart';
 
 class TaskPanel extends StatelessWidget {
-  final ChatService chat;
+  final ChatController chat;
   final bool expanded;
   final VoidCallback onToggleExpanded;
 
@@ -75,7 +75,7 @@ class TaskPanel extends StatelessWidget {
 }
 
 class _CollapsedTaskPanel extends StatelessWidget {
-  final ChatService chat;
+  final ChatController chat;
   final ProjectDocument? project;
   final Task? task;
   final VoidCallback onToggleExpanded;
@@ -143,7 +143,7 @@ class _CollapsedTaskPanel extends StatelessWidget {
 }
 
 class _Header extends StatelessWidget {
-  final ChatService chat;
+  final ChatController chat;
   final ProjectDocument? project;
   final Task? task;
   final VoidCallback onToggleExpanded;
@@ -215,7 +215,7 @@ class _Header extends StatelessWidget {
 }
 
 class _ProjectBody extends StatelessWidget {
-  final ChatService chat;
+  final ChatController chat;
   final ProjectDocument project;
 
   const _ProjectBody({required this.chat, required this.project});
@@ -386,7 +386,7 @@ class _ProjectBody extends StatelessWidget {
 }
 
 class _ProjectActions extends StatelessWidget {
-  final ChatService chat;
+  final ChatController chat;
   final ProjectDocument project;
 
   const _ProjectActions({required this.chat, required this.project});
@@ -540,7 +540,7 @@ class _ProjectActions extends StatelessWidget {
 }
 
 class _ProjectQuestionCard extends StatefulWidget {
-  final ChatService chat;
+  final ChatController chat;
   final ProjectDocument project;
 
   const _ProjectQuestionCard({required this.chat, required this.project});
@@ -617,7 +617,7 @@ class _ProjectBlockerCard extends StatelessWidget {
 }
 
 class _CurrentProjectTask extends StatelessWidget {
-  final ChatService chat;
+  final ChatController chat;
   final Task task;
 
   const _CurrentProjectTask({required this.chat, required this.task});
@@ -688,7 +688,7 @@ class _CurrentProjectTask extends StatelessWidget {
 }
 
 class _TaskBody extends StatelessWidget {
-  final ChatService chat;
+  final ChatController chat;
   final Task task;
 
   const _TaskBody({required this.chat, required this.task});
@@ -793,7 +793,7 @@ class _TaskBody extends StatelessWidget {
 }
 
 class _Actions extends StatelessWidget {
-  final ChatService chat;
+  final ChatController chat;
   final Task task;
   final TaskStep? next;
 
@@ -939,7 +939,7 @@ class _Actions extends StatelessWidget {
 }
 
 class _ApprovalCard extends StatelessWidget {
-  final ChatService chat;
+  final ChatController chat;
   final Task task;
 
   const _ApprovalCard({required this.chat, required this.task});
@@ -977,7 +977,7 @@ class _ApprovalCard extends StatelessWidget {
 }
 
 class _QuestionCard extends StatefulWidget {
-  final ChatService chat;
+  final ChatController chat;
   final Task task;
 
   const _QuestionCard({required this.chat, required this.task});
@@ -1115,7 +1115,7 @@ class _StepTile extends StatelessWidget {
 }
 
 class _ArtifactList extends StatelessWidget {
-  final ChatService chat;
+  final ChatController chat;
   final Task task;
 
   const _ArtifactList({required this.chat, required this.task});
@@ -1423,7 +1423,7 @@ class _ProjectDecisionList extends StatelessWidget {
 }
 
 class _WorkList extends StatelessWidget {
-  final ChatService chat;
+  final ChatController chat;
 
   const _WorkList({required this.chat});
 

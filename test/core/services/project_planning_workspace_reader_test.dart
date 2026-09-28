@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/models/workspace.dart';
-import 'package:hermes/core/services/project_system/project_planning_workspace_reader.dart';
+import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/features/project/application/project_application/project_planning_workspace_reader.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 
 void main() {

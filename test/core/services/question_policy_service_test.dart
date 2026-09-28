@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/models/task_system_settings.dart';
+import 'package:hermes/features/task/domain/task_system_settings.dart';
 import 'package:hermes/core/services/question_policy_service.dart';
 
 void main() {

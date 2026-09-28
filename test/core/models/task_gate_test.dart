@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/models/task.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 
 void main() {

@@ -1,7 +1,7 @@
 import 'dart:convert';
 
-import 'package:hermes/core/models/workspace.dart';
-import 'package:hermes/core/models/task.dart';
+import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/tools/calculator_tool.dart';
 import 'package:hermes/core/tools/tool.dart';

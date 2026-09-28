@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:hermes/core/enums/diagnostics_visibility.dart';
 import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
-import 'package:hermes/core/models/project.dart';
-import 'package:hermes/core/models/task_system_settings.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task_system_settings.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/ui/model_configuration/slider_control.dart';
 

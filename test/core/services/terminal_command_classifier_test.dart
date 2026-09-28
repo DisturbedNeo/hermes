@@ -5,7 +5,7 @@ void main() {
   group('TerminalCommandClassifier', () {
     test('classifies common read-only commands', () {
       expect(
-        TerminalCommandClassifier.classify('rg "TaskService" lib'),
+        TerminalCommandClassifier.classify('rg "TaskController" lib'),
         TerminalCommandClass.readOnly,
       );
       expect(

@@ -9,20 +9,20 @@ import 'package:hermes/core/helpers/chat/context_estimator.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/chat_token.dart';
 import 'package:hermes/core/models/bubble.dart';
-import 'package:hermes/core/models/project.dart';
-import 'package:hermes/core/models/task.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/core/serialization/model_json.dart';
-import 'package:hermes/core/services/chat/chat_client.dart';
-import 'package:hermes/core/services/chat/chat_library_service.dart';
+import 'package:hermes/features/model/infrastructure/chat_client.dart';
+import 'package:hermes/features/chat/application/chat_application/chat_library_service.dart';
 import 'package:hermes/core/services/chat_library_repository.dart';
-import 'package:hermes/core/services/chat/chat_service.dart';
+import 'package:hermes/features/chat/application/chat_controller.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
-import 'package:hermes/core/services/chat/chat_tabs_service.dart';
-import 'package:hermes/core/services/project_system/project_orchestrator.dart';
-import 'package:hermes/core/services/task_system/task_service.dart';
-import 'package:hermes/core/services/task_system/task_repository.dart';
+import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
+import 'package:hermes/features/project/application/project_application/project_application.dart';
+import 'package:hermes/features/task/application/task_application/task_controller.dart';
+import 'package:hermes/features/task/application/task_application/task_repository.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/system_prompt_library_repository.dart';
@@ -36,16 +36,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('ChatService system prompts and tasks', () {
+  group('ChatController system prompts and tasks', () {
     late Directory tempDir;
     late ChatLibraryService chatLibrary;
     late PreferencesService preferences;
     late LlamaServerManager serverManager;
-    late ChatService chat;
+    late ChatController chat;
 
     setUp(() async {
       SharedPreferences.setMockInitialValues({});
-      tempDir = await Directory.systemTemp.createTemp('hermes_chat_service_');
+      tempDir = await Directory.systemTemp.createTemp('hermes_chat_controller_');
       preferences = PreferencesService();
       final chatLibraryRepository = ChatLibraryRepository(
         preferencesService: preferences,
@@ -55,15 +55,15 @@ void main() {
       serverManager = LlamaServerManager();
       final sandbox = WorkspaceSandbox();
       final toolService = ToolService(workspaceSandbox: sandbox);
-      final taskService = TaskService(
+      final taskController = TaskController(
         toolService: toolService,
         sandbox: sandbox,
       );
-      chat = ChatService(
+      chat = ChatController(
         serverManager: serverManager,
         toolService: toolService,
-        taskService: taskService,
-        projectOrchestrator: ProjectOrchestrator(taskService: taskService),
+        taskController: taskController,
+        projectApplication: ProjectApplication(taskController: taskController),
         chatLibrary: chatLibrary,
         workspaceService: WorkspaceService(sandbox: sandbox),
         preferencesService: preferences,
@@ -362,11 +362,11 @@ void main() {
       ]);
       await chat.attachWorkspace(tempDir.path);
       final seedProject = _projectDocument();
-      final seedProjectOrchestrator = ProjectOrchestrator(
-        taskService: _createTaskService(),
+      final seedProjectApplication = ProjectApplication(
+        taskController: _createTaskController(),
       );
       chat.activeProject =
-          (await seedProjectOrchestrator.repository.saveSnapshot(
+          (await seedProjectApplication.repository.saveSnapshot(
             tempDir.path,
             seedProject,
           )).value;
@@ -677,8 +677,8 @@ void main() {
           contains('SvelteKit'),
         );
         expect(
-          (await ProjectOrchestrator(
-            taskService: _createTaskService(),
+          (await ProjectApplication(
+            taskController: _createTaskController(),
           ).repository.listProjects(tempDir.path)),
           hasLength(1),
         );
@@ -710,13 +710,13 @@ void main() {
     });
   });
 
-  group('ChatTabsService task cleanup', () {
+  group('ChatWorkspaceController task cleanup', () {
     late Directory tempDir;
     late PreferencesService preferences;
     late ChatLibraryService chatLibrary;
     late SystemPromptLibraryRepository promptLibraryRepository;
     late SystemPromptLibraryService promptLibrary;
-    late ChatTabsService tabs;
+    late ChatWorkspaceController tabs;
 
     setUp(() async {
       SharedPreferences.setMockInitialValues({});
@@ -737,16 +737,17 @@ void main() {
       );
       final sandbox = WorkspaceSandbox();
       final toolService = ToolService(workspaceSandbox: sandbox);
-      final taskService = TaskService(
+      final taskController = TaskController(
         toolService: toolService,
         sandbox: sandbox,
       );
-      tabs = ChatTabsService(
+      tabs = ChatWorkspaceController(
+      serverManager: LlamaServerManager(),
         chatLibrary: chatLibrary,
         systemPromptLibrary: promptLibrary,
         toolService: toolService,
-        taskService: taskService,
-        projectOrchestrator: ProjectOrchestrator(taskService: taskService),
+        taskController: taskController,
+        projectApplication: ProjectApplication(taskController: taskController),
         workspaceService: WorkspaceService(sandbox: sandbox),
         preferencesService: preferences,
       );
@@ -877,8 +878,8 @@ void main() {
         id: 'project_orphaned',
         chatSessionId: 'deleted_chat',
       );
-      await ProjectOrchestrator(
-        taskService: _createTaskService(),
+      await ProjectApplication(
+        taskController: _createTaskController(),
       ).repository.saveSnapshot(tempDir.path, orphaned);
       final projectDir = Directory(
         path.join(tempDir.path, '.agent', 'projects', 'project_orphaned'),
@@ -893,9 +894,9 @@ void main() {
   });
 }
 
-TaskService _createTaskService() {
+TaskController _createTaskController() {
   final sandbox = WorkspaceSandbox();
-  return TaskService(
+  return TaskController(
     toolService: ToolService(workspaceSandbox: sandbox),
     sandbox: sandbox,
   );

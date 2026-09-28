@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/core/models/planning_metrics.dart';
-import 'package:hermes/core/models/project.dart';
-import 'package:hermes/core/services/chat/chat_service.dart';
-import 'package:hermes/core/services/project_system/project_scheduler.dart';
-import 'package:hermes/core/services/project_system/project_workspace_context_service.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/chat/application/chat_controller.dart';
+import 'package:hermes/features/project/application/project_application/project_scheduler.dart';
+import 'package:hermes/features/project/application/project_application/project_workspace_context_service.dart';
 import 'package:hermes/ui/chat/task_panel_dialogs.dart';
 
 class ProjectOutcomeSection extends StatelessWidget {
@@ -556,7 +556,7 @@ class _RoadmapTaskTile extends StatelessWidget {
 
 class ProjectEvidenceSection extends StatelessWidget {
   final ProjectDocument project;
-  final ChatService chat;
+  final ChatController chat;
 
   const ProjectEvidenceSection({
     super.key,
@@ -605,7 +605,7 @@ class _EvidenceGroup extends StatelessWidget {
   final String title;
   final String criterionId;
   final List<ProjectEvidence> evidence;
-  final ChatService chat;
+  final ChatController chat;
 
   const _EvidenceGroup({
     required this.title,
@@ -642,7 +642,7 @@ class _EvidenceGroup extends StatelessWidget {
 
 class _EvidenceTile extends StatelessWidget {
   final ProjectEvidence evidence;
-  final ChatService chat;
+  final ChatController chat;
 
   const _EvidenceTile({required this.evidence, required this.chat});
 
@@ -700,7 +700,7 @@ class _EvidenceTile extends StatelessWidget {
 
 class ProjectRevisionSection extends StatelessWidget {
   final ProjectDocument project;
-  final ChatService chat;
+  final ChatController chat;
 
   const ProjectRevisionSection({
     super.key,
@@ -735,7 +735,7 @@ class ProjectRevisionSection extends StatelessWidget {
 class _PendingRevision extends StatelessWidget {
   final ProjectDocument project;
   final PendingProjectPlanApproval pending;
-  final ChatService chat;
+  final ChatController chat;
 
   const _PendingRevision({
     required this.project,
@@ -1057,7 +1057,7 @@ class _Subheading extends StatelessWidget {
   }
 }
 
-Future<void> _showProjectEditor(BuildContext context, ChatService chat) async {
+Future<void> _showProjectEditor(BuildContext context, ChatController chat) async {
   final initial = chat.activeProjectJson;
   if (initial == null) return;
   final saved = await EditProjectDialog.show(

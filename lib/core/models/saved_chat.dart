@@ -1,7 +1,7 @@
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/system_prompt.dart';
-import 'package:hermes/core/models/workspace.dart';
+import 'package:hermes/features/workspace/domain/workspace.dart';
 
 class SavedChat {
   final String id;

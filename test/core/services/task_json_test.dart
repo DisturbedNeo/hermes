@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/services/task_system/task_json.dart';
+import 'package:hermes/features/task/application/task_application/task_json.dart';
 
 void main() {
   group('TaskJson', () {

@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/models/project.dart';
-import 'package:hermes/core/models/task.dart';
-import 'package:hermes/core/services/project_system/project_plan_builder.dart';
-import 'package:hermes/core/services/project_system/project_plan_patch.dart';
-import 'package:hermes/core/services/project_system/project_plan_revision_service.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/features/project/application/project_application/project_plan_builder.dart';
+import 'package:hermes/features/project/application/project_application/project_plan_patch.dart';
+import 'package:hermes/features/project/application/project_application/project_plan_revision_service.dart';
 
 void main() {
   test(

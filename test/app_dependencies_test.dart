@@ -6,8 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/app_dependencies.dart';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/models/bubble.dart';
-import 'package:hermes/core/models/workspace.dart';
-import 'package:hermes/core/services/chat/chat_tabs_service.dart';
+import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/theme_manager.dart';
 import 'package:hermes/core/services/tool_service.dart';
@@ -82,12 +82,12 @@ void main() {
     final preferences = context.read<PreferencesService>();
     final theme = context.read<ThemeManager>();
     final tools = context.read<ToolService>();
-    final tabs = context.read<ChatTabsService>();
+    final tabs = context.read<ChatWorkspaceController>();
 
     expect(identical(preferences, context.read<PreferencesService>()), isTrue);
     expect(identical(theme, context.read<ThemeManager>()), isTrue);
     expect(identical(tools, context.read<ToolService>()), isTrue);
-    expect(identical(tabs, context.read<ChatTabsService>()), isTrue);
+    expect(identical(tabs, context.read<ChatWorkspaceController>()), isTrue);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
@@ -108,7 +108,7 @@ void main() {
     await tester.pump();
 
     final context = tester.element(find.byType(MaterialApp));
-    final chat = context.read<ChatTabsService>().activeChat!;
+    final chat = context.read<ChatWorkspaceController>().activeChat!;
     chat.messageStore.upsert(_userMessage('new-chat', 'Keep this chat'));
 
     expect(await tester.binding.handleRequestAppExit(), AppExitResponse.cancel);
@@ -145,7 +145,7 @@ void main() {
     await tester.pump();
 
     final context = tester.element(find.byType(MaterialApp));
-    final chat = context.read<ChatTabsService>().activeChat!;
+    final chat = context.read<ChatWorkspaceController>().activeChat!;
     chat.messageStore.upsert(_userMessage('discard-chat', 'Discard this chat'));
 
     await tester.binding.handleRequestAppExit();
@@ -230,7 +230,7 @@ void main() {
     await tester.pump();
 
     final context = tester.element(find.byType(MaterialApp));
-    final tabs = context.read<ChatTabsService>();
+    final tabs = context.read<ChatWorkspaceController>();
 
     await tester.binding.handleRequestAppExit();
     await _pumpAsyncUi(tester);

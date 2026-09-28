@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
-import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/core/services/planning_runtime.dart';
 import 'package:hermes/core/services/planning_structured_output.dart';
 

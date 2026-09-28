@@ -2,14 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:hermes/core/models/system_prompt.dart';
-import 'package:hermes/core/services/chat/chat_tabs_service.dart';
+import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/ui/common/state_display.dart';
 import 'system_prompt_library_dialogs.dart';
 
 class SystemPromptLibraryPanel extends StatefulWidget {
   final VoidCallback? onPromptLoaded;
-  final ChatTabsService tabs;
+  final ChatWorkspaceController tabs;
   final SystemPromptLibraryService library;
 
   const SystemPromptLibraryPanel({
@@ -32,7 +32,7 @@ class _SystemPromptLibraryPanelState extends State<SystemPromptLibraryPanel> {
   final _presetSearchController = TextEditingController();
   final _moduleSearchController = TextEditingController();
 
-  late final ChatTabsService _tabs;
+  late final ChatWorkspaceController _tabs;
   late final SystemPromptLibraryService _library;
 
   List<PromptPreset> _presets = const [];

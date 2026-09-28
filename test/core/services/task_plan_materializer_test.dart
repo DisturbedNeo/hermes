@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/models/task.dart';
-import 'package:hermes/core/services/project_system/project_task_models.dart';
-import 'package:hermes/core/services/task_system/task_plan_materializer.dart';
+import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/features/project/domain/project_task_models.dart';
+import 'package:hermes/features/task/application/task_application/task_plan_materializer.dart';
 
 void main() {
   test('updates planning metadata without replacing execution history', () {

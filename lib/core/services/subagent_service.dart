@@ -1,14 +1,15 @@
 import 'package:flutter/foundation.dart';
 import 'package:hermes/core/models/chat_message.dart';
-import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/features/model/domain/model_provider.dart';
+import 'package:hermes/features/model/domain/model_errors.dart';
 
 /// A lightweight service that spawns ephemeral subagents to extract specific
 /// information from file contents without ingesting the entire file into the
 /// main agent's context.
 class SubagentService {
-  final ChatClient Function() _chatClientFactory;
+  final ModelProvider Function() _chatClientFactory;
 
-  SubagentService({required ChatClient Function() chatClientFactory})
+  SubagentService({required ModelProvider Function() chatClientFactory})
     : _chatClientFactory = chatClientFactory;
 
   /// Extracts specific information from [fileContent] based on the

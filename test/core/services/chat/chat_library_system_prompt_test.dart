@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/models/bubble.dart';
-import 'package:hermes/core/services/chat/chat_library_service.dart';
+import 'package:hermes/features/chat/application/chat_application/chat_library_service.dart';
 import 'package:hermes/core/services/chat_library_repository.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/system_prompt_library_repository.dart';

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hermes/core/models/system_prompt.dart';
-import 'package:hermes/core/models/workspace.dart';
+import 'package:hermes/features/workspace/domain/workspace.dart';
 import 'package:hermes/core/services/prompt_assembler.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 

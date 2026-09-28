@@ -2,10 +2,11 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/chat_message.dart';
-import 'package:hermes/core/models/project.dart';
-import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/model/infrastructure/chat_client.dart';
+import 'package:hermes/features/model/domain/model_provider.dart';
 import 'package:hermes/core/services/planning_runtime.dart';
-import 'package:hermes/core/services/project_system/project_planning_tools.dart';
+import 'package:hermes/features/project/application/project_application/project_planning_tools.dart';
 
 void main() {
   test('runs initial planning commands through commit', () async {
@@ -226,7 +227,7 @@ void main() {
 }
 
 Future<Map<String, dynamic>> _complete({
-  required ChatClient client,
+  required ModelProvider client,
   required PlanningToolRegistry registry,
   required String label,
   required String system,

@@ -4,14 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/ui/common/state_display.dart';
 import 'package:hermes/core/models/saved_chat.dart';
-import 'package:hermes/core/services/chat/chat_library_service.dart';
-import 'package:hermes/core/services/chat/chat_tabs_service.dart';
+import 'package:hermes/features/chat/application/chat_application/chat_library_service.dart';
+import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 
 class ChatList extends StatefulWidget {
   final FutureOr<void> Function(String chatId) onOpenChat;
   final FutureOr<void> Function(String chatId) onOpenChatInNewTab;
   final FutureOr<void> Function() onNewChat;
-  final ChatTabsService tabs;
+  final ChatWorkspaceController tabs;
   final ChatLibraryService library;
 
   const ChatList({
@@ -37,7 +37,7 @@ class _ChatListState extends State<ChatList> {
 
   final _searchController = TextEditingController();
 
-  ChatTabsService get _tabs => widget.tabs;
+  ChatWorkspaceController get _tabs => widget.tabs;
   ChatLibraryService get _library => widget.library;
 
   List<SavedChat> _chats = const [];

@@ -10,7 +10,7 @@ import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/saved_chat.dart';
 import 'package:hermes/core/models/system_prompt.dart';
-import 'package:hermes/core/models/workspace.dart';
+import 'package:hermes/features/workspace/domain/workspace.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/services/managed_lazy_database.dart';
 import 'package:hermes/core/services/preferences_service.dart';

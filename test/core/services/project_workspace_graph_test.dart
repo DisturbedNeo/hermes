@@ -1,12 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/models/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/core/serialization/model_json.dart';
-import 'package:hermes/core/services/project_system/project_plan_builder.dart';
-import 'package:hermes/core/services/project_system/project_plan_revision_service.dart';
-import 'package:hermes/core/services/project_system/project_plan_validator.dart';
-import 'package:hermes/core/services/project_system/project_workspace_context_service.dart';
-import 'package:hermes/core/services/project_system/project_workspace_graph_service.dart';
-import 'package:hermes/core/services/project_system/project_view_service.dart';
+import 'package:hermes/features/project/application/project_application/project_plan_builder.dart';
+import 'package:hermes/features/project/application/project_application/project_plan_revision_service.dart';
+import 'package:hermes/features/project/application/project_application/project_plan_validator.dart';
+import 'package:hermes/features/project/application/project_application/project_workspace_context_service.dart';
+import 'package:hermes/features/project/application/project_application/project_workspace_graph_service.dart';
+import 'package:hermes/features/project/application/project_application/project_view_service.dart';
 
 void main() {
   final now = DateTime(2026, 1, 1);

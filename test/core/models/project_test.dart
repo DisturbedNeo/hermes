@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/models/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 
 void main() {
   test('ProjectState exposes one task collection and derives revisions', () {

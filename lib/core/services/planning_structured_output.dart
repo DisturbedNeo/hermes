@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'package:hermes/core/models/chat_message.dart';
 import 'package:hermes/core/models/planning_metrics.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
-import 'package:hermes/core/services/chat/chat_client.dart';
-import 'package:hermes/core/services/task_system/task_model_output.dart';
+import 'package:hermes/features/model/domain/model_provider.dart';
+import 'package:hermes/features/task/application/task_application/task_model_output.dart';
 
 class StructuredPlanningOutputException implements Exception {
   final String message;
@@ -33,7 +33,7 @@ class StructuredPlanningOutputService {
   const StructuredPlanningOutputService();
 
   Future<StructuredPlanningOutputResult<Map<String, dynamic>>> completeObject({
-    required ChatClient client,
+    required ModelProvider client,
     required String label,
     required String system,
     required String user,
@@ -92,7 +92,7 @@ Return only the repaired JSON object.''',
   }
 
   Future<String> _completeRaw({
-    required ChatClient client,
+    required ModelProvider client,
     required String label,
     required String system,
     required String user,

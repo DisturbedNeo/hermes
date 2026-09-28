@@ -9,13 +9,13 @@ import '../models/chat_message.dart' as p1;
 import '../models/model_configuration_snapshot.dart' as p2;
 import '../models/model_load_configuration.dart' as p3;
 import '../models/planning_metrics.dart' as p4;
-import '../models/project.dart' as p5;
+import 'package:hermes/features/project/domain/project.dart' as p5;
 import '../models/project_workspace_graph.dart' as p6;
 import '../models/system_prompt.dart' as p7;
-import '../models/task.dart' as p8;
-import '../services/project_system/project_task_models.dart' as p9;
+import 'package:hermes/features/task/domain/task.dart' as p8;
+import 'package:hermes/features/project/domain/project_task_models.dart' as p9;
 import '../services/question_policy_service.dart' as p10;
-import '../services/task_system/task_service.dart' as p11;
+import 'package:hermes/features/task/domain/task_planning_models.dart' as p11;
 import '../services/workspace_discovery_profile.dart' as p12;
 import '../tools/calculator_tool.dart' as p13;
 
@@ -108,4 +108,3 @@ void initializeMappers() {
   p12.WorkspaceFileExcerptMapper.ensureInitialized();
   p13.CalculatorOperationMapper.ensureInitialized();
 }
-

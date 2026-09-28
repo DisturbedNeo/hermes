@@ -8,17 +8,17 @@ import 'package:hermes/core/models/chat_persistence.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/saved_chat.dart';
 import 'package:hermes/core/models/system_prompt.dart';
-import 'package:hermes/core/models/workspace.dart';
-import 'package:hermes/core/services/chat/chat_library_service.dart';
-import 'package:hermes/core/services/chat/chat_service.dart';
-import 'package:hermes/core/services/chat/chat_tabs_service.dart';
+import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/features/chat/application/chat_application/chat_library_service.dart';
+import 'package:hermes/features/chat/application/chat_controller.dart';
+import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 import 'package:hermes/core/services/chat_library_repository.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/preferences_service.dart';
-import 'package:hermes/core/services/project_system/project_orchestrator.dart';
+import 'package:hermes/features/project/application/project_application/project_application.dart';
 import 'package:hermes/core/services/system_prompt_library_repository.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
-import 'package:hermes/core/services/task_system/task_service.dart';
+import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/services/workspace_service.dart';
@@ -41,12 +41,12 @@ void main() {
     final serverManager = LlamaServerManager();
     final sandbox = WorkspaceSandbox();
     final tools = ToolService(workspaceSandbox: sandbox);
-    final tasks = TaskService(toolService: tools, sandbox: sandbox);
-    final chat = ChatService(
+    final tasks = TaskController(toolService: tools, sandbox: sandbox);
+    final chat = ChatController(
       serverManager: serverManager,
       toolService: tools,
-      taskService: tasks,
-      projectOrchestrator: ProjectOrchestrator(taskService: tasks),
+      taskController: tasks,
+      projectApplication: ProjectApplication(taskController: tasks),
       chatLibrary: library,
       workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,
@@ -92,12 +92,12 @@ void main() {
     final serverManager = LlamaServerManager();
     final sandbox = WorkspaceSandbox();
     final tools = ToolService(workspaceSandbox: sandbox);
-    final tasks = TaskService(toolService: tools, sandbox: sandbox);
-    final chat = ChatService(
+    final tasks = TaskController(toolService: tools, sandbox: sandbox);
+    final chat = ChatController(
       serverManager: serverManager,
       toolService: tools,
-      taskService: tasks,
-      projectOrchestrator: ProjectOrchestrator(taskService: tasks),
+      taskController: tasks,
+      projectApplication: ProjectApplication(taskController: tasks),
       chatLibrary: library,
       workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,
@@ -138,12 +138,12 @@ void main() {
     final serverManager = LlamaServerManager();
     final sandbox = WorkspaceSandbox();
     final tools = ToolService(workspaceSandbox: sandbox);
-    final tasks = TaskService(toolService: tools, sandbox: sandbox);
-    final chat = ChatService(
+    final tasks = TaskController(toolService: tools, sandbox: sandbox);
+    final chat = ChatController(
       serverManager: serverManager,
       toolService: tools,
-      taskService: tasks,
-      projectOrchestrator: ProjectOrchestrator(taskService: tasks),
+      taskController: tasks,
+      projectApplication: ProjectApplication(taskController: tasks),
       chatLibrary: library,
       workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,
@@ -198,13 +198,14 @@ void main() {
     );
     final sandbox = WorkspaceSandbox();
     final tools = ToolService(workspaceSandbox: sandbox);
-    final tasks = TaskService(toolService: tools, sandbox: sandbox);
-    final tabs = ChatTabsService(
+    final tasks = TaskController(toolService: tools, sandbox: sandbox);
+    final tabs = ChatWorkspaceController(
+      serverManager: LlamaServerManager(),
       chatLibrary: chatLibrary,
       systemPromptLibrary: promptLibrary,
       toolService: tools,
-      taskService: tasks,
-      projectOrchestrator: ProjectOrchestrator(taskService: tasks),
+      taskController: tasks,
+      projectApplication: ProjectApplication(taskController: tasks),
       workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,
     );

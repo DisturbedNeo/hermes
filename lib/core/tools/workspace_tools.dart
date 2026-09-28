@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hermes/core/models/task.dart';
-import 'package:hermes/core/models/workspace.dart';
+import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/features/workspace/domain/workspace.dart';
 import 'package:hermes/core/services/subagent_service.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/sandbox_policy.dart';

@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/chat_message.dart';
-import 'package:hermes/core/models/workspace.dart';
-import 'package:hermes/core/services/chat/chat_client.dart';
+import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/core/services/subagent_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';

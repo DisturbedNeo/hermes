@@ -3,7 +3,7 @@ import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/helpers/chat/buffered_token_writer.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/chat_token.dart';
-import 'package:hermes/core/services/chat/message_store.dart';
+import 'package:hermes/features/chat/application/chat_application/message_store.dart';
 
 void main() {
   group('MessageStore compaction metadata', () {

@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:hermes/core/models/workspace.dart';
+import 'package:hermes/features/workspace/domain/workspace.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/tools/tool.dart';
 

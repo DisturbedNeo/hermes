@@ -1,9 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/models/task.dart';
-import 'package:hermes/core/services/task_system/task_plan_builder.dart';
-import 'package:hermes/core/services/task_system/task_planning_tools.dart';
+import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/features/task/application/task_application/task_plan_builder.dart';
+import 'package:hermes/features/task/application/task_application/task_planning_tools.dart';
 
 void main() {
   test('builder generates step and check identity and validates the draft', () {

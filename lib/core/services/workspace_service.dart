@@ -2,12 +2,13 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:hermes/core/models/workspace.dart';
+import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 
-class WorkspaceService extends ChangeNotifier {
+class WorkspaceService extends ChangeNotifier implements WorkspacePort {
   static const String _recentWorkspacesKey = 'recent_workspaces';
   static const int _maxRecentWorkspaces = 12;
 
@@ -17,6 +18,7 @@ class WorkspaceService extends ChangeNotifier {
   WorkspaceService({required this.sandbox, Future<SharedPreferences>? prefs})
     : _prefs = prefs ?? SharedPreferences.getInstance();
 
+  @override
   Future<WorkspaceAttachment> attach(String folderPath) async {
     final canonical = await sandbox.canonicalRoot(folderPath);
     final workspace = WorkspaceAttachment(
@@ -28,6 +30,7 @@ class WorkspaceService extends ChangeNotifier {
     return workspace;
   }
 
+  @override
   Future<WorkspaceAttachment> restore({
     required String rootPath,
     required String displayName,
@@ -55,6 +58,7 @@ class WorkspaceService extends ChangeNotifier {
     return restored;
   }
 
+  @override
   Future<List<WorkspaceAttachment>> recentWorkspaces() async {
     final raw = (await _prefs).getString(_recentWorkspacesKey);
     if (raw == null || raw.isEmpty) return const [];
@@ -80,6 +84,7 @@ class WorkspaceService extends ChangeNotifier {
         .toList();
   }
 
+  @override
   Future<void> remember(WorkspaceAttachment workspace) async {
     final existing = await recentWorkspaces();
     final next = <WorkspaceAttachment>[

@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:hermes/core/helpers/chat/assistant_ops.dart';
 import 'package:hermes/core/models/chat_token.dart';
-import 'package:hermes/core/services/chat/message_store.dart';
+import 'package:hermes/features/chat/application/chat_application/message_store.dart';
 
 /// Publishes streamed tokens in small batches to bound UI notification work.
 class BufferedTokenWriter {

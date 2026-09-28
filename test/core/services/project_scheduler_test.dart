@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/models/project.dart';
-import 'package:hermes/core/services/project_system/project_scheduler.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/project/application/project_application/project_scheduler.dart';
 
 void main() {
   const scheduler = ProjectScheduler();

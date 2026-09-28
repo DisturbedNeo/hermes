@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/models/project.dart';
-import 'package:hermes/core/services/project_system/project_state_models.dart';
-import 'package:hermes/core/services/project_system/project_task_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/project/application/project_application/project_state_models.dart';
+import 'package:hermes/features/project/domain/project_task_models.dart';
 
 void main() {
   test('exposes separate plan, execution, evidence, and control views', () {

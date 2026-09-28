@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/models/system_prompt.dart';
-import 'package:hermes/core/services/chat/chat_library_service.dart';
+import 'package:hermes/features/chat/application/chat_application/chat_library_service.dart';
 import 'package:hermes/core/services/chat_library_repository.dart';
-import 'package:hermes/core/services/chat/chat_tabs_service.dart';
-import 'package:hermes/core/services/project_system/project_orchestrator.dart';
-import 'package:hermes/core/services/task_system/task_service.dart';
+import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
+import 'package:hermes/core/services/llama_server_manager.dart';
+import 'package:hermes/features/project/application/project_application/project_application.dart';
+import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/core/services/prompt_assembler.dart';
 import 'package:hermes/core/services/system_prompt_library_repository.dart';
@@ -22,7 +23,7 @@ void main() {
   late PreferencesService preferences;
   late ChatLibraryService chatLibrary;
   late _FakeSystemPromptLibraryService promptLibrary;
-  late ChatTabsService tabs;
+  late ChatWorkspaceController tabs;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
@@ -35,13 +36,14 @@ void main() {
     promptLibrary = _FakeSystemPromptLibraryService();
     final sandbox = WorkspaceSandbox();
     final toolService = ToolService(workspaceSandbox: sandbox);
-    final taskService = TaskService(toolService: toolService, sandbox: sandbox);
-    tabs = ChatTabsService(
+    final taskController = TaskController(toolService: toolService, sandbox: sandbox);
+    tabs = ChatWorkspaceController(
+      serverManager: LlamaServerManager(),
       chatLibrary: chatLibrary,
       systemPromptLibrary: promptLibrary,
       toolService: toolService,
-      taskService: taskService,
-      projectOrchestrator: ProjectOrchestrator(taskService: taskService),
+      taskController: taskController,
+      projectApplication: ProjectApplication(taskController: taskController),
       workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,
     );
@@ -264,7 +266,7 @@ void main() {
 }
 
 Widget _panelApp({
-  required ChatTabsService tabs,
+  required ChatWorkspaceController tabs,
   required SystemPromptLibraryService promptLibrary,
   VoidCallback? onPromptLoaded,
   double width = 520,

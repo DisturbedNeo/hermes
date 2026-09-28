@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:hermes/core/helpers/a11y.dart';
 import 'package:hermes/core/helpers/models_directory.dart';
 import 'package:hermes/core/models/model_load_configuration.dart';
-import 'package:hermes/core/services/chat/chat_tabs_service.dart';
+import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 import 'package:hermes/core/services/preferences_service.dart';
 import 'package:hermes/ui/chat/message/dot_pulse.dart';
 import 'package:hermes/ui/model_configuration/model_configuration.dart';
@@ -34,7 +34,7 @@ class ModelPicker extends StatefulWidget {
     required this.preferencesService,
   });
 
-  final ChatTabsService tabs;
+  final ChatWorkspaceController tabs;
   final PreferencesService preferencesService;
 
   @override
@@ -48,7 +48,7 @@ class _ModelPickerState extends State<ModelPicker> {
   bool _loading = true;
   String? _error;
 
-  ChatTabsService get _tabs => widget.tabs;
+  ChatWorkspaceController get _tabs => widget.tabs;
   PreferencesService get _preferencesService => widget.preferencesService;
 
   @override
