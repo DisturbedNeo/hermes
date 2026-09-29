@@ -1,7 +1,9 @@
 import 'package:dart_mappable/dart_mappable.dart';
-import 'package:hermes/core/helpers/sentinel.dart' show kSentinel, resolve;
-import 'package:hermes/core/serialization/json_hooks.dart';
+import 'package:hermes/shared_kernel/sentinel.dart' show kSentinel, resolve;
+import 'package:hermes/shared_kernel/json_hooks.dart';
 import 'package:hermes/shared_kernel/task_planning_types.dart';
+
+export 'package:hermes/shared_kernel/task_tool_contracts.dart';
 
 part 'task_execution_contracts.mapper.dart';
 

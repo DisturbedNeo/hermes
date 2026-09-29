@@ -3,14 +3,14 @@ import 'package:hermes/core/models/hermes_theme_data.dart';
 import 'package:hermes/core/models/themes/nexus_theme.dart';
 import 'package:hermes/core/models/themes/solarpunk_theme.dart';
 import 'package:hermes/core/services/disposable.dart';
-import 'package:hermes/core/services/preferences_service.dart';
+import 'package:hermes/shared_kernel/preferences_port.dart';
 
 class ThemeManager with ChangeNotifier implements Disposable {
   bool _isDarkMode = false;
   HermesThemeData _currentTheme = allThemes.first;
   bool _disposed = false;
 
-  final PreferencesService _preferencesService;
+  final PreferencesPort _preferencesService;
 
   /// All available themes, built once at class load time.
   static List<HermesThemeData> allThemes = _buildAllThemes();
@@ -22,7 +22,7 @@ class ThemeManager with ChangeNotifier implements Disposable {
 
   final Duration _themeSwitchDuration = const Duration(milliseconds: 300);
 
-  ThemeManager({required PreferencesService preferencesService})
+  ThemeManager({required PreferencesPort preferencesService})
     : _preferencesService = preferencesService {
     _loadThemePreferences();
   }

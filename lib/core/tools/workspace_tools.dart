@@ -1,8 +1,9 @@
-import 'dart:convert';
 import 'dart:io';
 
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/shared_kernel/task_execution_contracts.dart';
+import 'package:hermes/shared_kernel/task_tool_contracts.dart';
+import 'package:hermes/shared_kernel/tool_contracts.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/core/services/subagent_service.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/sandbox_policy.dart';
@@ -24,57 +25,51 @@ abstract class WorkspaceTool extends Tool {
   );
 
   @override
-  Future<String> process(String input, {WorkspaceToolContext? context}) async {
-    if (context == null || context.workspace.missing) {
-      return jsonEncode(
-        toolErrorPayload(
-          code: 'workspace_unavailable',
-          message: 'No active workspace is available.',
-          disposition: TaskToolErrorDisposition.retryable,
-        ),
+  Future<ToolResult> execute(ToolRequest request) async {
+    final context = request.context;
+    if (context == null ||
+        context.workspace == null ||
+        context.workspace!.missing) {
+      return const ToolFailure(
+        code: 'workspace_unavailable',
+        message: 'No active workspace is available.',
       );
     }
 
+    final workspaceContext = WorkspaceToolContext(
+      workspace: WorkspaceAttachment(
+        rootPath: context.workspace!.rootPath,
+        displayName: context.workspace!.displayName,
+        lastOpenedAt: DateTime.now(),
+        missing: context.workspace!.missing,
+        commandExecutionApproved: context.workspace!.commandExecutionApproved,
+      ),
+      subagentService: context.runtimeContext,
+      cancellationToken: context.cancellationToken,
+    );
+
     try {
-      final decoded = jsonDecode(input);
-      final args = decoded is Map<String, dynamic>
-          ? decoded
-          : Map<String, dynamic>.from(decoded as Map);
-      final result = await run(args, context);
-      return jsonEncode(result);
+      final result = await run(
+        Map<String, dynamic>.from(request.arguments),
+        workspaceContext,
+      );
+      return ToolSuccess(result);
     } on OperationCancelledException {
       rethrow;
     } on WorkspaceSandboxException catch (e) {
-      return jsonEncode(
-        toolErrorPayload(
-          code: e.code,
-          message: e.message,
-          disposition: TaskToolErrorDisposition.advisory,
-        ),
+      return ToolFailure(
+        code: e.code,
+        message: e.message,
+        details: const {'error_disposition': 'advisory'},
       );
     } on FormatException catch (e) {
-      return jsonEncode(
-        toolErrorPayload(
-          code: 'invalid_tool_arguments',
-          message: e.toString(),
-          disposition: TaskToolErrorDisposition.advisory,
-        ),
-      );
+      return ToolFailure(code: 'invalid_tool_arguments', message: e.toString());
     } on FileSystemException catch (e) {
-      return jsonEncode(
-        toolErrorPayload(
-          code: 'workspace_io_failure',
-          message: e.message,
-          disposition: TaskToolErrorDisposition.retryable,
-        ),
-      );
+      return ToolFailure(code: 'workspace_io_failure', message: e.message);
     } catch (e) {
-      return jsonEncode(
-        toolErrorPayload(
-          code: 'unexpected_tool_failure',
-          message: e.toString(),
-          disposition: TaskToolErrorDisposition.fatal,
-        ),
+      return ToolFailure(
+        code: 'unexpected_tool_failure',
+        message: e.toString(),
       );
     }
   }

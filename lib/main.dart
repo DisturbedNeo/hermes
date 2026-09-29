@@ -3,11 +3,12 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:hermes/app_dependencies.dart';
+import 'package:hermes/app/application_exit_coordinator.dart';
 import 'package:hermes/core/models/chat_persistence.dart';
-import 'package:hermes/features/chat/application/chat_application/chat_library_service.dart';
+import 'package:hermes/features/chat/runtime/chat_application/chat_library_service.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 import 'package:hermes/core/services/keyboard_shortcuts.dart';
-import 'package:hermes/core/services/preferences_service.dart';
+import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/features/project/application/project_application/project_application.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
@@ -15,9 +16,9 @@ import 'package:hermes/core/services/theme_manager.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/services/workspace_service.dart';
-import 'package:hermes/ui/chat/chat.dart';
-import 'package:hermes/ui/overlays/keyboard_shortcuts_panel.dart';
-import 'package:hermes/ui/routes.dart';
+import 'package:hermes/features/chat/presentation/chat/chat.dart';
+import 'package:hermes/features/chat/presentation/overlays/keyboard_shortcuts_panel.dart';
+import 'package:hermes/features/chat/presentation/routes.dart';
 import 'package:provider/provider.dart';
 
 void main() {
@@ -145,22 +146,22 @@ class _AppShell extends StatefulWidget {
   State<_AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
+class _AppShellState extends State<_AppShell> {
   final KeyboardShortcutsService _shortcuts = KeyboardShortcutsService();
-  bool _exitCleanupStarted = false;
-  bool _exitAfterCleanup = false;
+  late final ApplicationExitCoordinator _exitCoordinator;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
+    _exitCoordinator = ApplicationExitCoordinator(onExitRequested: _beginExit);
+    WidgetsBinding.instance.addObserver(_exitCoordinator);
     widget.themeManager.addListener(_handleThemeChanged);
     _registerAppShortcuts();
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
+    WidgetsBinding.instance.removeObserver(_exitCoordinator);
     widget.themeManager.removeListener(_handleThemeChanged);
     _shortcuts.dispose();
     super.dispose();
@@ -207,23 +208,12 @@ class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
     if (mounted) setState(() {});
   }
 
-  @override
-  Future<AppExitResponse> didRequestAppExit() async {
-    if (_exitAfterCleanup) return AppExitResponse.exit;
-    if (_exitCleanupStarted) return AppExitResponse.cancel;
-
-    _exitCleanupStarted = true;
-    Timer.run(() => unawaited(_beginExit()));
-
-    return AppExitResponse.cancel;
-  }
-
   Future<void> _beginExit() async {
     var policy = NewChatExitPolicy.discard;
     if (widget.tabs.tabs.any((tab) => tab.isUnsavedNonEmpty)) {
       final choice = await _showUnsavedChatsDialog();
       if (choice == null || choice == _UnsavedChatsExitAction.cancel) {
-        _exitCleanupStarted = false;
+        _exitCoordinator.reset();
         return;
       }
       policy = choice == _UnsavedChatsExitAction.saveAll
@@ -247,7 +237,7 @@ class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
         await _finishExit();
         return;
       }
-      _exitCleanupStarted = false;
+      _exitCoordinator.reset();
       return;
     }
     await _finishExit();
@@ -255,7 +245,7 @@ class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
 
   Future<void> _finishExit() async {
     await widget.disposeWithoutSavingDependencies();
-    _exitAfterCleanup = true;
+    _exitCoordinator.allowExit();
     await widget.exitApplication(AppExitType.required);
   }
 

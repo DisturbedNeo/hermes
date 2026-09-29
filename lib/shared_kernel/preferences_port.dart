@@ -1,4 +1,4 @@
-import 'package:hermes/core/models/compaction_settings.dart';
+import 'package:hermes/shared_kernel/compaction_settings.dart';
 import 'package:hermes/shared_kernel/task_system_settings.dart';
 
 /// Minimal settings contract needed by application services.
@@ -12,4 +12,10 @@ abstract interface class PreferencesPort {
 
   Future<CompactionSettings> getCompactionSettings();
   Future<TaskSystemSettings> getTaskSystemSettings();
+
+  Future<bool> isDarkMode();
+  Future<String?> getThemeId();
+  Future<void> setDarkMode(bool value);
+  Future<void> setThemeId(String themeId);
+  Future<String?> getModelsDirectory();
 }

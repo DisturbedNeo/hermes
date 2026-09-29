@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/ui/chat/model_picker.dart';
+import 'package:hermes/features/chat/presentation/chat/model_picker.dart';
 
 void main() {
   test('does not save when model startup fails', () async {

@@ -1,4 +1,4 @@
-import 'package:hermes/core/models/chat_token.dart';
+import 'package:hermes/shared_kernel/chat_token.dart';
 
 enum TaskModelOutputEventType {
   start,

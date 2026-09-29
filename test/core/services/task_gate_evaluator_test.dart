@@ -8,7 +8,7 @@ import 'package:hermes/features/workspace/domain/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/core/services/sandbox_policy.dart';
-import 'package:hermes/features/task/application/task_application/task_gate_evaluator.dart';
+import 'package:hermes/features/task/runtime/task_gate_evaluator.dart';
 import 'package:path/path.dart' as path;
 
 void main() {

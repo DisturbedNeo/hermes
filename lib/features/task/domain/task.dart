@@ -1,12 +1,13 @@
 import 'package:dart_mappable/dart_mappable.dart';
-import 'package:hermes/core/helpers/sentinel.dart' show kSentinel, resolve;
-import 'package:hermes/core/models/planning_metrics.dart';
-import 'package:hermes/core/serialization/json_hooks.dart';
+import 'package:hermes/shared_kernel/sentinel.dart' show kSentinel, resolve;
+import 'package:hermes/shared_kernel/planning_metrics.dart';
+import 'package:hermes/shared_kernel/json_hooks.dart';
 import 'package:hermes/shared_kernel/task_planning_types.dart';
 import 'package:hermes/shared_kernel/task_execution_contracts.dart';
 
 export 'package:hermes/shared_kernel/task_planning_types.dart';
 export 'package:hermes/shared_kernel/task_execution_contracts.dart';
+export 'package:hermes/shared_kernel/task_tool_contracts.dart';
 
 part 'task.mapper.dart';
 
@@ -39,9 +40,6 @@ enum TaskRunStatus {
 @MappableEnum(defaultValue: TaskToolCallOutcome.succeeded)
 enum TaskToolCallOutcome { succeeded, denied, failed, skipped }
 
-@MappableEnum(defaultValue: TaskToolErrorDisposition.fatal)
-enum TaskToolErrorDisposition { advisory, retryable, fatal }
-
 /// Project outcome context supplied transiently while a bounded task runs.
 @MappableClass(ignoreNull: true)
 class TaskProjectCriterion with TaskProjectCriterionMappable {
@@ -62,7 +60,7 @@ class TaskProjectCriterion with TaskProjectCriterionMappable {
   });
 }
 
-/// Task-planning DTO used by the task planner prompt. The canonical task
+/// TaskAggregate-planning DTO used by the task planner prompt. The canonical task
 /// record uses [TaskEvidenceExpectation] and its typed evidence enum.
 @MappableClass(ignoreNull: true)
 class TaskProjectEvidenceExpectation
@@ -102,9 +100,9 @@ extension ExecutionModeWire on ExecutionMode {
   String get label => switch (this) {
     ExecutionMode.chat => 'Chat',
     ExecutionMode.refine => 'Refine',
-    ExecutionMode.task => 'Task',
+    ExecutionMode.task => 'TaskAggregate',
     ExecutionMode.project => 'Project',
-    ExecutionMode.continueTask => 'Continue Task',
+    ExecutionMode.continueTask => 'Continue TaskAggregate',
   };
 }
 
@@ -120,10 +118,6 @@ extension TaskRunStatusWire on TaskRunStatus {
 }
 
 extension TaskToolCallOutcomeWire on TaskToolCallOutcome {
-  String get wire => name;
-}
-
-extension TaskToolErrorDispositionWire on TaskToolErrorDisposition {
   String get wire => name;
 }
 
@@ -153,7 +147,7 @@ class RefinedTaskBrief with RefinedTaskBriefMappable {
 }
 
 @MappableClass(ignoreNull: true, hook: TaskJsonHook())
-class Task with TaskMappable {
+class TaskAggregate with TaskAggregateMappable {
   /// Revision of the canonical task snapshot. This is runtime metadata and
   /// is omitted from the document nested in the persistence envelope.
   @MappableField(hook: JsonIntHook(min: 0))
@@ -238,7 +232,7 @@ class Task with TaskMappable {
   @MappableField(hook: JsonNullableDateHook())
   final DateTime? completedAt;
 
-  const Task({
+  const TaskAggregate({
     this.persistenceRevision = 0,
     required this.id,
     required this.title,
@@ -285,7 +279,7 @@ class Task with TaskMappable {
   }) : originalPrompt = originalPrompt ?? objective ?? '',
        objective = objective ?? originalPrompt ?? '';
 
-  Task copyWith({
+  TaskAggregate copyWith({
     int? persistenceRevision,
     String? id,
     String? title,
@@ -330,7 +324,7 @@ class Task with TaskMappable {
     DateTime? updatedAt,
     Object? completedAt = kSentinel,
   }) {
-    return Task(
+    return TaskAggregate(
       persistenceRevision: persistenceRevision ?? this.persistenceRevision,
       id: id ?? this.id,
       title: title ?? this.title,
@@ -546,21 +540,6 @@ class TaskRun with TaskRunMappable {
 }
 
 @MappableClass(ignoreNull: true)
-class TaskToolError with TaskToolErrorMappable {
-  @MappableField(hook: JsonStringHook(fallback: 'unknown_tool_error'))
-  final String code;
-  @MappableField(hook: JsonStringHook())
-  final String message;
-  final TaskToolErrorDisposition disposition;
-
-  const TaskToolError({
-    required this.code,
-    required this.message,
-    required this.disposition,
-  });
-}
-
-@MappableClass(ignoreNull: true)
 class TaskToolCallRecord with TaskToolCallRecordMappable {
   @MappableField(hook: JsonStringHook())
   final String id;
@@ -630,3 +609,5 @@ class PendingTaskQuestion with PendingTaskQuestionMappable {
     required this.createdAt,
   });
 }
+
+typedef Task = TaskAggregate;

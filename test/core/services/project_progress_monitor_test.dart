@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/project/application/project_application/project_progress_monitor.dart';
+import 'package:hermes/features/project/runtime/project_progress_monitor.dart';
 
 void main() {
   const monitor = ProjectProgressMonitor();

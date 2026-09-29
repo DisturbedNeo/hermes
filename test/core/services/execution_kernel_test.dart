@@ -5,9 +5,9 @@ import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
-import 'package:hermes/features/chat/application/chat_application/chat_tool_execution_service.dart';
-import 'package:hermes/features/chat/application/chat_application/message_store.dart';
-import 'package:hermes/features/task/application/task_application/task_tool_execution_service.dart';
+import 'package:hermes/features/chat/runtime/chat_application/chat_tool_execution_service.dart';
+import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';
+import 'package:hermes/features/task/runtime/task_tool_execution_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 

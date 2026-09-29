@@ -1,31 +1,28 @@
-import 'dart:async';
-
-import 'package:flutter/foundation.dart';
-import 'package:hermes/features/chat/application/chat_application/chat_library_service.dart';
+import 'package:hermes/features/chat/runtime/chat_application/chat_library_service.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 import 'package:hermes/features/chat/infrastructure/chat_library_repository.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/features/project/application/project_application/project_application.dart';
 import 'package:hermes/features/project/infrastructure/project_aggregate_repository.dart';
-import 'package:hermes/features/project/application/project_application/project_command_service.dart';
+import 'package:hermes/features/project/runtime/project_command_service.dart';
 import 'package:hermes/features/project/infrastructure/project_repository.dart';
-import 'package:hermes/features/project/application/project_application/project_state_store.dart';
-import 'package:hermes/features/project/application/project_application/project_recovery_service.dart';
+import 'package:hermes/features/project/runtime/project_state_store.dart';
+import 'package:hermes/features/project/runtime/project_recovery_service.dart';
 import 'package:hermes/core/services/planning_runtime.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/core/services/planning_structured_output.dart';
 import 'package:hermes/features/chat/infrastructure/system_prompt_library_repository.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/features/task/infrastructure/task_repository.dart';
-import 'package:hermes/features/task/application/task_application/task_persistence_store.dart';
-import 'package:hermes/features/task/application/task_application/task_planning_coordinator.dart';
-import 'package:hermes/features/task/application/task_application/task_recovery_service.dart';
-import 'package:hermes/features/task/application/task_application/task_model_completion_service.dart';
+import 'package:hermes/features/task/runtime/task_persistence_store.dart';
+import 'package:hermes/features/task/runtime/task_planning_coordinator.dart';
+import 'package:hermes/features/task/runtime/task_recovery_service.dart';
+import 'package:hermes/features/task/runtime/task_model_completion_service.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/core/models/chat_persistence.dart';
-import 'package:hermes/features/task/application/task_application/task_tool_execution_service.dart';
-import 'package:hermes/features/task/application/task_application/task_planning_service.dart';
+import 'package:hermes/features/task/runtime/task_tool_execution_service.dart';
+import 'package:hermes/features/task/runtime/task_planning_service.dart';
 import 'package:hermes/core/services/theme_manager.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
@@ -50,6 +47,7 @@ class AppDependencies implements ApplicationLifecycle {
     required this.chatLibraryService,
     required this.systemPromptLibraryService,
     required this.chatWorkspaceController,
+    required this.lifecycleCoordinator,
   });
 
   factory AppDependencies.create() {
@@ -145,6 +143,33 @@ class AppDependencies implements ApplicationLifecycle {
       workspaceService: workspaceService,
       preferencesService: preferencesService,
     );
+    final lifecycleCoordinator = ApplicationLifecycleCoordinator();
+    lifecycleCoordinator.register(
+      name: 'preferences',
+      dispose: preferencesService.dispose,
+    );
+    lifecycleCoordinator.register(name: 'theme', dispose: themeManager.dispose);
+    lifecycleCoordinator.register(
+      name: 'workspace',
+      dispose: workspaceService.dispose,
+    );
+    lifecycleCoordinator.register(
+      name: 'chat library',
+      dispose: chatLibraryService.dispose,
+    );
+    lifecycleCoordinator.register(
+      name: 'system prompt library',
+      dispose: systemPromptLibraryService.dispose,
+    );
+    lifecycleCoordinator.register(
+      name: 'chat workspace',
+      quiesce: () =>
+          chatWorkspaceController.prepareForExit(NewChatExitPolicy.discard),
+      flush: () =>
+          chatWorkspaceController.prepareForExit(NewChatExitPolicy.save),
+      dispose: chatWorkspaceController.dispose,
+      disposeWithoutSaving: chatWorkspaceController.disposeWithoutSaving,
+    );
 
     return AppDependencies._(
       preferencesService: preferencesService,
@@ -158,6 +183,7 @@ class AppDependencies implements ApplicationLifecycle {
       chatLibraryService: chatLibraryService,
       systemPromptLibraryService: systemPromptLibraryService,
       chatWorkspaceController: chatWorkspaceController,
+      lifecycleCoordinator: lifecycleCoordinator,
     );
   }
 
@@ -172,87 +198,24 @@ class AppDependencies implements ApplicationLifecycle {
   final ChatLibraryService chatLibraryService;
   final SystemPromptLibraryService systemPromptLibraryService;
   final ChatWorkspaceController chatWorkspaceController;
-
-  bool _disposed = false;
-  Future<void>? _disposeFuture;
-  ApplicationLifecycleState _lifecycleState = ApplicationLifecycleState.created;
+  final ApplicationLifecycleCoordinator lifecycleCoordinator;
 
   @override
-  ApplicationLifecycleState get lifecycleState => _lifecycleState;
+  ApplicationLifecycleState get lifecycleState =>
+      lifecycleCoordinator.lifecycleState;
 
   @override
-  Future<void> start() async {
-    if (_disposed) throw StateError('Application dependencies are disposed.');
-    _lifecycleState = ApplicationLifecycleState.running;
-  }
+  Future<void> start() => lifecycleCoordinator.start();
 
   @override
-  Future<void> quiesce() async {
-    if (_disposed) return;
-    _lifecycleState = ApplicationLifecycleState.quiescing;
-    await chatWorkspaceController.prepareForExit(NewChatExitPolicy.discard);
-    _lifecycleState = ApplicationLifecycleState.running;
-  }
+  Future<void> quiesce() => lifecycleCoordinator.quiesce();
 
   @override
-  Future<void> flush() async {
-    if (_disposed) return;
-    _lifecycleState = ApplicationLifecycleState.flushing;
-    await chatWorkspaceController.prepareForExit(NewChatExitPolicy.save);
-    _lifecycleState = ApplicationLifecycleState.running;
-  }
+  Future<void> flush() => lifecycleCoordinator.flush();
 
   /// Disposes owned dependencies once, in reverse construction order.
-  Future<void> dispose() => _startDispose(discardChanges: false);
+  Future<void> dispose() => lifecycleCoordinator.dispose();
 
-  Future<void> disposeWithoutSaving() => _startDispose(discardChanges: true);
-
-  Future<void> _startDispose({required bool discardChanges}) {
-    if (_disposed) return _disposeFuture ?? Future.value();
-    final pending = _disposeFuture;
-    if (pending != null) return pending;
-
-    late final Future<void> operation;
-    operation = _dispose(discardChanges: discardChanges).whenComplete(() {
-      if (!_disposed && identical(_disposeFuture, operation)) {
-        _disposeFuture = null;
-      }
-    });
-    _disposeFuture = operation;
-    return operation;
-  }
-
-  Future<void> _dispose({required bool discardChanges}) async {
-    _lifecycleState = ApplicationLifecycleState.quiescing;
-    if (discardChanges) {
-      await _disposeSafely(chatWorkspaceController.disposeWithoutSaving);
-    } else {
-      // A failed tab preflight must stop disposal before repositories close.
-      await chatWorkspaceController.dispose();
-    }
-    await _disposeSafely(systemPromptLibraryService.dispose);
-    await _disposeSafely(chatLibraryService.dispose);
-    await _disposeSafely(workspaceService.dispose);
-    await _disposeSafely(themeManager.dispose);
-    await _disposeSafely(preferencesService.dispose);
-    _disposed = true;
-    _lifecycleState = ApplicationLifecycleState.disposed;
-  }
-
-  Future<void> _disposeSafely(FutureOr<void> Function() dispose) async {
-    try {
-      await dispose();
-    } catch (error, stackTrace) {
-      FlutterError.reportError(
-        FlutterErrorDetails(
-          exception: error,
-          stack: stackTrace,
-          library: 'hermes application disposal',
-          context: ErrorDescription(
-            'while disposing an application dependency',
-          ),
-        ),
-      );
-    }
-  }
+  Future<void> disposeWithoutSaving() =>
+      lifecycleCoordinator.disposeWithoutSaving();
 }

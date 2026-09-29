@@ -1,17 +1,20 @@
-import 'dart:convert';
-
-import 'package:hermes/features/workspace/domain/workspace.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/core/tools/tool.dart';
+import 'package:hermes/shared_kernel/tool_contracts.dart';
 
 abstract class JsonTool<T extends Object> extends Tool {
   Future<Map<String, dynamic>> run(T input);
 
   @override
-  Future<String> process(String raw, {WorkspaceToolContext? context}) async {
-    final map = jsonDecode(raw);
-    final input = ModelJson.decode<T>(map);
-    final result = await run(input);
-    return jsonEncode(result);
+  Future<ToolResult> execute(ToolRequest request) async {
+    try {
+      final input = ModelJson.decode<T>(request.arguments);
+      return ToolSuccess(await run(input));
+    } catch (error) {
+      return ToolFailure(
+        code: 'tool_execution_failed',
+        message: error.toString(),
+      );
+    }
   }
 }

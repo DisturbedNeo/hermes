@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:hermes/core/models/chat_message.dart';
-import 'package:hermes/features/model/domain/model_provider.dart';
-import 'package:hermes/features/model/domain/model_errors.dart';
+import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_errors.dart';
 
 /// A lightweight service that spawns ephemeral subagents to extract specific
 /// information from file contents without ingesting the entire file into the

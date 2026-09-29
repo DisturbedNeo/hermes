@@ -1,7 +1,7 @@
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/saved_chat.dart';
 import 'package:hermes/core/models/system_prompt.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
 
 /// Storage contract consumed by the chat application service.
 abstract interface class ChatLibraryPort {

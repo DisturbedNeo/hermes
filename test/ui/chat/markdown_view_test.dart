@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/ui/chat/message/markdown_view.dart';
+import 'package:hermes/features/chat/presentation/chat/message/markdown_view.dart';
 
 void main() {
   testWidgets('renders unlabeled fenced code blocks without language errors', (

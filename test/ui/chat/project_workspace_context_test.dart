@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/ui/chat/project_panel_sections.dart';
+import 'package:hermes/features/chat/presentation/chat/project_panel_sections.dart';
 
 void main() {
   testWidgets('renders workspace orientation, nodes, and relationships', (

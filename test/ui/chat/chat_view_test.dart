@@ -10,19 +10,19 @@ import 'package:hermes/core/helpers/scroll.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/features/workspace/domain/workspace.dart';
-import 'package:hermes/features/chat/application/chat_application/chat_library_service.dart';
-import 'package:hermes/core/services/chat_library_repository.dart';
+import 'package:hermes/features/chat/runtime/chat_application/chat_library_service.dart';
+import 'package:hermes/features/chat/infrastructure/chat_library_repository.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
 import 'package:hermes/features/project/application/project_application/project_application.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
-import 'package:hermes/core/services/preferences_service.dart';
-import 'package:hermes/core/services/system_prompt_library_repository.dart';
+import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
+import 'package:hermes/features/chat/infrastructure/system_prompt_library_repository.dart';
 import 'package:hermes/core/services/system_prompt_library_service.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/services/workspace_service.dart';
-import 'package:hermes/ui/chat/chat_view.dart';
+import 'package:hermes/features/chat/presentation/chat/chat_view.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

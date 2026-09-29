@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/helpers/models_directory.dart';
-import 'package:hermes/core/services/preferences_service.dart';
+import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

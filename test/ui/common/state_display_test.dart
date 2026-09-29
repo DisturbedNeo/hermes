@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/ui/common/state_display.dart';
+import 'package:hermes/features/chat/presentation/common/state_display.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

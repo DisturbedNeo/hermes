@@ -5,14 +5,14 @@ import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/workspace/domain/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
-import 'package:hermes/features/project/application/project_application/orchestration_contracts.dart';
-import 'package:hermes/features/project/application/project_application/project_recovery_service.dart';
-import 'package:hermes/features/project/application/project_application/project_run_loop.dart';
-import 'package:hermes/features/task/application/task_application/task_command_service.dart';
-import 'package:hermes/features/task/application/task_application/task_persistence_store.dart';
-import 'package:hermes/features/task/application/task_application/task_recovery_service.dart';
-import 'package:hermes/features/task/application/task_application/task_repository.dart';
-import 'package:hermes/features/task/application/task_application/task_step_runner.dart';
+import 'package:hermes/features/project/project_runtime_contracts.dart';
+import 'package:hermes/features/project/runtime/project_recovery_service.dart';
+import 'package:hermes/features/project/runtime/project_run_loop.dart';
+import 'package:hermes/features/task/runtime/task_command_service.dart';
+import 'package:hermes/features/task/runtime/task_persistence_store.dart';
+import 'package:hermes/features/task/runtime/task_recovery_service.dart';
+import 'package:hermes/features/task/infrastructure/task_repository.dart';
+import 'package:hermes/features/task/runtime/task_step_runner.dart';
 
 void main() {
   late Directory root;

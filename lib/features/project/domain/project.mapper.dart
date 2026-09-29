@@ -2748,13 +2748,13 @@ mixin ProjectBoundaryMappable {
 }
 
 /// @nodoc
-class ProjectStateMapper extends ClassMapperBase<ProjectState> {
-  ProjectStateMapper._();
+class ProjectAggregateMapper extends ClassMapperBase<ProjectAggregate> {
+  ProjectAggregateMapper._();
 
-  static ProjectStateMapper? _instance;
-  static ProjectStateMapper ensureInitialized() {
+  static ProjectAggregateMapper? _instance;
+  static ProjectAggregateMapper ensureInitialized() {
     if (_instance == null) {
-      MapperContainer.globals.use(_instance = ProjectStateMapper._());
+      MapperContainer.globals.use(_instance = ProjectAggregateMapper._());
       ProjectCriterionMapper.ensureInitialized();
       ProjectTaskNodeMapper.ensureInitialized();
       TaskArtifactMapper.ensureInitialized();
@@ -2778,95 +2778,93 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
   }
 
   @override
-  final String id = 'ProjectState';
+  final String id = 'ProjectAggregate';
 
-  static int _$persistenceRevision(ProjectState v) => v.persistenceRevision;
-  static const Field<ProjectState, int> _f$persistenceRevision = Field(
+  static int _$persistenceRevision(ProjectAggregate v) => v.persistenceRevision;
+  static const Field<ProjectAggregate, int> _f$persistenceRevision = Field(
     'persistenceRevision',
     _$persistenceRevision,
     opt: true,
     def: 0,
     hook: JsonIntHook(min: 0),
   );
-  static String _$id(ProjectState v) => v.id;
-  static const Field<ProjectState, String> _f$id = Field(
+  static String _$id(ProjectAggregate v) => v.id;
+  static const Field<ProjectAggregate, String> _f$id = Field(
     'id',
     _$id,
     hook: JsonStringHook(),
   );
-  static String _$title(ProjectState v) => v.title;
-  static const Field<ProjectState, String> _f$title = Field(
+  static String _$title(ProjectAggregate v) => v.title;
+  static const Field<ProjectAggregate, String> _f$title = Field(
     'title',
     _$title,
     hook: JsonStringHook(fallback: 'Untitled project'),
   );
-  static String _$originalGoal(ProjectState v) => v.originalGoal;
-  static const Field<ProjectState, String> _f$originalGoal = Field(
+  static String _$originalGoal(ProjectAggregate v) => v.originalGoal;
+  static const Field<ProjectAggregate, String> _f$originalGoal = Field(
     'originalGoal',
     _$originalGoal,
     hook: JsonStringHook(),
   );
-  static String _$refinedGoal(ProjectState v) => v.refinedGoal;
-  static const Field<ProjectState, String> _f$refinedGoal = Field(
+  static String _$refinedGoal(ProjectAggregate v) => v.refinedGoal;
+  static const Field<ProjectAggregate, String> _f$refinedGoal = Field(
     'refinedGoal',
     _$refinedGoal,
     hook: JsonStringHook(),
   );
-  static List<ProjectCriterion> _$criteria(ProjectState v) => v.criteria;
-  static const Field<ProjectState, List<ProjectCriterion>> _f$criteria = Field(
-    'criteria',
-    _$criteria,
-    hook: JsonObjectListHook(),
-  );
-  static List<String> _$constraints(ProjectState v) => v.constraints;
-  static const Field<ProjectState, List<String>> _f$constraints = Field(
+  static List<ProjectCriterion> _$criteria(ProjectAggregate v) => v.criteria;
+  static const Field<ProjectAggregate, List<ProjectCriterion>> _f$criteria =
+      Field('criteria', _$criteria, hook: JsonObjectListHook());
+  static List<String> _$constraints(ProjectAggregate v) => v.constraints;
+  static const Field<ProjectAggregate, List<String>> _f$constraints = Field(
     'constraints',
     _$constraints,
     hook: JsonStringListHook(),
   );
-  static List<ProjectTaskNode> _$tasks(ProjectState v) => v.tasks;
-  static const Field<ProjectState, List<ProjectTaskNode>> _f$tasks = Field(
+  static List<ProjectTaskNode> _$tasks(ProjectAggregate v) => v.tasks;
+  static const Field<ProjectAggregate, List<ProjectTaskNode>> _f$tasks = Field(
     'tasks',
     _$tasks,
     opt: true,
     hook: JsonObjectListHook(),
   );
-  static List<String> _$taskIds(ProjectState v) => v.taskIds;
-  static const Field<ProjectState, List<String>> _f$taskIds = Field(
+  static List<String> _$taskIds(ProjectAggregate v) => v.taskIds;
+  static const Field<ProjectAggregate, List<String>> _f$taskIds = Field(
     'taskIds',
     _$taskIds,
     opt: true,
     hook: JsonStringListHook(),
   );
-  static List<String> _$currentBatchTaskIds(ProjectState v) =>
+  static List<String> _$currentBatchTaskIds(ProjectAggregate v) =>
       v.currentBatchTaskIds;
-  static const Field<ProjectState, List<String>> _f$currentBatchTaskIds = Field(
-    'currentBatchTaskIds',
-    _$currentBatchTaskIds,
-    opt: true,
-    def: const [],
-    hook: JsonStringListHook(),
-  );
-  static int _$currentBatchIndex(ProjectState v) => v.currentBatchIndex;
-  static const Field<ProjectState, int> _f$currentBatchIndex = Field(
+  static const Field<ProjectAggregate, List<String>> _f$currentBatchTaskIds =
+      Field(
+        'currentBatchTaskIds',
+        _$currentBatchTaskIds,
+        opt: true,
+        def: const [],
+        hook: JsonStringListHook(),
+      );
+  static int _$currentBatchIndex(ProjectAggregate v) => v.currentBatchIndex;
+  static const Field<ProjectAggregate, int> _f$currentBatchIndex = Field(
     'currentBatchIndex',
     _$currentBatchIndex,
     opt: true,
     def: 0,
     hook: JsonIntHook(min: 0),
   );
-  static int _$currentBatchPlanRevision(ProjectState v) =>
+  static int _$currentBatchPlanRevision(ProjectAggregate v) =>
       v.currentBatchPlanRevision;
-  static const Field<ProjectState, int> _f$currentBatchPlanRevision = Field(
+  static const Field<ProjectAggregate, int> _f$currentBatchPlanRevision = Field(
     'currentBatchPlanRevision',
     _$currentBatchPlanRevision,
     opt: true,
     def: 0,
     hook: JsonIntHook(min: 0),
   );
-  static bool _$currentBatchProgressObserved(ProjectState v) =>
+  static bool _$currentBatchProgressObserved(ProjectAggregate v) =>
       v.currentBatchProgressObserved;
-  static const Field<ProjectState, bool> _f$currentBatchProgressObserved =
+  static const Field<ProjectAggregate, bool> _f$currentBatchProgressObserved =
       Field(
         'currentBatchProgressObserved',
         _$currentBatchProgressObserved,
@@ -2874,71 +2872,67 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
         def: false,
         hook: JsonBoolHook(),
       );
-  static String? _$pendingReplanReason(ProjectState v) => v.pendingReplanReason;
-  static const Field<ProjectState, String> _f$pendingReplanReason = Field(
+  static String? _$pendingReplanReason(ProjectAggregate v) =>
+      v.pendingReplanReason;
+  static const Field<ProjectAggregate, String> _f$pendingReplanReason = Field(
     'pendingReplanReason',
     _$pendingReplanReason,
     opt: true,
     hook: JsonNullableStringHook(),
   );
-  static List<TaskArtifact> _$artifacts(ProjectState v) => v.artifacts;
-  static const Field<ProjectState, List<TaskArtifact>> _f$artifacts = Field(
+  static List<TaskArtifact> _$artifacts(ProjectAggregate v) => v.artifacts;
+  static const Field<ProjectAggregate, List<TaskArtifact>> _f$artifacts = Field(
     'artifacts',
     _$artifacts,
     opt: true,
     hook: JsonObjectListHook(),
   );
-  static List<ProjectRecoveryIncident> _$recoveryIncidents(ProjectState v) =>
-      v.recoveryIncidents;
-  static const Field<ProjectState, List<ProjectRecoveryIncident>>
+  static List<ProjectRecoveryIncident> _$recoveryIncidents(
+    ProjectAggregate v,
+  ) => v.recoveryIncidents;
+  static const Field<ProjectAggregate, List<ProjectRecoveryIncident>>
   _f$recoveryIncidents = Field(
     'recoveryIncidents',
     _$recoveryIncidents,
     opt: true,
     hook: JsonObjectListHook(),
   );
-  static List<ProjectEvidence> _$evidence(ProjectState v) => v.evidence;
-  static const Field<ProjectState, List<ProjectEvidence>> _f$evidence = Field(
-    'evidence',
-    _$evidence,
-    opt: true,
-    hook: JsonObjectListHook(),
-  );
-  static List<ProjectMilestone> _$milestones(ProjectState v) => v.milestones;
-  static const Field<ProjectState, List<ProjectMilestone>> _f$milestones =
+  static List<ProjectEvidence> _$evidence(ProjectAggregate v) => v.evidence;
+  static const Field<ProjectAggregate, List<ProjectEvidence>> _f$evidence =
+      Field('evidence', _$evidence, opt: true, hook: JsonObjectListHook());
+  static List<ProjectMilestone> _$milestones(ProjectAggregate v) =>
+      v.milestones;
+  static const Field<ProjectAggregate, List<ProjectMilestone>> _f$milestones =
       Field('milestones', _$milestones, opt: true, hook: JsonObjectListHook());
-  static List<ProjectMemoryEntry> _$memory(ProjectState v) => v.memory;
-  static const Field<ProjectState, List<ProjectMemoryEntry>> _f$memory = Field(
-    'memory',
-    _$memory,
+  static List<ProjectMemoryEntry> _$memory(ProjectAggregate v) => v.memory;
+  static const Field<ProjectAggregate, List<ProjectMemoryEntry>> _f$memory =
+      Field('memory', _$memory, opt: true, hook: JsonObjectListHook());
+  static ProjectWorkspaceGraph _$workspaceGraph(ProjectAggregate v) =>
+      v.workspaceGraph;
+  static const Field<ProjectAggregate, ProjectWorkspaceGraph>
+  _f$workspaceGraph = Field('workspaceGraph', _$workspaceGraph, opt: true);
+  static List<ProjectPlanRevision> _$planHistory(ProjectAggregate v) =>
+      v.planHistory;
+  static const Field<ProjectAggregate, List<ProjectPlanRevision>>
+  _f$planHistory = Field(
+    'planHistory',
+    _$planHistory,
     opt: true,
     hook: JsonObjectListHook(),
   );
-  static ProjectWorkspaceGraph _$workspaceGraph(ProjectState v) =>
-      v.workspaceGraph;
-  static const Field<ProjectState, ProjectWorkspaceGraph> _f$workspaceGraph =
-      Field('workspaceGraph', _$workspaceGraph, opt: true);
-  static List<ProjectPlanRevision> _$planHistory(ProjectState v) =>
-      v.planHistory;
-  static const Field<ProjectState, List<ProjectPlanRevision>> _f$planHistory =
-      Field(
-        'planHistory',
-        _$planHistory,
-        opt: true,
-        hook: JsonObjectListHook(),
-      );
-  static PendingProjectPlanApproval? _$pendingPlanApproval(ProjectState v) =>
-      v.pendingPlanApproval;
-  static const Field<ProjectState, PendingProjectPlanApproval>
+  static PendingProjectPlanApproval? _$pendingPlanApproval(
+    ProjectAggregate v,
+  ) => v.pendingPlanApproval;
+  static const Field<ProjectAggregate, PendingProjectPlanApproval>
   _f$pendingPlanApproval = Field(
     'pendingPlanApproval',
     _$pendingPlanApproval,
     opt: true,
   );
   static List<ProjectPlanRevisionTrigger> _$pendingReplanTriggers(
-    ProjectState v,
+    ProjectAggregate v,
   ) => v.pendingReplanTriggers;
-  static const Field<ProjectState, List<ProjectPlanRevisionTrigger>>
+  static const Field<ProjectAggregate, List<ProjectPlanRevisionTrigger>>
   _f$pendingReplanTriggers = Field(
     'pendingReplanTriggers',
     _$pendingReplanTriggers,
@@ -2946,23 +2940,23 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
     def: const [],
   );
   static ProjectCompletionReviewCheckpoint? _$completionReviewCheckpoint(
-    ProjectState v,
+    ProjectAggregate v,
   ) => v.completionReviewCheckpoint;
-  static const Field<ProjectState, ProjectCompletionReviewCheckpoint>
+  static const Field<ProjectAggregate, ProjectCompletionReviewCheckpoint>
   _f$completionReviewCheckpoint = Field(
     'completionReviewCheckpoint',
     _$completionReviewCheckpoint,
     opt: true,
   );
-  static ProjectBoundary? _$boundary(ProjectState v) => v.boundary;
-  static const Field<ProjectState, ProjectBoundary> _f$boundary = Field(
+  static ProjectBoundary? _$boundary(ProjectAggregate v) => v.boundary;
+  static const Field<ProjectAggregate, ProjectBoundary> _f$boundary = Field(
     'boundary',
     _$boundary,
     opt: true,
   );
-  static List<PendingProjectQuestion> _$openQuestions(ProjectState v) =>
+  static List<PendingProjectQuestion> _$openQuestions(ProjectAggregate v) =>
       v.openQuestions;
-  static const Field<ProjectState, List<PendingProjectQuestion>>
+  static const Field<ProjectAggregate, List<PendingProjectQuestion>>
   _f$openQuestions = Field(
     'openQuestions',
     _$openQuestions,
@@ -2970,95 +2964,97 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
     def: const [],
     hook: JsonObjectListHook(),
   );
-  static ProjectStatus _$status(ProjectState v) => v.status;
-  static const Field<ProjectState, ProjectStatus> _f$status = Field(
+  static ProjectStatus _$status(ProjectAggregate v) => v.status;
+  static const Field<ProjectAggregate, ProjectStatus> _f$status = Field(
     'status',
     _$status,
   );
-  static int _$iterationCount(ProjectState v) => v.iterationCount;
-  static const Field<ProjectState, int> _f$iterationCount = Field(
+  static int _$iterationCount(ProjectAggregate v) => v.iterationCount;
+  static const Field<ProjectAggregate, int> _f$iterationCount = Field(
     'iterationCount',
     _$iterationCount,
     opt: true,
     hook: JsonIntHook(),
   );
-  static int _$maxIterations(ProjectState v) => v.maxIterations;
-  static const Field<ProjectState, int> _f$maxIterations = Field(
+  static int _$maxIterations(ProjectAggregate v) => v.maxIterations;
+  static const Field<ProjectAggregate, int> _f$maxIterations = Field(
     'maxIterations',
     _$maxIterations,
     opt: true,
-    def: ProjectState.defaultMaxIterations,
-    hook: JsonIntHook(fallback: ProjectState.defaultMaxIterations, min: 0),
+    def: ProjectAggregate.defaultMaxIterations,
+    hook: JsonIntHook(fallback: ProjectAggregate.defaultMaxIterations, min: 0),
   );
-  static int _$maxFailedTasks(ProjectState v) => v.maxFailedTasks;
-  static const Field<ProjectState, int> _f$maxFailedTasks = Field(
+  static int _$maxFailedTasks(ProjectAggregate v) => v.maxFailedTasks;
+  static const Field<ProjectAggregate, int> _f$maxFailedTasks = Field(
     'maxFailedTasks',
     _$maxFailedTasks,
     opt: true,
-    def: ProjectState.defaultMaxFailedTasks,
+    def: ProjectAggregate.defaultMaxFailedTasks,
     hook: JsonIntHook(
-      fallback: ProjectState.defaultMaxFailedTasks,
+      fallback: ProjectAggregate.defaultMaxFailedTasks,
       min: 1,
       max: 100,
     ),
   );
-  static String? _$activeTaskId(ProjectState v) => v.activeTaskId;
-  static const Field<ProjectState, String> _f$activeTaskId = Field(
+  static String? _$activeTaskId(ProjectAggregate v) => v.activeTaskId;
+  static const Field<ProjectAggregate, String> _f$activeTaskId = Field(
     'activeTaskId',
     _$activeTaskId,
     hook: JsonNullableStringHook(),
   );
-  static String? _$chatSessionId(ProjectState v) => v.chatSessionId;
-  static const Field<ProjectState, String> _f$chatSessionId = Field(
+  static String? _$chatSessionId(ProjectAggregate v) => v.chatSessionId;
+  static const Field<ProjectAggregate, String> _f$chatSessionId = Field(
     'chatSessionId',
     _$chatSessionId,
     opt: true,
     hook: JsonNullableStringHook(),
   );
-  static String _$completionSummary(ProjectState v) => v.completionSummary;
-  static const Field<ProjectState, String> _f$completionSummary = Field(
+  static String _$completionSummary(ProjectAggregate v) => v.completionSummary;
+  static const Field<ProjectAggregate, String> _f$completionSummary = Field(
     'completionSummary',
     _$completionSummary,
     opt: true,
     def: '',
     hook: JsonStringHook(),
   );
-  static ProjectBlocker? _$blocker(ProjectState v) => v.blocker;
-  static const Field<ProjectState, ProjectBlocker> _f$blocker = Field(
+  static ProjectBlocker? _$blocker(ProjectAggregate v) => v.blocker;
+  static const Field<ProjectAggregate, ProjectBlocker> _f$blocker = Field(
     'blocker',
     _$blocker,
     opt: true,
   );
-  static List<ProjectDecisionRecord> _$decisions(ProjectState v) => v.decisions;
-  static const Field<ProjectState, List<ProjectDecisionRecord>> _f$decisions =
-      Field(
-        'decisions',
-        _$decisions,
-        opt: true,
-        def: const [],
-        hook: JsonObjectListHook(),
-      );
-  static ProjectDiagnostics _$diagnostics(ProjectState v) => v.diagnostics;
-  static const Field<ProjectState, ProjectDiagnostics> _f$diagnostics = Field(
-    'diagnostics',
-    _$diagnostics,
+  static List<ProjectDecisionRecord> _$decisions(ProjectAggregate v) =>
+      v.decisions;
+  static const Field<ProjectAggregate, List<ProjectDecisionRecord>>
+  _f$decisions = Field(
+    'decisions',
+    _$decisions,
     opt: true,
-    def: const ProjectDiagnostics(),
+    def: const [],
+    hook: JsonObjectListHook(),
   );
-  static DateTime _$createdAt(ProjectState v) => v.createdAt;
-  static const Field<ProjectState, DateTime> _f$createdAt = Field(
+  static ProjectDiagnostics _$diagnostics(ProjectAggregate v) => v.diagnostics;
+  static const Field<ProjectAggregate, ProjectDiagnostics> _f$diagnostics =
+      Field(
+        'diagnostics',
+        _$diagnostics,
+        opt: true,
+        def: const ProjectDiagnostics(),
+      );
+  static DateTime _$createdAt(ProjectAggregate v) => v.createdAt;
+  static const Field<ProjectAggregate, DateTime> _f$createdAt = Field(
     'createdAt',
     _$createdAt,
     hook: JsonDateHook(),
   );
-  static DateTime _$updatedAt(ProjectState v) => v.updatedAt;
-  static const Field<ProjectState, DateTime> _f$updatedAt = Field(
+  static DateTime _$updatedAt(ProjectAggregate v) => v.updatedAt;
+  static const Field<ProjectAggregate, DateTime> _f$updatedAt = Field(
     'updatedAt',
     _$updatedAt,
     hook: JsonDateHook(),
   );
-  static DateTime? _$completedAt(ProjectState v) => v.completedAt;
-  static const Field<ProjectState, DateTime> _f$completedAt = Field(
+  static DateTime? _$completedAt(ProjectAggregate v) => v.completedAt;
+  static const Field<ProjectAggregate, DateTime> _f$completedAt = Field(
     'completedAt',
     _$completedAt,
     opt: true,
@@ -3066,7 +3062,7 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
   );
 
   @override
-  final MappableFields<ProjectState> fields = const {
+  final MappableFields<ProjectAggregate> fields = const {
     #persistenceRevision: _f$persistenceRevision,
     #id: _f$id,
     #title: _f$title,
@@ -3112,8 +3108,8 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
 
   @override
   final MappingHook hook = const ProjectStateJsonHook();
-  static ProjectState _instantiate(DecodingData data) {
-    return ProjectState(
+  static ProjectAggregate _instantiate(DecodingData data) {
+    return ProjectAggregate(
       persistenceRevision: data.dec(_f$persistenceRevision),
       id: data.dec(_f$id),
       title: data.dec(_f$title),
@@ -3159,27 +3155,25 @@ class ProjectStateMapper extends ClassMapperBase<ProjectState> {
   @override
   final Function instantiate = _instantiate;
 
-  static ProjectState fromMap(Map<String, dynamic> map) {
-    return ensureInitialized().decodeMap<ProjectState>(map);
+  static ProjectAggregate fromMap(Map<String, dynamic> map) {
+    return ensureInitialized().decodeMap<ProjectAggregate>(map);
   }
 
-  static ProjectState fromJson(String json) {
-    return ensureInitialized().decodeJson<ProjectState>(json);
+  static ProjectAggregate fromJson(String json) {
+    return ensureInitialized().decodeJson<ProjectAggregate>(json);
   }
 }
 
 /// @nodoc
-mixin ProjectStateMappable {
+mixin ProjectAggregateMappable {
   String toJson() {
-    return ProjectStateMapper.ensureInitialized().encodeJson<ProjectState>(
-      this as ProjectState,
-    );
+    return ProjectAggregateMapper.ensureInitialized()
+        .encodeJson<ProjectAggregate>(this as ProjectAggregate);
   }
 
   Map<String, dynamic> toMap() {
-    return ProjectStateMapper.ensureInitialized().encodeMap<ProjectState>(
-      this as ProjectState,
-    );
+    return ProjectAggregateMapper.ensureInitialized()
+        .encodeMap<ProjectAggregate>(this as ProjectAggregate);
   }
 }
 

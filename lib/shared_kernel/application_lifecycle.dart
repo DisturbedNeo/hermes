@@ -36,6 +36,7 @@ class ApplicationLifecycleCoordinator implements ApplicationLifecycle {
     FutureOr<void> Function()? quiesce,
     FutureOr<void> Function()? flush,
     required FutureOr<void> Function() dispose,
+    FutureOr<void> Function()? disposeWithoutSaving,
   }) {
     if (_state != ApplicationLifecycleState.created) {
       throw StateError('Cannot register $name after lifecycle startup.');
@@ -46,6 +47,7 @@ class ApplicationLifecycleCoordinator implements ApplicationLifecycle {
         quiesce: quiesce ?? () {},
         flush: flush ?? () {},
         dispose: dispose,
+        disposeWithoutSaving: disposeWithoutSaving ?? dispose,
       ),
     );
   }
@@ -79,20 +81,31 @@ class ApplicationLifecycleCoordinator implements ApplicationLifecycle {
   @override
   Future<void> dispose() =>
       _runOnce(ApplicationLifecycleState.disposed, () async {
-        Object? firstError;
-        StackTrace? firstStack;
-        for (final owner in _owners.reversed) {
-          try {
-            await owner.dispose();
-          } catch (error, stackTrace) {
-            firstError ??= error;
-            firstStack ??= stackTrace;
-          }
-        }
-        if (firstError != null) {
-          Error.throwWithStackTrace(firstError, firstStack!);
-        }
+        await _disposeOwners((owner) => owner.dispose());
       });
+
+  Future<void> disposeWithoutSaving() =>
+      _runOnce(ApplicationLifecycleState.disposed, () async {
+        await _disposeOwners((owner) => owner.disposeWithoutSaving());
+      });
+
+  Future<void> _disposeOwners(
+    FutureOr<void> Function(_LifecycleOwner owner) disposer,
+  ) async {
+    Object? firstError;
+    StackTrace? firstStack;
+    for (final owner in _owners.reversed) {
+      try {
+        await disposer(owner);
+      } catch (error, stackTrace) {
+        firstError ??= error;
+        firstStack ??= stackTrace;
+      }
+    }
+    if (firstError != null) {
+      Error.throwWithStackTrace(firstError, firstStack!);
+    }
+  }
 
   Future<void> _runOnce(
     ApplicationLifecycleState target,
@@ -109,20 +122,22 @@ class ApplicationLifecycleCoordinator implements ApplicationLifecycle {
     final pending = _operation;
     if (pending != null) return pending;
     late final Future<void> current;
-    current = operation().whenComplete(() {
-      if (target == ApplicationLifecycleState.disposed) {
-        _state = ApplicationLifecycleState.disposed;
-      }
-      if (identical(_operation, current)) _operation = null;
-    });
+    current = operation()
+        .then<void>((_) {
+          if (_state != ApplicationLifecycleState.disposed) {
+            _state = target == ApplicationLifecycleState.quiescing
+                ? ApplicationLifecycleState.running
+                : target;
+          }
+        })
+        .whenComplete(() {
+          if (target == ApplicationLifecycleState.disposed) {
+            _state = ApplicationLifecycleState.disposed;
+          }
+          if (identical(_operation, current)) _operation = null;
+        });
     _operation = current;
-    return current.then((_) {
-      if (_state != ApplicationLifecycleState.disposed) {
-        _state = target == ApplicationLifecycleState.quiescing
-            ? ApplicationLifecycleState.running
-            : target;
-      }
-    });
+    return current;
   }
 }
 
@@ -132,10 +147,12 @@ class _LifecycleOwner {
     required this.quiesce,
     required this.flush,
     required this.dispose,
+    required this.disposeWithoutSaving,
   });
 
   final String name;
   final FutureOr<void> Function() quiesce;
   final FutureOr<void> Function() flush;
   final FutureOr<void> Function() dispose;
+  final FutureOr<void> Function() disposeWithoutSaving;
 }

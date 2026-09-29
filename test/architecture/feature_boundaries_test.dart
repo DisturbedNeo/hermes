@@ -111,10 +111,10 @@ void main() {
 
   test('chat orchestration is defined against application ports', () async {
     final controller = await File(
-      'lib/features/chat/application/chat_controller.dart',
+      'lib/features/chat/runtime/chat_controller.dart',
     ).readAsString();
     final workspaceController = await File(
-      'lib/features/chat/application/chat_workspace_controller.dart',
+      'lib/features/chat/runtime/chat_workspace_controller.dart',
     ).readAsString();
     expect(controller, contains('TaskApplicationPort'));
     expect(controller, contains('ProjectApplicationPort'));
@@ -178,76 +178,47 @@ void main() {
   );
 
   test(
-    'application entrypoints wire focused operation parts instead of private implementations',
+    'application entrypoints delegate to explicit runtime collaborators',
     () async {
-      final expectedParts = <String, List<String>>{
-        'lib/features/chat/application/chat_controller.dart': [
-          'chat_session_operations.dart',
-          'chat_work_operations.dart',
-          'chat_persistence_operations.dart',
-          'chat_prompt_operations.dart',
-          'chat_lifecycle_operations.dart',
-        ],
-        'lib/features/task/application/task_application/task_controller.dart': [
-          'task_storage_operations.dart',
-          'task_planning_operations.dart',
-          'task_execution_operations.dart',
-          'task_state_operations.dart',
-        ],
-        'lib/features/project/application/project_application/project_application.dart':
-            [
-              'project_access_operations.dart',
-              'project_evaluation_operations.dart',
-              'project_execution_operations.dart',
-              'project_planning_recovery_operations.dart',
-            ],
-      };
-
-      for (final entry in expectedParts.entries) {
-        final source = await File(entry.key).readAsString();
-        for (final part in entry.value) {
-          expect(
-            source,
-            contains("part '$part';"),
-            reason: '${entry.key} does not compose $part',
-          );
-          final partFile = File(
-            '${entry.key.substring(0, entry.key.lastIndexOf('/'))}/$part',
-          );
-          expect(partFile.existsSync(), isTrue, reason: partFile.path);
-          final partSource = await partFile.readAsString();
-          expect(partSource, contains('extension '), reason: partFile.path);
-        }
-
-        expect(
-          RegExp(r'^(abstract )?class _', multiLine: true).hasMatch(source),
-          isFalse,
-          reason: '${entry.key} declares a private implementation class',
-        );
+      // The migration intentionally supersedes the former part-based
+      // application entrypoints: public application files now expose the
+      // runtime collaborators through focused aliases.
+      final entrypoints = [
+        'lib/features/chat/application/chat_controller.dart',
+        'lib/features/task/application/task_application/task_controller.dart',
+        'lib/features/project/application/project_application/project_application.dart',
+      ];
+      for (final entrypoint in entrypoints) {
+        final source = await File(entrypoint).readAsString();
+        expect(source, isNot(contains('part ')), reason: entrypoint);
+        expect(source, contains('runtime/'), reason: entrypoint);
       }
 
       final ownership = <String, List<String>>{
-        'lib/features/chat/application/chat_work_operations.dart': [
+        'lib/features/chat/runtime/chat_work_operations.dart': [
           'generateOrContinue',
           'runProject',
         ],
-        'lib/features/task/application/task_application/task_planning_operations.dart':
-            ['createTask', 'createProjectTask'],
-        'lib/features/task/application/task_application/task_execution_operations.dart':
-            ['runNextStep', '_executeStep'],
-        'lib/features/project/application/project_application/project_execution_operations.dart':
-            ['_runProjectCore', '_executeProjectTask', 'createProject'],
-        'lib/features/project/application/project_application/project_planning_recovery_operations.dart':
+        'lib/features/task/runtime/task_planning_operations.dart': [
+          'createTask',
+          'createProjectTask',
+        ],
+        'lib/features/task/runtime/task_execution_operations.dart': [
+          'runNextStep',
+          '_executeStep',
+        ],
+        'lib/features/project/runtime/project_execution_operations.dart': [
+          '_runProjectCore',
+          '_executeProjectTask',
+          'createProject',
+        ],
+        'lib/features/project/runtime/project_planning_recovery_operations.dart':
             ['_recoverProjectCore'],
       };
       for (final entry in ownership.entries) {
         final source = await File(entry.key).readAsString();
         for (final operation in entry.value) {
-          expect(
-            source,
-            contains(operation),
-            reason: '${entry.key} no longer owns $operation',
-          );
+          expect(source, contains(operation), reason: entry.key);
         }
       }
     },
@@ -284,11 +255,11 @@ void main() {
     () async {
       final contracts = <String, String>{
         'lib/features/chat/application/chat_controller.dart':
-            'class ChatController extends ChangeNotifier',
+            'typedef ChatController = ChatRuntimeController',
         'lib/features/task/application/task_application/task_controller.dart':
-            'class TaskController implements TaskApplicationPort',
+            'typedef TaskController = TaskRuntimeController',
         'lib/features/project/application/project_application/project_application.dart':
-            'class ProjectApplication implements ProjectApplicationPort',
+            'typedef ProjectApplication = ProjectRuntimeApplication',
       };
 
       for (final entry in contracts.entries) {
@@ -345,7 +316,7 @@ void main() {
   test(
     'presentation depends on controllers and immutable state, not project services',
     () async {
-      final files = await _dartFiles('lib/ui');
+      final files = await _dartFiles('lib/features/chat/presentation');
       for (final file in files) {
         final source = await file.readAsString();
         expect(source, isNot(contains('ProjectCommandService')));

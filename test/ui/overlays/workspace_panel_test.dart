@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/workspace/domain/workspace.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/services/workspace_service.dart';
-import 'package:hermes/ui/overlays/workspace_panel.dart';
+import 'package:hermes/features/chat/presentation/overlays/workspace_panel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

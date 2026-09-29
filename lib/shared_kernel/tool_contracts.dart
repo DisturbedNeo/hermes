@@ -1,6 +1,20 @@
 import 'dart:convert';
 
-import 'package:hermes/core/services/cancellation_token.dart';
+import 'package:hermes/shared_kernel/cancellation.dart';
+
+class ToolDefinition {
+  const ToolDefinition({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.schema,
+  });
+
+  final String id;
+  final String name;
+  final String description;
+  final Map<String, Object?> schema;
+}
 
 /// Typed request crossing an application/tool boundary. JSON is decoded once
 /// at the protocol adapter and is not passed through the application graph.
@@ -71,11 +85,13 @@ class ToolContext {
     this.workspace,
     this.permission = ToolPermission.none,
     this.cancellationToken,
+    this.runtimeContext,
   });
 
   final ToolWorkspace? workspace;
   final ToolPermission permission;
   final CancellationToken? cancellationToken;
+  final Object? runtimeContext;
 
   bool allows(ToolPermission required) => permission.index >= required.index;
 }
@@ -135,4 +151,14 @@ class ToolFailure extends ToolResult {
     'error_code': code,
     ...details,
   };
+}
+
+/// Typed registry boundary used by feature application ports.
+abstract interface class ToolRegistryPort {
+  List<ToolDefinition> getToolDefinitions({
+    List<String> ids,
+    bool includeWorkspaceTools,
+  });
+
+  Future<ToolResult> executeTyped(ToolRequest request);
 }

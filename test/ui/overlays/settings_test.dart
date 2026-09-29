@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/task/domain/task_system_settings.dart';
 import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/core/services/preferences_service.dart';
-import 'package:hermes/ui/overlays/settings.dart';
+import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
+import 'package:hermes/features/chat/presentation/overlays/settings.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

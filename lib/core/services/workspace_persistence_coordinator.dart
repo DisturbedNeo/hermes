@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as path;
-import 'package:hermes/features/workspace/application/workspace_ports.dart';
+import 'package:hermes/shared_kernel/workspace_ports.dart';
 
 class WorkspaceLockDiagnostics {
   const WorkspaceLockDiagnostics({

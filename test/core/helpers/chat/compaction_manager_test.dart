@@ -9,7 +9,7 @@ import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/core/models/compaction_settings.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/features/model/domain/model_provider.dart';
-import 'package:hermes/features/chat/application/chat_application/message_store.dart';
+import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';
 
 void main() {
   group('CompactionManager', () {

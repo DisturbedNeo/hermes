@@ -9,7 +9,7 @@ import 'package:hermes/core/helpers/server_health_checker.dart';
 import 'package:hermes/core/models/llama_server_handle.dart';
 import 'package:hermes/core/models/model_configuration_snapshot.dart';
 import 'package:hermes/core/models/model_session_diagnostics.dart';
-import 'package:hermes/features/model/domain/model_provider.dart';
+import 'package:hermes/shared_kernel/model_provider.dart';
 import 'package:hermes/core/models/model_call_diagnostics.dart';
 import 'package:hermes/core/services/model_diagnostic_bundle_writer.dart';
 

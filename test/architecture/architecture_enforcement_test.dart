@@ -208,8 +208,8 @@ void main() {
         );
       }
       for (final file in files) {
-        if (file.source.contains("package:hermes/ui/")) {
-          violations.add('${file.path}: imports the global UI package');
+        if (file.source.contains('package:hermes/ui/')) {
+          violations.add('${file.path}: imports the removed global UI package');
         }
       }
       _expectNoViolations('feature-local presentation', violations);

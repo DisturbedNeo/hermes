@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
-import 'package:hermes/features/workspace/application/workspace_ports.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/shared_kernel/workspace_ports.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';

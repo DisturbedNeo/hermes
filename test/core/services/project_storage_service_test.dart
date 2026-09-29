@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/core/services/atomic_json_snapshot_store.dart';
-import 'package:hermes/features/project/application/project_application/project_repository.dart';
+import 'package:hermes/features/project/runtime/project_repository.dart';
 import 'package:path/path.dart' as path;
 
 void main() {

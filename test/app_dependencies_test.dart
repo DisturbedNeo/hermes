@@ -8,7 +8,7 @@ import 'package:hermes/core/enums/message_role.dart';
 import 'package:hermes/core/models/bubble.dart';
 import 'package:hermes/features/workspace/domain/workspace.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
-import 'package:hermes/core/services/preferences_service.dart';
+import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/core/services/theme_manager.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/main.dart';

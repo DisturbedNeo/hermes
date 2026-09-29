@@ -1,10 +1,10 @@
-import 'package:hermes/core/models/bubble.dart';
-import 'package:hermes/core/models/chat_persistence.dart';
-import 'package:hermes/core/models/model_configuration_snapshot.dart';
-import 'package:hermes/core/models/saved_chat.dart';
-import 'package:hermes/core/models/system_prompt.dart';
+import 'package:hermes/shared_kernel/bubble.dart';
+import 'package:hermes/shared_kernel/chat_persistence.dart';
+import 'package:hermes/shared_kernel/model_configuration.dart';
+import 'package:hermes/shared_kernel/saved_chat.dart';
+import 'package:hermes/shared_kernel/system_prompt.dart';
 import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/application/task_application/task_summary.dart';
+import 'package:hermes/features/task/domain/task_summary.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/task_system_settings.dart';
 import 'package:hermes/features/workspace/domain/workspace.dart';
@@ -61,9 +61,9 @@ class ChatState {
   final WorkspaceAttachment? workspace;
   final SystemPromptSnapshot? systemPrompt;
   final ExecutionMode executionMode;
-  final ProjectDocument? activeProject;
+  final ProjectAggregate? activeProject;
   final List<ProjectSummary> availableProjects;
-  final Task? activeTask;
+  final TaskAggregate? activeTask;
   final List<TaskSummary> availableTasks;
   final TaskSystemSettings taskSystemSettings;
   final bool taskBusy;
@@ -129,11 +129,11 @@ class ChatState {
     executionMode: executionMode ?? this.executionMode,
     activeProject: identical(activeProject, _unchanged)
         ? this.activeProject
-        : activeProject as ProjectDocument?,
+        : activeProject as ProjectAggregate?,
     availableProjects: availableProjects ?? this.availableProjects,
     activeTask: identical(activeTask, _unchanged)
         ? this.activeTask
-        : activeTask as Task?,
+        : activeTask as TaskAggregate?,
     availableTasks: availableTasks ?? this.availableTasks,
     taskSystemSettings: taskSystemSettings ?? this.taskSystemSettings,
     taskBusy: taskBusy ?? this.taskBusy,
@@ -162,6 +162,19 @@ const _unchanged = Object();
 class ChatStateReducer {
   const ChatStateReducer();
 
+  ChatState reduce(ChatState state, ChatStateEvent event) => switch (event) {
+    ChatMessagesChanged(:final messages) => state.copyWith(messages: messages),
+    ChatWorkspaceChanged(:final workspace) => state.copyWith(
+      workspace: workspace,
+    ),
+    ChatProjectChanged(:final project) => state.copyWith(
+      activeProject: project,
+    ),
+    ChatTaskChanged(:final task) => state.copyWith(activeTask: task),
+    ChatTaskBusyChanged(:final busy) => setTaskBusy(state, busy),
+    ChatTaskErrorChanged(:final error) => setTaskError(state, error),
+  };
+
   ChatState setTaskBusy(ChatState state, bool busy) => state.copyWith(
     taskBusy: busy,
     taskCancellationRequested: busy ? state.taskCancellationRequested : false,
@@ -177,4 +190,44 @@ class ChatStateReducer {
         ? state.taskCancellationRequested
         : false,
   );
+}
+
+sealed class ChatStateEvent {
+  const ChatStateEvent();
+}
+
+class ChatMessagesChanged extends ChatStateEvent {
+  const ChatMessagesChanged(this.messages);
+
+  final List<Bubble> messages;
+}
+
+class ChatWorkspaceChanged extends ChatStateEvent {
+  const ChatWorkspaceChanged(this.workspace);
+
+  final WorkspaceAttachment? workspace;
+}
+
+class ChatProjectChanged extends ChatStateEvent {
+  const ChatProjectChanged(this.project);
+
+  final ProjectAggregate? project;
+}
+
+class ChatTaskChanged extends ChatStateEvent {
+  const ChatTaskChanged(this.task);
+
+  final TaskAggregate? task;
+}
+
+class ChatTaskBusyChanged extends ChatStateEvent {
+  const ChatTaskBusyChanged(this.busy);
+
+  final bool busy;
+}
+
+class ChatTaskErrorChanged extends ChatStateEvent {
+  const ChatTaskErrorChanged(this.error);
+
+  final Object? error;
 }

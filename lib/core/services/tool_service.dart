@@ -1,18 +1,15 @@
 import 'dart:convert';
 
-import 'package:hermes/features/workspace/domain/workspace.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/core/models/tool_definition.dart';
 import 'package:hermes/core/tools/calculator_tool.dart';
 import 'package:hermes/core/tools/tool.dart';
-import 'package:hermes/core/tools/tool_error.dart';
 import 'package:hermes/core/tools/workspace_tools.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/services/cancellation_token.dart';
 import 'package:hermes/shared_kernel/tool_contracts.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/core/services/subagent_service.dart';
 
-class ToolService {
+class ToolService implements ToolRegistryPort {
   ToolService({required WorkspaceSandbox workspaceSandbox})
     : _workspaceSandbox = workspaceSandbox;
 
@@ -49,6 +46,7 @@ class ToolService {
     return _toolRegistry[name];
   }
 
+  @override
   List<ToolDefinition> getToolDefinitions({
     List<String> ids = const [],
     bool includeWorkspaceTools = false,
@@ -81,13 +79,14 @@ class ToolService {
   /// [execute] remains as the protocol compatibility adapter for model JSON.
   /// New application code should pass [ToolRequest] and receive [ToolResult]
   /// so malformed JSON cannot leak through the feature graph.
+  @override
   Future<ToolResult> executeTyped(ToolRequest request) async {
     final context = request.context;
     final requiredPermission = _requiredPermission(request.toolId);
     if (requiredPermission != ToolPermission.none && context == null) {
       return const ToolFailure(
         code: 'permission_denied',
-        message: 'This tool requires an authorised workspace context.',
+        message: 'This tool requires an active workspace context.',
       );
     }
     if (context != null && !context.allows(requiredPermission)) {
@@ -106,25 +105,27 @@ class ToolService {
     }
     try {
       context?.cancellationToken?.throwIfCancelled();
-      final raw = await execute(
-        toolId: request.toolId,
-        argumentsJson: jsonEncode(request.arguments),
-        context: context == null
-            ? null
-            : WorkspaceToolContext(
-                workspace: WorkspaceAttachment(
-                  rootPath: context.workspace!.rootPath,
-                  displayName: context.workspace!.displayName,
-                  lastOpenedAt: DateTime.now(),
-                  missing: context.workspace!.missing,
-                  commandExecutionApproved:
-                      context.workspace!.commandExecutionApproved,
+      final tool = _toolRegistry[request.toolId];
+      if (tool == null) {
+        return ToolFailure(
+          code: 'unknown_tool',
+          message: 'Unknown tool: ${request.toolId}',
+        );
+      }
+      final result = await tool.execute(
+        request.copyWith(
+          context: context == null
+              ? null
+              : ToolContext(
+                  workspace: context.workspace,
+                  permission: context.permission,
+                  cancellationToken: context.cancellationToken,
+                  runtimeContext: _subagentService,
                 ),
-                cancellationToken: context.cancellationToken,
-              ),
+        ),
       );
       context?.cancellationToken?.throwIfCancelled();
-      return ToolResult.decode(raw);
+      return result;
     } on OperationCancelledException {
       return const ToolFailure(
         code: 'cancelled',
@@ -156,42 +157,25 @@ class ToolService {
     String argumentsJson = '',
     WorkspaceToolContext? context,
   }) {
-    final tool = _toolRegistry[toolId];
-
-    if (tool == null) {
-      return Future.value(
-        jsonEncode(
-          toolErrorPayload(
-            code: 'unknown_tool',
-            message: 'Unknown tool: $toolId',
-            disposition: TaskToolErrorDisposition.advisory,
-          ),
-        ),
-      );
-    }
-
-    if (tool.requiresWorkspace && context == null) {
-      return Future.value(
-        jsonEncode(
-          toolErrorPayload(
-            code: 'workspace_required',
-            message: 'This tool requires an active workspace.',
-            disposition: TaskToolErrorDisposition.retryable,
-          ),
-        ),
-      );
-    }
-
-    // Ensure subagent service is available in context if we have one
-    final effectiveContext = context != null && _subagentService != null
-        ? WorkspaceToolContext(
-            workspace: context.workspace,
-            subagentService: _subagentService,
+    final toolContext = context == null
+        ? null
+        : ToolContext(
+            workspace: ToolWorkspace(
+              rootPath: context.workspace.rootPath,
+              displayName: context.workspace.displayName,
+              missing: context.workspace.missing,
+              commandExecutionApproved:
+                  context.workspace.commandExecutionApproved,
+            ),
+            permission: _requiredPermission(toolId),
             cancellationToken: context.cancellationToken,
-          )
-        : context;
-
-    effectiveContext?.cancellationToken?.throwIfCancelled();
-    return tool.process(argumentsJson, context: effectiveContext);
+            runtimeContext: _subagentService,
+          );
+    final arguments = argumentsJson.isEmpty
+        ? const <String, Object?>{}
+        : Map<String, Object?>.from(jsonDecode(argumentsJson) as Map);
+    return executeTyped(
+      ToolRequest(toolId: toolId, arguments: arguments, context: toolContext),
+    ).then((result) => result.encode());
   }
 }

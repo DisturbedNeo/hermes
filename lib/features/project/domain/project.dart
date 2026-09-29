@@ -1,9 +1,9 @@
 import 'package:dart_mappable/dart_mappable.dart';
-import 'package:hermes/core/helpers/sentinel.dart' show kSentinel, resolve;
-import 'package:hermes/core/models/planning_metrics.dart';
-import 'package:hermes/core/models/project_workspace_graph.dart';
+import 'package:hermes/shared_kernel/sentinel.dart' show kSentinel, resolve;
+import 'package:hermes/shared_kernel/planning_metrics.dart';
+import 'package:hermes/shared_kernel/project_workspace_graph.dart';
 import 'package:hermes/features/project/domain/project_task_models.dart';
-import 'package:hermes/core/serialization/json_hooks.dart';
+import 'package:hermes/shared_kernel/json_hooks.dart';
 import 'package:hermes/shared_kernel/task_planning_types.dart';
 import 'package:hermes/shared_kernel/task_execution_contracts.dart';
 
@@ -11,7 +11,7 @@ export 'package:hermes/shared_kernel/task_planning_types.dart';
 export 'package:hermes/shared_kernel/task_execution_contracts.dart';
 export 'project_task_models.dart'
     show ProjectTaskNode, ProjectTaskRef, ProjectTaskSpec;
-export 'package:hermes/core/models/project_workspace_graph.dart'
+export 'package:hermes/shared_kernel/project_workspace_graph.dart'
     show
         ProjectWorkspaceConfidence,
         ProjectWorkspaceEdge,
@@ -756,8 +756,58 @@ class ProjectBoundary with ProjectBoundaryMappable {
   });
 }
 
+class ProjectPlanState {
+  const ProjectPlanState({
+    required this.revision,
+    required this.criteria,
+    required this.milestones,
+    required this.tasks,
+  });
+
+  final int revision;
+  final List<ProjectCriterion> criteria;
+  final List<ProjectMilestone> milestones;
+  final List<ProjectTaskNode> tasks;
+}
+
+class ProjectExecutionState {
+  const ProjectExecutionState({
+    required this.status,
+    required this.activeTaskId,
+    required this.iterationCount,
+  });
+
+  final ProjectStatus status;
+  final String? activeTaskId;
+  final int iterationCount;
+}
+
+class ProjectEvidenceState {
+  const ProjectEvidenceState({
+    required this.evidence,
+    required this.artifacts,
+    required this.completionReview,
+  });
+
+  final List<ProjectEvidence> evidence;
+  final List<TaskArtifact> artifacts;
+  final ProjectCompletionReviewCheckpoint? completionReview;
+}
+
+class ProjectControlState {
+  const ProjectControlState({
+    required this.boundary,
+    required this.blocker,
+    required this.openQuestions,
+  });
+
+  final ProjectBoundary? boundary;
+  final ProjectBlocker? blocker;
+  final List<PendingProjectQuestion> openQuestions;
+}
+
 @MappableClass(ignoreNull: true, hook: ProjectStateJsonHook())
-class ProjectState with ProjectStateMappable {
+class ProjectAggregate with ProjectAggregateMappable {
   static const int defaultMaxIterations = 25;
   static const int defaultMaxFailedTasks = 3;
 
@@ -821,12 +871,12 @@ class ProjectState with ProjectStateMappable {
   @MappableField(hook: JsonIntHook())
   final int iterationCount;
   @MappableField(
-    hook: JsonIntHook(fallback: ProjectState.defaultMaxIterations, min: 0),
+    hook: JsonIntHook(fallback: ProjectAggregate.defaultMaxIterations, min: 0),
   )
   final int maxIterations;
   @MappableField(
     hook: JsonIntHook(
-      fallback: ProjectState.defaultMaxFailedTasks,
+      fallback: ProjectAggregate.defaultMaxFailedTasks,
       min: 1,
       max: 100,
     ),
@@ -849,7 +899,7 @@ class ProjectState with ProjectStateMappable {
   @MappableField(hook: JsonNullableDateHook())
   final DateTime? completedAt;
 
-  ProjectState({
+  ProjectAggregate({
     this.persistenceRevision = 0,
     required this.id,
     required this.title,
@@ -919,6 +969,31 @@ class ProjectState with ProjectStateMappable {
                    .length ??
                0);
 
+  ProjectPlanState get planState => ProjectPlanState(
+    revision: currentBatchPlanRevision,
+    criteria: criteria,
+    milestones: milestones,
+    tasks: tasks,
+  );
+
+  ProjectExecutionState get executionState => ProjectExecutionState(
+    status: status,
+    activeTaskId: activeTaskId,
+    iterationCount: iterationCount,
+  );
+
+  ProjectEvidenceState get evidenceState => ProjectEvidenceState(
+    evidence: evidence,
+    artifacts: artifacts,
+    completionReview: completionReviewCheckpoint,
+  );
+
+  ProjectControlState get controlState => ProjectControlState(
+    boundary: boundary,
+    blocker: blocker,
+    openQuestions: openQuestions,
+  );
+
   bool get isTerminal =>
       status == ProjectStatus.completed ||
       status == ProjectStatus.cancelled ||
@@ -958,7 +1033,7 @@ class ProjectState with ProjectStateMappable {
   String? get currentBatchTaskId =>
       hasCurrentBatch ? currentBatchTaskIds[currentBatchIndex] : null;
 
-  ProjectState copyWith({
+  ProjectAggregate copyWith({
     int? persistenceRevision,
     String? id,
     String? title,
@@ -999,7 +1074,7 @@ class ProjectState with ProjectStateMappable {
     DateTime? updatedAt,
     Object? completedAt = kSentinel,
   }) {
-    return ProjectState(
+    return ProjectAggregate(
       persistenceRevision: persistenceRevision ?? this.persistenceRevision,
       id: id ?? this.id,
       title: title ?? this.title,
@@ -1057,7 +1132,8 @@ class ProjectState with ProjectStateMappable {
   }
 }
 
-typedef ProjectDocument = ProjectState;
+typedef ProjectState = ProjectAggregate;
+typedef ProjectDocument = ProjectAggregate;
 
 @MappableClass(ignoreNull: true)
 class ProjectRecoveryIncident with ProjectRecoveryIncidentMappable {

@@ -2,17 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/features/chat/application/chat_application/chat_library_service.dart';
-import 'package:hermes/core/services/chat_library_repository.dart';
+import 'package:hermes/features/chat/runtime/chat_application/chat_library_service.dart';
+import 'package:hermes/features/chat/infrastructure/chat_library_repository.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
 import 'package:hermes/core/services/llama_server_manager.dart';
-import 'package:hermes/core/services/preferences_service.dart';
+import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/features/project/application/project_application/project_application.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/core/services/tool_service.dart';
 import 'package:hermes/core/services/workspace_sandbox.dart';
 import 'package:hermes/core/services/workspace_service.dart';
-import 'package:hermes/ui/chat/task_panel.dart';
+import 'package:hermes/features/chat/presentation/chat/task_panel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

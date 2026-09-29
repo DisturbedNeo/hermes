@@ -1,11 +1,9 @@
 import 'dart:io';
 
-import 'package:hermes/core/services/preferences_service.dart';
+import 'package:hermes/shared_kernel/preferences_port.dart';
 import 'package:path/path.dart' as p;
 
-Future<Map<String, File>> getModels(
-  PreferencesService preferencesService,
-) async {
+Future<Map<String, File>> getModels(PreferencesPort preferencesService) async {
   final modelsDirectoryPath = await preferencesService.getModelsDirectory();
 
   if (modelsDirectoryPath == null) {

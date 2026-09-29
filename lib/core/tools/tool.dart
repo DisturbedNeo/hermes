@@ -1,4 +1,4 @@
-import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/shared_kernel/tool_contracts.dart';
 
 abstract class Tool {
   abstract final String id;
@@ -8,5 +8,5 @@ abstract class Tool {
 
   bool get requiresWorkspace => false;
 
-  Future<String> process(String input, {WorkspaceToolContext? context});
+  Future<ToolResult> execute(ToolRequest request);
 }

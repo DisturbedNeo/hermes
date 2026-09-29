@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/services/atomic_json_snapshot_store.dart';
-import 'package:hermes/features/task/application/task_application/task_repository.dart';
+import 'package:hermes/features/task/infrastructure/task_repository.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:path/path.dart' as path;
 

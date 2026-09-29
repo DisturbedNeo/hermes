@@ -6,7 +6,7 @@ import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/features/model/domain/model_provider.dart';
 import 'package:hermes/core/services/planning_runtime.dart';
-import 'package:hermes/features/project/application/project_application/project_planning_tools.dart';
+import 'package:hermes/features/project/runtime/project_planning_tools.dart';
 
 void main() {
   test('runs initial planning commands through commit', () async {

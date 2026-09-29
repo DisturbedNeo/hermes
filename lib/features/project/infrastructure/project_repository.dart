@@ -7,7 +7,7 @@ import 'package:hermes/features/workspace/application/workspace_ports.dart';
 import 'package:hermes/core/services/workspace_persistence_coordinator.dart';
 import 'package:hermes/core/serialization/model_json.dart';
 import 'package:hermes/shared_kernel/schema_migrations.dart';
-import 'package:hermes/features/project/application/project_application/project_repository_port.dart';
+import 'package:hermes/features/project/project_repository_port.dart';
 import 'package:path/path.dart' as path;
 
 /// Repository responsible for all project data access, JSON mapping,

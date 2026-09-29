@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/ui/model_configuration/slider_control.dart';
+import 'package:hermes/features/chat/presentation/model_configuration/slider_control.dart';
 
 void main() {
   testWidgets('integer text input updates value without submit', (

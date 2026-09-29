@@ -6,7 +6,7 @@ import 'package:hermes/core/models/system_prompt.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/domain/task_system_settings.dart';
-import 'package:hermes/features/task/application/task_application/task_summary.dart';
+import 'package:hermes/features/task/domain/task_summary.dart';
 import 'package:hermes/features/workspace/domain/workspace.dart';
 
 /// Immutable presentation snapshot for one chat tab.

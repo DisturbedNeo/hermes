@@ -46,11 +46,13 @@ void main() {
   });
 
   test('committed mapper outputs and package initializer exist', () {
+    // Canonical shared-kernel models own their generated mappers now; the
+    // former core mapper paths were removed with the compatibility models.
     for (final path in [
       'lib/features/task/domain/task.mapper.dart',
       'lib/features/project/domain/project.mapper.dart',
-      'lib/core/models/system_prompt.mapper.dart',
-      'lib/core/models/model_configuration_snapshot.mapper.dart',
+      'lib/shared_kernel/system_prompt.mapper.dart',
+      'lib/shared_kernel/model_configuration.mapper.dart',
       'lib/core/models/model_load_configuration.mapper.dart',
       'lib/core/serialization/mappers.init.dart',
     ]) {

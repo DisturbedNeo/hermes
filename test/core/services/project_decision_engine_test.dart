@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/project/application/project_application/project_decision_engine.dart';
+import 'package:hermes/features/project/runtime/project_decision_engine.dart';
 
 void main() {
   final engine = const ProjectDecisionEngine();

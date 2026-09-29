@@ -1,2 +1,1 @@
-// Compatibility export for the task infrastructure adapter.
-export 'package:hermes/features/task/infrastructure/task_repository.dart';
+// Task persistence is owned by the infrastructure package.

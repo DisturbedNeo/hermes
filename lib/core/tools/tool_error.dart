@@ -1,4 +1,5 @@
-import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/shared_kernel/task_execution_contracts.dart';
+import 'package:hermes/shared_kernel/task_tool_contracts.dart';
 
 Map<String, dynamic> toolErrorPayload({
   required String code,
