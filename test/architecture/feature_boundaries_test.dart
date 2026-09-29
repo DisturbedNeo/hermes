@@ -255,11 +255,13 @@ void main() {
     () async {
       final contracts = <String, String>{
         'lib/features/chat/application/chat_controller.dart':
-            'typedef ChatController = ChatRuntimeController',
+            'class ChatController',
+        'lib/features/chat/application/chat_workspace_controller.dart':
+            'class ChatWorkspaceController',
         'lib/features/task/application/task_application/task_controller.dart':
-            'typedef TaskController = TaskRuntimeController',
+            'class TaskController',
         'lib/features/project/application/project_application/project_application.dart':
-            'typedef ProjectApplication = ProjectRuntimeApplication',
+            'class ProjectApplication',
       };
 
       for (final entry in contracts.entries) {
@@ -268,6 +270,11 @@ void main() {
           source,
           contains(entry.value),
           reason: '${entry.key} no longer exposes ${entry.value}',
+        );
+        expect(
+          source,
+          isNot(matches(RegExp(r'^\s*typedef\s+', multiLine: true))),
+          reason: '${entry.key} must not be a compatibility typedef',
         );
       }
     },

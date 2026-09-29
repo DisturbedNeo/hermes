@@ -1,11 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/project/application/project_application/project_ports.dart';
 import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/task_runtime_contracts.dart';
+import 'package:hermes/features/task/application/task_application/task_ports.dart';
 import 'package:hermes/features/task/domain/task_summary.dart';
 import 'package:hermes/features/workspace/domain/workspace.dart';
 
-class _FakeTaskPort implements TaskApplicationPort {
+class _FakeTaskPort implements TaskQueryPort {
   final calls = <Symbol>[];
 
   @override
@@ -18,7 +18,7 @@ class _FakeTaskPort implements TaskApplicationPort {
   }
 }
 
-class _FakeProjectPort implements ProjectApplicationPort {
+class _FakeProjectPort implements ProjectQueryPort {
   final calls = <Symbol>[];
 
   @override
@@ -34,8 +34,8 @@ class _FakeProjectPort implements ProjectApplicationPort {
 class _ChatPortProbe {
   const _ChatPortProbe({required this.tasks, required this.projects});
 
-  final TaskApplicationPort tasks;
-  final ProjectApplicationPort projects;
+  final TaskQueryPort tasks;
+  final ProjectQueryPort projects;
 
   Future<List<TaskSummary>> listTasks(WorkspaceAttachment workspace) =>
       tasks.listTasks(workspace);
