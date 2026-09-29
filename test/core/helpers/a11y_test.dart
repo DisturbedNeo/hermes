@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/helpers/a11y.dart';
+import 'package:hermes/features/chat/presentation/a11y.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

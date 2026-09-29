@@ -1,12 +1,12 @@
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
-import 'package:hermes/core/enums/message_role.dart';
-import 'package:hermes/core/enums/upsert_result.dart';
-import 'package:hermes/core/helpers/chat/tool_caller.dart';
-import 'package:hermes/core/helpers/chat/message_store_port.dart';
-import 'package:hermes/core/helpers/uuid.dart';
-import 'package:hermes/core/models/bubble.dart';
+import 'package:hermes/shared_kernel/message_role.dart';
+import 'package:hermes/shared_kernel/upsert_result.dart';
+import 'package:hermes/shared_kernel/tool_caller.dart';
+import 'package:hermes/shared_kernel/message_store_port.dart';
+import 'package:hermes/shared_kernel/uuid.dart';
+import 'package:hermes/shared_kernel/bubble.dart';
 
 class MessageStore extends ChangeNotifier implements MessageStorePort {
   MessageStore({ToolCaller? toolCaller})

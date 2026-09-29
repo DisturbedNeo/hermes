@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:hermes/core/enums/diagnostics_visibility.dart';
-import 'package:hermes/core/helpers/a11y.dart';
-import 'package:hermes/core/models/compaction_settings.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/domain/task_system_settings.dart';
-import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
+import 'package:hermes/shared_kernel/diagnostics_visibility.dart';
+import 'package:hermes/features/chat/presentation/a11y.dart';
+import 'package:hermes/shared_kernel/compaction_settings.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/task_system_settings.dart';
+import 'package:hermes/shared_kernel/preferences_port.dart';
 import 'package:hermes/features/chat/presentation/model_configuration/slider_control.dart';
 
 class Settings extends StatefulWidget {
   const Settings({super.key, required this.preferencesService});
 
-  final PreferencesService preferencesService;
+  final PreferencesPort preferencesService;
 
   @override
   State<Settings> createState() => _SettingsState();
@@ -26,7 +26,7 @@ class _SettingsState extends State<Settings> {
   CompactionSettings _compactionSettings = const CompactionSettings();
   TaskSystemSettings _taskSystemSettings = const TaskSystemSettings();
 
-  PreferencesService get preferencesService => widget.preferencesService;
+  PreferencesPort get preferencesService => widget.preferencesService;
 
   void loadSettings() async {
     final llamaCppDir = await preferencesService.getLlamaCppDirectory();

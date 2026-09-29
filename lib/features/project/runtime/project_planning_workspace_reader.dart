@@ -1,10 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hermes/features/workspace/domain/workspace.dart';
-import 'package:hermes/core/services/cancellation_token.dart';
-import 'package:hermes/core/services/sandbox_policy.dart';
-import 'package:hermes/core/services/workspace_sandbox.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/shared_kernel/sandbox_policy.dart';
 import 'package:path/path.dart' as path;
 
 /// Read-only, budgeted workspace context for the initial project planner.
@@ -15,7 +14,7 @@ import 'package:path/path.dart' as path;
 class ProjectPlanningWorkspaceReader {
   ProjectPlanningWorkspaceReader({
     required WorkspaceAttachment workspace,
-    required WorkspaceSandbox sandbox,
+    required dynamic sandbox,
     required Iterable<String> allowedPaths,
     CancellationToken? cancellationToken,
     this.maxTotalBytes = defaultMaxTotalBytes,
@@ -36,7 +35,7 @@ class ProjectPlanningWorkspaceReader {
   static const int defaultMaxWindowLines = 240;
 
   final WorkspaceAttachment _workspace;
-  final WorkspaceSandbox _sandbox;
+  final dynamic _sandbox;
   final CancellationToken? _cancellationToken;
   final Map<String, String> _allowedPaths;
   final int maxTotalBytes;

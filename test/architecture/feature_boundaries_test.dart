@@ -116,10 +116,10 @@ void main() {
     final workspaceController = await File(
       'lib/features/chat/runtime/chat_workspace_controller.dart',
     ).readAsString();
-    expect(controller, contains('TaskApplicationPort'));
-    expect(controller, contains('ProjectApplicationPort'));
-    expect(workspaceController, contains('TaskApplicationPort'));
-    expect(workspaceController, contains('ProjectApplicationPort'));
+    expect(controller, contains('TaskChatPort'));
+    expect(controller, contains('ProjectChatPort'));
+    expect(workspaceController, contains('TaskChatPort'));
+    expect(workspaceController, contains('ProjectChatPort'));
   });
 
   test(
@@ -282,10 +282,10 @@ void main() {
 
   test('infrastructure adapters implement typed ports', () async {
     final workspace = await File(
-      'lib/core/services/workspace_service.dart',
+      'lib/platform/workspace_service.dart',
     ).readAsString();
     final persistence = await File(
-      'lib/core/services/workspace_persistence_coordinator.dart',
+      'lib/shared_kernel/workspace_persistence_coordinator.dart',
     ).readAsString();
     final model = await File(
       'lib/features/model/infrastructure/chat_client.dart',
@@ -309,10 +309,10 @@ void main() {
       'lib/features/settings/infrastructure/preferences_service.dart',
     ).readAsString();
 
-    expect(workspace, contains('implements WorkspacePort'));
+    expect(workspace, contains('implements WorkspacePresentationPort'));
     expect(persistence, contains('implements PersistencePort'));
     expect(model, contains('implements ModelProvider'));
-    expect(task, contains('implements TaskRepositoryPort'));
+    expect(task, contains('implements TaskReadPort'));
     expect(project, contains('implements ProjectRepositoryPort'));
     expect(aggregate, contains('implements ProjectAggregateRepositoryPort'));
     expect(chatLibrary, contains('implements ChatLibraryPort'));
@@ -331,7 +331,7 @@ void main() {
       }
 
       final state = await File(
-        'lib/features/chat/presentation/chat_view_state.dart',
+        'lib/features/chat/application/chat_view_state.dart',
       ).readAsString();
       final controller = await File(
         'lib/features/chat/application/chat_controller.dart',

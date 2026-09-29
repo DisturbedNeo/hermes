@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hermes/core/enums/delete_choice.dart';
+import 'package:hermes/shared_kernel/delete_choice.dart';
 
 class DeleteMessageDialog extends StatefulWidget {
   const DeleteMessageDialog({super.key});

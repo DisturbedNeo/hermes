@@ -1,22 +1,21 @@
 import 'dart:async';
 
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/core/services/persistence_contracts.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/persistence_contracts.dart';
 import 'package:hermes/features/project/infrastructure/project_snapshot_migrator.dart';
 import 'package:hermes/features/project/infrastructure/project_transaction_coordinator.dart';
 import 'package:hermes/features/project/project_aggregate_repository_port.dart';
 import 'package:hermes/features/project/project_repository_port.dart';
-import 'package:hermes/features/project/runtime/project_checkpoint.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/features/task/task_runtime_contracts.dart';
-import 'package:hermes/features/workspace/application/workspace_ports.dart';
+import 'package:hermes/shared_kernel/project_checkpoint.dart';
+import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/shared_kernel/workspace_ports.dart';
 
 /// Reads and coordinates project aggregates while delegating migration and
 /// transaction mechanics to focused infrastructure collaborators.
 class ProjectAggregateRepository implements ProjectAggregateRepositoryPort {
   ProjectAggregateRepository({
     required ProjectRepositoryPort projectRepository,
-    required TaskRepositoryPort taskRepository,
+    required dynamic taskRepository,
     required PersistencePort coordinator,
     this.onTransactionPhase,
   }) : _projects = projectRepository,
@@ -33,7 +32,7 @@ class ProjectAggregateRepository implements ProjectAggregateRepositoryPort {
        );
 
   final ProjectRepositoryPort _projects;
-  final TaskRepositoryPort _tasks;
+  final dynamic _tasks;
   final PersistencePort _coordinator;
   final ProjectSnapshotMigrator _migrator;
   final ProjectTransactionCoordinator _transactions;
@@ -270,7 +269,9 @@ class ProjectAggregateRepository implements ProjectAggregateRepositoryPort {
           workspaceRoot,
           projectId: project.id,
         );
-        taskIds.addAll(summaries.map((task) => task.id));
+        taskIds.addAll([
+          for (final task in summaries as Iterable<dynamic>) task.id.toString(),
+        ]);
         final taskRevisions = <String, int>{};
         for (final taskId in taskIds) {
           final task = await _tasks.loadTaskSnapshotUnlocked(

@@ -1,5 +1,5 @@
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/project/runtime/project_workspace_context_service.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/project_workspace_context_service.dart';
 import 'package:path/path.dart' as path;
 
 enum ProjectPlanValidationSeverity { warning, error }

@@ -3,21 +3,22 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
-import 'package:hermes/core/helpers/responsive.dart';
-import 'package:hermes/features/chat/runtime/chat_application/chat_library_service.dart';
+import 'package:hermes/features/chat/presentation/responsive.dart';
+import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
-import 'package:hermes/core/services/keyboard_shortcuts.dart';
-import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
-import 'package:hermes/core/services/system_prompt_library_service.dart';
-import 'package:hermes/core/services/tool_service.dart';
-import 'package:hermes/core/services/workspace_service.dart';
+import 'package:hermes/features/chat/presentation/keyboard_shortcuts.dart';
+import 'package:hermes/shared_kernel/preferences_port.dart';
+import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
+import 'package:hermes/shared_kernel/tool_contracts.dart';
+import 'package:hermes/shared_kernel/workspace_ports.dart';
 import 'package:hermes/features/chat/presentation/overlays/chat_list.dart';
 import 'package:hermes/features/chat/presentation/chat/chat_view.dart';
 import 'package:hermes/features/chat/presentation/chat/model_picker.dart';
 import 'package:hermes/features/chat/presentation/overlays/settings.dart';
 import 'package:hermes/features/chat/presentation/overlays/system_prompt_library_panel.dart';
 import 'package:hermes/features/chat/presentation/overlays/workspace_panel.dart';
+import 'package:hermes/shared_kernel/chat_workspace_contracts.dart';
 
 enum _ChatAppBarAction { model, prompts, workspace, settings }
 
@@ -35,9 +36,9 @@ class Chat extends StatefulWidget {
   final ChatWorkspaceController tabs;
   final ChatLibraryService chatLibrary;
   final SystemPromptLibraryService systemPromptLibrary;
-  final WorkspaceService workspaceService;
-  final PreferencesService preferencesService;
-  final ToolService toolService;
+  final WorkspacePresentationPort workspaceService;
+  final PreferencesPort preferencesService;
+  final ToolRegistryPort toolService;
 
   @override
   State<StatefulWidget> createState() => _ChatState();
@@ -296,7 +297,7 @@ class _ChatState extends State<Chat> {
             return Column(
               children: [
                 _ChatTabStrip(
-                  tabs: _tabs.tabs,
+                  tabs: _tabs.tabs.cast<ChatController>().toList(),
                   activeTabId: _tabs.activeTabId,
                   onSelect: (tab) => unawaited(_tabs.selectTab(tab.tabId)),
                   onClose: (tab) => unawaited(_closeTab(tab)),
@@ -311,7 +312,7 @@ class _ChatState extends State<Chat> {
                             ? const SizedBox.shrink()
                             : ChatView(
                                 key: ValueKey('chat_${activeChat.tabId}'),
-                                chat: activeChat,
+                                chat: activeChat as ChatController,
                                 preferencesService: widget.preferencesService,
                                 toolService: widget.toolService,
                                 onOpenWorkspace: _selectWorkspaceForActiveChat,
@@ -378,7 +379,7 @@ class _ChatState extends State<Chat> {
                         open: isWorkspaceOpen,
                         width: 420,
                         child: WorkspacePanel(
-                          chat: activeChat,
+                          chat: activeChat as ChatController?,
                           workspaceService: widget.workspaceService,
                           onSelectWorkspace: _selectWorkspaceForActiveChat,
                         ),
@@ -483,7 +484,7 @@ class _ChatState extends State<Chat> {
   void _closeActiveTab() {
     final activeChat = _tabs.activeChat;
     if (activeChat == null) return;
-    unawaited(_closeTab(activeChat));
+    unawaited(_closeTab(activeChat as ChatController));
   }
 
   Future<void> _closeTab(ChatController tab) async {

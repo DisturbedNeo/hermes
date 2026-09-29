@@ -1,21 +1,21 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
-import 'package:hermes/core/services/cancellation_token.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/features/project/runtime/project_memory_service.dart';
 import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
-import 'package:hermes/features/project/runtime/project_scheduler.dart';
-import 'package:hermes/features/project/runtime/project_workspace_context_service.dart';
-import 'package:hermes/features/task/task_runtime_contracts.dart';
-import 'package:hermes/core/services/workspace_discovery_profile.dart';
+import 'package:hermes/shared_kernel/project_scheduler.dart';
+import 'package:hermes/shared_kernel/project_workspace_context_service.dart';
+import 'package:hermes/features/task/application/task_application/task_ports.dart';
+import 'package:hermes/shared_kernel/workspace_discovery_service.dart';
 import 'package:path/path.dart' as path;
 
 /// Collects bounded, read-only context for initialization and replanning.
 class ProjectDiscoveryService {
   const ProjectDiscoveryService({
-    required TaskApplicationPort taskController,
+    required TaskProjectPort taskController,
     ProjectMemoryService memoryService = const ProjectMemoryService(),
     WorkspaceDiscoveryProfileService profileService =
         const WorkspaceDiscoveryProfileService(),
@@ -29,7 +29,7 @@ class ProjectDiscoveryService {
   static const int _maxRootEntries = 80;
   static const int _maxRecentItems = 12;
 
-  final TaskApplicationPort _taskController;
+  final TaskProjectPort _taskController;
   final ProjectMemoryService _memoryService;
   final WorkspaceDiscoveryProfileService _profileService;
   final ProjectWorkspaceContextService _workspaceContextService;

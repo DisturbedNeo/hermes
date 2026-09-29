@@ -2,15 +2,15 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hermes/core/serialization/model_json.dart';
-import 'package:hermes/core/services/atomic_json_snapshot_store.dart';
-import 'package:hermes/core/services/persistence_contracts.dart';
-import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/shared_kernel/model_json.dart';
+import 'package:hermes/shared_kernel/atomic_json_snapshot_store.dart';
+import 'package:hermes/shared_kernel/persistence_contracts.dart';
+import 'package:hermes/shared_kernel/project.dart';
 import 'package:hermes/features/project/project_aggregate_repository_port.dart';
 import 'package:hermes/features/project/project_repository_port.dart';
-import 'package:hermes/features/project/runtime/project_checkpoint.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/features/task/task_runtime_contracts.dart';
+import 'package:hermes/shared_kernel/project_checkpoint.dart';
+import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/shared_kernel/task_persistence_ports.dart';
 import 'package:path/path.dart' as path;
 
 /// Owns aggregate transaction manifests, commit ordering, and recovery.
@@ -19,7 +19,7 @@ import 'package:path/path.dart' as path;
 class ProjectTransactionCoordinator {
   ProjectTransactionCoordinator({
     required ProjectRepositoryPort projectRepository,
-    required TaskRepositoryPort taskRepository,
+    required dynamic taskRepository,
     this.onTransactionPhase,
     AtomicJsonSnapshotStore snapshots = const AtomicJsonSnapshotStore(),
   }) : _projects = projectRepository,
@@ -29,7 +29,7 @@ class ProjectTransactionCoordinator {
   static const String transactionsDirectoryName = '.agent/transactions';
 
   final ProjectRepositoryPort _projects;
-  final TaskRepositoryPort _tasks;
+  final dynamic _tasks;
   final AtomicJsonSnapshotStore _snapshots;
   final FutureOr<void> Function(String phase)? onTransactionPhase;
 
@@ -114,7 +114,7 @@ class ProjectTransactionCoordinator {
       final persistedTasks = Map<String, PersistedSnapshot<Task>>.fromEntries(
         persistedTaskEntries,
       );
-      await Future.wait([
+      await Future.wait<void>([
         for (final taskId in deletedTaskIds)
           _tasks.deleteTaskUnlocked(workspaceRoot, taskId),
       ]);

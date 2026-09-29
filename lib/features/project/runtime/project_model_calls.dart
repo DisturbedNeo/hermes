@@ -1,24 +1,24 @@
 import 'dart:convert';
 
-import 'package:hermes/core/helpers/json_parsing.dart';
-import 'package:hermes/core/helpers/uuid.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/core/models/planning_metrics.dart';
-import 'package:hermes/core/serialization/model_json.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
-import 'package:hermes/features/model/domain/model_provider.dart';
-import 'package:hermes/features/model/domain/model_errors.dart';
-import 'package:hermes/core/services/cancellation_token.dart';
-import 'package:hermes/core/services/planning_runtime.dart';
-import 'package:hermes/core/services/planning_structured_output.dart';
+import 'package:hermes/shared_kernel/json_parsing.dart';
+import 'package:hermes/shared_kernel/uuid.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/planning_metrics.dart';
+import 'package:hermes/shared_kernel/model_json.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_errors.dart';
+import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/shared_kernel/planning_runtime.dart';
+import 'package:hermes/shared_kernel/planning_structured_output.dart';
 import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
 import 'package:hermes/features/project/runtime/project_planning_tools.dart';
 import 'package:hermes/features/project/runtime/project_planning_workspace_reader.dart';
 import 'package:hermes/features/project/runtime/project_view_service.dart';
-import 'package:hermes/core/services/question_policy_service.dart';
+import 'package:hermes/shared_kernel/question_policy_service.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
-import 'package:hermes/core/services/tool_service.dart';
+import 'package:hermes/shared_kernel/tool_contracts.dart';
 
 export 'package:hermes/features/project/runtime/project_planning_gateway.dart'
     show
@@ -31,7 +31,7 @@ export 'package:hermes/features/project/runtime/project_planning_gateway.dart'
 
 class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
   ProjectModelCalls({
-    required ToolService toolService,
+    required ToolRegistryPort toolService,
     ProjectViewService projectViewService = const ProjectViewService(),
     PlanningToolCallRunner planningRunner = const PlanningToolCallRunner(),
     StructuredPlanningOutputService structuredOutput =
@@ -42,7 +42,7 @@ class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
        _structuredOutput = structuredOutput;
 
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
-  final ToolService _toolService;
+  final ToolRegistryPort _toolService;
   final ProjectViewService _projectViewService;
   final PlanningToolCallRunner _planningRunner;
   final StructuredPlanningOutputService _structuredOutput;

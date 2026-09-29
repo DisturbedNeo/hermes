@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hermes/core/models/tool_definition.dart';
+import 'package:hermes/shared_kernel/tool_contracts.dart';
 
 class ToolSelector extends StatefulWidget {
   final List<ToolDefinition> allTools;

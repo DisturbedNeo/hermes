@@ -1,19 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:hermes/core/enums/message_role.dart';
-import 'package:hermes/core/helpers/chat/compaction_manager.dart';
-import 'package:hermes/core/helpers/chat/context_estimator.dart';
-import 'package:hermes/core/helpers/chat/payload_builder.dart';
-import 'package:hermes/core/models/bubble.dart';
-import 'package:hermes/core/models/chat_message.dart';
-import 'package:hermes/core/models/chat_token.dart';
-import 'package:hermes/core/models/compaction_settings.dart';
-import 'package:hermes/core/services/cancellation_token.dart';
-import 'package:hermes/features/model/domain/model_provider.dart';
-import 'package:hermes/features/model/domain/model_completion.dart';
-import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';
-import 'package:hermes/core/services/planning_structured_output.dart';
+import 'package:hermes/shared_kernel/message_role.dart';
+import 'package:hermes/shared_kernel/compaction_manager.dart';
+import 'package:hermes/shared_kernel/context_estimator.dart';
+import 'package:hermes/shared_kernel/payload_builder.dart';
+import 'package:hermes/shared_kernel/bubble.dart';
+import 'package:hermes/shared_kernel/chat_message.dart';
+import 'package:hermes/shared_kernel/chat_token.dart';
+import 'package:hermes/shared_kernel/compaction_settings.dart';
+import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_completion.dart';
+import 'package:hermes/shared_kernel/message_store_port.dart';
+import 'package:hermes/shared_kernel/tool_caller.dart';
+import 'package:hermes/shared_kernel/planning_structured_output.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
 
 typedef TaskCompactionStatusCallback = void Function(String status);
@@ -251,7 +252,7 @@ class TaskModelCompletionService implements TaskModelCompletionPort {
       return messages;
     }
 
-    final store = MessageStore()..setMessages(_bubblesFromMessages(messages));
+    final store = _TaskMessageStore(_bubblesFromMessages(messages));
     final manager = CompactionManager(settings: settings, client: client);
     try {
       final result = await manager.compactIfNeeded(
@@ -448,6 +449,77 @@ class TaskModelCompletionService implements TaskModelCompletionPort {
 
   void _emit(TaskModelOutputSink? sink, TaskModelOutputEvent event) {
     sink?.call(event);
+  }
+}
+
+/// Compaction needs mutation semantics, not the Flutter notifier owned by the
+/// chat presentation runtime. Keeping this small in-memory implementation
+/// local prevents task execution from depending on the chat feature.
+class _TaskMessageStore implements MessageStorePort {
+  _TaskMessageStore(Iterable<Bubble> initial) : _messages = [...initial] {
+    _rebuildIndex();
+  }
+
+  final List<Bubble> _messages;
+  final Map<String, int> _indices = {};
+  final ToolCaller toolCaller = ToolCaller();
+
+  @override
+  List<Bubble> get messages => _messages;
+
+  @override
+  Bubble? get currentMessage => null;
+
+  @override
+  void insertAt(int index, Bubble message) {
+    _messages.insert(index.clamp(0, _messages.length), message);
+    _rebuildIndex();
+  }
+
+  @override
+  bool replaceById(String id, Bubble message) {
+    final index = _indices[id];
+    if (index == null) return false;
+    _messages[index] = message;
+    _rebuildIndex();
+    return true;
+  }
+
+  @override
+  void markCoveredBySummary({
+    required Iterable<String> messageIds,
+    required String summaryId,
+  }) {
+    final ids = messageIds.toSet();
+    for (var i = 0; i < _messages.length; i++) {
+      final message = _messages[i];
+      if (message.id == summaryId || !ids.contains(message.id)) continue;
+      _messages[i] = message.copyWith(
+        omittedFromModelPayload: true,
+        summaryId: summaryId,
+      );
+    }
+  }
+
+  @override
+  void upsert(Bubble message) {
+    final index = _indices[message.id];
+    if (index == null) {
+      _messages.add(message);
+    } else {
+      _messages[index] = message;
+    }
+    _rebuildIndex();
+  }
+
+  void _rebuildIndex() {
+    _indices
+      ..clear()
+      ..addEntries(
+        _messages.asMap().entries.map(
+          (entry) => MapEntry(entry.value.id, entry.key),
+        ),
+      );
   }
 }
 

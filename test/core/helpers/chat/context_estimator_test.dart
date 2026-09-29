@@ -1,13 +1,13 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/enums/message_role.dart';
-import 'package:hermes/core/helpers/chat/context_estimator.dart';
-import 'package:hermes/core/helpers/chat/payload_builder.dart';
-import 'package:hermes/core/helpers/chat/tool_caller.dart';
-import 'package:hermes/core/models/bubble.dart';
-import 'package:hermes/core/models/chat_message.dart';
-import 'package:hermes/core/models/tool_definition.dart';
+import 'package:hermes/shared_kernel/message_role.dart';
+import 'package:hermes/shared_kernel/context_estimator.dart';
+import 'package:hermes/shared_kernel/payload_builder.dart';
+import 'package:hermes/shared_kernel/tool_caller.dart';
+import 'package:hermes/shared_kernel/bubble.dart';
+import 'package:hermes/shared_kernel/chat_message.dart';
+import 'package:hermes/shared_kernel/tool_contracts.dart';
 
 void main() {
   group('ContextEstimator', () {

@@ -2,13 +2,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/models/chat_message.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/shared_kernel/chat_message.dart';
+import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
-import 'package:hermes/core/services/cancellation_token.dart';
-import 'package:hermes/core/services/sandbox_policy.dart';
+import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/shared_kernel/sandbox_policy.dart';
 import 'package:hermes/features/task/runtime/task_gate_evaluator.dart';
+import 'package:hermes/platform/workspace_sandbox.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
@@ -26,7 +27,7 @@ void main() {
         displayName: 'Workspace',
         lastOpenedAt: DateTime(2026, 1, 1),
       );
-      evaluator = TaskGateEvaluator();
+      evaluator = TaskGateEvaluator(sandbox: WorkspaceSandbox());
       step = const TaskStep(
         id: 'step_1',
         title: 'Step',

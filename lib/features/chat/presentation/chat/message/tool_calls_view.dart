@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hermes/core/models/bubble.dart';
+import 'package:hermes/shared_kernel/bubble.dart';
 
 class ToolCallsView extends StatefulWidget {
   final Map<int, BubbleToolCall> tools;

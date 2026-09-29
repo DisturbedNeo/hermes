@@ -1,8 +1,8 @@
-import 'package:hermes/core/models/bubble.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
-import 'package:hermes/core/services/cancellation_token.dart';
+import 'package:hermes/shared_kernel/bubble.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';
-import 'package:hermes/core/services/tool_service.dart';
+import 'package:hermes/shared_kernel/tool_contracts.dart';
 
 abstract interface class ChatToolExecutionPort {
   Future<Bubble?> executePendingCalls({
@@ -19,12 +19,12 @@ abstract interface class ChatToolExecutionPort {
 /// workspace context, cancellation boundaries, and result persistence.
 class ChatToolExecutionService implements ChatToolExecutionPort {
   const ChatToolExecutionService({
-    required ToolService toolService,
+    required ToolRegistryPort toolService,
     required MessageStore messageStore,
   }) : _toolService = toolService,
        _messageStore = messageStore;
 
-  final ToolService _toolService;
+  final ToolRegistryPort _toolService;
   final MessageStore _messageStore;
 
   @override

@@ -2,9 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/core/services/atomic_json_snapshot_store.dart';
-import 'package:hermes/features/project/runtime/project_repository.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/atomic_json_snapshot_store.dart';
+import 'package:hermes/features/project/infrastructure/project_repository.dart';
 import 'package:path/path.dart' as path;
 
 void main() {

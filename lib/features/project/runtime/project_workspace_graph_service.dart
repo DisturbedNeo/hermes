@@ -1,6 +1,6 @@
-import 'package:hermes/core/helpers/uuid.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/project/runtime/project_workspace_context_service.dart';
+import 'package:hermes/shared_kernel/uuid.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/project_workspace_context_service.dart';
 
 /// Applies explicit user-authored graph edits. User entries are confirmed and
 /// protected so planner revisions cannot silently overwrite them.

@@ -1,9 +1,9 @@
 import 'dart:convert';
 
-import 'package:hermes/core/helpers/uuid.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/core/services/terminal_command_classifier.dart';
-import 'package:hermes/core/services/terminal_command_parser.dart';
+import 'package:hermes/shared_kernel/uuid.dart';
+import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/shared_kernel/terminal_command_classifier.dart';
+import 'package:hermes/shared_kernel/terminal_command_parser.dart';
 
 /// A compact validation issue returned by the task planning tools.
 class TaskPlanIssue {

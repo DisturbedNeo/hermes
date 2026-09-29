@@ -1,16 +1,16 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
-import 'package:hermes/core/services/workspace_service.dart';
+import 'package:hermes/shared_kernel/workspace_ports.dart';
 import 'package:hermes/features/chat/presentation/common/state_display.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class WorkspacePanel extends StatefulWidget {
   final ChatController? chat;
-  final WorkspaceService workspaceService;
+  final WorkspacePresentationPort workspaceService;
   final FutureOr<void> Function() onSelectWorkspace;
 
   const WorkspacePanel({
@@ -29,7 +29,7 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
   static const double _compactBodyHeight = 160;
   static const double _compactActionWidth = 240;
 
-  WorkspaceService get _workspaceService => widget.workspaceService;
+  WorkspacePresentationPort get _workspaceService => widget.workspaceService;
 
   List<WorkspaceAttachment> _recent = const [];
   List<Map<String, dynamic>> _entries = const [];
@@ -78,10 +78,7 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
       final workspace = widget.chat?.workspace;
       final entries = workspace == null || workspace.missing
           ? const <Map<String, dynamic>>[]
-          : await _workspaceService.sandbox.listDirectory(
-              workspace.rootPath,
-              '.',
-            );
+          : await _workspaceService.listDirectory(workspace.rootPath, '.');
       if (!mounted) return;
       setState(() {
         _recent = recent;

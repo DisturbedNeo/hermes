@@ -2,15 +2,15 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/core/services/persistence_contracts.dart';
-import 'package:hermes/features/project/runtime/project_aggregate_repository.dart';
-import 'package:hermes/features/project/runtime/project_checkpoint.dart';
-import 'package:hermes/features/project/runtime/project_repository.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/shared_kernel/persistence_contracts.dart';
+import 'package:hermes/features/project/infrastructure/project_aggregate_repository.dart';
+import 'package:hermes/shared_kernel/project_checkpoint.dart';
+import 'package:hermes/features/project/infrastructure/project_repository.dart';
 import 'package:hermes/features/task/infrastructure/task_repository.dart';
-import 'package:hermes/core/services/workspace_persistence_coordinator.dart';
-import 'package:hermes/core/serialization/model_json.dart';
+import 'package:hermes/shared_kernel/workspace_persistence_coordinator.dart';
+import 'package:hermes/shared_kernel/model_json.dart';
 import 'package:path/path.dart' as path;
 
 void main() {

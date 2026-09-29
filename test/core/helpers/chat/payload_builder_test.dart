@@ -1,10 +1,10 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/enums/message_role.dart';
-import 'package:hermes/core/helpers/chat/payload_builder.dart';
-import 'package:hermes/core/models/bubble.dart';
-import 'package:hermes/core/serialization/model_json.dart';
+import 'package:hermes/shared_kernel/message_role.dart';
+import 'package:hermes/shared_kernel/payload_builder.dart';
+import 'package:hermes/shared_kernel/bubble.dart';
+import 'package:hermes/shared_kernel/model_json.dart';
 
 void main() {
   group('PayloadBuilder', () {

@@ -1,4 +1,4 @@
-import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/shared_kernel/task.dart';
 
 /// A bounded read model used by the task-planning agent.
 ///

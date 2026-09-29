@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:hermes/core/enums/stream_state.dart';
+import 'package:hermes/shared_kernel/stream_state.dart';
 
 class ChatStream<T> extends ChangeNotifier {
   StreamState _state = StreamState.idle;

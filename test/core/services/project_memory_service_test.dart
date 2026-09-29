@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/core/serialization/model_json.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/model_json.dart';
 import 'package:hermes/features/project/runtime/project_memory_service.dart';
 
 void main() {

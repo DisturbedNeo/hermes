@@ -1,10 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:hermes/core/helpers/a11y.dart';
+import 'package:hermes/features/chat/presentation/a11y.dart';
 import 'package:hermes/features/chat/presentation/common/state_display.dart';
-import 'package:hermes/core/models/saved_chat.dart';
-import 'package:hermes/features/chat/runtime/chat_application/chat_library_service.dart';
+import 'package:hermes/shared_kernel/saved_chat.dart';
+import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 
 class ChatList extends StatefulWidget {

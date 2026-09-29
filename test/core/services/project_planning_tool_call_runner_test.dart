@@ -1,11 +1,11 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/models/chat_message.dart';
-import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/shared_kernel/chat_message.dart';
+import 'package:hermes/shared_kernel/project.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
-import 'package:hermes/features/model/domain/model_provider.dart';
-import 'package:hermes/core/services/planning_runtime.dart';
+import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/planning_runtime.dart';
 import 'package:hermes/features/project/runtime/project_planning_tools.dart';
 
 void main() {

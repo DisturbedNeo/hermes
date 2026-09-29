@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/services/atomic_json_snapshot_store.dart';
-import 'package:hermes/core/services/managed_lazy_database.dart';
+import 'package:hermes/shared_kernel/atomic_json_snapshot_store.dart';
+import 'package:hermes/features/chat/infrastructure/managed_lazy_database.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {

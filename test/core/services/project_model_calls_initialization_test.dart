@@ -2,12 +2,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/models/chat_message.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/shared_kernel/chat_message.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/features/project/runtime/project_model_calls.dart';
-import 'package:hermes/core/services/tool_service.dart';
-import 'package:hermes/core/services/workspace_sandbox.dart';
+import 'package:hermes/platform/tool_service.dart';
+import 'package:hermes/platform/workspace_sandbox.dart';
 
 void main() {
   test('initial project creation uses generated planning IDs', () async {

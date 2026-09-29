@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/models/chat_message.dart';
-import 'package:hermes/core/services/planner_message_compactor.dart';
+import 'package:hermes/shared_kernel/chat_message.dart';
+import 'package:hermes/shared_kernel/planner_message_compactor.dart';
 
 void main() {
   test('compacts old planning output while preserving tool call structure', () {

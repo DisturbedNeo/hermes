@@ -14,11 +14,11 @@ class _ChatApplicationContext extends ChangeNotifier
   final MessageStore messageStore = MessageStore();
   final ChatStream<ChatToken> chatStream = ChatStream<ChatToken>();
 
-  final ToolService _toolService;
-  final TaskApplicationPort _taskController;
-  final ProjectApplicationPort _projectApplication;
+  final ToolRegistryPort _toolService;
+  final TaskChatPort _taskController;
+  final ProjectChatPort _projectApplication;
   final ChatLibraryService _chatLibrary;
-  final WorkspaceService _workspaceService;
+  final WorkspacePort _workspaceService;
   final PreferencesPort _preferencesService;
   final ChatCommandCoordinator _commandCoordinator;
   final PromptAssembler _promptAssembler = const PromptAssembler();
@@ -239,11 +239,11 @@ class _ChatApplicationContext extends ChangeNotifier
   _ChatApplicationContext({
     String? tabId,
     required this.serverManager,
-    required ToolService toolService,
-    required TaskApplicationPort taskController,
-    required ProjectApplicationPort projectApplication,
+    required ToolRegistryPort toolService,
+    required TaskChatPort taskController,
+    required ProjectChatPort projectApplication,
     required ChatLibraryService chatLibrary,
-    required WorkspaceService workspaceService,
+    required WorkspacePort workspaceService,
     required PreferencesPort preferencesService,
     ChatCommandCoordinator? commandCoordinator,
     ChatToolExecutionPort? toolExecution,

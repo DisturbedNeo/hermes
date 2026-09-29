@@ -1,6 +1,46 @@
 import 'package:hermes/features/project/runtime/project_application.dart';
 
-export 'package:hermes/features/project/runtime/project_application.dart';
-
-/// Public project application entry point.
-typedef ProjectApplication = ProjectRuntimeApplication;
+/// Concrete public project application facade.
+class ProjectApplication extends ProjectRuntimeApplication {
+  ProjectApplication({
+    required dynamic taskController,
+    dynamic repository,
+    dynamic planner,
+    dynamic completionEvaluator,
+    dynamic scheduler,
+    dynamic memoryService,
+    dynamic progressMonitor,
+    dynamic persistenceCoordinator,
+    dynamic aggregateRepository,
+    dynamic stateStore,
+    dynamic commandService,
+    dynamic executionPort,
+    dynamic recoveryPort,
+    dynamic planningRunner,
+    dynamic structuredOutput,
+    dynamic lifecycle,
+    dynamic taskLifecycle,
+    dynamic completion,
+    dynamic recoveryService,
+  }) : super(
+         taskController: taskController,
+         repository: repository,
+         planner: planner,
+         completionEvaluator: completionEvaluator,
+         scheduler: scheduler,
+         memoryService: memoryService,
+         progressMonitor: progressMonitor,
+         persistenceCoordinator: persistenceCoordinator,
+         aggregateRepository: aggregateRepository,
+         stateStore: stateStore,
+         commandService: commandService,
+         executionPort: executionPort,
+         recoveryPort: recoveryPort,
+         planningRunner: planningRunner,
+         structuredOutput: structuredOutput,
+         lifecycle: lifecycle,
+         taskLifecycle: taskLifecycle,
+         completion: completion,
+         recoveryService: recoveryService,
+       );
+}

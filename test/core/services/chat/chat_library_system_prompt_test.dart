@@ -1,13 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/enums/message_role.dart';
-import 'package:hermes/core/models/bubble.dart';
-import 'package:hermes/features/chat/runtime/chat_application/chat_library_service.dart';
+import 'package:hermes/shared_kernel/message_role.dart';
+import 'package:hermes/shared_kernel/bubble.dart';
+import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/infrastructure/chat_library_repository.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/features/chat/infrastructure/system_prompt_library_repository.dart';
-import 'package:hermes/core/services/system_prompt_library_service.dart';
+import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';

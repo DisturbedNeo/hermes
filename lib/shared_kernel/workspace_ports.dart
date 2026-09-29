@@ -10,6 +10,9 @@ abstract interface class PersistencePort {
 }
 
 abstract interface class WorkspacePort {
+  void addListener(void Function() listener);
+  void removeListener(void Function() listener);
+
   Future<WorkspaceAttachment> attach(String folderPath);
 
   Future<WorkspaceAttachment> restore({
@@ -21,4 +24,13 @@ abstract interface class WorkspacePort {
   Future<List<WorkspaceAttachment>> recentWorkspaces();
 
   Future<void> remember(WorkspaceAttachment workspace);
+}
+
+/// Presentation needs only the observable workspace list and a safe directory
+/// listing; the concrete sandbox remains owned by the platform adapter.
+abstract interface class WorkspacePresentationPort implements WorkspacePort {
+  Future<List<Map<String, dynamic>>> listDirectory(
+    String rootPath,
+    String relativePath,
+  );
 }

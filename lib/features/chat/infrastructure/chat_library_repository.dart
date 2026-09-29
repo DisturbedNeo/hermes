@@ -4,17 +4,17 @@ import 'dart:io';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'package:hermes/core/enums/message_role.dart';
-import 'package:hermes/core/helpers/uuid.dart';
-import 'package:hermes/core/models/bubble.dart';
-import 'package:hermes/core/models/model_configuration_snapshot.dart';
-import 'package:hermes/core/models/saved_chat.dart';
-import 'package:hermes/core/models/system_prompt.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
-import 'package:hermes/core/serialization/model_json.dart';
-import 'package:hermes/core/services/managed_lazy_database.dart';
-import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
-import 'package:hermes/core/services/chat_library_port.dart';
+import 'package:hermes/shared_kernel/message_role.dart';
+import 'package:hermes/shared_kernel/uuid.dart';
+import 'package:hermes/shared_kernel/bubble.dart';
+import 'package:hermes/shared_kernel/model_configuration.dart';
+import 'package:hermes/shared_kernel/saved_chat.dart';
+import 'package:hermes/shared_kernel/system_prompt.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/shared_kernel/model_json.dart';
+import 'package:hermes/features/chat/infrastructure/managed_lazy_database.dart';
+import 'package:hermes/shared_kernel/preferences_port.dart';
+import 'package:hermes/shared_kernel/chat_library_port.dart';
 
 /// Repository layer for the chat library.
 ///
@@ -22,14 +22,14 @@ import 'package:hermes/core/services/chat_library_port.dart';
 /// interactions.  Contains zero business logic — it is a pure data-access
 /// abstraction over the chat store.
 class ChatLibraryRepository implements ChatLibraryPort {
-  final PreferencesService _preferencesService;
+  final PreferencesPort _preferencesService;
   final DatabaseFactory _databaseFactory;
   final String? _databasePath;
 
   late final ManagedLazyDatabase _database;
 
   ChatLibraryRepository({
-    required PreferencesService preferencesService,
+    required PreferencesPort preferencesService,
     DatabaseFactory? databaseFactory,
     String? databasePath,
   }) : _preferencesService = preferencesService,

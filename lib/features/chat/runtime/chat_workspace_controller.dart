@@ -2,35 +2,33 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
-import 'package:hermes/core/models/system_prompt.dart';
-import 'package:hermes/core/models/chat_persistence.dart';
-import 'package:hermes/features/chat/runtime/chat_application/chat_library_service.dart';
+import 'package:hermes/shared_kernel/system_prompt.dart';
+import 'package:hermes/shared_kernel/chat_persistence.dart';
+import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/runtime/chat_controller.dart';
-import 'package:hermes/features/project/runtime/project_ports.dart';
-import 'package:hermes/features/task/task_runtime_contracts.dart';
-import 'package:hermes/core/services/llama_server_manager.dart';
+import 'package:hermes/features/project/application/project_application/project_ports.dart';
+import 'package:hermes/features/task/application/task_application/task_ports.dart';
+import 'package:hermes/features/chat/runtime/model/llama_server_manager.dart';
 import 'package:hermes/shared_kernel/preferences_port.dart';
-import 'package:hermes/core/services/subagent_service.dart';
-import 'package:hermes/core/services/system_prompt_library_service.dart';
-import 'package:hermes/core/services/tool_service.dart';
-import 'package:hermes/core/services/workspace_service.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/shared_kernel/subagent_service.dart';
+import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
+import 'package:hermes/shared_kernel/tool_contracts.dart';
+import 'package:hermes/shared_kernel/workspace_ports.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
 
-import 'package:hermes/core/services/disposable.dart';
-
-enum OpenChatTarget { currentTab, newTab }
-
-enum SystemPromptLoadTarget { currentChat, newTab }
+import 'package:hermes/shared_kernel/disposable.dart';
+import 'package:hermes/shared_kernel/chat_workspace_contracts.dart';
 
 class ChatRuntimeWorkspaceController extends ChangeNotifier
     implements Disposable {
   final ChatLibraryService _chatLibrary;
   final SystemPromptLibraryService _systemPromptLibrary;
-  final ToolService _toolService;
-  final TaskApplicationPort _taskController;
-  final ProjectApplicationPort _projectApplication;
-  final WorkspaceService _workspaceService;
+  final ToolRegistryPort _toolService;
+  final TaskChatPort _taskController;
+  final ProjectChatPort _projectApplication;
+  final WorkspacePort _workspaceService;
   final PreferencesPort _preferencesService;
+  final dynamic _tabFactory;
 
   final LlamaServerManager serverManager;
   SubagentService? _subagentService;
@@ -44,18 +42,20 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
     required this.serverManager,
     required ChatLibraryService chatLibrary,
     required SystemPromptLibraryService systemPromptLibrary,
-    required ToolService toolService,
-    required TaskApplicationPort taskController,
-    required ProjectApplicationPort projectApplication,
-    required WorkspaceService workspaceService,
+    required ToolRegistryPort toolService,
+    required TaskChatPort taskController,
+    required ProjectChatPort projectApplication,
+    required WorkspacePort workspaceService,
     required PreferencesPort preferencesService,
+    dynamic tabFactory,
   }) : _chatLibrary = chatLibrary,
        _systemPromptLibrary = systemPromptLibrary,
        _toolService = toolService,
        _taskController = taskController,
        _projectApplication = projectApplication,
        _workspaceService = workspaceService,
-       _preferencesService = preferencesService {
+       _preferencesService = preferencesService,
+       _tabFactory = tabFactory {
     newTab();
     _initializeSubagentService();
   }
@@ -79,7 +79,7 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
       _subagentService ??= SubagentService(
         chatClientFactory: () => serverManager.chatClient!,
       );
-      // Update the reference in ToolService
+      // Update the reference in ToolRegistryPort
       _toolService.setSubagentService(_subagentService!);
     } else {
       // Server stopped - clear the subagent service so tool calls
@@ -272,16 +272,29 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
   ChatRuntimeController _createTab({
     SystemPromptSnapshot? systemPromptSnapshot,
   }) {
-    final tab = ChatRuntimeController(
-      serverManager: serverManager,
-      toolService: _toolService,
-      taskController: _taskController,
-      projectApplication: _projectApplication,
-      chatLibrary: _chatLibrary,
-      workspaceService: _workspaceService,
-      preferencesService: _preferencesService,
-      initialSystemPromptSnapshot: systemPromptSnapshot,
-    );
+    final factory = _tabFactory;
+    final tab = factory == null
+        ? ChatRuntimeController(
+            serverManager: serverManager,
+            toolService: _toolService,
+            taskController: _taskController,
+            projectApplication: _projectApplication,
+            chatLibrary: _chatLibrary,
+            workspaceService: _workspaceService,
+            preferencesService: _preferencesService,
+            initialSystemPromptSnapshot: systemPromptSnapshot,
+          )
+        : factory(
+                serverManager: serverManager,
+                toolService: _toolService,
+                taskController: _taskController,
+                projectApplication: _projectApplication,
+                chatLibrary: _chatLibrary,
+                workspaceService: _workspaceService,
+                preferencesService: _preferencesService,
+                initialSystemPromptSnapshot: systemPromptSnapshot,
+              )
+              as ChatRuntimeController;
     tab.addListener(notifyListeners);
     return tab;
   }

@@ -3,11 +3,11 @@ import 'package:hermes/shared_kernel/chat_persistence.dart';
 import 'package:hermes/shared_kernel/model_configuration.dart';
 import 'package:hermes/shared_kernel/saved_chat.dart';
 import 'package:hermes/shared_kernel/system_prompt.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/domain/task_summary.dart';
-import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/task_summary.dart';
+import 'package:hermes/shared_kernel/task.dart';
 import 'package:hermes/shared_kernel/task_system_settings.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
 
 /// Authoritative immutable state for one chat session.
 ///

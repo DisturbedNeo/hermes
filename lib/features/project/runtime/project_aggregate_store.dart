@@ -1,10 +1,10 @@
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/core/services/persistence_contracts.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/shared_kernel/persistence_contracts.dart';
 import 'package:hermes/features/project/project_aggregate_repository_port.dart';
-import 'package:hermes/features/project/runtime/project_checkpoint.dart';
-import 'package:hermes/features/task/task_runtime_contracts.dart';
-import 'package:hermes/features/task/runtime/task_plan_materializer.dart';
+import 'package:hermes/shared_kernel/project_checkpoint.dart';
+import 'package:hermes/shared_kernel/task_plan_materializer.dart';
+import 'package:hermes/shared_kernel/task_persistence_ports.dart';
 
 /// Tracks the last task snapshots included in one project command.
 ///
@@ -86,12 +86,12 @@ class ProjectCommitIntent {
 class ProjectAggregateStore {
   ProjectAggregateStore({
     required ProjectAggregateRepositoryPort aggregateRepository,
-    required TaskRepositoryPort taskRepository,
+    required dynamic taskRepository,
   }) : _aggregateRepository = aggregateRepository,
        _taskRepository = taskRepository;
 
   final ProjectAggregateRepositoryPort _aggregateRepository;
-  final TaskRepositoryPort _taskRepository;
+  final dynamic _taskRepository;
   final TaskPlanMaterializer _materializer = TaskPlanMaterializer();
 
   Future<ProjectDocument> commit(ProjectCommitIntent intent) async {

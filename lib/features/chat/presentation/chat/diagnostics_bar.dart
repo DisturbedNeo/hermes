@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:hermes/core/enums/diagnostics_visibility.dart';
-import 'package:hermes/core/models/model_call_diagnostics.dart';
-import 'package:hermes/core/models/model_session_diagnostics.dart';
-import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
+import 'package:hermes/shared_kernel/diagnostics_visibility.dart';
+import 'package:hermes/shared_kernel/model_call_diagnostics.dart';
+import 'package:hermes/shared_kernel/preferences_port.dart';
+import 'package:hermes/shared_kernel/model_session_contracts.dart';
 
 class DiagnosticsBar extends StatefulWidget {
   const DiagnosticsBar({
@@ -12,15 +12,15 @@ class DiagnosticsBar extends StatefulWidget {
     required this.preferencesService,
   });
 
-  final ModelSessionDiagnostics diagnostics;
-  final PreferencesService preferencesService;
+  final dynamic diagnostics;
+  final PreferencesPort preferencesService;
 
   @override
   State<DiagnosticsBar> createState() => _DiagnosticsBarState();
 }
 
 class _DiagnosticsBarState extends State<DiagnosticsBar> {
-  PreferencesService get _preferences => widget.preferencesService;
+  PreferencesPort get _preferences => widget.preferencesService;
 
   DiagnosticsVisibility _visibility = DiagnosticsVisibility.off;
 
@@ -68,7 +68,7 @@ class _DiagnosticsBarState extends State<DiagnosticsBar> {
 class _DiagnosticsBand extends StatelessWidget {
   const _DiagnosticsBand({required this.diagnostics, required this.visibility});
 
-  final ModelSessionDiagnostics diagnostics;
+  final dynamic diagnostics;
   final DiagnosticsVisibility visibility;
 
   @override
@@ -99,13 +99,14 @@ class _DiagnosticsBand extends StatelessWidget {
 
   List<Widget> _compactMetrics(BuildContext context) {
     final call = diagnostics.activeCall;
+    final state = diagnostics.state as ModelServerState;
     return [
       _metric(
         context,
-        diagnostics.state.icon,
+        state.icon,
         'Status',
-        call == null ? diagnostics.state.label : _activeStatusText(call),
-        color: diagnostics.state.color(Theme.of(context).colorScheme),
+        call == null ? state.label : _activeStatusText(call),
+        color: state.color(Theme.of(context).colorScheme),
       ),
       _metric(
         context,
@@ -247,7 +248,9 @@ class _DiagnosticsBand extends StatelessWidget {
           context,
           Icons.verified_outlined,
           'Accuracy',
-          call?.accuracy.name ?? 'n/a',
+          call?.accuracy == null
+              ? 'n/a'
+              : (call.accuracy as TelemetryAccuracy).name,
           tooltip: _accuracyTooltip(call?.accuracy),
         ),
         if (call?.error != null)
@@ -693,7 +696,7 @@ class _DiagnosticsBand extends StatelessWidget {
 class _LogViewer extends StatelessWidget {
   const _LogViewer({required this.diagnostics});
 
-  final ModelSessionDiagnostics diagnostics;
+  final dynamic diagnostics;
 
   @override
   Widget build(BuildContext context) {

@@ -1,30 +1,30 @@
 import 'dart:async';
 
-import 'package:hermes/core/enums/message_role.dart';
-import 'package:hermes/core/enums/stream_state.dart';
-import 'package:hermes/core/helpers/chat/compaction_manager.dart';
-import 'package:hermes/core/helpers/chat/content_normaliser.dart';
-import 'package:hermes/core/helpers/chat/tool_caller.dart';
-import 'package:hermes/core/helpers/uuid.dart';
-import 'package:hermes/core/models/bubble.dart';
-import 'package:hermes/core/models/chat_token.dart';
-import 'package:hermes/core/models/model_configuration_snapshot.dart';
-import 'package:hermes/features/model/domain/model_provider.dart';
+import 'package:hermes/shared_kernel/message_role.dart';
+import 'package:hermes/shared_kernel/stream_state.dart';
+import 'package:hermes/shared_kernel/compaction_manager.dart';
+import 'package:hermes/shared_kernel/content_normaliser.dart';
+import 'package:hermes/shared_kernel/tool_caller.dart';
+import 'package:hermes/shared_kernel/uuid.dart';
+import 'package:hermes/shared_kernel/bubble.dart';
+import 'package:hermes/shared_kernel/chat_token.dart';
+import 'package:hermes/shared_kernel/model_configuration.dart';
+import 'package:hermes/shared_kernel/model_provider.dart';
 import 'package:hermes/features/chat/runtime/chat_application/chat_stream.dart';
-import 'package:hermes/core/services/cancellation_token.dart';
+import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';
-import 'package:hermes/core/helpers/chat/payload_builder.dart';
-import 'package:hermes/core/helpers/chat/assistant_ops.dart';
-import 'package:hermes/core/helpers/chat/buffered_token_writer.dart';
-import 'package:hermes/core/services/llama_server_manager.dart';
+import 'package:hermes/shared_kernel/payload_builder.dart';
+import 'package:hermes/shared_kernel/assistant_ops.dart';
+import 'package:hermes/shared_kernel/buffered_token_writer.dart';
+import 'package:hermes/features/chat/runtime/model/llama_server_manager.dart';
 import 'package:hermes/shared_kernel/preferences_port.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
-import 'package:hermes/core/services/tool_service.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/shared_kernel/tool_contracts.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/features/chat/runtime/chat_session_host.dart';
 import 'package:hermes/features/chat/runtime/chat_application/chat_tool_execution_service.dart';
 
-import 'package:hermes/core/services/disposable.dart';
+import 'package:hermes/shared_kernel/disposable.dart';
 
 /// Manages the active chat session's streaming and LLM communication.
 ///
@@ -36,7 +36,7 @@ class ChatSessionManager implements Disposable {
   final MessageStore _messageStore;
   final ChatStream<ChatToken> _chatStream;
   final LlamaServerManager _serverManager;
-  final ToolService _toolService;
+  final ToolRegistryPort _toolService;
   final ChatToolExecutionPort _toolExecution;
   final PreferencesPort _preferencesService;
   late final BufferedTokenWriter _tokenWriter;
@@ -65,7 +65,7 @@ class ChatSessionManager implements Disposable {
     required MessageStore messageStore,
     required ChatStream<ChatToken> chatStream,
     required LlamaServerManager serverManager,
-    required ToolService toolService,
+    required ToolRegistryPort toolService,
     ChatToolExecutionPort? toolExecution,
     required PreferencesPort preferencesService,
     required ChatSessionHost host,

@@ -1,9 +1,34 @@
 import 'package:hermes/features/chat/runtime/chat_controller.dart';
 
-export 'package:hermes/features/chat/runtime/chat_controller.dart';
-
-/// Public chat application entry point.
+/// Concrete public chat application facade.
 ///
-/// The execution engine is composed in the runtime layer; this alias keeps
-/// the application boundary free of platform and persistence dependencies.
-typedef ChatController = ChatRuntimeController;
+/// Runtime orchestration remains below this boundary. The dynamic constructor
+/// parameters intentionally keep infrastructure types out of the application
+/// package; the composition root supplies the concrete implementations.
+class ChatController extends ChatRuntimeController {
+  ChatController({
+    String? tabId,
+    required dynamic serverManager,
+    required dynamic toolService,
+    required dynamic taskController,
+    required dynamic projectApplication,
+    required dynamic chatLibrary,
+    required dynamic workspaceService,
+    required dynamic preferencesService,
+    dynamic commandCoordinator,
+    dynamic toolExecution,
+    dynamic initialSystemPromptSnapshot,
+  }) : super(
+         tabId: tabId,
+         serverManager: serverManager,
+         toolService: toolService,
+         taskController: taskController,
+         projectApplication: projectApplication,
+         chatLibrary: chatLibrary,
+         workspaceService: workspaceService,
+         preferencesService: preferencesService,
+         commandCoordinator: commandCoordinator,
+         toolExecution: toolExecution,
+         initialSystemPromptSnapshot: initialSystemPromptSnapshot,
+       );
+}

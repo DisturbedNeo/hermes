@@ -1,12 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
-import 'package:hermes/core/services/sandbox_policy.dart';
-import 'package:hermes/core/services/tool_service.dart';
-import 'package:hermes/core/services/workspace_sandbox.dart';
-import 'package:hermes/core/services/workspace_service.dart';
-import 'package:hermes/core/services/cancellation_token.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/shared_kernel/sandbox_policy.dart';
+import 'package:hermes/platform/tool_service.dart';
+import 'package:hermes/platform/workspace_sandbox.dart';
+import 'package:hermes/platform/workspace_service.dart';
+import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

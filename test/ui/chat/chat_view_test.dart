@@ -4,24 +4,25 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/enums/diagnostics_visibility.dart';
-import 'package:hermes/core/enums/message_role.dart';
-import 'package:hermes/core/helpers/scroll.dart';
-import 'package:hermes/core/models/bubble.dart';
-import 'package:hermes/core/models/llama_server_handle.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
-import 'package:hermes/features/chat/runtime/chat_application/chat_library_service.dart';
+import 'package:hermes/shared_kernel/diagnostics_visibility.dart';
+import 'package:hermes/features/chat/application/chat_controller.dart';
+import 'package:hermes/shared_kernel/message_role.dart';
+import 'package:hermes/features/chat/presentation/scroll.dart';
+import 'package:hermes/shared_kernel/bubble.dart';
+import 'package:hermes/features/chat/runtime/model/llama_server_handle.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/infrastructure/chat_library_repository.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
-import 'package:hermes/core/services/llama_server_manager.dart';
+import 'package:hermes/features/chat/runtime/model/llama_server_manager.dart';
 import 'package:hermes/features/project/application/project_application/project_application.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/features/chat/infrastructure/system_prompt_library_repository.dart';
-import 'package:hermes/core/services/system_prompt_library_service.dart';
-import 'package:hermes/core/services/tool_service.dart';
-import 'package:hermes/core/services/workspace_sandbox.dart';
-import 'package:hermes/core/services/workspace_service.dart';
+import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
+import 'package:hermes/platform/tool_service.dart';
+import 'package:hermes/platform/workspace_sandbox.dart';
+import 'package:hermes/platform/workspace_service.dart';
 import 'package:hermes/features/chat/presentation/chat/chat_view.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -443,7 +444,7 @@ Widget _chatViewApp(
   return MaterialApp(
     home: Scaffold(
       body: ChatView(
-        chat: tabs.activeChat!,
+        chat: tabs.activeChat! as ChatController,
         preferencesService: preferences,
         toolService: toolService,
         onOpenWorkspace: () {},
@@ -462,7 +463,7 @@ Widget _activeChatViewApp(
       body: AnimatedBuilder(
         animation: tabs,
         builder: (context, _) {
-          final chat = tabs.activeChat;
+          final chat = tabs.activeChat as ChatController?;
           if (chat == null) return const SizedBox.shrink();
           return ChatView(
             key: ValueKey('chat_${chat.tabId}'),
@@ -490,7 +491,7 @@ Widget _chatViewBoxApp(
         width: width,
         height: height,
         child: ChatView(
-          chat: tabs.activeChat!,
+          chat: tabs.activeChat! as ChatController,
           preferencesService: preferences,
           toolService: toolService,
           onOpenWorkspace: () {},

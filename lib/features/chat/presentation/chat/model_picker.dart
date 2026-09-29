@@ -1,15 +1,39 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:hermes/core/helpers/a11y.dart';
-import 'package:hermes/core/helpers/models_directory.dart';
-import 'package:hermes/core/models/model_load_configuration.dart';
+import 'package:hermes/features/chat/presentation/a11y.dart';
+import 'package:hermes/shared_kernel/model_load_configuration.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
-import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
+import 'package:hermes/shared_kernel/preferences_port.dart';
 import 'package:hermes/features/chat/presentation/chat/message/dot_pulse.dart';
 import 'package:hermes/features/chat/presentation/model_configuration/model_configuration.dart';
+import 'package:path/path.dart' as p;
 
 enum ModelConfigurationSaveOutcome { notRequested, saved, failed }
+
+Future<Map<String, File>> _getModels(PreferencesPort preferences) async {
+  final directoryPath = await preferences.getModelsDirectory();
+  if (directoryPath == null) return {};
+  final directory = Directory(directoryPath);
+  if (!await directory.exists()) return {};
+
+  final models = <String, File>{};
+  final shardPattern = RegExp(
+    r'^(.*)-(\d{5})-of-(\d{5})\.gguf$',
+    caseSensitive: false,
+  );
+  for (final entity in directory.listSync().whereType<File>()) {
+    final name = p.basename(entity.path);
+    if (!name.toLowerCase().endsWith('.gguf')) continue;
+    final match = shardPattern.firstMatch(name);
+    if (match != null) {
+      if (int.parse(match.group(2)!) == 1) models[match.group(1)!] = entity;
+    } else {
+      models[name.substring(0, name.length - 5)] = entity;
+    }
+  }
+  return models;
+}
 
 @visibleForTesting
 Future<ModelConfigurationSaveOutcome> startModelAndMaybeSaveConfiguration({
@@ -35,7 +59,7 @@ class ModelPicker extends StatefulWidget {
   });
 
   final ChatWorkspaceController tabs;
-  final PreferencesService preferencesService;
+  final PreferencesPort preferencesService;
 
   @override
   State<ModelPicker> createState() => _ModelPickerState();
@@ -49,7 +73,7 @@ class _ModelPickerState extends State<ModelPicker> {
   String? _error;
 
   ChatWorkspaceController get _tabs => widget.tabs;
-  PreferencesService get _preferencesService => widget.preferencesService;
+  PreferencesPort get _preferencesService => widget.preferencesService;
 
   @override
   void initState() {
@@ -83,7 +107,7 @@ class _ModelPickerState extends State<ModelPicker> {
       _error = null;
     });
     try {
-      final models = await getModels(_preferencesService);
+      final models = await _getModels(_preferencesService);
       if (!mounted) return;
       setState(() {
         _models = models;

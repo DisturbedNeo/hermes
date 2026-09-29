@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/enums/diagnostics_visibility.dart';
-import 'package:hermes/core/helpers/preferences_keys.dart';
-import 'package:hermes/core/models/model_call_diagnostics.dart';
-import 'package:hermes/core/models/model_configuration_snapshot.dart';
-import 'package:hermes/core/models/model_session_diagnostics.dart';
+import 'package:hermes/shared_kernel/diagnostics_visibility.dart';
+import 'package:hermes/shared_kernel/preferences_keys.dart';
+import 'package:hermes/shared_kernel/model_call_diagnostics.dart';
+import 'package:hermes/shared_kernel/model_configuration.dart';
+import 'package:hermes/shared_kernel/model_session_contracts.dart';
+import 'package:hermes/features/chat/runtime/model/model_session_diagnostics.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/features/chat/presentation/chat/diagnostics_bar.dart';
 import 'package:shared_preferences/shared_preferences.dart';

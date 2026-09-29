@@ -1,4 +1,4 @@
-import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/shared_kernel/project.dart';
 
 enum ProjectPlanPatchSource {
   initialization,

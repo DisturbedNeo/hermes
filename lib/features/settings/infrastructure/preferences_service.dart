@@ -1,13 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:hermes/core/enums/diagnostics_visibility.dart';
-import 'package:hermes/core/helpers/preferences_keys.dart';
-import 'package:hermes/core/models/compaction_settings.dart';
-import 'package:hermes/core/models/model_load_configuration.dart';
-import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/shared_kernel/diagnostics_visibility.dart';
+import 'package:hermes/shared_kernel/preferences_keys.dart';
+import 'package:hermes/shared_kernel/compaction_settings.dart';
+import 'package:hermes/shared_kernel/model_load_configuration.dart';
+import 'package:hermes/shared_kernel/project.dart';
 import 'package:hermes/shared_kernel/task_system_settings.dart';
-import 'package:hermes/core/serialization/model_json.dart';
+import 'package:hermes/shared_kernel/model_json.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';

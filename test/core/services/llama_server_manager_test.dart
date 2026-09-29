@@ -3,12 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/helpers/server_health_checker.dart';
-import 'package:hermes/core/models/llama_server_handle.dart';
-import 'package:hermes/core/models/model_configuration_snapshot.dart';
-import 'package:hermes/core/models/model_session_diagnostics.dart';
-import 'package:hermes/core/serialization/model_json.dart';
-import 'package:hermes/core/services/llama_server_manager.dart';
+import 'package:hermes/features/chat/runtime/model/server_health_checker.dart';
+import 'package:hermes/features/chat/runtime/model/llama_server_handle.dart';
+import 'package:hermes/shared_kernel/model_configuration.dart';
+import 'package:hermes/shared_kernel/model_json.dart';
+import 'package:hermes/shared_kernel/model_session_contracts.dart';
+import 'package:hermes/features/chat/runtime/model/llama_server_manager.dart';
 
 void main() {
   const snapshot = ModelConfigurationSnapshot(

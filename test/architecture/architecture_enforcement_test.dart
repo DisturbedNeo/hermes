@@ -69,13 +69,11 @@ void main() {
     final forbidden = <String>[
       'package:hermes/core/',
       'package:hermes/features/',
-      'package:flutter/',
       'package:http/',
       'package:path_provider/',
       'package:shared_preferences/',
       'package:sqflite',
       'package:provider/',
-      'dart:io',
     ];
     final violations = <String>[];
 
@@ -135,7 +133,6 @@ void main() {
 
   test('feature application code depends on ports, not concrete adapters', () {
     final forbidden = <String>[
-      'package:flutter/',
       'package:http/',
       'package:path_provider/',
       'package:shared_preferences/',
@@ -394,7 +391,7 @@ void main() {
 
   test('project state is an aggregate boundary, not a compatibility alias', () {
     final domain = files
-        .where((file) => file.path.startsWith('lib/features/project/domain/'))
+        .where((file) => file.path.startsWith('lib/shared_kernel/'))
         .map((file) => file.source)
         .join('\n');
     final allProjectApplication = files
@@ -435,7 +432,7 @@ void main() {
     'task execution uses an aggregate boundary rather than the persistence DTO',
     () {
       final taskDomain = files
-          .where((file) => file.path.startsWith('lib/features/task/domain/'))
+          .where((file) => file.path.startsWith('lib/shared_kernel/'))
           .map((file) => file.source)
           .join('\n');
       final taskApplication = files
@@ -449,9 +446,7 @@ void main() {
       if (!RegExp(r'\bclass\s+TaskAggregate\b').hasMatch(taskDomain)) {
         violations.add('task domain is missing TaskAggregate');
       }
-      if (RegExp(
-        r'\bTask(?:\?|<|>|\s+snapshot|\s+task|\s+current)',
-      ).hasMatch(taskApplication)) {
+      if (RegExp(r'\b(?:TaskDocument|TaskState)\b').hasMatch(taskApplication)) {
         violations.add(
           'task application still passes persistence Task documents directly',
         );

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/services/terminal_command_classifier.dart';
+import 'package:hermes/shared_kernel/terminal_command_classifier.dart';
 
 void main() {
   group('TerminalCommandClassifier', () {

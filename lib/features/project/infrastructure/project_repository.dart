@@ -1,11 +1,11 @@
 import 'dart:io';
 
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/core/services/atomic_json_snapshot_store.dart';
-import 'package:hermes/core/services/persistence_contracts.dart';
-import 'package:hermes/features/workspace/application/workspace_ports.dart';
-import 'package:hermes/core/services/workspace_persistence_coordinator.dart';
-import 'package:hermes/core/serialization/model_json.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/atomic_json_snapshot_store.dart';
+import 'package:hermes/shared_kernel/persistence_contracts.dart';
+import 'package:hermes/shared_kernel/workspace_ports.dart';
+import 'package:hermes/shared_kernel/workspace_persistence_coordinator.dart';
+import 'package:hermes/shared_kernel/model_json.dart';
 import 'package:hermes/shared_kernel/schema_migrations.dart';
 import 'package:hermes/features/project/project_repository_port.dart';
 import 'package:path/path.dart' as path;

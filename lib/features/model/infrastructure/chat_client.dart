@@ -2,21 +2,21 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hermes/core/helpers/chat/context_estimator.dart';
-import 'package:hermes/core/helpers/uuid.dart';
-import 'package:hermes/core/models/chat_message.dart';
-import 'package:hermes/core/models/chat_token.dart';
-import 'package:hermes/core/models/model_call_diagnostics.dart';
-import 'package:hermes/core/serialization/model_json.dart';
-import 'package:hermes/core/services/cancellation_token.dart';
-import 'package:hermes/features/model/domain/model_completion.dart';
-import 'package:hermes/features/model/domain/model_errors.dart';
-import 'package:hermes/features/model/domain/model_provider.dart';
-import 'package:hermes/features/model/domain/model_request.dart';
+import 'package:hermes/shared_kernel/context_estimator.dart';
+import 'package:hermes/shared_kernel/uuid.dart';
+import 'package:hermes/shared_kernel/chat_message.dart';
+import 'package:hermes/shared_kernel/chat_token.dart';
+import 'package:hermes/shared_kernel/model_call_diagnostics.dart';
+import 'package:hermes/shared_kernel/model_json.dart';
+import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/shared_kernel/model_completion.dart';
+import 'package:hermes/shared_kernel/model_errors.dart';
+import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_request.dart';
 import 'package:http/http.dart' as http;
 
-export 'package:hermes/features/model/domain/model_completion.dart';
-export 'package:hermes/features/model/domain/model_errors.dart';
+export 'package:hermes/shared_kernel/model_completion.dart';
+export 'package:hermes/shared_kernel/model_errors.dart';
 
 /// Parses SSE (Server-Sent Events) stream payloads into [ChatToken]s.
 ///

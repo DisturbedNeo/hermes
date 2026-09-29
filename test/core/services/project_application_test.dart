@@ -2,20 +2,20 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
-import 'package:hermes/core/services/persistence_contracts.dart';
-import 'package:hermes/features/project/project_runtime_contracts.dart';
+import 'package:hermes/shared_kernel/persistence_contracts.dart';
+import 'package:hermes/shared_kernel/project_runtime_contracts.dart';
 import 'package:hermes/features/project/runtime/project_completion_service.dart';
 import 'package:hermes/features/project/runtime/project_command_service.dart';
 import 'package:hermes/features/project/runtime/project_lifecycle_service.dart';
 import 'package:hermes/features/project/application/project_application/project_application.dart';
-import 'package:hermes/features/task/runtime/task_lifecycle_service.dart';
+import 'package:hermes/shared_kernel/task_lifecycle_service.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
-import 'package:hermes/core/services/tool_service.dart';
-import 'package:hermes/core/services/workspace_sandbox.dart';
+import 'package:hermes/platform/tool_service.dart';
+import 'package:hermes/platform/workspace_sandbox.dart';
 
 void main() {
   late Directory root;
@@ -119,7 +119,7 @@ void main() {
     var executionCalls = 0;
     final orchestrator = ProjectApplication(
       taskController: taskController,
-      executionPort: CallbackProjectExecutionPort((request) async {
+      executionPort: CallbackProjectCommandExecutionPort((request) async {
         executionCalls++;
         return ProjectCommandResult.fromSnapshot(project: request.snapshot);
       }),
@@ -144,7 +144,7 @@ void main() {
       var recoveryCalls = 0;
       final orchestrator = ProjectApplication(
         taskController: taskController,
-        executionPort: CallbackProjectExecutionPort((request) async {
+        executionPort: CallbackProjectCommandExecutionPort((request) async {
           executionCalls++;
           return ProjectCommandResult.fromSnapshot(project: request.snapshot);
         }),
@@ -186,7 +186,7 @@ void main() {
       final release = Completer<ProjectCommandResult>();
       final orchestrator = ProjectApplication(
         taskController: taskController,
-        executionPort: CallbackProjectExecutionPort(
+        executionPort: CallbackProjectCommandExecutionPort(
           (request) => release.future,
         ),
       );

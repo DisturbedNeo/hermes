@@ -2,27 +2,28 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hermes/core/helpers/chat/tool_caller.dart';
-import 'package:hermes/core/helpers/json_parsing.dart';
-import 'package:hermes/core/helpers/sentinel.dart' show kSentinel, resolve;
-import 'package:hermes/core/helpers/uuid.dart';
-import 'package:hermes/core/models/chat_message.dart';
-import 'package:hermes/core/models/compaction_settings.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/features/task/domain/task_planning_models.dart';
-import 'package:hermes/core/models/planning_metrics.dart';
+import 'package:hermes/shared_kernel/tool_caller.dart';
+import 'package:hermes/features/task/application/task_application/task_ports.dart';
+import 'package:hermes/shared_kernel/json_parsing.dart';
+import 'package:hermes/shared_kernel/sentinel.dart' show kSentinel, resolve;
+import 'package:hermes/shared_kernel/uuid.dart';
+import 'package:hermes/shared_kernel/chat_message.dart';
+import 'package:hermes/shared_kernel/compaction_settings.dart';
+import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/shared_kernel/task_planning_models.dart';
+import 'package:hermes/shared_kernel/planning_metrics.dart';
 import 'package:hermes/shared_kernel/task_system_settings.dart';
-import 'package:hermes/core/models/tool_definition.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
-import 'package:hermes/features/model/domain/model_provider.dart';
-import 'package:hermes/features/model/domain/model_completion.dart';
-import 'package:hermes/features/model/domain/model_errors.dart';
-import 'package:hermes/core/services/cancellation_token.dart';
-import 'package:hermes/core/services/planning_structured_output.dart';
-import 'package:hermes/core/services/question_policy_service.dart';
-import 'package:hermes/core/services/sandbox_policy.dart';
+import 'package:hermes/shared_kernel/tool_contracts.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_completion.dart';
+import 'package:hermes/shared_kernel/model_errors.dart';
+import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/shared_kernel/planning_structured_output.dart';
+import 'package:hermes/shared_kernel/question_policy_service.dart';
+import 'package:hermes/shared_kernel/sandbox_policy.dart';
 import 'package:hermes/features/task/runtime/task_gate_evaluator.dart';
-import 'package:hermes/features/task/runtime/task_json.dart';
+import 'package:hermes/shared_kernel/task_json.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
 import 'package:hermes/features/task/runtime/task_planning_tools.dart';
 import 'package:hermes/features/task/runtime/task_planning_service.dart';
@@ -34,15 +35,12 @@ import 'package:hermes/features/task/runtime/task_model_completion_service.dart'
 import 'package:hermes/features/task/runtime/task_tool_execution_service.dart';
 import 'package:hermes/features/task/runtime/task_recovery_service.dart';
 import 'package:hermes/features/task/runtime/in_memory_task_repository.dart';
-import 'package:hermes/features/task/domain/task_summary.dart';
-import 'package:hermes/features/task/task_runtime_contracts.dart';
+import 'package:hermes/shared_kernel/task_summary.dart';
 import 'package:hermes/features/task/runtime/task_view_service.dart';
-import 'package:hermes/core/services/terminal_command_parser.dart';
-import 'package:hermes/core/services/tool_service.dart';
-import 'package:hermes/core/services/workspace_sandbox.dart';
-import 'package:hermes/core/services/workspace_discovery_profile.dart';
-import 'package:hermes/core/serialization/model_json.dart';
-import 'package:hermes/core/tools/tool_error.dart';
+import 'package:hermes/shared_kernel/terminal_command_parser.dart';
+import 'package:hermes/shared_kernel/workspace_discovery_service.dart';
+import 'package:hermes/shared_kernel/model_json.dart';
+import 'package:hermes/shared_kernel/tool_error.dart';
 import 'package:path/path.dart' as path;
 
 part 'task_context.dart';
@@ -55,42 +53,42 @@ part 'task_execution_operations.dart';
 
 part 'task_state_operations.dart';
 
-class TaskRuntimeController implements TaskApplicationPort {
+class TaskRuntimeController implements TaskChatPort, TaskProjectPort {
   TaskRuntimeController({
-    required ToolService toolService,
-    required WorkspaceSandbox sandbox,
-    TaskRepositoryPort? repository,
+    required ToolRegistryPort toolService,
+    required dynamic sandbox,
+    dynamic repository,
     TaskPersistenceStore? persistenceStore,
-    TaskRecoveryService recoveryService = const TaskRecoveryService(),
-    TaskPlanner planner = const TaskPlanningService(),
+    TaskRecoveryService? recoveryService,
+    TaskPlanner? planner,
     TaskPlanningCoordinatorPort? planningCoordinator,
     TaskModelCompletionPort? modelCompletion,
     TaskToolExecutionPort? toolExecution,
-    StructuredPlanningOutputService structuredOutput =
-        const StructuredPlanningOutputService(),
-    WorkspaceDiscoveryProfileService profileService =
-        const WorkspaceDiscoveryProfileService(),
+    StructuredPlanningOutputService? structuredOutput,
+    WorkspaceDiscoveryProfileService? profileService,
   }) : _delegate = _TaskApplicationContext(
          toolService: toolService,
          sandbox: sandbox,
          repository: repository,
          persistenceStore: persistenceStore,
-         recoveryService: recoveryService,
-         planner: planner,
+         recoveryService: recoveryService ?? const TaskRecoveryService(),
+         planner: planner ?? const TaskPlanningService(),
          planningCoordinator: planningCoordinator,
          modelCompletion: modelCompletion,
          toolExecution: toolExecution,
-         structuredOutput: structuredOutput,
-         profileService: profileService,
+         structuredOutput:
+             structuredOutput ?? const StructuredPlanningOutputService(),
+         profileService:
+             profileService ?? const WorkspaceDiscoveryProfileService(),
        );
 
   final _TaskApplicationContext _delegate;
 
   @override
-  TaskRepositoryPort get repository => _delegate.repository;
+  dynamic get repository => _delegate.repository;
 
   @override
-  ToolService get toolService => _delegate.toolService;
+  ToolRegistryPort get toolService => _delegate.toolService;
 
   @override
   Future<List<TaskSummary>> listTasks(

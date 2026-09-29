@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:hermes/core/enums/message_role.dart';
-import 'package:hermes/core/helpers/style.dart';
-import 'package:hermes/core/models/bubble.dart';
+import 'package:hermes/shared_kernel/message_role.dart';
+import 'package:hermes/features/chat/presentation/style.dart';
+import 'package:hermes/shared_kernel/bubble.dart';
 import 'package:hermes/features/chat/presentation/chat/message/bubble_editor.dart';
 import 'package:hermes/features/chat/presentation/chat/message/bubble_surface.dart';
 import 'package:hermes/features/chat/presentation/chat/message/bubble_view.dart';

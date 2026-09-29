@@ -2,7 +2,7 @@ part of 'project_application.dart';
 
 class _ProjectApplicationContext {
   _ProjectApplicationContext({
-    required TaskApplicationPort taskController,
+    required TaskProjectPort taskController,
     ProjectRepositoryPort? repository,
     ProjectPlanner? planner,
     ProjectCompletionEvaluator? completionEvaluator,
@@ -13,7 +13,7 @@ class _ProjectApplicationContext {
     ProjectAggregateRepositoryPort? aggregateRepository,
     ProjectStateStore? stateStore,
     ProjectCommandService? commandService,
-    ProjectExecutionPort? executionPort,
+    ProjectCommandExecutionPort? executionPort,
     ProjectRecoveryPort? recoveryPort,
     PlanningToolCallRunner planningRunner = const PlanningToolCallRunner(),
     StructuredPlanningOutputService structuredOutput =
@@ -56,7 +56,7 @@ class _ProjectApplicationContext {
          recoveryService ?? const ProjectRecoveryService(),
        );
 
-  final TaskApplicationPort _taskController;
+  final TaskProjectPort _taskController;
   final ProjectRepositoryPort _repository;
   final ProjectPlanner _planner;
   final ProjectCompletionEvaluator _completionEvaluator;
@@ -69,7 +69,7 @@ class _ProjectApplicationContext {
   final ProjectCompletionService completionService;
   final ProjectRecoveryHandler recoveryHandler;
   final ProjectCommandService? _providedCommandService;
-  final ProjectExecutionPort? _providedExecutionPort;
+  final ProjectCommandExecutionPort? _providedExecutionPort;
   final ProjectRecoveryPort? _providedRecoveryPort;
   final ProjectAggregateRepositoryPort? _providedAggregateRepository;
   final ProjectStateStore? _providedStateStore;
@@ -104,9 +104,9 @@ class _ProjectApplicationContext {
         persistenceCoordinator: _persistenceCoordinator,
         runLoop: const ProjectRunLoop(),
       );
-  late final ProjectExecutionPort _executionPort =
+  late final ProjectCommandExecutionPort _executionPort =
       _providedExecutionPort ??
-      CallbackProjectExecutionPort(_runProjectForCommand);
+      CallbackProjectCommandExecutionPort(_runProjectForCommand);
   late final ProjectRecoveryPort _recoveryPort =
       _providedRecoveryPort ?? CallbackProjectRecoveryPort(_recoverForCommand);
   final QuestionPolicyService _questionPolicy = const QuestionPolicyService();

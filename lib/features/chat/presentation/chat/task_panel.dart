@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:hermes/core/helpers/a11y.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/features/chat/presentation/a11y.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/task.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
 import 'package:hermes/features/chat/presentation/common/state_display.dart';
 import 'package:hermes/features/chat/presentation/chat/project_panel_sections.dart';

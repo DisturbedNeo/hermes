@@ -1,14 +1,14 @@
 import 'dart:async';
 
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
-import 'package:hermes/core/services/persistence_contracts.dart';
-import 'package:hermes/features/project/project_runtime_contracts.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/shared_kernel/persistence_contracts.dart';
+import 'package:hermes/shared_kernel/project_runtime_contracts.dart';
 import 'package:hermes/features/project/runtime/project_run_loop.dart';
 import 'package:hermes/features/project/runtime/project_state_store.dart';
-import 'package:hermes/features/workspace/application/workspace_ports.dart';
+import 'package:hermes/shared_kernel/workspace_ports.dart';
 
-abstract interface class ProjectExecutionPort {
+abstract interface class ProjectCommandExecutionPort {
   Future<ProjectCommandResult> execute(ProjectExecutionRequest request);
 }
 
@@ -16,8 +16,9 @@ abstract interface class ProjectRecoveryPort {
   Future<ProjectCommandResult> recover(ProjectRecoveryRequest request);
 }
 
-class CallbackProjectExecutionPort implements ProjectExecutionPort {
-  const CallbackProjectExecutionPort(this._callback);
+class CallbackProjectCommandExecutionPort
+    implements ProjectCommandExecutionPort {
+  const CallbackProjectCommandExecutionPort(this._callback);
 
   final ProjectExecutionDelegate _callback;
 
@@ -58,7 +59,7 @@ class ProjectCommandService {
 
   Future<ProjectCommandResult> execute(
     ProjectExecutionRequest request, {
-    required ProjectExecutionPort port,
+    required ProjectCommandExecutionPort port,
   }) => _withProjectCommand(request.workspace, request.snapshot, () async {
     final readOnly = await _ensureCurrentSnapshot(
       request.workspace,
@@ -82,7 +83,7 @@ class ProjectCommandService {
   Future<ProjectCommandResult> executeUntilStop(
     ProjectExecutionRequest request, {
     required bool boundedRun,
-    required ProjectExecutionPort port,
+    required ProjectCommandExecutionPort port,
   }) => _withProjectCommand(request.workspace, request.snapshot, () {
     return _runLoop.run(
       request,

@@ -3,12 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/enums/message_role.dart';
-import 'package:hermes/core/helpers/chat/compaction_manager.dart';
-import 'package:hermes/core/models/bubble.dart';
-import 'package:hermes/core/models/compaction_settings.dart';
+import 'package:hermes/shared_kernel/message_role.dart';
+import 'package:hermes/shared_kernel/compaction_manager.dart';
+import 'package:hermes/shared_kernel/bubble.dart';
+import 'package:hermes/shared_kernel/compaction_settings.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
-import 'package:hermes/features/model/domain/model_provider.dart';
+import 'package:hermes/shared_kernel/model_provider.dart';
 import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';
 
 void main() {

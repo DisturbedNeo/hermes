@@ -1,4 +1,4 @@
-import 'package:hermes/core/services/cancellation_token.dart';
+import 'package:hermes/shared_kernel/cancellation.dart';
 
 /// Central cancellation boundary for UI-triggered task and project commands.
 ///

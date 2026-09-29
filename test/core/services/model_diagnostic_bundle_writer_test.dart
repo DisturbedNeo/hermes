@@ -2,8 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/models/model_session_diagnostics.dart';
-import 'package:hermes/core/services/model_diagnostic_bundle_writer.dart';
+import 'package:hermes/shared_kernel/model_session_contracts.dart';
+import 'package:hermes/features/chat/runtime/model/model_session_diagnostics.dart';
+import 'package:hermes/features/chat/runtime/model/model_diagnostic_bundle_writer.dart';
 
 void main() {
   group('ModelDiagnosticBundleWriter', () {

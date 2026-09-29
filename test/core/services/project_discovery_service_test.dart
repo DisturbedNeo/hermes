@@ -1,12 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/features/project/runtime/project_discovery_service.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
-import 'package:hermes/core/services/tool_service.dart';
-import 'package:hermes/core/services/workspace_sandbox.dart';
+import 'package:hermes/platform/tool_service.dart';
+import 'package:hermes/platform/workspace_sandbox.dart';
 
 void main() {
   test('collects bounded read-only planning evidence', () async {

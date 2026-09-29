@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/services/keyboard_shortcuts.dart';
+import 'package:hermes/features/chat/presentation/keyboard_shortcuts.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

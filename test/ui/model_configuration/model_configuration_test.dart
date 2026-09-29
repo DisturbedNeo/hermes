@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/models/model_configuration_snapshot.dart';
-import 'package:hermes/core/models/model_load_configuration.dart';
+import 'package:hermes/shared_kernel/model_configuration.dart';
+import 'package:hermes/shared_kernel/model_load_configuration.dart';
 import 'package:hermes/features/chat/presentation/model_configuration/model_configuration.dart';
 
 void main() {

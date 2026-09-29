@@ -1,12 +1,12 @@
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/core/models/planning_metrics.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
-import 'package:hermes/core/services/cancellation_token.dart';
-import 'package:hermes/features/model/domain/model_provider.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/planning_metrics.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/shared_kernel/model_provider.dart';
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
-import 'package:hermes/features/project/runtime/project_workspace_context_service.dart';
+import 'package:hermes/shared_kernel/project_workspace_context_service.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
-import 'package:hermes/core/services/workspace_discovery_profile.dart';
+import 'package:hermes/shared_kernel/workspace_discovery_service.dart';
 
 /// Canonical result of initial planning.
 ///

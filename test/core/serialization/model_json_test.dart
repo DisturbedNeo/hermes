@@ -1,16 +1,16 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/helpers/chat/context_summary_prompt.dart';
-import 'package:hermes/core/models/chat_message.dart';
-import 'package:hermes/core/models/model_configuration_snapshot.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/core/models/system_prompt.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/core/serialization/model_json.dart';
-import 'package:hermes/core/services/question_policy_service.dart';
-import 'package:hermes/features/task/domain/task_planning_models.dart';
-import 'package:hermes/core/tools/calculator_tool.dart';
+import 'package:hermes/shared_kernel/context_summary_prompt.dart';
+import 'package:hermes/shared_kernel/chat_message.dart';
+import 'package:hermes/shared_kernel/model_configuration.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/system_prompt.dart';
+import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/shared_kernel/model_json.dart';
+import 'package:hermes/shared_kernel/question_policy_service.dart';
+import 'package:hermes/shared_kernel/task_planning_models.dart';
+import 'package:hermes/platform/tools/calculator_tool.dart';
 
 void main() {
   final now = DateTime(2026, 1, 2, 3, 4, 5);

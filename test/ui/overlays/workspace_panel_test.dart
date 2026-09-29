@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
-import 'package:hermes/core/services/workspace_sandbox.dart';
-import 'package:hermes/core/services/workspace_service.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/platform/workspace_sandbox.dart';
+import 'package:hermes/platform/workspace_service.dart';
 import 'package:hermes/features/chat/presentation/overlays/workspace_panel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

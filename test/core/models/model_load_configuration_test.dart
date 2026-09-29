@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/models/model_configuration_snapshot.dart';
-import 'package:hermes/core/models/model_load_configuration.dart';
-import 'package:hermes/core/serialization/model_json.dart';
+import 'package:hermes/shared_kernel/model_configuration.dart';
+import 'package:hermes/shared_kernel/model_load_configuration.dart';
+import 'package:hermes/shared_kernel/model_json.dart';
 
 void main() {
   test('provides the canonical model dialog defaults', () {

@@ -1,10 +1,10 @@
-import 'package:hermes/core/models/bubble.dart';
-import 'package:hermes/core/models/model_configuration_snapshot.dart';
-import 'package:hermes/core/models/saved_chat.dart';
-import 'package:hermes/core/models/system_prompt.dart';
-import 'package:hermes/core/services/chat_library_port.dart';
-import 'package:hermes/core/serialization/model_json.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
+import 'package:hermes/shared_kernel/bubble.dart';
+import 'package:hermes/shared_kernel/model_configuration.dart';
+import 'package:hermes/shared_kernel/saved_chat.dart';
+import 'package:hermes/shared_kernel/system_prompt.dart';
+import 'package:hermes/shared_kernel/chat_library_port.dart';
+import 'package:hermes/shared_kernel/model_json.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
 
 /// Small chat repository double for application tests.
 class InMemoryChatLibrary implements ChatLibraryPort {

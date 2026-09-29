@@ -1,10 +1,10 @@
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
-import 'package:hermes/core/services/persistence_contracts.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/shared_kernel/persistence_contracts.dart';
 import 'package:hermes/features/project/project_aggregate_repository_port.dart';
-import 'package:hermes/features/project/runtime/project_control_state_service.dart';
+import 'package:hermes/shared_kernel/project_control_state_service.dart';
 import 'package:hermes/features/project/project_repository_port.dart';
-import 'package:hermes/features/task/task_runtime_contracts.dart';
+import 'package:hermes/features/task/application/task_application/task_ports.dart';
 
 /// The project aggregate's persistence and hydration boundary.
 ///
@@ -16,14 +16,14 @@ class ProjectStateStore {
   ProjectStateStore({
     required ProjectRepositoryPort projectRepository,
     required ProjectAggregateRepositoryPort aggregateRepository,
-    required TaskApplicationPort taskController,
+    required TaskProjectPort taskController,
   }) : _projectRepository = projectRepository,
        _aggregateRepository = aggregateRepository,
        _taskController = taskController;
 
   final ProjectRepositoryPort _projectRepository;
   final ProjectAggregateRepositoryPort _aggregateRepository;
-  final TaskApplicationPort _taskController;
+  final TaskProjectPort _taskController;
   final ProjectControlStateService _controlStateService =
       const ProjectControlStateService();
 

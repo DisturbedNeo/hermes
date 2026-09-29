@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:hermes/core/helpers/a11y.dart';
+import 'package:hermes/features/chat/presentation/a11y.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
 
 class WorkspaceBar extends StatelessWidget {

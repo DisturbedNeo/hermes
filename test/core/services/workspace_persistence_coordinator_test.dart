@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/services/workspace_persistence_coordinator.dart';
+import 'package:hermes/shared_kernel/workspace_persistence_coordinator.dart';
 
 void main() {
   late Directory workspace;

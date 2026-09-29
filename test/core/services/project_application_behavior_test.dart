@@ -2,30 +2,30 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/models/compaction_settings.dart';
-import 'package:hermes/core/models/chat_message.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/features/task/domain/task_system_settings.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
-import 'package:hermes/core/services/cancellation_token.dart';
+import 'package:hermes/shared_kernel/compaction_settings.dart';
+import 'package:hermes/shared_kernel/chat_message.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/shared_kernel/task_system_settings.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
-import 'package:hermes/features/model/domain/model_provider.dart';
-import 'package:hermes/features/project/project_runtime_contracts.dart';
+import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/project_runtime_contracts.dart';
 import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
-import 'package:hermes/features/project/runtime/project_scheduler.dart';
+import 'package:hermes/shared_kernel/project_scheduler.dart';
 import 'package:hermes/features/project/application/project_application/project_application.dart';
 import 'package:hermes/features/project/infrastructure/project_repository.dart';
 import 'package:hermes/features/project/infrastructure/project_aggregate_repository.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
-import 'package:hermes/features/task/domain/task_planning_models.dart';
+import 'package:hermes/shared_kernel/task_planning_models.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
 import 'package:hermes/features/task/infrastructure/task_repository.dart';
-import 'package:hermes/core/services/persistence_contracts.dart';
-import 'package:hermes/core/services/tool_service.dart';
-import 'package:hermes/core/services/workspace_sandbox.dart';
-import 'package:hermes/core/services/workspace_persistence_coordinator.dart';
+import 'package:hermes/shared_kernel/persistence_contracts.dart';
+import 'package:hermes/platform/tool_service.dart';
+import 'package:hermes/platform/workspace_sandbox.dart';
+import 'package:hermes/shared_kernel/workspace_persistence_coordinator.dart';
 
 extension _ProjectApplicationTestCommands on ProjectApplication {
   Future<ProjectCommandResult> executeProject({

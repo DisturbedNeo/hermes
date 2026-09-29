@@ -422,6 +422,12 @@ extension _TaskExecutionOperations on _TaskApplicationContext {
     String? chatSessionId,
   }) async {
     final profile = await _profileService.collect(workspace: workspace);
+    final existingTasks =
+        await repository.listTasks(
+              workspace.rootPath,
+              chatSessionId: chatSessionId,
+            )
+            as Iterable<dynamic>;
     return WorkspaceMetadata(
       workspaceName: workspace.displayName,
       rootFiles: profile.rootEntries,
@@ -432,10 +438,7 @@ extension _TaskExecutionOperations on _TaskApplicationContext {
           ) !=
           FileSystemEntityType.notFound,
       commandExecutionApproved: workspace.commandExecutionApproved,
-      existingTaskIds: (await repository.listTasks(
-        workspace.rootPath,
-        chatSessionId: chatSessionId,
-      )).map((task) => task.id).toList(),
+      existingTaskIds: [for (final task in existingTasks) task.id.toString()],
       workspaceProfile: profile,
     );
   }

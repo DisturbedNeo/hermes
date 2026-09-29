@@ -1,7 +1,7 @@
 import 'dart:convert';
 
-import 'package:hermes/core/helpers/uuid.dart';
-import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/shared_kernel/uuid.dart';
+import 'package:hermes/shared_kernel/project.dart';
 import 'package:hermes/features/project/runtime/project_plan_revision_service.dart';
 import 'package:hermes/features/project/runtime/project_plan_validator.dart';
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';

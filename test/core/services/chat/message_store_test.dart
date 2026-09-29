@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/enums/message_role.dart';
-import 'package:hermes/core/helpers/chat/buffered_token_writer.dart';
-import 'package:hermes/core/models/bubble.dart';
-import 'package:hermes/core/models/chat_token.dart';
+import 'package:hermes/shared_kernel/message_role.dart';
+import 'package:hermes/shared_kernel/buffered_token_writer.dart';
+import 'package:hermes/shared_kernel/bubble.dart';
+import 'package:hermes/shared_kernel/chat_token.dart';
 import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';
 
 void main() {

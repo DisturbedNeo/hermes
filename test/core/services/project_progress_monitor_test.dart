@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/shared_kernel/project.dart';
 import 'package:hermes/features/project/runtime/project_progress_monitor.dart';
 
 void main() {

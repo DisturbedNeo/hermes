@@ -1,4 +1,4 @@
-import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/shared_kernel/project.dart';
 import 'package:hermes/features/project/runtime/project_lifecycle_service.dart';
 
 /// Records project progress at task boundaries while evaluating stagnation at

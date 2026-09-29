@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:hermes/core/models/system_prompt.dart';
+import 'package:hermes/shared_kernel/system_prompt.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
-import 'package:hermes/core/services/system_prompt_library_service.dart';
+import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
 import 'package:hermes/features/chat/presentation/common/state_display.dart';
 import 'system_prompt_library_dialogs.dart';
 

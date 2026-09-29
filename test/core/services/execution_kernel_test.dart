@@ -1,15 +1,15 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/enums/message_role.dart';
-import 'package:hermes/core/models/bubble.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/core/services/cancellation_token.dart';
+import 'package:hermes/shared_kernel/message_role.dart';
+import 'package:hermes/shared_kernel/bubble.dart';
+import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/features/chat/runtime/chat_application/chat_tool_execution_service.dart';
 import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';
 import 'package:hermes/features/task/runtime/task_tool_execution_service.dart';
-import 'package:hermes/core/services/tool_service.dart';
-import 'package:hermes/core/services/workspace_sandbox.dart';
+import 'package:hermes/platform/tool_service.dart';
+import 'package:hermes/platform/workspace_sandbox.dart';
 
 void main() {
   test(

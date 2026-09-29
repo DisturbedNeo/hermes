@@ -1,15 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:hermes/core/helpers/responsive.dart';
-import 'package:hermes/core/helpers/scroll.dart';
-import 'package:hermes/core/models/bubble.dart';
-import 'package:hermes/core/models/llama_server_handle.dart';
+import 'package:hermes/features/chat/presentation/responsive.dart';
+import 'package:hermes/features/chat/presentation/scroll.dart';
+import 'package:hermes/shared_kernel/bubble.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
-import 'package:hermes/features/chat/presentation/chat_view_state.dart';
-import 'package:hermes/core/services/keyboard_shortcuts.dart';
-import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
-import 'package:hermes/core/services/tool_service.dart';
+import 'package:hermes/features/chat/application/chat_view_state.dart';
+import 'package:hermes/features/chat/presentation/keyboard_shortcuts.dart';
+import 'package:hermes/shared_kernel/preferences_port.dart';
+import 'package:hermes/shared_kernel/tool_contracts.dart';
 import 'package:hermes/features/chat/presentation/chat/composer.dart';
 import 'package:hermes/features/chat/presentation/chat/diagnostics_bar.dart';
 import 'package:hermes/features/chat/presentation/chat/task_panel.dart';
@@ -18,8 +17,8 @@ import 'package:hermes/features/chat/presentation/chat/chat_view_presenter.dart'
 
 class ChatView extends StatefulWidget {
   final ChatController chat;
-  final PreferencesService preferencesService;
-  final ToolService toolService;
+  final PreferencesPort preferencesService;
+  final ToolRegistryPort toolService;
   final VoidCallback onOpenWorkspace;
 
   const ChatView({
@@ -294,7 +293,7 @@ class _ChatViewState extends State<ChatView> {
           diagnostics: chat.serverManager.diagnostics,
           preferencesService: widget.preferencesService,
         ),
-        ValueListenableBuilder<LlamaServerHandle?>(
+        ValueListenableBuilder<dynamic>(
           valueListenable: chat.serverManager.handle,
           builder: (_, handle, _) {
             return Composer(

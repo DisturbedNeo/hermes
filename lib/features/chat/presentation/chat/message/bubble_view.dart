@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hermes/core/models/bubble.dart';
+import 'package:hermes/shared_kernel/bubble.dart';
 import 'package:hermes/features/chat/presentation/chat/message/markdown_view.dart';
 import 'package:hermes/features/chat/presentation/chat/message/think_section.dart';
 import 'package:hermes/features/chat/presentation/chat/message/tool_calls_view.dart';

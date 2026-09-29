@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/shared_kernel/subagent_service.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
 
 class ToolDefinition {
   const ToolDefinition({
@@ -155,10 +157,22 @@ class ToolFailure extends ToolResult {
 
 /// Typed registry boundary used by feature application ports.
 abstract interface class ToolRegistryPort {
+  dynamic get workspaceSandbox;
+
   List<ToolDefinition> getToolDefinitions({
     List<String> ids,
     bool includeWorkspaceTools,
   });
 
   Future<ToolResult> executeTyped(ToolRequest request);
+
+  Future<String> execute({
+    String toolId,
+    String argumentsJson,
+    WorkspaceToolContext? context,
+  });
+
+  List<String> defaultToolIds({required bool includeWorkspaceTools});
+
+  void setSubagentService(SubagentService? service);
 }

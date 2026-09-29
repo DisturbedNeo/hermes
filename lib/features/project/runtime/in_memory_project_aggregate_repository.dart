@@ -1,10 +1,9 @@
-import 'package:hermes/core/services/persistence_contracts.dart';
+import 'package:hermes/shared_kernel/persistence_contracts.dart';
 import 'package:hermes/features/project/project_aggregate_repository_port.dart';
-import 'package:hermes/features/project/runtime/project_checkpoint.dart';
+import 'package:hermes/shared_kernel/project_checkpoint.dart';
 import 'package:hermes/features/project/project_repository_port.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/task_runtime_contracts.dart';
-import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/task.dart';
 
 /// In-memory aggregate double used by application-only construction and tests.
 /// It preserves the repository revision protocol without transaction files.
@@ -12,12 +11,12 @@ class InMemoryProjectAggregateRepository
     implements ProjectAggregateRepositoryPort {
   InMemoryProjectAggregateRepository({
     required ProjectRepositoryPort projectRepository,
-    required TaskRepositoryPort taskRepository,
+    required dynamic taskRepository,
   }) : _projects = projectRepository,
        _tasks = taskRepository;
 
   final ProjectRepositoryPort _projects;
-  final TaskRepositoryPort _tasks;
+  final dynamic _tasks;
 
   @override
   Future<ProjectLoadResult> loadProject(
@@ -44,7 +43,7 @@ class InMemoryProjectAggregateRepository
       projectId: snapshot.value.id,
       includeHistory: includeHistory,
     );
-    final tasks = [
+    final tasks = <Task>[
       for (final taskId in snapshot.value.taskIds)
         if (taskSnapshots[taskId] != null) taskSnapshots[taskId]!.value,
     ];

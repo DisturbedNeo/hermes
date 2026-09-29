@@ -1,6 +1,6 @@
-import 'package:hermes/features/project/project_runtime_contracts.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/project/runtime/project_control_state_service.dart';
+import 'package:hermes/shared_kernel/project_runtime_contracts.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/project_control_state_service.dart';
 
 typedef ProjectRunIteration =
     Future<ProjectCommandResult> Function(ProjectExecutionRequest request);

@@ -5,11 +5,11 @@ import 'dart:io';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'package:hermes/core/models/system_prompt.dart';
-import 'package:hermes/core/services/managed_lazy_database.dart';
-import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
-import 'package:hermes/core/services/prompt_library_seed_data.dart';
-import 'package:hermes/core/services/prompt_library_port.dart';
+import 'package:hermes/shared_kernel/system_prompt.dart';
+import 'package:hermes/features/chat/infrastructure/managed_lazy_database.dart';
+import 'package:hermes/shared_kernel/preferences_port.dart';
+import 'package:hermes/shared_kernel/prompt_library_seed_data.dart';
+import 'package:hermes/shared_kernel/prompt_library_port.dart';
 
 /// Repository layer for the system prompt library.
 ///
@@ -17,14 +17,14 @@ import 'package:hermes/core/services/prompt_library_port.dart';
 /// interactions.  Contains zero business logic — it is a pure data-access
 /// abstraction over the prompt-preset / prompt-module store.
 class SystemPromptLibraryRepository implements PromptLibraryPort {
-  final PreferencesService _preferencesService;
+  final PreferencesPort _preferencesService;
   final DatabaseFactory _databaseFactory;
   final String? _databasePath;
 
   late final ManagedLazyDatabase _database;
 
   SystemPromptLibraryRepository({
-    required PreferencesService preferencesService,
+    required PreferencesPort preferencesService,
     DatabaseFactory? databaseFactory,
     String? databasePath,
   }) : _preferencesService = preferencesService,

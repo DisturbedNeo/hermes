@@ -1,7 +1,7 @@
-import 'package:hermes/core/services/persistence_contracts.dart';
-import 'package:hermes/features/project/runtime/project_checkpoint.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/shared_kernel/persistence_contracts.dart';
+import 'package:hermes/shared_kernel/project_checkpoint.dart';
+import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/shared_kernel/task.dart';
 
 /// Read/write contract for the project aggregate persistence boundary.
 ///

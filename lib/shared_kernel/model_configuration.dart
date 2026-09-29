@@ -1,4 +1,4 @@
-import 'package:hermes/platform/thread_defaults.dart';
+import 'package:hermes/shared_kernel/thread_defaults.dart';
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:hermes/shared_kernel/json_parsing.dart';
 import 'package:hermes/shared_kernel/json_hooks.dart';

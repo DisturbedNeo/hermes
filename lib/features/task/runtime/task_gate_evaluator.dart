@@ -1,18 +1,17 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hermes/core/helpers/json_parsing.dart';
-import 'package:hermes/core/models/chat_message.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/core/serialization/model_json.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
-import 'package:hermes/features/model/domain/model_provider.dart';
-import 'package:hermes/features/model/domain/model_errors.dart';
-import 'package:hermes/core/services/cancellation_token.dart';
-import 'package:hermes/features/task/runtime/task_json.dart';
-import 'package:hermes/core/services/terminal_command_classifier.dart';
-import 'package:hermes/core/services/terminal_command_parser.dart';
-import 'package:hermes/core/services/workspace_sandbox.dart';
+import 'package:hermes/shared_kernel/json_parsing.dart';
+import 'package:hermes/shared_kernel/chat_message.dart';
+import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/shared_kernel/model_json.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_errors.dart';
+import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/shared_kernel/task_json.dart';
+import 'package:hermes/shared_kernel/terminal_command_classifier.dart';
+import 'package:hermes/shared_kernel/terminal_command_parser.dart';
 import 'package:path/path.dart' as path;
 import 'package:yaml/yaml.dart';
 
@@ -82,10 +81,9 @@ class TaskGateEvaluation {
 }
 
 class TaskGateEvaluator {
-  TaskGateEvaluator({WorkspaceSandbox? sandbox})
-    : _sandbox = sandbox ?? WorkspaceSandbox();
+  TaskGateEvaluator({required dynamic sandbox}) : _sandbox = sandbox;
 
-  final WorkspaceSandbox _sandbox;
+  final dynamic _sandbox;
 
   Future<TaskGateEvaluation> evaluate({
     required WorkspaceAttachment workspace,

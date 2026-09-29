@@ -2,20 +2,20 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:hermes/core/enums/message_role.dart';
-import 'package:hermes/core/enums/stream_state.dart';
-import 'package:hermes/core/helpers/a11y.dart';
-import 'package:hermes/core/helpers/responsive.dart';
-import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/shared_kernel/message_role.dart';
+import 'package:hermes/shared_kernel/stream_state.dart';
+import 'package:hermes/features/chat/presentation/a11y.dart';
+import 'package:hermes/features/chat/presentation/responsive.dart';
+import 'package:hermes/shared_kernel/task.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
-import 'package:hermes/core/services/tool_service.dart';
+import 'package:hermes/shared_kernel/tool_contracts.dart';
 import 'package:hermes/features/chat/presentation/chat/tool_selector.dart';
 
 enum ComposerMode { send, generate, cont, cancel }
 
 class Composer extends StatefulWidget {
   final ChatController chat;
-  final ToolService toolService;
+  final ToolRegistryPort toolService;
   final bool enabled;
   final FocusNode? focusNode;
 
@@ -32,7 +32,7 @@ class Composer extends StatefulWidget {
 }
 
 class _ComposerState extends State<Composer> {
-  ToolService get _toolService => widget.toolService;
+  ToolRegistryPort get _toolService => widget.toolService;
 
   late final TextEditingController _controller;
   late FocusNode _focusNode;

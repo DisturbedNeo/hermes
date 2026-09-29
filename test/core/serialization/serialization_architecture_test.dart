@@ -5,16 +5,16 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('DTO source files contain no handwritten JSON methods', () async {
     const dtoSources = [
-      'lib/core/models/chat_message.dart',
-      'lib/core/models/model_configuration_snapshot.dart',
-      'lib/core/models/model_load_configuration.dart',
-      'lib/features/project/domain/project.dart',
-      'lib/core/models/system_prompt.dart',
-      'lib/features/task/domain/task.dart',
-      'lib/core/helpers/chat/context_summary_prompt.dart',
-      'lib/core/services/question_policy_service.dart',
-      'lib/features/task/domain/task_planning_models.dart',
-      'lib/core/tools/calculator_tool.dart',
+      'lib/shared_kernel/chat_message.dart',
+      'lib/shared_kernel/model_configuration.dart',
+      'lib/shared_kernel/model_load_configuration.dart',
+      'lib/shared_kernel/project.dart',
+      'lib/shared_kernel/system_prompt.dart',
+      'lib/shared_kernel/task.dart',
+      'lib/shared_kernel/context_summary_prompt.dart',
+      'lib/shared_kernel/question_policy_service.dart',
+      'lib/shared_kernel/task_planning_models.dart',
+      'lib/platform/tools/calculator_tool.dart',
     ];
 
     for (final path in dtoSources) {
@@ -49,12 +49,12 @@ void main() {
     // Canonical shared-kernel models own their generated mappers now; the
     // former core mapper paths were removed with the compatibility models.
     for (final path in [
-      'lib/features/task/domain/task.mapper.dart',
-      'lib/features/project/domain/project.mapper.dart',
+      'lib/shared_kernel/task.mapper.dart',
+      'lib/shared_kernel/project.mapper.dart',
       'lib/shared_kernel/system_prompt.mapper.dart',
       'lib/shared_kernel/model_configuration.mapper.dart',
-      'lib/core/models/model_load_configuration.mapper.dart',
-      'lib/core/serialization/mappers.init.dart',
+      'lib/shared_kernel/model_load_configuration.mapper.dart',
+      'lib/shared_kernel/mappers.init.dart',
     ]) {
       expect(File(path).existsSync(), isTrue, reason: '$path is missing.');
     }

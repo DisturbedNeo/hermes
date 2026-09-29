@@ -1,5 +1,5 @@
-import 'package:hermes/core/services/cancellation_token.dart';
-import 'package:hermes/features/model/domain/model_provider.dart';
+import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/shared_kernel/model_provider.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
 import 'package:hermes/features/task/runtime/task_planning_service.dart';
 import 'package:hermes/features/task/runtime/task_planning_tools.dart';

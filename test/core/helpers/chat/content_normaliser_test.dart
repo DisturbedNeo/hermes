@@ -1,9 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/core/enums/message_role.dart';
-import 'package:hermes/core/helpers/chat/content_normaliser.dart';
-import 'package:hermes/core/models/bubble.dart';
+import 'package:hermes/shared_kernel/message_role.dart';
+import 'package:hermes/shared_kernel/content_normaliser.dart';
+import 'package:hermes/shared_kernel/bubble.dart';
 
 void main() {
   group('ContentNormaliser', () {

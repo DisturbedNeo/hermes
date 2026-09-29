@@ -1,17 +1,16 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hermes/core/helpers/json_parsing.dart';
-import 'package:hermes/core/helpers/uuid.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/features/workspace/domain/workspace.dart';
-import 'package:hermes/core/services/sandbox_policy.dart';
-import 'package:hermes/features/model/domain/model_completion.dart';
-import 'package:hermes/features/task/runtime/task_json.dart';
-import 'package:hermes/core/services/terminal_command_parser.dart';
-import 'package:hermes/core/services/tool_service.dart';
-import 'package:hermes/core/services/workspace_sandbox.dart';
-import 'package:hermes/core/tools/tool_error.dart';
+import 'package:hermes/shared_kernel/json_parsing.dart';
+import 'package:hermes/shared_kernel/uuid.dart';
+import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/shared_kernel/sandbox_policy.dart';
+import 'package:hermes/shared_kernel/model_completion.dart';
+import 'package:hermes/shared_kernel/task_json.dart';
+import 'package:hermes/shared_kernel/terminal_command_parser.dart';
+import 'package:hermes/shared_kernel/tool_contracts.dart';
+import 'package:hermes/shared_kernel/tool_error.dart';
 import 'package:path/path.dart' as path;
 
 class TaskAllowedCommand {
@@ -28,7 +27,7 @@ class TaskAllowedCommand {
 ///
 /// Model completion and task lifecycle are intentionally outside this class.
 /// This is the authoritative boundary for read-only command whitelists,
-/// declared artifact writes, and the final call into ToolService.
+/// declared artifact writes, and the final call into ToolRegistryPort.
 abstract interface class TaskToolExecutionPort {
   Future<String> execute({
     required ModelToolCall call,
@@ -49,13 +48,13 @@ abstract interface class TaskToolExecutionPort {
 
 class TaskToolExecutionService implements TaskToolExecutionPort {
   const TaskToolExecutionService({
-    required ToolService toolService,
-    required WorkspaceSandbox sandbox,
+    required ToolRegistryPort toolService,
+    required dynamic sandbox,
   }) : _toolService = toolService,
        _sandbox = sandbox;
 
-  final ToolService _toolService;
-  final WorkspaceSandbox _sandbox;
+  final ToolRegistryPort _toolService;
+  final dynamic _sandbox;
 
   @override
   Future<String> execute({
