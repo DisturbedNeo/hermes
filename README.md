@@ -18,7 +18,7 @@ shared kernel -> contracts, immutable values, cancellation, serialization
 ```
 
 Feature application code consumes narrow ports. Chat depends on
-`TaskApplicationPort` and `ProjectApplicationPort`; it does not construct or
+`TaskChatPort` and `ProjectChatPort`; it does not construct or
 call task/project implementations directly. Project planning stores immutable
 `ProjectTaskNode` values and materializes executable task documents only in the
 task boundary adapter.
@@ -26,7 +26,8 @@ task boundary adapter.
 `ChatController`, `TaskController`, and `ProjectApplication` are stable thin
 facades over focused runtime/coordinator implementations. Concrete persistence
 adapters live under feature `infrastructure/` directories and implement typed
-ports; compatibility exports preserve existing import paths during migration.
+ports. Model-server lifecycle and diagnostics are owned by `features/model`,
+while chat consumes its application port.
 
 The main state and ownership boundaries are:
 

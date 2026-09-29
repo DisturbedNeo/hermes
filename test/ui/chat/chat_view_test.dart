@@ -9,12 +9,12 @@ import 'package:hermes/features/chat/application/chat_controller.dart';
 import 'package:hermes/shared_kernel/message_role.dart';
 import 'package:hermes/features/chat/presentation/scroll.dart';
 import 'package:hermes/shared_kernel/bubble.dart';
-import 'package:hermes/features/chat/runtime/model/llama_server_handle.dart';
+import 'package:hermes/features/model/application/llama_server_handle.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/infrastructure/chat_library_repository.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
-import 'package:hermes/features/chat/runtime/model/llama_server_manager.dart';
+import 'package:hermes/features/model/infrastructure/llama_server_manager.dart';
 import 'package:hermes/features/project/application/project_application/project_application.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
@@ -88,11 +88,11 @@ void main() {
   testWidgets('lays out in the reported short viewport', (tester) async {
     await _setViewport(tester, const Size(190, 286));
     final chat = tabs.activeChat!;
-    chat.workspace = WorkspaceAttachment(
+    chat.setWorkspace(WorkspaceAttachment(
       rootPath: tempDir.path,
       displayName: 'workspace',
       lastOpenedAt: DateTime(2024, 1, 1),
-    );
+    ));
     chat.insertMessage('A short user message.', MessageRole.user);
 
     await tester.pumpWidget(_chatViewApp(tabs, preferences, toolService));
@@ -107,11 +107,11 @@ void main() {
   ) async {
     await _setViewport(tester, const Size(900, 700));
     final chat = tabs.activeChat!;
-    chat.workspace = WorkspaceAttachment(
+    chat.setWorkspace(WorkspaceAttachment(
       rootPath: tempDir.path,
       displayName: 'workspace',
       lastOpenedAt: DateTime(2024, 1, 1),
-    );
+    ));
     await tester.pumpWidget(_chatViewApp(tabs, preferences, toolService));
     await tester.pump();
 

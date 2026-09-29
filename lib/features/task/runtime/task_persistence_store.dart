@@ -1,6 +1,7 @@
 import 'package:hermes/shared_kernel/task.dart';
 import 'package:hermes/shared_kernel/persistence_contracts.dart';
 import 'package:hermes/shared_kernel/task_summary.dart';
+import 'package:hermes/shared_kernel/task_persistence_ports.dart';
 
 /// Owns all task-document and task-history storage access.
 ///
@@ -9,18 +10,18 @@ import 'package:hermes/shared_kernel/task_summary.dart';
 /// repository remains the durable implementation and retains its optimistic
 /// concurrency and history semantics.
 class TaskPersistenceStore {
-  TaskPersistenceStore({required dynamic repository})
-    : _repository = repository;
+  TaskPersistenceStore({required TaskPersistencePort persistence})
+    : _persistence = persistence;
 
-  final dynamic _repository;
+  final TaskPersistencePort _persistence;
 
-  dynamic get repository => _repository;
+  TaskPersistencePort get persistence => _persistence;
 
   Future<PersistedSnapshot<Task>> save(
     String workspaceRoot,
     Task task, {
     int? expectedRevision,
-  }) => _repository.saveSnapshot(
+  }) => _persistence.saveSnapshot(
     workspaceRoot,
     task,
     expectedRevision: expectedRevision,
@@ -32,7 +33,7 @@ class TaskPersistenceStore {
     String? chatSessionId,
     String? projectId,
     bool includeHistory = true,
-  }) => _repository.loadTask(
+  }) => _persistence.loadTask(
     workspaceRoot,
     taskId,
     chatSessionId: chatSessionId,
@@ -44,7 +45,7 @@ class TaskPersistenceStore {
     String workspaceRoot, {
     String? chatSessionId,
     String? projectId,
-  }) => _repository.loadLatestTask(
+  }) => _persistence.loadLatestTask(
     workspaceRoot,
     chatSessionId: chatSessionId,
     projectId: projectId,
@@ -54,7 +55,7 @@ class TaskPersistenceStore {
     String workspaceRoot, {
     String? chatSessionId,
     String? projectId,
-  }) => _repository.listTasks(
+  }) => _persistence.listTasks(
     workspaceRoot,
     chatSessionId: chatSessionId,
     projectId: projectId,
@@ -63,7 +64,7 @@ class TaskPersistenceStore {
   Future<int> deleteForChatSession(
     String workspaceRoot, {
     required String chatSessionId,
-  }) => _repository.deleteTasksForChatSession(
+  }) => _persistence.deleteTasksForChatSession(
     workspaceRoot,
     chatSessionId: chatSessionId,
   );
@@ -71,11 +72,11 @@ class TaskPersistenceStore {
   Future<int> deleteOrphaned(
     String workspaceRoot, {
     required Set<String> retainedChatSessionIds,
-  }) => _repository.deleteOrphanedChatTasks(
+  }) => _persistence.deleteOrphanedChatTasks(
     workspaceRoot,
     retainedChatSessionIds: retainedChatSessionIds,
   );
 
   Future<bool> delete(String workspaceRoot, Task task) =>
-      _repository.deleteTask(workspaceRoot, task.id);
+      _persistence.deleteTask(workspaceRoot, task.id);
 }

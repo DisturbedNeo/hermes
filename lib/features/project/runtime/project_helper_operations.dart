@@ -1,5 +1,5 @@
 // ignore_for_file: unused_element, unused_field
-part of 'project_application.dart';
+part of 'project_runtime_engine.dart';
 
 extension _ProjectHelperOperations on _ProjectApplicationContext {
   ProjectRepositoryPort get repository => _repository;

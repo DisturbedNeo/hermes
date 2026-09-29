@@ -6,10 +6,10 @@ import 'package:hermes/features/project/application/project_application/project_
 import 'package:hermes/features/project/infrastructure/project_aggregate_repository.dart';
 import 'package:hermes/features/project/runtime/project_command_service.dart';
 import 'package:hermes/features/project/infrastructure/project_repository.dart';
-import 'package:hermes/features/project/runtime/project_state_store.dart';
 import 'package:hermes/features/project/runtime/project_recovery_service.dart';
+import 'package:hermes/features/project/runtime/project_state_store.dart';
 import 'package:hermes/shared_kernel/planning_runtime.dart';
-import 'package:hermes/features/chat/runtime/model/llama_server_manager.dart';
+import 'package:hermes/features/model/infrastructure/llama_server_manager.dart';
 import 'package:hermes/shared_kernel/planning_structured_output.dart';
 import 'package:hermes/features/chat/infrastructure/system_prompt_library_repository.dart';
 import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
@@ -81,7 +81,7 @@ class AppDependencies implements ApplicationLifecycle {
     final persistenceCoordinator = WorkspacePersistenceCoordinator();
     final taskRepository = TaskRepository(coordinator: persistenceCoordinator);
     final taskPersistenceStore = TaskPersistenceStore(
-      repository: taskRepository,
+      persistence: taskRepository,
     );
     final taskController = TaskController(
       toolService: toolService,
@@ -112,9 +112,10 @@ class AppDependencies implements ApplicationLifecycle {
     );
     final projectApplication = ProjectApplication(
       taskController: taskController,
+      taskPersistence: taskRepository,
+      toolService: toolService,
       repository: projectRepository,
       aggregateRepository: projectAggregateRepository,
-      stateStore: projectStateStore,
       commandService: projectCommandService,
       recoveryService: const ProjectRecoveryService(),
       persistenceCoordinator: persistenceCoordinator,

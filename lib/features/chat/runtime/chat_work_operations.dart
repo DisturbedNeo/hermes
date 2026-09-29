@@ -1,5 +1,5 @@
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member, unused_element, unused_field
-part of 'chat_controller.dart';
+part of 'chat_runtime_engine.dart';
 
 extension _ChatWorkOperations on _ChatApplicationContext {
   Future<void> generateOrContinue({
@@ -60,8 +60,8 @@ extension _ChatWorkOperations on _ChatApplicationContext {
   Future<void> cancelTaskRun() async {
     if (!taskBusy) return;
     final token = _commandCoordinator.activeToken;
-    taskCancellationRequested = true;
-    taskStatusMessage = 'Cancelling run...';
+    setTaskCancellationRequested(true);
+    setTaskStatusMessage('Cancelling run...');
     notifyListeners();
     if (token == null) {
       await _commandCoordinator.cancel();
@@ -73,26 +73,27 @@ extension _ChatWorkOperations on _ChatApplicationContext {
   Future<void> reloadTasks() async {
     final current = workspace;
     if (current == null || current.missing) {
-      availableTasks = const [];
-      availableProjects = const [];
-      activeTask = null;
-      activeProject = null;
+      setAvailableTasks(const []);
+      setAvailableProjects(const []);
+      setActiveTask(null);
+      setActiveProject(null);
       notifyListeners();
       return;
     }
 
     final scopeId = _taskScopeId;
-    activeProject = (await _recoverProject(
-      current,
-      activeProject ??
-          await _projectApplication.loadLatestProject(
-            current,
-            chatSessionId: scopeId,
-          ),
-    ))?.project;
-    availableProjects = await _projectApplication.listProjects(
-      current,
-      chatSessionId: scopeId,
+    setActiveProject(
+      (await _recoverProject(
+        current,
+        activeProject ??
+            await _projectApplication.loadLatestProject(
+              current,
+              chatSessionId: scopeId,
+            ),
+      ))?.project,
+    );
+    setAvailableProjects(
+      await _projectApplication.listProjects(current, chatSessionId: scopeId),
     );
     final activeScopeId = activeTask?.chatSessionId;
     final scopedActiveTask =
@@ -100,20 +101,21 @@ extension _ChatWorkOperations on _ChatApplicationContext {
             (activeScopeId == null || activeScopeId == scopeId)
         ? activeTask
         : null;
-    activeTask = await _taskForActiveProject(current, activeProject);
+    setActiveTask(await _taskForActiveProject(current, activeProject));
     if (activeTask == null && activeProject == null) {
-      activeTask = await _recoverTaskSnapshot(
-        current,
-        scopedActiveTask ??
-            await _taskController.loadLatestTask(
-              current,
-              chatSessionId: scopeId,
-            ),
+      setActiveTask(
+        await _recoverTaskSnapshot(
+          current,
+          scopedActiveTask ??
+              await _taskController.loadLatestTask(
+                current,
+                chatSessionId: scopeId,
+              ),
+        ),
       );
     }
-    availableTasks = await _taskController.listTasks(
-      current,
-      chatSessionId: scopeId,
+    setAvailableTasks(
+      await _taskController.listTasks(current, chatSessionId: scopeId),
     );
     notifyListeners();
   }
@@ -135,7 +137,7 @@ extension _ChatWorkOperations on _ChatApplicationContext {
       ProjectRecoveryRequest(
         workspace: current,
         snapshot: snapshot,
-        onTaskUpdated: (task) => activeTask = task,
+        onTaskUpdated: (task) => setActiveTask(task),
       ),
     );
   }
@@ -163,9 +165,11 @@ extension _ChatWorkOperations on _ChatApplicationContext {
     if (current == null || current.missing || taskBusy) {
       return;
     }
-    activeTask = await _recoverTaskSnapshot(
-      current,
-      await _taskController.loadLatestTask(current, chatSessionId: scopeId),
+    setActiveTask(
+      await _recoverTaskSnapshot(
+        current,
+        await _taskController.loadLatestTask(current, chatSessionId: scopeId),
+      ),
     );
     await reloadTasks();
   }
@@ -176,9 +180,11 @@ extension _ChatWorkOperations on _ChatApplicationContext {
     if (current == null || current.missing || taskBusy) {
       return;
     }
-    activeTask = await _recoverTaskSnapshot(
-      current,
-      await _taskController.loadTask(current, taskId, chatSessionId: scopeId),
+    setActiveTask(
+      await _recoverTaskSnapshot(
+        current,
+        await _taskController.loadTask(current, taskId, chatSessionId: scopeId),
+      ),
     );
     await reloadTasks();
   }
@@ -196,9 +202,9 @@ extension _ChatWorkOperations on _ChatApplicationContext {
         chatSessionId: scopeId,
       ),
     );
-    activeProject = result?.project;
-    activeTask = result?.activeTask;
-    activeProjectPersistenceDiagnostics = result?.persistenceDiagnostics;
+    setActiveProject(result?.project);
+    setActiveTask(result?.activeTask);
+    setActiveProjectPersistenceDiagnostics(result?.persistenceDiagnostics);
     await reloadTasks();
   }
 
@@ -216,9 +222,9 @@ extension _ChatWorkOperations on _ChatApplicationContext {
         chatSessionId: scopeId,
       ),
     );
-    activeProject = result?.project;
-    activeTask = result?.activeTask;
-    activeProjectPersistenceDiagnostics = result?.persistenceDiagnostics;
+    setActiveProject(result?.project);
+    setActiveTask(result?.activeTask);
+    setActiveProjectPersistenceDiagnostics(result?.persistenceDiagnostics);
     await reloadTasks();
   }
 
@@ -258,13 +264,13 @@ extension _ChatWorkOperations on _ChatApplicationContext {
     final token = _beginTaskCancellationScope(reuseExisting: keepBusy);
 
     if (!keepBusy) {
-      taskBusy = true;
-      taskError = null;
+      setTaskBusy(true);
+      setTaskError(null);
       _beginTaskModelOutput('Task Run Model Output');
       notifyListeners();
     }
     await _refreshTaskSystemSettings();
-    taskStatusMessage = 'Running task...';
+    setTaskStatusMessage('Running task...');
     notifyListeners();
 
     try {
@@ -289,13 +295,13 @@ extension _ChatWorkOperations on _ChatApplicationContext {
     } on OperationCancelledException {
       _insertTaskAssistantMessage('Task run cancelled.');
     } catch (e) {
-      taskError = e;
+      setTaskError(e);
       _insertTaskErrorBubble('Failed to run task: $e');
     } finally {
       if (!keepBusy) {
-        taskBusy = false;
+        setTaskBusy(false);
         _endTaskCancellationScope(token);
-        taskStatusMessage = null;
+        setTaskStatusMessage(null);
         _finishTaskModelOutput();
         notifyListeners();
       }
@@ -312,9 +318,11 @@ extension _ChatWorkOperations on _ChatApplicationContext {
       return;
     }
 
-    activeTask = await _taskController.retryCurrentStep(
-      workspace: currentWorkspace,
-      snapshot: snapshot,
+    setActiveTask(
+      await _taskController.retryCurrentStep(
+        workspace: currentWorkspace,
+        snapshot: snapshot,
+      ),
     );
     await _clearProjectTaskBlocker();
     await reloadTasks();
@@ -330,9 +338,11 @@ extension _ChatWorkOperations on _ChatApplicationContext {
       return;
     }
 
-    activeTask = await _taskController.skipCurrentStep(
-      workspace: currentWorkspace,
-      snapshot: snapshot,
+    setActiveTask(
+      await _taskController.skipCurrentStep(
+        workspace: currentWorkspace,
+        snapshot: snapshot,
+      ),
     );
     await _clearProjectTaskBlocker();
     await reloadTasks();
@@ -352,9 +362,11 @@ extension _ChatWorkOperations on _ChatApplicationContext {
       return;
     }
 
-    activeTask = await _taskController.stopTask(
-      workspace: currentWorkspace,
-      snapshot: snapshot,
+    setActiveTask(
+      await _taskController.stopTask(
+        workspace: currentWorkspace,
+        snapshot: snapshot,
+      ),
     );
     await reloadTasks();
   }
@@ -369,10 +381,12 @@ extension _ChatWorkOperations on _ChatApplicationContext {
       return;
     }
 
-    activeTask = await _taskController.answerOpenQuestion(
-      workspace: currentWorkspace,
-      snapshot: snapshot,
-      answer: answer,
+    setActiveTask(
+      await _taskController.answerOpenQuestion(
+        workspace: currentWorkspace,
+        snapshot: snapshot,
+        answer: answer,
+      ),
     );
     await _clearProjectTaskBlocker();
     await reloadTasks();
@@ -388,9 +402,11 @@ extension _ChatWorkOperations on _ChatApplicationContext {
       return;
     }
 
-    activeTask = await _taskController.approvePendingStep(
-      workspace: currentWorkspace,
-      snapshot: snapshot,
+    setActiveTask(
+      await _taskController.approvePendingStep(
+        workspace: currentWorkspace,
+        snapshot: snapshot,
+      ),
     );
     await _clearProjectTaskBlocker();
     await reloadTasks();
@@ -406,10 +422,12 @@ extension _ChatWorkOperations on _ChatApplicationContext {
       return;
     }
 
-    activeProject = await _projectApplication.answerOpenQuestion(
-      workspace: currentWorkspace,
-      snapshot: snapshot,
-      answer: answer,
+    setActiveProject(
+      await _projectApplication.answerOpenQuestion(
+        workspace: currentWorkspace,
+        snapshot: snapshot,
+        answer: answer,
+      ),
     );
     await reloadTasks();
   }
@@ -428,11 +446,13 @@ extension _ChatWorkOperations on _ChatApplicationContext {
       return;
     }
 
-    activeProject = await _projectApplication.stopProject(
-      workspace: currentWorkspace,
-      snapshot: snapshot,
+    setActiveProject(
+      await _projectApplication.stopProject(
+        workspace: currentWorkspace,
+        snapshot: snapshot,
+      ),
     );
-    activeTask = null;
+    setActiveTask(null);
     await reloadTasks();
   }
 
@@ -446,9 +466,11 @@ extension _ChatWorkOperations on _ChatApplicationContext {
       return;
     }
 
-    activeProject = await _projectApplication.pauseProject(
-      workspace: currentWorkspace,
-      snapshot: snapshot,
+    setActiveProject(
+      await _projectApplication.pauseProject(
+        workspace: currentWorkspace,
+        snapshot: snapshot,
+      ),
     );
     await reloadTasks();
   }
@@ -463,10 +485,12 @@ extension _ChatWorkOperations on _ChatApplicationContext {
       return;
     }
 
-    activeProject = await _projectApplication.retryRecoveryIncident(
-      workspace: currentWorkspace,
-      snapshot: snapshot,
-      incidentId: incidentId,
+    setActiveProject(
+      await _projectApplication.retryRecoveryIncident(
+        workspace: currentWorkspace,
+        snapshot: snapshot,
+        incidentId: incidentId,
+      ),
     );
     await reloadTasks();
   }
@@ -481,9 +505,11 @@ extension _ChatWorkOperations on _ChatApplicationContext {
         snapshot.pendingPlanApproval == null) {
       return;
     }
-    activeProject = await _projectApplication.approvePlanRevision(
-      workspace: currentWorkspace,
-      snapshot: snapshot,
+    setActiveProject(
+      await _projectApplication.approvePlanRevision(
+        workspace: currentWorkspace,
+        snapshot: snapshot,
+      ),
     );
     await reloadTasks();
   }
@@ -498,9 +524,11 @@ extension _ChatWorkOperations on _ChatApplicationContext {
         snapshot.pendingPlanApproval == null) {
       return;
     }
-    activeProject = await _projectApplication.rejectPlanRevision(
-      workspace: currentWorkspace,
-      snapshot: snapshot,
+    setActiveProject(
+      await _projectApplication.rejectPlanRevision(
+        workspace: currentWorkspace,
+        snapshot: snapshot,
+      ),
     );
     await reloadTasks();
   }
@@ -516,12 +544,14 @@ extension _ChatWorkOperations on _ChatApplicationContext {
         taskBusy) {
       return;
     }
-    activeProject = await _projectApplication.requestScopeChange(
-      workspace: currentWorkspace,
-      snapshot: snapshot,
-      context: reason.trim().isEmpty
-          ? 'User explicitly requested a roadmap revision.'
-          : reason,
+    setActiveProject(
+      await _projectApplication.requestScopeChange(
+        workspace: currentWorkspace,
+        snapshot: snapshot,
+        context: reason.trim().isEmpty
+            ? 'User explicitly requested a roadmap revision.'
+            : reason,
+      ),
     );
     await reloadTasks();
     await _runProjectInternal();
@@ -598,10 +628,10 @@ extension _ChatWorkOperations on _ChatApplicationContext {
       ),
     );
 
-    taskBusy = true;
+    setTaskBusy(true);
     final token = _beginTaskCancellationScope();
-    taskError = null;
-    taskStatusMessage = 'Refining task brief...';
+    setTaskError(null);
+    setTaskStatusMessage('Refining task brief...');
     _beginTaskModelOutput('Task Brief Model Output');
     notifyListeners();
 
@@ -626,12 +656,12 @@ extension _ChatWorkOperations on _ChatApplicationContext {
     } on OperationCancelledException {
       _insertTaskAssistantMessage('Task brief refinement cancelled.');
     } catch (e) {
-      taskError = e;
+      setTaskError(e);
       _insertTaskErrorBubble('Failed to refine task brief: $e');
     } finally {
-      taskBusy = false;
+      setTaskBusy(false);
       _endTaskCancellationScope(token);
-      taskStatusMessage = null;
+      setTaskStatusMessage(null);
       _finishTaskModelOutput();
       notifyListeners();
     }
@@ -673,13 +703,17 @@ extension _ChatWorkOperations on _ChatApplicationContext {
     }
 
     final scopeId = _taskScopeId;
-    activeTask ??= await _recoverTaskSnapshot(
-      currentWorkspace,
-      await _taskController.loadLatestTask(
-        currentWorkspace,
-        chatSessionId: scopeId,
-      ),
-    );
+    if (activeTask == null) {
+      setActiveTask(
+        await _recoverTaskSnapshot(
+          currentWorkspace,
+          await _taskController.loadLatestTask(
+            currentWorkspace,
+            chatSessionId: scopeId,
+          ),
+        ),
+      );
+    }
     await reloadTasks();
     if (activeTask == null) {
       messageStore.upsert(
@@ -733,13 +767,17 @@ extension _ChatWorkOperations on _ChatApplicationContext {
     }
 
     final scopeId = _taskScopeId;
-    activeProject ??= (await _recoverProject(
-      currentWorkspace,
-      await _projectApplication.loadLatestProject(
-        currentWorkspace,
-        chatSessionId: scopeId,
-      ),
-    ))?.project;
+    if (activeProject == null) {
+      setActiveProject(
+        (await _recoverProject(
+          currentWorkspace,
+          await _projectApplication.loadLatestProject(
+            currentWorkspace,
+            chatSessionId: scopeId,
+          ),
+        ))?.project,
+      );
+    }
     await reloadTasks();
     if (activeProject == null) {
       messageStore.upsert(
@@ -809,12 +847,14 @@ extension _ChatWorkOperations on _ChatApplicationContext {
           ),
         ))?.project;
     if (existingProject != null && !existingProject.isTerminal) {
-      activeProject = await _projectApplication.addUserContext(
-        workspace: currentWorkspace,
-        snapshot: existingProject,
-        text: prompt,
+      setActiveProject(
+        await _projectApplication.addUserContext(
+          workspace: currentWorkspace,
+          snapshot: existingProject,
+          text: prompt,
+        ),
       );
-      activeTask = null;
+      setActiveTask(null);
       await reloadTasks();
       _insertTaskAssistantMessage(_projectStatusMessage(activeProject!));
       if (runAfterCreation) {
@@ -823,12 +863,14 @@ extension _ChatWorkOperations on _ChatApplicationContext {
       return;
     }
 
-    taskBusy = true;
+    setTaskBusy(true);
     final token = _beginTaskCancellationScope();
-    taskError = null;
-    taskStatusMessage = runAfterCreation
-        ? 'Creating project and preparing first task...'
-        : 'Creating project...';
+    setTaskError(null);
+    setTaskStatusMessage(
+      runAfterCreation
+          ? 'Creating project and preparing first task...'
+          : 'Creating project...',
+    );
     _beginTaskModelOutput('Project Creation Model Output');
     notifyListeners();
 
@@ -844,24 +886,24 @@ extension _ChatWorkOperations on _ChatApplicationContext {
         cancellationToken: token,
         questionAutonomy: settings.questionAutonomy,
       );
-      activeProject = project;
-      activeTask = null;
+      setActiveProject(project);
+      setActiveTask(null);
       await reloadTasks();
       _insertTaskAssistantMessage(_projectCreatedMessage(project));
 
       if (runAfterCreation) {
-        activeProject = project;
+        setActiveProject(project);
         await _runProjectInternal(keepBusy: true);
       }
     } on OperationCancelledException {
       _insertTaskAssistantMessage('Project creation cancelled.');
     } catch (e) {
-      taskError = e;
+      setTaskError(e);
       _insertTaskErrorBubble('Failed to create project: $e');
     } finally {
-      taskBusy = false;
+      setTaskBusy(false);
       _endTaskCancellationScope(token);
-      taskStatusMessage = null;
+      setTaskStatusMessage(null);
       _finishTaskModelOutput();
       notifyListeners();
     }
@@ -885,13 +927,13 @@ extension _ChatWorkOperations on _ChatApplicationContext {
     final token = _beginTaskCancellationScope(reuseExisting: keepBusy);
 
     if (!keepBusy) {
-      taskBusy = true;
-      taskError = null;
+      setTaskBusy(true);
+      setTaskError(null);
       _beginTaskModelOutput('Project Run Model Output');
       notifyListeners();
     }
     final settings = await _refreshTaskSystemSettings();
-    taskStatusMessage = 'Running project...';
+    setTaskStatusMessage('Running project...');
     notifyListeners();
 
     try {
@@ -911,34 +953,34 @@ extension _ChatWorkOperations on _ChatApplicationContext {
           compactionSettings: compactionSettings,
           contextLimitTokens: _diagnosticsContextLimit,
           onCompactionStatus: (status) {
-            taskStatusMessage = status;
+            setTaskStatusMessage(status);
             notifyListeners();
           },
           onModelOutput: _handleTaskModelOutput,
           onTaskUpdated: (task) {
-            activeTask = task;
+            setActiveTask(task);
             notifyListeners();
           },
           cancellationToken: token,
         ),
         boundedRun: maxNewTasks != null,
       );
-      activeProject = result.project;
-      activeTask = result.activeTask;
-      activeProjectPersistenceDiagnostics = result.persistenceDiagnostics;
+      setActiveProject(result.project);
+      setActiveTask(result.activeTask);
+      setActiveProjectPersistenceDiagnostics(result.persistenceDiagnostics);
       notifyListeners();
       await reloadTasks();
       _insertTaskAssistantMessage(_projectStatusMessage(activeProject!));
     } on OperationCancelledException {
       _insertTaskAssistantMessage('Project run cancelled.');
     } catch (e) {
-      taskError = e;
+      setTaskError(e);
       _insertTaskErrorBubble('Failed to run project: $e');
     } finally {
       if (!keepBusy) {
-        taskBusy = false;
+        setTaskBusy(false);
         _endTaskCancellationScope(token);
-        taskStatusMessage = null;
+        setTaskStatusMessage(null);
         _finishTaskModelOutput();
         notifyListeners();
       }
@@ -968,12 +1010,12 @@ extension _ChatWorkOperations on _ChatApplicationContext {
     final token = _beginTaskCancellationScope(reuseExisting: keepBusy);
 
     if (!keepBusy) {
-      taskBusy = true;
-      taskError = null;
+      setTaskBusy(true);
+      setTaskError(null);
       _beginTaskModelOutput('Task Step Model Output');
       notifyListeners();
     }
-    taskStatusMessage = 'Running step ${nextStep.id}: ${nextStep.title}';
+    setTaskStatusMessage('Running step ${nextStep.id}: ${nextStep.title}');
     notifyListeners();
 
     try {
@@ -989,25 +1031,25 @@ extension _ChatWorkOperations on _ChatApplicationContext {
         compactionSettings: compactionSettings,
         contextLimitTokens: _diagnosticsContextLimit,
         onCompactionStatus: (status) {
-          taskStatusMessage = status;
+          setTaskStatusMessage(status);
           notifyListeners();
         },
         onModelOutput: _handleTaskModelOutput,
         cancellationToken: token,
       );
-      activeTask = updated;
+      setActiveTask(updated);
       await reloadTasks();
       _insertTaskAssistantMessage(_stepFinishedMessage(updated));
     } on OperationCancelledException {
       _insertTaskAssistantMessage('Task step cancelled.');
     } catch (e) {
-      taskError = e;
+      setTaskError(e);
       _insertTaskErrorBubble('Failed to run task step: $e');
     } finally {
       if (!keepBusy) {
-        taskBusy = false;
+        setTaskBusy(false);
         _endTaskCancellationScope(token);
-        taskStatusMessage = null;
+        setTaskStatusMessage(null);
         _finishTaskModelOutput();
         notifyListeners();
       }
@@ -1057,12 +1099,14 @@ extension _ChatWorkOperations on _ChatApplicationContext {
       return;
     }
 
-    taskBusy = true;
+    setTaskBusy(true);
     final token = _beginTaskCancellationScope();
-    taskError = null;
-    taskStatusMessage = runFirstPhase
-        ? 'Creating task plan and preparing first phase...'
-        : 'Creating task plan...';
+    setTaskError(null);
+    setTaskStatusMessage(
+      runFirstPhase
+          ? 'Creating task plan and preparing first phase...'
+          : 'Creating task plan...',
+    );
     _beginTaskModelOutput('Task Creation Model Output');
     notifyListeners();
 
@@ -1078,23 +1122,23 @@ extension _ChatWorkOperations on _ChatApplicationContext {
         onModelOutput: _handleTaskModelOutput,
         cancellationToken: token,
       );
-      activeTask = snapshot;
+      setActiveTask(snapshot);
       await reloadTasks();
       _insertTaskAssistantMessage(_taskCreatedMessage(snapshot));
 
       if (runFirstPhase) {
-        activeTask = snapshot;
+        setActiveTask(snapshot);
         await _runTaskInternal(keepBusy: true);
       }
     } on OperationCancelledException {
       _insertTaskAssistantMessage('Task creation cancelled.');
     } catch (e) {
-      taskError = e;
+      setTaskError(e);
       _insertTaskErrorBubble('Failed to create task: $e');
     } finally {
-      taskBusy = false;
+      setTaskBusy(false);
       _endTaskCancellationScope(token);
-      taskStatusMessage = null;
+      setTaskStatusMessage(null);
       _finishTaskModelOutput();
       notifyListeners();
     }
@@ -1114,20 +1158,22 @@ extension _ChatWorkOperations on _ChatApplicationContext {
       return;
     }
 
-    taskBusy = true;
+    setTaskBusy(true);
     final token = _beginTaskCancellationScope();
-    taskError = null;
-    taskStatusMessage = 'Replanning unfinished work...';
+    setTaskError(null);
+    setTaskStatusMessage('Replanning unfinished work...');
     _beginTaskModelOutput('Replan Model Output');
     notifyListeners();
     try {
-      activeTask = await _taskController.replanUnfinished(
-        client: client,
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-        baseSystemPrompt: _buildTaskSystemPrompt(snapshot),
-        onModelOutput: _handleTaskModelOutput,
-        cancellationToken: token,
+      setActiveTask(
+        await _taskController.replanUnfinished(
+          client: client,
+          workspace: currentWorkspace,
+          snapshot: snapshot,
+          baseSystemPrompt: _buildTaskSystemPrompt(snapshot),
+          onModelOutput: _handleTaskModelOutput,
+          cancellationToken: token,
+        ),
       );
       await reloadTasks();
       _insertTaskAssistantMessage(
@@ -1136,12 +1182,12 @@ extension _ChatWorkOperations on _ChatApplicationContext {
     } on OperationCancelledException {
       _insertTaskAssistantMessage('Replan cancelled.');
     } catch (e) {
-      taskError = e;
+      setTaskError(e);
       rethrow;
     } finally {
-      taskBusy = false;
+      setTaskBusy(false);
       _endTaskCancellationScope(token);
-      taskStatusMessage = null;
+      setTaskStatusMessage(null);
       _finishTaskModelOutput();
       notifyListeners();
     }
@@ -1165,26 +1211,28 @@ extension _ChatWorkOperations on _ChatApplicationContext {
       return;
     }
 
-    taskBusy = true;
-    taskError = null;
-    taskStatusMessage = 'Updating task plan...';
+    setTaskBusy(true);
+    setTaskError(null);
+    setTaskStatusMessage('Updating task plan...');
     notifyListeners();
     try {
-      activeTask = await _taskController.updateTaskPlan(
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-        rawJson: rawJson,
+      setActiveTask(
+        await _taskController.updateTaskPlan(
+          workspace: currentWorkspace,
+          snapshot: snapshot,
+          rawJson: rawJson,
+        ),
       );
       await reloadTasks();
       _insertTaskAssistantMessage(
         'Task plan updated for **${activeTask!.title}**.',
       );
     } catch (e) {
-      taskError = e;
+      setTaskError(e);
       rethrow;
     } finally {
-      taskBusy = false;
-      taskStatusMessage = null;
+      setTaskBusy(false);
+      setTaskStatusMessage(null);
       notifyListeners();
     }
   }
@@ -1199,26 +1247,28 @@ extension _ChatWorkOperations on _ChatApplicationContext {
       return;
     }
 
-    taskBusy = true;
-    taskError = null;
-    taskStatusMessage = 'Updating project...';
+    setTaskBusy(true);
+    setTaskError(null);
+    setTaskStatusMessage('Updating project...');
     notifyListeners();
     try {
-      activeProject = await _projectApplication.updateProject(
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-        rawJson: rawJson,
+      setActiveProject(
+        await _projectApplication.updateProject(
+          workspace: currentWorkspace,
+          snapshot: snapshot,
+          rawJson: rawJson,
+        ),
       );
       await reloadTasks();
       _insertTaskAssistantMessage(
         'Project updated for **${activeProject!.title}**.',
       );
     } catch (e) {
-      taskError = e;
+      setTaskError(e);
       rethrow;
     } finally {
-      taskBusy = false;
-      taskStatusMessage = null;
+      setTaskBusy(false);
+      setTaskStatusMessage(null);
       notifyListeners();
     }
   }
@@ -1237,9 +1287,12 @@ extension _ChatWorkOperations on _ChatApplicationContext {
   // ── Session state management ────────────────────────────────────────────
 
   void _handleMessagesChanged() {
-    _state = _state.copyWith(
-      messages: messageStore.messages,
-      historyRevision: _historyRevision,
+    _dispatchChatState(
+      _state.copyWith(
+        messages: messageStore.messages,
+        historyRevision: _historyRevision,
+      ),
+      notify: false,
     );
     _requestContextEstimateUpdate();
     if (_disposed || _loadingSnapshot) return;

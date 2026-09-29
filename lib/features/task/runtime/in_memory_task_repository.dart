@@ -7,7 +7,7 @@ import 'package:path/path.dart' as path;
 
 /// In-memory task persistence double that retains optimistic revision checks.
 class InMemoryTaskRepository
-    implements TaskReadPort, TaskWritePort, TaskCleanupPort {
+    implements TaskPersistencePort {
   InMemoryTaskRepository({PersistencePort? coordinator})
     : _coordinator = coordinator ?? const _InMemoryPersistence();
 

@@ -22,6 +22,7 @@ import 'package:hermes/features/task/application/task_application/task_controlle
 import 'package:hermes/shared_kernel/task_planning_models.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
 import 'package:hermes/features/task/infrastructure/task_repository.dart';
+import 'package:hermes/features/task/application/task_application/task_plan_materializer.dart';
 import 'package:hermes/shared_kernel/persistence_contracts.dart';
 import 'package:hermes/platform/tool_service.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
@@ -83,7 +84,7 @@ void main() {
     taskController = TaskController(
       toolService: ToolService(workspaceSandbox: sandbox),
       sandbox: sandbox,
-      repository: TaskRepository(),
+      persistence: TaskRepository(),
     );
     service = ProjectApplication(
       taskController: taskController,
@@ -327,9 +328,9 @@ void main() {
   test('does not rewrite unchanged project tasks during a run', () async {
     final countingRepository = _CountingTaskRepository();
     final countedTaskController = TaskController(
-      toolService: taskController.toolService,
+      toolService: taskController.tools,
       sandbox: WorkspaceSandbox(),
-      repository: countingRepository,
+      persistence: countingRepository,
     );
     final persistence = WorkspacePersistenceCoordinator();
     final projectRepository = ProjectRepository(coordinator: persistence);
@@ -349,9 +350,12 @@ void main() {
       objective: 'Complete a second bounded project slice.',
       fingerprint: 'task_2',
     );
-    await countedTaskController.repository.saveSnapshot(
+    await countedTaskController.persistence.saveSnapshot(
       workspace.rootPath,
-      secondTask.toTaskDefinition(),
+      TaskPlanMaterializer().create(
+        secondTask,
+        projectId: 'project_1',
+      ),
     );
     countingRepository.savedTaskIds.clear();
 
@@ -637,7 +641,7 @@ void main() {
       status: TaskStatus.completed,
       completedAt: DateTime(2026, 1, 2),
     );
-    await taskController.repository.saveSnapshot(root.path, terminalTask);
+    await taskController.persistence.saveSnapshot(root.path, terminalTask);
 
     final project = _project(
       tasks: [

@@ -8,6 +8,7 @@ import 'package:hermes/features/project/project_aggregate_repository_port.dart';
 import 'package:hermes/features/project/project_repository_port.dart';
 import 'package:hermes/shared_kernel/project_checkpoint.dart';
 import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/shared_kernel/task_persistence_ports.dart';
 import 'package:hermes/shared_kernel/workspace_ports.dart';
 
 /// Reads and coordinates project aggregates while delegating migration and
@@ -15,7 +16,7 @@ import 'package:hermes/shared_kernel/workspace_ports.dart';
 class ProjectAggregateRepository implements ProjectAggregateRepositoryPort {
   ProjectAggregateRepository({
     required ProjectRepositoryPort projectRepository,
-    required dynamic taskRepository,
+    required TaskPersistencePort taskRepository,
     required PersistencePort coordinator,
     this.onTransactionPhase,
   }) : _projects = projectRepository,
@@ -32,7 +33,7 @@ class ProjectAggregateRepository implements ProjectAggregateRepositoryPort {
        );
 
   final ProjectRepositoryPort _projects;
-  final dynamic _tasks;
+  final TaskPersistencePort _tasks;
   final PersistencePort _coordinator;
   final ProjectSnapshotMigrator _migrator;
   final ProjectTransactionCoordinator _transactions;

@@ -1,4 +1,4 @@
-part of 'chat_controller.dart';
+part of 'chat_runtime_engine.dart';
 
 class _ChatApplicationContext extends ChangeNotifier
     implements ChatSessionHost {
@@ -10,7 +10,7 @@ class _ChatApplicationContext extends ChangeNotifier
   );
 
   final String tabId;
-  final LlamaServerManager serverManager;
+  final ModelServerPort serverManager;
   final MessageStore messageStore = MessageStore();
   final ChatStream<ChatToken> chatStream = ChatStream<ChatToken>();
 
@@ -45,103 +45,120 @@ class _ChatApplicationContext extends ChangeNotifier
   /// The only authoritative user-visible state for this tab.
   ChatState get state => _state;
 
+  void _dispatchChatState(ChatState next, {bool notify = true}) {
+    _state = next;
+    if (notify) notifyListeners();
+  }
+
   String? get currentChatId => _state.currentChatId;
-  set currentChatId(String? value) =>
-      _state = _state.copyWith(currentChatId: value);
+  void setCurrentChatId(String? value) =>
+      _dispatchChatState(_state.copyWith(currentChatId: value));
 
   SavedChat? get currentSavedChat => _state.currentSavedChat;
-  set currentSavedChat(SavedChat? value) =>
-      _state = _state.copyWith(currentSavedChat: value);
+  void setCurrentSavedChat(SavedChat? value) =>
+      _dispatchChatState(_state.copyWith(currentSavedChat: value));
 
   @override
   ModelConfigurationSnapshot? get currentModelSnapshot =>
       _state.currentModelSnapshot;
-  set currentModelSnapshot(ModelConfigurationSnapshot? value) =>
-      _state = _state.copyWith(currentModelSnapshot: value);
+  void dispatchCurrentModelSnapshot(ModelConfigurationSnapshot? value) =>
+      _dispatchChatState(_state.copyWith(currentModelSnapshot: value));
 
   ModelConfigurationSnapshot? get pendingModelRestore =>
       _state.pendingModelRestore;
-  set pendingModelRestore(ModelConfigurationSnapshot? value) =>
-      _state = _state.copyWith(pendingModelRestore: value);
+  void setPendingModelRestore(ModelConfigurationSnapshot? value) =>
+      _dispatchChatState(_state.copyWith(pendingModelRestore: value));
 
   String? get pendingModelRestoreIssue => _state.pendingModelRestoreIssue;
-  set pendingModelRestoreIssue(String? value) =>
-      _state = _state.copyWith(pendingModelRestoreIssue: value);
+  void setPendingModelRestoreIssue(String? value) =>
+      _dispatchChatState(_state.copyWith(pendingModelRestoreIssue: value));
 
   @override
   WorkspaceAttachment? get workspace => _state.workspace;
-  set workspace(WorkspaceAttachment? value) =>
-      _state = _state.copyWith(workspace: value);
+  void setWorkspace(WorkspaceAttachment? value) =>
+      _dispatchChatState(_state.copyWith(workspace: value));
 
   SystemPromptSnapshot? get currentSystemPromptSnapshot => _state.systemPrompt;
-  set currentSystemPromptSnapshot(SystemPromptSnapshot? value) =>
-      _state = _state.copyWith(systemPrompt: value);
+  void setCurrentSystemPromptSnapshot(SystemPromptSnapshot? value) =>
+      _dispatchChatState(_state.copyWith(systemPrompt: value));
 
   ExecutionMode get executionMode => _state.executionMode;
-  set executionMode(ExecutionMode value) =>
-      _state = _state.copyWith(executionMode: value);
+  void dispatchExecutionMode(ExecutionMode value) =>
+      _dispatchChatState(_state.copyWith(executionMode: value));
 
   ProjectDocument? get activeProject => _state.activeProject;
-  set activeProject(ProjectDocument? value) =>
-      _state = _state.copyWith(activeProject: value);
+  void setActiveProject(ProjectDocument? value) =>
+      _dispatchChatState(_state.copyWith(activeProject: value));
 
-  ProjectPersistenceDiagnostics? activeProjectPersistenceDiagnostics;
+  ProjectPersistenceDiagnostics? _activeProjectPersistenceDiagnostics;
+  ProjectPersistenceDiagnostics? get activeProjectPersistenceDiagnostics =>
+      _activeProjectPersistenceDiagnostics;
+  void setActiveProjectPersistenceDiagnostics(
+    ProjectPersistenceDiagnostics? value,
+  ) {
+    _activeProjectPersistenceDiagnostics = value;
+  }
 
   List<ProjectSummary> get availableProjects => _state.availableProjects;
-  set availableProjects(List<ProjectSummary> value) =>
-      _state = _state.copyWith(availableProjects: value);
+  void setAvailableProjects(List<ProjectSummary> value) =>
+      _dispatchChatState(_state.copyWith(availableProjects: value));
 
   Task? get activeTask => _state.activeTask;
-  set activeTask(Task? value) => _state = _state.copyWith(activeTask: value);
+  void setActiveTask(Task? value) =>
+      _dispatchChatState(_state.copyWith(activeTask: value));
 
   List<TaskSummary> get availableTasks => _state.availableTasks;
-  set availableTasks(List<TaskSummary> value) =>
-      _state = _state.copyWith(availableTasks: value);
+  void setAvailableTasks(List<TaskSummary> value) =>
+      _dispatchChatState(_state.copyWith(availableTasks: value));
 
   TaskSystemSettings get taskSystemSettings => _state.taskSystemSettings;
-  set taskSystemSettings(TaskSystemSettings value) =>
-      _state = _state.copyWith(taskSystemSettings: value);
+  void setTaskSystemSettings(TaskSystemSettings value) =>
+      _dispatchChatState(_state.copyWith(taskSystemSettings: value));
 
   bool get taskBusy => _state.taskBusy;
-  set taskBusy(bool value) =>
-      _state = const ChatStateReducer().setTaskBusy(_state, value);
+  void setTaskBusy(bool value) =>
+      _dispatchChatState(const ChatStateReducer().setTaskBusy(_state, value));
 
   bool get taskCancellationRequested => _state.taskCancellationRequested;
-  set taskCancellationRequested(bool value) => _state = value
-      ? const ChatStateReducer().requestTaskCancellation(_state)
-      : _state.copyWith(taskCancellationRequested: false);
+  void setTaskCancellationRequested(bool value) => _dispatchChatState(
+    value
+        ? const ChatStateReducer().requestTaskCancellation(_state)
+        : _state.copyWith(taskCancellationRequested: false),
+  );
 
   String? get taskStatusMessage => _state.taskStatusMessage;
-  set taskStatusMessage(String? value) =>
-      _state = _state.copyWith(taskStatusMessage: value);
+  void setTaskStatusMessage(String? value) =>
+      _dispatchChatState(_state.copyWith(taskStatusMessage: value));
 
   Object? get taskError => _state.taskError;
-  set taskError(Object? value) =>
-      _state = const ChatStateReducer().setTaskError(_state, value);
+  void setTaskError(Object? value) =>
+      _dispatchChatState(const ChatStateReducer().setTaskError(_state, value));
 
   String? get taskModelOutputTitle => _state.taskModelOutputTitle;
-  set taskModelOutputTitle(String? value) =>
-      _state = _state.copyWith(taskModelOutputTitle: value);
+  void setTaskModelOutputTitle(String? value) =>
+      _dispatchChatState(_state.copyWith(taskModelOutputTitle: value));
 
   @override
   String get taskModelOutputText => _state.taskModelOutputText;
-  @override
-  set taskModelOutputText(String value) =>
-      _state = _state.copyWith(taskModelOutputText: value);
+  void setTaskModelOutputText(String value) =>
+      _dispatchChatState(_state.copyWith(taskModelOutputText: value));
+  void appendTaskModelOutputText(String value) =>
+      setTaskModelOutputText('$taskModelOutputText$value');
 
   @override
   String get taskModelOutputReasoning => _state.taskModelOutputReasoning;
-  @override
-  set taskModelOutputReasoning(String value) =>
-      _state = _state.copyWith(taskModelOutputReasoning: value);
+  void setTaskModelOutputReasoning(String value) =>
+      _dispatchChatState(_state.copyWith(taskModelOutputReasoning: value));
+  void appendTaskModelOutputReasoning(String value) =>
+      setTaskModelOutputReasoning('$taskModelOutputReasoning$value');
 
   bool get taskModelOutputActive => _state.taskModelOutputActive;
-  set taskModelOutputActive(bool value) =>
-      _state = _state.copyWith(taskModelOutputActive: value);
+  void setTaskModelOutputActive(bool value) =>
+      _dispatchChatState(_state.copyWith(taskModelOutputActive: value));
 
   ChatSaveFailure? get saveFailure => _state.saveFailure;
-  set saveFailure(ChatSaveFailure? value) =>
-      _state = _state.copyWith(saveFailure: value);
+  void setSaveFailure(ChatSaveFailure? value) =>
+      _dispatchChatState(_state.copyWith(saveFailure: value));
   String? _taskModelOutputLabel;
   String? _taskModelOutputTextSection;
   String? _taskModelOutputReasoningLabel;
@@ -270,7 +287,7 @@ class _ChatApplicationContext extends ChangeNotifier
       createdAt: DateTime.now(),
     );
     messageStore.setMessages([systemPrompt]);
-    _state = _state.copyWith(messages: messageStore.messages);
+    _dispatchChatState(_state.copyWith(messages: messageStore.messages));
 
     _contextEstimateScheduler = ThrottledScheduler(
       interval: _contextEstimateThrottle,
@@ -286,7 +303,7 @@ class _ChatApplicationContext extends ChangeNotifier
     _preferencesService.addListener(_handlePreferencesChanged);
     unawaited(_loadTaskSystemSettings());
 
-    currentModelSnapshot = _activeServerSnapshot;
+    dispatchCurrentModelSnapshot(_activeServerSnapshot);
 
     // Initialize the session manager with all streaming/LLM dependencies
     _session = ChatSessionManager(

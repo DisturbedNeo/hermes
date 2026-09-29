@@ -5,7 +5,7 @@ import 'package:hermes/shared_kernel/task.dart';
 import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/infrastructure/chat_library_repository.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
-import 'package:hermes/features/chat/runtime/model/llama_server_manager.dart';
+import 'package:hermes/features/model/infrastructure/llama_server_manager.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/features/project/application/project_application/project_application.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
@@ -61,7 +61,7 @@ void main() {
   testWidgets(
     'expanded panel renders artifact tiles without ListTile asserts',
     (tester) async {
-      chat.activeTask = _taskWithArtifact();
+      chat.setActiveTask(_taskWithArtifact());
 
       await tester.pumpWidget(
         MaterialApp(
@@ -85,7 +85,7 @@ void main() {
   );
 
   testWidgets('expanded panel renders project state', (tester) async {
-    chat.activeProject = _projectWithTask();
+    chat.setActiveProject(_projectWithTask());
 
     await tester.pumpWidget(
       MaterialApp(
@@ -111,7 +111,7 @@ void main() {
   testWidgets('blocked recovery renders structured diagnostics and retry', (
     tester,
   ) async {
-    chat.activeProject = _projectWithExhaustedRecovery();
+    chat.setActiveProject(_projectWithExhaustedRecovery());
 
     await tester.pumpWidget(
       MaterialApp(
@@ -138,7 +138,7 @@ void main() {
   testWidgets(
     'project UX renders outcome, milestone, readiness, evidence, and revision review',
     (tester) async {
-      chat.activeProject = _projectWithPlanReview();
+    chat.setActiveProject(_projectWithPlanReview());
 
       await tester.pumpWidget(
         MaterialApp(
@@ -178,7 +178,7 @@ void main() {
   testWidgets('manual replan control collects an optional reason', (
     tester,
   ) async {
-    chat.activeProject = _projectWithTask();
+    chat.setActiveProject(_projectWithTask());
 
     await tester.pumpWidget(
       MaterialApp(

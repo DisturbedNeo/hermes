@@ -12,6 +12,7 @@ import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/shared_kernel/task_json.dart';
 import 'package:hermes/shared_kernel/terminal_command_classifier.dart';
 import 'package:hermes/shared_kernel/terminal_command_parser.dart';
+import 'package:hermes/shared_kernel/workspace_ports.dart';
 import 'package:path/path.dart' as path;
 import 'package:yaml/yaml.dart';
 
@@ -81,9 +82,9 @@ class TaskGateEvaluation {
 }
 
 class TaskGateEvaluator {
-  TaskGateEvaluator({required dynamic sandbox}) : _sandbox = sandbox;
+  TaskGateEvaluator({required WorkspaceSandboxPort sandbox}) : _sandbox = sandbox;
 
-  final dynamic _sandbox;
+  final WorkspaceSandboxPort _sandbox;
 
   Future<TaskGateEvaluation> evaluate({
     required WorkspaceAttachment workspace,

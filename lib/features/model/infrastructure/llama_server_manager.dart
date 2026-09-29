@@ -4,16 +4,16 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import 'package:flutter/foundation.dart';
-import 'package:hermes/features/chat/runtime/model/llama_server_finder.dart';
-import 'package:hermes/features/chat/runtime/model/server_health_checker.dart';
-import 'package:hermes/features/chat/runtime/model/llama_server_handle.dart';
+import 'package:hermes/features/model/infrastructure/llama_server_finder.dart';
+import 'package:hermes/features/model/infrastructure/server_health_checker.dart';
+import 'package:hermes/features/model/application/llama_server_handle.dart';
 import 'package:hermes/shared_kernel/model_configuration.dart';
-import 'package:hermes/features/chat/runtime/model/model_session_diagnostics.dart';
-import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/features/model/application/model_session_diagnostics.dart';
+import 'package:hermes/features/model/application/model_server_port.dart';
+import 'package:hermes/features/model/domain/model_provider.dart';
 import 'package:hermes/shared_kernel/model_call_diagnostics.dart';
-import 'package:hermes/features/chat/runtime/model/model_diagnostic_bundle_writer.dart';
+import 'package:hermes/features/model/infrastructure/model_diagnostic_bundle_writer.dart';
 
-import 'package:hermes/shared_kernel/disposable.dart';
 
 typedef LlamaProcessLauncher =
     Future<Process> Function(
@@ -154,13 +154,14 @@ List<String> buildLlamaServerArguments({
   ];
 }
 
-class LlamaServerManager implements Disposable {
+class LlamaServerManager implements ModelServerPort {
   final LlamaProcessLauncher _processLauncher;
   final LlamaPortAllocator _portAllocator;
   final LlamaHealthWaiter _healthWaiter;
   final LlamaModelProviderFactory _clientFactory;
   final ValueNotifier<LlamaServerHandle?> handle = ValueNotifier(null);
   final ModelSessionDiagnostics diagnostics = ModelSessionDiagnostics();
+  @override
   ModelProvider? chatClient;
   String? currentModelName;
 

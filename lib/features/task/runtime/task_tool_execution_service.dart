@@ -10,6 +10,7 @@ import 'package:hermes/shared_kernel/model_completion.dart';
 import 'package:hermes/shared_kernel/task_json.dart';
 import 'package:hermes/shared_kernel/terminal_command_parser.dart';
 import 'package:hermes/shared_kernel/tool_contracts.dart';
+import 'package:hermes/shared_kernel/workspace_ports.dart';
 import 'package:hermes/shared_kernel/tool_error.dart';
 import 'package:path/path.dart' as path;
 
@@ -49,12 +50,12 @@ abstract interface class TaskToolExecutionPort {
 class TaskToolExecutionService implements TaskToolExecutionPort {
   const TaskToolExecutionService({
     required ToolRegistryPort toolService,
-    required dynamic sandbox,
+    required WorkspaceSandboxPort sandbox,
   }) : _toolService = toolService,
        _sandbox = sandbox;
 
   final ToolRegistryPort _toolService;
-  final dynamic _sandbox;
+  final WorkspaceSandboxPort _sandbox;
 
   @override
   Future<String> execute({

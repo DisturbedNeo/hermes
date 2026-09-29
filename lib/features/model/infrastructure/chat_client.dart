@@ -11,7 +11,7 @@ import 'package:hermes/shared_kernel/model_json.dart';
 import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/shared_kernel/model_completion.dart';
 import 'package:hermes/shared_kernel/model_errors.dart';
-import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/features/model/domain/model_provider.dart';
 import 'package:hermes/shared_kernel/model_request.dart';
 import 'package:http/http.dart' as http;
 

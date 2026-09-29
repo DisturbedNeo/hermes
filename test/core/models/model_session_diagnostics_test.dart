@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/shared_kernel/model_call_diagnostics.dart';
 import 'package:hermes/shared_kernel/model_configuration.dart';
-import 'package:hermes/features/chat/runtime/model/model_session_diagnostics.dart';
+import 'package:hermes/features/model/application/model_session_diagnostics.dart';
 
 void main() {
   group('ModelSessionDiagnostics', () {

@@ -5,6 +5,7 @@ import 'package:hermes/shared_kernel/persistence_contracts.dart';
 import 'package:hermes/shared_kernel/model_json.dart';
 import 'package:hermes/features/project/project_repository_port.dart';
 import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/shared_kernel/task_persistence_ports.dart';
 
 /// Converts pre-aggregate project snapshots to the canonical project/task
 /// layout. The operation is deliberately isolated from normal repository
@@ -12,14 +13,14 @@ import 'package:hermes/shared_kernel/task.dart';
 class ProjectSnapshotMigrator {
   ProjectSnapshotMigrator({
     required ProjectRepositoryPort projectRepository,
-    required dynamic taskRepository,
+    required TaskPersistencePort taskRepository,
     AtomicJsonSnapshotStore snapshots = const AtomicJsonSnapshotStore(),
   }) : _projects = projectRepository,
        _tasks = taskRepository,
        _snapshots = snapshots;
 
   final ProjectRepositoryPort _projects;
-  final dynamic _tasks;
+  final TaskPersistencePort _tasks;
   final AtomicJsonSnapshotStore _snapshots;
 
   Future<void> migrateLegacyEmbeddedTasks(

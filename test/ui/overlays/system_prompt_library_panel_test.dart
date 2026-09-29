@@ -4,7 +4,7 @@ import 'package:hermes/shared_kernel/system_prompt.dart';
 import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/infrastructure/chat_library_repository.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
-import 'package:hermes/features/chat/runtime/model/llama_server_manager.dart';
+import 'package:hermes/features/model/infrastructure/llama_server_manager.dart';
 import 'package:hermes/features/project/application/project_application/project_application.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';

@@ -59,7 +59,7 @@ void main() {
     'task command service persists a terminal stop through the store',
     () async {
       final repository = TaskRepository();
-      final store = TaskPersistenceStore(repository: repository);
+      final store = TaskPersistenceStore(persistence: repository);
       final command = TaskCommandService(persistence: store);
       final saved = await store.save(root.path, _task('task_1'));
 
@@ -77,7 +77,7 @@ void main() {
 
   test('task step runner recovers and checkpoints before execution', () async {
     final repository = TaskRepository();
-    final store = TaskPersistenceStore(repository: repository);
+    final store = TaskPersistenceStore(persistence: repository);
     final runner = TaskStepRunner(
       persistence: store,
       recovery: const TaskRecoveryService(),

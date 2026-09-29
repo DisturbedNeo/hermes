@@ -16,7 +16,7 @@ import 'package:hermes/features/chat/runtime/chat_application/message_store.dart
 import 'package:hermes/shared_kernel/payload_builder.dart';
 import 'package:hermes/shared_kernel/assistant_ops.dart';
 import 'package:hermes/shared_kernel/buffered_token_writer.dart';
-import 'package:hermes/features/chat/runtime/model/llama_server_manager.dart';
+import 'package:hermes/features/model/application/model_server_port.dart';
 import 'package:hermes/shared_kernel/preferences_port.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
 import 'package:hermes/shared_kernel/tool_contracts.dart';
@@ -35,7 +35,7 @@ import 'package:hermes/shared_kernel/disposable.dart';
 class ChatSessionManager implements Disposable {
   final MessageStore _messageStore;
   final ChatStream<ChatToken> _chatStream;
-  final LlamaServerManager _serverManager;
+  final ModelServerPort _serverManager;
   final ToolRegistryPort _toolService;
   final ChatToolExecutionPort _toolExecution;
   final PreferencesPort _preferencesService;
@@ -64,7 +64,7 @@ class ChatSessionManager implements Disposable {
   ChatSessionManager({
     required MessageStore messageStore,
     required ChatStream<ChatToken> chatStream,
-    required LlamaServerManager serverManager,
+    required ModelServerPort serverManager,
     required ToolRegistryPort toolService,
     ChatToolExecutionPort? toolExecution,
     required PreferencesPort preferencesService,
@@ -644,7 +644,7 @@ class ChatSessionManager implements Disposable {
     if (_host.sessionTaskModelOutputLabel() != label) {
       _host.setSessionTaskModelOutputLabel(label);
       _host.setSessionTaskModelOutputTextSection(null);
-      _host.taskModelOutputText += '\n\n## $label\n';
+      _host.appendTaskModelOutputText('\n\n## $label\n');
     }
     if (_host.sessionTaskModelOutputTextSection() == section) return;
     _host.setSessionTaskModelOutputTextSection(section);
@@ -653,7 +653,7 @@ class ChatSessionManager implements Disposable {
       case 'tool-call':
       case 'tool-result':
       case 'error':
-        _host.taskModelOutputText += '\n';
+        _host.appendTaskModelOutputText('\n');
     }
   }
 
@@ -661,12 +661,13 @@ class ChatSessionManager implements Disposable {
     if (_host.sessionTaskModelOutputReasoningLabel() == label) return;
     _host.setSessionTaskModelOutputReasoningLabel(label);
     final current = _host.taskModelOutputReasoning;
-    _host.taskModelOutputReasoning =
-        '${current.trim().isEmpty ? '' : '\n\n'}## $label\n';
+    _host.setTaskModelOutputReasoning(
+      '${current.trim().isEmpty ? '' : '\n\n'}## $label\n',
+    );
   }
 
   void appendTaskModelText(String text) {
-    _host.taskModelOutputText += text;
+    _host.appendTaskModelOutputText(text);
   }
 
   void finishTaskModelOutputBubbleFromService({required bool clearCurrent}) {

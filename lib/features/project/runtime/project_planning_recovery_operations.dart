@@ -1,5 +1,5 @@
 // ignore_for_file: override_on_non_overriding_member, unused_element
-part of 'project_application.dart';
+part of 'project_runtime_engine.dart';
 
 int taskStepLimit(TaskEffort effort) => switch (effort) {
   TaskEffort.small => 1,

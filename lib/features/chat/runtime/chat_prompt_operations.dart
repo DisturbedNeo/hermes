@@ -1,5 +1,5 @@
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member, unused_element, unused_field
-part of 'chat_controller.dart';
+part of 'chat_runtime_engine.dart';
 
 extension _ChatPromptOperations on _ChatApplicationContext {
   String _buildTaskSystemPrompt(Task snapshot) {
@@ -75,7 +75,7 @@ extension _ChatPromptOperations on _ChatApplicationContext {
       return;
     }
 
-    currentModelSnapshot = activeSnapshot;
+    dispatchCurrentModelSnapshot(activeSnapshot);
     _requestContextEstimateUpdate(immediate: true);
     _markPersistableChange();
     notifyListeners();

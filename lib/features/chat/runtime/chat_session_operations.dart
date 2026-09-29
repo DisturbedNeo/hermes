@@ -1,5 +1,5 @@
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member, unused_element, unused_field
-part of 'chat_controller.dart';
+part of 'chat_runtime_engine.dart';
 
 extension _ChatSessionOperations on _ChatApplicationContext {
   // ── Public API (session management + orchestration) ─────────────────────
@@ -67,15 +67,15 @@ extension _ChatSessionOperations on _ChatApplicationContext {
     await _deleteTransientTasksForCurrentScope();
     await _deleteTransientProjectsForCurrentScope();
     _clearSavedState();
-    currentSystemPromptSnapshot = systemPromptSnapshot;
-    activeProject = null;
-    availableProjects = const [];
-    activeTask = null;
-    availableTasks = const [];
-    taskError = null;
-    taskStatusMessage = null;
+    setCurrentSystemPromptSnapshot(systemPromptSnapshot);
+    setActiveProject(null);
+    setAvailableProjects(const []);
+    setActiveTask(null);
+    setAvailableTasks(const []);
+    setTaskError(null);
+    setTaskStatusMessage(null);
     _clearTaskModelOutput(notify: false);
-    currentModelSnapshot = _activeServerSnapshot;
+    dispatchCurrentModelSnapshot(_activeServerSnapshot);
     _historyRevision++;
     messageStore.setMessages([
       systemPrompt.copyWith(text: _buildSystemPrompt()),
@@ -97,45 +97,53 @@ extension _ChatSessionOperations on _ChatApplicationContext {
     await _deleteTransientTasksForCurrentScope();
     _loadingSnapshot = true;
     try {
-      currentChatId = snapshot.chat.id;
+      setCurrentChatId(snapshot.chat.id);
       _chatSessionScopeId = snapshot.chat.id;
-      currentSavedChat = snapshot.chat;
-      currentModelSnapshot = snapshot.chat.modelSnapshot;
+      setCurrentSavedChat(snapshot.chat);
+      dispatchCurrentModelSnapshot(snapshot.chat.modelSnapshot);
       _clearTaskModelOutput(notify: false);
-      workspace = await _restoreWorkspace(snapshot.chat.workspace);
+      setWorkspace(await _restoreWorkspace(snapshot.chat.workspace));
       if (workspace != null && workspace?.missing != true) {
-        activeProject = (await _recoverProject(
-          workspace!,
-          await _projectApplication.loadLatestProject(
+        setActiveProject(
+          (await _recoverProject(
             workspace!,
-            chatSessionId: snapshot.chat.id,
-          ),
-        ))?.project;
-        availableProjects = await _projectApplication.listProjects(
-          workspace!,
-          chatSessionId: snapshot.chat.id,
-        );
-        activeTask = await _taskForActiveProject(workspace!, activeProject);
-        if (activeTask == null && activeProject == null) {
-          activeTask = await _recoverTaskSnapshot(
-            workspace!,
-            await _taskController.loadLatestTask(
+            await _projectApplication.loadLatestProject(
               workspace!,
               chatSessionId: snapshot.chat.id,
             ),
+          ))?.project,
+        );
+        setAvailableProjects(
+          await _projectApplication.listProjects(
+            workspace!,
+            chatSessionId: snapshot.chat.id,
+          ),
+        );
+        setActiveTask(await _taskForActiveProject(workspace!, activeProject));
+        if (activeTask == null && activeProject == null) {
+          setActiveTask(
+            await _recoverTaskSnapshot(
+              workspace!,
+              await _taskController.loadLatestTask(
+                workspace!,
+                chatSessionId: snapshot.chat.id,
+              ),
+            ),
           );
         }
-        availableTasks = await _taskController.listTasks(
-          workspace!,
-          chatSessionId: snapshot.chat.id,
+        setAvailableTasks(
+          await _taskController.listTasks(
+            workspace!,
+            chatSessionId: snapshot.chat.id,
+          ),
         );
       } else {
-        activeProject = null;
-        availableProjects = const [];
-        availableTasks = const [];
-        activeTask = null;
+        setActiveProject(null);
+        setAvailableProjects(const []);
+        setAvailableTasks(const []);
+        setActiveTask(null);
       }
-      currentSystemPromptSnapshot = snapshot.chat.systemPromptSnapshot;
+      setCurrentSystemPromptSnapshot(snapshot.chat.systemPromptSnapshot);
       _historyRevision++;
       messageStore.setMessages(_withCurrentSystemPrompt(snapshot.messages));
       _resetPersistenceRevisions();
@@ -188,13 +196,13 @@ extension _ChatSessionOperations on _ChatApplicationContext {
   }
 
   void setCurrentModelSnapshot(ModelConfigurationSnapshot snapshot) {
-    currentModelSnapshot = snapshot;
+    dispatchCurrentModelSnapshot(snapshot);
     _requestContextEstimateUpdate(immediate: true);
     _markPersistableChange();
 
     if (pendingModelRestore?.matches(snapshot) ?? false) {
-      pendingModelRestore = null;
-      pendingModelRestoreIssue = null;
+      setPendingModelRestore(null);
+      setPendingModelRestoreIssue(null);
     }
 
     notifyListeners();
@@ -214,8 +222,8 @@ extension _ChatSessionOperations on _ChatApplicationContext {
       throw FlutterError('Saved MTP model file not found: $mtpModelPath');
     }
 
-    pendingModelRestore = null;
-    pendingModelRestoreIssue = null;
+    setPendingModelRestore(null);
+    setPendingModelRestoreIssue(null);
     notifyListeners();
 
     await serverManager.startWithSnapshot(snapshot);
@@ -223,8 +231,8 @@ extension _ChatSessionOperations on _ChatApplicationContext {
   }
 
   void dismissPendingModelRestore() {
-    pendingModelRestore = null;
-    pendingModelRestoreIssue = null;
+    setPendingModelRestore(null);
+    setPendingModelRestoreIssue(null);
     notifyListeners();
   }
 
@@ -233,7 +241,7 @@ extension _ChatSessionOperations on _ChatApplicationContext {
       throw StateError('System prompt is locked for this chat');
     }
 
-    currentSystemPromptSnapshot = snapshot;
+    setCurrentSystemPromptSnapshot(snapshot);
     _syncSystemPrompt();
     notifyListeners();
   }
@@ -293,33 +301,38 @@ extension _ChatSessionOperations on _ChatApplicationContext {
         chatSessionId: previousScopeId,
       );
     }
-    workspace = nextWorkspace;
+    setWorkspace(nextWorkspace);
     _syncSystemPrompt();
     final scopeId = _taskScopeId;
-    activeProject = (await _recoverProject(
-      workspace!,
-      await _projectApplication.loadLatestProject(
+    setActiveProject(
+      (await _recoverProject(
         workspace!,
-        chatSessionId: scopeId,
-      ),
-    ))?.project;
-    availableProjects = await _projectApplication.listProjects(
-      workspace!,
-      chatSessionId: scopeId,
-    );
-    activeTask = await _taskForActiveProject(workspace!, activeProject);
-    if (activeTask == null && activeProject == null) {
-      activeTask = await _recoverTaskSnapshot(
-        workspace!,
-        await _taskController.loadLatestTask(
+        await _projectApplication.loadLatestProject(
           workspace!,
           chatSessionId: scopeId,
         ),
+      ))?.project,
+    );
+    setAvailableProjects(
+      await _projectApplication.listProjects(
+        workspace!,
+        chatSessionId: scopeId,
+      ),
+    );
+    setActiveTask(await _taskForActiveProject(workspace!, activeProject));
+    if (activeTask == null && activeProject == null) {
+      setActiveTask(
+        await _recoverTaskSnapshot(
+          workspace!,
+          await _taskController.loadLatestTask(
+            workspace!,
+            chatSessionId: scopeId,
+          ),
+        ),
       );
     }
-    availableTasks = await _taskController.listTasks(
-      workspace!,
-      chatSessionId: scopeId,
+    setAvailableTasks(
+      await _taskController.listTasks(workspace!, chatSessionId: scopeId),
     );
     _markWorkspaceChanged();
   }
@@ -328,11 +341,11 @@ extension _ChatSessionOperations on _ChatApplicationContext {
     if (chatStream.isStreaming) return;
     await _deleteTransientTasksForCurrentScope();
     await _deleteTransientProjectsForCurrentScope();
-    workspace = null;
-    activeProject = null;
-    availableProjects = const [];
-    activeTask = null;
-    availableTasks = const [];
+    setWorkspace(null);
+    setActiveProject(null);
+    setAvailableProjects(const []);
+    setActiveTask(null);
+    setAvailableTasks(const []);
     _syncSystemPrompt();
     _markWorkspaceChanged();
   }
@@ -340,14 +353,14 @@ extension _ChatSessionOperations on _ChatApplicationContext {
   void setCommandExecutionApproved(bool approved) {
     final current = workspace;
     if (current == null) return;
-    workspace = current.copyWith(commandExecutionApproved: approved);
+    setWorkspace(current.copyWith(commandExecutionApproved: approved));
     _markWorkspaceChanged();
   }
 
   void setExecutionMode(ExecutionMode mode) {
     if (chatStream.isStreaming || taskBusy) return;
     if (executionMode == mode) return;
-    executionMode = mode;
+    dispatchExecutionMode(mode);
     notifyListeners();
   }
 

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/shared_kernel/subagent_service.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/shared_kernel/workspace_ports.dart';
 
 class ToolDefinition {
   const ToolDefinition({
@@ -157,7 +158,7 @@ class ToolFailure extends ToolResult {
 
 /// Typed registry boundary used by feature application ports.
 abstract interface class ToolRegistryPort {
-  dynamic get workspaceSandbox;
+  WorkspaceSandboxPort get workspaceSandbox;
 
   List<ToolDefinition> getToolDefinitions({
     List<String> ids,

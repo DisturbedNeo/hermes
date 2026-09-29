@@ -1,5 +1,5 @@
 // ignore_for_file: dead_code, dead_code_on_catch_subtype, unused_element
-part of 'task_controller.dart';
+part of 'task_runtime_engine.dart';
 
 class _IncrementalTaskPlanAttempt {
   final Task? task;
@@ -211,7 +211,7 @@ extension _TaskPlanningOperations on _TaskApplicationContext {
     task = task.copyWith(
       planningMetrics: task.planningMetrics.add(planningMetrics),
     );
-    final existing = await repository.loadTaskSnapshot(
+    final existing = await persistence.loadTaskSnapshot(
       workspace.rootPath,
       task.id,
       includeHistory: false,
@@ -480,7 +480,7 @@ or an explicit user command. Task memories remain separate from that graph.
       planningContext: planningContext,
       now: now,
     );
-    final existing = await repository.loadTaskSnapshot(
+    final existing = await persistence.loadTaskSnapshot(
       workspace.rootPath,
       task.id,
       includeHistory: false,

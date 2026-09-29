@@ -1,20 +1,7 @@
 import 'package:dart_mappable/dart_mappable.dart';
-import 'package:hermes/shared_kernel/task_planning_types.dart';
-import 'package:hermes/shared_kernel/task_execution_contracts.dart';
+import 'package:hermes/shared_kernel/task.dart';
 
 part 'project_task_models.mapper.dart';
-
-typedef ProjectTaskDefinitionFactory = Object Function(ProjectTaskNode node);
-
-ProjectTaskDefinitionFactory? _taskDefinitionFactory;
-
-/// Registers the one-way project-to-task materializer owned by the task
-/// application boundary. The project domain keeps no executable Task import.
-void registerProjectTaskDefinitionFactory(
-  ProjectTaskDefinitionFactory factory,
-) {
-  _taskDefinitionFactory = factory;
-}
 
 /// Planner-owned description of a task.
 ///
@@ -155,8 +142,8 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
   final DateTime createdAt;
   final DateTime updatedAt;
 
-  factory ProjectTaskNode.fromTask(Object task) {
-    final source = task as dynamic;
+  factory ProjectTaskNode.fromTask(Task task) {
+    final source = task;
     return ProjectTaskNode(
       id: source.id,
       title: source.title,
@@ -280,13 +267,6 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
-
-  /// Materializes a planning node at the task-system boundary. The returned
-  /// document is a definition only; it deliberately contains no steps, runs,
-  /// or execution history.
-  dynamic toTaskDefinition() =>
-      _taskDefinitionFactory?.call(this) ??
-      (throw StateError('Task materializer has not been registered.'));
 
   bool get isTerminal => switch (status) {
     TaskStatus.completed ||

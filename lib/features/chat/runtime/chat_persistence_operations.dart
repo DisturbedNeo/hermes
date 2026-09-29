@@ -1,5 +1,5 @@
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member, unused_element, unused_field
-part of 'chat_controller.dart';
+part of 'chat_runtime_engine.dart';
 
 extension _ChatPersistenceOperations on _ChatApplicationContext {
   void _handlePreferencesChanged() {
@@ -10,7 +10,7 @@ extension _ChatPersistenceOperations on _ChatApplicationContext {
     final settings = await _preferencesService.getTaskSystemSettings();
     if (_disposed) return settings;
     if (taskSystemSettings != settings) {
-      taskSystemSettings = settings;
+      setTaskSystemSettings(settings);
       notifyListeners();
     }
     return settings;
@@ -36,8 +36,8 @@ extension _ChatPersistenceOperations on _ChatApplicationContext {
       currentWorkspace,
       chatSessionId: _chatSessionScopeId,
     );
-    activeTask = null;
-    availableTasks = const [];
+    setActiveTask(null);
+    setAvailableTasks(const []);
   }
 
   Future<void> _deleteTransientProjectsForCurrentScope() async {
@@ -48,8 +48,8 @@ extension _ChatPersistenceOperations on _ChatApplicationContext {
       currentWorkspace,
       chatSessionId: _chatSessionScopeId,
     );
-    activeProject = null;
-    availableProjects = const [];
+    setActiveProject(null);
+    setAvailableProjects(const []);
   }
 
   List<WorkspaceAttachment> _workspacesForSavedChatDeletion(
@@ -105,31 +105,33 @@ extension _ChatPersistenceOperations on _ChatApplicationContext {
         type != ProjectBlockerType.taskFailed) {
       return;
     }
-    activeProject = await _projectApplication.clearTaskBlocker(
-      workspace: currentWorkspace,
-      snapshot: project,
+    setActiveProject(
+      await _projectApplication.clearTaskBlocker(
+        workspace: currentWorkspace,
+        snapshot: project,
+      ),
     );
   }
 
   CancellationToken _beginTaskCancellationScope({bool reuseExisting = false}) {
     final token = _commandCoordinator.begin(reuseExisting: reuseExisting);
-    taskCancellationRequested = false;
+    setTaskCancellationRequested(false);
     return token;
   }
 
   void _endTaskCancellationScope(CancellationToken token) {
     _commandCoordinator.end(token);
-    taskCancellationRequested = false;
+    setTaskCancellationRequested(false);
   }
 
   // ── Task model output management ────────────────────────────────────────
 
   void _beginTaskModelOutput(String title) {
     _finishTaskModelOutputBubble(clearCurrent: true);
-    taskModelOutputTitle = title;
-    taskModelOutputText = '';
-    taskModelOutputReasoning = '';
-    taskModelOutputActive = true;
+    setTaskModelOutputTitle(title);
+    setTaskModelOutputText('');
+    setTaskModelOutputReasoning('');
+    setTaskModelOutputActive(true);
     _taskModelOutputLabel = null;
     _taskModelOutputTextSection = null;
     _taskModelOutputReasoningLabel = null;
@@ -139,10 +141,10 @@ extension _ChatPersistenceOperations on _ChatApplicationContext {
   void _clearTaskModelOutput({bool notify = true}) {
     _finishTaskModelOutputBubble(clearCurrent: true);
     _taskModelOutputNotifier.cancel();
-    taskModelOutputTitle = null;
-    taskModelOutputText = '';
-    taskModelOutputReasoning = '';
-    taskModelOutputActive = false;
+    setTaskModelOutputTitle(null);
+    setTaskModelOutputText('');
+    setTaskModelOutputReasoning('');
+    setTaskModelOutputActive(false);
     _taskModelOutputLabel = null;
     _taskModelOutputTextSection = null;
     _taskModelOutputReasoningLabel = null;
@@ -167,22 +169,22 @@ extension _ChatPersistenceOperations on _ChatApplicationContext {
         _session.startTaskModelOutputBubble();
         _taskModelOutputLabel = event.label;
         _taskModelOutputTextSection = null;
-        taskModelOutputText += '\n\n## ${event.label}\n';
+        appendTaskModelOutputText('\n\n## ${event.label}\n');
       case TaskModelOutputEventType.content:
         _ensureTaskModelTextSection(event.label, 'output');
-        taskModelOutputText += event.text;
+        appendTaskModelOutputText(event.text);
         _session.appendTaskModelToken(event);
       case TaskModelOutputEventType.reasoning:
         _ensureTaskModelReasoningSection(event.label);
-        taskModelOutputReasoning += event.text;
+        appendTaskModelOutputReasoning(event.text);
         _session.appendTaskModelToken(event);
       case TaskModelOutputEventType.toolCall:
         _ensureTaskModelTextSection(event.label, 'tool-call');
-        taskModelOutputText += '\nTool call:\n${event.text}\n';
+        appendTaskModelOutputText('\nTool call:\n${event.text}\n');
         _session.appendTaskModelToken(event);
       case TaskModelOutputEventType.toolResult:
         _ensureTaskModelTextSection(event.label, 'tool-result');
-        taskModelOutputText += '\nTool result:\n${event.text}\n';
+        appendTaskModelOutputText('\nTool result:\n${event.text}\n');
         _session.appendTaskToolResult(event);
       case TaskModelOutputEventType.done:
         notifyImmediately = true;
@@ -191,7 +193,7 @@ extension _ChatPersistenceOperations on _ChatApplicationContext {
       case TaskModelOutputEventType.error:
         notifyImmediately = true;
         _ensureTaskModelTextSection(event.label, 'error');
-        taskModelOutputText += '\nError: ${event.text}\n';
+        appendTaskModelOutputText('\nError: ${event.text}\n');
         _session.flushPendingTokens();
         messageStore.appendCurrentError(event.text);
     }
@@ -214,7 +216,7 @@ extension _ChatPersistenceOperations on _ChatApplicationContext {
     if (_taskModelOutputLabel != label) {
       _taskModelOutputLabel = label;
       _taskModelOutputTextSection = null;
-      taskModelOutputText += '\n\n## $label\n';
+      appendTaskModelOutputText('\n\n## $label\n');
     }
     if (_taskModelOutputTextSection == section) return;
     _taskModelOutputTextSection = section;
@@ -223,15 +225,16 @@ extension _ChatPersistenceOperations on _ChatApplicationContext {
       case 'tool-call':
       case 'tool-result':
       case 'error':
-        taskModelOutputText += '\n';
+        appendTaskModelOutputText('\n');
     }
   }
 
   void _ensureTaskModelReasoningSection(String label) {
     if (_taskModelOutputReasoningLabel == label) return;
     _taskModelOutputReasoningLabel = label;
-    taskModelOutputReasoning +=
-        '${taskModelOutputReasoning.trim().isEmpty ? '' : '\n\n'}## $label\n';
+    appendTaskModelOutputReasoning(
+      '${taskModelOutputReasoning.trim().isEmpty ? '' : '\n\n'}## $label\n',
+    );
   }
 
   void _finishTaskModelOutputBubble({required bool clearCurrent}) {
@@ -257,7 +260,7 @@ extension _ChatPersistenceOperations on _ChatApplicationContext {
 
   void _finishTaskModelOutput() {
     _finishTaskModelOutputBubble(clearCurrent: true);
-    taskModelOutputActive = false;
+    setTaskModelOutputActive(false);
     _taskModelOutputContextEstimate = null;
     _requestContextEstimateUpdate(immediate: true);
   }
@@ -382,9 +385,9 @@ extension _ChatPersistenceOperations on _ChatApplicationContext {
         systemPromptSnapshot: capturedSystemPromptSnapshot,
       );
 
-      currentChatId = saved.id;
+      setCurrentChatId(saved.id);
       _chatSessionScopeId = saved.id;
-      currentSavedChat = saved;
+      setCurrentSavedChat(saved);
       if (previousChatId == null) {
         _pendingScopeMove ??= _PendingScopeMove(
           previousScopeId: previousScopeId,
@@ -411,7 +414,7 @@ extension _ChatPersistenceOperations on _ChatApplicationContext {
         _pendingScopeMove = null;
       }
       _persistedRevision = capturedRevision;
-      saveFailure = null;
+      setSaveFailure(null);
       if (_hasPendingPersistence) _scheduleAutosave();
       notifyListeners();
       return saved;
@@ -455,7 +458,7 @@ extension _ChatPersistenceOperations on _ChatApplicationContext {
       );
       if (updated.id == activeTaskId &&
           workspace?.rootPath == currentWorkspace.rootPath) {
-        activeTask = updated;
+        setActiveTask(updated);
       }
     }
     final scopedTasks = await _taskController.listTasks(
@@ -463,7 +466,7 @@ extension _ChatPersistenceOperations on _ChatApplicationContext {
       chatSessionId: savedChatId,
     );
     if (workspace?.rootPath == currentWorkspace.rootPath) {
-      availableTasks = scopedTasks;
+      setAvailableTasks(scopedTasks);
     }
   }
 
@@ -495,7 +498,7 @@ extension _ChatPersistenceOperations on _ChatApplicationContext {
       );
       if (updated.id == activeProjectId &&
           workspace?.rootPath == currentWorkspace.rootPath) {
-        activeProject = updated;
+        setActiveProject(updated);
       }
     }
     final scopedProjects = await _projectApplication.listProjects(
@@ -503,22 +506,23 @@ extension _ChatPersistenceOperations on _ChatApplicationContext {
       chatSessionId: savedChatId,
     );
     if (workspace?.rootPath == currentWorkspace.rootPath) {
-      availableProjects = scopedProjects;
+      setAvailableProjects(scopedProjects);
     }
   }
 
   Future<void> _prepareModelRestorePrompt(
     ModelConfigurationSnapshot? snapshot,
   ) async {
-    pendingModelRestore = null;
-    pendingModelRestoreIssue = null;
+    setPendingModelRestore(null);
+    setPendingModelRestoreIssue(null);
 
     if (snapshot == null || snapshot.matches(_activeServerSnapshot)) return;
 
-    pendingModelRestore = snapshot;
+    setPendingModelRestore(snapshot);
     if (!await File(snapshot.modelPath).exists()) {
-      pendingModelRestoreIssue =
-          'Saved model file not found: ${snapshot.modelPath}';
+      setPendingModelRestoreIssue(
+        'Saved model file not found: ${snapshot.modelPath}',
+      );
       return;
     }
 
@@ -526,36 +530,39 @@ extension _ChatPersistenceOperations on _ChatApplicationContext {
     if (snapshot.mtpEnabled &&
         mtpModelPath != null &&
         !await File(mtpModelPath).exists()) {
-      pendingModelRestoreIssue =
-          'Saved MTP model file not found: $mtpModelPath';
+      setPendingModelRestoreIssue(
+        'Saved MTP model file not found: $mtpModelPath',
+      );
     }
   }
 
   void _clearSavedState() {
-    currentChatId = null;
+    setCurrentChatId(null);
     _chatSessionScopeId = uuid.v7();
-    currentSavedChat = null;
-    workspace = null;
-    activeProject = null;
-    availableProjects = const [];
-    activeTask = null;
-    availableTasks = const [];
-    taskError = null;
-    taskStatusMessage = null;
-    currentSystemPromptSnapshot = null;
-    pendingModelRestore = null;
-    pendingModelRestoreIssue = null;
+    setCurrentSavedChat(null);
+    setWorkspace(null);
+    setActiveProject(null);
+    setAvailableProjects(const []);
+    setActiveTask(null);
+    setAvailableTasks(const []);
+    setTaskError(null);
+    setTaskStatusMessage(null);
+    setCurrentSystemPromptSnapshot(null);
+    setPendingModelRestore(null);
+    setPendingModelRestoreIssue(null);
     _pendingScopeMove = null;
     _resetPersistenceRevisions();
-    saveFailure = null;
+    setSaveFailure(null);
     notifyListeners();
   }
 
   void _recordSaveFailure(Object error, StackTrace stackTrace) {
-    saveFailure = ChatSaveFailure(
-      error: error,
-      stackTrace: stackTrace,
-      occurredAt: DateTime.now(),
+    setSaveFailure(
+      ChatSaveFailure(
+        error: error,
+        stackTrace: stackTrace,
+        occurredAt: DateTime.now(),
+      ),
     );
     if (!_disposed) notifyListeners();
   }

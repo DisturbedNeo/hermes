@@ -25,7 +25,7 @@ import 'package:hermes/features/project/application/project_application/project_
 import 'package:hermes/features/project/infrastructure/project_repository.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/features/task/infrastructure/task_repository.dart';
-import 'package:hermes/features/chat/runtime/model/llama_server_manager.dart';
+import 'package:hermes/features/model/infrastructure/llama_server_manager.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/features/chat/infrastructure/system_prompt_library_repository.dart';
 import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
@@ -62,7 +62,7 @@ void main() {
       final taskController = TaskController(
         toolService: toolService,
         sandbox: sandbox,
-        repository: TaskRepository(),
+        persistence: TaskRepository(),
       );
       chat = ChatController(
         serverManager: serverManager,
@@ -374,11 +374,12 @@ void main() {
         taskController: _createTaskController(),
         repository: ProjectRepository(),
       );
-      chat.activeProject =
-          (await seedProjectApplication.repository.saveSnapshot(
-            tempDir.path,
-            seedProject,
-          )).value;
+      chat.setActiveProject(
+        (await seedProjectApplication.persistence.saveSnapshot(
+          tempDir.path,
+          seedProject,
+        )).value,
+      );
 
       await chat.send('/continue-project');
 
@@ -689,7 +690,7 @@ void main() {
           (await ProjectApplication(
             taskController: _createTaskController(),
             repository: ProjectRepository(),
-          ).repository.listProjects(tempDir.path)),
+          ).persistence.listProjects(tempDir.path)),
           hasLength(1),
         );
       },
@@ -704,11 +705,11 @@ void main() {
         }),
       ]);
       await chat.attachWorkspace(tempDir.path);
-      chat.activeTask = _taskDocument();
-      chat.activeTask = (await TaskRepository().saveSnapshot(
+      chat.setActiveTask(_taskDocument());
+      chat.setActiveTask((await TaskRepository().saveSnapshot(
         tempDir.path,
         chat.activeTask!,
-      )).value;
+      )).value);
 
       await chat.send('/continue');
 
@@ -750,7 +751,7 @@ void main() {
       final taskController = TaskController(
         toolService: toolService,
         sandbox: sandbox,
-        repository: TaskRepository(),
+        persistence: TaskRepository(),
       );
       tabs = ChatWorkspaceController(
         serverManager: LlamaServerManager(),
@@ -895,7 +896,7 @@ void main() {
       await ProjectApplication(
         taskController: _createTaskController(),
         repository: ProjectRepository(),
-      ).repository.saveSnapshot(tempDir.path, orphaned);
+      ).persistence.saveSnapshot(tempDir.path, orphaned);
       final projectDir = Directory(
         path.join(tempDir.path, '.agent', 'projects', 'project_orphaned'),
       );
@@ -914,7 +915,7 @@ TaskController _createTaskController() {
   return TaskController(
     toolService: ToolService(workspaceSandbox: sandbox),
     sandbox: sandbox,
-    repository: TaskRepository(),
+    persistence: TaskRepository(),
   );
 }
 

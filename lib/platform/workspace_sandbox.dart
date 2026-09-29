@@ -18,8 +18,9 @@ import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/platform/host_command_runner.dart';
 import 'package:hermes/shared_kernel/terminal_command_parser.dart';
 import 'package:hermes/shared_kernel/sandbox_policy.dart';
+import 'package:hermes/shared_kernel/workspace_ports.dart';
 
-class WorkspaceSandbox {
+class WorkspaceSandbox implements WorkspaceSandboxPort {
   WorkspaceSandbox({
     Duration commandTimeout = kCommandTimeout,
     this.commandTerminationGrace = const Duration(seconds: 2),

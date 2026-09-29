@@ -2,11 +2,30 @@ import 'package:hermes/shared_kernel/persistence_contracts.dart';
 import 'package:hermes/shared_kernel/task.dart';
 import 'package:hermes/shared_kernel/task_summary.dart';
 import 'package:hermes/shared_kernel/workspace_ports.dart';
+import 'package:hermes/shared_kernel/project_task_models.dart';
 
 class TaskStorageLayout {
   static const String tasksRoot = '.agent/tasks';
   static const String documentFileName = 'task.json';
   static const String runsDirectoryName = 'runs';
+}
+
+/// Application-owned conversion boundary for planning-only project nodes.
+abstract interface class TaskMaterializerPort {
+  Task create(
+    ProjectTaskNode node, {
+    required String projectId,
+    String? chatSessionId,
+  });
+
+  Task apply(
+    ProjectTaskNode node,
+    Task existing, {
+    required String projectId,
+    String? chatSessionId,
+  });
+
+  bool matches(ProjectTaskNode node, Task task);
 }
 
 /// Read-only task persistence capabilities.
@@ -110,3 +129,7 @@ abstract interface class TaskCleanupPort {
     required Set<String> retainedChatSessionIds,
   });
 }
+
+/// Narrow task persistence capability used by project aggregate infrastructure.
+abstract interface class TaskPersistencePort
+    implements TaskReadPort, TaskWritePort, TaskCleanupPort {}

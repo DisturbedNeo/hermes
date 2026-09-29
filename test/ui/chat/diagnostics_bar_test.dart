@@ -5,7 +5,7 @@ import 'package:hermes/shared_kernel/preferences_keys.dart';
 import 'package:hermes/shared_kernel/model_call_diagnostics.dart';
 import 'package:hermes/shared_kernel/model_configuration.dart';
 import 'package:hermes/shared_kernel/model_session_contracts.dart';
-import 'package:hermes/features/chat/runtime/model/model_session_diagnostics.dart';
+import 'package:hermes/features/model/application/model_session_diagnostics.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/features/chat/presentation/chat/diagnostics_bar.dart';
 import 'package:shared_preferences/shared_preferences.dart';

@@ -43,6 +43,7 @@ class _AppState extends State<App> {
   void initState() {
     super.initState();
     _dependencies = AppDependencies.create();
+    unawaited(_dependencies.start());
   }
 
   @override

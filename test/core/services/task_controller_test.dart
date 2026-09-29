@@ -36,7 +36,7 @@ void main() {
       service = TaskController(
         toolService: ToolService(workspaceSandbox: sandbox),
         sandbox: sandbox,
-        repository: TaskRepository(),
+        persistence: TaskRepository(),
       );
     });
 
@@ -430,7 +430,7 @@ void main() {
           status: TaskStepStatus.pending,
         ),
       );
-      final persisted = await service.repository.saveSnapshot(root.path, task);
+      final persisted = await service.persistence.saveSnapshot(root.path, task);
       final client = _QueueChatClient([
         jsonEncode({
           'status': 'completed',

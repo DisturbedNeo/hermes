@@ -8,7 +8,7 @@ import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/runtime/chat_controller.dart';
 import 'package:hermes/features/project/application/project_application/project_ports.dart';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
-import 'package:hermes/features/chat/runtime/model/llama_server_manager.dart';
+import 'package:hermes/features/model/application/model_server_port.dart';
 import 'package:hermes/shared_kernel/preferences_port.dart';
 import 'package:hermes/shared_kernel/subagent_service.dart';
 import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
@@ -19,6 +19,17 @@ import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/shared_kernel/disposable.dart';
 import 'package:hermes/shared_kernel/chat_workspace_contracts.dart';
 
+typedef ChatTabFactory = ChatRuntimeController Function({
+  required ModelServerPort serverManager,
+  required ToolRegistryPort toolService,
+  required TaskChatPort taskController,
+  required ProjectChatPort projectApplication,
+  required ChatLibraryService chatLibrary,
+  required WorkspacePort workspaceService,
+  required PreferencesPort preferencesService,
+  SystemPromptSnapshot? initialSystemPromptSnapshot,
+});
+
 class ChatRuntimeWorkspaceController extends ChangeNotifier
     implements Disposable {
   final ChatLibraryService _chatLibrary;
@@ -28,9 +39,9 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
   final ProjectChatPort _projectApplication;
   final WorkspacePort _workspaceService;
   final PreferencesPort _preferencesService;
-  final dynamic _tabFactory;
+  final ChatTabFactory? _tabFactory;
 
-  final LlamaServerManager serverManager;
+  final ModelServerPort serverManager;
   SubagentService? _subagentService;
   final List<ChatRuntimeController> _tabs = [];
 
@@ -47,7 +58,7 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
     required ProjectChatPort projectApplication,
     required WorkspacePort workspaceService,
     required PreferencesPort preferencesService,
-    dynamic tabFactory,
+    ChatTabFactory? tabFactory,
   }) : _chatLibrary = chatLibrary,
        _systemPromptLibrary = systemPromptLibrary,
        _toolService = toolService,
@@ -293,8 +304,7 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
                 workspaceService: _workspaceService,
                 preferencesService: _preferencesService,
                 initialSystemPromptSnapshot: systemPromptSnapshot,
-              )
-              as ChatRuntimeController;
+              );
     tab.addListener(notifyListeners);
     return tab;
   }
@@ -353,6 +363,7 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
       await prepareForExit(NewChatExitPolicy.discard);
     }
     _disposed = true;
+    serverManager.handle.removeListener(_handleServerAvailabilityChanged);
 
     for (final tab in List<ChatRuntimeController>.of(_tabs)) {
       tab.removeListener(notifyListeners);

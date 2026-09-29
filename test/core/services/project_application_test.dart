@@ -124,7 +124,7 @@ void main() {
         return ProjectCommandResult.fromSnapshot(project: request.snapshot);
       }),
     );
-    final saved = await orchestrator.repository.saveSnapshot(
+    final saved = await orchestrator.persistence.saveSnapshot(
       root.path,
       _project(),
     );
@@ -153,7 +153,7 @@ void main() {
           return ProjectCommandResult.fromSnapshot(project: request.snapshot);
         }),
       );
-      final saved = await orchestrator.repository.saveSnapshot(
+    final saved = await orchestrator.persistence.saveSnapshot(
         root.path,
         _project(),
       );
@@ -190,7 +190,7 @@ void main() {
           (request) => release.future,
         ),
       );
-      final saved = await orchestrator.repository.saveSnapshot(
+    final saved = await orchestrator.persistence.saveSnapshot(
         root.path,
         _project(),
       );

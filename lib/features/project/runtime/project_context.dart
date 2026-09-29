@@ -1,8 +1,11 @@
-part of 'project_application.dart';
+part of 'project_runtime_engine.dart';
 
 class _ProjectApplicationContext {
   _ProjectApplicationContext({
     required TaskProjectPort taskController,
+    required TaskPersistencePort taskPersistence,
+    required ToolRegistryPort toolService,
+    required this.materializer,
     ProjectRepositoryPort? repository,
     ProjectPlanner? planner,
     ProjectCompletionEvaluator? completionEvaluator,
@@ -23,9 +26,11 @@ class _ProjectApplicationContext {
     ProjectCompletionService? completion,
     ProjectRecoveryService? recoveryService,
   }) : _taskController = taskController,
+       taskPersistence = taskPersistence,
+       toolService = toolService,
        _repository = repository ?? InMemoryProjectRepository(),
        _persistenceCoordinator =
-           persistenceCoordinator ?? taskController.repository.coordinator,
+           persistenceCoordinator ?? taskPersistence.coordinator,
        _providedAggregateRepository = aggregateRepository,
        _providedStateStore = stateStore,
        _providedCommandService = commandService,
@@ -34,14 +39,14 @@ class _ProjectApplicationContext {
        _planner =
            planner ??
            ProjectModelCalls(
-             toolService: taskController.toolService,
+             toolService: toolService,
              planningRunner: planningRunner,
              structuredOutput: structuredOutput,
            ),
        _completionEvaluator =
            completionEvaluator ??
            ProjectModelCalls(
-             toolService: taskController.toolService,
+             toolService: toolService,
              planningRunner: planningRunner,
              structuredOutput: structuredOutput,
            ),
@@ -57,6 +62,9 @@ class _ProjectApplicationContext {
        );
 
   final TaskProjectPort _taskController;
+  final TaskPersistencePort taskPersistence;
+  final ToolRegistryPort toolService;
+  final TaskMaterializerPort materializer;
   final ProjectRepositoryPort _repository;
   final ProjectPlanner _planner;
   final ProjectCompletionEvaluator _completionEvaluator;
@@ -74,15 +82,18 @@ class _ProjectApplicationContext {
   final ProjectAggregateRepositoryPort? _providedAggregateRepository;
   final ProjectStateStore? _providedStateStore;
 
+  ProjectRepositoryPort get persistence => _repository;
+
   late final ProjectAggregateRepositoryPort _aggregateRepository =
       _providedAggregateRepository ??
       InMemoryProjectAggregateRepository(
         projectRepository: _repository,
-        taskRepository: _taskController.repository,
+        taskRepository: taskPersistence,
       );
   late final ProjectAggregateStore _aggregateStore = ProjectAggregateStore(
     aggregateRepository: _aggregateRepository,
-    taskRepository: _taskController.repository,
+    taskRepository: taskPersistence,
+    materializer: materializer,
   );
   late final ProjectPersistenceHandler _persistenceHandler =
       ProjectPersistenceHandler(

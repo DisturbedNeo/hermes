@@ -1,4 +1,4 @@
-part of 'chat_controller.dart';
+part of 'chat_runtime_engine.dart';
 
 class _SlashCommand {
   final String name;

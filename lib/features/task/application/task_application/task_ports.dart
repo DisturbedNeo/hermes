@@ -8,6 +8,7 @@ import 'package:hermes/shared_kernel/tool_contracts.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/shared_kernel/task.dart';
 import 'package:hermes/shared_kernel/task_planning_models.dart';
+import 'package:hermes/shared_kernel/task_persistence_ports.dart';
 
 abstract interface class TaskQueryPort {
   Future<List<TaskSummary>> listTasks(
@@ -184,8 +185,9 @@ abstract interface class TaskChatPort
 }
 
 abstract interface class TaskProjectPort implements TaskQueryPort {
-  dynamic get repository;
-  dynamic get toolService;
+  TaskPersistencePort get persistence;
+  ToolRegistryPort get tools;
+  TaskMaterializerPort get materializer;
 
   Future<Task> createTask({
     required ModelProvider client,

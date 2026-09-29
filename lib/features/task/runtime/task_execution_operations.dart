@@ -1,5 +1,5 @@
 // ignore_for_file: dead_code, dead_code_on_catch_subtype, unused_element
-part of 'task_controller.dart';
+part of 'task_runtime_engine.dart';
 
 enum _StepExecutionStatus { completed, blocked, needsReplan, failed }
 
@@ -423,7 +423,7 @@ extension _TaskExecutionOperations on _TaskApplicationContext {
   }) async {
     final profile = await _profileService.collect(workspace: workspace);
     final existingTasks =
-        await repository.listTasks(
+        await persistence.listTasks(
               workspace.rootPath,
               chatSessionId: chatSessionId,
             )
@@ -719,7 +719,7 @@ extension _TaskExecutionOperations on _TaskApplicationContext {
       }
     }
 
-    await repository.saveLog(
+    await persistence.saveLog(
       workspace.rootPath,
       task.id,
       '${step.id}-${run.runId}.md',

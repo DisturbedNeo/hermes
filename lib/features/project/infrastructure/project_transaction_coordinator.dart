@@ -19,7 +19,7 @@ import 'package:path/path.dart' as path;
 class ProjectTransactionCoordinator {
   ProjectTransactionCoordinator({
     required ProjectRepositoryPort projectRepository,
-    required dynamic taskRepository,
+    required TaskPersistencePort taskRepository,
     this.onTransactionPhase,
     AtomicJsonSnapshotStore snapshots = const AtomicJsonSnapshotStore(),
   }) : _projects = projectRepository,
@@ -29,7 +29,7 @@ class ProjectTransactionCoordinator {
   static const String transactionsDirectoryName = '.agent/transactions';
 
   final ProjectRepositoryPort _projects;
-  final dynamic _tasks;
+  final TaskPersistencePort _tasks;
   final AtomicJsonSnapshotStore _snapshots;
   final FutureOr<void> Function(String phase)? onTransactionPhase;
 
