@@ -14,8 +14,8 @@ class ProjectRecoveryService {
 
   final ProjectLifecycleService lifecycle;
 
-  ProjectDocument reconcile({
-    required ProjectDocument project,
+  ProjectAggregate reconcile({
+    required ProjectAggregate project,
     required Task recoveredTask,
     required DateTime now,
   }) {

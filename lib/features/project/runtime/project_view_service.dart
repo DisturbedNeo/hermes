@@ -4,7 +4,7 @@ import 'package:hermes/features/project/domain/project_workspace_context_service
 
 /// A bounded read model for project planning.
 ///
-/// This deliberately does not serialize [ProjectState] or [Task]. Runtime
+/// This deliberately does not serialize [ProjectAggregate] or [Task]. Runtime
 /// execution data such as runs, logs, gate results, and full evidence stays
 /// behind the task and execution services.
 class ProjectViewService {
@@ -23,7 +23,7 @@ class ProjectViewService {
   final ProjectWorkspaceContextService _workspaceContextService;
 
   Map<String, dynamic> query(
-    ProjectState project, {
+    ProjectAggregate project, {
     String? taskRef,
     String? criterionRef,
     String? memoryQuery,
@@ -169,7 +169,7 @@ class ProjectViewService {
     return result;
   }
 
-  List<ProjectTaskNode> _boundedTasks(ProjectState project, int limit) {
+  List<ProjectTaskNode> _boundedTasks(ProjectAggregate project, int limit) {
     final relevant = _plannerRelevantTasks(project);
     final active = relevant.where((task) => !_isTerminal(task)).toList();
     final recent = relevant.toList()
@@ -186,7 +186,7 @@ class ProjectViewService {
     return selected;
   }
 
-  List<ProjectTaskNode> _plannerRelevantTasks(ProjectState project) => [
+  List<ProjectTaskNode> _plannerRelevantTasks(ProjectAggregate project) => [
     for (final task in project.tasks)
       if (!_isTerminal(task) || task.status == TaskStatus.completed) task,
   ];
@@ -229,7 +229,7 @@ class ProjectViewService {
   };
 
   List<Map<String, dynamic>> _workspaceRelationships(
-    ProjectState project,
+    ProjectAggregate project,
     String nodeId,
     int limit,
   ) {
@@ -248,7 +248,7 @@ class ProjectViewService {
   }
 
   Map<String, dynamic> _criterionDetail(
-    ProjectState project,
+    ProjectAggregate project,
     ProjectCriterion criterion,
     int limit,
   ) => {
@@ -365,7 +365,10 @@ class ProjectViewService {
     ],
   };
 
-  List<Map<String, dynamic>> _recentFailures(ProjectState project, int limit) {
+  List<Map<String, dynamic>> _recentFailures(
+    ProjectAggregate project,
+    int limit,
+  ) {
     final failures = <_FailureSummary>[];
     for (final task in project.tasks) {
       final summary = task.failureKey?.trim();
@@ -412,7 +415,7 @@ class ProjectViewService {
     return [for (final item in failures.take(limit)) item.value];
   }
 
-  Map<String, dynamic>? _blockerSummary(ProjectState project) {
+  Map<String, dynamic>? _blockerSummary(ProjectAggregate project) {
     final blocker = project.blocker;
     if (blocker == null) return null;
     return {

@@ -20,7 +20,7 @@ enum ProjectLifecycleTrigger {
 }
 
 class ProjectTransitionResult {
-  final ProjectDocument project;
+  final ProjectAggregate project;
   final ProjectLifecycleTransition transition;
 
   const ProjectTransitionResult({
@@ -38,7 +38,7 @@ class ProjectLifecycleService {
   final ProjectControlStateService controlState;
 
   ProjectTransitionResult transition({
-    required ProjectDocument snapshot,
+    required ProjectAggregate snapshot,
     required ProjectStatus to,
     required ProjectLifecycleTrigger trigger,
     String reason = '',
@@ -118,7 +118,7 @@ class ProjectLifecycleService {
   }
 
   void _validate({
-    required ProjectDocument snapshot,
+    required ProjectAggregate snapshot,
     required ProjectStatus to,
     required ProjectLifecycleTrigger trigger,
     required String? taskId,
@@ -177,7 +177,7 @@ class ProjectLifecycleService {
     );
   }
 
-  bool _hasTask(ProjectDocument project, String? taskId) {
+  bool _hasTask(ProjectAggregate project, String? taskId) {
     final id = taskId ?? project.activeTaskId;
     return id != null && project.taskById(id) != null;
   }
@@ -192,7 +192,7 @@ class ProjectLifecycleService {
   };
 
   String _reason({
-    required ProjectDocument snapshot,
+    required ProjectAggregate snapshot,
     required ProjectStatus to,
     required ProjectLifecycleTrigger trigger,
     required String? taskId,

@@ -44,8 +44,18 @@ class ChatRuntimeController extends ChangeNotifier
     String? tabId,
     required ModelServerPort serverManager,
     required ToolRegistryPort toolService,
-    required TaskChatPort taskController,
-    required ProjectChatPort projectApplication,
+    required TaskQueryPort taskQueries,
+    required TaskSessionPort taskSessions,
+    required TaskPresentationPort taskPresentation,
+    required TaskPlanningPort taskPlanning,
+    required TaskExecutionPort taskExecution,
+    required TaskRecoveryPort taskRecovery,
+    required ProjectQueryPort projectQueries,
+    required ProjectSessionPort projectSessions,
+    required ProjectPlanningPort projectPlanning,
+    required ProjectCommandPort projectCommands,
+    required ProjectExecutionPort projectExecution,
+    required ProjectRecoveryCommandsPort projectRecovery,
     required ChatLibraryService chatLibrary,
     required WorkspacePort workspaceService,
     required PreferencesPort preferencesService,
@@ -56,8 +66,18 @@ class ChatRuntimeController extends ChangeNotifier
          tabId: tabId,
          serverManager: serverManager,
          toolService: toolService,
-         taskController: taskController,
-         projectApplication: projectApplication,
+         taskQueries: taskQueries,
+         taskSessions: taskSessions,
+         taskPresentation: taskPresentation,
+         taskPlanning: taskPlanning,
+         taskExecution: taskExecution,
+         taskRecovery: taskRecovery,
+         projectQueries: projectQueries,
+         projectSessions: projectSessions,
+         projectPlanning: projectPlanning,
+         projectCommands: projectCommands,
+         projectExecution: projectExecution,
+         projectRecovery: projectRecovery,
          chatLibrary: chatLibrary,
          workspaceService: workspaceService,
          preferencesService: preferencesService,
@@ -94,30 +114,30 @@ class ChatRuntimeController extends ChangeNotifier
 
   @override
   WorkspaceAttachment? get workspace => _delegate.workspace;
-  void setWorkspace(WorkspaceAttachment? value) =>
-      _delegate.setWorkspace(value);
+  void dispatchWorkspace(WorkspaceAttachment? value) =>
+      _delegate.dispatchWorkspace(value);
 
   SystemPromptSnapshot? get currentSystemPromptSnapshot =>
       _delegate.currentSystemPromptSnapshot;
 
   ExecutionMode get executionMode => _delegate.executionMode;
 
-  ProjectDocument? get activeProject => _delegate.activeProject;
-  void setActiveProject(ProjectDocument? value) =>
-      _delegate.setActiveProject(value);
+  ProjectAggregate? get activeProject => _delegate.activeProject;
+  void dispatchActiveProject(ProjectAggregate? value) =>
+      _delegate.dispatchActiveProject(value);
 
   ProjectPersistenceDiagnostics? get activeProjectPersistenceDiagnostics =>
       _delegate.activeProjectPersistenceDiagnostics;
-  void setActiveProjectPersistenceDiagnostics(
+  void dispatchActiveProjectPersistenceDiagnostics(
     ProjectPersistenceDiagnostics? value,
   ) {
-    _delegate.setActiveProjectPersistenceDiagnostics(value);
+    _delegate.dispatchActiveProjectPersistenceDiagnostics(value);
   }
 
   List<ProjectSummary> get availableProjects => _delegate.availableProjects;
 
   Task? get activeTask => _delegate.activeTask;
-  void setActiveTask(Task? value) => _delegate.setActiveTask(value);
+  void dispatchActiveTask(Task? value) => _delegate.dispatchActiveTask(value);
 
   List<TaskSummary> get availableTasks => _delegate.availableTasks;
 
@@ -135,15 +155,15 @@ class ChatRuntimeController extends ChangeNotifier
 
   @override
   String get taskModelOutputText => _delegate.taskModelOutputText;
-  void setTaskModelOutputText(String value) =>
-      _delegate.setTaskModelOutputText(value);
+  void dispatchTaskModelOutputText(String value) =>
+      _delegate.dispatchTaskModelOutputText(value);
   void appendTaskModelOutputText(String value) =>
       _delegate.appendTaskModelOutputText(value);
 
   @override
   String get taskModelOutputReasoning => _delegate.taskModelOutputReasoning;
-  void setTaskModelOutputReasoning(String value) =>
-      _delegate.setTaskModelOutputReasoning(value);
+  void dispatchTaskModelOutputReasoning(String value) =>
+      _delegate.dispatchTaskModelOutputReasoning(value);
   void appendTaskModelOutputReasoning(String value) =>
       _delegate.appendTaskModelOutputReasoning(value);
 
@@ -180,24 +200,24 @@ class ChatRuntimeController extends ChangeNotifier
       _delegate.sessionTaskModelOutputLabel();
 
   @override
-  void setSessionTaskModelOutputLabel(String? value) =>
-      _delegate.setSessionTaskModelOutputLabel(value);
+  void updateSessionTaskModelOutputLabel(String? value) =>
+      _delegate.updateSessionTaskModelOutputLabel(value);
 
   @override
   String? sessionTaskModelOutputTextSection() =>
       _delegate.sessionTaskModelOutputTextSection();
 
   @override
-  void setSessionTaskModelOutputTextSection(String? value) =>
-      _delegate.setSessionTaskModelOutputTextSection(value);
+  void updateSessionTaskModelOutputTextSection(String? value) =>
+      _delegate.updateSessionTaskModelOutputTextSection(value);
 
   @override
   String? sessionTaskModelOutputReasoningLabel() =>
       _delegate.sessionTaskModelOutputReasoningLabel();
 
   @override
-  void setSessionTaskModelOutputReasoningLabel(String? value) =>
-      _delegate.setSessionTaskModelOutputReasoningLabel(value);
+  void updateSessionTaskModelOutputReasoningLabel(String? value) =>
+      _delegate.updateSessionTaskModelOutputReasoningLabel(value);
 
   @override
   String buildSystemPrompt({String? currentUserRequest}) =>
@@ -231,15 +251,15 @@ class ChatRuntimeController extends ChangeNotifier
 
   Future<void> flushCurrentChat() => _delegate.flushCurrentChat();
 
-  void setCurrentModelSnapshot(ModelConfigurationSnapshot snapshot) =>
-      _delegate.setCurrentModelSnapshot(snapshot);
+  void updateCurrentModelSnapshot(ModelConfigurationSnapshot snapshot) =>
+      _delegate.updateCurrentModelSnapshot(snapshot);
 
   Future<void> restorePendingModel() => _delegate.restorePendingModel();
 
   void dismissPendingModelRestore() => _delegate.dismissPendingModelRestore();
 
-  void setSystemPromptSnapshot(SystemPromptSnapshot snapshot) =>
-      _delegate.setSystemPromptSnapshot(snapshot);
+  void updateSystemPromptSnapshot(SystemPromptSnapshot snapshot) =>
+      _delegate.updateSystemPromptSnapshot(snapshot);
 
   @visibleForTesting
   String buildSystemPromptForTesting({
@@ -261,10 +281,11 @@ class ChatRuntimeController extends ChangeNotifier
 
   Future<void> detachWorkspace() => _delegate.detachWorkspace();
 
-  void setCommandExecutionApproved(bool approved) =>
-      _delegate.setCommandExecutionApproved(approved);
+  void updateCommandExecutionApproval(bool approved) =>
+      _delegate.updateCommandExecutionApproval(approved);
 
-  void setExecutionMode(ExecutionMode mode) => _delegate.setExecutionMode(mode);
+  void updateExecutionMode(ExecutionMode mode) =>
+      _delegate.updateExecutionMode(mode);
 
   Future<void> send(String text, {List<String>? tools = const []}) =>
       _delegate.send(text, tools: tools);

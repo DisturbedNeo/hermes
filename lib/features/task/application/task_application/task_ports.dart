@@ -30,46 +30,7 @@ abstract interface class TaskQueryPort {
   });
 }
 
-abstract interface class TaskPlanningPort {
-  Future<Task> updateTaskPlan({
-    required WorkspaceAttachment workspace,
-    required Task snapshot,
-    required String rawJson,
-  });
-}
-
-abstract interface class TaskExecutionPort {
-  Future<Task> runNextStep({
-    required ModelCompletionPort client,
-    required WorkspaceAttachment workspace,
-    required Task snapshot,
-    required String baseSystemPrompt,
-    bool requirePhaseApproval = false,
-    CompactionSettings? compactionSettings,
-    int? contextLimitTokens,
-    TaskCompactionStatusSink? onCompactionStatus,
-    ModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-    QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
-    TaskExecutionRequest executionRequest = const TaskExecutionRequest(),
-    bool persist = true,
-  });
-}
-
-abstract interface class TaskRecoveryPort {
-  Future<Task> recoverTask({
-    required WorkspaceAttachment workspace,
-    required Task snapshot,
-    bool persist = true,
-  });
-}
-
-abstract interface class TaskChatPort
-    implements
-        TaskQueryPort,
-        TaskPlanningPort,
-        TaskExecutionPort,
-        TaskRecoveryPort {
+abstract interface class TaskSessionPort {
   Future<int> deleteTasksForChatSession(
     WorkspaceAttachment workspace, {
     required String chatSessionId,
@@ -85,13 +46,9 @@ abstract interface class TaskChatPort
     required Task snapshot,
     required String chatSessionId,
   });
+}
 
-  Future<Task> recoverTask({
-    required WorkspaceAttachment workspace,
-    required Task snapshot,
-    bool persist = true,
-  });
-
+abstract interface class TaskPresentationPort {
   String encodeTask(Task task);
 
   Future<String> readArtifact({
@@ -99,7 +56,9 @@ abstract interface class TaskChatPort
     required String artifactPath,
     CancellationToken? cancellationToken,
   });
+}
 
+abstract interface class TaskPlanningPort {
   Future<RefinedTaskBrief> refineTaskBrief({
     required ModelCompletionPort client,
     WorkspaceAttachment? workspace,
@@ -129,6 +88,29 @@ abstract interface class TaskChatPort
     required String rawJson,
   });
 
+  Future<Task> replanUnfinished({
+    required ModelCompletionPort client,
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+    required String baseSystemPrompt,
+    String reason = 'User requested a replan of unfinished work.',
+    ModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  });
+}
+
+abstract interface class TaskProjectPlanningPort {
+  Future<Task> createProjectTask({
+    required WorkspaceAttachment workspace,
+    required String userPrompt,
+    required String? chatSessionId,
+    required String? projectId,
+    required TaskPlanningContext planningContext,
+    String? canonicalTaskId,
+  });
+}
+
+abstract interface class TaskExecutionPort {
   Future<Task> runNextStep({
     required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
@@ -170,58 +152,9 @@ abstract interface class TaskChatPort
     required Task snapshot,
     required String answer,
   });
-
-  Future<Task> replanUnfinished({
-    required ModelCompletionPort client,
-    required WorkspaceAttachment workspace,
-    required Task snapshot,
-    required String baseSystemPrompt,
-    String reason = 'User requested a replan of unfinished work.',
-    ModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  });
 }
 
-abstract interface class TaskProjectPort implements TaskQueryPort {
-  Future<Task> createTask({
-    required ModelCompletionPort client,
-    required WorkspaceAttachment workspace,
-    required String userPrompt,
-    required ExecutionMode selectedMode,
-    required String baseSystemPrompt,
-    String? chatSessionId,
-    String? projectId,
-    String? canonicalTaskId,
-    TaskPlanningContext? planningContext,
-    ModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  });
-
-  Future<Task> createProjectTask({
-    required WorkspaceAttachment workspace,
-    required String userPrompt,
-    required String? chatSessionId,
-    required String? projectId,
-    required TaskPlanningContext planningContext,
-    String? canonicalTaskId,
-  });
-
-  Future<Task> runNextStep({
-    required ModelCompletionPort client,
-    required WorkspaceAttachment workspace,
-    required Task snapshot,
-    required String baseSystemPrompt,
-    bool requirePhaseApproval = false,
-    CompactionSettings? compactionSettings,
-    int? contextLimitTokens,
-    TaskCompactionStatusSink? onCompactionStatus,
-    ModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-    QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
-    TaskExecutionRequest executionRequest = const TaskExecutionRequest(),
-    bool persist = true,
-  });
-
+abstract interface class TaskRecoveryPort {
   Future<Task> recoverTask({
     required WorkspaceAttachment workspace,
     required Task snapshot,

@@ -123,7 +123,7 @@ class ProjectWorkspaceContextService {
   static const int defaultMaxEdges = 48;
 
   ProjectWorkspaceContextSelection selectContext({
-    required ProjectDocument project,
+    required ProjectAggregate project,
     ProjectTaskNode? task,
     int maxCharacters = defaultContextCharacters,
     int maxSelectedNodes = defaultMaxNodes,
@@ -226,7 +226,7 @@ class ProjectWorkspaceContextService {
     );
   }
 
-  List<String> _terms(ProjectDocument project, ProjectTaskNode? task) => [
+  List<String> _terms(ProjectAggregate project, ProjectTaskNode? task) => [
     project.refinedGoal,
     ...project.constraints,
     ...project.criteria.map((item) => item.statement),

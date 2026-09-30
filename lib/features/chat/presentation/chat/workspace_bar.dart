@@ -203,7 +203,7 @@ Future<void> _setHostTerminalApproval(
   bool approved,
 ) async {
   if (!approved) {
-    chat.setCommandExecutionApproved(false);
+    chat.updateCommandExecutionApproval(false);
     return;
   }
 
@@ -229,5 +229,5 @@ Future<void> _setHostTerminalApproval(
       ],
     ),
   );
-  if (confirmed == true) chat.setCommandExecutionApproved(true);
+  if (confirmed == true) chat.updateCommandExecutionApproval(true);
 }

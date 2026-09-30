@@ -806,7 +806,7 @@ class ProjectControlState {
   final List<PendingProjectQuestion> openQuestions;
 }
 
-@MappableClass(ignoreNull: true, hook: ProjectStateJsonHook())
+@MappableClass(ignoreNull: true, hook: ProjectAggregateJsonHook())
 class ProjectAggregate with ProjectAggregateMappable {
   static const int defaultMaxIterations = 25;
   static const int defaultMaxFailedTasks = 3;
@@ -828,7 +828,7 @@ class ProjectAggregate with ProjectAggregateMappable {
   final List<String> constraints;
   @MappableField(hook: JsonStringListHook())
   /// Project-owned task references. The canonical executable task document is
-  /// persisted by the task system and hydrated by ProjectStateStore.
+  /// persisted by the task system and hydrated by ProjectAggregateHydrator.
   final List<String> taskIds;
   @MappableField(hook: JsonStringListHook())
   final List<String> currentBatchTaskIds;
@@ -1131,9 +1131,6 @@ class ProjectAggregate with ProjectAggregateMappable {
     );
   }
 }
-
-typedef ProjectState = ProjectAggregate;
-typedef ProjectDocument = ProjectAggregate;
 
 @MappableClass(ignoreNull: true)
 class ProjectRecoveryIncident with ProjectRecoveryIncidentMappable {

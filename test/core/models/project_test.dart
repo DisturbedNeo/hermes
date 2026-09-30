@@ -3,33 +3,36 @@ import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/domain/task.dart';
 
 void main() {
-  test('ProjectState exposes one task collection and derives revisions', () {
-    final now = DateTime(2026, 1, 1);
-    final project = ProjectDocument(
-      id: 'project_1',
-      title: 'Project',
-      originalGoal: 'Build the app',
-      refinedGoal: 'Build the app safely',
-      criteria: [
-        ProjectCriterion(
-          id: 'criterion_1',
-          statement: 'The app works',
-          createdAt: now,
-          updatedAt: now,
-        ),
-      ],
-      constraints: const [],
-      tasks: const [],
-      status: ProjectStatus.active,
-      activeTaskId: null,
-      createdAt: now,
-      updatedAt: now,
-    );
+  test(
+    'ProjectAggregate exposes one task collection and derives revisions',
+    () {
+      final now = DateTime(2026, 1, 1);
+      final project = ProjectAggregate(
+        id: 'project_1',
+        title: 'Project',
+        originalGoal: 'Build the app',
+        refinedGoal: 'Build the app safely',
+        criteria: [
+          ProjectCriterion(
+            id: 'criterion_1',
+            statement: 'The app works',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        ],
+        constraints: const [],
+        tasks: const [],
+        status: ProjectStatus.active,
+        activeTaskId: null,
+        createdAt: now,
+        updatedAt: now,
+      );
 
-    expect(project.tasks, isEmpty);
-    expect(project.nextRevision, 2);
-    expect(project.taskById('missing'), isNull);
-  });
+      expect(project.tasks, isEmpty);
+      expect(project.nextRevision, 2);
+      expect(project.taskById('missing'), isNull);
+    },
+  );
 
   test('task lifecycle status is the authority for task state', () {
     final now = DateTime(2026, 1, 1);
@@ -68,7 +71,7 @@ void main() {
       createdAt: now,
       updatedAt: now,
     );
-    final project = ProjectDocument(
+    final project = ProjectAggregate(
       id: 'project_1',
       title: 'Project',
       originalGoal: 'Build the app',

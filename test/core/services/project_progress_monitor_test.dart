@@ -232,8 +232,8 @@ void main() {
   });
 }
 
-ProjectDocument _project(DateTime now) {
-  return ProjectDocument(
+ProjectAggregate _project(DateTime now) {
+  return ProjectAggregate(
     id: 'project',
     title: 'Project',
     originalGoal: 'Ship the project.',
@@ -254,7 +254,7 @@ ProjectDocument _project(DateTime now) {
   );
 }
 
-ProjectDocument _batchedProject(
+ProjectAggregate _batchedProject(
   DateTime now,
   List<String> taskIds, {
   int planRevision = 1,

@@ -33,7 +33,7 @@ extension _ProjectApplicationTestCommands on ProjectApplication {
   Future<ProjectCommandResult> executeProject({
     required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
-    required ProjectDocument snapshot,
+    required ProjectAggregate snapshot,
     required String baseSystemPrompt,
     required int maxNewTasks,
     int? maxIterations,
@@ -809,7 +809,7 @@ void main() {
   );
 }
 
-ProjectDocument _project({
+ProjectAggregate _project({
   List<ProjectTaskNode> tasks = const [],
   String? activeTaskId,
   ProjectStatus status = ProjectStatus.active,
@@ -818,7 +818,7 @@ ProjectDocument _project({
   List<ProjectRecoveryIncident> recoveryIncidents = const [],
 }) {
   final now = DateTime(2026, 1, 1);
-  return ProjectDocument(
+  return ProjectAggregate(
     id: 'project_1',
     title: 'Project',
     originalGoal: 'Build the project',
@@ -927,7 +927,7 @@ class _InitialisationGateway
 
   final ProjectInitialPlanResult initialPlan;
   final List<ProjectInitialPlanResult> repairedPlans;
-  final ProjectDocument? revisedProject;
+  final ProjectAggregate? revisedProject;
   List<Map<String, String>>? validationIssues;
   var repairCalls = 0;
   var revisePlanCalls = 0;
@@ -968,7 +968,7 @@ class _InitialisationGateway
     required ModelCompletionPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
-    required ProjectState project,
+    required ProjectAggregate project,
     required ProjectEvidenceSnapshot evidenceSnapshot,
     required List<ProjectPlanRevisionTrigger> triggers,
     required ProjectPlanApprovalPolicy approvalPolicy,
@@ -992,7 +992,7 @@ class _InitialisationGateway
     required ModelCompletionPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
-    required ProjectState project,
+    required ProjectAggregate project,
     required ProjectTaskNode oversizedTask,
     required List<String> violations,
     required ProjectPlanApprovalPolicy approvalPolicy,
@@ -1011,7 +1011,7 @@ class _InitialisationGateway
   Future<ProjectCompletionAssessment> evaluateCompletion({
     required ModelCompletionPort client,
     required String baseSystemPrompt,
-    required ProjectState project,
+    required ProjectAggregate project,
     ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
@@ -1031,7 +1031,7 @@ class _CountingScheduler extends ProjectScheduler {
   var scheduleCalls = 0;
 
   @override
-  ProjectScheduleResult schedule(ProjectDocument project) {
+  ProjectScheduleResult schedule(ProjectAggregate project) {
     scheduleCalls++;
     return super.schedule(project);
   }

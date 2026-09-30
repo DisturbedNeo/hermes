@@ -4,6 +4,7 @@ import 'package:hermes/shared_kernel/model_configuration.dart';
 import 'package:hermes/shared_kernel/saved_chat.dart';
 import 'package:hermes/shared_kernel/system_prompt.dart';
 import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/shared_kernel/persistence_contracts.dart';
 import 'package:hermes/shared_kernel/task_summary.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/task_system_settings.dart';
@@ -29,6 +30,7 @@ class ChatState {
     this.systemPrompt,
     this.executionMode = ExecutionMode.chat,
     this.activeProject,
+    this.activeProjectPersistenceDiagnostics,
     List<ProjectSummary> availableProjects = const [],
     this.activeTask,
     List<TaskSummary> availableTasks = const [],
@@ -62,6 +64,7 @@ class ChatState {
   final SystemPromptSnapshot? systemPrompt;
   final ExecutionMode executionMode;
   final ProjectAggregate? activeProject;
+  final ProjectPersistenceDiagnostics? activeProjectPersistenceDiagnostics;
   final List<ProjectSummary> availableProjects;
   final TaskAggregate? activeTask;
   final List<TaskSummary> availableTasks;
@@ -86,6 +89,7 @@ class ChatState {
     Object? systemPrompt = _unchanged,
     ExecutionMode? executionMode,
     Object? activeProject = _unchanged,
+    Object? activeProjectPersistenceDiagnostics = _unchanged,
     List<ProjectSummary>? availableProjects,
     Object? activeTask = _unchanged,
     List<TaskSummary>? availableTasks,
@@ -130,6 +134,10 @@ class ChatState {
     activeProject: identical(activeProject, _unchanged)
         ? this.activeProject
         : activeProject as ProjectAggregate?,
+    activeProjectPersistenceDiagnostics:
+        identical(activeProjectPersistenceDiagnostics, _unchanged)
+        ? this.activeProjectPersistenceDiagnostics
+        : activeProjectPersistenceDiagnostics as ProjectPersistenceDiagnostics?,
     availableProjects: availableProjects ?? this.availableProjects,
     activeTask: identical(activeTask, _unchanged)
         ? this.activeTask
@@ -164,18 +172,70 @@ class ChatStateReducer {
 
   ChatState reduce(ChatState state, ChatStateEvent event) => switch (event) {
     ChatMessagesChanged(:final messages) => state.copyWith(messages: messages),
+    ChatHistoryRevisionChanged(:final revision) => state.copyWith(
+      historyRevision: revision,
+    ),
+    ChatCurrentChatChanged(:final id) => state.copyWith(currentChatId: id),
+    ChatSavedChatChanged(:final chat) => state.copyWith(currentSavedChat: chat),
+    ChatModelSnapshotChanged(:final snapshot) => state.copyWith(
+      currentModelSnapshot: snapshot,
+    ),
+    ChatPendingModelRestoreChanged(:final snapshot) => state.copyWith(
+      pendingModelRestore: snapshot,
+    ),
+    ChatPendingModelRestoreIssueChanged(:final issue) => state.copyWith(
+      pendingModelRestoreIssue: issue,
+    ),
     ChatWorkspaceChanged(:final workspace) => state.copyWith(
       workspace: workspace,
+    ),
+    ChatSystemPromptChanged(:final prompt) => state.copyWith(
+      systemPrompt: prompt,
+    ),
+    ChatExecutionModeChanged(:final mode) => state.copyWith(
+      executionMode: mode,
     ),
     ChatProjectChanged(:final project) => state.copyWith(
       activeProject: project,
     ),
+    ChatProjectDiagnosticsChanged(:final diagnostics) => state.copyWith(
+      activeProjectPersistenceDiagnostics: diagnostics,
+    ),
+    ChatProjectsChanged(:final projects) => state.copyWith(
+      availableProjects: projects,
+    ),
     ChatTaskChanged(:final task) => state.copyWith(activeTask: task),
-    ChatTaskBusyChanged(:final busy) => setTaskBusy(state, busy),
-    ChatTaskErrorChanged(:final error) => setTaskError(state, error),
+    ChatTasksChanged(:final tasks) => state.copyWith(availableTasks: tasks),
+    ChatTaskSettingsChanged(:final settings) => state.copyWith(
+      taskSystemSettings: settings,
+    ),
+    ChatTaskBusyChanged(:final busy) => dispatchTaskBusy(state, busy),
+    ChatTaskCancellationChanged(:final requested) =>
+      requested
+          ? requestTaskCancellation(state)
+          : state.copyWith(taskCancellationRequested: false),
+    ChatTaskStatusMessageChanged(:final message) => state.copyWith(
+      taskStatusMessage: message,
+    ),
+    ChatTaskErrorChanged(:final error) => dispatchTaskError(state, error),
+    ChatTaskModelOutputTitleChanged(:final title) => state.copyWith(
+      taskModelOutputTitle: title,
+    ),
+    ChatTaskModelOutputTextChanged(:final text) => state.copyWith(
+      taskModelOutputText: text,
+    ),
+    ChatTaskModelOutputReasoningChanged(:final reasoning) => state.copyWith(
+      taskModelOutputReasoning: reasoning,
+    ),
+    ChatTaskModelOutputActiveChanged(:final active) => state.copyWith(
+      taskModelOutputActive: active,
+    ),
+    ChatSaveFailureChanged(:final failure) => state.copyWith(
+      saveFailure: failure,
+    ),
   };
 
-  ChatState setTaskBusy(ChatState state, bool busy) => state.copyWith(
+  ChatState dispatchTaskBusy(ChatState state, bool busy) => state.copyWith(
     taskBusy: busy,
     taskCancellationRequested: busy ? state.taskCancellationRequested : false,
   );
@@ -183,7 +243,7 @@ class ChatStateReducer {
   ChatState requestTaskCancellation(ChatState state) =>
       state.taskBusy ? state.copyWith(taskCancellationRequested: true) : state;
 
-  ChatState setTaskError(ChatState state, Object? error) => state.copyWith(
+  ChatState dispatchTaskError(ChatState state, Object? error) => state.copyWith(
     taskError: error,
     taskBusy: error == null ? state.taskBusy : false,
     taskCancellationRequested: error == null
@@ -202,10 +262,58 @@ class ChatMessagesChanged extends ChatStateEvent {
   final List<Bubble> messages;
 }
 
+class ChatHistoryRevisionChanged extends ChatStateEvent {
+  const ChatHistoryRevisionChanged(this.revision);
+
+  final int revision;
+}
+
+class ChatCurrentChatChanged extends ChatStateEvent {
+  const ChatCurrentChatChanged(this.id);
+
+  final String? id;
+}
+
+class ChatSavedChatChanged extends ChatStateEvent {
+  const ChatSavedChatChanged(this.chat);
+
+  final SavedChat? chat;
+}
+
+class ChatModelSnapshotChanged extends ChatStateEvent {
+  const ChatModelSnapshotChanged(this.snapshot);
+
+  final ModelConfigurationSnapshot? snapshot;
+}
+
+class ChatPendingModelRestoreChanged extends ChatStateEvent {
+  const ChatPendingModelRestoreChanged(this.snapshot);
+
+  final ModelConfigurationSnapshot? snapshot;
+}
+
+class ChatPendingModelRestoreIssueChanged extends ChatStateEvent {
+  const ChatPendingModelRestoreIssueChanged(this.issue);
+
+  final String? issue;
+}
+
 class ChatWorkspaceChanged extends ChatStateEvent {
   const ChatWorkspaceChanged(this.workspace);
 
   final WorkspaceAttachment? workspace;
+}
+
+class ChatSystemPromptChanged extends ChatStateEvent {
+  const ChatSystemPromptChanged(this.prompt);
+
+  final SystemPromptSnapshot? prompt;
+}
+
+class ChatExecutionModeChanged extends ChatStateEvent {
+  const ChatExecutionModeChanged(this.mode);
+
+  final ExecutionMode mode;
 }
 
 class ChatProjectChanged extends ChatStateEvent {
@@ -214,10 +322,34 @@ class ChatProjectChanged extends ChatStateEvent {
   final ProjectAggregate? project;
 }
 
+class ChatProjectDiagnosticsChanged extends ChatStateEvent {
+  const ChatProjectDiagnosticsChanged(this.diagnostics);
+
+  final ProjectPersistenceDiagnostics? diagnostics;
+}
+
+class ChatProjectsChanged extends ChatStateEvent {
+  const ChatProjectsChanged(this.projects);
+
+  final List<ProjectSummary> projects;
+}
+
 class ChatTaskChanged extends ChatStateEvent {
   const ChatTaskChanged(this.task);
 
   final TaskAggregate? task;
+}
+
+class ChatTasksChanged extends ChatStateEvent {
+  const ChatTasksChanged(this.tasks);
+
+  final List<TaskSummary> tasks;
+}
+
+class ChatTaskSettingsChanged extends ChatStateEvent {
+  const ChatTaskSettingsChanged(this.settings);
+
+  final TaskSystemSettings settings;
 }
 
 class ChatTaskBusyChanged extends ChatStateEvent {
@@ -226,8 +358,50 @@ class ChatTaskBusyChanged extends ChatStateEvent {
   final bool busy;
 }
 
+class ChatTaskCancellationChanged extends ChatStateEvent {
+  const ChatTaskCancellationChanged(this.requested);
+
+  final bool requested;
+}
+
+class ChatTaskStatusMessageChanged extends ChatStateEvent {
+  const ChatTaskStatusMessageChanged(this.message);
+
+  final String? message;
+}
+
 class ChatTaskErrorChanged extends ChatStateEvent {
   const ChatTaskErrorChanged(this.error);
 
   final Object? error;
+}
+
+class ChatTaskModelOutputTitleChanged extends ChatStateEvent {
+  const ChatTaskModelOutputTitleChanged(this.title);
+
+  final String? title;
+}
+
+class ChatTaskModelOutputTextChanged extends ChatStateEvent {
+  const ChatTaskModelOutputTextChanged(this.text);
+
+  final String text;
+}
+
+class ChatTaskModelOutputReasoningChanged extends ChatStateEvent {
+  const ChatTaskModelOutputReasoningChanged(this.reasoning);
+
+  final String reasoning;
+}
+
+class ChatTaskModelOutputActiveChanged extends ChatStateEvent {
+  const ChatTaskModelOutputActiveChanged(this.active);
+
+  final bool active;
+}
+
+class ChatSaveFailureChanged extends ChatStateEvent {
+  const ChatSaveFailureChanged(this.failure);
+
+  final ChatSaveFailure? failure;
 }

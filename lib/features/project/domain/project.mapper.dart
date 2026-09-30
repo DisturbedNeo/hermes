@@ -3107,7 +3107,7 @@ class ProjectAggregateMapper extends ClassMapperBase<ProjectAggregate> {
   final bool ignoreNull = true;
 
   @override
-  final MappingHook hook = const ProjectStateJsonHook();
+  final MappingHook hook = const ProjectAggregateJsonHook();
   static ProjectAggregate _instantiate(DecodingData data) {
     return ProjectAggregate(
       persistenceRevision: data.dec(_f$persistenceRevision),
@@ -3565,4 +3565,3 @@ mixin ProjectDecisionRecordMappable {
         .encodeMap<ProjectDecisionRecord>(this as ProjectDecisionRecord);
   }
 }
-

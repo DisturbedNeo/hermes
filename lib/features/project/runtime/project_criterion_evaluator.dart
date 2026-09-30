@@ -4,8 +4,8 @@ import 'package:hermes/features/project/domain/project.dart';
 class ProjectCriterionEvaluator {
   const ProjectCriterionEvaluator();
 
-  ProjectDocument evaluateDeterministically(
-    ProjectDocument project, {
+  ProjectAggregate evaluateDeterministically(
+    ProjectAggregate project, {
     required DateTime evaluatedAt,
   }) {
     final criteria = [
@@ -15,8 +15,8 @@ class ProjectCriterionEvaluator {
     return project.copyWith(criteria: criteria, updatedAt: evaluatedAt);
   }
 
-  ProjectDocument applyModelReview(
-    ProjectDocument project, {
+  ProjectAggregate applyModelReview(
+    ProjectAggregate project, {
     required bool projectComplete,
     required List<String> remainingCriteria,
     List<String> supportedCriterionIds = const [],
@@ -150,7 +150,7 @@ class ProjectCriterionEvaluator {
   }
 
   ProjectCriterion _evaluateCriterion(
-    ProjectDocument project,
+    ProjectAggregate project,
     ProjectCriterion criterion,
     List<ProjectEvidence> evidence,
     DateTime evaluatedAt,
@@ -220,7 +220,7 @@ class ProjectCriterionEvaluator {
   }
 
   bool _hasAllRequiredExpectations(
-    ProjectDocument project,
+    ProjectAggregate project,
     ProjectCriterion criterion,
     Iterable<ProjectEvidence> accepted,
   ) {

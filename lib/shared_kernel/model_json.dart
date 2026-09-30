@@ -1,11 +1,20 @@
 import 'dart:convert';
 
 import 'package:dart_mappable/dart_mappable.dart';
-import 'package:hermes/app/mappers.init.dart';
 
 /// Generic JSON entry point for all typed application DTOs.
+///
+/// Mapper registration is supplied by the composition root. Keeping the
+/// callback here as a small generic seam prevents the shared kernel from
+/// depending on application wiring or generated feature mappers.
 abstract final class ModelJson {
   static bool _initialized = false;
+  static void Function()? _mapperInitializer;
+
+  static void configureMapperInitialization(void Function() initializer) {
+    if (_initialized) return;
+    _mapperInitializer = initializer;
+  }
 
   static T decode<T>(Object? value) {
     _ensureInitialized();
@@ -35,7 +44,14 @@ abstract final class ModelJson {
   static void _ensureInitialized() {
     if (_initialized) return;
     DateTimeMapper.encodingMode = DateTimeEncoding.iso8601String;
-    initializeMappers();
+    final initializer = _mapperInitializer;
+    if (initializer == null) {
+      throw StateError(
+        'ModelJson is not configured. Register generated mappers at the '
+        'composition root before serializing a model.',
+      );
+    }
+    initializer();
     _initialized = true;
   }
 }

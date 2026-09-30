@@ -45,7 +45,7 @@ class ProjectPlanningContext {
        _draftRefinedGoal = project.refinedGoal,
        _draftConstraints = [...project.constraints];
 
-  final ProjectState project;
+  final ProjectAggregate project;
   final String workspaceRoot;
   final int baseRevision;
   final ProjectPlanApprovalPolicy approvalPolicy;
@@ -59,7 +59,7 @@ class ProjectPlanningContext {
   List<String> _draftConstraints;
   ProjectDesiredPlan? committedProposal;
   ProjectPlanPatch? committedPatch;
-  ProjectState? committedProject;
+  ProjectAggregate? committedProject;
 
   bool closed = false;
 
@@ -260,7 +260,7 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
     );
   }
 
-  ProjectState _projectForDetail(ProjectPlanBuilderPreview preview) {
+  ProjectAggregate _projectForDetail(ProjectPlanBuilderPreview preview) {
     final proposedTaskIds = {
       for (final task in preview.proposal.tasks) task.id,
     };

@@ -14,7 +14,7 @@ void main() {
       title: 'Active bounded task',
       status: TaskStatus.running,
     );
-    final project = ProjectState(
+    final project = ProjectAggregate(
       id: 'project_1',
       title: 'Project',
       originalGoal: 'Deliver the outcome.',
@@ -55,7 +55,7 @@ void main() {
       status: TaskStatus.completed,
     );
     final now = DateTime(2026, 1, 1);
-    final project = ProjectState(
+    final project = ProjectAggregate(
       id: 'project_1',
       title: 'Project',
       originalGoal: 'Deliver the outcome.',

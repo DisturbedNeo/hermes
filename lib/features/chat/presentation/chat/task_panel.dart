@@ -76,7 +76,7 @@ class TaskPanel extends StatelessWidget {
 
 class _CollapsedTaskPanel extends StatelessWidget {
   final ChatController chat;
-  final ProjectDocument? project;
+  final ProjectAggregate? project;
   final Task? task;
   final VoidCallback onToggleExpanded;
 
@@ -144,7 +144,7 @@ class _CollapsedTaskPanel extends StatelessWidget {
 
 class _Header extends StatelessWidget {
   final ChatController chat;
-  final ProjectDocument? project;
+  final ProjectAggregate? project;
   final Task? task;
   final VoidCallback onToggleExpanded;
 
@@ -216,7 +216,7 @@ class _Header extends StatelessWidget {
 
 class _ProjectBody extends StatelessWidget {
   final ChatController chat;
-  final ProjectDocument project;
+  final ProjectAggregate project;
 
   const _ProjectBody({required this.chat, required this.project});
 
@@ -387,7 +387,7 @@ class _ProjectBody extends StatelessWidget {
 
 class _ProjectActions extends StatelessWidget {
   final ChatController chat;
-  final ProjectDocument project;
+  final ProjectAggregate project;
 
   const _ProjectActions({required this.chat, required this.project});
 
@@ -541,7 +541,7 @@ class _ProjectActions extends StatelessWidget {
 
 class _ProjectQuestionCard extends StatefulWidget {
   final ChatController chat;
-  final ProjectDocument project;
+  final ProjectAggregate project;
 
   const _ProjectQuestionCard({required this.chat, required this.project});
 
@@ -598,7 +598,7 @@ class _ProjectQuestionCardState extends State<_ProjectQuestionCard> {
 }
 
 class _ProjectBlockerCard extends StatelessWidget {
-  final ProjectDocument project;
+  final ProjectAggregate project;
 
   const _ProjectBlockerCard({required this.project});
 
@@ -1290,7 +1290,7 @@ class _ProjectTaskBoardList extends StatelessWidget {
 }
 
 class _ProjectQuestionList extends StatelessWidget {
-  final ProjectDocument project;
+  final ProjectAggregate project;
 
   const _ProjectQuestionList({required this.project});
 
@@ -1319,7 +1319,7 @@ class _ProjectQuestionList extends StatelessWidget {
 }
 
 class _ProjectArtifactBoardList extends StatelessWidget {
-  final ProjectDocument project;
+  final ProjectAggregate project;
 
   const _ProjectArtifactBoardList({required this.project});
 
@@ -1384,7 +1384,7 @@ class _StringList extends StatelessWidget {
 }
 
 class _ProjectDecisionList extends StatelessWidget {
-  final ProjectDocument project;
+  final ProjectAggregate project;
 
   const _ProjectDecisionList({required this.project});
 

@@ -72,7 +72,7 @@ class ProjectCommitIntent {
   });
 
   final String workspaceRoot;
-  final ProjectDocument project;
+  final ProjectAggregate project;
   final ProjectPersistenceContext? context;
   final ProjectPersistenceCheckpoint checkpoint;
 }
@@ -95,7 +95,7 @@ class ProjectAggregateStore {
   final TaskPersistencePort _taskRepository;
   final TaskMaterializerPort _materializer;
 
-  Future<ProjectDocument> commit(ProjectCommitIntent intent) async {
+  Future<ProjectAggregate> commit(ProjectCommitIntent intent) async {
     final workspaceRoot = intent.workspaceRoot;
     final project = intent.project;
     final context = intent.context;

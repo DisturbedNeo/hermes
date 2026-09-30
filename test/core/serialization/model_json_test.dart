@@ -212,7 +212,7 @@ void main() {
     expect(ModelJson.encode(blocker)['type'], 'task_failed');
     expect(ModelJson.encode(question)['question'], 'Continue?');
 
-    final project = ProjectDocument(
+    final project = ProjectAggregate(
       id: 'project_1',
       title: 'Project',
       originalGoal: 'Build',
@@ -232,7 +232,7 @@ void main() {
       createdAt: now,
       updatedAt: now,
     );
-    final decodedProject = ModelJson.decode<ProjectDocument>(
+    final decodedProject = ModelJson.decode<ProjectAggregate>(
       ModelJson.encode(project),
     );
     expect(decodedProject.taskIds, [task.id]);

@@ -29,12 +29,12 @@ void main() {
     final cancelledWhileIdle = reducer.requestTaskCancellation(idle);
     expect(cancelledWhileIdle.taskCancellationRequested, isFalse);
 
-    final running = reducer.setTaskBusy(idle, true);
+    final running = reducer.dispatchTaskBusy(idle, true);
     final cancelled = reducer.requestTaskCancellation(running);
     expect(cancelled.taskBusy, isTrue);
     expect(cancelled.taskCancellationRequested, isTrue);
 
-    final failed = reducer.setTaskError(cancelled, StateError('failed'));
+    final failed = reducer.dispatchTaskError(cancelled, StateError('failed'));
     expect(failed.taskBusy, isFalse);
     expect(failed.taskCancellationRequested, isFalse);
     expect(failed.taskError, isA<StateError>());

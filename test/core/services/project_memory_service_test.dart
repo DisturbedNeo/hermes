@@ -132,7 +132,7 @@ void main() {
           isTrue,
         );
 
-        final roundTrip = ModelJson.decode<ProjectDocument>(
+        final roundTrip = ModelJson.decode<ProjectAggregate>(
           ModelJson.encode(result.project),
         );
         expect(roundTrip.memory.last.coveredEntryIds, ['fact_1', 'fact_2']);
@@ -304,11 +304,11 @@ void main() {
 
 final _now = DateTime.utc(2026, 1, 1);
 
-ProjectDocument _project({
+ProjectAggregate _project({
   List<ProjectTaskNode> tasks = const [],
   List<ProjectMemoryEntry> memory = const [],
   List<ProjectMilestone> milestones = const [],
-}) => ProjectDocument(
+}) => ProjectAggregate(
   id: 'project',
   title: 'Project',
   originalGoal: 'Deliver reporting.',

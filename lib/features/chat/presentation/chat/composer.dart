@@ -742,7 +742,7 @@ class _ExecutionModeSelector extends StatelessWidget {
         ],
         selected: {chat.executionMode},
         onSelectionChanged: enabled
-            ? (selection) => chat.setExecutionMode(selection.single)
+            ? (selection) => chat.updateExecutionMode(selection.single)
             : null,
       ),
     );

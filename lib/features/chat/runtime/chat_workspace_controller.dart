@@ -23,8 +23,18 @@ typedef ChatTabFactory =
     ChatRuntimeController Function({
       required ModelServerPort serverManager,
       required ToolRegistryPort toolService,
-      required TaskChatPort taskController,
-      required ProjectChatPort projectApplication,
+      required TaskQueryPort taskQueries,
+      required TaskSessionPort taskSessions,
+      required TaskPresentationPort taskPresentation,
+      required TaskPlanningPort taskPlanning,
+      required TaskExecutionPort taskExecution,
+      required TaskRecoveryPort taskRecovery,
+      required ProjectQueryPort projectQueries,
+      required ProjectSessionPort projectSessions,
+      required ProjectPlanningPort projectPlanning,
+      required ProjectCommandPort projectCommands,
+      required ProjectExecutionPort projectExecution,
+      required ProjectRecoveryCommandsPort projectRecovery,
       required ChatLibraryService chatLibrary,
       required WorkspacePort workspaceService,
       required PreferencesPort preferencesService,
@@ -36,8 +46,18 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
   final ChatLibraryService _chatLibrary;
   final SystemPromptLibraryService _systemPromptLibrary;
   final ToolRegistryPort _toolService;
-  final TaskChatPort _taskController;
-  final ProjectChatPort _projectApplication;
+  final TaskQueryPort _taskQueries;
+  final TaskSessionPort _taskSessions;
+  final TaskPresentationPort _taskPresentation;
+  final TaskPlanningPort _taskPlanning;
+  final TaskExecutionPort _taskExecution;
+  final TaskRecoveryPort _taskRecovery;
+  final ProjectQueryPort _projectQueries;
+  final ProjectSessionPort _projectSessions;
+  final ProjectPlanningPort _projectPlanning;
+  final ProjectCommandPort _projectCommands;
+  final ProjectExecutionPort _projectExecution;
+  final ProjectRecoveryCommandsPort _projectRecovery;
   final WorkspacePort _workspaceService;
   final PreferencesPort _preferencesService;
   final ChatTabFactory? _tabFactory;
@@ -55,16 +75,36 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
     required ChatLibraryService chatLibrary,
     required SystemPromptLibraryService systemPromptLibrary,
     required ToolRegistryPort toolService,
-    required TaskChatPort taskController,
-    required ProjectChatPort projectApplication,
+    required TaskQueryPort taskQueries,
+    required TaskSessionPort taskSessions,
+    required TaskPresentationPort taskPresentation,
+    required TaskPlanningPort taskPlanning,
+    required TaskExecutionPort taskExecution,
+    required TaskRecoveryPort taskRecovery,
+    required ProjectQueryPort projectQueries,
+    required ProjectSessionPort projectSessions,
+    required ProjectPlanningPort projectPlanning,
+    required ProjectCommandPort projectCommands,
+    required ProjectExecutionPort projectExecution,
+    required ProjectRecoveryCommandsPort projectRecovery,
     required WorkspacePort workspaceService,
     required PreferencesPort preferencesService,
     ChatTabFactory? tabFactory,
   }) : _chatLibrary = chatLibrary,
        _systemPromptLibrary = systemPromptLibrary,
        _toolService = toolService,
-       _taskController = taskController,
-       _projectApplication = projectApplication,
+       _taskQueries = taskQueries,
+       _taskSessions = taskSessions,
+       _taskPresentation = taskPresentation,
+       _taskPlanning = taskPlanning,
+       _taskExecution = taskExecution,
+       _taskRecovery = taskRecovery,
+       _projectQueries = projectQueries,
+       _projectSessions = projectSessions,
+       _projectPlanning = projectPlanning,
+       _projectCommands = projectCommands,
+       _projectExecution = projectExecution,
+       _projectRecovery = projectRecovery,
        _workspaceService = workspaceService,
        _preferencesService = preferencesService,
        _tabFactory = tabFactory {
@@ -227,7 +267,7 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
         selectedOptionalModuleIds: selectedOptionalModuleIds,
         workspace: active.workspace,
       );
-      active.setSystemPromptSnapshot(snapshot);
+      active.updateSystemPromptSnapshot(snapshot);
       await _systemPromptLibrary.markPresetUsed(preset.id);
       notifyListeners();
       return SystemPromptLoadTarget.currentChat;
@@ -289,8 +329,18 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
         ? ChatRuntimeController(
             serverManager: serverManager,
             toolService: _toolService,
-            taskController: _taskController,
-            projectApplication: _projectApplication,
+            taskQueries: _taskQueries,
+            taskSessions: _taskSessions,
+            taskPresentation: _taskPresentation,
+            taskPlanning: _taskPlanning,
+            taskExecution: _taskExecution,
+            taskRecovery: _taskRecovery,
+            projectQueries: _projectQueries,
+            projectSessions: _projectSessions,
+            projectPlanning: _projectPlanning,
+            projectCommands: _projectCommands,
+            projectExecution: _projectExecution,
+            projectRecovery: _projectRecovery,
             chatLibrary: _chatLibrary,
             workspaceService: _workspaceService,
             preferencesService: _preferencesService,
@@ -299,8 +349,18 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
         : factory(
             serverManager: serverManager,
             toolService: _toolService,
-            taskController: _taskController,
-            projectApplication: _projectApplication,
+            taskQueries: _taskQueries,
+            taskSessions: _taskSessions,
+            taskPresentation: _taskPresentation,
+            taskPlanning: _taskPlanning,
+            taskExecution: _taskExecution,
+            taskRecovery: _taskRecovery,
+            projectQueries: _projectQueries,
+            projectSessions: _projectSessions,
+            projectPlanning: _projectPlanning,
+            projectCommands: _projectCommands,
+            projectExecution: _projectExecution,
+            projectRecovery: _projectRecovery,
             chatLibrary: _chatLibrary,
             workspaceService: _workspaceService,
             preferencesService: _preferencesService,
@@ -434,7 +494,7 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
     Iterable<WorkspaceAttachment> workspaces,
   ) async {
     for (final workspace in workspaces) {
-      await _taskController.deleteTasksForChatSession(
+      await _taskSessions.deleteTasksForChatSession(
         workspace,
         chatSessionId: chatSessionId,
       );
@@ -446,7 +506,7 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
     Iterable<WorkspaceAttachment> workspaces,
   ) async {
     for (final workspace in workspaces) {
-      await _projectApplication.deleteProjectsForChatSession(
+      await _projectSessions.deleteProjectsForChatSession(
         workspace,
         chatSessionId: chatSessionId,
       );
@@ -468,11 +528,11 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
 
     final byRoot = _collectWorkspacesByRoot(allWorkspaces);
     for (final workspace in byRoot.values) {
-      await _taskController.deleteOrphanedChatTasks(
+      await _taskSessions.deleteOrphanedChatTasks(
         workspace,
         retainedChatSessionIds: retainedChatSessionIds,
       );
-      await _projectApplication.deleteOrphanedChatProjects(
+      await _projectSessions.deleteOrphanedChatProjects(
         workspace,
         retainedChatSessionIds: retainedChatSessionIds,
       );

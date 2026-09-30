@@ -12,18 +12,18 @@ import 'package:hermes/features/task/application/task_application/task_ports.dar
 /// task history. This store is the one place that knows how to load the
 /// aggregate and rehydrate that relationship; run and planning code receives
 /// ordinary domain objects instead of repository details.
-class ProjectStateStore {
-  ProjectStateStore({
+class ProjectAggregateHydrator {
+  ProjectAggregateHydrator({
     required ProjectRepositoryPort projectRepository,
     required ProjectAggregateRepositoryPort aggregateRepository,
-    required TaskProjectPort taskController,
+    required TaskQueryPort taskQueries,
   }) : _projectRepository = projectRepository,
        _aggregateRepository = aggregateRepository,
-       _taskController = taskController;
+       _taskQueries = taskQueries;
 
   final ProjectRepositoryPort _projectRepository;
   final ProjectAggregateRepositoryPort _aggregateRepository;
-  final TaskProjectPort _taskController;
+  final TaskQueryPort _taskQueries;
   final ProjectControlStateService _controlStateService =
       const ProjectControlStateService();
 
@@ -77,14 +77,14 @@ class ProjectStateStore {
     return load(workspace, summaries.first.id, chatSessionId: chatSessionId);
   }
 
-  Future<ProjectDocument> hydrate(
+  Future<ProjectAggregate> hydrate(
     WorkspaceAttachment workspace,
-    ProjectDocument project,
+    ProjectAggregate project,
   ) async {
     final cached = {for (final task in project.tasks) task.id: task};
     final tasks = <ProjectTaskNode>[];
     for (final taskId in project.taskIds) {
-      final task = await _taskController.loadTask(
+      final task = await _taskQueries.loadTask(
         workspace,
         taskId,
         chatSessionId: project.chatSessionId,
@@ -101,7 +101,7 @@ class ProjectStateStore {
 
   Future<ProjectPersistenceDiagnostics> inspect(
     WorkspaceAttachment workspace,
-    ProjectDocument project,
+    ProjectAggregate project,
   ) => _aggregateRepository.inspect(workspace.rootPath, project);
 
   Future<ProjectTransactionRecoveryResult> recoverInterruptedTransactions(
@@ -110,7 +110,7 @@ class ProjectStateStore {
 
   Future<ProjectRevisionCheckResult> checkRevisions(
     WorkspaceAttachment workspace,
-    ProjectDocument project,
+    ProjectAggregate project,
   ) => _aggregateRepository.checkRevisions(workspace.rootPath, project);
 
   Future<int> deleteForChatSession(

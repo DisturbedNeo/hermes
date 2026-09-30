@@ -260,7 +260,7 @@ class _ModelPickerState extends State<ModelPicker> {
                                           startModel: () => _tabs.serverManager
                                               .startWithSnapshot(snapshot),
                                           onModelStarted: () => _tabs.activeChat
-                                              ?.setCurrentModelSnapshot(
+                                              ?.updateCurrentModelSnapshot(
                                                 snapshot,
                                               ),
                                           saveAsDefault: saveAsDefault,

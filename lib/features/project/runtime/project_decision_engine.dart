@@ -27,7 +27,7 @@ class ProjectDecisionInput {
     this.recoveryRequested = false,
   });
 
-  final ProjectDocument project;
+  final ProjectAggregate project;
   final ProjectTaskNode? candidate;
   final List<ProjectPlanRevisionTrigger> replanTriggers;
   final int runIterations;

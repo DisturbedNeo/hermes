@@ -7,8 +7,8 @@ import 'package:hermes/features/project/domain/project_workspace_context_service
 class ProjectWorkspaceGraphService {
   const ProjectWorkspaceGraphService();
 
-  ProjectDocument upsertUserNode({
-    required ProjectDocument project,
+  ProjectAggregate upsertUserNode({
+    required ProjectAggregate project,
     String? id,
     required String type,
     required String title,
@@ -67,8 +67,8 @@ class ProjectWorkspaceGraphService {
     );
   }
 
-  ProjectDocument upsertUserEdge({
-    required ProjectDocument project,
+  ProjectAggregate upsertUserEdge({
+    required ProjectAggregate project,
     String? id,
     required String sourceNodeId,
     required String targetNodeId,

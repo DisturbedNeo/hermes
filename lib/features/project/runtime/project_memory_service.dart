@@ -2,7 +2,7 @@ import 'package:hermes/shared_kernel/uuid.dart';
 import 'package:hermes/features/project/domain/project.dart';
 
 class ProjectMemoryMutation {
-  final ProjectDocument project;
+  final ProjectAggregate project;
   final ProjectMemoryEntry entry;
   final List<String> deactivatedEntryIds;
 
@@ -73,7 +73,7 @@ class ProjectMemoryService {
   static const int defaultContextCharacters = 12000;
 
   ProjectMemoryMutation record({
-    required ProjectDocument project,
+    required ProjectAggregate project,
     required ProjectMemoryKind kind,
     required String content,
     required ProjectMemorySourceType sourceType,
@@ -143,7 +143,7 @@ class ProjectMemoryService {
   }
 
   ProjectMemoryMutation recordUserAnswer({
-    required ProjectDocument project,
+    required ProjectAggregate project,
     required PendingProjectQuestion question,
     required String answer,
     DateTime? timestamp,
@@ -170,7 +170,7 @@ class ProjectMemoryService {
   }
 
   ProjectMemoryMutation compact({
-    required ProjectDocument project,
+    required ProjectAggregate project,
     required List<String> coveredEntryIds,
     required String summary,
     String? compactionId,
@@ -212,8 +212,8 @@ class ProjectMemoryService {
     );
   }
 
-  ProjectDocument supersede({
-    required ProjectDocument project,
+  ProjectAggregate supersede({
+    required ProjectAggregate project,
     required String replacementEntryId,
     required List<String> coveredEntryIds,
     ProjectMemorySourceType actor = ProjectMemorySourceType.planner,
@@ -261,7 +261,7 @@ class ProjectMemoryService {
   }
 
   ProjectMemoryMutation? resolveRisksForSource({
-    required ProjectDocument project,
+    required ProjectAggregate project,
     required String sourceId,
     required String resolution,
     DateTime? timestamp,
@@ -289,7 +289,7 @@ class ProjectMemoryService {
   }
 
   ProjectMemoryContextSelection selectContext({
-    required ProjectDocument project,
+    required ProjectAggregate project,
     ProjectTaskNode? task,
     int maxCharacters = defaultContextCharacters,
   }) {
@@ -433,7 +433,7 @@ class ProjectMemoryService {
   }
 
   static Set<String> _relevanceTerms(
-    ProjectDocument project,
+    ProjectAggregate project,
     ProjectTaskNode? task,
   ) {
     final text = [

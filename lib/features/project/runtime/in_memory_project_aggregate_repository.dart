@@ -58,7 +58,7 @@ class InMemoryProjectAggregateRepository
   @override
   Future<ProjectRevisionCheckResult> checkRevisions(
     String workspaceRoot,
-    ProjectDocument project,
+    ProjectAggregate project,
   ) async {
     final taskRevisions = await _tasks.revisionOfManyUnlocked(
       workspaceRoot,
@@ -77,7 +77,7 @@ class InMemoryProjectAggregateRepository
   @override
   Future<ProjectPersistenceDiagnostics> inspect(
     String workspaceRoot,
-    ProjectDocument project,
+    ProjectAggregate project,
   ) async => (await loadProject(workspaceRoot, project.id)).diagnostics;
 
   @override
@@ -88,7 +88,7 @@ class InMemoryProjectAggregateRepository
   @override
   Future<ProjectAggregateCommitResult> commit({
     required String workspaceRoot,
-    required ProjectDocument project,
+    required ProjectAggregate project,
     required Iterable<Task> tasks,
     Set<String> deletedTaskIds = const {},
     ProjectPersistenceDiagnostics? knownHealth,
@@ -130,7 +130,7 @@ class InMemoryProjectAggregateRepository
   @override
   Future<bool> deleteProject(
     String workspaceRoot,
-    ProjectDocument project,
+    ProjectAggregate project,
   ) async {
     final taskIds = <String>{
       ...project.taskIds,

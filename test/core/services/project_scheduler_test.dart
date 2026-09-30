@@ -119,9 +119,9 @@ void main() {
   });
 }
 
-ProjectDocument _project(List<Task> tasks) {
+ProjectAggregate _project(List<Task> tasks) {
   final now = DateTime.utc(2026, 1, 1);
-  return ProjectDocument(
+  return ProjectAggregate(
     id: 'project',
     title: 'Project',
     originalGoal: 'Deliver the project.',

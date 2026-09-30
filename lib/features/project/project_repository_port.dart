@@ -16,13 +16,13 @@ abstract interface class ProjectRepositoryPort {
     String? chatSessionId,
   });
 
-  Future<PersistedSnapshot<ProjectDocument>?> loadProject(
+  Future<PersistedSnapshot<ProjectAggregate>?> loadProject(
     String workspaceRoot,
     String projectId, {
     String? chatSessionId,
   });
 
-  Future<PersistedSnapshot<ProjectDocument>?> loadProjectSnapshot(
+  Future<PersistedSnapshot<ProjectAggregate>?> loadProjectSnapshot(
     String workspaceRoot,
     String projectId, {
     String? chatSessionId,
@@ -34,23 +34,23 @@ abstract interface class ProjectRepositoryPort {
     String projectId,
   );
 
-  Future<PersistedSnapshot<ProjectDocument>> saveSnapshot(
+  Future<PersistedSnapshot<ProjectAggregate>> saveSnapshot(
     String workspaceRoot,
-    ProjectDocument project, {
+    ProjectAggregate project, {
     int? expectedRevision,
     PersistedRevision? currentRevision,
     bool assumeLocked = false,
   });
 
-  Future<PersistedSnapshot<ProjectDocument>?> loadProjectSnapshotUnlocked(
+  Future<PersistedSnapshot<ProjectAggregate>?> loadProjectSnapshotUnlocked(
     String workspaceRoot,
     String projectId, {
     String? chatSessionId,
   });
 
-  Future<PersistedSnapshot<ProjectDocument>> saveSnapshotUnlocked(
+  Future<PersistedSnapshot<ProjectAggregate>> saveSnapshotUnlocked(
     String workspaceRoot,
-    ProjectDocument project, {
+    ProjectAggregate project, {
     required int expectedRevision,
     PersistedRevision? currentRevision,
   });

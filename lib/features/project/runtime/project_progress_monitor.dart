@@ -13,8 +13,8 @@ class ProjectProgressMonitor {
     this.lifecycle = const ProjectLifecycleService(),
   }) : assert(stagnationThreshold > 0);
 
-  ProjectDocument recordTaskResult({
-    required ProjectDocument project,
+  ProjectAggregate recordTaskResult({
+    required ProjectAggregate project,
     required ProjectTaskNode task,
     required bool taskAccepted,
     bool excludeFromStagnation = false,
@@ -152,7 +152,7 @@ class ProjectProgressMonitor {
         .project;
   }
 
-  String _batchId(ProjectDocument project, ProjectTaskNode task) {
+  String _batchId(ProjectAggregate project, ProjectTaskNode task) {
     if (project.currentBatchTaskIds.isEmpty) return 'single:${task.id}';
     return '${project.currentBatchPlanRevision}:'
         '${project.currentBatchTaskIds.join(',')}';

@@ -21,7 +21,7 @@ void main() {
       createdAt: now,
       updatedAt: now,
     );
-    final project = ProjectDocument(
+    final project = ProjectAggregate(
       id: 'project_1',
       title: 'Project',
       originalGoal: 'Build it',
@@ -46,7 +46,7 @@ void main() {
     expect(encoded['taskIds'], ['task_1']);
     expect(encoded, isNot(contains('tasks')));
 
-    final decoded = ModelJson.decode<ProjectDocument>(encoded);
+    final decoded = ModelJson.decode<ProjectAggregate>(encoded);
     expect(decoded.taskIds, ['task_1']);
     expect(decoded.tasks, isEmpty);
     expect(decoded.nextRevision, 2);
@@ -55,7 +55,7 @@ void main() {
 
   test('persists and restores the resumable batch cursor', () {
     final now = DateTime(2026, 1, 1);
-    final project = ProjectDocument(
+    final project = ProjectAggregate(
       id: 'project_batch',
       title: 'Batch project',
       originalGoal: 'Run a batch',
@@ -91,7 +91,7 @@ void main() {
       'The batch reached a safe boundary.',
     );
 
-    final decoded = ModelJson.decode<ProjectDocument>(encoded);
+    final decoded = ModelJson.decode<ProjectAggregate>(encoded);
     expect(decoded.currentBatchTaskIds, project.currentBatchTaskIds);
     expect(decoded.currentBatchIndex, 1);
     expect(decoded.currentBatchPlanRevision, 4);
@@ -102,7 +102,7 @@ void main() {
 
   test('rejects an embedded task collection', () {
     expect(
-      () => ModelJson.decode<ProjectDocument>({
+      () => ModelJson.decode<ProjectAggregate>({
         'id': 'project_embedded_tasks',
         'tasks': const [],
       }),

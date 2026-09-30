@@ -50,7 +50,7 @@ class ProjectPlanValidator {
   final int planningHorizon;
 
   ProjectPlanValidationResult validate({
-    required ProjectState project,
+    required ProjectAggregate project,
     required ProjectDesiredPlan proposal,
     required String workspaceRoot,
   }) {

@@ -410,9 +410,9 @@ void main() {
   );
 }
 
-ProjectState _project({List<ProjectMemoryEntry> memory = const []}) {
+ProjectAggregate _project({List<ProjectMemoryEntry> memory = const []}) {
   final now = DateTime(2026, 1, 1);
-  return ProjectState(
+  return ProjectAggregate(
     id: 'project_1',
     title: 'Project',
     originalGoal: 'Deliver a bounded outcome',
@@ -435,7 +435,7 @@ ProjectState _project({List<ProjectMemoryEntry> memory = const []}) {
   );
 }
 
-ProjectState _projectWithTasks(List<Task> tasks) {
+ProjectAggregate _projectWithTasks(List<Task> tasks) {
   final project = _project();
   return project.copyWith(
     tasks: [for (final task in tasks) ProjectTaskNode.fromTask(task)],
@@ -443,7 +443,7 @@ ProjectState _projectWithTasks(List<Task> tasks) {
 }
 
 ProjectDesiredPlan _desired(
-  ProjectState project,
+  ProjectAggregate project,
   List<Task> tasks, {
   bool includeCriteria = true,
   List<ProjectMemoryEntry> memoryAdditions = const [],

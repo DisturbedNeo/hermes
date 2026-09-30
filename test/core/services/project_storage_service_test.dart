@@ -241,14 +241,14 @@ void main() {
   });
 }
 
-ProjectDocument _project({
+ProjectAggregate _project({
   required String id,
   DateTime? updatedAt,
   String? chatSessionId,
   int persistenceRevision = 0,
 }) {
   final now = DateTime(2026, 1, 1);
-  return ProjectDocument(
+  return ProjectAggregate(
     persistenceRevision: persistenceRevision,
     id: id,
     title: 'Test project',

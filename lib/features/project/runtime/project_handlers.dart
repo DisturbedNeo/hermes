@@ -52,7 +52,7 @@ class ProjectPlanningHandler {
   );
 
   Future<ProjectPlanRevisionResult> prepareAndApplyPatch({
-    required ProjectState project,
+    required ProjectAggregate project,
     required ProjectPlanPatch patch,
     required String workspaceRoot,
     ProjectPlanApprovalPolicy approvalPolicy =
@@ -67,7 +67,7 @@ class ProjectPlanningHandler {
   );
 
   Future<ProjectPlanRevisionResult> prepareAndApply({
-    required ProjectState project,
+    required ProjectAggregate project,
     required ProjectDesiredPlan proposal,
     required String workspaceRoot,
     ProjectPlanApprovalPolicy approvalPolicy =
@@ -84,7 +84,7 @@ class ProjectPlanningHandler {
   );
 
   ProjectPlanRevisionResult approvePending({
-    required ProjectState project,
+    required ProjectAggregate project,
     required String workspaceRoot,
   }) => _revisionService.approvePending(
     project: project,
@@ -110,9 +110,9 @@ class ProjectPersistenceHandler {
   final ProjectScheduler _scheduler;
   final ProjectControlStateService _controlState;
 
-  Future<ProjectDocument> persist(
+  Future<ProjectAggregate> persist(
     String workspaceRoot,
-    ProjectDocument project, {
+    ProjectAggregate project, {
     ProjectPersistenceContext? persistenceContext,
     ProjectPersistenceCheckpoint checkpoint =
         ProjectPersistenceCheckpoint.runtime,
@@ -143,8 +143,8 @@ class ProjectRecoveryHandler {
 
   final ProjectRecoveryService _service;
 
-  ProjectDocument reconcile({
-    required ProjectDocument project,
+  ProjectAggregate reconcile({
+    required ProjectAggregate project,
     required Task recoveredTask,
     required DateTime now,
   }) => _service.reconcile(

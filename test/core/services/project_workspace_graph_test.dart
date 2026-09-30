@@ -51,7 +51,7 @@ void main() {
       ),
     );
 
-    final decoded = ModelJson.decode<ProjectDocument>(
+    final decoded = ModelJson.decode<ProjectAggregate>(
       ModelJson.encode(project),
     );
 
@@ -65,7 +65,7 @@ void main() {
     final legacy = Map<String, dynamic>.from(ModelJson.encode(_project()));
     legacy.remove('workspaceGraph');
 
-    final decoded = ModelJson.decode<ProjectDocument>(legacy);
+    final decoded = ModelJson.decode<ProjectAggregate>(legacy);
 
     expect(decoded.workspaceGraph.orientation, isEmpty);
     expect(decoded.workspaceGraph.nodes, isEmpty);
@@ -512,12 +512,12 @@ void main() {
   });
 }
 
-ProjectState _project({
+ProjectAggregate _project({
   ProjectWorkspaceGraph? workspaceGraph,
   bool includeTask = true,
 }) {
   final now = DateTime(2026, 1, 1);
-  return ProjectState(
+  return ProjectAggregate(
     id: 'project_workspace_test',
     title: 'Workspace graph test',
     originalGoal: 'Map the project.',

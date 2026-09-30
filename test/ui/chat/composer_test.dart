@@ -39,13 +39,24 @@ void main() {
     );
     chatLibrary = ChatLibraryService(repository: chatLibraryRepository);
     serverManager = LlamaServerManager();
+    final projectApplication = createTestProjectApplication(
+      taskController: taskController,
+    );
     chat = ChatController(
       serverManager: serverManager,
       toolService: toolService,
-      taskController: taskController,
-      projectApplication: createTestProjectApplication(
-        taskController: taskController,
-      ),
+      taskQueries: taskController,
+      taskSessions: taskController,
+      taskPresentation: taskController,
+      taskPlanning: taskController,
+      taskExecution: taskController,
+      taskRecovery: taskController,
+      projectQueries: projectApplication,
+      projectSessions: projectApplication,
+      projectPlanning: projectApplication,
+      projectCommands: projectApplication,
+      projectExecution: projectApplication,
+      projectRecovery: projectApplication,
       chatLibrary: chatLibrary,
       workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,

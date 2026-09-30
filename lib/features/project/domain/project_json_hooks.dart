@@ -1,8 +1,8 @@
 part of 'project.dart';
 
 /// Project documents use the single schema supported by the current baseline.
-class ProjectStateJsonHook extends JsonModelHook {
-  const ProjectStateJsonHook()
+class ProjectAggregateJsonHook extends JsonModelHook {
+  const ProjectAggregateJsonHook()
     : super(removeKeys: const {'tasks', 'persistenceRevision'});
 
   @override

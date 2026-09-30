@@ -8,7 +8,7 @@ import 'package:hermes/features/project/domain/project.dart';
 class ProjectControlStateMachine {
   const ProjectControlStateMachine();
 
-  ProjectBoundary read(ProjectDocument project, {DateTime? now}) {
+  ProjectBoundary read(ProjectAggregate project, {DateTime? now}) {
     final existing = project.boundary;
     if (existing != null) return existing;
     return readCompatibility(project, now: now);
@@ -17,7 +17,7 @@ class ProjectControlStateMachine {
   /// Converts the legacy lifecycle fields at the deserialization boundary
   /// only. Runtime decisions should use [read], which returns the canonical
   /// persisted boundary once one exists.
-  ProjectBoundary readCompatibility(ProjectDocument project, {DateTime? now}) {
+  ProjectBoundary readCompatibility(ProjectAggregate project, {DateTime? now}) {
     final timestamp = now ?? project.updatedAt;
     final outcome = _compatibilityOutcomeFor(project);
     final blocker = project.blocker;
@@ -32,13 +32,13 @@ class ProjectControlStateMachine {
     );
   }
 
-  ProjectControlOutcome outcomeFor(ProjectDocument project) {
+  ProjectControlOutcome outcomeFor(ProjectAggregate project) {
     final boundary = project.boundary;
     if (boundary != null) return boundary.outcome;
     return _compatibilityOutcomeFor(project);
   }
 
-  ProjectControlOutcome _compatibilityOutcomeFor(ProjectDocument project) {
+  ProjectControlOutcome _compatibilityOutcomeFor(ProjectAggregate project) {
     if (project.status == ProjectStatus.initializing) {
       return ProjectControlOutcome.initializing;
     }
@@ -103,7 +103,7 @@ class ProjectControlStateService {
 
   final ProjectControlStateMachine machine;
 
-  ProjectDocument synchronise(ProjectDocument project, {DateTime? now}) {
+  ProjectAggregate synchronise(ProjectAggregate project, {DateTime? now}) {
     // Once written, the boundary is canonical. A routine checkpoint must not
     // reconstruct it from compatibility fields and accidentally erase an
     // explicit stop reason or recovery action.
@@ -115,7 +115,7 @@ class ProjectControlStateService {
   }
 
   bool _boundaryMatchesLifecycle(
-    ProjectDocument project,
+    ProjectAggregate project,
     ProjectBoundary boundary,
   ) => switch (boundary.outcome) {
     // These outcomes are command-level decisions and must remain durable even
@@ -144,14 +144,14 @@ class ProjectControlStateService {
   /// This is intentionally called only by deserialization and lifecycle
   /// transition code. Ordinary persistence uses [synchronise], which preserves
   /// an already-reduced boundary.
-  ProjectDocument migrateLegacy(ProjectDocument project, {DateTime? now}) {
+  ProjectAggregate migrateLegacy(ProjectAggregate project, {DateTime? now}) {
     return project.copyWith(
       boundary: machine.readCompatibility(project, now: now),
     );
   }
 
-  ProjectDocument withOutcome(
-    ProjectDocument project, {
+  ProjectAggregate withOutcome(
+    ProjectAggregate project, {
     required ProjectControlOutcome outcome,
     String message = '',
     String? action,
@@ -171,8 +171,8 @@ class ProjectControlStateService {
   }
 
   /// Canonical reducer entry point for explicit command outcomes.
-  ProjectDocument reduce(
-    ProjectDocument project, {
+  ProjectAggregate reduce(
+    ProjectAggregate project, {
     required ProjectControlOutcome outcome,
     String message = '',
     String? action,
@@ -190,7 +190,7 @@ class ProjectControlStateService {
     ),
   );
 
-  ProjectBoundary derive(ProjectDocument project, {DateTime? now}) {
+  ProjectBoundary derive(ProjectAggregate project, {DateTime? now}) {
     return machine.read(project, now: now);
   }
 }

@@ -191,9 +191,9 @@ dependencies:
   );
 }
 
-ProjectState _project() {
+ProjectAggregate _project() {
   final now = DateTime(2026, 1, 1);
-  return ProjectState(
+  return ProjectAggregate(
     id: 'project_1',
     title: 'Project',
     originalGoal: 'Deliver the project',

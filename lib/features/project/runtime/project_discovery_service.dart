@@ -15,13 +15,13 @@ import 'package:path/path.dart' as path;
 /// Collects bounded, read-only context for initialization and replanning.
 class ProjectDiscoveryService {
   const ProjectDiscoveryService({
-    required TaskProjectPort taskController,
+    required TaskQueryPort taskController,
     ProjectMemoryService memoryService = const ProjectMemoryService(),
     WorkspaceDiscoveryProfileService profileService =
         const WorkspaceDiscoveryProfileService(),
     ProjectWorkspaceContextService workspaceContextService =
         const ProjectWorkspaceContextService(),
-  }) : _taskController = taskController,
+  }) : _taskQueries = taskController,
        _memoryService = memoryService,
        _profileService = profileService,
        _workspaceContextService = workspaceContextService;
@@ -29,7 +29,7 @@ class ProjectDiscoveryService {
   static const int _maxRootEntries = 80;
   static const int _maxRecentItems = 12;
 
-  final TaskProjectPort _taskController;
+  final TaskQueryPort _taskQueries;
   final ProjectMemoryService _memoryService;
   final WorkspaceDiscoveryProfileService _profileService;
   final ProjectWorkspaceContextService _workspaceContextService;
@@ -37,7 +37,7 @@ class ProjectDiscoveryService {
 
   Future<ProjectEvidenceSnapshot> collect({
     required WorkspaceAttachment workspace,
-    ProjectState? project,
+    ProjectAggregate? project,
     String goalContext = '',
     CancellationToken? cancellationToken,
   }) async {
@@ -70,7 +70,7 @@ class ProjectDiscoveryService {
     }
 
     final taskSummaries = [
-      ...await _taskController.listTasks(
+      ...await _taskQueries.listTasks(
         workspace,
         chatSessionId: project?.chatSessionId,
         projectId: project?.id,

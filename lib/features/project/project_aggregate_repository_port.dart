@@ -18,12 +18,12 @@ abstract interface class ProjectAggregateRepositoryPort {
 
   Future<ProjectRevisionCheckResult> checkRevisions(
     String workspaceRoot,
-    ProjectDocument project,
+    ProjectAggregate project,
   );
 
   Future<ProjectPersistenceDiagnostics> inspect(
     String workspaceRoot,
-    ProjectDocument project,
+    ProjectAggregate project,
   );
 
   Future<ProjectTransactionRecoveryResult> recoverInterruptedTransactions(
@@ -32,7 +32,7 @@ abstract interface class ProjectAggregateRepositoryPort {
 
   Future<ProjectAggregateCommitResult> commit({
     required String workspaceRoot,
-    required ProjectDocument project,
+    required ProjectAggregate project,
     required Iterable<Task> tasks,
     Set<String> deletedTaskIds = const {},
     ProjectPersistenceDiagnostics? knownHealth,
@@ -40,7 +40,7 @@ abstract interface class ProjectAggregateRepositoryPort {
         ProjectPersistenceCheckpoint.runtime,
   });
 
-  Future<bool> deleteProject(String workspaceRoot, ProjectDocument project);
+  Future<bool> deleteProject(String workspaceRoot, ProjectAggregate project);
 }
 
 class ProjectLoadResult {
@@ -50,7 +50,7 @@ class ProjectLoadResult {
     this.canonicalTasks = const [],
   });
 
-  final ProjectDocument? project;
+  final ProjectAggregate? project;
   final ProjectPersistenceDiagnostics diagnostics;
   final List<Task> canonicalTasks;
 }
@@ -73,7 +73,7 @@ class ProjectAggregateCommitResult {
     required this.tasks,
   });
 
-  final PersistedSnapshot<ProjectDocument> project;
+  final PersistedSnapshot<ProjectAggregate> project;
   final Map<String, PersistedSnapshot<Task>> tasks;
 }
 

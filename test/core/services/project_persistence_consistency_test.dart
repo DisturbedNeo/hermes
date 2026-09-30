@@ -305,9 +305,9 @@ void main() {
   );
 }
 
-ProjectDocument _project(String id, {List<Task> tasks = const []}) {
+ProjectAggregate _project(String id, {List<Task> tasks = const []}) {
   final now = DateTime(2026, 1, 1);
-  return ProjectDocument(
+  return ProjectAggregate(
     id: id,
     title: 'Project',
     originalGoal: 'Goal',

@@ -585,7 +585,7 @@ void main() {
     test('chat state transitions are owned by the real reducer boundary', () {
       final context = _requiredSource(
         snapshot,
-        'lib/features/chat/runtime/chat_application_context.dart',
+        'lib/features/chat/runtime/chat_runtime_collaborators.dart',
       );
       final reducer = _requiredSource(
         snapshot,
@@ -603,12 +603,12 @@ void main() {
       }
       if (RegExp(r'\b_state\s*\.\s*copyWith\s*\(').hasMatch(context.source)) {
         violations.add(
-          'chat_application_context.dart: constructs state with copyWith outside the reducer',
+          'chat_runtime_collaborators.dart: constructs state with copyWith outside the reducer',
         );
       }
       if (RegExp(r'\bvoid\s+set[A-Z]\w*\s*\(').hasMatch(context.source)) {
         violations.add(
-          'chat_application_context.dart: exposes state mutation setters',
+          'chat_runtime_collaborators.dart: exposes state mutation setters',
         );
       }
       _expectNoViolations('chat reducer ownership', violations);
@@ -617,18 +617,18 @@ void main() {
     test('runtime contexts require explicit collaborators', () {
       final taskContext = _requiredSource(
         snapshot,
-        'lib/features/task/runtime/task_context.dart',
+        'lib/features/task/runtime/task_runtime_collaborators.dart',
       );
       final projectContext = _requiredSource(
         snapshot,
-        'lib/features/project/runtime/project_context.dart',
+        'lib/features/project/runtime/project_runtime_collaborators.dart',
       );
       final violations = <String>[];
       for (final entry in {
         taskContext.path: ['TaskPlanningService()', 'TaskPersistenceStore('],
         projectContext.path: [
           'ProjectModelCalls(',
-          'ProjectStateStore(',
+          'ProjectAggregateHydrator(',
           'ProjectCommandService(',
         ],
       }.entries) {

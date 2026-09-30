@@ -37,7 +37,7 @@ class ProjectDependencyValidationResult {
 class ProjectDependencyGraphValidator {
   const ProjectDependencyGraphValidator();
 
-  ProjectDependencyValidationResult validate(ProjectDocument project) {
+  ProjectDependencyValidationResult validate(ProjectAggregate project) {
     final taskById = <String, ProjectTaskNode>{
       for (final task in project.tasks) task.id: task,
     };
@@ -153,7 +153,7 @@ class ProjectScheduleResult {
   /// The project used for the schedule. Normal scheduling returns a copy with
   /// the selected task's derived rationale persisted; readiness refreshes
   /// continue to return the original project unchanged.
-  final ProjectDocument project;
+  final ProjectAggregate project;
   final ProjectTaskNode? selectedTask;
   final String? selectionRationale;
   final ProjectDependencyValidationResult dependencyValidation;
@@ -204,7 +204,7 @@ class ProjectScheduler {
 
   final ProjectDependencyGraphValidator _dependencyValidator;
 
-  ProjectScheduleResult refreshReadiness(ProjectDocument project) {
+  ProjectScheduleResult refreshReadiness(ProjectAggregate project) {
     final validation = _dependencyValidator.validate(project);
     final computed = {
       for (final task in project.tasks)
@@ -223,7 +223,7 @@ class ProjectScheduler {
     );
   }
 
-  ProjectScheduleResult schedule(ProjectDocument project) {
+  ProjectScheduleResult schedule(ProjectAggregate project) {
     final refreshed = refreshReadiness(project);
     final recoverySelection = _selectRecoveryTask(refreshed);
     final selection = recoverySelection ?? _selectNormalTask(refreshed);
@@ -247,7 +247,7 @@ class ProjectScheduler {
     );
   }
 
-  List<ProjectTaskNode> orderedReadyTasks(ProjectDocument project) {
+  List<ProjectTaskNode> orderedReadyTasks(ProjectAggregate project) {
     final refreshed = refreshReadiness(project);
     final ready = _orderedNormalTasks(refreshed);
     final recovery = _selectRecoveryTask(refreshed)?.task;
@@ -265,7 +265,7 @@ class ProjectScheduler {
   /// planning triggers, so a frontier can be resumed or advanced without a
   /// synthetic replan.
   ProjectExecutionFrontier executionFrontier(
-    ProjectDocument project, {
+    ProjectAggregate project, {
     int? limit,
   }) {
     final tasks = orderedReadyTasks(project);
@@ -282,7 +282,7 @@ class ProjectScheduler {
   }
 
   _ComputedReadiness _computeReadiness(
-    ProjectDocument project,
+    ProjectAggregate project,
     ProjectTaskNode task,
     ProjectDependencyValidationResult validation,
   ) {
@@ -330,7 +330,7 @@ class ProjectScheduler {
     ]);
   }
 
-  List<String> _inputReasons(ProjectDocument project, ProjectTaskNode task) {
+  List<String> _inputReasons(ProjectAggregate project, ProjectTaskNode task) {
     final reasons = <String>[];
     final approval = project.pendingPlanApproval;
     if (approval != null) {
@@ -480,7 +480,7 @@ class ProjectScheduler {
     return seen.length;
   }
 
-  static int _milestoneRank(ProjectDocument project, ProjectTaskNode task) {
+  static int _milestoneRank(ProjectAggregate project, ProjectTaskNode task) {
     if (task.milestoneId == null) return 1000000;
     final milestone = project.milestones
         .where((item) => item.id == task.milestoneId)
@@ -495,7 +495,7 @@ class ProjectScheduler {
     };
   }
 
-  static String _milestoneDescription(ProjectDocument project, String id) {
+  static String _milestoneDescription(ProjectAggregate project, String id) {
     final milestone = project.milestones
         .where((item) => item.id == id)
         .firstOrNull;

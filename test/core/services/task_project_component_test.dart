@@ -144,7 +144,7 @@ void main() {
 }
 
 ProjectExecutionRequest _request(
-  ProjectDocument project,
+  ProjectAggregate project,
   WorkspaceAttachment workspace,
 ) => ProjectExecutionRequest(
   client: ChatClient(baseUrl: 'http://localhost', model: 'test'),
@@ -154,13 +154,13 @@ ProjectExecutionRequest _request(
   maxNewTasks: 1,
 );
 
-ProjectDocument _project({
+ProjectAggregate _project({
   List<Task> tasks = const [],
   String? activeTaskId,
   ProjectStatus status = ProjectStatus.active,
 }) {
   final now = DateTime(2026, 1, 1);
-  return ProjectDocument(
+  return ProjectAggregate(
     id: 'project_1',
     title: 'Project',
     originalGoal: 'Build it.',

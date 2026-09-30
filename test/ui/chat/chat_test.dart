@@ -35,6 +35,9 @@ void main() {
       toolService: toolService,
       sandbox: sandbox,
     );
+    final projectApplication = createTestProjectApplication(
+      taskController: taskController,
+    );
     final chatLibraryRepository = ChatLibraryRepository(
       preferencesService: preferences,
       databasePath: ':memory:',
@@ -50,10 +53,18 @@ void main() {
       chatLibrary: chatLibrary,
       systemPromptLibrary: promptLibrary,
       toolService: toolService,
-      taskController: taskController,
-      projectApplication: createTestProjectApplication(
-        taskController: taskController,
-      ),
+      taskQueries: taskController,
+      taskSessions: taskController,
+      taskPresentation: taskController,
+      taskPlanning: taskController,
+      taskExecution: taskController,
+      taskRecovery: taskController,
+      projectQueries: projectApplication,
+      projectSessions: projectApplication,
+      projectPlanning: projectApplication,
+      projectCommands: projectApplication,
+      projectExecution: projectApplication,
+      projectRecovery: projectApplication,
       workspaceService: workspaceService,
       preferencesService: preferences,
     );

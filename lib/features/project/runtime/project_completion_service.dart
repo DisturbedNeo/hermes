@@ -12,7 +12,7 @@ class ProjectCompletionService {
   final ProjectLifecycleService lifecycle;
 
   ProjectTransitionResult completeFromEvidence({
-    required ProjectDocument project,
+    required ProjectAggregate project,
     String summary = '',
     DateTime? now,
   }) {

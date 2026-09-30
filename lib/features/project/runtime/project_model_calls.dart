@@ -148,7 +148,7 @@ ${_encoder.convert(_initialPlanToMap(initialPlan))}
     required ModelCompletionPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
-    required ProjectState project,
+    required ProjectAggregate project,
     required ProjectEvidenceSnapshot evidenceSnapshot,
     required List<ProjectPlanRevisionTrigger> triggers,
     required ProjectPlanApprovalPolicy approvalPolicy,
@@ -234,7 +234,7 @@ ${_encoder.convert(_projectViewService.query(project))}
     required ModelCompletionPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
-    required ProjectState project,
+    required ProjectAggregate project,
     required ProjectTaskNode oversizedTask,
     required List<String> violations,
     required ProjectPlanApprovalPolicy approvalPolicy,
@@ -331,7 +331,7 @@ ${_encoder.convert(_projectViewService.query(project, taskRef: oversizedTask.id)
   }
 
   ProjectIncrementalPlanResult _incrementalFailure(
-    ProjectState project,
+    ProjectAggregate project,
     String error, {
     PlanningMetrics planningMetrics = const PlanningMetrics(),
   }) => ProjectIncrementalPlanResult(
@@ -358,7 +358,7 @@ ${_encoder.convert(_projectViewService.query(project, taskRef: oversizedTask.id)
   Future<ProjectCompletionAssessment> evaluateCompletion({
     required ModelCompletionPort client,
     required String baseSystemPrompt,
-    required ProjectState project,
+    required ProjectAggregate project,
     ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
@@ -556,8 +556,8 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
     );
   }
 
-  ProjectState _initialPlanDraft(String originalGoal, DateTime now) =>
-      ProjectState(
+  ProjectAggregate _initialPlanDraft(String originalGoal, DateTime now) =>
+      ProjectAggregate(
         id: 'initial-plan-draft',
         title: _titleFromGoal(originalGoal),
         originalGoal: originalGoal,

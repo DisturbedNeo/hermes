@@ -85,7 +85,7 @@ class ProjectRepository implements ProjectRepositoryPort {
   /// Loads a single project by [projectId] from the given workspace root.
   /// Returns `null` when the project does not exist or its
   /// [chatSessionId] does not match (when provided).
-  Future<PersistedSnapshot<ProjectDocument>?> loadProject(
+  Future<PersistedSnapshot<ProjectAggregate>?> loadProject(
     String workspaceRoot,
     String projectId, {
     String? chatSessionId,
@@ -98,7 +98,7 @@ class ProjectRepository implements ProjectRepositoryPort {
     return snapshot;
   }
 
-  Future<PersistedSnapshot<ProjectDocument>?> loadProjectSnapshot(
+  Future<PersistedSnapshot<ProjectAggregate>?> loadProjectSnapshot(
     String workspaceRoot,
     String projectId, {
     String? chatSessionId,
@@ -122,7 +122,7 @@ class ProjectRepository implements ProjectRepositoryPort {
     );
   }
 
-  Future<PersistedSnapshot<ProjectDocument>?> _loadProjectSnapshotUnlocked(
+  Future<PersistedSnapshot<ProjectAggregate>?> _loadProjectSnapshotUnlocked(
     String workspaceRoot,
     String projectId, {
     String? chatSessionId,
@@ -162,9 +162,9 @@ class ProjectRepository implements ProjectRepositoryPort {
 
   /// Persists [project] to disk under the given workspace root. Creates
   /// the project directory if it does not already exist.
-  Future<PersistedSnapshot<ProjectDocument>> saveSnapshot(
+  Future<PersistedSnapshot<ProjectAggregate>> saveSnapshot(
     String workspaceRoot,
-    ProjectDocument project, {
+    ProjectAggregate project, {
     int? expectedRevision,
     PersistedRevision? currentRevision,
     bool assumeLocked = false,
@@ -207,7 +207,7 @@ class ProjectRepository implements ProjectRepositoryPort {
 
   /// Internal aggregate-commit entry point. The caller must hold the shared
   /// workspace coordinator lock.
-  Future<PersistedSnapshot<ProjectDocument>?> loadProjectSnapshotUnlocked(
+  Future<PersistedSnapshot<ProjectAggregate>?> loadProjectSnapshotUnlocked(
     String workspaceRoot,
     String projectId, {
     String? chatSessionId,
@@ -217,9 +217,9 @@ class ProjectRepository implements ProjectRepositoryPort {
     chatSessionId: chatSessionId,
   );
 
-  Future<PersistedSnapshot<ProjectDocument>> saveSnapshotUnlocked(
+  Future<PersistedSnapshot<ProjectAggregate>> saveSnapshotUnlocked(
     String workspaceRoot,
-    ProjectDocument project, {
+    ProjectAggregate project, {
     required int expectedRevision,
     PersistedRevision? currentRevision,
   }) => saveSnapshot(
@@ -368,12 +368,12 @@ class ProjectRepository implements ProjectRepositoryPort {
     await file.writeAsString(content);
   }
 
-  PersistedSnapshot<ProjectDocument> _decodeProjectSnapshot(
+  PersistedSnapshot<ProjectAggregate> _decodeProjectSnapshot(
     Map<String, dynamic> raw,
     bool fromBackup,
   ) {
     final envelope = SnapshotEnvelope.decode(raw);
-    final project = ModelJson.decode<ProjectDocument>(
+    final project = ModelJson.decode<ProjectAggregate>(
       projectSchemaMigrations.migrate(envelope.document),
     );
     if (project.id.trim().isEmpty) {
@@ -386,7 +386,7 @@ class ProjectRepository implements ProjectRepositoryPort {
     );
   }
 
-  Map<String, dynamic> _documentMap(ProjectDocument project) {
+  Map<String, dynamic> _documentMap(ProjectAggregate project) {
     final map = ModelJson.encode(project.copyWith(persistenceRevision: 0));
     map.remove('persistenceRevision');
     return map;
@@ -395,7 +395,7 @@ class ProjectRepository implements ProjectRepositoryPort {
   bool _isEnvelopeMap(Map<String, dynamic> map) {
     try {
       final envelope = SnapshotEnvelope.decode(map);
-      final project = ModelJson.decode<ProjectDocument>(
+      final project = ModelJson.decode<ProjectAggregate>(
         projectSchemaMigrations.migrate(envelope.document),
       );
       return project.id.trim().isNotEmpty;

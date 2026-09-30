@@ -5,7 +5,7 @@ import 'package:hermes/features/project/domain/project_control_state_service.dar
 ///
 /// This is intentionally a read model over the compatibility snapshot while
 /// the persisted schema is migrated. New planning code should depend on this
-/// boundary rather than reaching into execution fields on ProjectState.
+/// boundary rather than reaching into execution fields on ProjectAggregate.
 class ProjectPlan {
   const ProjectPlan({
     required this.id,
@@ -29,7 +29,7 @@ class ProjectPlan {
   final List<ProjectMilestone> milestones;
   final List<ProjectPlanRevision> planHistory;
 
-  factory ProjectPlan.fromProject(ProjectDocument project) => ProjectPlan(
+  factory ProjectPlan.fromProject(ProjectAggregate project) => ProjectPlan(
     id: project.id,
     title: project.title,
     originalGoal: project.originalGoal,
@@ -71,7 +71,7 @@ class ProjectExecutionState {
   final int maxFailedTasks;
   final List<ProjectRecoveryIncident> recoveryIncidents;
 
-  factory ProjectExecutionState.fromProject(ProjectDocument project) =>
+  factory ProjectExecutionState.fromProject(ProjectAggregate project) =>
       ProjectExecutionState(
         activeTaskId: project.activeTaskId,
         currentBatchTaskIds: List.unmodifiable(project.currentBatchTaskIds),
@@ -99,7 +99,7 @@ class ProjectEvidenceState {
   final List<ProjectEvidence> evidence;
   final ProjectCompletionReviewCheckpoint? completionReviewCheckpoint;
 
-  factory ProjectEvidenceState.fromProject(ProjectDocument project) =>
+  factory ProjectEvidenceState.fromProject(ProjectAggregate project) =>
       ProjectEvidenceState(
         artifacts: List.unmodifiable(project.artifacts),
         evidence: List.unmodifiable(project.evidence),
@@ -108,7 +108,7 @@ class ProjectEvidenceState {
 }
 
 /// Control state presented to the application. The legacy fields remain in
-/// ProjectState for snapshot compatibility, but callers can consume one
+/// ProjectAggregate for snapshot compatibility, but callers can consume one
 /// explicit object instead of inferring a stop condition.
 class ProjectControlState {
   const ProjectControlState({
@@ -126,7 +126,7 @@ class ProjectControlState {
   final PendingProjectPlanApproval? pendingPlanApproval;
 
   factory ProjectControlState.fromProject(
-    ProjectDocument project, {
+    ProjectAggregate project, {
     ProjectControlStateMachine machine = const ProjectControlStateMachine(),
   }) => ProjectControlState(
     boundary: machine.read(project),
@@ -137,7 +137,7 @@ class ProjectControlState {
   );
 }
 
-extension ProjectStateBoundaries on ProjectDocument {
+extension ProjectStateBoundaries on ProjectAggregate {
   ProjectPlan get plan => ProjectPlan.fromProject(this);
 
   ProjectExecutionState get execution =>

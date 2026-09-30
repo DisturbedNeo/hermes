@@ -59,12 +59,12 @@ void main() {
   });
 }
 
-ProjectDocument _project({
+ProjectAggregate _project({
   ProjectStatus status = ProjectStatus.active,
   List<PendingProjectQuestion> openQuestions = const [],
 }) {
   final now = DateTime(2026, 1, 1);
-  return ProjectDocument(
+  return ProjectAggregate(
     id: 'project_1',
     title: 'Project',
     originalGoal: 'Build it',

@@ -240,10 +240,3 @@ typedef ProjectExecutionDelegate =
 
 typedef ProjectRecoveryDelegate =
     Future<ProjectCommandResult> Function(ProjectRecoveryRequest request);
-
-typedef ProjectLoadDelegate =
-    Future<dynamic> Function(
-      WorkspaceAttachment workspace,
-      String projectId, {
-      String? chatSessionId,
-    });

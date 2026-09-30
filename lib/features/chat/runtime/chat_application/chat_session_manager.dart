@@ -642,12 +642,12 @@ class ChatSessionManager implements Disposable {
 
   void ensureTaskModelTextSection(String label, String section) {
     if (_host.sessionTaskModelOutputLabel() != label) {
-      _host.setSessionTaskModelOutputLabel(label);
-      _host.setSessionTaskModelOutputTextSection(null);
+      _host.updateSessionTaskModelOutputLabel(label);
+      _host.updateSessionTaskModelOutputTextSection(null);
       _host.appendTaskModelOutputText('\n\n## $label\n');
     }
     if (_host.sessionTaskModelOutputTextSection() == section) return;
-    _host.setSessionTaskModelOutputTextSection(section);
+    _host.updateSessionTaskModelOutputTextSection(section);
     switch (section) {
       case 'output':
       case 'tool-call':
@@ -659,9 +659,9 @@ class ChatSessionManager implements Disposable {
 
   void ensureTaskModelReasoningSection(String label) {
     if (_host.sessionTaskModelOutputReasoningLabel() == label) return;
-    _host.setSessionTaskModelOutputReasoningLabel(label);
+    _host.updateSessionTaskModelOutputReasoningLabel(label);
     final current = _host.taskModelOutputReasoning;
-    _host.setTaskModelOutputReasoning(
+    _host.dispatchTaskModelOutputReasoning(
       '${current.trim().isEmpty ? '' : '\n\n'}## $label\n',
     );
   }

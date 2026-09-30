@@ -15,7 +15,7 @@ void main() {
       createdAt: now,
       updatedAt: now,
     );
-    final project = ProjectDocument(
+    final project = ProjectAggregate(
       id: 'project_1',
       title: 'Project',
       originalGoal: 'Build it',

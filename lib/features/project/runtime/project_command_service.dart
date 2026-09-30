@@ -5,7 +5,7 @@ import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/shared_kernel/persistence_contracts.dart';
 import 'package:hermes/features/project/application/project_application/project_execution_port.dart';
 import 'package:hermes/features/project/runtime/project_run_loop.dart';
-import 'package:hermes/features/project/runtime/project_state_store.dart';
+import 'package:hermes/features/project/runtime/project_aggregate_hydrator.dart';
 import 'package:hermes/shared_kernel/workspace_ports.dart';
 
 abstract interface class ProjectCommandExecutionPort {
@@ -44,14 +44,14 @@ class CallbackProjectRecoveryPort implements ProjectRecoveryPort {
 /// model or task execution knowledge and can therefore be tested with ports.
 class ProjectCommandService {
   ProjectCommandService({
-    required ProjectStateStore stateStore,
+    required ProjectAggregateHydrator stateStore,
     required PersistencePort persistenceCoordinator,
     ProjectRunLoop runLoop = const ProjectRunLoop(),
   }) : _stateStore = stateStore,
        _persistenceCoordinator = persistenceCoordinator,
        _runLoop = runLoop;
 
-  final ProjectStateStore _stateStore;
+  final ProjectAggregateHydrator _stateStore;
   final PersistencePort _persistenceCoordinator;
   final ProjectRunLoop _runLoop;
   final Set<String> _busyProjects = <String>{};
@@ -117,7 +117,7 @@ class ProjectCommandService {
 
   Future<ProjectPersistenceDiagnostics?> _ensureCurrentSnapshot(
     WorkspaceAttachment workspace,
-    ProjectDocument snapshot,
+    ProjectAggregate snapshot,
   ) async {
     final checked = await _stateStore.checkRevisions(workspace, snapshot);
     final diagnostics = checked.diagnostics;
@@ -146,7 +146,7 @@ class ProjectCommandService {
 
   Future<T> _withProjectCommand<T>(
     WorkspaceAttachment workspace,
-    ProjectDocument project,
+    ProjectAggregate project,
     Future<T> Function() operation,
   ) async {
     if (Zone.current[_zoneKey] == true) return operation();

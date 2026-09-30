@@ -128,7 +128,7 @@ class ProjectCompletionAssessment {
 /// Result of a planner invocation that edits a draft through incremental
 /// commands and commits it through the planning registry.
 class ProjectIncrementalPlanResult {
-  final ProjectState project;
+  final ProjectAggregate project;
   final bool committed;
   final bool changed;
   final bool awaitingApproval;
@@ -178,7 +178,7 @@ abstract interface class ProjectPlanner {
     required ModelCompletionPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
-    required ProjectState project,
+    required ProjectAggregate project,
     required ProjectEvidenceSnapshot evidenceSnapshot,
     required List<ProjectPlanRevisionTrigger> triggers,
     required ProjectPlanApprovalPolicy approvalPolicy,
@@ -190,7 +190,7 @@ abstract interface class ProjectPlanner {
     required ModelCompletionPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
-    required ProjectState project,
+    required ProjectAggregate project,
     required ProjectTaskNode oversizedTask,
     required List<String> violations,
     required ProjectPlanApprovalPolicy approvalPolicy,
@@ -204,7 +204,7 @@ abstract interface class ProjectCompletionEvaluator {
   Future<ProjectCompletionAssessment> evaluateCompletion({
     required ModelCompletionPort client,
     required String baseSystemPrompt,
-    required ProjectState project,
+    required ProjectAggregate project,
     ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });

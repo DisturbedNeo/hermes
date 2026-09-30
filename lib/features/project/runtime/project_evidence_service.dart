@@ -7,7 +7,7 @@ class ProjectEvidenceService {
   const ProjectEvidenceService();
 
   List<ProjectEvidence> normalizeTaskResult({
-    required ProjectDocument project,
+    required ProjectAggregate project,
     required ProjectTaskNode task,
     required TaskResult result,
     required DateTime evaluatedAt,
@@ -21,7 +21,7 @@ class ProjectEvidenceService {
   }
 
   List<ProjectEvidence> _gateEvidence(
-    ProjectDocument project,
+    ProjectAggregate project,
     ProjectTaskNode task,
     TaskResult result,
     DateTime evaluatedAt,
@@ -98,7 +98,7 @@ class ProjectEvidenceService {
   }
 
   List<ProjectEvidence> _artifactEvidence(
-    ProjectDocument project,
+    ProjectAggregate project,
     ProjectTaskNode task,
     TaskResult result,
     DateTime evaluatedAt,
@@ -154,7 +154,7 @@ class ProjectEvidenceService {
   }
 
   List<ProjectEvidence> _claimEvidence(
-    ProjectDocument project,
+    ProjectAggregate project,
     ProjectTaskNode task,
     TaskResult result,
     DateTime evaluatedAt,
@@ -212,7 +212,7 @@ class ProjectEvidenceService {
   }
 
   List<String> _criterionIdsFor(
-    ProjectDocument project,
+    ProjectAggregate project,
     ProjectTaskNode task,
     ProjectEvidenceType type, {
     required List<TaskEvidenceExpectation> matchedExpectations,

@@ -10,7 +10,7 @@ import 'package:hermes/features/project/domain/project_workspace_context_service
 import 'package:hermes/features/chat/presentation/chat/task_panel_dialogs.dart';
 
 class ProjectOutcomeSection extends StatelessWidget {
-  final ProjectDocument project;
+  final ProjectAggregate project;
 
   const ProjectOutcomeSection({super.key, required this.project});
 
@@ -178,7 +178,7 @@ class _CriterionTile extends StatelessWidget {
 }
 
 class ProjectWorkspaceContextSection extends StatelessWidget {
-  final ProjectDocument project;
+  final ProjectAggregate project;
 
   const ProjectWorkspaceContextSection({super.key, required this.project});
 
@@ -302,7 +302,7 @@ class ProjectWorkspaceContextSection extends StatelessWidget {
 }
 
 class ProjectRoadmapSection extends StatelessWidget {
-  final ProjectDocument project;
+  final ProjectAggregate project;
 
   const ProjectRoadmapSection({super.key, required this.project});
 
@@ -424,7 +424,7 @@ class ProjectRoadmapSection extends StatelessWidget {
 }
 
 class _MilestoneTile extends StatelessWidget {
-  final ProjectDocument project;
+  final ProjectAggregate project;
   final ProjectMilestone milestone;
 
   const _MilestoneTile({required this.project, required this.milestone});
@@ -555,7 +555,7 @@ class _RoadmapTaskTile extends StatelessWidget {
 }
 
 class ProjectEvidenceSection extends StatelessWidget {
-  final ProjectDocument project;
+  final ProjectAggregate project;
   final ChatController chat;
 
   const ProjectEvidenceSection({
@@ -699,7 +699,7 @@ class _EvidenceTile extends StatelessWidget {
 }
 
 class ProjectRevisionSection extends StatelessWidget {
-  final ProjectDocument project;
+  final ProjectAggregate project;
   final ChatController chat;
 
   const ProjectRevisionSection({
@@ -733,7 +733,7 @@ class ProjectRevisionSection extends StatelessWidget {
 }
 
 class _PendingRevision extends StatelessWidget {
-  final ProjectDocument project;
+  final ProjectAggregate project;
   final PendingProjectPlanApproval pending;
   final ChatController chat;
 

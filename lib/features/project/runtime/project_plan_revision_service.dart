@@ -14,7 +14,7 @@ typedef ProjectPlanRepair =
     );
 
 class ProjectPlanRevisionResult {
-  final ProjectState project;
+  final ProjectAggregate project;
   final ProjectPlanValidationResult validation;
   final bool repairAttempted;
   final bool changed;
@@ -46,7 +46,7 @@ class ProjectPlanRevisionService {
   /// Planning tools use this for previews. Keeping the validator behind the
   /// revision service ensures preview and commit use the same policy.
   ProjectPlanValidationResult validate({
-    required ProjectState project,
+    required ProjectAggregate project,
     required ProjectDesiredPlan proposal,
     required String workspaceRoot,
   }) {
@@ -60,7 +60,7 @@ class ProjectPlanRevisionService {
   /// Applies the common plan-patch protocol used by initial, incremental,
   /// split, and recovery planning adapters.
   Future<ProjectPlanRevisionResult> prepareAndApplyPatch({
-    required ProjectState project,
+    required ProjectAggregate project,
     required ProjectPlanPatch patch,
     required String workspaceRoot,
     ProjectPlanApprovalPolicy approvalPolicy =
@@ -82,7 +82,7 @@ class ProjectPlanRevisionService {
   );
 
   Future<ProjectPlanRevisionResult> prepareAndApply({
-    required ProjectState project,
+    required ProjectAggregate project,
     required ProjectDesiredPlan proposal,
     required String workspaceRoot,
     ProjectPlanApprovalPolicy approvalPolicy =
@@ -144,7 +144,7 @@ class ProjectPlanRevisionService {
       );
     }
 
-    late final ProjectState preview;
+    late final ProjectAggregate preview;
     try {
       preview = _apply(
         project: project,
@@ -269,7 +269,7 @@ class ProjectPlanRevisionService {
   }
 
   ProjectPlanRevisionResult approvePending({
-    required ProjectState project,
+    required ProjectAggregate project,
     required String workspaceRoot,
   }) {
     final proposal = project.pendingPlanApproval?.desiredPlan;
@@ -346,8 +346,8 @@ class ProjectPlanRevisionService {
     }
   }
 
-  ProjectState _apply({
-    required ProjectState project,
+  ProjectAggregate _apply({
+    required ProjectAggregate project,
     required ProjectDesiredPlan proposal,
     required ProjectPlanValidationResult validation,
     required ProjectPlanRevisionApprover approver,
@@ -821,7 +821,7 @@ class ProjectPlanRevisionService {
     );
   }
 
-  static bool _planChanged(ProjectState before, ProjectState after) =>
+  static bool _planChanged(ProjectAggregate before, ProjectAggregate after) =>
       _criterionSignature(before.criteria) !=
           _criterionSignature(after.criteria) ||
       _milestoneSignature(before.milestones) !=
@@ -951,7 +951,7 @@ class ProjectPlanRevisionService {
   ];
 
   static List<_ProjectPlanRiskReason> _highRiskReasons(
-    ProjectState project,
+    ProjectAggregate project,
     ProjectDesiredPlan proposal,
   ) {
     final changes = <_ProjectPlanRiskReason>[];
@@ -1039,7 +1039,7 @@ class ProjectPlanRevisionService {
   }
 
   ProjectPlanRevisionResult _reconciliationFailure({
-    required ProjectState project,
+    required ProjectAggregate project,
     required ProjectPlanValidationResult validation,
     required bool repairAttempted,
     required int revision,
@@ -1084,8 +1084,8 @@ class ProjectPlanRevisionService {
           .map((issue) => '${issue.code} (${issue.path}): ${issue.message}')
           .join(' | ');
 
-  ProjectDocument _transition({
-    required ProjectDocument snapshot,
+  ProjectAggregate _transition({
+    required ProjectAggregate snapshot,
     required ProjectStatus to,
     required ProjectLifecycleTrigger trigger,
     ProjectBlocker? blocker,

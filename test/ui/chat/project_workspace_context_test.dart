@@ -107,9 +107,9 @@ void main() {
   });
 }
 
-ProjectState _project([ProjectWorkspaceGraph? graph]) {
+ProjectAggregate _project([ProjectWorkspaceGraph? graph]) {
   final now = DateTime(2026, 1, 1);
-  return ProjectState(
+  return ProjectAggregate(
     id: 'workspace_ui_test',
     title: 'Workspace UI test',
     originalGoal: 'Show workspace context.',

@@ -204,7 +204,7 @@ void main() {
   );
 }
 
-ProjectExecutionRequest _request(ProjectDocument project, String rootPath) =>
+ProjectExecutionRequest _request(ProjectAggregate project, String rootPath) =>
     ProjectExecutionRequest(
       client: ChatClient(baseUrl: 'http://localhost', model: 'test'),
       workspace: WorkspaceAttachment(
@@ -217,12 +217,12 @@ ProjectExecutionRequest _request(ProjectDocument project, String rootPath) =>
       maxNewTasks: 1,
     );
 
-ProjectDocument _project({
+ProjectAggregate _project({
   List<Task> tasks = const [],
   List<ProjectCriterion>? criteria,
 }) {
   final now = DateTime(2026, 1, 1);
-  return ProjectDocument(
+  return ProjectAggregate(
     id: 'project_1',
     title: 'Project',
     originalGoal: 'Build the project.',

@@ -50,7 +50,7 @@ void main() {
     expect(properties.keys, isNot(contains('gates')));
     expect(
       registry.toolDefinitions.map((item) => item.schema.toString()).join(),
-      isNot(contains('ProjectState')),
+      isNot(contains('ProjectAggregate')),
     );
   });
 
@@ -326,9 +326,9 @@ ProjectPlanningToolRegistry _registry() => ProjectPlanningToolRegistry(
   ),
 );
 
-ProjectState _project({List<Task> tasks = const []}) {
+ProjectAggregate _project({List<Task> tasks = const []}) {
   final now = DateTime(2026, 1, 1);
-  return ProjectState(
+  return ProjectAggregate(
     id: 'project_1',
     title: 'Project',
     originalGoal: 'Deliver a bounded outcome.',

@@ -19,11 +19,11 @@ abstract interface class ChatSessionHost {
   bool get workspaceToolsEnabled;
 
   String get taskModelOutputText;
-  void setTaskModelOutputText(String value);
+  void dispatchTaskModelOutputText(String value);
   void appendTaskModelOutputText(String value);
 
   String get taskModelOutputReasoning;
-  void setTaskModelOutputReasoning(String value);
+  void dispatchTaskModelOutputReasoning(String value);
   void appendTaskModelOutputReasoning(String value);
 
   void markWorkspaceChanged();
@@ -36,13 +36,13 @@ abstract interface class ChatSessionHost {
 
   String? sessionTaskModelOutputLabel();
 
-  void setSessionTaskModelOutputLabel(String? value);
+  void updateSessionTaskModelOutputLabel(String? value);
 
   String? sessionTaskModelOutputTextSection();
 
-  void setSessionTaskModelOutputTextSection(String? value);
+  void updateSessionTaskModelOutputTextSection(String? value);
 
   String? sessionTaskModelOutputReasoningLabel();
 
-  void setSessionTaskModelOutputReasoningLabel(String? value);
+  void updateSessionTaskModelOutputReasoningLabel(String? value);
 }

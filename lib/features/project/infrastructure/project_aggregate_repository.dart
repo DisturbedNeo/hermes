@@ -124,7 +124,7 @@ class ProjectAggregateRepository implements ProjectAggregateRepositoryPort {
   @override
   Future<ProjectRevisionCheckResult> checkRevisions(
     String workspaceRoot,
-    ProjectDocument project,
+    ProjectAggregate project,
   ) => _coordinator.synchronized(
     workspaceRoot,
     () => _checkRevisionsUnlocked(workspaceRoot, project),
@@ -132,7 +132,7 @@ class ProjectAggregateRepository implements ProjectAggregateRepositoryPort {
 
   Future<ProjectRevisionCheckResult> _checkRevisionsUnlocked(
     String workspaceRoot,
-    ProjectDocument project,
+    ProjectAggregate project,
   ) async {
     var diagnostics = await _transactions.transactionDiagnostics(workspaceRoot);
     PersistedRevision? projectRevision;
@@ -200,7 +200,7 @@ class ProjectAggregateRepository implements ProjectAggregateRepositoryPort {
   @override
   Future<ProjectPersistenceDiagnostics> inspect(
     String workspaceRoot,
-    ProjectDocument project,
+    ProjectAggregate project,
   ) async {
     final loaded = await _coordinator.synchronized(
       workspaceRoot,
@@ -220,7 +220,7 @@ class ProjectAggregateRepository implements ProjectAggregateRepositoryPort {
   @override
   Future<ProjectAggregateCommitResult> commit({
     required String workspaceRoot,
-    required ProjectDocument project,
+    required ProjectAggregate project,
     required Iterable<Task> tasks,
     Set<String> deletedTaskIds = const {},
     ProjectPersistenceDiagnostics? knownHealth,
@@ -241,7 +241,7 @@ class ProjectAggregateRepository implements ProjectAggregateRepositoryPort {
   });
 
   @override
-  Future<bool> deleteProject(String workspaceRoot, ProjectDocument project) =>
+  Future<bool> deleteProject(String workspaceRoot, ProjectAggregate project) =>
       _coordinator.synchronized(workspaceRoot, () async {
         final diagnostics = await _transactions.transactionDiagnostics(
           workspaceRoot,

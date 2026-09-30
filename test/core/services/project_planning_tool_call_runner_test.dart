@@ -254,9 +254,9 @@ ChatCompletionToolCall _call(
   arguments: jsonEncode(arguments),
 );
 
-ProjectState _project() {
+ProjectAggregate _project() {
   final now = DateTime(2026, 1, 1);
-  return ProjectState(
+  return ProjectAggregate(
     id: 'planning_seed',
     title: 'Project',
     originalGoal: 'Deliver a bounded outcome.',

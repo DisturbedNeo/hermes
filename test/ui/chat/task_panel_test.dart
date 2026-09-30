@@ -40,13 +40,24 @@ void main() {
     );
     chatLibrary = ChatLibraryService(repository: chatLibraryRepository);
     serverManager = LlamaServerManager();
+    final projectApplication = createTestProjectApplication(
+      taskController: taskController,
+    );
     chat = ChatController(
       serverManager: serverManager,
       toolService: toolService,
-      taskController: taskController,
-      projectApplication: createTestProjectApplication(
-        taskController: taskController,
-      ),
+      taskQueries: taskController,
+      taskSessions: taskController,
+      taskPresentation: taskController,
+      taskPlanning: taskController,
+      taskExecution: taskController,
+      taskRecovery: taskController,
+      projectQueries: projectApplication,
+      projectSessions: projectApplication,
+      projectPlanning: projectApplication,
+      projectCommands: projectApplication,
+      projectExecution: projectApplication,
+      projectRecovery: projectApplication,
       chatLibrary: chatLibrary,
       workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,
@@ -62,7 +73,7 @@ void main() {
   testWidgets(
     'expanded panel renders artifact tiles without ListTile asserts',
     (tester) async {
-      chat.setActiveTask(_taskWithArtifact());
+      chat.dispatchActiveTask(_taskWithArtifact());
 
       await tester.pumpWidget(
         MaterialApp(
@@ -86,7 +97,7 @@ void main() {
   );
 
   testWidgets('expanded panel renders project state', (tester) async {
-    chat.setActiveProject(_projectWithTask());
+    chat.dispatchActiveProject(_projectWithTask());
 
     await tester.pumpWidget(
       MaterialApp(
@@ -112,7 +123,7 @@ void main() {
   testWidgets('blocked recovery renders structured diagnostics and retry', (
     tester,
   ) async {
-    chat.setActiveProject(_projectWithExhaustedRecovery());
+    chat.dispatchActiveProject(_projectWithExhaustedRecovery());
 
     await tester.pumpWidget(
       MaterialApp(
@@ -139,7 +150,7 @@ void main() {
   testWidgets(
     'project UX renders outcome, milestone, readiness, evidence, and revision review',
     (tester) async {
-      chat.setActiveProject(_projectWithPlanReview());
+      chat.dispatchActiveProject(_projectWithPlanReview());
 
       await tester.pumpWidget(
         MaterialApp(
@@ -179,7 +190,7 @@ void main() {
   testWidgets('manual replan control collects an optional reason', (
     tester,
   ) async {
-    chat.setActiveProject(_projectWithTask());
+    chat.dispatchActiveProject(_projectWithTask());
 
     await tester.pumpWidget(
       MaterialApp(
@@ -257,9 +268,9 @@ Task _taskWithArtifact() {
   );
 }
 
-ProjectDocument _projectWithTask() {
+ProjectAggregate _projectWithTask() {
   final now = DateTime(2024, 1, 1);
-  return ProjectDocument(
+  return ProjectAggregate(
     id: 'project_test',
     title: 'Test project',
     originalGoal: 'Build project.',
@@ -316,7 +327,7 @@ ProjectDocument _projectWithTask() {
   );
 }
 
-ProjectDocument _projectWithExhaustedRecovery() {
+ProjectAggregate _projectWithExhaustedRecovery() {
   final now = DateTime(2024, 1, 1);
   final failure = const TaskFailure(
     gateId: 'no_tool_errors',
@@ -327,7 +338,7 @@ ProjectDocument _projectWithExhaustedRecovery() {
     toolCallIds: ['call_1'],
     unresolvedErrorCount: 1,
   );
-  return ProjectDocument(
+  return ProjectAggregate(
     id: 'project_recovery',
     title: 'Recovery project',
     originalGoal: 'Build project.',
@@ -389,7 +400,7 @@ ProjectDocument _projectWithExhaustedRecovery() {
   );
 }
 
-ProjectDocument _projectWithPlanReview() {
+ProjectAggregate _projectWithPlanReview() {
   final now = DateTime(2024, 1, 1);
   final criterion = ProjectCriterion(
     id: 'accessible',
@@ -439,7 +450,7 @@ ProjectDocument _projectWithPlanReview() {
     objective: 'Adopt the safer reporting API.',
     fingerprint: 'replacement',
   );
-  return ProjectDocument(
+  return ProjectAggregate(
     id: 'project_review',
     title: 'Review project',
     originalGoal: 'Ship the workflow.',

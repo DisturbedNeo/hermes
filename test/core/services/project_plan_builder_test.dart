@@ -466,9 +466,9 @@ void main() {
   );
 }
 
-ProjectState _project({List<Task> tasks = const []}) {
+ProjectAggregate _project({List<Task> tasks = const []}) {
   final now = DateTime(2026, 1, 1);
-  return ProjectState(
+  return ProjectAggregate(
     id: 'project_1',
     title: 'Project',
     originalGoal: 'Deliver a bounded outcome',

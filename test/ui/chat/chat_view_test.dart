@@ -65,15 +65,26 @@ void main() {
     promptLibrary = SystemPromptLibraryService(
       repository: promptLibraryRepository,
     );
+    final projectApplication = createTestProjectApplication(
+      taskController: taskController,
+    );
     tabs = ChatWorkspaceController(
       serverManager: LlamaServerManager(),
       chatLibrary: chatLibrary,
       systemPromptLibrary: promptLibrary,
       toolService: toolService,
-      taskController: taskController,
-      projectApplication: createTestProjectApplication(
-        taskController: taskController,
-      ),
+      taskQueries: taskController,
+      taskSessions: taskController,
+      taskPresentation: taskController,
+      taskPlanning: taskController,
+      taskExecution: taskController,
+      taskRecovery: taskController,
+      projectQueries: projectApplication,
+      projectSessions: projectApplication,
+      projectPlanning: projectApplication,
+      projectCommands: projectApplication,
+      projectExecution: projectApplication,
+      projectRecovery: projectApplication,
       workspaceService: workspaceService,
       preferencesService: preferences,
     );
@@ -93,7 +104,7 @@ void main() {
   testWidgets('lays out in the reported short viewport', (tester) async {
     await _setViewport(tester, const Size(190, 286));
     final chat = tabs.activeChat!;
-    chat.setWorkspace(
+    chat.dispatchWorkspace(
       WorkspaceAttachment(
         rootPath: tempDir.path,
         displayName: 'workspace',
@@ -114,7 +125,7 @@ void main() {
   ) async {
     await _setViewport(tester, const Size(900, 700));
     final chat = tabs.activeChat!;
-    chat.setWorkspace(
+    chat.dispatchWorkspace(
       WorkspaceAttachment(
         rootPath: tempDir.path,
         displayName: 'workspace',

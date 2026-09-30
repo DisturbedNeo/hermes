@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 import 'package:hermes/features/chat/infrastructure/chat_library_repository.dart';
@@ -5,9 +7,26 @@ import 'package:hermes/features/settings/infrastructure/preferences_service.dart
 import 'package:hermes/features/project/application/project_application/project_application.dart';
 import 'package:hermes/features/project/infrastructure/project_aggregate_repository.dart';
 import 'package:hermes/features/project/runtime/project_command_service.dart';
+import 'package:hermes/features/project/runtime/project_runtime_collaborators.dart';
 import 'package:hermes/features/project/infrastructure/project_repository.dart';
 import 'package:hermes/features/project/runtime/project_recovery_service.dart';
-import 'package:hermes/features/project/runtime/project_state_store.dart';
+import 'package:hermes/features/project/runtime/project_aggregate_hydrator.dart';
+import 'package:hermes/features/project/runtime/project_model_calls.dart';
+import 'package:hermes/features/project/runtime/project_memory_service.dart';
+import 'package:hermes/features/project/runtime/project_progress_monitor.dart';
+import 'package:hermes/features/project/runtime/project_planning_coordinator.dart';
+import 'package:hermes/features/project/runtime/project_plan_revision_service.dart';
+import 'package:hermes/features/project/runtime/project_handlers.dart';
+import 'package:hermes/features/project/runtime/project_discovery_service.dart';
+import 'package:hermes/features/project/runtime/project_aggregate_store.dart';
+import 'package:hermes/features/project/runtime/project_criterion_evaluator.dart';
+import 'package:hermes/features/project/runtime/project_evidence_service.dart';
+import 'package:hermes/features/project/runtime/project_decision_engine.dart';
+import 'package:hermes/features/project/runtime/project_completion_service.dart';
+import 'package:hermes/features/project/runtime/project_lifecycle_service.dart';
+import 'package:hermes/features/project/domain/project_control_state_service.dart';
+import 'package:hermes/features/project/domain/project_scheduler.dart';
+import 'package:hermes/features/task/domain/task_lifecycle_service.dart';
 import 'package:hermes/shared_kernel/planning_runtime.dart';
 import 'package:hermes/features/model/infrastructure/llama_server_manager.dart';
 import 'package:hermes/shared_kernel/planning_structured_output.dart';
@@ -23,6 +42,11 @@ import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/shared_kernel/chat_persistence.dart';
 import 'package:hermes/features/task/runtime/task_tool_execution_service.dart';
 import 'package:hermes/features/task/runtime/task_planning_service.dart';
+import 'package:hermes/features/task/runtime/task_runtime_collaborators.dart';
+import 'package:hermes/features/task/runtime/task_command_service.dart';
+import 'package:hermes/features/task/runtime/task_step_runner.dart';
+import 'package:hermes/features/task/runtime/task_gate_evaluator.dart';
+import 'package:hermes/features/task/runtime/task_view_service.dart';
 import 'package:hermes/features/task/application/task_application/task_plan_materializer.dart';
 import 'package:hermes/features/chat/presentation/theme_manager.dart';
 import 'package:hermes/platform/tool_service.dart';
@@ -30,6 +54,10 @@ import 'package:hermes/platform/workspace_sandbox.dart';
 import 'package:hermes/platform/workspace_service.dart';
 import 'package:hermes/shared_kernel/workspace_persistence_coordinator.dart';
 import 'package:hermes/shared_kernel/application_lifecycle.dart';
+import 'package:hermes/shared_kernel/model_json.dart';
+import 'package:hermes/shared_kernel/question_policy_service.dart';
+import 'package:hermes/shared_kernel/workspace_discovery_service.dart';
+import 'package:hermes/app/mappers.init.dart';
 
 /// The eagerly-created, application-scoped dependency graph.
 ///
@@ -52,6 +80,7 @@ class AppDependencies implements ApplicationLifecycle {
   });
 
   factory AppDependencies.create() {
+    ModelJson.configureMapperInitialization(initializeMappers);
     final preferencesService = PreferencesService();
     final workspaceSandbox = WorkspaceSandbox();
     final themeManager = ThemeManager(preferencesService: preferencesService);
@@ -85,17 +114,26 @@ class AppDependencies implements ApplicationLifecycle {
     final taskPersistenceStore = TaskPersistenceStore(
       persistence: taskRepository,
     );
-    final taskController = TaskController(
+    final taskDependencies = TaskRuntimeDependencies(
       toolService: toolService,
       sandbox: workspaceSandbox,
-      persistence: taskRepository,
-      persistenceStore: taskPersistenceStore,
       planningCoordinator: taskPlanningCoordinator,
+      persistenceStore: taskPersistenceStore,
+      profileService: const WorkspaceDiscoveryProfileService(),
+      gateEvaluator: TaskGateEvaluator(sandbox: workspaceSandbox),
       recoveryService: taskRecoveryService,
       modelCompletion: taskModelCompletion,
       toolExecution: taskToolExecution,
-      structuredOutput: structuredOutput,
+      commandService: TaskCommandService(persistence: taskPersistenceStore),
+      stepRunner: TaskStepRunner(
+        persistence: taskPersistenceStore,
+        recovery: taskRecoveryService,
+      ),
+      taskViewService: const TaskViewService(),
+      questionPolicy: const QuestionPolicyService(),
+      encoder: const JsonEncoder.withIndent('  '),
     );
+    final taskController = TaskController(dependencies: taskDependencies);
     final projectRepository = ProjectRepository(
       coordinator: persistenceCoordinator,
     );
@@ -104,28 +142,83 @@ class AppDependencies implements ApplicationLifecycle {
       taskRepository: taskRepository,
       coordinator: persistenceCoordinator,
     );
-    final projectStateStore = ProjectStateStore(
+    final projectStateStore = ProjectAggregateHydrator(
       projectRepository: projectRepository,
       aggregateRepository: projectAggregateRepository,
-      taskController: taskController,
+      taskQueries: taskController,
     );
     final projectCommandService = ProjectCommandService(
       stateStore: projectStateStore,
       persistenceCoordinator: persistenceCoordinator,
     );
-    final projectApplication = ProjectApplication(
+    const projectScheduler = ProjectScheduler();
+    const projectMemoryService = ProjectMemoryService();
+    const projectProgressMonitor = ProjectProgressMonitor();
+    const projectLifecycle = ProjectLifecycleService();
+    const taskLifecycle = TaskLifecycleService();
+    final projectModelCalls = ProjectModelCalls(
+      sandbox: workspaceSandbox,
+      planningRunner: planningRunner,
+      structuredOutput: structuredOutput,
+    );
+    final projectAggregateStore = ProjectAggregateStore(
+      aggregateRepository: projectAggregateRepository,
+      taskRepository: taskRepository,
+      materializer: taskMaterializer,
+    );
+    const projectControlState = ProjectControlStateService();
+    final projectPersistenceHandler = ProjectPersistenceHandler(
+      aggregateStore: projectAggregateStore,
+      scheduler: projectScheduler,
+      controlState: projectControlState,
+    );
+    final projectDiscoveryService = ProjectDiscoveryService(
       taskController: taskController,
+      memoryService: projectMemoryService,
+    );
+    final projectPlanningHandler = ProjectPlanningHandler(
+      coordinator: ProjectPlanningCoordinator(
+        discovery: projectDiscoveryService,
+        planner: projectModelCalls,
+      ),
+      revisionService: const ProjectPlanRevisionService(),
+    );
+    final projectDependencies = ProjectRuntimeDependencies(
+      planner: projectModelCalls,
+      completionEvaluator: projectModelCalls,
+      scheduler: projectScheduler,
+      memoryService: projectMemoryService,
+      progressMonitor: projectProgressMonitor,
+      persistenceCoordinator: persistenceCoordinator,
+      aggregateStore: projectAggregateStore,
+      persistenceHandler: projectPersistenceHandler,
+      stateStore: projectStateStore,
+      commandService: projectCommandService,
+      questionPolicy: const QuestionPolicyService(),
+      evidenceService: const ProjectEvidenceService(),
+      criterionEvaluator: const ProjectCriterionEvaluator(),
+      discoveryService: projectDiscoveryService,
+      planningHandler: projectPlanningHandler,
+      decisionEngine: const ProjectDecisionEngine(),
+      controlStateService: projectControlState,
+      lifecycleService: projectLifecycle,
+      taskLifecycleService: taskLifecycle,
+      completionService: ProjectCompletionService(lifecycle: projectLifecycle),
+      recoveryHandler: ProjectRecoveryHandler(const ProjectRecoveryService()),
+      encoder: const JsonEncoder.withIndent('  '),
+    );
+    final projectApplication = ProjectApplication(
+      taskQueries: taskController,
+      taskPlanning: taskController,
+      taskProjectPlanning: taskController,
+      taskExecution: taskController,
+      taskRecovery: taskController,
       taskPersistence: taskRepository,
       toolService: toolService,
-      sandbox: workspaceSandbox,
       materializer: taskMaterializer,
       repository: projectRepository,
       aggregateRepository: projectAggregateRepository,
-      commandService: projectCommandService,
-      recoveryService: const ProjectRecoveryService(),
-      persistenceCoordinator: persistenceCoordinator,
-      planningRunner: planningRunner,
-      structuredOutput: structuredOutput,
+      dependencies: projectDependencies,
     );
     final chatLibraryRepository = ChatLibraryRepository(
       preferencesService: preferencesService,
@@ -144,8 +237,18 @@ class AppDependencies implements ApplicationLifecycle {
       chatLibrary: chatLibraryService,
       systemPromptLibrary: systemPromptLibraryService,
       toolService: toolService,
-      taskController: taskController,
-      projectApplication: projectApplication,
+      taskQueries: taskController,
+      taskSessions: taskController,
+      taskPresentation: taskController,
+      taskPlanning: taskController,
+      taskExecution: taskController,
+      taskRecovery: taskController,
+      projectQueries: projectApplication,
+      projectSessions: projectApplication,
+      projectPlanning: projectApplication,
+      projectCommands: projectApplication,
+      projectExecution: projectApplication,
+      projectRecovery: projectApplication,
       workspaceService: workspaceService,
       preferencesService: preferencesService,
     );

@@ -3,55 +3,27 @@ import 'dart:async';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
 import 'package:hermes/shared_kernel/compaction_settings.dart';
 import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
 import 'package:hermes/features/task/domain/task_planning_models.dart';
 import 'package:hermes/shared_kernel/task_system_settings.dart';
-import 'package:hermes/shared_kernel/tool_contracts.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/shared_kernel/model_completion_port.dart';
 import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/planning_structured_output.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
-import 'package:hermes/features/task/runtime/task_planning_service.dart';
-import 'package:hermes/features/task/runtime/task_planning_coordinator.dart';
-import 'package:hermes/features/task/runtime/task_persistence_store.dart';
-import 'package:hermes/features/task/runtime/task_model_completion_service.dart';
-import 'package:hermes/features/task/runtime/task_tool_execution_service.dart';
-import 'package:hermes/features/task/runtime/task_recovery_service.dart';
 import 'package:hermes/shared_kernel/task_summary.dart';
-import 'package:hermes/shared_kernel/workspace_discovery_service.dart';
-import 'package:hermes/shared_kernel/workspace_ports.dart';
 
 import 'package:hermes/features/task/runtime/task_runtime_collaborators.dart';
 
-class TaskRuntimeController implements TaskChatPort, TaskProjectPort {
-  TaskRuntimeController({
-    required ToolRegistryPort toolService,
-    required WorkspaceSandboxPort sandbox,
-    required TaskPersistencePort persistence,
-    TaskPersistenceStore? persistenceStore,
-    TaskRecoveryService? recoveryService,
-    TaskPlanner? planner,
-    TaskPlanningCoordinatorPort? planningCoordinator,
-    TaskModelCompletionPort? modelCompletion,
-    TaskToolExecutionPort? toolExecution,
-    StructuredPlanningOutputService? structuredOutput,
-    WorkspaceDiscoveryProfileService? profileService,
-  }) : _delegate = TaskRuntimeContext(
-         toolService: toolService,
-         sandbox: sandbox,
-         persistence: persistence,
-         persistenceStore: persistenceStore,
-         recoveryService: recoveryService ?? const TaskRecoveryService(),
-         planner: planner ?? const TaskPlanningService(),
-         planningCoordinator: planningCoordinator,
-         modelCompletion: modelCompletion,
-         toolExecution: toolExecution,
-         structuredOutput:
-             structuredOutput ?? const StructuredPlanningOutputService(),
-         profileService:
-             profileService ?? const WorkspaceDiscoveryProfileService(),
-       );
+class TaskRuntimeController
+    implements
+        TaskQueryPort,
+        TaskSessionPort,
+        TaskPresentationPort,
+        TaskPlanningPort,
+        TaskProjectPlanningPort,
+        TaskExecutionPort,
+        TaskRecoveryPort {
+  TaskRuntimeController({required TaskRuntimeDependencies dependencies})
+    : _delegate = TaskRuntimeContext(dependencies: dependencies);
 
   final TaskRuntimeContext _delegate;
 

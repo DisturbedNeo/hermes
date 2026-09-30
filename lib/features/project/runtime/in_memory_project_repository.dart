@@ -8,7 +8,8 @@ import 'package:path/path.dart' as path;
 /// It deliberately models revisions and optimistic conflicts while avoiding
 /// filesystem construction, backup repair, and transaction side effects.
 class InMemoryProjectRepository implements ProjectRepositoryPort {
-  final Map<String, Map<String, PersistedSnapshot<ProjectDocument>>> _data = {};
+  final Map<String, Map<String, PersistedSnapshot<ProjectAggregate>>> _data =
+      {};
 
   @override
   Future<List<ProjectSummary>> listProjects(
@@ -36,7 +37,7 @@ class InMemoryProjectRepository implements ProjectRepositoryPort {
   }
 
   @override
-  Future<PersistedSnapshot<ProjectDocument>?> loadProject(
+  Future<PersistedSnapshot<ProjectAggregate>?> loadProject(
     String workspaceRoot,
     String projectId, {
     String? chatSessionId,
@@ -47,7 +48,7 @@ class InMemoryProjectRepository implements ProjectRepositoryPort {
   );
 
   @override
-  Future<PersistedSnapshot<ProjectDocument>?> loadProjectSnapshot(
+  Future<PersistedSnapshot<ProjectAggregate>?> loadProjectSnapshot(
     String workspaceRoot,
     String projectId, {
     String? chatSessionId,
@@ -74,9 +75,9 @@ class InMemoryProjectRepository implements ProjectRepositoryPort {
   }
 
   @override
-  Future<PersistedSnapshot<ProjectDocument>> saveSnapshot(
+  Future<PersistedSnapshot<ProjectAggregate>> saveSnapshot(
     String workspaceRoot,
-    ProjectDocument project, {
+    ProjectAggregate project, {
     int? expectedRevision,
     PersistedRevision? currentRevision,
     bool assumeLocked = false,
@@ -97,7 +98,7 @@ class InMemoryProjectRepository implements ProjectRepositoryPort {
       );
     }
     final persisted = project.copyWith(persistenceRevision: current + 1);
-    final snapshot = PersistedSnapshot<ProjectDocument>(
+    final snapshot = PersistedSnapshot<ProjectAggregate>(
       value: persisted,
       revision: current + 1,
     );
@@ -106,7 +107,7 @@ class InMemoryProjectRepository implements ProjectRepositoryPort {
   }
 
   @override
-  Future<PersistedSnapshot<ProjectDocument>?> loadProjectSnapshotUnlocked(
+  Future<PersistedSnapshot<ProjectAggregate>?> loadProjectSnapshotUnlocked(
     String workspaceRoot,
     String projectId, {
     String? chatSessionId,
@@ -118,9 +119,9 @@ class InMemoryProjectRepository implements ProjectRepositoryPort {
   );
 
   @override
-  Future<PersistedSnapshot<ProjectDocument>> saveSnapshotUnlocked(
+  Future<PersistedSnapshot<ProjectAggregate>> saveSnapshotUnlocked(
     String workspaceRoot,
-    ProjectDocument project, {
+    ProjectAggregate project, {
     required int expectedRevision,
     PersistedRevision? currentRevision,
   }) => saveSnapshot(

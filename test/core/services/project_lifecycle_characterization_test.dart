@@ -34,7 +34,7 @@ void main() {
         _task('done', TaskStatus.completed),
         _task('active', TaskStatus.running),
       ], activeTaskId: 'active');
-      final decoded = ModelJson.decode<ProjectDocument>(
+      final decoded = ModelJson.decode<ProjectAggregate>(
         ModelJson.encode(project),
       );
 
@@ -100,7 +100,7 @@ void main() {
           reasonCode: 'model_unavailable',
         );
 
-        final decoded = ModelJson.decode<ProjectDocument>(
+        final decoded = ModelJson.decode<ProjectAggregate>(
           ModelJson.encode(project),
         );
 
@@ -138,7 +138,7 @@ void main() {
   });
 }
 
-ProjectDocument _project(
+ProjectAggregate _project(
   List<Task> tasks, {
   String? activeTaskId,
   ProjectStatus status = ProjectStatus.active,
@@ -146,7 +146,7 @@ ProjectDocument _project(
   ProjectBlocker? blocker,
 }) {
   final now = DateTime(2026, 1, 1);
-  return ProjectDocument(
+  return ProjectAggregate(
     id: 'project_1',
     title: 'Project',
     originalGoal: 'Build it',

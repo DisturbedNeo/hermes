@@ -63,14 +63,25 @@ void main() {
         sandbox: sandbox,
         persistence: TaskRepository(),
       );
+      final projectApplication = createTestProjectApplication(
+        taskController: taskController,
+        repository: ProjectRepository(),
+      );
       chat = ChatController(
         serverManager: serverManager,
         toolService: toolService,
-        taskController: taskController,
-        projectApplication: createTestProjectApplication(
-          taskController: taskController,
-          repository: ProjectRepository(),
-        ),
+        taskQueries: taskController,
+        taskSessions: taskController,
+        taskPresentation: taskController,
+        taskPlanning: taskController,
+        taskExecution: taskController,
+        taskRecovery: taskController,
+        projectQueries: projectApplication,
+        projectSessions: projectApplication,
+        projectPlanning: projectApplication,
+        projectCommands: projectApplication,
+        projectExecution: projectApplication,
+        projectRecovery: projectApplication,
         chatLibrary: chatLibrary,
         workspaceService: WorkspaceService(sandbox: sandbox),
         preferencesService: preferences,
@@ -121,7 +132,7 @@ void main() {
       () async {
         final client = _BlockingCountClient();
         serverManager.chatClient = client;
-        chat.setCurrentModelSnapshot(
+        chat.updateCurrentModelSnapshot(
           ModelJson.decode<ModelConfigurationSnapshot>({
             'modelName': 'test',
             'nCtx': 4096,
@@ -148,7 +159,7 @@ void main() {
       final client = _TwoToolClient();
       serverManager.chatClient = client;
       await chat.attachWorkspace(tempDir.path);
-      chat.setCommandExecutionApproved(true);
+      chat.updateCommandExecutionApproval(true);
 
       await chat.send('Run two tools');
       Bubble? toolBubble;
@@ -182,7 +193,7 @@ void main() {
 
       expect(chat.isSystemPromptLocked, isTrue);
       expect(
-        () => chat.setSystemPromptSnapshot(
+        () => chat.updateSystemPromptSnapshot(
           const SystemPromptSnapshot(
             id: 'prompt-2',
             name: 'Architect',
@@ -218,7 +229,7 @@ void main() {
         updatedAt: now,
       );
 
-      chat.setSystemPromptSnapshot(
+      chat.updateSystemPromptSnapshot(
         SystemPromptSnapshot(
           id: preset.id,
           name: preset.name,
@@ -370,7 +381,7 @@ void main() {
       await chat.attachWorkspace(tempDir.path);
       final seedProject = _projectDocument();
       final seedProjectRepository = ProjectRepository();
-      chat.setActiveProject(
+      chat.dispatchActiveProject(
         (await seedProjectRepository.saveSnapshot(
           tempDir.path,
           seedProject,
@@ -506,7 +517,7 @@ void main() {
       () async {
         final client = _StuckTaskClient(_planJson(title: 'Diagnostic task'));
         serverManager.chatClient = client;
-        chat.setCurrentModelSnapshot(
+        chat.updateCurrentModelSnapshot(
           ModelJson.decode<ModelConfigurationSnapshot>({
             'modelName': 'test',
             'nCtx': 4096,
@@ -626,7 +637,7 @@ void main() {
     test('scopes transient projects and deletes them on new chat', () async {
       serverManager.chatClient = _QueueChatClient([jsonEncode({})]);
       await chat.attachWorkspace(tempDir.path);
-      chat.setExecutionMode(ExecutionMode.project);
+      chat.updateExecutionMode(ExecutionMode.project);
 
       await chat.send('Build the reporting screen');
 
@@ -646,7 +657,7 @@ void main() {
     test('moves transient project scope when the chat is saved', () async {
       serverManager.chatClient = _QueueChatClient([jsonEncode({})]);
       await chat.attachWorkspace(tempDir.path);
-      chat.setExecutionMode(ExecutionMode.project);
+      chat.updateExecutionMode(ExecutionMode.project);
 
       await chat.send('Build the reporting screen');
 
@@ -670,7 +681,7 @@ void main() {
       () async {
         serverManager.chatClient = _QueueChatClient([jsonEncode({})]);
         await chat.attachWorkspace(tempDir.path);
-        chat.setExecutionMode(ExecutionMode.project);
+        chat.updateExecutionMode(ExecutionMode.project);
 
         await chat.send('Build the reporting screen');
         final projectId = chat.activeProject!.id;
@@ -699,8 +710,8 @@ void main() {
         }),
       ]);
       await chat.attachWorkspace(tempDir.path);
-      chat.setActiveTask(_taskDocument());
-      chat.setActiveTask(
+      chat.dispatchActiveTask(_taskDocument());
+      chat.dispatchActiveTask(
         (await TaskRepository().saveSnapshot(
           tempDir.path,
           chat.activeTask!,
@@ -749,16 +760,27 @@ void main() {
         sandbox: sandbox,
         persistence: TaskRepository(),
       );
+      final projectApplication = createTestProjectApplication(
+        taskController: taskController,
+        repository: ProjectRepository(),
+      );
       tabs = ChatWorkspaceController(
         serverManager: LlamaServerManager(),
         chatLibrary: chatLibrary,
         systemPromptLibrary: promptLibrary,
         toolService: toolService,
-        taskController: taskController,
-        projectApplication: createTestProjectApplication(
-          taskController: taskController,
-          repository: ProjectRepository(),
-        ),
+        taskQueries: taskController,
+        taskSessions: taskController,
+        taskPresentation: taskController,
+        taskPlanning: taskController,
+        taskExecution: taskController,
+        taskRecovery: taskController,
+        projectQueries: projectApplication,
+        projectSessions: projectApplication,
+        projectPlanning: projectApplication,
+        projectCommands: projectApplication,
+        projectExecution: projectApplication,
+        projectRecovery: projectApplication,
         workspaceService: WorkspaceService(sandbox: sandbox),
         preferencesService: preferences,
       );
@@ -844,7 +866,7 @@ void main() {
       () async {
         tabs.serverManager.chatClient = _QueueChatClient([jsonEncode({})]);
         await tabs.activeChat?.attachWorkspace(tempDir.path);
-        tabs.activeChat?.setExecutionMode(ExecutionMode.project);
+        tabs.activeChat?.updateExecutionMode(ExecutionMode.project);
 
         await tabs.activeChat?.send('Build the reporting screen');
         final saved = await tabs.activeChat!.saveCurrentChat(
@@ -987,12 +1009,12 @@ Task _taskDocument({String id = 'task_test', String? chatSessionId}) {
   );
 }
 
-ProjectDocument _projectDocument({
+ProjectAggregate _projectDocument({
   String id = 'project_test',
   String? chatSessionId,
 }) {
   final now = DateTime(2026, 1, 1);
-  return ProjectDocument(
+  return ProjectAggregate(
     id: id,
     title: 'Test project',
     originalGoal: 'Run the project',

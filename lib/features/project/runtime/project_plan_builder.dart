@@ -36,7 +36,7 @@ class ProjectPlanBuilderCommit {
     required this.result,
   });
 
-  ProjectState get project => result.project;
+  ProjectAggregate get project => result.project;
   ProjectPlanValidationResult get validation => result.validation;
 
   ProjectPlanPatch get patch => ProjectPlanPatch.incremental(proposal);
@@ -57,7 +57,7 @@ class ProjectPlanBuilderPreview {
 /// and sends it through the existing validator and revision service.
 class ProjectPlanBuilder {
   ProjectPlanBuilder({
-    required ProjectState project,
+    required ProjectAggregate project,
     DateTime? now,
     Iterable<ProjectPlanRevisionTrigger> triggers = const [],
     String summary = 'Apply the incremental plan update.',
@@ -101,7 +101,7 @@ class ProjectPlanBuilder {
     }
   }
 
-  final ProjectState _project;
+  final ProjectAggregate _project;
   final DateTime _now;
   String _validationRefinedGoal;
   final List<ProjectPlanRevisionTrigger> _triggers;
@@ -1336,7 +1336,7 @@ class ProjectPlanBuilder {
     createdAt: _now,
   );
 
-  ProjectState get _planningProject =>
+  ProjectAggregate get _planningProject =>
       _project.copyWith(refinedGoal: _validationRefinedGoal);
 
   List<String> _addTasksInternal(List<ProjectPlanTaskSpec> specs) {

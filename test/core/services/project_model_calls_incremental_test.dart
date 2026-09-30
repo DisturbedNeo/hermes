@@ -129,9 +129,9 @@ ProjectEvidenceSnapshot _snapshot() => ProjectEvidenceSnapshot(
   collectedAt: DateTime(2026, 1, 1),
 );
 
-ProjectState _project({List<Task> tasks = const []}) {
+ProjectAggregate _project({List<Task> tasks = const []}) {
   final now = DateTime(2026, 1, 1);
-  return ProjectState(
+  return ProjectAggregate(
     id: 'project_incremental',
     title: 'Incremental project',
     originalGoal: 'Deliver a bounded outcome.',

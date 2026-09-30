@@ -35,7 +35,7 @@ class ProjectTransactionCoordinator {
 
   Future<ProjectAggregateCommitResult> commit({
     required String workspaceRoot,
-    required ProjectDocument project,
+    required ProjectAggregate project,
     required List<Task> tasks,
     required Set<String> deletedTaskIds,
     required ProjectPersistenceDiagnostics health,
@@ -259,7 +259,7 @@ class ProjectTransactionCoordinator {
 
   Future<ProjectTransaction> begin(
     String workspaceRoot, {
-    required ProjectDocument project,
+    required ProjectAggregate project,
     required Iterable<Task> tasks,
     required Set<String> deletedTaskIds,
     ProjectPersistenceCheckpoint checkpoint =

@@ -875,7 +875,7 @@ void main() {
   });
 }
 
-ProjectDocument _project(
+ProjectAggregate _project(
   DateTime timestamp, {
   ProjectVerificationMode verificationMode = ProjectVerificationMode.mixed,
   List<TaskEvidenceExpectation> expectedEvidence = const [],
@@ -903,7 +903,7 @@ ProjectDocument _project(
     createdAt: timestamp,
     updatedAt: timestamp,
   );
-  return ProjectDocument(
+  return ProjectAggregate(
     id: 'project_1',
     title: 'Report project',
     originalGoal: 'Create a report',
