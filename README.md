@@ -56,9 +56,10 @@ bash tool/verify.sh
 ```
 
 The workflow regenerates mappers, checks formatting, analyzes Dart, runs the
-architecture/import tests and the full Flutter test suite, and checks the
-final diff. For an individual change, use the narrowest relevant command,
-then run the complete workflow before handoff.
+authoritative architecture suite in
+`test/architecture/architecture_test.dart` and the full Flutter test suite,
+and checks the final diff. For an individual change, use the narrowest
+relevant command, then run the complete workflow before handoff.
 
 ## Persistence and compatibility
 

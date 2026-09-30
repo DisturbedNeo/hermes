@@ -7,4 +7,4 @@ dart analyze
 flutter test
 # dart_mappable currently emits a trailing blank line in generated outputs;
 # check all handwritten sources while allowing that generator detail.
-git diff --check -- . ':(exclude)lib/core/serialization/mappers.init.dart' ':(exclude,glob)**/*.mapper.dart'
+git diff --check -- . ':(exclude)lib/app/mappers.init.dart' ':(exclude,glob)**/*.mapper.dart'
