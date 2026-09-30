@@ -1,11 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/project.dart';
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
-import 'package:hermes/shared_kernel/project_runtime_contracts.dart';
+import 'package:hermes/features/project/application/project_application/project_execution_port.dart';
 import 'package:hermes/features/project/runtime/project_recovery_service.dart';
 import 'package:hermes/features/project/runtime/project_run_loop.dart';
 import 'package:hermes/features/task/runtime/task_command_service.dart';

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:hermes/app/test_factories.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -15,10 +16,8 @@ import 'package:hermes/features/chat/application/chat_workspace_controller.dart'
 import 'package:hermes/features/chat/infrastructure/chat_library_repository.dart';
 import 'package:hermes/features/model/infrastructure/llama_server_manager.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
-import 'package:hermes/features/project/application/project_application/project_application.dart';
 import 'package:hermes/features/chat/infrastructure/system_prompt_library_repository.dart';
 import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
-import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/platform/tool_service.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
 import 'package:hermes/platform/workspace_service.dart';
@@ -41,12 +40,15 @@ void main() {
     final serverManager = LlamaServerManager();
     final sandbox = WorkspaceSandbox();
     final tools = ToolService(workspaceSandbox: sandbox);
-    final tasks = TaskController(toolService: tools, sandbox: sandbox);
+    final tasks = createTestTaskController(
+      toolService: tools,
+      sandbox: sandbox,
+    );
     final chat = ChatController(
       serverManager: serverManager,
       toolService: tools,
       taskController: tasks,
-      projectApplication: ProjectApplication(taskController: tasks),
+      projectApplication: createTestProjectApplication(taskController: tasks),
       chatLibrary: library,
       workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,
@@ -92,12 +94,15 @@ void main() {
     final serverManager = LlamaServerManager();
     final sandbox = WorkspaceSandbox();
     final tools = ToolService(workspaceSandbox: sandbox);
-    final tasks = TaskController(toolService: tools, sandbox: sandbox);
+    final tasks = createTestTaskController(
+      toolService: tools,
+      sandbox: sandbox,
+    );
     final chat = ChatController(
       serverManager: serverManager,
       toolService: tools,
       taskController: tasks,
-      projectApplication: ProjectApplication(taskController: tasks),
+      projectApplication: createTestProjectApplication(taskController: tasks),
       chatLibrary: library,
       workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,
@@ -138,12 +143,15 @@ void main() {
     final serverManager = LlamaServerManager();
     final sandbox = WorkspaceSandbox();
     final tools = ToolService(workspaceSandbox: sandbox);
-    final tasks = TaskController(toolService: tools, sandbox: sandbox);
+    final tasks = createTestTaskController(
+      toolService: tools,
+      sandbox: sandbox,
+    );
     final chat = ChatController(
       serverManager: serverManager,
       toolService: tools,
       taskController: tasks,
-      projectApplication: ProjectApplication(taskController: tasks),
+      projectApplication: createTestProjectApplication(taskController: tasks),
       chatLibrary: library,
       workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,
@@ -198,14 +206,17 @@ void main() {
     );
     final sandbox = WorkspaceSandbox();
     final tools = ToolService(workspaceSandbox: sandbox);
-    final tasks = TaskController(toolService: tools, sandbox: sandbox);
+    final tasks = createTestTaskController(
+      toolService: tools,
+      sandbox: sandbox,
+    );
     final tabs = ChatWorkspaceController(
       serverManager: LlamaServerManager(),
       chatLibrary: chatLibrary,
       systemPromptLibrary: promptLibrary,
       toolService: tools,
       taskController: tasks,
-      projectApplication: ProjectApplication(taskController: tasks),
+      projectApplication: createTestProjectApplication(taskController: tasks),
       workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,
     );

@@ -1,5 +1,5 @@
 // ignore_for_file: dead_code, dead_code_on_catch_subtype, unused_element
-part of 'task_runtime_engine.dart';
+part of 'task_runtime_collaborators.dart';
 
 class _IncrementalTaskPlanAttempt {
   final Task? task;
@@ -109,9 +109,9 @@ const ToolDefinition _requestTaskReplanToolDefinition = ToolDefinition(
   },
 );
 
-extension _TaskPlanningOperations on _TaskApplicationContext {
+extension TaskPlanningOperations on TaskRuntimeContext {
   Future<Task> createTask({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required String userPrompt,
     required ExecutionMode selectedMode,
@@ -120,7 +120,7 @@ extension _TaskPlanningOperations on _TaskApplicationContext {
     String? projectId,
     String? canonicalTaskId,
     TaskPlanningContext? planningContext,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     final now = DateTime.now();
@@ -211,7 +211,7 @@ extension _TaskPlanningOperations on _TaskApplicationContext {
     task = task.copyWith(
       planningMetrics: task.planningMetrics.add(planningMetrics),
     );
-    final existing = await persistence.loadTaskSnapshot(
+    final existing = await _persistenceStore.persistence.loadTaskSnapshot(
       workspace.rootPath,
       task.id,
       includeHistory: false,
@@ -223,7 +223,7 @@ extension _TaskPlanningOperations on _TaskApplicationContext {
   }
 
   Future<_IncrementalTaskPlanAttempt> _completeTaskPlanWithCommands({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required String baseSystemPrompt,
     required String taskId,
@@ -233,7 +233,7 @@ extension _TaskPlanningOperations on _TaskApplicationContext {
     required DateTime now,
     required String? chatSessionId,
     required String? projectId,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     final task = _taskPlanningSeed(
@@ -480,7 +480,7 @@ or an explicit user command. Task memories remain separate from that graph.
       planningContext: planningContext,
       now: now,
     );
-    final existing = await persistence.loadTaskSnapshot(
+    final existing = await _persistenceStore.persistence.loadTaskSnapshot(
       workspace.rootPath,
       task.id,
       includeHistory: false,
@@ -512,7 +512,7 @@ or an explicit user command. Task memories remain separate from that graph.
   }
 
   Future<Task> runNextStep({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required Task snapshot,
     required String baseSystemPrompt,
@@ -520,7 +520,7 @@ or an explicit user command. Task memories remain separate from that graph.
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
     TaskCompactionStatusSink? onCompactionStatus,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
     TaskExecutionRequest executionRequest = const TaskExecutionRequest(),

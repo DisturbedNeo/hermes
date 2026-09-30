@@ -1,14 +1,14 @@
 // ignore_for_file: unused_element, unused_field
-part of 'project_runtime_engine.dart';
+part of 'project_runtime_collaborators.dart';
 
-extension _ProjectEvaluationOperations on _ProjectApplicationContext {
+extension ProjectEvaluationOperations on ProjectRuntimeContext {
   Future<ProjectDocument> _applyCompletionEvaluation({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required ProjectDocument project,
     required String baseSystemPrompt,
     ProjectCompletionReviewReason? reviewReason,
     String? reviewMilestoneId,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
     CancellationToken? cancellationToken,
   }) async {

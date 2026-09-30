@@ -1,7 +1,7 @@
 import 'package:hermes/shared_kernel/planning_metrics.dart';
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_completion_port.dart';
 import 'package:hermes/shared_kernel/planning_runtime.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
 import 'package:hermes/features/task/runtime/task_planning_tools.dart';
@@ -26,22 +26,22 @@ class TaskPlanningResult {
 /// the in-memory [TaskPlanningToolContext] supplied for one planning session.
 abstract interface class TaskPlanner {
   Future<TaskPlanningResult> plan({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required TaskPlanningToolContext context,
     required String label,
     required String system,
     required String user,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });
 
   Future<TaskPlanningResult> replan({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required TaskPlanningToolContext context,
     required String label,
     required String system,
     required String user,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });
 }
@@ -53,12 +53,12 @@ class TaskPlanningService implements TaskPlanner {
 
   @override
   Future<TaskPlanningResult> plan({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required TaskPlanningToolContext context,
     required String label,
     required String system,
     required String user,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) => _run(
     client: client,
@@ -72,12 +72,12 @@ class TaskPlanningService implements TaskPlanner {
 
   @override
   Future<TaskPlanningResult> replan({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required TaskPlanningToolContext context,
     required String label,
     required String system,
     required String user,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) => _run(
     client: client,
@@ -90,12 +90,12 @@ class TaskPlanningService implements TaskPlanner {
   );
 
   Future<TaskPlanningResult> _run({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required TaskPlanningToolContext context,
     required String label,
     required String system,
     required String user,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     final registry = TaskPlanningToolRegistry(context: context);

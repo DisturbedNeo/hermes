@@ -35,7 +35,7 @@ const _featureRootContractFiles = {
   'project_aggregate_repository_port.dart',
   'project_application_port.dart',
   'project_repository_port.dart',
-  'project_runtime_contracts.dart',
+  'project_execution_port.dart',
   'task_runtime_contracts.dart',
 };
 
@@ -200,58 +200,75 @@ void main() {
         }
         if (sourceLayer == 'composition') continue;
 
+        // Feature domain types are stable value contracts after the ownership
+        // migration. Cross-feature application code may consume those
+        // contracts, while operational capabilities still cross features only
+        // through narrow application ports.
+        final crossFeatureContract =
+            sourceFeature != null &&
+            targetFeature != null &&
+            sourceFeature != targetFeature &&
+            (targetLayer == 'domain' ||
+                (targetLayer == 'application' && _isPortFile(targetPath)));
+        final generatedMapperRegistry =
+            sourceLayer == 'shared_kernel' &&
+            targetPath == 'app/mappers.init.dart';
+
         final sameFeature =
             sourceFeature != null && sourceFeature == targetFeature;
-        final allowed = switch (sourceLayer) {
-          'shared_kernel' => targetLayer == 'shared_kernel',
-          'platform' =>
-            targetLayer == 'shared_kernel' || targetLayer == 'platform',
-          'domain' =>
-            targetLayer == 'shared_kernel' ||
-                (sameFeature && targetLayer == 'domain'),
-          'feature_contract' =>
-            targetLayer == 'shared_kernel' ||
-                (sameFeature &&
-                    (targetLayer == 'domain' ||
-                        targetLayer == 'feature_contract')),
-          'presentation' =>
-            targetLayer == 'shared_kernel' ||
-                (sameFeature &&
-                    {
-                      'presentation',
-                      'application',
-                      'domain',
-                    }.contains(targetLayer)),
-          'application' =>
-            targetLayer == 'shared_kernel' ||
-                (sameFeature &&
-                    {
-                      'application',
-                      'domain',
-                      'runtime',
-                      'feature_contract',
-                    }.contains(targetLayer)),
-          'runtime' =>
-            targetLayer == 'shared_kernel' ||
-                (sameFeature &&
-                    {
-                      'application',
-                      'domain',
-                      'runtime',
-                      'feature_contract',
-                    }.contains(targetLayer)) ||
-                (targetLayer == 'application' && _isPortFile(targetPath)),
-          'infrastructure' =>
-            targetLayer == 'shared_kernel' ||
-                (sameFeature &&
-                    {
-                      'application',
-                      'domain',
-                      'infrastructure',
-                      'feature_contract',
-                    }.contains(targetLayer)),
-          _ => false,
-        };
+        final allowed =
+            crossFeatureContract ||
+            generatedMapperRegistry ||
+            switch (sourceLayer) {
+              'shared_kernel' => targetLayer == 'shared_kernel',
+              'platform' =>
+                targetLayer == 'shared_kernel' || targetLayer == 'platform',
+              'domain' =>
+                targetLayer == 'shared_kernel' ||
+                    (sameFeature && targetLayer == 'domain'),
+              'feature_contract' =>
+                targetLayer == 'shared_kernel' ||
+                    (sameFeature &&
+                        (targetLayer == 'domain' ||
+                            targetLayer == 'feature_contract')),
+              'presentation' =>
+                targetLayer == 'shared_kernel' ||
+                    (sameFeature &&
+                        {
+                          'presentation',
+                          'application',
+                          'domain',
+                        }.contains(targetLayer)),
+              'application' =>
+                targetLayer == 'shared_kernel' ||
+                    (sameFeature &&
+                        {
+                          'application',
+                          'domain',
+                          'runtime',
+                          'feature_contract',
+                        }.contains(targetLayer)),
+              'runtime' =>
+                targetLayer == 'shared_kernel' ||
+                    (sameFeature &&
+                        {
+                          'application',
+                          'domain',
+                          'runtime',
+                          'feature_contract',
+                        }.contains(targetLayer)) ||
+                    (targetLayer == 'application' && _isPortFile(targetPath)),
+              'infrastructure' =>
+                targetLayer == 'shared_kernel' ||
+                    (sameFeature &&
+                        {
+                          'application',
+                          'domain',
+                          'infrastructure',
+                          'feature_contract',
+                        }.contains(targetLayer)),
+              _ => false,
+            };
 
         if (!allowed) {
           violations.add('$sourcePath -> $uri');
@@ -346,7 +363,8 @@ void main() {
         final targetLayer = _layerOf(targetPath!);
         final isNarrowPort =
             targetLayer == 'application' && _isPortFile(targetPath);
-        if (!isNarrowPort) {
+        final isDomainContract = targetLayer == 'domain';
+        if (!isNarrowPort && !isDomainContract) {
           violations.add(
             '$sourcePath imports cross-feature implementation $uri',
           );

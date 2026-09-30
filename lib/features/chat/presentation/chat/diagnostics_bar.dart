@@ -4,6 +4,7 @@ import 'package:hermes/shared_kernel/diagnostics_visibility.dart';
 import 'package:hermes/shared_kernel/model_call_diagnostics.dart';
 import 'package:hermes/shared_kernel/preferences_port.dart';
 import 'package:hermes/shared_kernel/model_session_contracts.dart';
+import 'package:hermes/features/model/application/model_session_diagnostics_port.dart';
 
 class DiagnosticsBar extends StatefulWidget {
   const DiagnosticsBar({
@@ -12,7 +13,7 @@ class DiagnosticsBar extends StatefulWidget {
     required this.preferencesService,
   });
 
-  final dynamic diagnostics;
+  final ModelSessionDiagnosticsPort diagnostics;
   final PreferencesPort preferencesService;
 
   @override
@@ -68,7 +69,7 @@ class _DiagnosticsBarState extends State<DiagnosticsBar> {
 class _DiagnosticsBand extends StatelessWidget {
   const _DiagnosticsBand({required this.diagnostics, required this.visibility});
 
-  final dynamic diagnostics;
+  final ModelSessionDiagnosticsPort diagnostics;
   final DiagnosticsVisibility visibility;
 
   @override
@@ -99,7 +100,7 @@ class _DiagnosticsBand extends StatelessWidget {
 
   List<Widget> _compactMetrics(BuildContext context) {
     final call = diagnostics.activeCall;
-    final state = diagnostics.state as ModelServerState;
+    final state = diagnostics.state;
     return [
       _metric(
         context,
@@ -248,9 +249,7 @@ class _DiagnosticsBand extends StatelessWidget {
           context,
           Icons.verified_outlined,
           'Accuracy',
-          call?.accuracy == null
-              ? 'n/a'
-              : (call.accuracy as TelemetryAccuracy).name,
+          call?.accuracy.name ?? 'n/a',
           tooltip: _accuracyTooltip(call?.accuracy),
         ),
         if (call?.error != null)
@@ -696,7 +695,7 @@ class _DiagnosticsBand extends StatelessWidget {
 class _LogViewer extends StatelessWidget {
   const _LogViewer({required this.diagnostics});
 
-  final dynamic diagnostics;
+  final ModelSessionDiagnosticsPort diagnostics;
 
   @override
   Widget build(BuildContext context) {

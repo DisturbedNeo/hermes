@@ -10,7 +10,7 @@ enum TaskModelOutputEventType {
   error,
 }
 
-typedef TaskModelOutputSink = void Function(TaskModelOutputEvent event);
+typedef ModelOutputSink = void Function(TaskModelOutputEvent event);
 
 class TaskModelOutputEvent {
   const TaskModelOutputEvent({

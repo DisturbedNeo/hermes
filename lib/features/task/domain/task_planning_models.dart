@@ -1,6 +1,6 @@
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:hermes/shared_kernel/workspace_discovery_profile.dart';
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/task/domain/task.dart';
 
 part 'task_planning_models.mapper.dart';
 

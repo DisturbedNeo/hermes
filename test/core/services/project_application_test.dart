@@ -1,18 +1,19 @@
 import 'dart:async';
+import 'package:hermes/app/test_factories.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/project.dart';
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/shared_kernel/persistence_contracts.dart';
-import 'package:hermes/shared_kernel/project_runtime_contracts.dart';
+import 'package:hermes/features/project/application/project_application/project_execution_port.dart';
+import 'package:hermes/features/project/infrastructure/project_repository.dart';
 import 'package:hermes/features/project/runtime/project_completion_service.dart';
 import 'package:hermes/features/project/runtime/project_command_service.dart';
 import 'package:hermes/features/project/runtime/project_lifecycle_service.dart';
-import 'package:hermes/features/project/application/project_application/project_application.dart';
-import 'package:hermes/shared_kernel/task_lifecycle_service.dart';
+import 'package:hermes/features/task/domain/task_lifecycle_service.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/platform/tool_service.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
@@ -20,14 +21,16 @@ import 'package:hermes/platform/workspace_sandbox.dart';
 void main() {
   late Directory root;
   late TaskController taskController;
+  late ProjectRepository projectRepository;
 
   setUp(() async {
     root = await Directory.systemTemp.createTemp('hermes_orchestration_');
     final sandbox = WorkspaceSandbox();
-    taskController = TaskController(
+    taskController = createTestTaskController(
       toolService: ToolService(workspaceSandbox: sandbox),
       sandbox: sandbox,
     );
+    projectRepository = ProjectRepository();
   });
 
   tearDown(() async {
@@ -117,17 +120,15 @@ void main() {
 
   test('orchestrator rejects a stale revision before execution', () async {
     var executionCalls = 0;
-    final orchestrator = ProjectApplication(
+    final orchestrator = createTestProjectApplication(
       taskController: taskController,
+      repository: projectRepository,
       executionPort: CallbackProjectCommandExecutionPort((request) async {
         executionCalls++;
         return ProjectCommandResult.fromSnapshot(project: request.snapshot);
       }),
     );
-    final saved = await orchestrator.persistence.saveSnapshot(
-      root.path,
-      _project(),
-    );
+    final saved = await projectRepository.saveSnapshot(root.path, _project());
     final stale = saved.value.copyWith(persistenceRevision: 0);
 
     await expectLater(
@@ -142,8 +143,9 @@ void main() {
     () async {
       var executionCalls = 0;
       var recoveryCalls = 0;
-      final orchestrator = ProjectApplication(
+      final orchestrator = createTestProjectApplication(
         taskController: taskController,
+        repository: projectRepository,
         executionPort: CallbackProjectCommandExecutionPort((request) async {
           executionCalls++;
           return ProjectCommandResult.fromSnapshot(project: request.snapshot);
@@ -153,10 +155,7 @@ void main() {
           return ProjectCommandResult.fromSnapshot(project: request.snapshot);
         }),
       );
-    final saved = await orchestrator.persistence.saveSnapshot(
-        root.path,
-        _project(),
-      );
+      final saved = await projectRepository.saveSnapshot(root.path, _project());
       final workspace = WorkspaceAttachment(
         rootPath: root.path,
         displayName: 'Workspace',
@@ -184,16 +183,14 @@ void main() {
     'orchestrator rejects a second command for the same project as busy',
     () async {
       final release = Completer<ProjectCommandResult>();
-      final orchestrator = ProjectApplication(
+      final orchestrator = createTestProjectApplication(
         taskController: taskController,
+        repository: projectRepository,
         executionPort: CallbackProjectCommandExecutionPort(
           (request) => release.future,
         ),
       );
-    final saved = await orchestrator.persistence.saveSnapshot(
-        root.path,
-        _project(),
-      );
+      final saved = await projectRepository.saveSnapshot(root.path, _project());
       final first = orchestrator.execute(_request(saved.value, root.path));
 
       await expectLater(

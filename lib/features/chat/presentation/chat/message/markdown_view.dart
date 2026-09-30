@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:markdown/markdown.dart' as markdown;
 import 'package:markdown_widget/markdown_widget.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
@@ -126,7 +127,7 @@ class _MarkdownViewState extends State<MarkdownView> {
 class _SafeCodeBlockNode extends ElementNode {
   static final RegExp _classSplit = RegExp(r'\s+');
 
-  final dynamic element;
+  final markdown.Element element;
   final PreConfig preConfig;
   final WidgetVisitor visitor;
 
@@ -186,12 +187,13 @@ class _SafeCodeBlockNode extends ElementNode {
   @override
   TextStyle get style => preConfig.textStyle.merge(parentStyle);
 
-  static String? _languageFrom(dynamic element) {
+  static String? _languageFrom(markdown.Element element) {
     final children = element.children;
-    if (children is! List || children.isEmpty) return null;
+    if (children == null || children.isEmpty) return null;
 
-    final attributes = children.first.attributes;
-    if (attributes is! Map) return null;
+    final first = children.first;
+    if (first is! markdown.Element) return null;
+    final attributes = first.attributes;
 
     final className = attributes['class'];
     if (className is! String || className.trim().isEmpty) return null;

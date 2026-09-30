@@ -8,14 +8,14 @@ import 'package:hermes/shared_kernel/compaction_manager.dart';
 import 'package:hermes/shared_kernel/bubble.dart';
 import 'package:hermes/shared_kernel/compaction_settings.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
-import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_completion_port.dart';
 import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';
 
 void main() {
   group('CompactionManager', () {
     late HttpServer server;
     late StreamSubscription<HttpRequest> serverSub;
-    late ModelProvider client;
+    late ModelCompletionPort client;
     late List<Map<String, dynamic>> requests;
 
     setUp(() async {

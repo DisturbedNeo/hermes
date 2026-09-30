@@ -1,7 +1,7 @@
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member, unused_element, unused_field
-part of 'chat_runtime_engine.dart';
+part of 'chat_runtime_collaborators.dart';
 
-extension _ChatPromptOperations on _ChatApplicationContext {
+extension ChatPromptOperations on ChatRuntimeContext {
   String _buildTaskSystemPrompt(Task snapshot) {
     return _buildSystemPrompt(currentUserRequest: snapshot.originalPrompt);
   }

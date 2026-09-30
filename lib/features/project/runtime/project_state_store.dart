@@ -1,8 +1,8 @@
-import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/shared_kernel/persistence_contracts.dart';
 import 'package:hermes/features/project/project_aggregate_repository_port.dart';
-import 'package:hermes/shared_kernel/project_control_state_service.dart';
+import 'package:hermes/features/project/domain/project_control_state_service.dart';
 import 'package:hermes/features/project/project_repository_port.dart';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
 

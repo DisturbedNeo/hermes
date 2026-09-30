@@ -5,10 +5,12 @@ import 'package:hermes/shared_kernel/model_call_diagnostics.dart';
 import 'package:hermes/shared_kernel/model_completion.dart';
 import 'package:hermes/shared_kernel/model_request.dart';
 
-/// Typed application port for model completions.
+/// Shared model-completion capability used by generic kernel services.
 ///
-/// Application code depends on this contract, never on HTTP or ChatClient.
-abstract interface class ModelProvider {
+/// The model feature's [ModelProvider] extends this contract. Keeping this
+/// smaller capability in the shared kernel lets generic planning and
+/// compaction services remain independent from feature ownership.
+abstract interface class ModelCompletionPort {
   bool get supportsStreamingCancellation;
 
   void dispose();

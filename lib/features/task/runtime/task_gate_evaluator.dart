@@ -3,10 +3,10 @@ import 'dart:io';
 
 import 'package:hermes/shared_kernel/json_parsing.dart';
 import 'package:hermes/shared_kernel/chat_message.dart';
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/model_json.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_completion_port.dart';
 import 'package:hermes/shared_kernel/model_errors.dart';
 import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/shared_kernel/task_json.dart';
@@ -82,7 +82,8 @@ class TaskGateEvaluation {
 }
 
 class TaskGateEvaluator {
-  TaskGateEvaluator({required WorkspaceSandboxPort sandbox}) : _sandbox = sandbox;
+  TaskGateEvaluator({required WorkspaceSandboxPort sandbox})
+    : _sandbox = sandbox;
 
   final WorkspaceSandboxPort _sandbox;
 
@@ -94,7 +95,7 @@ class TaskGateEvaluator {
     List<TaskToolCallRecord> toolCalls = const [],
     List<TaskArtifact> artifacts = const [],
     TaskGateEvidence? evidence,
-    ModelProvider? client,
+    ModelCompletionPort? client,
     String baseSystemPrompt = '',
     bool humanApprovalGranted = false,
     CancellationToken? cancellationToken,
@@ -136,7 +137,7 @@ class TaskGateEvaluator {
     required TaskGate gate,
     required List<TaskToolCallRecord> toolCalls,
     required List<TaskArtifact> artifacts,
-    required ModelProvider? client,
+    required ModelCompletionPort? client,
     required String baseSystemPrompt,
     required bool humanApprovalGranted,
     CancellationToken? cancellationToken,
@@ -896,7 +897,7 @@ class TaskGateEvaluator {
     Task task,
     TaskStep step,
     TaskGate gate,
-    ModelProvider? client,
+    ModelCompletionPort? client,
     String baseSystemPrompt,
     DateTime now,
     CancellationToken? cancellationToken,

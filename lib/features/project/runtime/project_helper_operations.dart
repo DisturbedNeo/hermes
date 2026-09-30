@@ -1,7 +1,7 @@
 // ignore_for_file: unused_element, unused_field
-part of 'project_runtime_engine.dart';
+part of 'project_runtime_collaborators.dart';
 
-extension _ProjectHelperOperations on _ProjectApplicationContext {
+extension ProjectHelperOperations on ProjectRuntimeContext {
   ProjectRepositoryPort get repository => _repository;
 
   Future<ProjectCommandResult> execute(ProjectExecutionRequest request) =>
@@ -520,7 +520,7 @@ extension _ProjectHelperOperations on _ProjectApplicationContext {
   ) {
     return {
       for (final trigger in triggers)
-        if (_ProjectApplicationContext._runtimeReplanTriggers.contains(trigger))
+        if (ProjectRuntimeContext._runtimeReplanTriggers.contains(trigger))
           trigger,
     }.toList();
   }

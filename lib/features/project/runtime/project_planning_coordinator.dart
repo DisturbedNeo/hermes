@@ -1,7 +1,7 @@
 import 'package:hermes/shared_kernel/planning_metrics.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_completion_port.dart';
 import 'package:hermes/features/project/runtime/project_discovery_service.dart';
 import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
@@ -54,12 +54,12 @@ class ProjectPlanningCoordinator {
   Future<ProjectPlanningResult> initialise({
     required WorkspaceAttachment workspace,
     required String userPrompt,
-    required ModelProvider? client,
+    required ModelCompletionPort? client,
     required String baseSystemPrompt,
     required ProjectInitialPlanResult Function() fallback,
     required ProjectInitialPlanValidator validate,
     required ProjectContextIssuePolicy blocksContextIssue,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     cancellationToken?.throwIfCancelled();

@@ -1,5 +1,5 @@
 // ignore_for_file: override_on_non_overriding_member, unused_element
-part of 'project_runtime_engine.dart';
+part of 'project_runtime_collaborators.dart';
 
 int taskStepLimit(TaskEffort effort) => switch (effort) {
   TaskEffort.small => 1,
@@ -9,7 +9,7 @@ int taskStepLimit(TaskEffort effort) => switch (effort) {
 
 /// Owns the runtime graph used by the project use cases.
 
-extension _ProjectPlanningRecoveryOperations on _ProjectApplicationContext {
+extension ProjectPlanningRecoveryOperations on ProjectRuntimeContext {
   List<Map<String, String>> _validateInitialPlan({
     required ProjectInitialPlanResult initialPlan,
     required WorkspaceDiscoveryProfile workspaceProfile,

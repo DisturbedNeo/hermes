@@ -9,7 +9,7 @@ import 'package:hermes/shared_kernel/task_execution_contracts.dart';
 
 export 'package:hermes/shared_kernel/task_planning_types.dart';
 export 'package:hermes/shared_kernel/task_execution_contracts.dart';
-export 'project_task_models.dart'
+export 'package:hermes/shared_kernel/project_task_models.dart'
     show ProjectTaskNode, ProjectTaskRef, ProjectTaskSpec;
 export 'package:hermes/shared_kernel/project_workspace_graph.dart'
     show

@@ -1,25 +1,18 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:hermes/shared_kernel/message_role.dart';
-import 'package:hermes/shared_kernel/context_estimator.dart';
-import 'package:hermes/shared_kernel/throttled_scheduler.dart';
-import 'package:hermes/shared_kernel/uuid.dart';
 import 'package:hermes/shared_kernel/bubble.dart';
 import 'package:hermes/shared_kernel/chat_token.dart';
 import 'package:hermes/shared_kernel/chat_persistence.dart';
-import 'package:hermes/shared_kernel/project.dart';
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/task_system_settings.dart';
 import 'package:hermes/shared_kernel/model_configuration.dart';
 import 'package:hermes/shared_kernel/saved_chat.dart';
 import 'package:hermes/shared_kernel/system_prompt.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/assistant_ops.dart';
-import 'package:hermes/shared_kernel/content_normaliser.dart';
 import 'package:hermes/features/chat/application/chat_library_service.dart';
-import 'package:hermes/features/chat/runtime/chat_application/chat_session_manager.dart';
 import 'package:hermes/features/chat/runtime/chat_session_host.dart';
 import 'package:hermes/features/chat/runtime/chat_application/chat_command_coordinator.dart';
 import 'package:hermes/features/chat/application/chat_view_state.dart';
@@ -27,42 +20,25 @@ import 'package:hermes/features/chat/domain/chat_state.dart';
 import 'package:hermes/features/chat/runtime/chat_application/chat_tool_execution_service.dart';
 import 'package:hermes/features/chat/runtime/chat_application/chat_stream.dart';
 import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/features/project/application/project_application/project_ports.dart';
-import 'package:hermes/shared_kernel/project_runtime_contracts.dart';
 import 'package:hermes/shared_kernel/persistence_contracts.dart';
-import 'package:hermes/shared_kernel/model_output.dart';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
 import 'package:hermes/shared_kernel/task_summary.dart';
 import 'package:hermes/features/model/application/model_server_port.dart';
 import 'package:hermes/shared_kernel/preferences_port.dart';
-import 'package:hermes/shared_kernel/payload_builder.dart';
-import 'package:hermes/shared_kernel/prompt_assembler.dart';
 import 'package:hermes/shared_kernel/tool_contracts.dart';
 import 'package:hermes/shared_kernel/workspace_ports.dart';
 
 import 'package:hermes/shared_kernel/disposable.dart';
 
-part 'chat_application_context.dart';
-
-part 'chat_session_operations.dart';
-
-part 'chat_work_operations.dart';
-
-part 'chat_persistence_operations.dart';
-
-part 'chat_prompt_operations.dart';
-
-part 'chat_lifecycle_operations.dart';
-
-part 'chat_operation_models.dart';
+import 'package:hermes/features/chat/runtime/chat_runtime_collaborators.dart';
 
 class ChatRuntimeController extends ChangeNotifier
     implements Disposable, ChatSessionHost {
   static const String defaultSystemPromptName =
-      _ChatApplicationContext.defaultSystemPromptName;
+      ChatRuntimeContext.defaultSystemPromptName;
   static const String defaultSystemPromptText =
-      _ChatApplicationContext.defaultSystemPromptText;
+      ChatRuntimeContext.defaultSystemPromptText;
 
   ChatRuntimeController({
     String? tabId,
@@ -76,7 +52,7 @@ class ChatRuntimeController extends ChangeNotifier
     ChatCommandCoordinator? commandCoordinator,
     ChatToolExecutionPort? toolExecution,
     SystemPromptSnapshot? initialSystemPromptSnapshot,
-  }) : _delegate = _ChatApplicationContext(
+  }) : _delegate = ChatRuntimeContext(
          tabId: tabId,
          serverManager: serverManager,
          toolService: toolService,
@@ -92,7 +68,7 @@ class ChatRuntimeController extends ChangeNotifier
     _delegate.addListener(_forwardDelegateNotification);
   }
 
-  final _ChatApplicationContext _delegate;
+  final ChatRuntimeContext _delegate;
   bool _disposed = false;
   Future<void>? _disposeFuture;
 
@@ -118,7 +94,8 @@ class ChatRuntimeController extends ChangeNotifier
 
   @override
   WorkspaceAttachment? get workspace => _delegate.workspace;
-  void setWorkspace(WorkspaceAttachment? value) => _delegate.setWorkspace(value);
+  void setWorkspace(WorkspaceAttachment? value) =>
+      _delegate.setWorkspace(value);
 
   SystemPromptSnapshot? get currentSystemPromptSnapshot =>
       _delegate.currentSystemPromptSnapshot;
@@ -126,7 +103,8 @@ class ChatRuntimeController extends ChangeNotifier
   ExecutionMode get executionMode => _delegate.executionMode;
 
   ProjectDocument? get activeProject => _delegate.activeProject;
-  void setActiveProject(ProjectDocument? value) => _delegate.setActiveProject(value);
+  void setActiveProject(ProjectDocument? value) =>
+      _delegate.setActiveProject(value);
 
   ProjectPersistenceDiagnostics? get activeProjectPersistenceDiagnostics =>
       _delegate.activeProjectPersistenceDiagnostics;

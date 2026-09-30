@@ -1,13 +1,12 @@
 import 'package:hermes/shared_kernel/persistence_contracts.dart';
-import 'package:hermes/shared_kernel/task_persistence_ports.dart';
+import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
 import 'package:hermes/shared_kernel/task_summary.dart';
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/workspace_ports.dart';
 import 'package:path/path.dart' as path;
 
 /// In-memory task persistence double that retains optimistic revision checks.
-class InMemoryTaskRepository
-    implements TaskPersistencePort {
+class InMemoryTaskRepository implements TaskPersistencePort {
   InMemoryTaskRepository({PersistencePort? coordinator})
     : _coordinator = coordinator ?? const _InMemoryPersistence();
 

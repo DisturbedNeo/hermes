@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/shared_kernel/persistence_contracts.dart';
-import 'package:hermes/shared_kernel/project_runtime_contracts.dart';
+import 'package:hermes/features/project/application/project_application/project_execution_port.dart';
 import 'package:hermes/features/project/runtime/project_run_loop.dart';
 import 'package:hermes/features/project/runtime/project_state_store.dart';
 import 'package:hermes/shared_kernel/workspace_ports.dart';

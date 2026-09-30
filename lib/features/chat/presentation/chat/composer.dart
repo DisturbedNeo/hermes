@@ -6,7 +6,7 @@ import 'package:hermes/shared_kernel/message_role.dart';
 import 'package:hermes/shared_kernel/stream_state.dart';
 import 'package:hermes/features/chat/presentation/a11y.dart';
 import 'package:hermes/features/chat/presentation/responsive.dart';
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
 import 'package:hermes/shared_kernel/tool_contracts.dart';
 import 'package:hermes/features/chat/presentation/chat/tool_selector.dart';

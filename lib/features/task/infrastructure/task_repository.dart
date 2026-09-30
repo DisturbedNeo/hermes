@@ -1,18 +1,22 @@
 import 'dart:io';
 
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/atomic_json_snapshot_store.dart';
 import 'package:hermes/shared_kernel/persistence_contracts.dart';
 import 'package:hermes/shared_kernel/model_json.dart';
 import 'package:hermes/shared_kernel/task_summary.dart';
 import 'package:hermes/shared_kernel/workspace_ports.dart';
-import 'package:hermes/shared_kernel/task_persistence_ports.dart';
+import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
 import 'package:hermes/shared_kernel/workspace_persistence_coordinator.dart';
 import 'package:path/path.dart' as path;
 import 'package:hermes/shared_kernel/schema_migrations.dart';
 
 class TaskRepository
-    implements TaskReadPort, TaskWritePort, TaskCleanupPort, TaskPersistencePort {
+    implements
+        TaskReadPort,
+        TaskWritePort,
+        TaskCleanupPort,
+        TaskPersistencePort {
   static const String tasksRoot = '.agent/tasks';
   static const String documentFileName = 'task.json';
   static const String runsDirectoryName = 'runs';

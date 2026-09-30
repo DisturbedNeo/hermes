@@ -1,12 +1,12 @@
 import 'package:hermes/shared_kernel/compaction_settings.dart';
-import 'package:hermes/shared_kernel/project.dart';
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/task_system_settings.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_completion_port.dart';
 import 'package:hermes/shared_kernel/persistence_contracts.dart';
-import 'package:hermes/shared_kernel/project_control_state_service.dart';
+import 'package:hermes/features/project/domain/project_control_state_service.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
 
 typedef ProjectTaskSnapshotSink = void Function(Task? task);
@@ -46,7 +46,7 @@ class ProjectLifecycleTransition {
 
 /// The stable result shape returned by the application-facing orchestrator.
 class ProjectCommandResult {
-  final ProjectDocument project;
+  final ProjectAggregate project;
   final Task? activeTask;
   final ProjectCommandStopReason stopReason;
   final List<ProjectLifecycleTransition> transitions;
@@ -61,7 +61,7 @@ class ProjectCommandResult {
   });
 
   factory ProjectCommandResult.fromSnapshot({
-    required ProjectDocument project,
+    required ProjectAggregate project,
     Task? activeTask,
     ProjectPersistenceDiagnostics? persistenceDiagnostics,
   }) => ProjectCommandResult(
@@ -75,7 +75,7 @@ class ProjectCommandResult {
 
   factory ProjectCommandResult.withTransition({
     required ProjectCommandResult result,
-    ProjectDocument? before,
+    ProjectAggregate? before,
     String trigger = 'command',
   }) {
     final project = result.project;
@@ -105,7 +105,7 @@ class ProjectCommandResult {
 class ProjectCommandStopReasonFor {
   const ProjectCommandStopReasonFor._();
 
-  static ProjectCommandStopReason project(ProjectDocument project) =>
+  static ProjectCommandStopReason project(ProjectAggregate project) =>
       switch (const ProjectControlStateMachine().read(project).outcome) {
         ProjectControlOutcome.degradedPlanning =>
           ProjectCommandStopReason.degradedPlanning,
@@ -126,9 +126,9 @@ class ProjectCommandStopReasonFor {
 
 /// All inputs required to run one project command.
 class ProjectExecutionRequest {
-  final ModelProvider client;
+  final ModelCompletionPort client;
   final WorkspaceAttachment workspace;
-  final ProjectDocument snapshot;
+  final ProjectAggregate snapshot;
   final String baseSystemPrompt;
   final int maxNewTasks;
   final int? maxIterations;
@@ -136,7 +136,7 @@ class ProjectExecutionRequest {
   final CompactionSettings? compactionSettings;
   final int? contextLimitTokens;
   final ProjectCompactionStatusSink? onCompactionStatus;
-  final TaskModelOutputSink? onModelOutput;
+  final ModelOutputSink? onModelOutput;
   final ProjectTaskSnapshotSink? onTaskUpdated;
   final CancellationToken? cancellationToken;
   final QuestionAutonomy questionAutonomy;
@@ -161,7 +161,7 @@ class ProjectExecutionRequest {
   });
 
   ProjectExecutionRequest copyWith({
-    ProjectDocument? snapshot,
+    ProjectAggregate? snapshot,
     String? baseSystemPrompt,
   }) => ProjectExecutionRequest(
     client: client,
@@ -184,7 +184,7 @@ class ProjectExecutionRequest {
 
 class ProjectRecoveryRequest {
   final WorkspaceAttachment workspace;
-  final ProjectDocument snapshot;
+  final ProjectAggregate snapshot;
   final ProjectTaskSnapshotSink? onTaskUpdated;
 
   const ProjectRecoveryRequest({

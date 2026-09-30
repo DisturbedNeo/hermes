@@ -19,16 +19,17 @@ import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/shared_kernel/disposable.dart';
 import 'package:hermes/shared_kernel/chat_workspace_contracts.dart';
 
-typedef ChatTabFactory = ChatRuntimeController Function({
-  required ModelServerPort serverManager,
-  required ToolRegistryPort toolService,
-  required TaskChatPort taskController,
-  required ProjectChatPort projectApplication,
-  required ChatLibraryService chatLibrary,
-  required WorkspacePort workspaceService,
-  required PreferencesPort preferencesService,
-  SystemPromptSnapshot? initialSystemPromptSnapshot,
-});
+typedef ChatTabFactory =
+    ChatRuntimeController Function({
+      required ModelServerPort serverManager,
+      required ToolRegistryPort toolService,
+      required TaskChatPort taskController,
+      required ProjectChatPort projectApplication,
+      required ChatLibraryService chatLibrary,
+      required WorkspacePort workspaceService,
+      required PreferencesPort preferencesService,
+      SystemPromptSnapshot? initialSystemPromptSnapshot,
+    });
 
 class ChatRuntimeWorkspaceController extends ChangeNotifier
     implements Disposable {
@@ -296,15 +297,15 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
             initialSystemPromptSnapshot: systemPromptSnapshot,
           )
         : factory(
-                serverManager: serverManager,
-                toolService: _toolService,
-                taskController: _taskController,
-                projectApplication: _projectApplication,
-                chatLibrary: _chatLibrary,
-                workspaceService: _workspaceService,
-                preferencesService: _preferencesService,
-                initialSystemPromptSnapshot: systemPromptSnapshot,
-              );
+            serverManager: serverManager,
+            toolService: _toolService,
+            taskController: _taskController,
+            projectApplication: _projectApplication,
+            chatLibrary: _chatLibrary,
+            workspaceService: _workspaceService,
+            preferencesService: _preferencesService,
+            initialSystemPromptSnapshot: systemPromptSnapshot,
+          );
     tab.addListener(notifyListeners);
     return tab;
   }
@@ -387,17 +388,7 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
         context: 'while cleaning orphaned chat work',
       );
     }
-    try {
-      await serverManager.dispose();
-    } catch (error, stackTrace) {
-      _reportDisposalFailure(
-        error,
-        stackTrace,
-        context: 'while stopping the model server',
-      );
-    } finally {
-      super.dispose();
-    }
+    super.dispose();
   }
 
   void _reportDisposalFailure(

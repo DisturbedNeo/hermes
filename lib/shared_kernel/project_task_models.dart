@@ -1,7 +1,56 @@
 import 'package:dart_mappable/dart_mappable.dart';
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/shared_kernel/task_execution_contracts.dart';
+import 'package:hermes/shared_kernel/task_planning_types.dart';
 
 part 'project_task_models.mapper.dart';
+
+/// Read-only task fields required to materialize a project planning node.
+///
+/// The protocol lives in the shared kernel so the project planning model does
+/// not import the task feature. The task aggregate implements it at the
+/// feature boundary.
+abstract interface class TaskProjectNodeSource {
+  String get id;
+  String get title;
+  String get objective;
+  TaskStatus get status;
+  List<TaskGate> get gates;
+  List<String> get constraints;
+  List<String> get successCriteria;
+  List<String> get criterionIds;
+  String? get milestoneId;
+  List<String> get dependsOnTaskIds;
+  TaskPriority get priority;
+  TaskRisk get risk;
+  ProjectRiskReduction get riskReduction;
+  TaskEffort get effort;
+  String get selectionRationale;
+  int get revisionIntroduced;
+  int get revisionUpdated;
+  List<TaskEvidenceExpectation> get expectedEvidence;
+  List<String> get readPaths;
+  List<String> get writePaths;
+  List<String> get doneCriteria;
+  List<String> get outOfScope;
+  List<String> get context;
+  List<TaskArtifact> get expectedArtifacts;
+  String? get recoveryIncidentId;
+  String get fingerprint;
+  String? get rejectionReason;
+  TaskFailure? get failure;
+  String? get planningError;
+  DateTime get createdAt;
+  DateTime get updatedAt;
+}
+
+/// Read-only task fields required by project execution telemetry.
+abstract interface class TaskExecutionSource {
+  String get id;
+  TaskStatus get status;
+  String? get currentStepId;
+  int get persistenceRevision;
+  Object? get latestRun;
+}
 
 /// Planner-owned description of a task.
 ///
@@ -142,7 +191,7 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
   final DateTime createdAt;
   final DateTime updatedAt;
 
-  factory ProjectTaskNode.fromTask(Task task) {
+  factory ProjectTaskNode.fromTask(TaskProjectNodeSource task) {
     final source = task;
     return ProjectTaskNode(
       id: source.id,
@@ -304,14 +353,16 @@ class TaskExecution {
     this.latestRun,
   });
 
-  factory TaskExecution.fromTask(Object task, {DateTime? observedAt}) {
-    final source = task as dynamic;
+  factory TaskExecution.fromTask(
+    TaskExecutionSource task, {
+    DateTime? observedAt,
+  }) {
     return TaskExecution(
-      taskId: source.id,
-      status: source.status,
-      currentStepId: source.currentStepId,
-      persistenceRevision: source.persistenceRevision,
-      latestRun: source.runs.isEmpty ? null : source.runs.last,
+      taskId: task.id,
+      status: task.status,
+      currentStepId: task.currentStepId,
+      persistenceRevision: task.persistenceRevision,
+      latestRun: task.latestRun,
       observedAt: observedAt ?? DateTime.now(),
     );
   }

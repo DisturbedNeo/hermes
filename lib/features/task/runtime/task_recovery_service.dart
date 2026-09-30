@@ -1,4 +1,4 @@
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/task/domain/task.dart';
 
 /// Converts an interrupted running task into a durable, resumable state.
 ///

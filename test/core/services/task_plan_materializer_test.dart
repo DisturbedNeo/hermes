@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/project_task_models.dart';
 import 'package:hermes/features/task/application/task_application/task_plan_materializer.dart';
 

@@ -6,15 +6,12 @@ import 'package:hermes/shared_kernel/chat_message.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/features/project/runtime/project_model_calls.dart';
-import 'package:hermes/platform/tool_service.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
 
 void main() {
   test('initial project creation uses generated planning IDs', () async {
     final now = DateTime(2026, 1, 1);
-    final calls = ProjectModelCalls(
-      toolService: ToolService(workspaceSandbox: WorkspaceSandbox()),
-    );
+    final calls = ProjectModelCalls(sandbox: WorkspaceSandbox());
     final client = _Client([
       _call('plan_set_project_details', {
         'title': 'Bounded Project',
@@ -97,9 +94,7 @@ void main() {
       const design =
           'Authoritative design\n\nThe report must remain keyboard accessible.';
       await File('${root.path}/Design.md').writeAsString(design);
-      final calls = ProjectModelCalls(
-        toolService: ToolService(workspaceSandbox: WorkspaceSandbox()),
-      );
+      final calls = ProjectModelCalls(sandbox: WorkspaceSandbox());
       final client = _Client([
         _call('planning_read_file', {'path': 'Design.md'}),
         _call('plan_set_project_details', {

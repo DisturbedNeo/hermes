@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hermes/features/chat/presentation/a11y.dart';
 import 'package:hermes/shared_kernel/planning_metrics.dart';
-import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
-import 'package:hermes/shared_kernel/project_scheduler.dart';
-import 'package:hermes/shared_kernel/project_workspace_context_service.dart';
+import 'package:hermes/features/project/domain/project_scheduler.dart';
+import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
 import 'package:hermes/features/chat/presentation/chat/task_panel_dialogs.dart';
 
 class ProjectOutcomeSection extends StatelessWidget {

@@ -1,7 +1,7 @@
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member, unused_element, unused_field
-part of 'chat_runtime_engine.dart';
+part of 'chat_runtime_collaborators.dart';
 
-extension _ChatPersistenceOperations on _ChatApplicationContext {
+extension ChatPersistenceOperations on ChatRuntimeContext {
   void _handlePreferencesChanged() {
     unawaited(_loadTaskSystemSettings());
   }
@@ -608,7 +608,7 @@ extension _ChatPersistenceOperations on _ChatApplicationContext {
     final basePrompt =
         currentSystemPromptSnapshot?.text.trim().isNotEmpty == true
         ? currentSystemPromptSnapshot!.text.trim()
-        : _ChatApplicationContext.defaultSystemPromptText;
+        : ChatRuntimeContext.defaultSystemPromptText;
     final currentWorkspace = workspace;
     if (currentWorkspace == null) {
       return basePrompt;

@@ -66,7 +66,7 @@ void main() {
       'lib/features/project/infrastructure/project_snapshot_migrator.dart',
       'lib/features/project/infrastructure/project_transaction_coordinator.dart',
       'lib/shared_kernel/tool_contracts.dart',
-      'lib/shared_kernel/project_runtime_contracts.dart',
+      'lib/features/project/application/project_application/project_execution_port.dart',
     ];
     final dynamicDeclaration = RegExp(
       r'^\s*(?:required\s+)?dynamic\??\s+(?:get\s+)?[A-Za-z_]\w*',
@@ -126,16 +126,18 @@ void main() {
       sources,
       'lib/features/project/domain',
     ).map((entry) => entry.value).join('\n');
-    if (!RegExp(r'\bclass\s+ProjectDocument\b').hasMatch(projectDomain)) {
-      violations.add('features/project/domain does not define ProjectDocument');
+    if (!RegExp(r'\bclass\s+ProjectAggregate\b').hasMatch(projectDomain)) {
+      violations.add(
+        'features/project/domain does not define ProjectAggregate',
+      );
     }
 
     final taskDomain = _under(
       sources,
       'lib/features/task/domain',
     ).map((entry) => entry.value).join('\n');
-    if (!RegExp(r'\bclass\s+Task\b').hasMatch(taskDomain)) {
-      violations.add('features/task/domain does not define Task');
+    if (!RegExp(r'\bclass\s+TaskAggregate\b').hasMatch(taskDomain)) {
+      violations.add('features/task/domain does not define TaskAggregate');
     }
 
     final modelDomain = _under(

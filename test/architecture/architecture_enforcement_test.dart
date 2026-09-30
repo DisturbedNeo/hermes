@@ -391,7 +391,11 @@ void main() {
 
   test('project state is an aggregate boundary, not a compatibility alias', () {
     final domain = files
-        .where((file) => file.path.startsWith('lib/shared_kernel/'))
+        .where(
+          (file) =>
+              file.path.startsWith('lib/features/project/domain/') ||
+              file.path.startsWith('lib/features/task/domain/'),
+        )
         .map((file) => file.source)
         .join('\n');
     final allProjectApplication = files
@@ -432,7 +436,7 @@ void main() {
     'task execution uses an aggregate boundary rather than the persistence DTO',
     () {
       final taskDomain = files
-          .where((file) => file.path.startsWith('lib/shared_kernel/'))
+          .where((file) => file.path.startsWith('lib/features/task/domain/'))
           .map((file) => file.source)
           .join('\n');
       final taskApplication = files

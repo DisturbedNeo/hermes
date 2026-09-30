@@ -1,12 +1,12 @@
 import 'dart:convert';
+import 'package:hermes/app/test_factories.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/shared_kernel/chat_message.dart';
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
-import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/platform/tool_service.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
 
@@ -21,7 +21,7 @@ void main() {
         if (await root.exists()) await root.delete(recursive: true);
       });
       final sandbox = WorkspaceSandbox();
-      final service = TaskController(
+      final service = createTestTaskController(
         toolService: ToolService(workspaceSandbox: sandbox),
         sandbox: sandbox,
       );
@@ -84,7 +84,7 @@ void main() {
         if (await root.exists()) await root.delete(recursive: true);
       });
       final sandbox = WorkspaceSandbox();
-      final service = TaskController(
+      final service = createTestTaskController(
         toolService: ToolService(workspaceSandbox: sandbox),
         sandbox: sandbox,
       );

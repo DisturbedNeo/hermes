@@ -1,8 +1,8 @@
-import 'package:hermes/shared_kernel/project.dart';
-import 'package:hermes/shared_kernel/project_runtime_contracts.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/project/application/project_application/project_execution_port.dart';
 import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
-import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_completion_port.dart';
 import 'package:hermes/shared_kernel/task_system_settings.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
 
@@ -76,10 +76,10 @@ abstract interface class ProjectChatPort
     required WorkspaceAttachment workspace,
     required String userPrompt,
     String? chatSessionId,
-    ModelProvider? client,
+    ModelCompletionPort? client,
     String baseSystemPrompt = '',
     int? maxIterations,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
   });

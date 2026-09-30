@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:dart_mappable/dart_mappable.dart';
-import 'package:hermes/shared_kernel/mappers.init.dart';
+import 'package:hermes/app/mappers.init.dart';
 
 /// Generic JSON entry point for all typed application DTOs.
 abstract final class ModelJson {

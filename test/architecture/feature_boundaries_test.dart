@@ -312,7 +312,10 @@ void main() {
     expect(workspace, contains('implements WorkspacePresentationPort'));
     expect(persistence, contains('implements PersistencePort'));
     expect(model, contains('implements ModelProvider'));
-    expect(task, contains('implements TaskReadPort'));
+    expect(
+      task,
+      matches(RegExp(r'implements\s+[\s\S]*\bTaskPersistencePort\b')),
+    );
     expect(project, contains('implements ProjectRepositoryPort'));
     expect(aggregate, contains('implements ProjectAggregateRepositoryPort'));
     expect(chatLibrary, contains('implements ChatLibraryPort'));

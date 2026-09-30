@@ -1,10 +1,10 @@
-import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/shared_kernel/planning_metrics.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_completion_port.dart';
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
-import 'package:hermes/shared_kernel/project_workspace_context_service.dart';
+import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
 import 'package:hermes/shared_kernel/workspace_discovery_service.dart';
 
@@ -154,47 +154,47 @@ class ProjectIncrementalPlanResult {
 /// protocol; there is no legacy initial-plan branch.
 abstract interface class ProjectPlanner {
   Future<ProjectInitialPlanResult> initializePlan({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
     required Map<String, dynamic> workspaceMetadata,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });
 
   Future<ProjectInitialPlanResult?> repairInitialPlan({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
     required Map<String, dynamic> workspaceMetadata,
     required ProjectInitialPlanResult initialPlan,
     required List<Map<String, String>> validationIssues,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });
   Future<ProjectIncrementalPlanResult> revisePlanWithCommands({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required ProjectState project,
     required ProjectEvidenceSnapshot evidenceSnapshot,
     required List<ProjectPlanRevisionTrigger> triggers,
     required ProjectPlanApprovalPolicy approvalPolicy,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });
 
   Future<ProjectIncrementalPlanResult> splitTaskWithCommands({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required ProjectState project,
     required ProjectTaskNode oversizedTask,
     required List<String> violations,
     required ProjectPlanApprovalPolicy approvalPolicy,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });
 }
@@ -202,10 +202,10 @@ abstract interface class ProjectPlanner {
 /// Domain-specific structured evaluator used by project completion.
 abstract interface class ProjectCompletionEvaluator {
   Future<ProjectCompletionAssessment> evaluateCompletion({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String baseSystemPrompt,
     required ProjectState project,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });
 }

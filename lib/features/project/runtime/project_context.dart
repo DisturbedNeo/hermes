@@ -1,19 +1,20 @@
-part of 'project_runtime_engine.dart';
+part of 'project_runtime_collaborators.dart';
 
-class _ProjectApplicationContext {
-  _ProjectApplicationContext({
+class ProjectRuntimeContext {
+  ProjectRuntimeContext({
     required TaskProjectPort taskController,
     required TaskPersistencePort taskPersistence,
-    required ToolRegistryPort toolService,
+    required this.toolService,
+    required WorkspaceSandboxPort sandbox,
     required this.materializer,
-    ProjectRepositoryPort? repository,
+    required ProjectRepositoryPort repository,
     ProjectPlanner? planner,
     ProjectCompletionEvaluator? completionEvaluator,
     ProjectScheduler? scheduler,
     ProjectMemoryService? memoryService,
     ProjectProgressMonitor? progressMonitor,
     PersistencePort? persistenceCoordinator,
-    ProjectAggregateRepositoryPort? aggregateRepository,
+    required ProjectAggregateRepositoryPort aggregateRepository,
     ProjectStateStore? stateStore,
     ProjectCommandService? commandService,
     ProjectCommandExecutionPort? executionPort,
@@ -27,8 +28,7 @@ class _ProjectApplicationContext {
     ProjectRecoveryService? recoveryService,
   }) : _taskController = taskController,
        taskPersistence = taskPersistence,
-       toolService = toolService,
-       _repository = repository ?? InMemoryProjectRepository(),
+       _repository = repository,
        _persistenceCoordinator =
            persistenceCoordinator ?? taskPersistence.coordinator,
        _providedAggregateRepository = aggregateRepository,
@@ -39,14 +39,14 @@ class _ProjectApplicationContext {
        _planner =
            planner ??
            ProjectModelCalls(
-             toolService: toolService,
+             sandbox: sandbox,
              planningRunner: planningRunner,
              structuredOutput: structuredOutput,
            ),
        _completionEvaluator =
            completionEvaluator ??
            ProjectModelCalls(
-             toolService: toolService,
+             sandbox: sandbox,
              planningRunner: planningRunner,
              structuredOutput: structuredOutput,
            ),
@@ -82,14 +82,8 @@ class _ProjectApplicationContext {
   final ProjectAggregateRepositoryPort? _providedAggregateRepository;
   final ProjectStateStore? _providedStateStore;
 
-  ProjectRepositoryPort get persistence => _repository;
-
   late final ProjectAggregateRepositoryPort _aggregateRepository =
-      _providedAggregateRepository ??
-      InMemoryProjectAggregateRepository(
-        projectRepository: _repository,
-        taskRepository: taskPersistence,
-      );
+      _providedAggregateRepository!;
   late final ProjectAggregateStore _aggregateStore = ProjectAggregateStore(
     aggregateRepository: _aggregateRepository,
     taskRepository: taskPersistence,

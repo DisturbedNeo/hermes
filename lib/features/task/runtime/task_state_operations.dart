@@ -1,7 +1,7 @@
 // ignore_for_file: unused_element, unused_field
-part of 'task_runtime_engine.dart';
+part of 'task_runtime_collaborators.dart';
 
-extension _TaskStateOperations on _TaskApplicationContext {
+extension TaskStateOperations on TaskRuntimeContext {
   Task _fallbackReplannedTask(
     Task snapshot,
     String reason, {

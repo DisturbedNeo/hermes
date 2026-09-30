@@ -2,11 +2,11 @@ import 'dart:convert';
 
 import 'package:hermes/shared_kernel/json_parsing.dart';
 import 'package:hermes/shared_kernel/uuid.dart';
-import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/shared_kernel/planning_metrics.dart';
 import 'package:hermes/shared_kernel/model_json.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_completion_port.dart';
 import 'package:hermes/shared_kernel/model_errors.dart';
 import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/shared_kernel/planning_runtime.dart';
@@ -18,7 +18,7 @@ import 'package:hermes/features/project/runtime/project_planning_workspace_reade
 import 'package:hermes/features/project/runtime/project_view_service.dart';
 import 'package:hermes/shared_kernel/question_policy_service.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
-import 'package:hermes/shared_kernel/tool_contracts.dart';
+import 'package:hermes/shared_kernel/workspace_ports.dart';
 
 export 'package:hermes/features/project/runtime/project_planning_gateway.dart'
     show
@@ -31,29 +31,29 @@ export 'package:hermes/features/project/runtime/project_planning_gateway.dart'
 
 class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
   ProjectModelCalls({
-    required ToolRegistryPort toolService,
+    required WorkspaceSandboxPort sandbox,
     ProjectViewService projectViewService = const ProjectViewService(),
     PlanningToolCallRunner planningRunner = const PlanningToolCallRunner(),
     StructuredPlanningOutputService structuredOutput =
         const StructuredPlanningOutputService(),
-  }) : _toolService = toolService,
+  }) : _sandbox = sandbox,
        _projectViewService = projectViewService,
        _planningRunner = planningRunner,
        _structuredOutput = structuredOutput;
 
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
-  final ToolRegistryPort _toolService;
+  final WorkspaceSandboxPort _sandbox;
   final ProjectViewService _projectViewService;
   final PlanningToolCallRunner _planningRunner;
   final StructuredPlanningOutputService _structuredOutput;
 
   Future<Map<String, dynamic>> _runPlanning({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required PlanningToolRegistry registry,
     required String label,
     required String system,
     required String user,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async => (await _planningRunner.complete(
     PlanningRunRequest(
@@ -69,12 +69,12 @@ class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
 
   @override
   Future<ProjectInitialPlanResult> initializePlan({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
     required Map<String, dynamic> workspaceMetadata,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     try {
@@ -101,14 +101,14 @@ class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
 
   @override
   Future<ProjectInitialPlanResult?> repairInitialPlan({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
     required Map<String, dynamic> workspaceMetadata,
     required ProjectInitialPlanResult initialPlan,
     required List<Map<String, String>> validationIssues,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     try {
@@ -145,14 +145,14 @@ ${_encoder.convert(_initialPlanToMap(initialPlan))}
 
   @override
   Future<ProjectIncrementalPlanResult> revisePlanWithCommands({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required ProjectState project,
     required ProjectEvidenceSnapshot evidenceSnapshot,
     required List<ProjectPlanRevisionTrigger> triggers,
     required ProjectPlanApprovalPolicy approvalPolicy,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     final context = ProjectPlanningContext(
@@ -231,14 +231,14 @@ ${_encoder.convert(_projectViewService.query(project))}
 
   @override
   Future<ProjectIncrementalPlanResult> splitTaskWithCommands({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required ProjectState project,
     required ProjectTaskNode oversizedTask,
     required List<String> violations,
     required ProjectPlanApprovalPolicy approvalPolicy,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     final context = ProjectPlanningContext(
@@ -356,10 +356,10 @@ ${_encoder.convert(_projectViewService.query(project, taskRef: oversizedTask.id)
 
   @override
   Future<ProjectCompletionAssessment> evaluateCompletion({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String baseSystemPrompt,
     required ProjectState project,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     try {
@@ -437,12 +437,12 @@ ${_encoder.convert(ModelJson.encode(project))}
   }
 
   Future<Map<String, dynamic>> _completeJson({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String system,
     required String user,
     required String label,
     required String expectedShape,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     final result = await _structuredOutput.completeObject(
@@ -458,12 +458,12 @@ ${_encoder.convert(ModelJson.encode(project))}
   }
 
   Future<ProjectInitialPlanResult> _completeInitialPlanning({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
     required Map<String, dynamic> workspaceMetadata,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
     String additionalInstruction = '',
   }) async {
@@ -479,7 +479,7 @@ ${_encoder.convert(ModelJson.encode(project))}
           'Create a bounded, executable plan from the supplied goal and workspace profile.',
       workspaceReader: ProjectPlanningWorkspaceReader(
         workspace: workspace,
-        sandbox: _toolService.workspaceSandbox,
+        sandbox: _sandbox,
         allowedPaths: _workspaceFilesFromMetadata(workspaceMetadata),
         cancellationToken: cancellationToken,
       ),

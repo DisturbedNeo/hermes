@@ -1,4 +1,4 @@
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/features/task/runtime/task_persistence_store.dart';

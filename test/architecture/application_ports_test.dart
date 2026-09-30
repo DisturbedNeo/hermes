@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/project/application/project_application/project_ports.dart';
-import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
 import 'package:hermes/shared_kernel/task_summary.dart';
 import 'package:hermes/features/workspace/domain/workspace.dart';

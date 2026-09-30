@@ -1,7 +1,7 @@
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member, override_on_non_overriding_member
-part of 'chat_runtime_engine.dart';
+part of 'chat_runtime_collaborators.dart';
 
-extension _ChatLifecycleOperations on _ChatApplicationContext {
+extension ChatLifecycleOperations on ChatRuntimeContext {
   Future<void> _stopActiveWork() async {
     if (chatStream.isStreaming) await cancelGeneration();
     if (!taskBusy) return;

@@ -1,10 +1,10 @@
 import 'dart:io';
+import 'package:hermes/app/test_factories.dart';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/features/project/runtime/project_discovery_service.dart';
-import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/platform/tool_service.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
 
@@ -38,7 +38,7 @@ dependencies:
     );
     final sandbox = WorkspaceSandbox();
     final service = ProjectDiscoveryService(
-      taskController: TaskController(
+      taskController: createTestTaskController(
         toolService: ToolService(workspaceSandbox: sandbox),
         sandbox: sandbox,
       ),
@@ -91,7 +91,7 @@ dependencies:
       );
       final sandbox = WorkspaceSandbox();
       final service = ProjectDiscoveryService(
-        taskController: TaskController(
+        taskController: createTestTaskController(
           toolService: ToolService(workspaceSandbox: sandbox),
           sandbox: sandbox,
         ),
@@ -130,7 +130,7 @@ dependencies:
     );
     final sandbox = WorkspaceSandbox();
     final service = ProjectDiscoveryService(
-      taskController: TaskController(
+      taskController: createTestTaskController(
         toolService: ToolService(workspaceSandbox: sandbox),
         sandbox: sandbox,
       ),
@@ -168,7 +168,7 @@ dependencies:
       );
       final sandbox = WorkspaceSandbox();
       final service = ProjectDiscoveryService(
-        taskController: TaskController(
+        taskController: createTestTaskController(
           toolService: ToolService(workspaceSandbox: sandbox),
           sandbox: sandbox,
         ),

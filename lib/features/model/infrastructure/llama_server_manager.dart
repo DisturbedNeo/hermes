@@ -14,7 +14,6 @@ import 'package:hermes/features/model/domain/model_provider.dart';
 import 'package:hermes/shared_kernel/model_call_diagnostics.dart';
 import 'package:hermes/features/model/infrastructure/model_diagnostic_bundle_writer.dart';
 
-
 typedef LlamaProcessLauncher =
     Future<Process> Function(
       String executable,

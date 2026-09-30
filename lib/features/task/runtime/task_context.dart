@@ -1,10 +1,10 @@
-part of 'task_runtime_engine.dart';
+part of 'task_runtime_collaborators.dart';
 
-class _TaskApplicationContext {
-  _TaskApplicationContext({
+class TaskRuntimeContext {
+  TaskRuntimeContext({
     required ToolRegistryPort toolService,
     required WorkspaceSandboxPort sandbox,
-    TaskPersistencePort? persistence,
+    required TaskPersistencePort persistence,
     TaskPersistenceStore? persistenceStore,
     TaskRecoveryService recoveryService = const TaskRecoveryService(),
     TaskPlanner planner = const TaskPlanningService(),
@@ -19,10 +19,7 @@ class _TaskApplicationContext {
        _planningCoordinator =
            planningCoordinator ?? TaskPlanningCoordinator(planner: planner),
        _persistenceStore =
-           persistenceStore ??
-           TaskPersistenceStore(
-             persistence: persistence ?? InMemoryTaskRepository(),
-           ),
+           persistenceStore ?? TaskPersistenceStore(persistence: persistence),
        _sandbox = sandbox,
        _profileService = profileService,
        _gateEvaluator = TaskGateEvaluator(sandbox: sandbox),
@@ -53,8 +50,4 @@ class _TaskApplicationContext {
   );
   final QuestionPolicyService _questionPolicy = const QuestionPolicyService();
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
-
-  TaskPersistencePort get persistence => _persistenceStore.persistence;
-  ToolRegistryPort get tools => _toolService;
-  TaskMaterializerPort get materializer => const TaskPlanMaterializer();
 }

@@ -1,66 +1,34 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 
-import 'package:hermes/shared_kernel/tool_caller.dart';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
-import 'package:hermes/shared_kernel/json_parsing.dart';
-import 'package:hermes/shared_kernel/sentinel.dart' show kSentinel, resolve;
-import 'package:hermes/shared_kernel/uuid.dart';
-import 'package:hermes/shared_kernel/chat_message.dart';
 import 'package:hermes/shared_kernel/compaction_settings.dart';
-import 'package:hermes/shared_kernel/task.dart';
-import 'package:hermes/shared_kernel/task_persistence_ports.dart';
-import 'package:hermes/shared_kernel/task_planning_models.dart';
-import 'package:hermes/shared_kernel/planning_metrics.dart';
+import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
+import 'package:hermes/features/task/domain/task_planning_models.dart';
 import 'package:hermes/shared_kernel/task_system_settings.dart';
 import 'package:hermes/shared_kernel/tool_contracts.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/model_provider.dart';
-import 'package:hermes/shared_kernel/model_completion.dart';
-import 'package:hermes/shared_kernel/model_errors.dart';
+import 'package:hermes/shared_kernel/model_completion_port.dart';
 import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/shared_kernel/planning_structured_output.dart';
-import 'package:hermes/shared_kernel/question_policy_service.dart';
-import 'package:hermes/shared_kernel/sandbox_policy.dart';
-import 'package:hermes/features/task/runtime/task_gate_evaluator.dart';
-import 'package:hermes/shared_kernel/task_json.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
-import 'package:hermes/features/task/runtime/task_planning_tools.dart';
 import 'package:hermes/features/task/runtime/task_planning_service.dart';
 import 'package:hermes/features/task/runtime/task_planning_coordinator.dart';
 import 'package:hermes/features/task/runtime/task_persistence_store.dart';
-import 'package:hermes/features/task/runtime/task_command_service.dart';
-import 'package:hermes/features/task/runtime/task_step_runner.dart';
 import 'package:hermes/features/task/runtime/task_model_completion_service.dart';
 import 'package:hermes/features/task/runtime/task_tool_execution_service.dart';
 import 'package:hermes/features/task/runtime/task_recovery_service.dart';
-import 'package:hermes/features/task/application/task_application/task_plan_materializer.dart';
-import 'package:hermes/features/task/runtime/in_memory_task_repository.dart';
 import 'package:hermes/shared_kernel/task_summary.dart';
-import 'package:hermes/features/task/runtime/task_view_service.dart';
-import 'package:hermes/shared_kernel/terminal_command_parser.dart';
 import 'package:hermes/shared_kernel/workspace_discovery_service.dart';
 import 'package:hermes/shared_kernel/workspace_ports.dart';
-import 'package:hermes/shared_kernel/model_json.dart';
-import 'package:hermes/shared_kernel/tool_error.dart';
-import 'package:path/path.dart' as path;
 
-part 'task_context.dart';
-
-part 'task_storage_operations.dart';
-
-part 'task_planning_operations.dart';
-
-part 'task_execution_operations.dart';
-
-part 'task_state_operations.dart';
+import 'package:hermes/features/task/runtime/task_runtime_collaborators.dart';
 
 class TaskRuntimeController implements TaskChatPort, TaskProjectPort {
   TaskRuntimeController({
     required ToolRegistryPort toolService,
     required WorkspaceSandboxPort sandbox,
-    TaskPersistencePort? persistence,
+    required TaskPersistencePort persistence,
     TaskPersistenceStore? persistenceStore,
     TaskRecoveryService? recoveryService,
     TaskPlanner? planner,
@@ -69,7 +37,7 @@ class TaskRuntimeController implements TaskChatPort, TaskProjectPort {
     TaskToolExecutionPort? toolExecution,
     StructuredPlanningOutputService? structuredOutput,
     WorkspaceDiscoveryProfileService? profileService,
-  }) : _delegate = _TaskApplicationContext(
+  }) : _delegate = TaskRuntimeContext(
          toolService: toolService,
          sandbox: sandbox,
          persistence: persistence,
@@ -85,16 +53,7 @@ class TaskRuntimeController implements TaskChatPort, TaskProjectPort {
              profileService ?? const WorkspaceDiscoveryProfileService(),
        );
 
-  final _TaskApplicationContext _delegate;
-
-  @override
-  TaskPersistencePort get persistence => _delegate.persistence;
-
-  @override
-  ToolRegistryPort get tools => _delegate.tools;
-
-  @override
-  TaskMaterializerPort get materializer => _delegate.materializer;
+  final TaskRuntimeContext _delegate;
 
   @override
   Future<List<TaskSummary>> listTasks(
@@ -189,11 +148,11 @@ class TaskRuntimeController implements TaskChatPort, TaskProjectPort {
 
   @override
   Future<RefinedTaskBrief> refineTaskBrief({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     WorkspaceAttachment? workspace,
     required String userPrompt,
     ExecutionMode selectedMode = ExecutionMode.refine,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) => _delegate.refineTaskBrief(
     client: client,
@@ -206,7 +165,7 @@ class TaskRuntimeController implements TaskChatPort, TaskProjectPort {
 
   @override
   Future<Task> createTask({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required String userPrompt,
     required ExecutionMode selectedMode,
@@ -215,7 +174,7 @@ class TaskRuntimeController implements TaskChatPort, TaskProjectPort {
     String? projectId,
     String? canonicalTaskId,
     TaskPlanningContext? planningContext,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) => _delegate.createTask(
     client: client,
@@ -261,7 +220,7 @@ class TaskRuntimeController implements TaskChatPort, TaskProjectPort {
 
   @override
   Future<Task> runNextStep({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required Task snapshot,
     required String baseSystemPrompt,
@@ -269,7 +228,7 @@ class TaskRuntimeController implements TaskChatPort, TaskProjectPort {
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
     TaskCompactionStatusSink? onCompactionStatus,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
     TaskExecutionRequest executionRequest = const TaskExecutionRequest(),
@@ -327,12 +286,12 @@ class TaskRuntimeController implements TaskChatPort, TaskProjectPort {
 
   @override
   Future<Task> replanUnfinished({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required Task snapshot,
     required String baseSystemPrompt,
     String reason = 'User requested a replan of unfinished work.',
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) => _delegate.replanUnfinished(
     client: client,

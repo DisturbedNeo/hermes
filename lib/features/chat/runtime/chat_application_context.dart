@@ -1,7 +1,6 @@
-part of 'chat_runtime_engine.dart';
+part of 'chat_runtime_collaborators.dart';
 
-class _ChatApplicationContext extends ChangeNotifier
-    implements ChatSessionHost {
+class ChatRuntimeContext extends ChangeNotifier implements ChatSessionHost {
   static const String defaultSystemPromptName = 'Default';
   static const String defaultSystemPromptText = 'You are a helpful assistant.';
   static const Duration _contextEstimateThrottle = Duration(milliseconds: 500);
@@ -253,7 +252,7 @@ class _ChatApplicationContext extends ChangeNotifier
 
   void _disposeChangeNotifier() => super.dispose();
 
-  _ChatApplicationContext({
+  ChatRuntimeContext({
     String? tabId,
     required this.serverManager,
     required ToolRegistryPort toolService,

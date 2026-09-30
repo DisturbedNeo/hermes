@@ -1,11 +1,11 @@
 // ignore_for_file: override_on_non_overriding_member, unused_element
-part of 'project_runtime_engine.dart';
+part of 'project_runtime_collaborators.dart';
 
-extension _ProjectExecutionOperations on _ProjectApplicationContext {
+extension ProjectExecutionOperations on ProjectRuntimeContext {
   /// Executes bounded project runs and owns the task execution protocol.
   @override
   Future<ProjectCommandResult> _runProjectCore({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required ProjectDocument snapshot,
     required String baseSystemPrompt,
@@ -15,7 +15,7 @@ extension _ProjectExecutionOperations on _ProjectApplicationContext {
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
     ProjectCompactionStatusSink? onCompactionStatus,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     ProjectTaskSnapshotSink? onTaskUpdated,
     CancellationToken? cancellationToken,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
@@ -676,7 +676,7 @@ extension _ProjectExecutionOperations on _ProjectApplicationContext {
   }
 
   Future<_ProjectTaskExecution> _executeProjectTask({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required ProjectDocument project,
     required ProjectTaskNode projectTask,
@@ -685,7 +685,7 @@ extension _ProjectExecutionOperations on _ProjectApplicationContext {
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
     ProjectCompactionStatusSink? onCompactionStatus,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     ProjectTaskSnapshotSink? onTaskUpdated,
     CancellationToken? cancellationToken,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
@@ -951,10 +951,10 @@ extension _ProjectExecutionOperations on _ProjectApplicationContext {
     required WorkspaceAttachment workspace,
     required String userPrompt,
     String? chatSessionId,
-    ModelProvider? client,
+    ModelCompletionPort? client,
     String baseSystemPrompt = '',
     int? maxIterations,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
   }) async {

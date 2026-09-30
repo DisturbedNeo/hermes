@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:hermes/shared_kernel/chat_message.dart';
 import 'package:hermes/shared_kernel/planning_metrics.dart';
 import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_completion_port.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
 
 class StructuredPlanningOutputException implements Exception {
@@ -33,12 +33,12 @@ class StructuredPlanningOutputService {
   const StructuredPlanningOutputService();
 
   Future<StructuredPlanningOutputResult<Map<String, dynamic>>> completeObject({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String label,
     required String system,
     required String user,
     required String expectedShape,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     cancellationToken?.throwIfCancelled();
@@ -92,11 +92,11 @@ Return only the repaired JSON object.''',
   }
 
   Future<String> _completeRaw({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String label,
     required String system,
     required String user,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     _emit(
@@ -198,7 +198,7 @@ Return only the repaired JSON object.''',
     return match?.group(1)?.trim() ?? value;
   }
 
-  static void _emit(TaskModelOutputSink? sink, TaskModelOutputEvent event) {
+  static void _emit(ModelOutputSink? sink, TaskModelOutputEvent event) {
     sink?.call(event);
   }
 }

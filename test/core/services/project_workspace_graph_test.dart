@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/shared_kernel/model_json.dart';
 import 'package:hermes/features/project/runtime/project_plan_builder.dart';
 import 'package:hermes/features/project/runtime/project_plan_revision_service.dart';
 import 'package:hermes/features/project/runtime/project_plan_validator.dart';
-import 'package:hermes/shared_kernel/project_workspace_context_service.dart';
+import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
 import 'package:hermes/features/project/runtime/project_workspace_graph_service.dart';
 import 'package:hermes/features/project/runtime/project_view_service.dart';
 

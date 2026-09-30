@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:hermes/shared_kernel/json_parsing.dart';
 import 'package:hermes/shared_kernel/uuid.dart';
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/shared_kernel/sandbox_policy.dart';
 import 'package:hermes/shared_kernel/model_completion.dart';

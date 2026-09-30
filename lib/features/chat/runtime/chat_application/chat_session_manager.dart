@@ -9,7 +9,7 @@ import 'package:hermes/shared_kernel/uuid.dart';
 import 'package:hermes/shared_kernel/bubble.dart';
 import 'package:hermes/shared_kernel/chat_token.dart';
 import 'package:hermes/shared_kernel/model_configuration.dart';
-import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_completion_port.dart';
 import 'package:hermes/features/chat/runtime/chat_application/chat_stream.dart';
 import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';
@@ -91,7 +91,7 @@ class ChatSessionManager implements Disposable {
 
   /// Streams an assistant response from the LLM.
   ///
-  /// Builds the message payload, initiates streaming via [ModelProvider],
+  /// Builds the message payload, initiates streaming via [ModelCompletionPort],
   /// handles incoming tokens, and processes terminal events (errors,
   /// tool calls). Returns a [Future] that completes when streaming ends.
   Future<void> streamAssistantResponse({
@@ -125,7 +125,7 @@ class ChatSessionManager implements Disposable {
   }
 
   Future<void> _streamGenerationRequest({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required CancellationToken token,
     required int generationId,
     required bool includeToolResults,
@@ -317,7 +317,7 @@ class ChatSessionManager implements Disposable {
   // ── Streaming internals ─────────────────────────────────────────────────
 
   Future<Set<String>> _compactContextIfNeeded({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required Map<String, dynamic> extraParams,
     CancellationToken? cancellationToken,
   }) async {

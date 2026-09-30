@@ -1,7 +1,7 @@
 // ignore_for_file: dead_code_on_catch_subtype, unused_element, unused_field
-part of 'task_runtime_engine.dart';
+part of 'task_runtime_collaborators.dart';
 
-extension _TaskStorageOperations on _TaskApplicationContext {
+extension TaskStorageOperations on TaskRuntimeContext {
   Future<Task> _persistTask(String workspaceRoot, Task task) async {
     final persisted = await _persistenceStore.save(workspaceRoot, task);
     return persisted.value;
@@ -119,11 +119,11 @@ extension _TaskStorageOperations on _TaskApplicationContext {
   }
 
   Future<RefinedTaskBrief> refineTaskBrief({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     WorkspaceAttachment? workspace,
     required String userPrompt,
     ExecutionMode selectedMode = ExecutionMode.refine,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     final metadata = workspace == null || workspace.missing

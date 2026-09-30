@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/project.dart';
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/runtime/project_planning_tools.dart';
 import 'package:hermes/features/project/runtime/project_planning_workspace_reader.dart';
 import 'package:hermes/features/project/runtime/project_view_service.dart';

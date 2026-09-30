@@ -1,4 +1,4 @@
-import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 
 /// A bounded, task-oriented projection of the durable workspace graph.
 class ProjectWorkspaceContextSelection {

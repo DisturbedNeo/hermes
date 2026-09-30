@@ -8,12 +8,12 @@ void main() {
       'lib/shared_kernel/chat_message.dart',
       'lib/shared_kernel/model_configuration.dart',
       'lib/shared_kernel/model_load_configuration.dart',
-      'lib/shared_kernel/project.dart',
+      'lib/features/project/domain/project.dart',
       'lib/shared_kernel/system_prompt.dart',
-      'lib/shared_kernel/task.dart',
+      'lib/features/task/domain/task.dart',
       'lib/shared_kernel/context_summary_prompt.dart',
       'lib/shared_kernel/question_policy_service.dart',
-      'lib/shared_kernel/task_planning_models.dart',
+      'lib/features/task/domain/task_planning_models.dart',
       'lib/platform/tools/calculator_tool.dart',
     ];
 
@@ -46,15 +46,14 @@ void main() {
   });
 
   test('committed mapper outputs and package initializer exist', () {
-    // Canonical shared-kernel models own their generated mappers now; the
-    // former core mapper paths were removed with the compatibility models.
+    // Canonical feature-domain models own their generated mappers.
     for (final path in [
-      'lib/shared_kernel/task.mapper.dart',
-      'lib/shared_kernel/project.mapper.dart',
+      'lib/features/task/domain/task.mapper.dart',
+      'lib/features/project/domain/project.mapper.dart',
       'lib/shared_kernel/system_prompt.mapper.dart',
       'lib/shared_kernel/model_configuration.mapper.dart',
       'lib/shared_kernel/model_load_configuration.mapper.dart',
-      'lib/shared_kernel/mappers.init.dart',
+      'lib/app/mappers.init.dart',
     ]) {
       expect(File(path).existsSync(), isTrue, reason: '$path is missing.');
     }

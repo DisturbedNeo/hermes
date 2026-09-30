@@ -7,7 +7,7 @@ import 'package:hermes/shared_kernel/chat_token.dart';
 import 'package:hermes/shared_kernel/planning_metrics.dart';
 import 'package:hermes/shared_kernel/tool_contracts.dart';
 import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_completion_port.dart';
 import 'package:hermes/shared_kernel/model_completion.dart';
 import 'package:hermes/shared_kernel/planner_message_compactor.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
@@ -221,13 +221,13 @@ abstract class PlanningToolRegistryBase implements PlanningToolRegistry {
 }
 
 class PlanningRunRequest {
-  final ModelProvider client;
+  final ModelCompletionPort client;
   final PlanningToolRegistry registry;
   final String label;
   final String system;
   final String user;
   final int maxToolCalls;
-  final TaskModelOutputSink? onModelOutput;
+  final ModelOutputSink? onModelOutput;
   final CancellationToken? cancellationToken;
 
   const PlanningRunRequest({
@@ -503,7 +503,7 @@ class PlanningToolCallRunner {
     );
   }
 
-  void _emitToken(TaskModelOutputSink? sink, String label, ChatToken token) {
+  void _emitToken(ModelOutputSink? sink, String label, ChatToken token) {
     final content = token.content;
     if (content != null && content.isNotEmpty) {
       _emit(
@@ -625,7 +625,7 @@ class PlanningToolCallRunner {
       code.contains('unknown_ref') ||
       code.contains('stale_revision');
 
-  static void _emit(TaskModelOutputSink? sink, TaskModelOutputEvent event) {
+  static void _emit(ModelOutputSink? sink, TaskModelOutputEvent event) {
     sink?.call(event);
   }
 }

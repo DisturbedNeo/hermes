@@ -1,7 +1,7 @@
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/persistence_contracts.dart';
 import 'package:hermes/shared_kernel/task_summary.dart';
-import 'package:hermes/shared_kernel/task_persistence_ports.dart';
+import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
 
 /// Owns all task-document and task-history storage access.
 ///

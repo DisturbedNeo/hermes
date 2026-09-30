@@ -1,4 +1,4 @@
-import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/shared_kernel/persistence_contracts.dart';
 
 /// Application-facing project persistence contract.

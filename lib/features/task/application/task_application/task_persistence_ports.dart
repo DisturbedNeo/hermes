@@ -1,5 +1,5 @@
 import 'package:hermes/shared_kernel/persistence_contracts.dart';
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/task_summary.dart';
 import 'package:hermes/shared_kernel/workspace_ports.dart';
 import 'package:hermes/shared_kernel/project_task_models.dart';

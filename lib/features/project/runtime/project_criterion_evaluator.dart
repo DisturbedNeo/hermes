@@ -1,4 +1,4 @@
-import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 
 /// Applies evidence rules to criterion state without mutating task history.
 class ProjectCriterionEvaluator {

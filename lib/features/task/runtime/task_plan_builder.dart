@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:hermes/shared_kernel/uuid.dart';
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/terminal_command_classifier.dart';
 import 'package:hermes/shared_kernel/terminal_command_parser.dart';
 

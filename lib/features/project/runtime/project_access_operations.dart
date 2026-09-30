@@ -1,7 +1,7 @@
 // ignore_for_file: unused_element, unused_field
-part of 'project_runtime_engine.dart';
+part of 'project_runtime_collaborators.dart';
 
-extension _ProjectAccessOperations on _ProjectApplicationContext {
+extension ProjectAccessOperations on ProjectRuntimeContext {
   /// Executes successive bounded runs until the project reaches a user-facing
   /// boundary. The command gate is held for the whole sequence, so another
   /// tab cannot start a second project command between automatic continuations.
@@ -368,14 +368,14 @@ extension _ProjectAccessOperations on _ProjectApplicationContext {
   }
 
   Future<ProjectDocument> _revisePlan({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required ProjectDocument project,
     required List<ProjectPlanRevisionTrigger> triggers,
     required String baseSystemPrompt,
     required ProjectPlanApprovalPolicy approvalPolicy,
     required QuestionAutonomy questionAutonomy,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     final debouncedTriggers = triggers.toSet().toList();
@@ -526,14 +526,14 @@ extension _ProjectAccessOperations on _ProjectApplicationContext {
   }
 
   Future<ProjectDocument> _handleInvalidProjectTask({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required ProjectDocument project,
     required ProjectTaskNode task,
     required List<String> violations,
     required String baseSystemPrompt,
     required ProjectPlanApprovalPolicy approvalPolicy,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     final duplicateViolation = violations.any(

@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/shared_kernel/preferences_keys.dart';
 import 'package:hermes/shared_kernel/model_configuration.dart';
 import 'package:hermes/shared_kernel/model_load_configuration.dart';
-import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/shared_kernel/task_system_settings.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';

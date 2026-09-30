@@ -1,25 +1,26 @@
 import 'dart:convert';
+import 'package:hermes/app/test_factories.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/shared_kernel/compaction_settings.dart';
 import 'package:hermes/shared_kernel/chat_message.dart';
-import 'package:hermes/shared_kernel/project.dart';
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/task_system_settings.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
-import 'package:hermes/shared_kernel/model_provider.dart';
-import 'package:hermes/shared_kernel/project_runtime_contracts.dart';
+import 'package:hermes/shared_kernel/model_completion_port.dart';
+import 'package:hermes/features/project/application/project_application/project_execution_port.dart';
 import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
-import 'package:hermes/shared_kernel/project_scheduler.dart';
+import 'package:hermes/features/project/domain/project_scheduler.dart';
 import 'package:hermes/features/project/application/project_application/project_application.dart';
 import 'package:hermes/features/project/infrastructure/project_repository.dart';
 import 'package:hermes/features/project/infrastructure/project_aggregate_repository.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
-import 'package:hermes/shared_kernel/task_planning_models.dart';
+import 'package:hermes/features/task/domain/task_planning_models.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
 import 'package:hermes/features/task/infrastructure/task_repository.dart';
 import 'package:hermes/features/task/application/task_application/task_plan_materializer.dart';
@@ -30,7 +31,7 @@ import 'package:hermes/shared_kernel/workspace_persistence_coordinator.dart';
 
 extension _ProjectApplicationTestCommands on ProjectApplication {
   Future<ProjectCommandResult> executeProject({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required ProjectDocument snapshot,
     required String baseSystemPrompt,
@@ -40,7 +41,7 @@ extension _ProjectApplicationTestCommands on ProjectApplication {
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
     ProjectCompactionStatusSink? onCompactionStatus,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     ProjectTaskSnapshotSink? onTaskUpdated,
     CancellationToken? cancellationToken,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
@@ -72,6 +73,7 @@ void main() {
   late WorkspaceAttachment workspace;
   late TaskController taskController;
   late ProjectApplication service;
+  late TaskRepository taskRepository;
 
   setUp(() async {
     root = await Directory.systemTemp.createTemp('hermes_project_application_');
@@ -81,12 +83,13 @@ void main() {
       lastOpenedAt: DateTime(2026, 1, 1),
     );
     final sandbox = WorkspaceSandbox();
-    taskController = TaskController(
+    taskRepository = TaskRepository();
+    taskController = createTestTaskController(
       toolService: ToolService(workspaceSandbox: sandbox),
       sandbox: sandbox,
-      persistence: TaskRepository(),
+      persistence: taskRepository,
     );
-    service = ProjectApplication(
+    service = createTestProjectApplication(
       taskController: taskController,
       repository: ProjectRepository(),
     );
@@ -115,7 +118,7 @@ void main() {
         '${root.path}/ARCHITECTURE.MD',
       ).writeAsString(List.filled(65 * 1024, 'a').join());
       final gateway = _InitialisationGateway(_validInitialisation());
-      final planningService = ProjectApplication(
+      final planningService = createTestProjectApplication(
         taskController: taskController,
         planner: gateway,
         completionEvaluator: gateway,
@@ -167,7 +170,7 @@ void main() {
     'blocks initial plans with invalid dependencies and verification contracts',
     () async {
       final gateway = _InitialisationGateway(_invalidInitialisation());
-      final planningService = ProjectApplication(
+      final planningService = createTestProjectApplication(
         taskController: taskController,
         planner: gateway,
         completionEvaluator: gateway,
@@ -198,7 +201,7 @@ void main() {
         _invalidInitialisation(),
         repairedPlans: [_invalidInitialisation(), _validInitialisation()],
       );
-      final planningService = ProjectApplication(
+      final planningService = createTestProjectApplication(
         taskController: taskController,
         planner: gateway,
         completionEvaluator: gateway,
@@ -260,7 +263,7 @@ void main() {
         _validInitialisation(),
         revisedProject: revisedProject,
       );
-      final planningService = ProjectApplication(
+      final planningService = createTestProjectApplication(
         taskController: taskController,
         planner: gateway,
         completionEvaluator: gateway,
@@ -327,14 +330,14 @@ void main() {
 
   test('does not rewrite unchanged project tasks during a run', () async {
     final countingRepository = _CountingTaskRepository();
-    final countedTaskController = TaskController(
-      toolService: taskController.tools,
+    final countedTaskController = createTestTaskController(
+      toolService: ToolService(workspaceSandbox: WorkspaceSandbox()),
       sandbox: WorkspaceSandbox(),
       persistence: countingRepository,
     );
     final persistence = WorkspacePersistenceCoordinator();
     final projectRepository = ProjectRepository(coordinator: persistence);
-    final countedProjectApplication = ProjectApplication(
+    final countedProjectApplication = createTestProjectApplication(
       taskController: countedTaskController,
       repository: projectRepository,
       aggregateRepository: ProjectAggregateRepository(
@@ -350,12 +353,9 @@ void main() {
       objective: 'Complete a second bounded project slice.',
       fingerprint: 'task_2',
     );
-    await countedTaskController.persistence.saveSnapshot(
+    await countingRepository.saveSnapshot(
       workspace.rootPath,
-      TaskPlanMaterializer().create(
-        secondTask,
-        projectId: 'project_1',
-      ),
+      TaskPlanMaterializer().create(secondTask, projectId: 'project_1'),
     );
     countingRepository.savedTaskIds.clear();
 
@@ -387,7 +387,7 @@ void main() {
     'does not replan immediately after a successful task in the same batch',
     () async {
       final gateway = _InitialisationGateway(_validInitialisation());
-      final planningService = ProjectApplication(
+      final planningService = createTestProjectApplication(
         taskController: taskController,
         planner: gateway,
         completionEvaluator: gateway,
@@ -433,7 +433,7 @@ void main() {
     'persists a bounded execution frontier without a synthetic replan',
     () async {
       final scheduler = _CountingScheduler();
-      final batchService = ProjectApplication(
+      final batchService = createTestProjectApplication(
         taskController: taskController,
         scheduler: scheduler,
       );
@@ -490,7 +490,7 @@ void main() {
 
   test('resumes the persisted batch cursor without reselection', () async {
     final scheduler = _CountingScheduler();
-    final batchService = ProjectApplication(
+    final batchService = createTestProjectApplication(
       taskController: taskController,
       scheduler: scheduler,
     );
@@ -641,7 +641,7 @@ void main() {
       status: TaskStatus.completed,
       completedAt: DateTime(2026, 1, 2),
     );
-    await taskController.persistence.saveSnapshot(root.path, terminalTask);
+    await taskRepository.saveSnapshot(root.path, terminalTask);
 
     final project = _project(
       tasks: [
@@ -934,25 +934,25 @@ class _InitialisationGateway
 
   @override
   Future<ProjectInitialPlanResult> initializePlan({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
     required Map<String, dynamic> workspaceMetadata,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async => initialPlan;
 
   @override
   Future<ProjectInitialPlanResult?> repairInitialPlan({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
     required Map<String, dynamic> workspaceMetadata,
     required ProjectInitialPlanResult initialPlan,
     required List<Map<String, String>> validationIssues,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     repairCalls++;
@@ -965,14 +965,14 @@ class _InitialisationGateway
 
   @override
   Future<ProjectIncrementalPlanResult> revisePlanWithCommands({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required ProjectState project,
     required ProjectEvidenceSnapshot evidenceSnapshot,
     required List<ProjectPlanRevisionTrigger> triggers,
     required ProjectPlanApprovalPolicy approvalPolicy,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     revisePlanCalls++;
@@ -989,14 +989,14 @@ class _InitialisationGateway
 
   @override
   Future<ProjectIncrementalPlanResult> splitTaskWithCommands({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required ProjectState project,
     required ProjectTaskNode oversizedTask,
     required List<String> violations,
     required ProjectPlanApprovalPolicy approvalPolicy,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async => ProjectIncrementalPlanResult(
     project: project,
@@ -1009,10 +1009,10 @@ class _InitialisationGateway
 
   @override
   Future<ProjectCompletionAssessment> evaluateCompletion({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String baseSystemPrompt,
     required ProjectState project,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     return ProjectCompletionAssessment(

@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:hermes/shared_kernel/diagnostics_visibility.dart';
 import 'package:hermes/features/chat/presentation/a11y.dart';
 import 'package:hermes/shared_kernel/compaction_settings.dart';
-import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/shared_kernel/task_system_settings.dart';
 import 'package:hermes/shared_kernel/preferences_port.dart';
 import 'package:hermes/features/chat/presentation/model_configuration/slider_control.dart';

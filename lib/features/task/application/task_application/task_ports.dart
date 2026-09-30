@@ -1,14 +1,12 @@
 import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/shared_kernel/compaction_settings.dart';
-import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_completion_port.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
 import 'package:hermes/shared_kernel/task_summary.dart';
 import 'package:hermes/shared_kernel/task_system_settings.dart';
-import 'package:hermes/shared_kernel/tool_contracts.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/task.dart';
-import 'package:hermes/shared_kernel/task_planning_models.dart';
-import 'package:hermes/shared_kernel/task_persistence_ports.dart';
+import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/features/task/domain/task_planning_models.dart';
 
 abstract interface class TaskQueryPort {
   Future<List<TaskSummary>> listTasks(
@@ -42,7 +40,7 @@ abstract interface class TaskPlanningPort {
 
 abstract interface class TaskExecutionPort {
   Future<Task> runNextStep({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required Task snapshot,
     required String baseSystemPrompt,
@@ -50,7 +48,7 @@ abstract interface class TaskExecutionPort {
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
     TaskCompactionStatusSink? onCompactionStatus,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
     TaskExecutionRequest executionRequest = const TaskExecutionRequest(),
@@ -103,16 +101,16 @@ abstract interface class TaskChatPort
   });
 
   Future<RefinedTaskBrief> refineTaskBrief({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     WorkspaceAttachment? workspace,
     required String userPrompt,
     ExecutionMode selectedMode = ExecutionMode.refine,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });
 
   Future<Task> createTask({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required String userPrompt,
     required ExecutionMode selectedMode,
@@ -121,7 +119,7 @@ abstract interface class TaskChatPort
     String? projectId,
     String? canonicalTaskId,
     TaskPlanningContext? planningContext,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });
 
@@ -132,7 +130,7 @@ abstract interface class TaskChatPort
   });
 
   Future<Task> runNextStep({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required Task snapshot,
     required String baseSystemPrompt,
@@ -140,7 +138,7 @@ abstract interface class TaskChatPort
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
     TaskCompactionStatusSink? onCompactionStatus,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
     TaskExecutionRequest executionRequest = const TaskExecutionRequest(),
@@ -174,23 +172,19 @@ abstract interface class TaskChatPort
   });
 
   Future<Task> replanUnfinished({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required Task snapshot,
     required String baseSystemPrompt,
     String reason = 'User requested a replan of unfinished work.',
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });
 }
 
 abstract interface class TaskProjectPort implements TaskQueryPort {
-  TaskPersistencePort get persistence;
-  ToolRegistryPort get tools;
-  TaskMaterializerPort get materializer;
-
   Future<Task> createTask({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required String userPrompt,
     required ExecutionMode selectedMode,
@@ -199,7 +193,7 @@ abstract interface class TaskProjectPort implements TaskQueryPort {
     String? projectId,
     String? canonicalTaskId,
     TaskPlanningContext? planningContext,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });
 
@@ -213,7 +207,7 @@ abstract interface class TaskProjectPort implements TaskQueryPort {
   });
 
   Future<Task> runNextStep({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required Task snapshot,
     required String baseSystemPrompt,
@@ -221,7 +215,7 @@ abstract interface class TaskProjectPort implements TaskQueryPort {
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
     TaskCompactionStatusSink? onCompactionStatus,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
     TaskExecutionRequest executionRequest = const TaskExecutionRequest(),
@@ -233,8 +227,4 @@ abstract interface class TaskProjectPort implements TaskQueryPort {
     required Task snapshot,
     bool persist = true,
   });
-}
-
-abstract interface class TaskToolPort {
-  ToolRegistryPort get tools;
 }

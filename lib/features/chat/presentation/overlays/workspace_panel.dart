@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
 import 'package:hermes/shared_kernel/workspace_ports.dart';

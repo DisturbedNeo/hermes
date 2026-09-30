@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:hermes/app/test_factories.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -9,8 +10,8 @@ import 'package:hermes/shared_kernel/context_estimator.dart';
 import 'package:hermes/shared_kernel/chat_message.dart';
 import 'package:hermes/shared_kernel/chat_token.dart';
 import 'package:hermes/shared_kernel/bubble.dart';
-import 'package:hermes/shared_kernel/project.dart';
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/model_configuration.dart';
 import 'package:hermes/shared_kernel/system_prompt.dart';
 import 'package:hermes/shared_kernel/chat_workspace_contracts.dart';
@@ -21,9 +22,7 @@ import 'package:hermes/features/chat/infrastructure/chat_library_repository.dart
 import 'package:hermes/features/chat/application/chat_controller.dart';
 import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
-import 'package:hermes/features/project/application/project_application/project_application.dart';
 import 'package:hermes/features/project/infrastructure/project_repository.dart';
-import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/features/task/infrastructure/task_repository.dart';
 import 'package:hermes/features/model/infrastructure/llama_server_manager.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
@@ -59,7 +58,7 @@ void main() {
       serverManager = LlamaServerManager();
       final sandbox = WorkspaceSandbox();
       final toolService = ToolService(workspaceSandbox: sandbox);
-      final taskController = TaskController(
+      final taskController = createTestTaskController(
         toolService: toolService,
         sandbox: sandbox,
         persistence: TaskRepository(),
@@ -68,7 +67,7 @@ void main() {
         serverManager: serverManager,
         toolService: toolService,
         taskController: taskController,
-        projectApplication: ProjectApplication(
+        projectApplication: createTestProjectApplication(
           taskController: taskController,
           repository: ProjectRepository(),
         ),
@@ -370,12 +369,9 @@ void main() {
       ]);
       await chat.attachWorkspace(tempDir.path);
       final seedProject = _projectDocument();
-      final seedProjectApplication = ProjectApplication(
-        taskController: _createTaskController(),
-        repository: ProjectRepository(),
-      );
+      final seedProjectRepository = ProjectRepository();
       chat.setActiveProject(
-        (await seedProjectApplication.persistence.saveSnapshot(
+        (await seedProjectRepository.saveSnapshot(
           tempDir.path,
           seedProject,
         )).value,
@@ -686,11 +682,9 @@ void main() {
           chat.activeProject?.memory.map((item) => item.content).join('\n'),
           contains('SvelteKit'),
         );
+        final projectRepository = ProjectRepository();
         expect(
-          (await ProjectApplication(
-            taskController: _createTaskController(),
-            repository: ProjectRepository(),
-          ).persistence.listProjects(tempDir.path)),
+          await projectRepository.listProjects(tempDir.path),
           hasLength(1),
         );
       },
@@ -706,10 +700,12 @@ void main() {
       ]);
       await chat.attachWorkspace(tempDir.path);
       chat.setActiveTask(_taskDocument());
-      chat.setActiveTask((await TaskRepository().saveSnapshot(
-        tempDir.path,
-        chat.activeTask!,
-      )).value);
+      chat.setActiveTask(
+        (await TaskRepository().saveSnapshot(
+          tempDir.path,
+          chat.activeTask!,
+        )).value,
+      );
 
       await chat.send('/continue');
 
@@ -748,7 +744,7 @@ void main() {
       );
       final sandbox = WorkspaceSandbox();
       final toolService = ToolService(workspaceSandbox: sandbox);
-      final taskController = TaskController(
+      final taskController = createTestTaskController(
         toolService: toolService,
         sandbox: sandbox,
         persistence: TaskRepository(),
@@ -759,7 +755,7 @@ void main() {
         systemPromptLibrary: promptLibrary,
         toolService: toolService,
         taskController: taskController,
-        projectApplication: ProjectApplication(
+        projectApplication: createTestProjectApplication(
           taskController: taskController,
           repository: ProjectRepository(),
         ),
@@ -893,10 +889,8 @@ void main() {
         id: 'project_orphaned',
         chatSessionId: 'deleted_chat',
       );
-      await ProjectApplication(
-        taskController: _createTaskController(),
-        repository: ProjectRepository(),
-      ).persistence.saveSnapshot(tempDir.path, orphaned);
+      final projectRepository = ProjectRepository();
+      await projectRepository.saveSnapshot(tempDir.path, orphaned);
       final projectDir = Directory(
         path.join(tempDir.path, '.agent', 'projects', 'project_orphaned'),
       );
@@ -908,15 +902,6 @@ void main() {
       expect(projectDir.existsSync(), isFalse);
     });
   });
-}
-
-TaskController _createTaskController() {
-  final sandbox = WorkspaceSandbox();
-  return TaskController(
-    toolService: ToolService(workspaceSandbox: sandbox),
-    sandbox: sandbox,
-    persistence: TaskRepository(),
-  );
 }
 
 Map<String, dynamic> _planJson({required String title}) {

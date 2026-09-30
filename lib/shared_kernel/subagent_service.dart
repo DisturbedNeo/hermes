@@ -1,7 +1,7 @@
 import 'dart:developer' as developer;
 
 import 'package:hermes/shared_kernel/chat_message.dart';
-import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_completion_port.dart';
 import 'package:hermes/shared_kernel/model_errors.dart';
 
 /// A lightweight service that spawns ephemeral subagents to extract specific
@@ -10,9 +10,9 @@ import 'package:hermes/shared_kernel/model_errors.dart';
 class SubagentService {
   static const bool _debugMode = !bool.fromEnvironment('dart.vm.product');
 
-  final ModelProvider Function() _chatClientFactory;
+  final ModelCompletionPort Function() _chatClientFactory;
 
-  SubagentService({required ModelProvider Function() chatClientFactory})
+  SubagentService({required ModelCompletionPort Function() chatClientFactory})
     : _chatClientFactory = chatClientFactory;
 
   /// Extracts specific information from [fileContent] based on the

@@ -1,5 +1,5 @@
 // ignore_for_file: dead_code, dead_code_on_catch_subtype, unused_element
-part of 'task_runtime_engine.dart';
+part of 'task_runtime_collaborators.dart';
 
 enum _StepExecutionStatus { completed, blocked, needsReplan, failed }
 
@@ -129,9 +129,9 @@ wrong, and include a concrete reason. A successful task_commit_plan is the
 only completion signal.
 ''';
 
-extension _TaskExecutionOperations on _TaskApplicationContext {
+extension TaskExecutionOperations on TaskRuntimeContext {
   Future<Task> _runNextStepCore({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required Task snapshot,
     required String baseSystemPrompt,
@@ -139,7 +139,7 @@ extension _TaskExecutionOperations on _TaskApplicationContext {
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
     TaskCompactionStatusSink? onCompactionStatus,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
     TaskExecutionRequest executionRequest = const TaskExecutionRequest(),
@@ -397,12 +397,12 @@ extension _TaskExecutionOperations on _TaskApplicationContext {
   );
 
   Future<Task> replanUnfinished({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required Task snapshot,
     required String baseSystemPrompt,
     String reason = 'User requested a replan of unfinished work.',
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     final updated = await _replanUnfinished(
@@ -423,7 +423,7 @@ extension _TaskExecutionOperations on _TaskApplicationContext {
   }) async {
     final profile = await _profileService.collect(workspace: workspace);
     final existingTasks =
-        await persistence.listTasks(
+        await _persistenceStore.persistence.listTasks(
               workspace.rootPath,
               chatSessionId: chatSessionId,
             )
@@ -444,7 +444,7 @@ extension _TaskExecutionOperations on _TaskApplicationContext {
   }
 
   Future<_StepExecutionOutput> _executeStep({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required Task task,
     required TaskStep step,
@@ -453,7 +453,7 @@ extension _TaskExecutionOperations on _TaskApplicationContext {
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
     TaskCompactionStatusSink? onCompactionStatus,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
     required TaskExecutionRequest executionRequest,
   }) async {
@@ -719,7 +719,7 @@ extension _TaskExecutionOperations on _TaskApplicationContext {
       }
     }
 
-    await persistence.saveLog(
+    await _persistenceStore.persistence.saveLog(
       workspace.rootPath,
       task.id,
       '${step.id}-${run.runId}.md',
@@ -737,7 +737,7 @@ extension _TaskExecutionOperations on _TaskApplicationContext {
   }
 
   Future<_StepExecutionOutput> _applyCompletionGates({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required Task task,
     required TaskStep step,
@@ -1159,7 +1159,7 @@ extension _TaskExecutionOperations on _TaskApplicationContext {
   }
 
   void _emitTerminalToolResults({
-    required TaskModelOutputSink? onModelOutput,
+    required ModelOutputSink? onModelOutput,
     required String label,
     required List<ModelToolCall> calls,
     required int terminalCallIndex,
@@ -1185,14 +1185,14 @@ extension _TaskExecutionOperations on _TaskApplicationContext {
   }
 
   Future<ModelCompletion> _finalizeStepAfterToolGuard({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required TaskStep step,
     required List<ChatMessage> messages,
     required String reason,
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
     TaskCompactionStatusSink? onCompactionStatus,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) {
     return _modelCompletion.completeChat(
@@ -1248,12 +1248,12 @@ provenance and evaluates gates separately.
   }
 
   Future<Task> _replanUnfinished({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required WorkspaceAttachment workspace,
     required Task snapshot,
     required String baseSystemPrompt,
     required String reason,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     final context = TaskPlanningToolContext(

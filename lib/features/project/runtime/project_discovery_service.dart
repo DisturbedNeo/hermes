@@ -1,13 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/shared_kernel/workspace.dart';
 import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/features/project/runtime/project_memory_service.dart';
 import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
-import 'package:hermes/shared_kernel/project_scheduler.dart';
-import 'package:hermes/shared_kernel/project_workspace_context_service.dart';
+import 'package:hermes/features/project/domain/project_scheduler.dart';
+import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
 import 'package:hermes/shared_kernel/workspace_discovery_service.dart';
 import 'package:path/path.dart' as path;

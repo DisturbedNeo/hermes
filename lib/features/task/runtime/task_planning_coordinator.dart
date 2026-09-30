@@ -1,27 +1,27 @@
 import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_completion_port.dart';
 import 'package:hermes/shared_kernel/model_output.dart';
 import 'package:hermes/features/task/runtime/task_planning_service.dart';
 import 'package:hermes/features/task/runtime/task_planning_tools.dart';
 
 abstract interface class TaskPlanningCoordinatorPort {
   Future<TaskPlanningResult> plan({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required TaskPlanningToolContext context,
     required String label,
     required String system,
     required String user,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });
 
   Future<TaskPlanningResult> replan({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required TaskPlanningToolContext context,
     required String label,
     required String system,
     required String user,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });
 }
@@ -38,12 +38,12 @@ class TaskPlanningCoordinator implements TaskPlanningCoordinatorPort {
 
   @override
   Future<TaskPlanningResult> plan({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required TaskPlanningToolContext context,
     required String label,
     required String system,
     required String user,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) {
     cancellationToken?.throwIfCancelled();
@@ -60,12 +60,12 @@ class TaskPlanningCoordinator implements TaskPlanningCoordinatorPort {
 
   @override
   Future<TaskPlanningResult> replan({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required TaskPlanningToolContext context,
     required String label,
     required String system,
     required String user,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) {
     cancellationToken?.throwIfCancelled();

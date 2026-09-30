@@ -1,4 +1,4 @@
-import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 
 /// The single deterministic reducer for project command boundaries.
 ///

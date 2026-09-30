@@ -1,4 +1,4 @@
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/tool_contracts.dart';
 import 'package:hermes/shared_kernel/planning_runtime.dart';
 import 'package:hermes/features/task/runtime/task_plan_builder.dart';

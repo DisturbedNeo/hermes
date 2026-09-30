@@ -3,8 +3,10 @@ import 'package:hermes/shared_kernel/throttled_scheduler.dart';
 import 'package:hermes/shared_kernel/model_call_diagnostics.dart';
 import 'package:hermes/shared_kernel/model_configuration.dart';
 import 'package:hermes/shared_kernel/model_session_contracts.dart';
+import 'package:hermes/features/model/application/model_session_diagnostics_port.dart';
 
-class ModelSessionDiagnostics extends ChangeNotifier {
+class ModelSessionDiagnostics extends ChangeNotifier
+    implements ModelSessionDiagnosticsPort {
   static const int _maxLogEntries = 1000;
   static const Duration _streamOutputNotifyInterval = Duration(
     milliseconds: 500,

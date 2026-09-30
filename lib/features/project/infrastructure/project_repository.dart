@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/shared_kernel/atomic_json_snapshot_store.dart';
 import 'package:hermes/shared_kernel/persistence_contracts.dart';
 import 'package:hermes/shared_kernel/workspace_ports.dart';

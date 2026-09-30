@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/shared_kernel/message_role.dart';
 import 'package:hermes/shared_kernel/bubble.dart';
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/cancellation.dart';
 import 'package:hermes/features/chat/runtime/chat_application/chat_tool_execution_service.dart';
 import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';

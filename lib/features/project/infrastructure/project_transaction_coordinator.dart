@@ -5,12 +5,12 @@ import 'dart:io';
 import 'package:hermes/shared_kernel/model_json.dart';
 import 'package:hermes/shared_kernel/atomic_json_snapshot_store.dart';
 import 'package:hermes/shared_kernel/persistence_contracts.dart';
-import 'package:hermes/shared_kernel/project.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/project_aggregate_repository_port.dart';
 import 'package:hermes/features/project/project_repository_port.dart';
 import 'package:hermes/shared_kernel/project_checkpoint.dart';
-import 'package:hermes/shared_kernel/task.dart';
-import 'package:hermes/shared_kernel/task_persistence_ports.dart';
+import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
 import 'package:path/path.dart' as path;
 
 /// Owns aggregate transaction manifests, commit ordering, and recovery.

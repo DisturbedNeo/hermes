@@ -1,7 +1,7 @@
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member, unused_element, unused_field
-part of 'chat_runtime_engine.dart';
+part of 'chat_runtime_collaborators.dart';
 
-extension _ChatSessionOperations on _ChatApplicationContext {
+extension ChatSessionOperations on ChatRuntimeContext {
   // ── Public API (session management + orchestration) ─────────────────────
 
   bool get isDirty =>
@@ -246,7 +246,6 @@ extension _ChatSessionOperations on _ChatApplicationContext {
     notifyListeners();
   }
 
-  @visibleForTesting
   String buildSystemPromptForTesting({
     String? currentUserRequest,
     List<String> additionalModuleIds = const [],

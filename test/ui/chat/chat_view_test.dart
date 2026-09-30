@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:hermes/app/test_factories.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -15,7 +16,6 @@ import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/infrastructure/chat_library_repository.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 import 'package:hermes/features/model/infrastructure/llama_server_manager.dart';
-import 'package:hermes/features/project/application/project_application/project_application.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/features/chat/infrastructure/system_prompt_library_repository.dart';
@@ -48,7 +48,10 @@ void main() {
 
     final sandbox = WorkspaceSandbox();
     toolService = ToolService(workspaceSandbox: sandbox);
-    taskController = TaskController(toolService: toolService, sandbox: sandbox);
+    taskController = createTestTaskController(
+      toolService: toolService,
+      sandbox: sandbox,
+    );
     workspaceService = WorkspaceService(sandbox: sandbox);
     final chatLibraryRepository = ChatLibraryRepository(
       preferencesService: preferences,
@@ -68,7 +71,9 @@ void main() {
       systemPromptLibrary: promptLibrary,
       toolService: toolService,
       taskController: taskController,
-      projectApplication: ProjectApplication(taskController: taskController),
+      projectApplication: createTestProjectApplication(
+        taskController: taskController,
+      ),
       workspaceService: workspaceService,
       preferencesService: preferences,
     );
@@ -88,11 +93,13 @@ void main() {
   testWidgets('lays out in the reported short viewport', (tester) async {
     await _setViewport(tester, const Size(190, 286));
     final chat = tabs.activeChat!;
-    chat.setWorkspace(WorkspaceAttachment(
-      rootPath: tempDir.path,
-      displayName: 'workspace',
-      lastOpenedAt: DateTime(2024, 1, 1),
-    ));
+    chat.setWorkspace(
+      WorkspaceAttachment(
+        rootPath: tempDir.path,
+        displayName: 'workspace',
+        lastOpenedAt: DateTime(2024, 1, 1),
+      ),
+    );
     chat.insertMessage('A short user message.', MessageRole.user);
 
     await tester.pumpWidget(_chatViewApp(tabs, preferences, toolService));
@@ -107,11 +114,13 @@ void main() {
   ) async {
     await _setViewport(tester, const Size(900, 700));
     final chat = tabs.activeChat!;
-    chat.setWorkspace(WorkspaceAttachment(
-      rootPath: tempDir.path,
-      displayName: 'workspace',
-      lastOpenedAt: DateTime(2024, 1, 1),
-    ));
+    chat.setWorkspace(
+      WorkspaceAttachment(
+        rootPath: tempDir.path,
+        displayName: 'workspace',
+        lastOpenedAt: DateTime(2024, 1, 1),
+      ),
+    );
     await tester.pumpWidget(_chatViewApp(tabs, preferences, toolService));
     await tester.pump();
 

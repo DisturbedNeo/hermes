@@ -23,6 +23,7 @@ import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/shared_kernel/chat_persistence.dart';
 import 'package:hermes/features/task/runtime/task_tool_execution_service.dart';
 import 'package:hermes/features/task/runtime/task_planning_service.dart';
+import 'package:hermes/features/task/application/task_application/task_plan_materializer.dart';
 import 'package:hermes/features/chat/presentation/theme_manager.dart';
 import 'package:hermes/platform/tool_service.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
@@ -80,12 +81,14 @@ class AppDependencies implements ApplicationLifecycle {
     );
     final persistenceCoordinator = WorkspacePersistenceCoordinator();
     final taskRepository = TaskRepository(coordinator: persistenceCoordinator);
+    const taskMaterializer = TaskPlanMaterializer();
     final taskPersistenceStore = TaskPersistenceStore(
       persistence: taskRepository,
     );
     final taskController = TaskController(
       toolService: toolService,
       sandbox: workspaceSandbox,
+      persistence: taskRepository,
       persistenceStore: taskPersistenceStore,
       planningCoordinator: taskPlanningCoordinator,
       recoveryService: taskRecoveryService,
@@ -114,6 +117,8 @@ class AppDependencies implements ApplicationLifecycle {
       taskController: taskController,
       taskPersistence: taskRepository,
       toolService: toolService,
+      sandbox: workspaceSandbox,
+      materializer: taskMaterializer,
       repository: projectRepository,
       aggregateRepository: projectAggregateRepository,
       commandService: projectCommandService,
@@ -162,6 +167,7 @@ class AppDependencies implements ApplicationLifecycle {
       name: 'system prompt library',
       dispose: systemPromptLibraryService.dispose,
     );
+    lifecycleCoordinator.register(name: 'model', dispose: modelManager.dispose);
     lifecycleCoordinator.register(
       name: 'chat workspace',
       quiesce: () =>

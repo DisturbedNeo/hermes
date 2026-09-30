@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/project.dart';
-import 'package:hermes/shared_kernel/task.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/shared_kernel/model_json.dart';
-import 'package:hermes/shared_kernel/project_control_state_service.dart';
+import 'package:hermes/features/project/domain/project_control_state_service.dart';
 
 void main() {
   group('clean-slate project lifecycle', () {

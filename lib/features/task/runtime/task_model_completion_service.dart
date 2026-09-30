@@ -10,7 +10,7 @@ import 'package:hermes/shared_kernel/chat_message.dart';
 import 'package:hermes/shared_kernel/chat_token.dart';
 import 'package:hermes/shared_kernel/compaction_settings.dart';
 import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/model_provider.dart';
+import 'package:hermes/shared_kernel/model_completion_port.dart';
 import 'package:hermes/shared_kernel/model_completion.dart';
 import 'package:hermes/shared_kernel/message_store_port.dart';
 import 'package:hermes/shared_kernel/tool_caller.dart';
@@ -27,28 +27,28 @@ typedef TaskCompactionStatusCallback = void Function(String status);
 /// in their respective collaborators.
 abstract interface class TaskModelCompletionPort {
   Future<Map<String, dynamic>> completeJson({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String system,
     required String user,
     required String label,
     required String expectedShape,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });
 
   Future<ModelCompletion> completeChat({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String label,
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
     TaskCompactionStatusCallback? onCompactionStatus,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });
 
-  void emitOutput(TaskModelOutputSink? sink, TaskModelOutputEvent event);
+  void emitOutput(ModelOutputSink? sink, TaskModelOutputEvent event);
 }
 
 class TaskModelCompletionService implements TaskModelCompletionPort {
@@ -60,12 +60,12 @@ class TaskModelCompletionService implements TaskModelCompletionPort {
 
   @override
   Future<Map<String, dynamic>> completeJson({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String system,
     required String user,
     required String label,
     required String expectedShape,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     final result = await _structuredOutput.completeObject(
@@ -82,14 +82,14 @@ class TaskModelCompletionService implements TaskModelCompletionPort {
 
   @override
   Future<ModelCompletion> completeChat({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String label,
     required List<ChatMessage> messages,
     Map<String, dynamic>? extraParams,
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
     TaskCompactionStatusCallback? onCompactionStatus,
-    TaskModelOutputSink? onModelOutput,
+    ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
     cancellationToken?.throwIfCancelled();
@@ -227,12 +227,12 @@ class TaskModelCompletionService implements TaskModelCompletionPort {
   /// Publishes a task-model event for execution policies that need to emit a
   /// lifecycle event without owning model transport details.
   @override
-  void emitOutput(TaskModelOutputSink? sink, TaskModelOutputEvent event) {
+  void emitOutput(ModelOutputSink? sink, TaskModelOutputEvent event) {
     _emit(sink, event);
   }
 
   Future<List<ChatMessage>> _prepareMessages({
-    required ModelProvider client,
+    required ModelCompletionPort client,
     required String label,
     required List<ChatMessage> messages,
     required Map<String, dynamic> extraParams,
@@ -398,7 +398,7 @@ class TaskModelCompletionService implements TaskModelCompletionPort {
   );
 
   void _emitToken({
-    required TaskModelOutputSink? sink,
+    required ModelOutputSink? sink,
     required String label,
     required ChatToken token,
   }) {
@@ -447,7 +447,7 @@ class TaskModelCompletionService implements TaskModelCompletionPort {
     }
   }
 
-  void _emit(TaskModelOutputSink? sink, TaskModelOutputEvent event) {
+  void _emit(ModelOutputSink? sink, TaskModelOutputEvent event) {
     sink?.call(event);
   }
 }
