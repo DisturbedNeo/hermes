@@ -1,15 +1,15 @@
 import 'dart:async';
 
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/shared_kernel/persistence_contracts.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/persistence/application/persistence_contracts.dart';
 import 'package:hermes/features/project/infrastructure/project_snapshot_migrator.dart';
 import 'package:hermes/features/project/infrastructure/project_transaction_coordinator.dart';
 import 'package:hermes/features/project/project_aggregate_repository_port.dart';
 import 'package:hermes/features/project/project_repository_port.dart';
-import 'package:hermes/shared_kernel/project_checkpoint.dart';
-import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/features/project/application/contracts/project_checkpoint.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
 import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
-import 'package:hermes/shared_kernel/workspace_ports.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
 
 /// Reads and coordinates project aggregates while delegating migration and
 /// transaction mechanics to focused infrastructure collaborators.
@@ -38,6 +38,8 @@ class ProjectAggregateRepository implements ProjectAggregateRepositoryPort {
   final ProjectSnapshotMigrator _migrator;
   final ProjectTransactionCoordinator _transactions;
   final FutureOr<void> Function(String phase)? onTransactionPhase;
+
+  PersistencePort get coordinator => _coordinator;
 
   @override
   Future<ProjectLoadResult> loadProject(

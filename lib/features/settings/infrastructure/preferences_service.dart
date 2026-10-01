@@ -1,17 +1,17 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:hermes/shared_kernel/diagnostics_visibility.dart';
-import 'package:hermes/shared_kernel/preferences_keys.dart';
-import 'package:hermes/shared_kernel/compaction_settings.dart';
-import 'package:hermes/shared_kernel/model_load_configuration.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/shared_kernel/task_system_settings.dart';
-import 'package:hermes/shared_kernel/model_json.dart';
+import 'package:hermes/features/model/application/diagnostics_visibility.dart';
+import 'package:hermes/features/settings/application/preferences_keys.dart';
+import 'package:hermes/features/chat/application/contracts/compaction_settings.dart';
+import 'package:hermes/features/model/application/model_load_configuration.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
+import 'package:hermes/core/model_json.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:hermes/shared_kernel/preferences_port.dart';
+import 'package:hermes/features/settings/application/preferences_port.dart';
 
 class PreferencesService extends ChangeNotifier implements PreferencesPort {
   final Future<SharedPreferences> _prefs = SharedPreferences.getInstance();
@@ -112,7 +112,7 @@ class PreferencesService extends ChangeNotifier implements PreferencesPort {
     try {
       return ModelJson.decodeString<ModelLoadConfiguration>(
         encoded,
-      ).normalised();
+      ).normalised(maxThreads: Platform.numberOfProcessors);
     } catch (_) {
       return null;
     }
@@ -123,7 +123,9 @@ class PreferencesService extends ChangeNotifier implements PreferencesPort {
     ModelLoadConfiguration configuration,
   ) async => (await _prefs).setString(
     _modelLoadConfigurationKey(modelAlias),
-    ModelJson.encodeString(configuration.normalised()),
+    ModelJson.encodeString(
+      configuration.normalised(maxThreads: Platform.numberOfProcessors),
+    ),
   );
 
   Future<bool> removeModelLoadConfiguration(String modelAlias) async =>

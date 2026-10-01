@@ -1,9 +1,10 @@
 import 'dart:io';
+import 'package:hermes/features/persistence/infrastructure/workspace_persistence_coordinator.dart';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/features/project/application/project_application/project_execution_port.dart';
 import 'package:hermes/features/project/runtime/project_recovery_service.dart';
@@ -58,7 +59,9 @@ void main() {
   test(
     'task command service persists a terminal stop through the store',
     () async {
-      final repository = TaskRepository();
+      final repository = TaskRepository(
+        coordinator: WorkspacePersistenceCoordinator(),
+      );
       final store = TaskPersistenceStore(persistence: repository);
       final command = TaskCommandService(persistence: store);
       final saved = await store.save(root.path, _task('task_1'));
@@ -76,7 +79,9 @@ void main() {
   );
 
   test('task step runner recovers and checkpoints before execution', () async {
-    final repository = TaskRepository();
+    final repository = TaskRepository(
+      coordinator: WorkspacePersistenceCoordinator(),
+    );
     final store = TaskPersistenceStore(persistence: repository);
     final runner = TaskStepRunner(
       persistence: store,

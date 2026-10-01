@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/diagnostics_visibility.dart';
-import 'package:hermes/shared_kernel/preferences_keys.dart';
-import 'package:hermes/shared_kernel/model_call_diagnostics.dart';
-import 'package:hermes/shared_kernel/model_configuration.dart';
-import 'package:hermes/shared_kernel/model_session_contracts.dart';
+import 'package:hermes/features/model/application/diagnostics_visibility.dart';
+import 'package:hermes/features/settings/application/preferences_keys.dart';
+import 'package:hermes/features/model/application/model_call_diagnostics.dart';
+import 'package:hermes/features/model/application/model_configuration.dart';
+import 'package:hermes/features/model/application/model_session_contracts.dart';
 import 'package:hermes/features/model/application/model_session_diagnostics.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/features/chat/presentation/chat/diagnostics_bar.dart';
@@ -30,7 +30,7 @@ void main() {
     diagnostics.dispose();
   });
 
-  testWidgets('off hides diagnostics and disables live telemetry', (
+  testWidgets('off hides diagnostics without writing diagnostics state', (
     tester,
   ) async {
     await _pump(tester, preferences, diagnostics);
@@ -67,7 +67,6 @@ void main() {
     expect(find.text('Speed: 42.5 t/s'), findsOne);
     expect(find.textContaining('Context: 120 / 4,096'), findsOne);
     expect(find.textContaining('est.'), findsNothing);
-    expect(diagnostics.liveTelemetryEnabled, isTrue);
   });
 
   testWidgets('detailed groups call, totals, runtime, and configuration', (

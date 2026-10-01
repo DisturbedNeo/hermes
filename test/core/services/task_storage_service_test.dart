@@ -1,11 +1,12 @@
 import 'dart:convert';
+import 'package:hermes/features/persistence/infrastructure/workspace_persistence_coordinator.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/shared_kernel/atomic_json_snapshot_store.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/persistence/infrastructure/atomic_json_snapshot_store.dart';
 import 'package:hermes/features/task/infrastructure/task_repository.dart';
-import 'package:hermes/shared_kernel/model_json.dart';
+import 'package:hermes/core/model_json.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
@@ -15,7 +16,9 @@ void main() {
 
     setUp(() async {
       root = await Directory.systemTemp.createTemp('hermes_task_storage_');
-      repository = TaskRepository();
+      repository = TaskRepository(
+        coordinator: WorkspacePersistenceCoordinator(),
+      );
     });
 
     tearDown(() async {

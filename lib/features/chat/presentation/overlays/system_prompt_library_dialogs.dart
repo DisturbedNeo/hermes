@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:hermes/shared_kernel/system_prompt.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/prompt_assembler.dart';
+import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/features/chat/application/contracts/prompt_assembler.dart';
 import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
 
 // ── Data classes ──────────────────────────────────────────────────────────────

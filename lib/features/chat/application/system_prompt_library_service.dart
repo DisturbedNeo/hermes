@@ -1,13 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:hermes/shared_kernel/uuid.dart';
-import 'package:hermes/shared_kernel/system_prompt.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/prompt_assembler.dart';
+import 'package:hermes/core/uuid.dart';
+import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/features/chat/application/contracts/prompt_assembler.dart';
 
-import 'package:hermes/shared_kernel/disposable.dart';
-import 'package:hermes/shared_kernel/prompt_library_port.dart';
+import 'package:hermes/core/disposable.dart';
+import 'package:hermes/features/chat/application/contracts/prompt_library_port.dart';
 
 /// Business-logic orchestrator for the system prompt library.
 ///

@@ -1,10 +1,11 @@
-import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
 import 'package:hermes/features/project/application/project_application/project_execution_port.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/model_output.dart';
-import 'package:hermes/shared_kernel/model_completion_port.dart';
-import 'package:hermes/shared_kernel/task_system_settings.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/core/cancellation.dart';
+import 'package:hermes/features/model/application/model_output.dart';
+import 'package:hermes/features/model/application/model_completion_port.dart';
+import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/features/project/application/contracts/project_commands.dart';
 
 abstract interface class ProjectQueryPort {
   Future<List<ProjectSummary>> listProjects(
@@ -40,8 +41,6 @@ abstract interface class ProjectSessionPort {
     required ProjectAggregate snapshot,
     required String chatSessionId,
   });
-
-  String encodeProject(ProjectAggregate project);
 }
 
 abstract interface class ProjectPlanningPort {
@@ -74,7 +73,7 @@ abstract interface class ProjectCommandPort {
   Future<ProjectAggregate> updateProject({
     required WorkspaceAttachment workspace,
     required ProjectAggregate snapshot,
-    required String rawJson,
+    required ProjectUpdateCommand command,
   });
 
   Future<ProjectAggregate> pauseProject({

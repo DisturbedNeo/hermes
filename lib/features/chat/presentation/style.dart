@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hermes/shared_kernel/message_role.dart';
+import 'package:hermes/features/chat/application/contracts/message_role.dart';
 
 (Color bgColor, Color textColor) getColorsForRole(
   ColorScheme scheme,

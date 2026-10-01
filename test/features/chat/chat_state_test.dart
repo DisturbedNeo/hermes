@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/message_role.dart';
-import 'package:hermes/shared_kernel/uuid.dart';
-import 'package:hermes/shared_kernel/bubble.dart';
+import 'package:hermes/features/chat/application/contracts/message_role.dart';
+import 'package:hermes/core/uuid.dart';
+import 'package:hermes/features/chat/application/contracts/bubble.dart';
 import 'package:hermes/features/chat/domain/chat_state.dart';
 
 void main() {

@@ -1,7 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/task/domain/task.dart';
+import '../helpers/planning_test_helpers.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
 import 'package:hermes/features/task/runtime/task_plan_builder.dart';
 import 'package:hermes/features/task/runtime/task_planning_tools.dart';
 
@@ -62,7 +63,8 @@ void main() {
 
       final rejected =
           jsonDecode(
-                await registry.execute(
+                await executePlanning(
+                  registry,
                   'task_add_step',
                   jsonEncode({
                     'id': 'model_step',
@@ -76,7 +78,8 @@ void main() {
               as Map<String, dynamic>;
       final accepted =
           jsonDecode(
-                await registry.execute(
+                await executePlanning(
+                  registry,
                   'task_add_step',
                   jsonEncode({
                     'ref': 'valid',
@@ -129,7 +132,7 @@ void main() {
       );
       final registry = TaskPlanningToolRegistry(context: context);
 
-      final discarded = await registry.invoke('task_add_step', {
+      final discarded = await invokePlanning(registry, 'task_add_step', {
         'ref': 'discarded',
         'title': 'Discarded draft step',
         'objective': 'This draft will be replaced.',
@@ -137,7 +140,8 @@ void main() {
       }, commandId: 'discarded');
       expect(discarded['ok'], isTrue);
 
-      final reset = await registry.invoke(
+      final reset = await invokePlanning(
+        registry,
         'task_reset_plan',
         const {},
         commandId: 'reset',
@@ -145,7 +149,7 @@ void main() {
       expect(reset['ok'], isTrue);
       expect(context.builder.steps.map((step) => step.id), ['completed_step']);
 
-      final added = await registry.invoke('task_add_step', {
+      final added = await invokePlanning(registry, 'task_add_step', {
         'ref': 'replacement',
         'title': 'Replacement step',
         'objective': 'Complete the replacement work.',

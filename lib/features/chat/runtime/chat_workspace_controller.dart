@@ -2,30 +2,35 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
-import 'package:hermes/shared_kernel/system_prompt.dart';
-import 'package:hermes/shared_kernel/chat_persistence.dart';
+import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
+import 'package:hermes/features/chat/application/contracts/chat_persistence.dart';
 import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/runtime/chat_controller.dart';
 import 'package:hermes/features/project/application/project_application/project_ports.dart';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
 import 'package:hermes/features/model/application/model_server_port.dart';
-import 'package:hermes/shared_kernel/preferences_port.dart';
-import 'package:hermes/shared_kernel/subagent_service.dart';
+import 'package:hermes/features/settings/application/preferences_port.dart';
 import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
-import 'package:hermes/shared_kernel/tool_contracts.dart';
-import 'package:hermes/shared_kernel/workspace_ports.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/features/tools/application/tool_contracts.dart';
+import 'package:hermes/features/tools/application/tool_protocol_adapter.dart';
+import 'package:hermes/features/chat/runtime/chat_application/chat_tool_execution_service.dart';
+import 'package:hermes/features/chat/infrastructure/chat_panel_protocol_adapter.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
 
-import 'package:hermes/shared_kernel/disposable.dart';
-import 'package:hermes/shared_kernel/chat_workspace_contracts.dart';
+import 'package:hermes/core/disposable.dart';
+import 'package:hermes/features/chat/application/contracts/chat_workspace_contracts.dart';
 
 typedef ChatTabFactory =
     ChatRuntimeController Function({
       required ModelServerPort serverManager,
       required ToolRegistryPort toolService,
+      required ToolProtocolAdapter toolProtocol,
+      required ChatToolExecutionPort toolExecution,
       required TaskQueryPort taskQueries,
       required TaskSessionPort taskSessions,
       required TaskPresentationPort taskPresentation,
+      required ChatPanelProtocolAdapter panelProtocol,
       required TaskPlanningPort taskPlanning,
       required TaskExecutionPort taskExecution,
       required TaskRecoveryPort taskRecovery,
@@ -46,9 +51,12 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
   final ChatLibraryService _chatLibrary;
   final SystemPromptLibraryService _systemPromptLibrary;
   final ToolRegistryPort _toolService;
+  final ToolProtocolAdapter _toolProtocol;
+  final ChatToolExecutionPort _toolExecution;
   final TaskQueryPort _taskQueries;
   final TaskSessionPort _taskSessions;
   final TaskPresentationPort _taskPresentation;
+  final ChatPanelProtocolAdapter _panelProtocol;
   final TaskPlanningPort _taskPlanning;
   final TaskExecutionPort _taskExecution;
   final TaskRecoveryPort _taskRecovery;
@@ -63,7 +71,6 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
   final ChatTabFactory? _tabFactory;
 
   final ModelServerPort serverManager;
-  SubagentService? _subagentService;
   final List<ChatRuntimeController> _tabs = [];
 
   String? activeTabId;
@@ -75,9 +82,12 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
     required ChatLibraryService chatLibrary,
     required SystemPromptLibraryService systemPromptLibrary,
     required ToolRegistryPort toolService,
+    required ToolProtocolAdapter toolProtocol,
+    required ChatToolExecutionPort toolExecution,
     required TaskQueryPort taskQueries,
     required TaskSessionPort taskSessions,
     required TaskPresentationPort taskPresentation,
+    required ChatPanelProtocolAdapter panelProtocol,
     required TaskPlanningPort taskPlanning,
     required TaskExecutionPort taskExecution,
     required TaskRecoveryPort taskRecovery,
@@ -93,9 +103,12 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
   }) : _chatLibrary = chatLibrary,
        _systemPromptLibrary = systemPromptLibrary,
        _toolService = toolService,
+       _toolProtocol = toolProtocol,
+       _toolExecution = toolExecution,
        _taskQueries = taskQueries,
        _taskSessions = taskSessions,
        _taskPresentation = taskPresentation,
+       _panelProtocol = panelProtocol,
        _taskPlanning = taskPlanning,
        _taskExecution = taskExecution,
        _taskRecovery = taskRecovery,
@@ -109,36 +122,6 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
        _preferencesService = preferencesService,
        _tabFactory = tabFactory {
     newTab();
-    _initializeSubagentService();
-  }
-
-  /// Initializes the subagent service when the LLM server becomes available.
-  Future<void> _initializeSubagentService() async {
-    // Listen for server availability and create/update subagent service when ready
-    serverManager.handle.addListener(_handleServerAvailabilityChanged);
-
-    // If server is already running, create the subagent service immediately
-    if (serverManager.chatClient != null) {
-      _subagentService ??= SubagentService(
-        chatClientFactory: () => serverManager.chatClient!,
-      );
-      _toolService.setSubagentService(_subagentService!);
-    }
-  }
-
-  void _handleServerAvailabilityChanged() {
-    if (serverManager.chatClient != null) {
-      _subagentService ??= SubagentService(
-        chatClientFactory: () => serverManager.chatClient!,
-      );
-      // Update the reference in ToolRegistryPort
-      _toolService.setSubagentService(_subagentService!);
-    } else {
-      // Server stopped - clear the subagent service so tool calls
-      // gracefully return an error instead of crashing
-      _subagentService = null;
-      _toolService.setSubagentService(null);
-    }
   }
 
   UnmodifiableListView<ChatRuntimeController> get tabs =>
@@ -329,9 +312,12 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
         ? ChatRuntimeController(
             serverManager: serverManager,
             toolService: _toolService,
+            toolProtocol: _toolProtocol,
+            toolExecution: _toolExecution,
             taskQueries: _taskQueries,
             taskSessions: _taskSessions,
             taskPresentation: _taskPresentation,
+            panelProtocol: _panelProtocol,
             taskPlanning: _taskPlanning,
             taskExecution: _taskExecution,
             taskRecovery: _taskRecovery,
@@ -349,9 +335,12 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
         : factory(
             serverManager: serverManager,
             toolService: _toolService,
+            toolProtocol: _toolProtocol,
+            toolExecution: _toolExecution,
             taskQueries: _taskQueries,
             taskSessions: _taskSessions,
             taskPresentation: _taskPresentation,
+            panelProtocol: _panelProtocol,
             taskPlanning: _taskPlanning,
             taskExecution: _taskExecution,
             taskRecovery: _taskRecovery,
@@ -424,7 +413,6 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
       await prepareForExit(NewChatExitPolicy.discard);
     }
     _disposed = true;
-    serverManager.handle.removeListener(_handleServerAvailabilityChanged);
 
     for (final tab in List<ChatRuntimeController>.of(_tabs)) {
       tab.removeListener(notifyListeners);

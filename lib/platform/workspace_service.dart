@@ -2,9 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/workspace_ports.dart';
-import 'package:hermes/platform/workspace_sandbox.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -13,7 +12,7 @@ class WorkspaceService extends ChangeNotifier
   static const String _recentWorkspacesKey = 'recent_workspaces';
   static const int _maxRecentWorkspaces = 12;
 
-  final WorkspaceSandbox sandbox;
+  final WorkspaceSandboxPort sandbox;
   final Future<SharedPreferences> _prefs;
 
   WorkspaceService({required this.sandbox, Future<SharedPreferences>? prefs})
@@ -86,7 +85,7 @@ class WorkspaceService extends ChangeNotifier
   }
 
   @override
-  Future<List<Map<String, dynamic>>> listDirectory(
+  Future<List<WorkspaceDirectoryEntry>> listDirectory(
     String rootPath,
     String relativePath,
   ) => sandbox.listDirectory(rootPath, relativePath);

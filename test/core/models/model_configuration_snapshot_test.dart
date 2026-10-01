@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/model_configuration.dart';
-import 'package:hermes/shared_kernel/model_json.dart';
+import 'package:hermes/features/model/application/model_configuration.dart';
+import 'package:hermes/core/model_json.dart';
 
 void main() {
   test('uses model configuration defaults when snapshots omit them', () {

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/task_system_settings.dart';
-import 'package:hermes/shared_kernel/question_policy_service.dart';
+import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
+import 'package:hermes/features/task/application/contracts/question_policy_service.dart';
 
 void main() {
   group('QuestionPolicyService', () {

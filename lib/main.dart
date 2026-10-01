@@ -4,7 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:hermes/app_dependencies.dart';
 import 'package:hermes/app/application_exit_coordinator.dart';
-import 'package:hermes/shared_kernel/chat_persistence.dart';
+import 'package:hermes/features/chat/application/contracts/chat_persistence.dart';
 import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 import 'package:hermes/features/chat/presentation/keyboard_shortcuts.dart';

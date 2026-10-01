@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hermes/shared_kernel/bubble.dart';
+import 'package:hermes/features/chat/application/contracts/bubble.dart';
 
 class ActionSpec {
   final IconData icon;

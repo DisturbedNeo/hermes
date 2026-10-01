@@ -1,8 +1,8 @@
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/model_completion_port.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/core/cancellation.dart';
+import 'package:hermes/features/model/application/model_completion_port.dart';
 import 'package:hermes/features/project/runtime/project_aggregate_store.dart';
 import 'package:hermes/features/project/domain/project_control_state_service.dart';
 import 'package:hermes/features/project/runtime/project_plan_revision_service.dart';
@@ -11,8 +11,8 @@ import 'package:hermes/features/project/runtime/project_planning_coordinator.dar
 import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
 import 'package:hermes/features/project/runtime/project_recovery_service.dart';
 import 'package:hermes/features/project/domain/project_scheduler.dart';
-import 'package:hermes/shared_kernel/project_checkpoint.dart';
-import 'package:hermes/shared_kernel/model_output.dart';
+import 'package:hermes/features/project/application/contracts/project_checkpoint.dart';
+import 'package:hermes/features/model/application/model_output.dart';
 
 /// Planning use cases exposed to the workflow runtime.
 ///

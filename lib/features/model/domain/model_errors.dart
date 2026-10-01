@@ -1,1 +1,1 @@
-export 'package:hermes/shared_kernel/model_errors.dart';
+export 'package:hermes/features/model/application/model_errors.dart';

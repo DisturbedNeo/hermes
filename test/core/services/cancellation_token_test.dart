@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/core/cancellation.dart';
 
 void main() {
   group('CancellationToken', () {

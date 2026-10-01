@@ -1,17 +1,18 @@
 import 'dart:async';
 
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
-import 'package:hermes/shared_kernel/compaction_settings.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/features/task/domain/task_planning_models.dart';
-import 'package:hermes/shared_kernel/task_system_settings.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/model_completion_port.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/model_output.dart';
-import 'package:hermes/shared_kernel/task_summary.dart';
+import 'package:hermes/features/task/application/contracts/task_commands.dart';
+import 'package:hermes/features/chat/application/contracts/compaction_settings.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/application/contracts/task_planning_models.dart';
+import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/features/model/application/model_completion_port.dart';
+import 'package:hermes/core/cancellation.dart';
+import 'package:hermes/features/model/application/model_output.dart';
+import 'package:hermes/features/task/application/contracts/task_summary.dart';
 
-import 'package:hermes/features/task/runtime/task_runtime_collaborators.dart';
+import 'package:hermes/features/task/runtime/task_step_execution_runtime.dart';
 
 class TaskRuntimeController
     implements
@@ -23,9 +24,9 @@ class TaskRuntimeController
         TaskExecutionPort,
         TaskRecoveryPort {
   TaskRuntimeController({required TaskRuntimeDependencies dependencies})
-    : _delegate = TaskRuntimeContext(dependencies: dependencies);
+    : _delegate = TaskStepExecutionRuntime(dependencies: dependencies);
 
-  final TaskRuntimeContext _delegate;
+  final TaskStepExecutionRuntime _delegate;
 
   @override
   Future<List<TaskSummary>> listTasks(
@@ -105,8 +106,6 @@ class TaskRuntimeController
   );
 
   @override
-  String encodeTask(Task task) => _delegate.encodeTask(task);
-
   @override
   Future<String> readArtifact({
     required WorkspaceAttachment workspace,
@@ -183,11 +182,11 @@ class TaskRuntimeController
   Future<Task> updateTaskPlan({
     required WorkspaceAttachment workspace,
     required Task snapshot,
-    required String rawJson,
+    required TaskPlanUpdateCommand command,
   }) => _delegate.updateTaskPlan(
     workspace: workspace,
     snapshot: snapshot,
-    rawJson: rawJson,
+    command: command,
   );
 
   @override

@@ -1,12 +1,14 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/sandbox_policy.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
+import 'package:hermes/features/workspace/application/sandbox_policy.dart';
 import 'package:hermes/platform/tool_service.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
+import 'package:hermes/features/tools/application/tool_protocol_adapter.dart';
 import 'package:hermes/platform/workspace_service.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/core/cancellation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -97,11 +99,8 @@ void main() {
 
       final results = await sandbox.searchFiles(root.path, 'needle');
 
-      expect(results.map((item) => item['path']), contains('notes.txt'));
-      expect(
-        results.map((item) => item['path']),
-        isNot(contains('binary.dat')),
-      );
+      expect(results.map((item) => item.path), contains('notes.txt'));
+      expect(results.map((item) => item.path), isNot(contains('binary.dat')));
     });
 
     test('search skips hidden dot-folders from workspace root', () async {
@@ -116,7 +115,7 @@ void main() {
       ).create(recursive: true).then((file) => file.writeAsString('needle'));
 
       final results = await sandbox.searchFiles(root.path, 'needle');
-      final paths = results.map((item) => item['path']);
+      final paths = results.map((item) => item.path);
 
       expect(paths, contains('lib/main.dart'));
       expect(paths, isNot(contains('.dart_tool/generated.dart')));
@@ -136,7 +135,7 @@ void main() {
         'needle',
         relativePath: '/',
       );
-      final paths = results.map((item) => item['path']);
+      final paths = results.map((item) => item.path);
 
       expect(paths, contains('lib/main.dart'));
       expect(paths, isNot(contains('.dart_tool/generated.dart')));
@@ -157,7 +156,7 @@ void main() {
           'needle',
           relativePath: 'packages/app',
         );
-        final paths = results.map((item) => item['path']);
+        final paths = results.map((item) => item.path);
 
         expect(paths, contains('packages/app/lib/main.dart'));
         expect(
@@ -179,7 +178,7 @@ void main() {
       );
 
       expect(
-        results.map((item) => item['path']),
+        results.map((item) => item.path),
         contains('.dart_tool/generated.dart'),
       );
     });
@@ -198,7 +197,7 @@ void main() {
         );
 
         expect(
-          results.map((item) => item['path']),
+          results.map((item) => item.path),
           contains('packages/app/.cache/index.txt'),
         );
       },
@@ -209,13 +208,16 @@ void main() {
           '${List.filled(kMaxSearchOutputBytes, 'x').join()} needle';
       await File('${root.path}/huge.txt').writeAsString(longLine);
 
-      final result = await ToolService(workspaceSandbox: sandbox).execute(
-        toolId: 'search_files',
-        argumentsJson: '{"query":"needle"}',
-        context: WorkspaceToolContext(
-          workspace: WorkspaceAttachment.fromPath(root.path),
-        ),
-      );
+      final result =
+          await ToolProtocolAdapter(
+            registry: ToolService(workspaceSandbox: sandbox),
+          ).execute(
+            toolId: 'search_files',
+            argumentsJson: '{"query":"needle"}',
+            context: WorkspaceToolContext(
+              workspace: WorkspaceAttachment.fromPath(root.path),
+            ),
+          );
 
       expect(result, contains('"error"'));
       expect(result, contains('Search results are too large'));
@@ -319,6 +321,20 @@ void main() {
       );
     });
 
+    test('filesystem inspection returns typed path results', () async {
+      await File('${root.path}/notes.txt').writeAsString('needle');
+      await Directory('${root.path}/folder').create();
+
+      final file = await sandbox.inspectPath(root.path, 'notes.txt');
+      final directory = await sandbox.inspectPath(root.path, 'folder');
+      final missing = await sandbox.inspectPath(root.path, 'missing.txt');
+
+      expect(file.kind, WorkspaceEntryKind.file);
+      expect(file.size, 6);
+      expect(directory.kind, WorkspaceEntryKind.directory);
+      expect(missing.exists, isFalse);
+    });
+
     test('artifact previews stop at the requested character limit', () async {
       await File(
         '${root.path}/artifact.txt',
@@ -396,8 +412,8 @@ void main() {
         command: 'printf hello > generated.txt && cat generated.txt',
       );
 
-      expect(result['exit_code'], 0);
-      expect(result['stdout'], 'hello');
+      expect(result.exitCode, 0);
+      expect(result.stdout, 'hello');
       expect(await File('${root.path}/generated.txt').readAsString(), 'hello');
     });
 
@@ -578,9 +594,9 @@ void main() {
         command: 'yes x | head -c 200000',
       );
 
-      expect(result['exit_code'], 0);
-      expect(result['stdout'], endsWith('... output truncated ...'));
-      expect((result['stdout'] as String).length, lessThan(70000));
+      expect(result.exitCode, 0);
+      expect(result.stdout, endsWith('... output truncated ...'));
+      expect(result.stdout.length, lessThan(70000));
     });
   });
 
@@ -606,8 +622,8 @@ void main() {
     });
 
     test('rejects workspace tool execution without context', () async {
-      final result = await ToolService(
-        workspaceSandbox: WorkspaceSandbox(),
+      final result = await ToolProtocolAdapter(
+        registry: ToolService(workspaceSandbox: WorkspaceSandbox()),
       ).execute(toolId: 'read_file', argumentsJson: '{"path":"README.md"}');
 
       expect(result, contains('active workspace'));
@@ -620,7 +636,7 @@ void main() {
       });
 
       final service = ToolService(workspaceSandbox: WorkspaceSandbox());
-      final result = await service.execute(
+      final result = await ToolProtocolAdapter(registry: service).execute(
         toolId: 'run_command',
         argumentsJson: '{"command":"pwd"}',
         context: WorkspaceToolContext(
@@ -639,7 +655,7 @@ void main() {
       await File('${root.path}/generated.txt').writeAsString('important');
 
       final service = ToolService(workspaceSandbox: WorkspaceSandbox());
-      final result = await service.execute(
+      final result = await ToolProtocolAdapter(registry: service).execute(
         toolId: 'run_command',
         argumentsJson: '{"command":"rm generated.txt"}',
         context: WorkspaceToolContext(
@@ -662,7 +678,7 @@ void main() {
       });
 
       final service = ToolService(workspaceSandbox: WorkspaceSandbox());
-      final result = await service.execute(
+      final result = await ToolProtocolAdapter(registry: service).execute(
         toolId: 'run_command',
         argumentsJson: '{"command":"printf","args":["%s","hello world"]}',
         context: WorkspaceToolContext(

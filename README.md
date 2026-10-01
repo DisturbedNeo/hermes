@@ -5,23 +5,23 @@ bounded task/project execution.
 
 ## Architecture
 
-Hermes is a modular monolith with dependency flow toward the shared kernel:
+Hermes is a modular monolith with explicit contract modules and typed
+composition roots:
 
 ```text
-presentation -> feature application -> feature domain
-                         |                 ^
-                         v                 |
-                 infrastructure adapters --+
-
-composition root -> all feature ports and infrastructure implementations
-shared kernel -> contracts, immutable values, cancellation, serialization
+presentation -> application projections/ports -> domain
+runtime -> application/domain ports
+infrastructure adapters -> application contracts and core values
+composition modules -> owned ports and concrete adapters
+core -> values, cancellation, lifecycle, parsing, schema abstractions
 ```
 
-Feature application code consumes narrow ports. Chat depends on
-`TaskChatPort` and `ProjectChatPort`; it does not construct or
-call task/project implementations directly. Project planning stores immutable
-`ProjectTaskNode` values and materializes executable task documents only in the
-task boundary adapter.
+Feature application code consumes narrow ports. Chat depends on the typed
+`TaskQueryPort`, `TaskExecutionPort`, `ProjectQueryPort`, and
+`ProjectExecutionPort` contracts; it does not construct task/project
+implementations directly. Project planning stores immutable `ProjectTaskNode`
+values and materializes executable task documents only in the task boundary
+adapter.
 
 `ChatController`, `TaskController`, and `ProjectApplication` are stable thin
 facades over focused runtime/coordinator implementations. Concrete persistence
@@ -29,10 +29,19 @@ adapters live under feature `infrastructure/` directories and implement typed
 ports. Model-server lifecycle and diagnostics are owned by `features/model`,
 while chat consumes its application port.
 
+Protocol adapters own model, tool, planning, command, and persistence wire
+conversion. `ChatMessageWireAdapter`, `ToolProtocolAdapter`, and the planning
+adapters convert JSON only at the edge; runtime code receives typed tool calls,
+tool payloads, model request options, planning responses, and workspace
+operation results. Model process handles and diagnostics telemetry writes stay
+inside model infrastructure/runtime.
+
 The main state and ownership boundaries are:
 
 - `ChatState` is the authoritative immutable chat session state and
-  `ChatViewState` is only its presentation projection.
+  `ChatViewState` is only its presentation projection. Its conversation,
+  model-session, task-panel, project-panel, persistence, and transient slices
+  expose read models rather than project/task aggregates.
 - Project plan, execution, evidence, and control views are separated in
   `project_state_models.dart`.
 - Project and task persistence expose application repository ports, retain
@@ -43,6 +52,9 @@ The main state and ownership boundaries are:
   [`docs/architecture.md`](docs/architecture.md).
 - `ApplicationLifecycle` owns startup, quiescing, flushing, cancellation, and
   reverse-order idempotent disposal.
+- Workspace path policy, workspace-confined file operations, and host command
+  execution are separate typed capabilities. Filesystem and process
+  implementations live under platform or infrastructure modules.
 
 The generated mapper files are build artifacts and must be regenerated rather
 than edited manually.
@@ -64,7 +76,7 @@ relevant command, then run the complete workflow before handoff.
 ## Persistence and compatibility
 
 Project, task, chat, prompt-library, and settings data retain compatibility
-with existing snapshots. `shared_kernel/schema_migrations.dart` contains
+with existing snapshots. `features/persistence/application/schema_migrations.dart` contains
 explicit versioned migration registries; missing optional fields remain
 compatible with legacy documents, while newer unsupported versions fail with
 an actionable diagnostic. Transaction manifests, backup recovery, unknown

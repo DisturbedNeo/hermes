@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/shared_kernel/model_json.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/core/model_json.dart';
 
 void main() {
   test('canonical task JSON defaults missing gates to empty', () {

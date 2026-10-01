@@ -1,27 +1,26 @@
-import 'dart:convert';
-import 'dart:io';
-
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/project/runtime/project_memory_service.dart';
 import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
 import 'package:hermes/features/project/domain/project_scheduler.dart';
 import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
-import 'package:hermes/shared_kernel/workspace_discovery_service.dart';
-import 'package:path/path.dart' as path;
+import 'package:hermes/features/workspace/infrastructure/workspace_discovery_service.dart';
+import 'package:hermes/features/workspace/application/workspace_change_discovery.dart';
 
 /// Collects bounded, read-only context for initialization and replanning.
 class ProjectDiscoveryService {
   const ProjectDiscoveryService({
     required TaskQueryPort taskController,
+    required WorkspaceChangeDiscoveryPort changeDiscovery,
     ProjectMemoryService memoryService = const ProjectMemoryService(),
     WorkspaceDiscoveryProfileService profileService =
         const WorkspaceDiscoveryProfileService(),
     ProjectWorkspaceContextService workspaceContextService =
         const ProjectWorkspaceContextService(),
   }) : _taskQueries = taskController,
+       _changeDiscovery = changeDiscovery,
        _memoryService = memoryService,
        _profileService = profileService,
        _workspaceContextService = workspaceContextService;
@@ -30,6 +29,7 @@ class ProjectDiscoveryService {
   static const int _maxRecentItems = 12;
 
   final TaskQueryPort _taskQueries;
+  final WorkspaceChangeDiscoveryPort _changeDiscovery;
   final ProjectMemoryService _memoryService;
   final WorkspaceDiscoveryProfileService _profileService;
   final ProjectWorkspaceContextService _workspaceContextService;
@@ -50,24 +50,10 @@ class ProjectDiscoveryService {
     final rootEntries = workspaceProfile.rootEntries
         .take(_maxRootEntries)
         .toList();
-    var gitAvailable = false;
-    var changedFiles = const <String>[];
-    try {
-      gitAvailable =
-          await FileSystemEntity.type(
-            path.join(workspace.rootPath, '.git'),
-            followLinks: false,
-          ) !=
-          FileSystemEntityType.notFound;
-      if (gitAvailable) {
-        changedFiles = await _gitChangedFiles(
-          workspace.rootPath,
-          cancellationToken,
-        );
-      }
-    } on FileSystemException {
-      // Git discovery is optional.
-    }
+    final changeSet = await _changeDiscovery.discover(
+      workspace,
+      cancellationToken: cancellationToken,
+    );
 
     final taskSummaries = [
       ...await _taskQueries.listTasks(
@@ -108,8 +94,8 @@ class ProjectDiscoveryService {
       workspaceName: workspace.displayName,
       workspaceProfile: workspaceProfile,
       rootEntries: rootEntries,
-      gitAvailable: gitAvailable,
-      changedFiles: changedFiles,
+      gitAvailable: changeSet.isRepository,
+      changedFiles: changeSet.changedFiles,
       projectArtifactPaths: [
         for (final artifact in project?.artifacts ?? const <TaskArtifact>[])
           artifact.path,
@@ -183,47 +169,5 @@ class ProjectDiscoveryService {
       workspaceContext: workspaceContext,
       collectedAt: DateTime.now(),
     );
-  }
-
-  Future<List<String>> _gitChangedFiles(
-    String workspaceRoot,
-    CancellationToken? cancellationToken,
-  ) async {
-    Process? process;
-    try {
-      cancellationToken?.throwIfCancelled();
-      process = await Process.start('git', [
-        '-C',
-        workspaceRoot,
-        'status',
-        '--porcelain=v1',
-        '--untracked-files=no',
-      ]);
-      final output = process.stdout.transform(utf8.decoder).join();
-      final errorDrain = process.stderr.drain<void>();
-      final exitCode = await process.exitCode.timeout(
-        const Duration(seconds: 2),
-        onTimeout: () {
-          process?.kill();
-          return -1;
-        },
-      );
-      final text = await output;
-      await errorDrain;
-      cancellationToken?.throwIfCancelled();
-      if (exitCode != 0) return const [];
-      return text
-          .split('\n')
-          .map((line) => line.length > 3 ? line.substring(3).trim() : '')
-          .where((line) => line.isNotEmpty)
-          .take(_maxRootEntries)
-          .toList();
-    } on OperationCancelledException {
-      process?.kill();
-      rethrow;
-    } on Object {
-      process?.kill();
-      return const [];
-    }
   }
 }

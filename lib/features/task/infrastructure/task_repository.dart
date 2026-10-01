@@ -1,15 +1,16 @@
 import 'dart:io';
 
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/shared_kernel/atomic_json_snapshot_store.dart';
-import 'package:hermes/shared_kernel/persistence_contracts.dart';
-import 'package:hermes/shared_kernel/model_json.dart';
-import 'package:hermes/shared_kernel/task_summary.dart';
-import 'package:hermes/shared_kernel/workspace_ports.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/persistence/infrastructure/atomic_json_snapshot_store.dart';
+import 'package:hermes/features/persistence/application/persistence_contracts.dart';
+import 'package:hermes/core/model_json.dart';
+import 'package:hermes/features/task/application/contracts/task_summary.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
 import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
-import 'package:hermes/shared_kernel/workspace_persistence_coordinator.dart';
 import 'package:path/path.dart' as path;
-import 'package:hermes/shared_kernel/schema_migrations.dart';
+import 'package:hermes/features/persistence/application/schema_migrations.dart';
+import 'package:hermes/features/persistence/infrastructure/dto/task_persistence_adapter.dart';
+import 'package:hermes/features/persistence/infrastructure/dto/task_snapshot_dto.dart';
 
 class TaskRepository
     implements
@@ -21,11 +22,12 @@ class TaskRepository
   static const String documentFileName = 'task.json';
   static const String runsDirectoryName = 'runs';
 
-  TaskRepository({PersistencePort? coordinator})
-    : _coordinator = coordinator ?? WorkspacePersistenceCoordinator();
+  TaskRepository({required PersistencePort coordinator})
+    : _coordinator = coordinator;
 
   final AtomicJsonSnapshotStore _snapshots = const AtomicJsonSnapshotStore();
   final PersistencePort _coordinator;
+  static const TaskPersistenceAdapter _persistence = TaskPersistenceAdapter();
 
   PersistencePort get coordinator => _coordinator;
   final Map<String, _TaskSummaryCacheEntry> _summaryCache = {};
@@ -237,9 +239,13 @@ class TaskRepository
     );
     if (raw == null) return null;
     final envelope = SnapshotEnvelope.decode(raw.map);
-    final decoded = ModelJson.decode<Task>(
-      taskSchemaMigrations.migrate(envelope.document),
-    ).copyWith(persistenceRevision: envelope.revision);
+    final decoded = _persistence
+        .fromDto(
+          TaskSnapshotDto.fromDocument(
+            taskSchemaMigrations.migrate(envelope.document),
+          ),
+        )
+        .copyWith(persistenceRevision: envelope.revision);
     final task = includeHistory
         ? decoded
         : _cachedMetadataTask(
@@ -508,8 +514,10 @@ class TaskRepository
     if (raw == null) return null;
     try {
       final envelope = SnapshotEnvelope.decode(raw);
-      final task = ModelJson.decode<Task>(
-        taskSchemaMigrations.migrate(_withoutRuns(envelope.document)),
+      final task = _persistence.fromDto(
+        TaskSnapshotDto.fromDocument(
+          taskSchemaMigrations.migrate(_withoutRuns(envelope.document)),
+        ),
       );
       return TaskSummary(
         id: task.id,
@@ -535,15 +543,17 @@ class TaskRepository
     if (cached != null && cached.matches(stat)) {
       return cached.task.copyWith(persistenceRevision: cached.revision);
     }
-    final task = ModelJson.decode<Task>(_withoutRuns(raw));
+    final task = _persistence.fromDto(
+      TaskSnapshotDto.fromDocument(_withoutRuns(raw)),
+    );
     _metadataCache[file.path] = _TaskCacheEntry(stat, task, revision);
     return task;
   }
 
   Map<String, dynamic> _compactTaskMap(Task task) {
-    final map = ModelJson.encode(
-      task.copyWith(runs: const [], persistenceRevision: 0),
-    );
+    final map = _persistence
+        .toDto(task.copyWith(runs: const [], persistenceRevision: 0))
+        .document;
     map.remove('runs');
     map.remove('persistenceRevision');
     return map;
@@ -594,8 +604,10 @@ class TaskRepository
   bool _isEnvelopeMap(Map<String, dynamic> map) {
     try {
       final envelope = SnapshotEnvelope.decode(map);
-      final task = ModelJson.decode<Task>(
-        taskSchemaMigrations.migrate(envelope.document),
+      final task = _persistence.fromDto(
+        TaskSnapshotDto.fromDocument(
+          taskSchemaMigrations.migrate(envelope.document),
+        ),
       );
       return task.id.trim().isNotEmpty;
     } catch (_) {

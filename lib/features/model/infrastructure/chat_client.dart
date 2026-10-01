@@ -2,21 +2,25 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hermes/shared_kernel/context_estimator.dart';
-import 'package:hermes/shared_kernel/uuid.dart';
-import 'package:hermes/shared_kernel/chat_message.dart';
-import 'package:hermes/shared_kernel/chat_token.dart';
-import 'package:hermes/shared_kernel/model_call_diagnostics.dart';
-import 'package:hermes/shared_kernel/model_json.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/model_completion.dart';
-import 'package:hermes/shared_kernel/model_errors.dart';
+import 'package:hermes/features/chat/application/protocol/context_estimator.dart';
+import 'package:hermes/features/chat/application/protocol/chat_message_wire_adapter.dart';
+import 'package:hermes/core/uuid.dart';
+import 'package:hermes/features/chat/application/contracts/chat_message.dart';
+import 'package:hermes/features/chat/application/contracts/chat_token.dart';
+import 'package:hermes/features/model/application/model_call_diagnostics.dart';
+import 'package:hermes/core/cancellation.dart';
+import 'package:hermes/features/model/application/model_completion.dart';
+import 'package:hermes/features/model/application/model_errors.dart';
 import 'package:hermes/features/model/domain/model_provider.dart';
-import 'package:hermes/shared_kernel/model_request.dart';
+import 'package:hermes/features/model/application/model_request.dart';
+
+export 'package:hermes/features/model/application/model_request.dart';
 import 'package:http/http.dart' as http;
 
-export 'package:hermes/shared_kernel/model_completion.dart';
-export 'package:hermes/shared_kernel/model_errors.dart';
+export 'package:hermes/features/model/application/model_completion.dart';
+export 'package:hermes/features/model/application/model_errors.dart';
+
+const _chatMessageWireAdapter = ChatMessageWireAdapter();
 
 /// Parses SSE (Server-Sent Events) stream payloads into [ChatToken]s.
 ///
@@ -710,9 +714,9 @@ class ChatClient implements ModelProvider {
     );
     final body = {
       'model': _model,
-      'messages': messages.map(ModelJson.encode).toList(),
+      'messages': messages.map(_chatMessageWireAdapter.encode).toList(),
       'stream': false,
-      ...?extraParams,
+      ..._encodeRequestOptions(extraParams),
     };
 
     final chatUri = Uri.parse('$_baseUrl/v1/chat/completions');
@@ -1108,7 +1112,7 @@ class ChatClient implements ModelProvider {
 
   _CallDiagnosticsTracker _createDiagnosticsTracker({
     required List<ChatMessage> messages,
-    required Map<String, dynamic>? extraParams,
+    required ModelRequestOptions? extraParams,
     required String label,
     required int? contextLimitTokens,
     required int? inputTokensHint,
@@ -1121,7 +1125,7 @@ class ChatClient implements ModelProvider {
       inputTokensHint: inputTokensHint,
       estimatedInputTokens: ContextEstimator.estimateChatCompletionRequest(
         messages: messages,
-        extraParams: extraParams ?? const {},
+        extraParams: extraParams ?? const ModelRequestOptions.empty(),
       ),
       onSnapshot: _onDiagnostics,
     );
@@ -1132,19 +1136,18 @@ class ChatClient implements ModelProvider {
 
   Map<String, dynamic> _streamBody({
     required List<ChatMessage> messages,
-    required Map<String, dynamic>? extraParams,
+    required ModelRequestOptions? extraParams,
   }) {
     final body = <String, dynamic>{
-      ...?extraParams,
+      ..._encodeRequestOptions(extraParams),
       'model': _model,
-      'messages': messages.map(ModelJson.encode).toList(),
+      'messages': messages.map(_chatMessageWireAdapter.encode).toList(),
       'stream': true,
     };
-    final callerOptions = extraParams?['stream_options'];
+    final callerOptions = extraParams?.streamOptions?.custom;
     final streamOptions = <String, dynamic>{
-      if (callerOptions is Map)
-        for (final entry in callerOptions.entries)
-          entry.key.toString(): entry.value,
+      for (final option in callerOptions ?? const <ModelStreamOption>[])
+        option.name: option.value,
       'include_usage': true,
     };
     body['stream_options'] = streamOptions;
@@ -1255,7 +1258,7 @@ class ChatClient implements ModelProvider {
   @override
   Future<int> countInputTokens({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     CancellationToken? cancellationToken,
   }) async {
     cancellationToken?.throwIfCancelled();
@@ -1263,8 +1266,8 @@ class ChatClient implements ModelProvider {
     final uri = Uri.parse('$_baseUrl/v1/chat/completions/input_tokens');
     final body = {
       'model': _model,
-      'messages': messages.map(ModelJson.encode).toList(),
-      ...?extraParams,
+      'messages': messages.map(_chatMessageWireAdapter.encode).toList(),
+      ..._encodeRequestOptions(extraParams),
     };
 
     return _runBeforeOutputRetry(uri, cancellationToken, (client) async {
@@ -1486,6 +1489,37 @@ class ChatClient implements ModelProvider {
     }
     throw HttpException('$statusCode: $message', uri: uri);
   }
+}
+
+Map<String, dynamic> _encodeRequestOptions(ModelRequestOptions? options) {
+  if (options == null || options.isEmpty) return const {};
+
+  return {
+    if (options.addGenerationPrompt != null)
+      'add_generation_prompt': options.addGenerationPrompt,
+    if (options.tools.isNotEmpty)
+      'tools': [
+        for (final tool in options.tools)
+          {
+            'type': 'function',
+            'function': {
+              'name': tool.id,
+              'description': tool.description,
+              'parameters': tool.schema.toWire(),
+            },
+          },
+      ],
+    if (options.toolChoice != null) 'tool_choice': options.toolChoice,
+    if (options.maxTokens != null) 'max_tokens': options.maxTokens,
+    if (options.temperature != null) 'temperature': options.temperature,
+    if (options.chatTemplate != null)
+      'chat_template_kwargs': {
+        if (options.chatTemplate!.enableThinking != null)
+          'enable_thinking': options.chatTemplate!.enableThinking,
+        if (options.chatTemplate!.reasoningBudget != null)
+          'reasoning_budget': options.chatTemplate!.reasoningBudget,
+      },
+  };
 }
 
 /// Converts a tool delta from wire format into a [ChatToken].

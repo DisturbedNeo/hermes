@@ -4,17 +4,17 @@ import 'dart:io';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'package:hermes/shared_kernel/message_role.dart';
-import 'package:hermes/shared_kernel/uuid.dart';
-import 'package:hermes/shared_kernel/bubble.dart';
-import 'package:hermes/shared_kernel/model_configuration.dart';
-import 'package:hermes/shared_kernel/saved_chat.dart';
-import 'package:hermes/shared_kernel/system_prompt.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/model_json.dart';
+import 'package:hermes/features/chat/application/contracts/message_role.dart';
+import 'package:hermes/core/uuid.dart';
+import 'package:hermes/features/chat/application/contracts/bubble.dart';
+import 'package:hermes/features/model/application/model_configuration.dart';
+import 'package:hermes/features/chat/application/contracts/saved_chat.dart';
+import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/core/model_json.dart';
 import 'package:hermes/features/chat/infrastructure/managed_lazy_database.dart';
-import 'package:hermes/shared_kernel/preferences_port.dart';
-import 'package:hermes/shared_kernel/chat_library_port.dart';
+import 'package:hermes/features/settings/application/preferences_port.dart';
+import 'package:hermes/features/chat/application/contracts/chat_library_port.dart';
 
 /// Repository layer for the chat library.
 ///
@@ -131,7 +131,7 @@ class ChatLibraryRepository implements ChatLibraryPort {
     String? chatId,
     required String title,
     required DateTime now,
-    required String? modelSnapshotJson,
+    required ModelConfigurationSnapshot? modelSnapshot,
     required WorkspaceAttachment? workspace,
     required SystemPromptSnapshot? systemPromptSnapshot,
     required List<Bubble> messages,
@@ -181,7 +181,9 @@ class ChatLibraryRepository implements ChatLibraryPort {
         'created_at': createdAt.millisecondsSinceEpoch,
         'updated_at': now.millisecondsSinceEpoch,
         'last_opened_at': lastOpenedAt?.millisecondsSinceEpoch,
-        'model_snapshot_json': modelSnapshotJson,
+        'model_snapshot_json': modelSnapshot == null
+            ? null
+            : ModelJson.encodeString(modelSnapshot),
         'workspace_root_path': workspace?.rootPath,
         'workspace_display_name': workspace?.displayName,
         'workspace_last_opened_at':
@@ -291,11 +293,7 @@ class ChatLibraryRepository implements ChatLibraryPort {
         createdAt: createdAt,
         updatedAt: now,
         lastOpenedAt: lastOpenedAt,
-        modelSnapshot: modelSnapshotJson == null || modelSnapshotJson.isEmpty
-            ? null
-            : ModelJson.decodeString<ModelConfigurationSnapshot>(
-                modelSnapshotJson,
-              ),
+        modelSnapshot: modelSnapshot,
         workspace: workspace,
         systemPromptSnapshot: systemPromptSnapshot,
       );

@@ -1,96 +1,62 @@
-import 'package:hermes/shared_kernel/bubble.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';
-import 'package:hermes/shared_kernel/tool_contracts.dart';
+import 'package:hermes/core/cancellation.dart';
+import 'package:hermes/features/chat/application/contracts/chat_tool_execution.dart';
+import 'package:hermes/features/tools/application/tool_contracts.dart';
+import 'package:hermes/features/tools/application/tool_protocol_adapter.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
 
 abstract interface class ChatToolExecutionPort {
-  Future<Bubble?> executePendingCalls({
-    required List<MapEntry<int, BubbleToolCall>> calls,
+  Future<void> executePendingCalls({
+    required List<ChatPendingToolCall> calls,
     required WorkspaceAttachment? workspace,
     required CancellationToken cancellationToken,
+    required void Function(ChatToolExecutionResult result) onResult,
   });
 }
 
-/// Executes and persists chat tool calls without owning model continuation.
+/// Executes chat tool calls without owning model continuation or chat state.
 ///
-/// The caller remains responsible for deciding whether and how to ask the
-/// model for another completion. This service owns only tool permissions,
-/// workspace context, cancellation boundaries, and result persistence.
+/// The service consumes and emits typed values. JSON encoding remains inside
+/// the protocol adapter used by the session when it persists tool results.
 class ChatToolExecutionService implements ChatToolExecutionPort {
-  const ChatToolExecutionService({
-    required ToolRegistryPort toolService,
-    required MessageStore messageStore,
-  }) : _toolService = toolService,
-       _messageStore = messageStore;
+  const ChatToolExecutionService({required ToolProtocolAdapter protocol})
+    : _protocol = protocol;
 
-  final ToolRegistryPort _toolService;
-  final MessageStore _messageStore;
+  final ToolProtocolAdapter _protocol;
 
   @override
-  Future<Bubble?> executePendingCalls({
-    required List<MapEntry<int, BubbleToolCall>> calls,
+  Future<void> executePendingCalls({
+    required List<ChatPendingToolCall> calls,
     required WorkspaceAttachment? workspace,
     required CancellationToken cancellationToken,
+    required void Function(ChatToolExecutionResult result) onResult,
   }) async {
-    final currentBubble = _messageStore.currentMessage;
-    if (currentBubble == null) {
-      _messageStore.clearCurrentId();
-      return null;
-    }
-    var assistantBubble = currentBubble;
-
-    for (final entry in calls) {
+    for (final call in calls) {
       cancellationToken.throwIfCancelled();
-      final toolCall = entry.value;
-      final resultJson = await _executeCall(
-        toolCall: toolCall,
-        workspace: workspace,
-        cancellationToken: cancellationToken,
-      );
-      cancellationToken.throwIfCancelled();
-      assistantBubble = _persistToolResult(
-        assistantBubble,
-        entry.key,
-        toolCall.copyWith(result: resultJson),
-      );
-    }
-
-    return assistantBubble;
-  }
-
-  Future<String> _executeCall({
-    required BubbleToolCall toolCall,
-    required WorkspaceAttachment? workspace,
-    required CancellationToken cancellationToken,
-  }) {
-    final toolName = toolCall.name;
-    final argsJson = toolCall.arguments;
-    if (toolName == null || argsJson == null) {
-      return Future.value('{"error":"missing tool name or args"}');
-    }
-
-    return _toolService.execute(
-      toolId: toolName,
-      argumentsJson: argsJson,
-      context: workspace != null && !workspace.missing
-          ? WorkspaceToolContext(
-              workspace: workspace,
-              cancellationToken: cancellationToken,
+      final result = call.name == null || call.name!.trim().isEmpty
+          ? const ToolFailure(
+              code: 'invalid_tool_call',
+              message: 'Tool call is missing a tool name.',
             )
-          : null,
-    );
-  }
-
-  Bubble _persistToolResult(
-    Bubble assistantBubble,
-    int toolIndex,
-    BubbleToolCall result,
-  ) {
-    final tools = Map<int, BubbleToolCall>.from(assistantBubble.tools);
-    tools[toolIndex] = result;
-    final updated = assistantBubble.copyWith(tools: tools);
-    _messageStore.upsert(updated);
-    return updated;
+          : await _protocol.executeRequest(
+              ToolRequest(
+                toolId: call.name!,
+                arguments: call.arguments,
+                context: workspace == null || workspace.missing
+                    ? null
+                    : ToolContext(
+                        workspace: ToolWorkspace(
+                          rootPath: workspace.rootPath,
+                          displayName: workspace.displayName,
+                          missing: workspace.missing,
+                          commandExecutionApproved:
+                              workspace.commandExecutionApproved,
+                        ),
+                        permission: _protocol.permissionFor(call.name!),
+                        cancellationToken: cancellationToken,
+                      ),
+              ),
+            );
+      onResult(ChatToolExecutionResult(index: call.index, result: result));
+    }
   }
 }

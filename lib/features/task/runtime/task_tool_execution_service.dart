@@ -1,17 +1,14 @@
-import 'dart:convert';
-import 'dart:io';
-
-import 'package:hermes/shared_kernel/json_parsing.dart';
-import 'package:hermes/shared_kernel/uuid.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/sandbox_policy.dart';
-import 'package:hermes/shared_kernel/model_completion.dart';
-import 'package:hermes/shared_kernel/task_json.dart';
-import 'package:hermes/shared_kernel/terminal_command_parser.dart';
-import 'package:hermes/shared_kernel/tool_contracts.dart';
-import 'package:hermes/shared_kernel/workspace_ports.dart';
-import 'package:hermes/shared_kernel/tool_error.dart';
+import 'package:hermes/core/json_parsing.dart';
+import 'package:hermes/core/uuid.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/features/workspace/application/sandbox_policy.dart';
+import 'package:hermes/features/model/application/model_completion.dart';
+import 'package:hermes/features/persistence/application/task_json.dart';
+import 'package:hermes/features/workspace/application/terminal_command_parser.dart';
+import 'package:hermes/features/tools/application/tool_protocol_adapter.dart';
+import 'package:hermes/features/tools/application/tool_contracts.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
 import 'package:path/path.dart' as path;
 
 class TaskAllowedCommand {
@@ -30,7 +27,7 @@ class TaskAllowedCommand {
 /// This is the authoritative boundary for read-only command whitelists,
 /// declared artifact writes, and the final call into ToolRegistryPort.
 abstract interface class TaskToolExecutionPort {
-  Future<String> execute({
+  Future<ToolResult> execute({
     required ModelToolCall call,
     required Task task,
     required TaskStep step,
@@ -49,16 +46,16 @@ abstract interface class TaskToolExecutionPort {
 
 class TaskToolExecutionService implements TaskToolExecutionPort {
   const TaskToolExecutionService({
-    required ToolRegistryPort toolService,
+    required ToolProtocolAdapter protocol,
     required WorkspaceSandboxPort sandbox,
-  }) : _toolService = toolService,
+  }) : _protocol = protocol,
        _sandbox = sandbox;
 
-  final ToolRegistryPort _toolService;
+  final ToolProtocolAdapter _protocol;
   final WorkspaceSandboxPort _sandbox;
 
   @override
-  Future<String> execute({
+  Future<ToolResult> execute({
     required ModelToolCall call,
     required Task task,
     required TaskStep step,
@@ -118,14 +115,14 @@ class TaskToolExecutionService implements TaskToolExecutionPort {
       if (artifactWriteError != null) return artifactWriteError;
     }
 
-    return _toolService.execute(
+    return _protocol.executeTyped(
       toolId: call.name,
       argumentsJson: call.arguments,
       context: context,
     );
   }
 
-  String? _readOnlyCommandWhitelistError(
+  ToolResult? _readOnlyCommandWhitelistError(
     ModelToolCall call,
     List<TaskAllowedCommand> allowedCommands,
   ) {
@@ -173,7 +170,7 @@ class TaskToolExecutionService implements TaskToolExecutionPort {
     );
   }
 
-  Future<String> _executeReadOnlyArtifactWrite({
+  Future<ToolResult> _executeReadOnlyArtifactWrite({
     required ModelToolCall call,
     required Task task,
     required TaskStep step,
@@ -235,8 +232,11 @@ class TaskToolExecutionService implements TaskToolExecutionPort {
         );
       }
 
-      final existingType = await FileSystemEntity.type(resolved.absolutePath);
-      if (existingType != FileSystemEntityType.notFound) {
+      final inspected = await _sandbox.inspectPath(
+        context.workspace.rootPath,
+        resolved.relativePath,
+      );
+      if (inspected.exists) {
         return _error(
           code: 'read_only_overwrite_denied',
           message: 'Read-only steps cannot overwrite existing files.',
@@ -250,7 +250,9 @@ class TaskToolExecutionService implements TaskToolExecutionPort {
         resolved.relativePath,
         content,
       );
-      return jsonEncode(result);
+      return ToolSuccess(
+        ToolPayload({'path': result.path, 'bytes': result.bytes}),
+      );
     } on WorkspaceSandboxException catch (error) {
       return _error(
         code: error.code,
@@ -266,7 +268,7 @@ class TaskToolExecutionService implements TaskToolExecutionPort {
     }
   }
 
-  Future<String?> _taskArtifactWriteError({
+  Future<ToolResult?> _taskArtifactWriteError({
     required ModelToolCall call,
     required Task task,
     required TaskStep step,
@@ -382,17 +384,14 @@ class TaskToolExecutionService implements TaskToolExecutionPort {
     return artifacts;
   }
 
-  String _error({
+  ToolResult _error({
     required String code,
     required String message,
     required TaskToolErrorDisposition disposition,
     Map<String, dynamic> details = const {},
-  }) => jsonEncode(
-    toolErrorPayload(
-      code: code,
-      message: message,
-      disposition: disposition,
-      details: details,
-    ),
+  }) => ToolFailure(
+    code: code,
+    message: message,
+    details: ToolPayload({...details, 'error_disposition': disposition.wire}),
   );
 }

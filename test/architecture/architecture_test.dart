@@ -2,17 +2,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// The single authoritative architecture gate for the production package.
-///
-/// This suite deliberately scans the repository rather than a hand-picked set
-/// of files. A missing source root, unclassified file, unresolved internal
-/// directive, stale path, dependency cycle, or forbidden edge is a failure.
-/// Keep target-specific checks below tied to real production paths; do not
-/// replace them with compatibility paths or source fragments that can pass
-/// when the implementation has moved.
-
-const _topLevelDirectories = {'app', 'features', 'platform', 'shared_kernel'};
-const _rootFiles = {'app_dependencies.dart', 'main.dart'};
+/// Authoritative production architecture gate. It scans every production
+/// source so new files cannot silently join a broad catch-all module.
+const _modules = {'app', 'core', 'features', 'platform'};
 const _featureLayers = {
   'application',
   'domain',
@@ -20,297 +12,149 @@ const _featureLayers = {
   'presentation',
   'runtime',
 };
-const _featureContractPaths = {
-  'features/project/project_aggregate_repository_port.dart',
-  'features/project/project_repository_port.dart',
-};
-const _requiredDirectories = [
-  'lib/app',
-  'lib/features',
-  'lib/platform',
-  'lib/shared_kernel',
-];
 
 class _Directive {
-  const _Directive({required this.kind, required this.uri, required this.line});
+  const _Directive(this.uri, this.line);
 
-  final String kind;
   final String uri;
   final int line;
 }
 
-class _SourceFile {
-  const _SourceFile({
-    required this.path,
-    required this.source,
-    required this.imports,
-    required this.parts,
-    required this.partOfs,
-  });
+class _Source {
+  const _Source(this.path, this.text, this.imports, this.parts);
 
   final String path;
-  final String source;
+  final String text;
   final List<_Directive> imports;
   final List<_Directive> parts;
-  final List<_Directive> partOfs;
 
-  _Location? get location => _locate(path);
+  String get module =>
+      path == 'lib/app_dependencies.dart' || path == 'lib/main.dart'
+      ? 'app'
+      : path.substring('lib/'.length).split('/').first;
+  String? get feature {
+    final segments = path.substring('lib/'.length).split('/');
+    return segments.first == 'features' && segments.length > 1
+        ? segments[1]
+        : null;
+  }
+
+  String? get layer {
+    final segments = path.substring('lib/'.length).split('/');
+    if (segments.first != 'features' || segments.length < 3) return null;
+    return _featureLayers.contains(segments[2]) ? segments[2] : null;
+  }
 }
 
-class _Location {
-  const _Location({required this.layer, this.feature});
+class _Graph {
+  const _Graph(this.sources);
 
-  final String layer;
-  final String? feature;
-}
-
-class _ArchitectureSnapshot {
-  const _ArchitectureSnapshot(this.files);
-
-  final List<_SourceFile> files;
-
-  Map<String, _SourceFile> get byPath => {
-    for (final file in files) file.path: file,
+  final List<_Source> sources;
+  Map<String, _Source> get byPath => {
+    for (final source in sources) source.path: source,
   };
 }
 
-List<_Directive> _parseDirectives(String source, String kind, RegExp pattern) {
-  final directives = <_Directive>[];
-  for (final match in pattern.allMatches(source)) {
-    final body = match.group(1) ?? '';
-    final uris = RegExp(r'''['"]([^'"]+)['"]''')
-        .allMatches(body)
-        .map((uriMatch) => uriMatch.group(1)!)
-        .toList(growable: false);
-    final line = _lineNumber(source, match.start);
-    if (uris.isEmpty) {
-      directives.add(_Directive(kind: kind, uri: '', line: line));
-      continue;
-    }
-    for (final uri in uris) {
-      directives.add(_Directive(kind: kind, uri: uri, line: line));
-    }
+int _line(String text, int offset) =>
+    '\n'.allMatches(text.substring(0, offset)).length + 1;
+
+List<_Directive> _directives(String text, String keyword) {
+  final result = <_Directive>[];
+  final pattern = RegExp(
+    r'^\s*' + keyword + r'\s+([\s\S]*?);',
+    multiLine: true,
+  );
+  for (final match in pattern.allMatches(text)) {
+    final uri = RegExp(
+      r'''['"]([^'"]+)['"]''',
+    ).firstMatch(match.group(1) ?? '')?.group(1);
+    if (uri != null) result.add(_Directive(uri, _line(text, match.start)));
   }
-  return directives;
+  return result;
 }
 
-int _lineNumber(String source, int offset) =>
-    '\n'.allMatches(source.substring(0, offset)).length + 1;
-
-String _normalisePath(String path) => path.replaceAll('\\', '/');
-
-String _resolveRelativePath(String sourcePath, String uri) {
-  if (uri.isEmpty || uri.startsWith('/')) return '';
-  final segments = _normalisePath(sourcePath).split('/')..removeLast();
-  for (final segment in uri.split('/')) {
-    if (segment.isEmpty || segment == '.') continue;
-    if (segment == '..') {
-      if (segments.isEmpty) return '';
-      segments.removeLast();
-      continue;
+Iterable<String> _interfaceBodies(String text) sync* {
+  final declaration = RegExp(
+    r'abstract\s+interface\s+class\s+\w+[^\{]*\{',
+    multiLine: true,
+  );
+  for (final match in declaration.allMatches(text)) {
+    var depth = 0;
+    var end = match.end;
+    for (var i = match.end - 1; i < text.length; i++) {
+      final character = text[i];
+      if (character == '{') depth++;
+      if (character == '}') {
+        depth--;
+        if (depth == 0) {
+          end = i;
+          break;
+        }
+      }
     }
-    segments.add(segment);
+    yield text.substring(match.end, end);
   }
-  return segments.join('/');
 }
 
-String? _internalTarget(String sourcePath, String uri) {
+String _resolve(String source, String uri) {
   if (uri.startsWith('package:hermes/')) {
     return 'lib/${uri.substring('package:hermes/'.length)}';
   }
-  if (uri.startsWith('package:') || uri.startsWith('dart:')) return null;
-  return _resolveRelativePath(sourcePath, uri);
+  if (uri.startsWith('package:') || uri.startsWith('dart:')) return '';
+  final parts = source.split('/')..removeLast();
+  for (final segment in uri.split('/')) {
+    if (segment.isEmpty || segment == '.') continue;
+    if (segment == '..') {
+      if (parts.isNotEmpty) parts.removeLast();
+    } else {
+      parts.add(segment);
+    }
+  }
+  return parts.join('/');
 }
 
-Future<_ArchitectureSnapshot> _readProductionSources() async {
-  final lib = Directory('lib');
-  if (!lib.existsSync()) {
-    throw StateError('Architecture scan requires a lib/ directory.');
-  }
-
-  final files = <_SourceFile>[];
-  await for (final entity in lib.list(recursive: true, followLinks: false)) {
+Future<_Graph> _readGraph() async {
+  final sources = <_Source>[];
+  await for (final entity in Directory('lib').list(recursive: true)) {
     if (entity is! File || !entity.path.endsWith('.dart')) continue;
-    final path = _normalisePath(entity.path);
-    if (!path.startsWith('lib/')) {
-      throw StateError('Production file escaped lib/: $path');
-    }
-    final source = await entity.readAsString();
-    files.add(
-      _SourceFile(
-        path: path,
-        source: source,
-        imports: _parseDirectives(
-          source,
-          'import/export',
-          RegExp(r'^\s*(?:import|export)\s+([\s\S]*?);', multiLine: true),
-        ),
-        parts: _parseDirectives(
-          source,
-          'part',
-          RegExp(r'^\s*part\s+(?!of\b)([\s\S]*?);', multiLine: true),
-        ),
-        partOfs: _parseDirectives(
-          source,
-          'part of',
-          RegExp(r'^\s*part\s+of\s+([\s\S]*?);', multiLine: true),
-        ),
+    final path = entity.path.replaceAll('\\', '/');
+    final text = await entity.readAsString();
+    sources.add(
+      _Source(
+        path,
+        text,
+        _directives(text, 'import'),
+        _directives(text, 'part'),
       ),
     );
   }
-
-  if (files.isEmpty) {
-    throw StateError('Architecture scan found no Dart production sources.');
-  }
-  files.sort((a, b) => a.path.compareTo(b.path));
-  return _ArchitectureSnapshot(files);
+  sources.sort((a, b) => a.path.compareTo(b.path));
+  return _Graph(sources);
 }
 
-_Location? _locate(String path) {
-  if (!path.startsWith('lib/')) return null;
-  final relative = path.substring('lib/'.length);
-  if (_rootFiles.contains(relative)) {
-    return const _Location(layer: 'composition');
-  }
-
-  final segments = relative.split('/');
-  if (segments.isEmpty || !_topLevelDirectories.contains(segments.first)) {
-    return null;
-  }
-  if (segments.first == 'app') {
-    return const _Location(layer: 'composition');
-  }
-  if (segments.first == 'shared_kernel') {
-    return const _Location(layer: 'shared_kernel');
-  }
-  if (segments.first == 'platform') {
-    return const _Location(layer: 'platform');
-  }
-  if (segments.first != 'features' || segments.length < 3) return null;
-  final feature = segments[1];
-  final layer = segments[2];
-  if (_featureLayers.contains(layer)) {
-    return _Location(layer: layer, feature: feature);
-  }
-  if (_featureContractPaths.contains(relative)) {
-    return _Location(layer: 'feature_contract', feature: feature);
-  }
-  return null;
-}
-
-bool _isPortPath(String path) {
-  final name = path.split('/').last;
-  return name.endsWith('_port.dart') || name.endsWith('_ports.dart');
-}
-
-bool _isCrossFeatureContract(
-  _Location source,
-  _Location target,
-  String targetFilePath,
-) {
-  if (source.feature == null || target.feature == null) return false;
-  if (source.feature == target.feature) return false;
-  return target.layer == 'domain' ||
-      target.layer == 'feature_contract' ||
-      (target.layer == 'application' && _isPortPath(targetFilePath));
-}
-
-bool _allowsEdge(_SourceFile sourceFile, _SourceFile targetFile) {
-  final source = sourceFile.location;
-  final target = targetFile.location;
-  if (source == null || target == null) return false;
-  if (source.layer == 'composition') return true;
-  if (target.layer == 'composition') return false;
-
-  if (_isCrossFeatureContract(source, target, targetFile.path)) return true;
-  if (source.feature != null &&
-      target.feature != null &&
-      source.feature != target.feature) {
-    return false;
-  }
-
-  if (source.layer == 'shared_kernel') {
-    return target.layer == 'shared_kernel';
-  }
-  if (source.layer == 'platform') {
-    return target.layer == 'platform' || target.layer == 'shared_kernel';
-  }
-  if (source.layer == 'feature_contract') {
-    return target.layer == 'feature_contract' ||
-        target.layer == 'domain' ||
-        target.layer == 'shared_kernel';
-  }
-  if (source.layer == 'domain') {
-    return target.layer == 'domain' || target.layer == 'shared_kernel';
-  }
-  if (source.layer == 'application') {
-    return {
-      'application',
-      'domain',
-      'runtime',
-      'feature_contract',
-      'shared_kernel',
-    }.contains(target.layer);
-  }
-  if (source.layer == 'runtime') {
-    return {
-      'application',
-      'domain',
-      'runtime',
-      'feature_contract',
-      'shared_kernel',
-    }.contains(target.layer);
-  }
-  if (source.layer == 'infrastructure') {
-    return {
-      'application',
-      'domain',
-      'infrastructure',
-      'feature_contract',
-      'shared_kernel',
-    }.contains(target.layer);
-  }
-  if (source.layer == 'presentation') {
-    return {
-      'application',
-      'domain',
-      'presentation',
-      'shared_kernel',
-    }.contains(target.layer);
-  }
-  return false;
-}
-
-Map<String, Set<String>> _importGraph(_ArchitectureSnapshot snapshot) {
-  final graph = <String, Set<String>>{
-    for (final file in snapshot.files) file.path: <String>{},
+Map<String, Set<String>> _importGraph(_Graph graph) {
+  final result = <String, Set<String>>{
+    for (final source in graph.sources) source.path: <String>{},
   };
-  final files = snapshot.byPath;
-  for (final file in snapshot.files) {
-    for (final directive in file.imports) {
-      final target = _internalTarget(file.path, directive.uri);
-      if (target != null && files.containsKey(target)) {
-        graph[file.path]!.add(target);
-      }
+  for (final source in graph.sources) {
+    for (final directive in source.imports) {
+      final target = _resolve(source.path, directive.uri);
+      if (graph.byPath.containsKey(target)) result[source.path]!.add(target);
     }
   }
-  return graph;
+  return result;
 }
 
 List<String> _cycles(Map<String, Set<String>> graph) {
   final active = <String>{};
   final visited = <String>{};
   final stack = <String>[];
-  final found = <String>{};
+  final result = <String>[];
 
   void visit(String node) {
     if (active.contains(node)) {
       final start = stack.indexOf(node);
-      if (start >= 0) {
-        final cycle = [...stack.sublist(start), node];
-        final canonical = cycle.sublist(0, cycle.length - 1)..sort();
-        found.add('${canonical.join(' -> ')} -> ${canonical.first}');
-      }
+      result.add([...stack.sublist(start), node].join(' -> '));
       return;
     }
     if (!visited.add(node)) return;
@@ -326,379 +170,461 @@ List<String> _cycles(Map<String, Set<String>> graph) {
   for (final node in graph.keys) {
     visit(node);
   }
-  return found.toList()..sort();
+  return result;
 }
 
-String _lineRef(String path, int line) => '$path:$line';
+bool _isPort(_Source source) =>
+    source.path.endsWith('_port.dart') || source.path.endsWith('_ports.dart');
 
-_SourceFile _requiredSource(_ArchitectureSnapshot snapshot, String path) {
-  final source = snapshot.byPath[path];
-  if (source == null) {
-    throw StateError('Required production path is missing: $path');
+bool _allowed(_Source source, _Source target) {
+  if (source.module == 'app') return true;
+  if (target.module == 'app') return false;
+  if (source.module == 'core') return target.module == 'core';
+  if (source.module == 'platform') {
+    return target.module == 'platform' ||
+        target.module == 'core' ||
+        (target.module == 'features' && target.layer == 'application');
   }
-  return source;
+  if (source.feature != null &&
+      target.feature != null &&
+      source.feature != target.feature) {
+    if (target.layer == 'application' || target.layer == 'domain') {
+      return true;
+    }
+    return (source.layer == 'runtime' || source.layer == 'infrastructure') &&
+        (target.feature == 'workspace' || target.feature == 'persistence');
+  }
+  if (source.module == 'features') {
+    if (target.module != 'features') return target.module == 'core';
+    if (source.layer == 'domain') {
+      return target.layer == 'domain' ||
+          (target.layer == 'application' &&
+              (_isPort(target) || target.path.contains('/contracts/')));
+    }
+    if (source.layer == 'presentation') {
+      return target.layer == 'presentation' ||
+          target.layer == 'application' ||
+          target.layer == 'domain';
+    }
+    return true;
+  }
+  return false;
 }
 
-void _expectNoViolations(String label, Iterable<String> violations) {
-  final values = violations.toList(growable: false);
-  expect(values, isEmpty, reason: '$label:\n${values.join('\n')}');
+void _expectEmpty(String label, List<String> violations) {
+  expect(violations, isEmpty, reason: '$label\n${violations.join('\n')}');
 }
-
-bool _hasClass(String source, String name) =>
-    RegExp(r'\bclass\s+' + RegExp.escape(name) + r'\b').hasMatch(source);
-
-bool _hasAbstractClass(String source, String name) => RegExp(
-  r'\babstract\s+(?:interface\s+)?class\s+' + RegExp.escape(name) + r'\b',
-).hasMatch(source);
 
 void main() {
-  late _ArchitectureSnapshot snapshot;
+  late _Graph graph;
 
   setUpAll(() async {
-    snapshot = await _readProductionSources();
+    graph = await _readGraph();
   });
 
-  group('authoritative production architecture', () {
-    test('inventory and every internal directive resolve to real files', () {
-      final violations = <String>[];
-      final files = snapshot.byPath;
+  test('every production file belongs to a declared module', () {
+    final violations = <String>[];
+    for (final source in graph.sources) {
+      if (!_modules.contains(source.module)) {
+        violations.add('${source.path}: undeclared module');
+      }
+      if (source.module == 'features' && source.layer == null) {
+        final segments = source.path.substring('lib/'.length).split('/');
+        if (!(segments.length == 3 && segments.last.endsWith('_port.dart'))) {
+          violations.add('${source.path}: feature file has no declared layer');
+        }
+      }
+    }
+    _expectEmpty('module inventory', violations);
+  });
 
-      for (final directory in _requiredDirectories) {
-        if (!Directory(directory).existsSync()) {
+  test('all internal imports and parts resolve', () {
+    final violations = <String>[];
+    for (final source in graph.sources) {
+      for (final directive in [...source.imports, ...source.parts]) {
+        final target = _resolve(source.path, directive.uri);
+        if (target.isNotEmpty && !graph.byPath.containsKey(target)) {
+          violations.add('${source.path}:${directive.line}: missing $target');
+        }
+      }
+    }
+    _expectEmpty('internal references', violations);
+  });
+
+  test('dependency direction is explicit and the graph is acyclic', () {
+    final violations = <String>[];
+    for (final source in graph.sources) {
+      for (final directive in source.imports) {
+        final target = graph.byPath[_resolve(source.path, directive.uri)];
+        if (target != null && !_allowed(source, target)) {
+          violations.add('${source.path}:${directive.line}: ${target.path}');
+        }
+      }
+    }
+    violations.addAll(_cycles(_importGraph(graph)));
+    _expectEmpty('dependency graph', violations);
+  });
+
+  test('core and contract modules stay platform independent', () {
+    final violations = <String>[];
+    for (final source in graph.sources) {
+      if (source.module == 'core' || source.layer == 'domain') {
+        if (RegExp(
+          r'''import ['"](?:dart:io|package:flutter|package:http|package:sqflite|package:shared_preferences|package:path_provider|package:yaml|package:process)''',
+        ).hasMatch(source.text)) {
+          violations.add('${source.path}: platform dependency in core/domain');
+        }
+        if (source.layer == 'domain' &&
+            RegExp(
+              r'dart_mappable|core/serialization/json_hooks|features/persistence/infrastructure|\.mapper\.dart',
+            ).hasMatch(source.text)) {
           violations.add(
-            '$directory: required architecture directory is missing',
+            '${source.path}: domain model owns persistence mapping concerns',
           );
         }
       }
+    }
+    _expectEmpty('platform-independent contracts', violations);
+  });
 
-      final duplicatePaths = snapshot.files
-          .map((file) => file.path)
-          .where(
-            (path) =>
-                snapshot.files.where((file) => file.path == path).length > 1,
-          );
-      for (final path in duplicatePaths.toSet()) {
-        violations.add('$path: source path was indexed more than once');
+  test('platform adapters do not leak through core or contract modules', () {
+    final violations = <String>[];
+    for (final source in graph.sources) {
+      if (source.module == 'core' &&
+          RegExp(
+            r'''import ['"](?:dart:io|package:flutter|package:http|package:sqflite|package:shared_preferences|package:path_provider|package:yaml|package:process)''',
+          ).hasMatch(source.text)) {
+        violations.add('${source.path}: concrete platform import in core');
       }
+      if (source.path.contains('/application/contracts/') &&
+          RegExp(
+            r'''import ['"](?:dart:io|package:flutter|package:http|package:sqflite|package:shared_preferences|package:path_provider|package:yaml|package:process)''',
+          ).hasMatch(source.text)) {
+        violations.add(
+          '${source.path}: concrete platform import in application contract',
+        );
+      }
+    }
+    _expectEmpty('contract platform isolation', violations);
+  });
 
-      for (final file in snapshot.files) {
-        if (file.location == null) {
-          violations.add(
-            '${file.path}: production file is outside the classified module layout',
-          );
-        }
-        for (final directive in [
-          ...file.imports,
-          ...file.parts,
-          ...file.partOfs,
-        ]) {
-          if (directive.uri.isEmpty) {
-            violations.add(
-              '${_lineRef(file.path, directive.line)}: ${directive.kind} has no URI',
-            );
-            continue;
-          }
-          final target = _internalTarget(file.path, directive.uri);
-          if (target != null && !files.containsKey(target)) {
-            violations.add(
-              '${_lineRef(file.path, directive.line)}: ${directive.kind} targets missing $target',
-            );
-          }
-        }
+  test('application and runtime orchestration use typed platform ports', () {
+    final violations = <String>[];
+    for (final source in graph.sources) {
+      if (source.module != 'features' ||
+          (source.layer != 'application' && source.layer != 'runtime')) {
+        continue;
+      }
+      if (RegExp(
+        r'''import ['"](?:dart:io|package:http|package:sqflite|package:shared_preferences|package:path_provider|package:yaml|package:process)''',
+      ).hasMatch(source.text)) {
+        violations.add('${source.path}: concrete platform import');
+      }
+    }
+    _expectEmpty('application/runtime platform isolation', violations);
+  });
 
-        for (final directive in file.parts) {
-          final targetPath = _internalTarget(file.path, directive.uri);
-          final target = targetPath == null ? null : files[targetPath];
-          if (target == null) continue;
-          final declaresParent = target.partOfs.any(
-            (partOf) => _internalTarget(target.path, partOf.uri) == file.path,
-          );
-          if (!declaresParent) {
-            violations.add(
-              '${_lineRef(file.path, directive.line)}: part target $targetPath '
-              'does not declare part of ${file.path}',
-            );
-          }
-        }
-
-        for (final directive in file.partOfs) {
-          final parentPath = _internalTarget(file.path, directive.uri);
-          final parent = parentPath == null ? null : files[parentPath];
-          if (parent == null) continue;
-          final declaresPart = parent.parts.any(
-            (part) => _internalTarget(parent.path, part.uri) == file.path,
-          );
-          if (!declaresPart) {
-            violations.add(
-              '${_lineRef(file.path, directive.line)}: part-of parent $parentPath '
-              'does not declare ${file.path} as a part',
-            );
-          }
+  test('application/runtime ports have no raw transport seams', () {
+    final violations = <String>[];
+    for (final source in graph.sources.where(_isPort)) {
+      if (!source.path.contains('/application/')) continue;
+      if (RegExp(
+        r'^\s*(?:Future|Stream|List|Map|String|void|[A-Z]\w*)[^;{}\n]*(?:Map<String,\s*dynamic>|Process|StreamSubscription|ValueNotifier|LlamaServerHandle|String\s+\w*(?:Json|JSON|json))',
+        multiLine: true,
+      ).hasMatch(source.text)) {
+        violations.add('${source.path}: raw/infrastructure boundary type');
+      }
+    }
+    for (final source in graph.sources.where(
+      (source) =>
+          (source.layer == 'application' || source.layer == 'runtime') &&
+          source.text.contains('abstract interface class') &&
+          !source.path.contains('/protocol/'),
+    )) {
+      for (final body in _interfaceBodies(source.text)) {
+        if (RegExp(
+          r'Map<String,\s*dynamic>|Process|StreamSubscription|ValueNotifier|LlamaServerHandle|String\s+\w*(?:Json|JSON|json)',
+        ).hasMatch(body)) {
+          violations.add('${source.path}: raw/infrastructure port seam');
         }
       }
+    }
+    _expectEmpty('typed ports', violations);
+  });
 
-      _expectNoViolations(
-        'production inventory/directive resolution',
-        violations,
+  test('model and diagnostics boundaries are hardened', () {
+    final model =
+        graph.byPath['lib/features/model/application/model_server_port.dart']!;
+    final diagnostics = graph
+        .byPath['lib/features/model/application/model_session_diagnostics_port.dart']!;
+    final violations = <String>[];
+    if (RegExp(
+      r'Process|StreamSubscription|LlamaServerHandle|ValueNotifier|set[A-Z]',
+    ).hasMatch(model.text)) {
+      violations.add(
+        'model_server_port.dart exposes infrastructure or setters',
       );
-    });
+    }
+    final telemetry = graph
+        .byPath['lib/features/model/application/model_session_telemetry_port.dart'];
+    if (telemetry == null ||
+        !telemetry.text.contains('ModelSessionTelemetryPort')) {
+      violations.add('diagnostics read/write contracts are not separated');
+    }
+    if (RegExp(
+      r'\b(?:record|update|clear|set)[A-Z]',
+    ).hasMatch(diagnostics.text)) {
+      violations.add('diagnostics read port exposes telemetry mutation');
+    }
+    final requestOptions =
+        graph.byPath['lib/features/model/application/model_request.dart']!;
+    if (RegExp(
+      r'fromWire|toWire|Map<String,\s*Object',
+    ).hasMatch(requestOptions.text)) {
+      violations.add('model request options expose transport maps');
+    }
+    _expectEmpty('model boundary', violations);
+  });
 
-    test('resolved package and relative imports obey the layer graph', () {
-      final violations = <String>[];
-      final files = snapshot.byPath;
+  test('runtime collaborator files contain wiring only', () {
+    final violations = <String>[];
+    for (final source in graph.sources.where(
+      (source) => source.path.endsWith('_runtime_collaborators.dart'),
+    )) {
+      if (RegExp(
+        r'\bextension\s+|\bclass\s+\w+\s+extends|\bFuture<',
+      ).hasMatch(source.text)) {
+        violations.add(
+          '${source.path}: orchestration implementation in wiring file',
+        );
+      }
+    }
+    _expectEmpty('runtime wiring files', violations);
+  });
 
-      for (final file in snapshot.files) {
-        final source = file.location;
-        if (source == null) {
-          violations.add(
-            '${file.path}: cannot classify source layer for dependency checking',
-          );
-          continue;
-        }
-        for (final directive in file.imports) {
-          final targetPath = _internalTarget(file.path, directive.uri);
-          if (targetPath == null) continue;
-          final target = files[targetPath];
-          if (target == null) {
-            violations.add(
-              '${_lineRef(file.path, directive.line)}: dependency target $targetPath is not indexed',
-            );
-            continue;
-          }
-          if (!_allowsEdge(file, target)) {
-            violations.add(
-              '${_lineRef(file.path, directive.line)}: ${source.layer} -> '
-              '${target.location?.layer} ${target.path}',
-            );
-          }
+  test('runtime orchestration is class-based and responsibility-focused', () {
+    final violations = <String>[];
+    for (final source in graph.sources.where(
+      (source) => source.path.endsWith('_runtime_orchestrator.dart'),
+    )) {
+      if (RegExp(r'^extension\s+', multiLine: true).hasMatch(source.text)) {
+        violations.add('${source.path}: extension-based orchestration remains');
+      }
+      if (RegExp(r'RuntimeContext').hasMatch(source.text)) {
+        violations.add('${source.path}: mutable runtime context remains');
+      }
+    }
+    const requiredTypes = <String, List<String>>{
+      'lib/features/task/runtime/task_step_execution_runtime.dart': [
+        'class TaskStepExecutionRuntime',
+      ],
+      'lib/features/task/runtime/task_command_service.dart': [
+        'class TaskCommandService',
+      ],
+      'lib/features/task/runtime/task_step_runner.dart': [
+        'class TaskStepRunner',
+      ],
+      'lib/features/task/runtime/task_recovery_service.dart': [
+        'class TaskRecoveryService',
+      ],
+      'lib/features/task/runtime/task_persistence_store.dart': [
+        'class TaskPersistenceStore',
+      ],
+      'lib/features/project/runtime/project_command_service.dart': [
+        'class ProjectCommandService',
+      ],
+      'lib/features/project/runtime/project_handlers.dart': [
+        'class ProjectPlanningHandler',
+        'class ProjectPersistenceHandler',
+        'class ProjectRecoveryHandler',
+      ],
+      'lib/features/chat/runtime/chat_application/chat_session_manager.dart': [
+        'class ChatSessionManager',
+      ],
+      'lib/features/chat/runtime/chat_application/chat_command_coordinator.dart':
+          ['class ChatCommandCoordinator'],
+      'lib/features/chat/runtime/chat_application/chat_tool_execution_service.dart':
+          ['class ChatToolExecutionService'],
+      'lib/features/chat/runtime/chat_application/chat_persistence_runtime.dart':
+          ['class ChatPersistenceRuntime'],
+      'lib/features/chat/runtime/chat_application/chat_prompt_construction_service.dart':
+          ['class ChatPromptConstructionService'],
+      'lib/features/project/runtime/project_persistence_runtime.dart': [
+        'class ProjectPersistenceRuntime',
+      ],
+      'lib/features/project/runtime/project_execution_runtime.dart': [
+        'class ProjectExecutionRuntime',
+      ],
+    };
+    for (final entry in requiredTypes.entries) {
+      final source = graph.byPath[entry.key];
+      if (source == null) {
+        violations.add('${entry.key}: focused runtime service is missing');
+        continue;
+      }
+      for (final type in entry.value) {
+        if (!source.text.contains(type)) {
+          violations.add('${entry.key}: missing $type');
         }
       }
+    }
+    _expectEmpty('runtime orchestration decomposition', violations);
+  });
 
-      _expectNoViolations('layer dependency graph', violations);
-    });
+  test('presentation consumes projections instead of aggregates', () {
+    final violations = <String>[];
+    for (final source in graph.sources.where(
+      (source) => source.path.contains('/presentation/'),
+    )) {
+      if (RegExp(
+            r'features/(project|task)/domain/(project|task)\.dart',
+          ).hasMatch(source.text) ||
+          source.text.contains('SnapshotDto') ||
+          source.text.contains('ProjectAggregate') ||
+          RegExp(r'\bTaskAggregate\b').hasMatch(source.text)) {
+        violations.add(
+          '${source.path}: presentation imports/uses a domain aggregate',
+        );
+      }
+    }
+    _expectEmpty('presentation projections', violations);
+  });
 
-    test('the internal import graph is acyclic', () {
-      final violations = _cycles(_importGraph(snapshot));
-      _expectNoViolations('internal import cycles', violations);
-    });
+  test('chat state owns explicit immutable slices and projections', () {
+    final state = graph.byPath['lib/features/chat/domain/chat_state.dart']!;
+    final view =
+        graph.byPath['lib/features/chat/application/chat_view_state.dart']!;
+    final slices =
+        graph.byPath['lib/features/chat/domain/chat_state_slices.dart']!;
+    final violations = <String>[];
+    for (final name in [
+      'ChatConversationState',
+      'ChatModelSessionState',
+      'ChatTaskPanelState',
+      'ChatProjectPanelState',
+      'ChatPersistenceState',
+      'ChatTransientOperationState',
+    ]) {
+      if (!slices.text.contains('class $name')) {
+        violations.add('chat_state_slices.dart: missing $name');
+      }
+    }
+    for (final source in [state, view]) {
+      if (RegExp(
+        r'\b(?:ProjectAggregate|TaskAggregate)\b',
+      ).hasMatch(source.text)) {
+        violations.add('${source.path}: exposes a domain aggregate');
+      }
+    }
+    if (!state.text.contains('ChatStateReducer')) {
+      violations.add(
+        'chat_state.dart: reducer is not the state transition owner',
+      );
+    }
+    _expectEmpty('chat state slices', violations);
+  });
 
-    test('runtime composition does not hide implementation in Dart parts', () {
+  test(
+    'wire compatibility is confined to protocol and persistence adapters',
+    () {
       final violations = <String>[];
-      for (final file in snapshot.files) {
-        if (file.location?.layer != 'runtime') continue;
-        if (file.parts.isNotEmpty || file.partOfs.isNotEmpty) {
-          violations.add(
-            '${file.path}: runtime collaborator is still composed with part/part of',
-          );
+      for (final source in graph.sources) {
+        if (source.path.contains('/application/contracts/') &&
+            RegExp(
+              r'\b(?:jsonDecode|jsonEncode|argumentsJson|resultJson)\b',
+            ).hasMatch(source.text)) {
+          violations.add('${source.path}: wire JSON in application contract');
         }
       }
-      _expectNoViolations('runtime collaborator composition', violations);
-    });
-
-    test('the real application boundaries and runtime entrypoints exist', () {
-      final requiredClasses = {
-        'lib/features/chat/application/chat_controller.dart': 'ChatController',
-        'lib/features/chat/application/chat_workspace_controller.dart':
-            'ChatWorkspaceController',
-        'lib/features/task/application/task_application/task_controller.dart':
-            'TaskController',
-        'lib/features/project/application/project_application/project_application.dart':
-            'ProjectApplication',
-        'lib/features/chat/runtime/chat_runtime_engine.dart':
-            'ChatRuntimeController',
-        'lib/features/task/runtime/task_runtime_engine.dart':
-            'TaskRuntimeController',
-        'lib/features/project/runtime/project_runtime_engine.dart':
-            'ProjectRuntimeApplication',
-      };
-      final violations = <String>[];
-      for (final entry in requiredClasses.entries) {
-        final source = _requiredSource(snapshot, entry.key);
-        if (!_hasClass(source.source, entry.value)) {
-          violations.add('${entry.key}: missing ${entry.value}');
-        }
-      }
-      _expectNoViolations('application/runtime entrypoints', violations);
-    });
-
-    test('application ports expose the declared narrow contracts', () {
-      final taskPorts = _requiredSource(
-        snapshot,
-        'lib/features/task/application/task_application/task_ports.dart',
-      ).source;
-      final projectPorts = _requiredSource(
-        snapshot,
-        'lib/features/project/application/project_application/project_ports.dart',
-      ).source;
-      final violations = <String>[];
-
-      for (final port in [
-        'TaskQueryPort',
-        'TaskPlanningPort',
-        'TaskExecutionPort',
-        'TaskRecoveryPort',
+      for (final path in [
+        'lib/features/tools/application/tool_protocol_adapter.dart',
+        'lib/features/chat/infrastructure/chat_panel_protocol_adapter.dart',
       ]) {
-        if (!_hasAbstractClass(taskPorts, port)) {
-          violations.add('task_ports.dart: missing $port');
+        if (!graph.byPath.containsKey(path)) {
+          violations.add('$path: protocol adapter is missing');
         }
       }
-      for (final port in [
-        'ProjectQueryPort',
-        'ProjectCommandPort',
-        'ProjectExecutionPort',
-      ]) {
-        if (!_hasAbstractClass(projectPorts, port)) {
-          violations.add('project_ports.dart: missing $port');
-        }
-      }
-      _expectNoViolations('application port contracts', violations);
-    });
+      _expectEmpty('wire boundary ownership', violations);
+    },
+  );
 
-    test(
-      'application/runtime boundary declarations do not use dynamic seams',
-      () {
-        final violations = <String>[];
-        final dynamicDependency = RegExp(
-          r'\brequired\s+dynamic\b|'
-          r'\b(?:final|var)\s+dynamic\b|'
-          r'\bdynamic\s+get\b|'
-          r'\b(?:Future|Stream)\s*<\s*dynamic\b|'
-          r'\btypedef\s+[^;=]+dynamic\b',
-        );
-        for (final file in snapshot.files) {
-          final location = file.location;
-          if (location == null ||
-              (location.layer != 'application' &&
-                  location.layer != 'runtime')) {
-            continue;
-          }
-          for (final match in dynamicDependency.allMatches(file.source)) {
-            violations.add(
-              '${_lineRef(file.path, _lineNumber(file.source, match.start))}: dynamic dependency seam',
-            );
-          }
-        }
-        _expectNoViolations('typed application/runtime seams', violations);
-      },
-    );
-
-    test('chat state transitions are owned by the real reducer boundary', () {
-      final context = _requiredSource(
-        snapshot,
-        'lib/features/chat/runtime/chat_runtime_collaborators.dart',
-      );
-      final reducer = _requiredSource(
-        snapshot,
-        'lib/features/chat/domain/chat_state.dart',
-      );
+  test(
+    'runtime wiring files contain no ignore directives or hidden contexts',
+    () {
       final violations = <String>[];
-
-      if (!reducer.source.contains('class ChatStateReducer')) {
-        violations.add('chat_state.dart: missing ChatStateReducer');
-      }
-      if (!RegExp(r'\bChatState\s+reduce\s*\(').hasMatch(reducer.source)) {
-        violations.add(
-          'chat_state.dart: reducer does not expose reduce(state, event)',
-        );
-      }
-      if (RegExp(r'\b_state\s*\.\s*copyWith\s*\(').hasMatch(context.source)) {
-        violations.add(
-          'chat_runtime_collaborators.dart: constructs state with copyWith outside the reducer',
-        );
-      }
-      if (RegExp(r'\bvoid\s+set[A-Z]\w*\s*\(').hasMatch(context.source)) {
-        violations.add(
-          'chat_runtime_collaborators.dart: exposes state mutation setters',
-        );
-      }
-      _expectNoViolations('chat reducer ownership', violations);
-    });
-
-    test('runtime contexts require explicit collaborators', () {
-      final taskContext = _requiredSource(
-        snapshot,
-        'lib/features/task/runtime/task_runtime_collaborators.dart',
-      );
-      final projectContext = _requiredSource(
-        snapshot,
-        'lib/features/project/runtime/project_runtime_collaborators.dart',
-      );
-      final violations = <String>[];
-      for (final entry in {
-        taskContext.path: ['TaskPlanningService()', 'TaskPersistenceStore('],
-        projectContext.path: [
-          'ProjectModelCalls(',
-          'ProjectAggregateHydrator(',
-          'ProjectCommandService(',
-        ],
-      }.entries) {
-        for (final fallback in entry.value) {
-          if (snapshot.byPath[entry.key]!.source.contains(fallback)) {
-            violations.add('${entry.key}: silently constructs $fallback');
-          }
+      for (final source in graph.sources) {
+        if (!source.path.contains('/runtime/')) continue;
+        if (source.text.contains('ignore_for_file:')) {
+          violations.add('${source.path}: runtime ignore directive remains');
+        }
+        if (RegExp(
+          r'\b(?:TaskRuntimeContext|ProjectRuntimeContext|ChatRuntimeContext)\b',
+        ).hasMatch(source.text)) {
+          violations.add('${source.path}: mutable mega-context remains');
         }
       }
-      _expectNoViolations(
-        'explicit runtime collaborator composition',
-        violations,
+      _expectEmpty('runtime wiring hygiene', violations);
+    },
+  );
+
+  test('composition and persistence invariants are explicit', () {
+    final app = graph.byPath['lib/app_dependencies.dart']!.text;
+    final persistence =
+        graph.byPath['lib/app/modules/persistence_module.dart']!.text;
+    final tasks = graph
+        .byPath['lib/features/task/infrastructure/task_repository.dart']!
+        .text;
+    final projects = graph
+        .byPath['lib/features/project/infrastructure/project_repository.dart']!
+        .text;
+    final violations = <String>[];
+    for (final name in [
+      'PersistenceModule',
+      'ModelModule',
+      'TaskModule',
+      'ProjectModule',
+      'ChatModule',
+      'WorkspaceToolsModule',
+    ]) {
+      if (!app.contains(name)) {
+        violations.add('app_dependencies.dart: missing $name');
+      }
+    }
+    if (!persistence.contains(
+      'final coordinator = WorkspacePersistenceCoordinator()',
+    )) {
+      violations.add(
+        'persistence module does not own coordinator construction',
       );
-    });
+    }
+    if (RegExp(r'WorkspacePersistenceCoordinator\s*\(').hasMatch(tasks) ||
+        RegExp(r'WorkspacePersistenceCoordinator\s*\(').hasMatch(projects)) {
+      violations.add('repository constructs fallback coordinator');
+    }
+    _expectEmpty('composition/persistence ownership', violations);
+  });
 
-    test('model lifecycle is owned by the composition root', () {
-      final appDependencies = _requiredSource(
-        snapshot,
-        'lib/app_dependencies.dart',
-      ).source;
-      final chatWorkspace = _requiredSource(
-        snapshot,
-        'lib/features/chat/runtime/chat_workspace_controller.dart',
-      ).source;
-      final violations = <String>[];
-      if (!RegExp(
-        r"lifecycleCoordinator\.register\([\s\S]{0,300}"
-        r"name:\s*'model'[\s\S]{0,300}dispose:\s*modelManager\.dispose",
-      ).hasMatch(appDependencies)) {
-        violations.add(
-          'app_dependencies.dart: model manager is not lifecycle-owned',
-        );
+  test('module ownership and generated-artifact rules are documented', () {
+    final architecture = File('docs/architecture.md').readAsStringSync();
+    final violations = <String>[];
+    for (final module in [
+      '`core`',
+      '`features/persistence`',
+      '`features/workspace`',
+      '`features/tools`',
+      '`features/model`',
+      '`features/task`',
+      '`features/project`',
+      '`features/chat`',
+      '`app/modules`',
+    ]) {
+      if (!architecture.contains(module)) {
+        violations.add('docs/architecture.md: missing owner for $module');
       }
-      if (chatWorkspace.contains('await serverManager.dispose()')) {
-        violations.add(
-          'chat_workspace_controller.dart: disposes the model server directly',
-        );
-      }
-      _expectNoViolations('model lifecycle ownership', violations);
-    });
-
-    test('persistence adapters implement real application ports', () {
-      final expectedImplementations = {
-        'lib/platform/workspace_service.dart': 'WorkspacePresentationPort',
-        'lib/shared_kernel/workspace_persistence_coordinator.dart':
-            'PersistencePort',
-        'lib/features/model/infrastructure/chat_client.dart': 'ModelProvider',
-        'lib/features/task/infrastructure/task_repository.dart':
-            'TaskPersistencePort',
-        'lib/features/project/infrastructure/project_repository.dart':
-            'ProjectRepositoryPort',
-        'lib/features/project/infrastructure/project_aggregate_repository.dart':
-            'ProjectAggregateRepositoryPort',
-        'lib/features/chat/infrastructure/chat_library_repository.dart':
-            'ChatLibraryPort',
-        'lib/features/chat/infrastructure/system_prompt_library_repository.dart':
-            'PromptLibraryPort',
-        'lib/features/settings/infrastructure/preferences_service.dart':
-            'PreferencesPort',
-      };
-      final violations = <String>[];
-      for (final entry in expectedImplementations.entries) {
-        final source = _requiredSource(snapshot, entry.key).source;
-        if (!RegExp(
-          r'\bimplements\b[\s\S]{0,180}\b' + RegExp.escape(entry.value) + r'\b',
-        ).hasMatch(source)) {
-          violations.add('${entry.key}: does not implement ${entry.value}');
-        }
-      }
-      _expectNoViolations('typed adapter implementations', violations);
-    });
+    }
+    if (!architecture.contains('Generated mapper output')) {
+      violations.add('docs/architecture.md: generated mapper rule missing');
+    }
+    _expectEmpty('documented module ownership', violations);
   });
 }

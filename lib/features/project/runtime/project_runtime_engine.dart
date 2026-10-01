@@ -1,21 +1,22 @@
 import 'dart:async';
 
-import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
 import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
-import 'package:hermes/shared_kernel/task_system_settings.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/model_completion_port.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/features/model/application/model_completion_port.dart';
+import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/project/application/project_application/project_execution_port.dart';
 import 'package:hermes/features/project/project_repository_port.dart';
 import 'package:hermes/features/project/project_aggregate_repository_port.dart';
 import 'package:hermes/features/project/runtime/project_command_service.dart';
-import 'package:hermes/shared_kernel/model_output.dart';
+import 'package:hermes/features/model/application/model_output.dart';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
-import 'package:hermes/shared_kernel/tool_contracts.dart';
+import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/project/application/project_application/project_ports.dart';
+import 'package:hermes/features/project/application/contracts/project_commands.dart';
 
-import 'package:hermes/features/project/runtime/project_runtime_collaborators.dart';
+import 'package:hermes/features/project/runtime/project_execution_runtime.dart';
 
 class ProjectRuntimeApplication
     implements
@@ -48,7 +49,7 @@ class ProjectRuntimeApplication
         CallbackProjectRecoveryPort(
           (request) => _delegate.recoverProjectForCommand(request),
         );
-    _delegate = ProjectRuntimeContext(
+    _delegate = ProjectExecutionRuntime(
       taskQueries: taskQueries,
       taskPlanning: taskPlanning,
       taskProjectPlanning: taskProjectPlanning,
@@ -65,7 +66,7 @@ class ProjectRuntimeApplication
     );
   }
 
-  late final ProjectRuntimeContext _delegate;
+  late final ProjectExecutionRuntime _delegate;
 
   Future<ProjectCommandResult> execute(ProjectExecutionRequest request) =>
       _delegate.execute(request);
@@ -134,10 +135,6 @@ class ProjectRuntimeApplication
   );
 
   @override
-  String encodeProject(ProjectAggregate project) =>
-      _delegate.encodeProject(project);
-
-  @override
   Future<ProjectAggregate> createProject({
     required WorkspaceAttachment workspace,
     required String userPrompt,
@@ -164,11 +161,11 @@ class ProjectRuntimeApplication
   Future<ProjectAggregate> updateProject({
     required WorkspaceAttachment workspace,
     required ProjectAggregate snapshot,
-    required String rawJson,
+    required ProjectUpdateCommand command,
   }) => _delegate.updateProject(
     workspace: workspace,
     snapshot: snapshot,
-    rawJson: rawJson,
+    command: command,
   );
 
   @override

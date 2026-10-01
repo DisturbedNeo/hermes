@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:hermes/shared_kernel/preferences_port.dart';
+import 'package:hermes/features/settings/application/preferences_port.dart';
 import 'package:path/path.dart' as p;
 
 Future<Map<String, File>> getModels(PreferencesPort preferencesService) async {

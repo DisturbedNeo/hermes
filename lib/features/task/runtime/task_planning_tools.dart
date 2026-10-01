@@ -1,6 +1,6 @@
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/shared_kernel/tool_contracts.dart';
-import 'package:hermes/shared_kernel/planning_runtime.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/tools/application/tool_contracts.dart';
+import 'package:hermes/features/task/application/protocol/planning_runtime.dart';
 import 'package:hermes/features/task/runtime/task_plan_builder.dart';
 import 'package:hermes/features/task/runtime/task_view_service.dart';
 
@@ -500,14 +500,14 @@ const ToolDefinition _taskViewDefinition = ToolDefinition(
   name: 'View task plan',
   description:
       'Inspect a bounded task summary, its step statuses, boundaries, and required checks.',
-  schema: {
+  schema: ToolSchema({
     'type': 'object',
     'additionalProperties': false,
     'properties': {
       'step_ref': {'type': 'string'},
       'max_items': {'type': 'integer', 'minimum': 1},
     },
-  },
+  }),
 );
 
 const ToolDefinition _setBriefDefinition = ToolDefinition(
@@ -515,7 +515,7 @@ const ToolDefinition _setBriefDefinition = ToolDefinition(
   name: 'Set task brief',
   description:
       'Refine the task title, objective, constraints, or success criteria.',
-  schema: {
+  schema: ToolSchema({
     'type': 'object',
     'additionalProperties': false,
     'properties': {
@@ -530,7 +530,7 @@ const ToolDefinition _setBriefDefinition = ToolDefinition(
         'items': {'type': 'string'},
       },
     },
-  },
+  }),
 );
 
 const ToolDefinition _addStepDefinition = ToolDefinition(
@@ -538,7 +538,7 @@ const ToolDefinition _addStepDefinition = ToolDefinition(
   name: 'Add task step',
   description:
       'Add one independently executable step. Hermes generates its persistent ID.',
-  schema: {
+  schema: ToolSchema({
     'type': 'object',
     'additionalProperties': false,
     'properties': {
@@ -569,7 +569,7 @@ const ToolDefinition _addStepDefinition = ToolDefinition(
       },
     },
     'required': ['title', 'objective', 'instructions'],
-  },
+  }),
 );
 
 const ToolDefinition _resetPlanDefinition = ToolDefinition(
@@ -577,7 +577,11 @@ const ToolDefinition _resetPlanDefinition = ToolDefinition(
   name: 'Reset task draft',
   description:
       'Discard the current uncommitted draft so it can be rebuilt with planning commands. Completed and skipped steps are preserved during replanning.',
-  schema: {'type': 'object', 'additionalProperties': false, 'properties': {}},
+  schema: ToolSchema({
+    'type': 'object',
+    'additionalProperties': false,
+    'properties': {},
+  }),
 );
 
 const ToolDefinition _addCheckDefinition = ToolDefinition(
@@ -585,7 +589,7 @@ const ToolDefinition _addCheckDefinition = ToolDefinition(
   name: 'Add task check',
   description:
       'Add an exact verification command to the task or one step. Hermes creates the gate and evidence ID.',
-  schema: {
+  schema: ToolSchema({
     'type': 'object',
     'additionalProperties': false,
     'properties': {
@@ -596,42 +600,50 @@ const ToolDefinition _addCheckDefinition = ToolDefinition(
       'description': {'type': 'string'},
     },
     'required': ['command'],
-  },
+  }),
 );
 
 const ToolDefinition _previewDefinition = ToolDefinition(
   id: 'task_preview_plan',
   name: 'Preview task plan',
   description: 'Validate the current task draft without committing it.',
-  schema: {'type': 'object', 'additionalProperties': false, 'properties': {}},
+  schema: ToolSchema({
+    'type': 'object',
+    'additionalProperties': false,
+    'properties': {},
+  }),
 );
 
 const ToolDefinition _commitDefinition = ToolDefinition(
   id: 'task_commit_plan',
   name: 'Commit task plan',
   description: 'Validate and finish the task plan draft.',
-  schema: {'type': 'object', 'additionalProperties': false, 'properties': {}},
+  schema: ToolSchema({
+    'type': 'object',
+    'additionalProperties': false,
+    'properties': {},
+  }),
 );
 
 const ToolDefinition _requestReplanDefinition = ToolDefinition(
   id: 'task_request_replan',
   name: 'Request task replan',
   description: 'Record a concrete reason why unfinished work needs replanning.',
-  schema: {
+  schema: ToolSchema({
     'type': 'object',
     'additionalProperties': false,
     'properties': {
       'reason': {'type': 'string'},
     },
     'required': ['reason'],
-  },
+  }),
 );
 
 const ToolDefinition _requestDecisionDefinition = ToolDefinition(
   id: 'task_request_user_decision',
   name: 'Request user decision',
   description: 'Ask one genuinely blocking user question.',
-  schema: {
+  schema: ToolSchema({
     'type': 'object',
     'additionalProperties': false,
     'properties': {
@@ -639,5 +651,5 @@ const ToolDefinition _requestDecisionDefinition = ToolDefinition(
       'step_ref': {'type': 'string'},
     },
     'required': ['question'],
-  },
+  }),
 );

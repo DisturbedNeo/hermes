@@ -2,8 +2,10 @@ import 'dart:io';
 import 'package:hermes/app/test_factories.dart';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/core/cancellation.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/features/workspace/application/workspace_change_discovery.dart';
 import 'package:hermes/features/project/runtime/project_discovery_service.dart';
 import 'package:hermes/platform/tool_service.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
@@ -38,6 +40,7 @@ dependencies:
     );
     final sandbox = WorkspaceSandbox();
     final service = ProjectDiscoveryService(
+      changeDiscovery: const _StaticChangeDiscovery(),
       taskController: createTestTaskController(
         toolService: ToolService(workspaceSandbox: sandbox),
         sandbox: sandbox,
@@ -91,6 +94,7 @@ dependencies:
       );
       final sandbox = WorkspaceSandbox();
       final service = ProjectDiscoveryService(
+        changeDiscovery: const _StaticChangeDiscovery(),
         taskController: createTestTaskController(
           toolService: ToolService(workspaceSandbox: sandbox),
           sandbox: sandbox,
@@ -130,6 +134,7 @@ dependencies:
     );
     final sandbox = WorkspaceSandbox();
     final service = ProjectDiscoveryService(
+      changeDiscovery: const _StaticChangeDiscovery(),
       taskController: createTestTaskController(
         toolService: ToolService(workspaceSandbox: sandbox),
         sandbox: sandbox,
@@ -168,6 +173,7 @@ dependencies:
       );
       final sandbox = WorkspaceSandbox();
       final service = ProjectDiscoveryService(
+        changeDiscovery: const _StaticChangeDiscovery(),
         taskController: createTestTaskController(
           toolService: ToolService(workspaceSandbox: sandbox),
           sandbox: sandbox,
@@ -189,6 +195,16 @@ dependencies:
       );
     },
   );
+}
+
+class _StaticChangeDiscovery implements WorkspaceChangeDiscoveryPort {
+  const _StaticChangeDiscovery();
+
+  @override
+  Future<WorkspaceChangeSet> discover(
+    WorkspaceAttachment workspace, {
+    CancellationToken? cancellationToken,
+  }) async => const WorkspaceChangeSet(isRepository: true);
 }
 
 ProjectAggregate _project() {

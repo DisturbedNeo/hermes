@@ -1,10 +1,24 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/model_call_diagnostics.dart';
-import 'package:hermes/shared_kernel/model_configuration.dart';
+import 'package:hermes/features/model/application/model_call_diagnostics.dart';
+import 'package:hermes/features/model/application/model_configuration.dart';
 import 'package:hermes/features/model/application/model_session_diagnostics.dart';
+import 'package:hermes/features/model/application/model_session_diagnostics_port.dart';
+import 'package:hermes/features/model/application/model_session_telemetry_port.dart';
 
 void main() {
   group('ModelSessionDiagnostics', () {
+    test('exposes reads and telemetry writes through separate contracts', () {
+      final diagnostics = ModelSessionDiagnostics();
+      addTearDown(diagnostics.dispose);
+      final ModelSessionDiagnosticsPort reads = diagnostics;
+      final ModelSessionTelemetryPort telemetry = diagnostics;
+
+      telemetry.updateContextEstimate(42, contextLimitTokens: 4096);
+
+      expect(reads.displayContextTokens, 42);
+      expect(reads.displayContextIsEstimate, isTrue);
+    });
+
     test(
       'isolates concurrent calls and keeps the most recently progressing',
       () {

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/planning_metrics.dart';
-import 'package:hermes/shared_kernel/model_json.dart';
+import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
+import 'package:hermes/core/model_json.dart';
 
 void main() {
   test('round-trips rollout metrics and derives rates', () {

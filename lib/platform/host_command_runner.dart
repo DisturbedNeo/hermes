@@ -2,9 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/sandbox_policy.dart';
-import 'package:hermes/shared_kernel/terminal_command_classifier.dart';
+import 'package:hermes/core/cancellation.dart';
+import 'package:hermes/features/workspace/application/sandbox_policy.dart';
+import 'package:hermes/features/workspace/application/terminal_command_classifier.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
 
 /// Executes a user-approved shell command on the host machine.
 ///
@@ -20,7 +21,7 @@ class HostCommandRunner {
   final Duration _timeout;
   final Duration terminationGrace;
 
-  Future<Map<String, dynamic>> run({
+  Future<WorkspaceCommandResult> run({
     required String commandLine,
     required String workingDirectory,
     required String relativeWorkingDirectory,
@@ -77,13 +78,13 @@ class HostCommandRunner {
           code: 'command_timeout',
         );
       }
-      return {
-        'command': commandLine,
-        'working_directory': relativeWorkingDirectory,
-        'exit_code': exitCode,
-        'stdout': stdout.text,
-        'stderr': stderr.text,
-      };
+      return WorkspaceCommandResult(
+        command: commandLine,
+        workingDirectory: relativeWorkingDirectory,
+        exitCode: exitCode,
+        stdout: stdout.text,
+        stderr: stderr.text,
+      );
     } finally {
       unregister?.call();
     }

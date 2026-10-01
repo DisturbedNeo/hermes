@@ -1,26 +1,28 @@
 import 'dart:async';
+import 'package:hermes/features/persistence/infrastructure/workspace_persistence_coordinator.dart';
 import 'package:hermes/app/test_factories.dart';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/message_role.dart';
-import 'package:hermes/shared_kernel/stream_state.dart';
-import 'package:hermes/shared_kernel/context_estimator.dart';
-import 'package:hermes/shared_kernel/chat_message.dart';
-import 'package:hermes/shared_kernel/chat_token.dart';
-import 'package:hermes/shared_kernel/bubble.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/shared_kernel/model_configuration.dart';
-import 'package:hermes/shared_kernel/system_prompt.dart';
-import 'package:hermes/shared_kernel/chat_workspace_contracts.dart';
-import 'package:hermes/shared_kernel/model_json.dart';
+import 'package:hermes/features/chat/application/contracts/message_role.dart';
+import 'package:hermes/features/chat/application/contracts/stream_state.dart';
+import 'package:hermes/features/chat/application/protocol/context_estimator.dart';
+import 'package:hermes/features/chat/application/contracts/chat_message.dart';
+import 'package:hermes/features/chat/application/contracts/chat_token.dart';
+import 'package:hermes/features/chat/application/contracts/bubble.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/model/application/model_configuration.dart';
+import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
+import 'package:hermes/features/chat/application/contracts/chat_workspace_contracts.dart';
+import 'package:hermes/core/model_json.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/infrastructure/chat_library_repository.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/features/chat/infrastructure/chat_panel_protocol_adapter.dart';
+import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 import 'package:hermes/features/project/infrastructure/project_repository.dart';
 import 'package:hermes/features/task/infrastructure/task_repository.dart';
@@ -29,6 +31,8 @@ import 'package:hermes/features/settings/infrastructure/preferences_service.dart
 import 'package:hermes/features/chat/infrastructure/system_prompt_library_repository.dart';
 import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
 import 'package:hermes/platform/tool_service.dart';
+import 'package:hermes/features/tools/application/tool_protocol_adapter.dart';
+import 'package:hermes/features/chat/runtime/chat_application/chat_tool_execution_service.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
 import 'package:hermes/platform/workspace_service.dart';
 import 'package:path/path.dart' as path;
@@ -61,18 +65,27 @@ void main() {
       final taskController = createTestTaskController(
         toolService: toolService,
         sandbox: sandbox,
-        persistence: TaskRepository(),
+        persistence: TaskRepository(
+          coordinator: WorkspacePersistenceCoordinator(),
+        ),
       );
       final projectApplication = createTestProjectApplication(
         taskController: taskController,
-        repository: ProjectRepository(),
+        repository: ProjectRepository(
+          coordinator: WorkspacePersistenceCoordinator(),
+        ),
       );
       chat = ChatController(
         serverManager: serverManager,
         toolService: toolService,
+        toolProtocol: ToolProtocolAdapter(registry: toolService),
+        toolExecution: ChatToolExecutionService(
+          protocol: ToolProtocolAdapter(registry: toolService),
+        ),
         taskQueries: taskController,
         taskSessions: taskController,
         taskPresentation: taskController,
+        panelProtocol: const ChatPanelProtocolAdapter(),
         taskPlanning: taskController,
         taskExecution: taskController,
         taskRecovery: taskController,
@@ -115,7 +128,7 @@ void main() {
 
     test('uses workspace tools attached after chat construction', () async {
       final client = _RecordingStreamClient();
-      serverManager.chatClient = client;
+      serverManager.setCompletionProviderForTesting(client);
       await chat.attachWorkspace(tempDir.path);
 
       await chat.send('Inspect the workspace');
@@ -131,7 +144,7 @@ void main() {
       'cancels during pre-stream context accounting without a stale bubble',
       () async {
         final client = _BlockingCountClient();
-        serverManager.chatClient = client;
+        serverManager.setCompletionProviderForTesting(client);
         chat.updateCurrentModelSnapshot(
           ModelJson.decode<ModelConfigurationSnapshot>({
             'modelName': 'test',
@@ -157,7 +170,7 @@ void main() {
 
     test('persists each tool result and cancels remaining tool work', () async {
       final client = _TwoToolClient();
-      serverManager.chatClient = client;
+      serverManager.setCompletionProviderForTesting(client);
       await chat.attachWorkspace(tempDir.path);
       chat.updateCommandExecutionApproval(true);
 
@@ -249,15 +262,17 @@ void main() {
     });
 
     test('supports /refine without creating a task', () async {
-      serverManager.chatClient = _QueueChatClient([
-        jsonEncode({
-          'title': 'Refined task',
-          'goal': 'Build the reporting screen',
-          'successCriteria': ['Clear plan'],
-          'constraints': ['Stay in workspace'],
-          'assumptions': ['Flutter app'],
-        }),
-      ]);
+      serverManager.setCompletionProviderForTesting(
+        _QueueChatClient([
+          jsonEncode({
+            'title': 'Refined task',
+            'goal': 'Build the reporting screen',
+            'successCriteria': ['Clear plan'],
+            'constraints': ['Stay in workspace'],
+            'assumptions': ['Flutter app'],
+          }),
+        ]),
+      );
 
       await chat.send('/refine Build the reporting screen');
 
@@ -267,9 +282,9 @@ void main() {
     });
 
     test('supports /plan command without running steps', () async {
-      serverManager.chatClient = _QueueChatClient([
-        jsonEncode(_planJson(title: 'Planned task')),
-      ]);
+      serverManager.setCompletionProviderForTesting(
+        _QueueChatClient([jsonEncode(_planJson(title: 'Planned task'))]),
+      );
       await chat.attachWorkspace(tempDir.path);
 
       await chat.send('/plan Build the reporting screen');
@@ -282,16 +297,18 @@ void main() {
     });
 
     test('supports /task command by creating and running steps', () async {
-      serverManager.chatClient = _QueueCompletionClient([
-        _commandPlanTaskResponse(_planJson(title: 'Runnable task')),
-        ChatCompletionResponse(
-          content: jsonEncode({
-            'status': 'completed',
-            'summary': 'Step complete.',
-            'memoryUpdate': 'Work finished.',
-          }),
-        ),
-      ]);
+      serverManager.setCompletionProviderForTesting(
+        _QueueCompletionClient([
+          _commandPlanTaskResponse(_planJson(title: 'Runnable task')),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Step complete.',
+              'memoryUpdate': 'Work finished.',
+            }),
+          ),
+        ]),
+      );
       await chat.attachWorkspace(tempDir.path);
 
       await chat.send('/task Build the reporting screen');
@@ -301,41 +318,43 @@ void main() {
     });
 
     test('run task continues across successful paused checkpoints', () async {
-      serverManager.chatClient = _QueueCompletionClient([
-        _commandPlanTaskResponse({
-          ..._planJson(title: 'Multi-step task'),
-          'steps': [
-            {
-              'id': 'inspect',
-              'title': 'Inspect',
-              'objective': 'Inspect the workspace.',
-              'instructions': ['Read the relevant files.'],
-              'mayEditFiles': false,
-            },
-            {
-              'id': 'report',
-              'title': 'Report',
-              'objective': 'Write the report.',
-              'instructions': ['Summarise the findings.'],
-              'mayEditFiles': false,
-            },
-          ],
-        }),
-        ChatCompletionResponse(
-          content: jsonEncode({
-            'status': 'completed',
-            'summary': 'Inspection complete.',
-            'memoryUpdate': 'The workspace was inspected.',
+      serverManager.setCompletionProviderForTesting(
+        _QueueCompletionClient([
+          _commandPlanTaskResponse({
+            ..._planJson(title: 'Multi-step task'),
+            'steps': [
+              {
+                'id': 'inspect',
+                'title': 'Inspect',
+                'objective': 'Inspect the workspace.',
+                'instructions': ['Read the relevant files.'],
+                'mayEditFiles': false,
+              },
+              {
+                'id': 'report',
+                'title': 'Report',
+                'objective': 'Write the report.',
+                'instructions': ['Summarise the findings.'],
+                'mayEditFiles': false,
+              },
+            ],
           }),
-        ),
-        ChatCompletionResponse(
-          content: jsonEncode({
-            'status': 'completed',
-            'summary': 'Report complete.',
-            'memoryUpdate': 'The report was written.',
-          }),
-        ),
-      ]);
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Inspection complete.',
+              'memoryUpdate': 'The workspace was inspected.',
+            }),
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Report complete.',
+              'memoryUpdate': 'The report was written.',
+            }),
+          ),
+        ]),
+      );
       await chat.attachWorkspace(tempDir.path);
 
       await chat.send('/task Inspect and report');
@@ -349,38 +368,44 @@ void main() {
     });
 
     test('supports /continue-project for the active project', () async {
-      serverManager.chatClient = _QueueCompletionClient([
-        _commandPlanProjectResponse({
-          'tasks': [
-            _projectTaskJson(relevantSuccessCriteria: const ['Finish']),
-          ],
-          'openQuestions': [],
-        }),
-        ChatCompletionResponse(
-          content: jsonEncode({
-            'task': _projectTaskJson(relevantSuccessCriteria: const ['Finish']),
-          }),
-        ),
-        _commandPlanTaskResponse(_projectPlanJson(title: 'Project task')),
-        ChatCompletionResponse(
-          content: jsonEncode({
-            'status': 'completed',
-            'summary': 'Project task complete.',
-            'memoryUpdate': 'Screen built.',
-          }),
-        ),
-        ChatCompletionResponse(
-          content: jsonEncode({
-            'complete': true,
-            'finalSummary': 'All done.',
-            'remainingCriteria': [],
+      serverManager.setCompletionProviderForTesting(
+        _QueueCompletionClient([
+          _commandPlanProjectResponse({
+            'tasks': [
+              _projectTaskJson(relevantSuccessCriteria: const ['Finish']),
+            ],
             'openQuestions': [],
           }),
-        ),
-      ]);
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'task': _projectTaskJson(
+                relevantSuccessCriteria: const ['Finish'],
+              ),
+            }),
+          ),
+          _commandPlanTaskResponse(_projectPlanJson(title: 'Project task')),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'status': 'completed',
+              'summary': 'Project task complete.',
+              'memoryUpdate': 'Screen built.',
+            }),
+          ),
+          ChatCompletionResponse(
+            content: jsonEncode({
+              'complete': true,
+              'finalSummary': 'All done.',
+              'remainingCriteria': [],
+              'openQuestions': [],
+            }),
+          ),
+        ]),
+      );
       await chat.attachWorkspace(tempDir.path);
       final seedProject = _projectDocument();
-      final seedProjectRepository = ProjectRepository();
+      final seedProjectRepository = ProjectRepository(
+        coordinator: WorkspacePersistenceCoordinator(),
+      );
       chat.dispatchActiveProject(
         (await seedProjectRepository.saveSnapshot(
           tempDir.path,
@@ -400,46 +425,50 @@ void main() {
     });
 
     test('step finished message omits future planned artifacts', () async {
-      serverManager.chatClient = _QueueChatClient([
-        jsonEncode({
-          'title': 'Artifact task',
-          'goal': 'Analyze and report',
-          'constraints': ['Stay inside the workspace.'],
-          'successCriteria': ['Report is written.'],
-          'steps': [
-            {
-              'id': 'inspect',
-              'title': 'Inspect',
-              'objective': 'Inspect the codebase.',
-              'instructions': ['Read relevant files.'],
-              'mayEditFiles': false,
-              'artifacts': [
-                {'path': '.agent/tasks/{{task_id}}/overview.md'},
-              ],
-            },
-            {
-              'id': 'report',
-              'title': 'Report',
-              'objective': 'Write final report.',
-              'instructions': ['Write final report.'],
-              'mayEditFiles': false,
-              'artifacts': [
-                {'path': '.agent/tasks/{{task_id}}/final_report.md'},
-              ],
-            },
-          ],
-        }),
-      ]);
+      serverManager.setCompletionProviderForTesting(
+        _QueueChatClient([
+          jsonEncode({
+            'title': 'Artifact task',
+            'goal': 'Analyze and report',
+            'constraints': ['Stay inside the workspace.'],
+            'successCriteria': ['Report is written.'],
+            'steps': [
+              {
+                'id': 'inspect',
+                'title': 'Inspect',
+                'objective': 'Inspect the codebase.',
+                'instructions': ['Read relevant files.'],
+                'mayEditFiles': false,
+                'artifacts': [
+                  {'path': '.agent/tasks/{{task_id}}/overview.md'},
+                ],
+              },
+              {
+                'id': 'report',
+                'title': 'Report',
+                'objective': 'Write final report.',
+                'instructions': ['Write final report.'],
+                'mayEditFiles': false,
+                'artifacts': [
+                  {'path': '.agent/tasks/{{task_id}}/final_report.md'},
+                ],
+              },
+            ],
+          }),
+        ]),
+      );
       await chat.attachWorkspace(tempDir.path);
       await chat.send('/plan Analyze the codebase');
 
-      serverManager.chatClient = _QueueChatClient([
-        jsonEncode({
-          'status': 'completed',
-          'summary': 'Inspection complete.',
-          'memoryUpdate': 'Inspected the codebase.',
-        }),
-      ]);
+      serverManager.setCompletionProviderForTesting(
+        _QueueChatClient([
+          jsonEncode({
+            'status': 'completed',
+            'summary': 'Inspection complete.',
+            'memoryUpdate': 'Inspected the codebase.',
+          }),
+        ]),
+      );
 
       await chat.runNextTaskPhase();
 
@@ -455,36 +484,38 @@ void main() {
     test(
       'renders task model reasoning and tool calls as chat bubbles',
       () async {
-        serverManager.chatClient = _QueueCompletionClient([
-          _commandPlanTaskResponse(
-            _planJson(title: 'Visible task'),
-            reasoning: 'Planning rationale.',
-            content: jsonEncode(_planJson(title: 'Visible task')),
-          ),
-          ChatCompletionResponse(
-            reasoning: 'Need a calculation.',
-            content: '',
-            toolCalls: [
-              ChatCompletionToolCall(
-                id: 'call_calc',
-                name: 'calculator',
-                arguments: jsonEncode({
-                  'paramA': 1,
-                  'paramB': 2,
-                  'operator': '+',
-                }),
-              ),
-            ],
-          ),
-          ChatCompletionResponse(
-            reasoning: 'Finalizing from tool output.',
-            content: jsonEncode({
-              'status': 'completed',
-              'summary': 'Calculated result.',
-              'memoryUpdate': 'Calculator returned 3.',
-            }),
-          ),
-        ]);
+        serverManager.setCompletionProviderForTesting(
+          _QueueCompletionClient([
+            _commandPlanTaskResponse(
+              _planJson(title: 'Visible task'),
+              reasoning: 'Planning rationale.',
+              content: jsonEncode(_planJson(title: 'Visible task')),
+            ),
+            ChatCompletionResponse(
+              reasoning: 'Need a calculation.',
+              content: '',
+              toolCalls: [
+                ChatCompletionToolCall(
+                  id: 'call_calc',
+                  name: 'calculator',
+                  arguments: jsonEncode({
+                    'paramA': 1,
+                    'paramB': 2,
+                    'operator': '+',
+                  }),
+                ),
+              ],
+            ),
+            ChatCompletionResponse(
+              reasoning: 'Finalizing from tool output.',
+              content: jsonEncode({
+                'status': 'completed',
+                'summary': 'Calculated result.',
+                'memoryUpdate': 'Calculator returned 3.',
+              }),
+            ),
+          ]),
+        );
         await chat.attachWorkspace(tempDir.path);
 
         await chat.send('/task Build the reporting screen');
@@ -516,7 +547,7 @@ void main() {
       'uses the active task phase payload for diagnostics context',
       () async {
         final client = _StuckTaskClient(_planJson(title: 'Diagnostic task'));
-        serverManager.chatClient = client;
+        serverManager.setCompletionProviderForTesting(client);
         chat.updateCurrentModelSnapshot(
           ModelJson.decode<ModelConfigurationSnapshot>({
             'modelName': 'test',
@@ -543,7 +574,7 @@ void main() {
       'cancels a stuck task run and keeps the transcript and task',
       () async {
         final client = _StuckTaskClient(_planJson(title: 'Cancellable task'));
-        serverManager.chatClient = client;
+        serverManager.setCompletionProviderForTesting(client);
         await chat.attachWorkspace(tempDir.path);
 
         final sendFuture = chat.send('/task Build the reporting screen');
@@ -591,9 +622,9 @@ void main() {
     );
 
     test('scopes transient tasks and deletes them on new chat', () async {
-      serverManager.chatClient = _QueueChatClient([
-        jsonEncode(_planJson(title: 'Scoped task')),
-      ]);
+      serverManager.setCompletionProviderForTesting(
+        _QueueChatClient([jsonEncode(_planJson(title: 'Scoped task'))]),
+      );
       await chat.attachWorkspace(tempDir.path);
 
       await chat.send('/plan Build the reporting screen');
@@ -612,9 +643,9 @@ void main() {
     });
 
     test('moves transient task scope when the chat is saved', () async {
-      serverManager.chatClient = _QueueChatClient([
-        jsonEncode(_planJson(title: 'Saved scoped task')),
-      ]);
+      serverManager.setCompletionProviderForTesting(
+        _QueueChatClient([jsonEncode(_planJson(title: 'Saved scoped task'))]),
+      );
       await chat.attachWorkspace(tempDir.path);
 
       await chat.send('/plan Build the reporting screen');
@@ -635,7 +666,9 @@ void main() {
     });
 
     test('scopes transient projects and deletes them on new chat', () async {
-      serverManager.chatClient = _QueueChatClient([jsonEncode({})]);
+      serverManager.setCompletionProviderForTesting(
+        _QueueChatClient([jsonEncode({})]),
+      );
       await chat.attachWorkspace(tempDir.path);
       chat.updateExecutionMode(ExecutionMode.project);
 
@@ -655,7 +688,9 @@ void main() {
     });
 
     test('moves transient project scope when the chat is saved', () async {
-      serverManager.chatClient = _QueueChatClient([jsonEncode({})]);
+      serverManager.setCompletionProviderForTesting(
+        _QueueChatClient([jsonEncode({})]),
+      );
       await chat.attachWorkspace(tempDir.path);
       chat.updateExecutionMode(ExecutionMode.project);
 
@@ -679,7 +714,9 @@ void main() {
     test(
       'project mode input updates the active project instead of replacing it',
       () async {
-        serverManager.chatClient = _QueueChatClient([jsonEncode({})]);
+        serverManager.setCompletionProviderForTesting(
+          _QueueChatClient([jsonEncode({})]),
+        );
         await chat.attachWorkspace(tempDir.path);
         chat.updateExecutionMode(ExecutionMode.project);
 
@@ -693,7 +730,9 @@ void main() {
           chat.activeProject?.memory.map((item) => item.content).join('\n'),
           contains('SvelteKit'),
         );
-        final projectRepository = ProjectRepository();
+        final projectRepository = ProjectRepository(
+          coordinator: WorkspacePersistenceCoordinator(),
+        );
         expect(
           await projectRepository.listProjects(tempDir.path),
           hasLength(1),
@@ -702,20 +741,22 @@ void main() {
     );
 
     test('supports /continue command for the active task', () async {
-      serverManager.chatClient = _QueueChatClient([
-        jsonEncode({
-          'status': 'completed',
-          'summary': 'Continued step.',
-          'memoryUpdate': 'Done.',
-        }),
-      ]);
+      serverManager.setCompletionProviderForTesting(
+        _QueueChatClient([
+          jsonEncode({
+            'status': 'completed',
+            'summary': 'Continued step.',
+            'memoryUpdate': 'Done.',
+          }),
+        ]),
+      );
       await chat.attachWorkspace(tempDir.path);
-      chat.dispatchActiveTask(_taskDocument());
+      final task = _taskDocument();
+      chat.dispatchActiveTask(task);
       chat.dispatchActiveTask(
-        (await TaskRepository().saveSnapshot(
-          tempDir.path,
-          chat.activeTask!,
-        )).value,
+        (await TaskRepository(
+          coordinator: WorkspacePersistenceCoordinator(),
+        ).saveSnapshot(tempDir.path, task)).value,
       );
 
       await chat.send('/continue');
@@ -758,20 +799,29 @@ void main() {
       final taskController = createTestTaskController(
         toolService: toolService,
         sandbox: sandbox,
-        persistence: TaskRepository(),
+        persistence: TaskRepository(
+          coordinator: WorkspacePersistenceCoordinator(),
+        ),
       );
       final projectApplication = createTestProjectApplication(
         taskController: taskController,
-        repository: ProjectRepository(),
+        repository: ProjectRepository(
+          coordinator: WorkspacePersistenceCoordinator(),
+        ),
       );
       tabs = ChatWorkspaceController(
         serverManager: LlamaServerManager(),
         chatLibrary: chatLibrary,
         systemPromptLibrary: promptLibrary,
         toolService: toolService,
+        toolProtocol: ToolProtocolAdapter(registry: toolService),
+        toolExecution: ChatToolExecutionService(
+          protocol: ToolProtocolAdapter(registry: toolService),
+        ),
         taskQueries: taskController,
         taskSessions: taskController,
         taskPresentation: taskController,
+        panelProtocol: const ChatPanelProtocolAdapter(),
         taskPlanning: taskController,
         taskExecution: taskController,
         taskRecovery: taskController,
@@ -838,9 +888,12 @@ void main() {
     });
 
     test('deletes saved chat task folders from the chat list path', () async {
-      tabs.serverManager.chatClient = _QueueChatClient([
-        jsonEncode(_planJson(title: 'Deleted tab task')),
-      ]);
+      (tabs.serverManager as LlamaServerManager)
+          .setCompletionProviderForTesting(
+            _QueueChatClient([
+              jsonEncode(_planJson(title: 'Deleted tab task')),
+            ]),
+          );
       await tabs.activeChat?.attachWorkspace(tempDir.path);
 
       await tabs.activeChat?.send('/plan Build the reporting screen');
@@ -864,7 +917,10 @@ void main() {
     test(
       'deletes saved chat project folders from the chat list path',
       () async {
-        tabs.serverManager.chatClient = _QueueChatClient([jsonEncode({})]);
+        (tabs.serverManager as LlamaServerManager)
+            .setCompletionProviderForTesting(
+              _QueueChatClient([jsonEncode({})]),
+            );
         await tabs.activeChat?.attachWorkspace(tempDir.path);
         tabs.activeChat?.updateExecutionMode(ExecutionMode.project);
 
@@ -893,7 +949,9 @@ void main() {
         id: 'task_orphaned',
         chatSessionId: 'deleted_chat',
       );
-      await TaskRepository().saveSnapshot(tempDir.path, orphaned);
+      await TaskRepository(
+        coordinator: WorkspacePersistenceCoordinator(),
+      ).saveSnapshot(tempDir.path, orphaned);
       final taskDir = Directory(
         path.join(tempDir.path, '.agent', 'tasks', 'task_orphaned'),
       );
@@ -911,7 +969,9 @@ void main() {
         id: 'project_orphaned',
         chatSessionId: 'deleted_chat',
       );
-      final projectRepository = ProjectRepository();
+      final projectRepository = ProjectRepository(
+        coordinator: WorkspacePersistenceCoordinator(),
+      );
       await projectRepository.saveSnapshot(tempDir.path, orphaned);
       final projectDir = Directory(
         path.join(tempDir.path, '.agent', 'projects', 'project_orphaned'),
@@ -1170,14 +1230,14 @@ class _QueueChatClient extends ChatClient {
   @override
   Future<int> countInputTokens({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     CancellationToken? cancellationToken,
   }) async => 0;
 
   @override
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     Object? cancellationToken,
     String diagnosticsLabel = 'Model call',
     int? contextLimitTokens,
@@ -1206,26 +1266,28 @@ class _QueueChatClient extends ChatClient {
 class _RecordingStreamClient extends ChatClient {
   _RecordingStreamClient() : super(baseUrl: 'http://localhost', model: 'test');
 
-  final Completer<Map<String, dynamic>> extraParams = Completer();
+  final Completer<ModelRequestOptions> extraParams = Completer();
 
   @override
   Future<int> countInputTokens({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     CancellationToken? cancellationToken,
   }) async => 0;
 
   @override
   Stream<ChatToken> streamMessage({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     Object? cancellationToken,
     String diagnosticsLabel = 'Model call',
     int? contextLimitTokens,
     int? inputTokensHint,
   }) async* {
     if (!this.extraParams.isCompleted) {
-      this.extraParams.complete(extraParams ?? const {});
+      this.extraParams.complete(
+        extraParams ?? const ModelRequestOptions.empty(),
+      );
     }
     yield ChatToken(content: 'Done.');
   }
@@ -1233,7 +1295,7 @@ class _RecordingStreamClient extends ChatClient {
   @override
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     Object? cancellationToken,
     String diagnosticsLabel = 'Model call',
     int? contextLimitTokens,
@@ -1246,14 +1308,8 @@ class _RecordingStreamClient extends ChatClient {
   void dispose() {}
 }
 
-Set<String> _toolNames(Map<String, dynamic>? extraParams) {
-  final tools = extraParams?['tools'];
-  if (tools is! List) return const {};
-  return {
-    for (final tool in tools.whereType<Map>())
-      if (tool['function'] is Map)
-        ((tool['function'] as Map)['name'] ?? '').toString(),
-  }..remove('');
+Set<String> _toolNames(ModelRequestOptions? extraParams) {
+  return {for (final tool in extraParams?.tools ?? const []) tool.id};
 }
 
 class _QueueCompletionClient extends ChatClient {
@@ -1266,14 +1322,14 @@ class _QueueCompletionClient extends ChatClient {
   @override
   Future<int> countInputTokens({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     CancellationToken? cancellationToken,
   }) async => 0;
 
   @override
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     Object? cancellationToken,
     String diagnosticsLabel = 'Model call',
     int? contextLimitTokens,
@@ -1301,7 +1357,7 @@ class _StuckTaskClient extends ChatClient {
   @override
   Future<int> countInputTokens({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     CancellationToken? cancellationToken,
   }) async => 0;
 
@@ -1311,7 +1367,7 @@ class _StuckTaskClient extends ChatClient {
   @override
   Stream<ChatToken> streamMessage({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     Object? cancellationToken,
     String diagnosticsLabel = 'Model call',
     int? contextLimitTokens,
@@ -1320,7 +1376,7 @@ class _StuckTaskClient extends ChatClient {
     requestEstimates.add(
       ContextEstimator.estimateChatCompletionRequest(
         messages: messages,
-        extraParams: extraParams ?? const {},
+        extraParams: extraParams ?? const ModelRequestOptions.empty(),
       ),
     );
     _streamCalls++;
@@ -1387,7 +1443,7 @@ class _StuckTaskClient extends ChatClient {
   @override
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     Object? cancellationToken,
     String diagnosticsLabel = 'Model call',
     int? contextLimitTokens,
@@ -1409,7 +1465,7 @@ class _BlockingCountClient extends ChatClient {
   @override
   Future<int> countInputTokens({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     CancellationToken? cancellationToken,
   }) async {
     if (!countStarted.isCompleted) countStarted.complete();
@@ -1427,7 +1483,7 @@ class _BlockingCountClient extends ChatClient {
   @override
   Stream<ChatToken> streamMessage({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     Object? cancellationToken,
     String diagnosticsLabel = 'Model call',
     int? contextLimitTokens,
@@ -1449,14 +1505,14 @@ class _TwoToolClient extends ChatClient {
   @override
   Future<int> countInputTokens({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     CancellationToken? cancellationToken,
   }) async => 0;
 
   @override
   Stream<ChatToken> streamMessage({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     Object? cancellationToken,
     String diagnosticsLabel = 'Model call',
     int? contextLimitTokens,

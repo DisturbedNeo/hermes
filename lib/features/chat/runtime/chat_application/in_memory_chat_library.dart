@@ -1,10 +1,9 @@
-import 'package:hermes/shared_kernel/bubble.dart';
-import 'package:hermes/shared_kernel/model_configuration.dart';
-import 'package:hermes/shared_kernel/saved_chat.dart';
-import 'package:hermes/shared_kernel/system_prompt.dart';
-import 'package:hermes/shared_kernel/chat_library_port.dart';
-import 'package:hermes/shared_kernel/model_json.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/features/chat/application/contracts/bubble.dart';
+import 'package:hermes/features/model/application/model_configuration.dart';
+import 'package:hermes/features/chat/application/contracts/saved_chat.dart';
+import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
+import 'package:hermes/features/chat/application/contracts/chat_library_port.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
 
 /// Small chat repository double for application tests.
 class InMemoryChatLibrary implements ChatLibraryPort {
@@ -42,7 +41,7 @@ class InMemoryChatLibrary implements ChatLibraryPort {
     String? chatId,
     required String title,
     required DateTime now,
-    required String? modelSnapshotJson,
+    required ModelConfigurationSnapshot? modelSnapshot,
     required WorkspaceAttachment? workspace,
     required SystemPromptSnapshot? systemPromptSnapshot,
     required List<Bubble> messages,
@@ -55,11 +54,7 @@ class InMemoryChatLibrary implements ChatLibraryPort {
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
       lastOpenedAt: existing?.lastOpenedAt,
-      modelSnapshot: modelSnapshotJson == null
-          ? null
-          : ModelJson.decodeString<ModelConfigurationSnapshot>(
-              modelSnapshotJson,
-            ),
+      modelSnapshot: modelSnapshot,
       workspace: workspace,
       systemPromptSnapshot: systemPromptSnapshot,
     );

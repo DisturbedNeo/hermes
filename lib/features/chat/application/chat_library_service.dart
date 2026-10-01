@@ -1,16 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:hermes/shared_kernel/message_role.dart';
-import 'package:hermes/shared_kernel/bubble.dart';
-import 'package:hermes/shared_kernel/model_configuration.dart';
-import 'package:hermes/shared_kernel/saved_chat.dart';
-import 'package:hermes/shared_kernel/system_prompt.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/model_json.dart';
-import 'package:hermes/shared_kernel/chat_library_port.dart';
+import 'package:hermes/features/chat/application/contracts/message_role.dart';
+import 'package:hermes/features/chat/application/contracts/bubble.dart';
+import 'package:hermes/features/model/application/model_configuration.dart';
+import 'package:hermes/features/chat/application/contracts/saved_chat.dart';
+import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/features/chat/application/contracts/chat_library_port.dart';
 
-import 'package:hermes/shared_kernel/disposable.dart';
+import 'package:hermes/core/disposable.dart';
 
 /// Orchestrator for chat library operations.
 ///
@@ -60,9 +59,7 @@ class ChatLibraryService extends ChangeNotifier implements Disposable {
       chatId: chatId,
       title: resolvedTitle,
       now: now,
-      modelSnapshotJson: modelSnapshot == null
-          ? null
-          : ModelJson.encodeString(modelSnapshot),
+      modelSnapshot: modelSnapshot,
       workspace: workspace,
       systemPromptSnapshot: systemPromptSnapshot,
       messages: messages,

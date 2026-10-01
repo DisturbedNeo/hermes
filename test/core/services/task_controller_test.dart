@@ -1,21 +1,24 @@
 import 'dart:convert';
+import 'package:hermes/features/persistence/infrastructure/workspace_persistence_coordinator.dart';
 import 'package:hermes/app/test_factories.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/context_estimator.dart';
-import 'package:hermes/shared_kernel/chat_message.dart';
-import 'package:hermes/shared_kernel/compaction_settings.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/shared_kernel/task_system_settings.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/model_json.dart';
+import 'package:hermes/features/chat/application/protocol/context_estimator.dart';
+import 'package:hermes/features/chat/application/protocol/chat_message_wire_adapter.dart';
+import 'package:hermes/features/chat/application/contracts/chat_message.dart';
+import 'package:hermes/features/chat/application/contracts/compaction_settings.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
+import 'package:hermes/core/model_json.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/platform/host_command_runner.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/features/task/infrastructure/task_repository.dart';
-import 'package:hermes/features/task/domain/task_planning_models.dart';
+import 'package:hermes/features/task/application/contracts/task_planning_models.dart';
 import 'package:hermes/platform/tool_service.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
 import 'package:path/path.dart' as path;
@@ -37,7 +40,9 @@ void main() {
       service = createTestTaskController(
         toolService: ToolService(workspaceSandbox: sandbox),
         sandbox: sandbox,
-        persistence: TaskRepository(),
+        persistence: TaskRepository(
+          coordinator: WorkspacePersistenceCoordinator(),
+        ),
       );
     });
 
@@ -431,7 +436,9 @@ void main() {
           status: TaskStepStatus.pending,
         ),
       );
-      final persisted = await TaskRepository().saveSnapshot(root.path, task);
+      final persisted = await TaskRepository(
+        coordinator: WorkspacePersistenceCoordinator(),
+      ).saveSnapshot(root.path, task);
       final client = _QueueChatClient([
         jsonEncode({
           'status': 'completed',
@@ -2345,7 +2352,9 @@ void main() {
       );
 
       final finalRequest = jsonEncode(
-        client.seenMessages.last.map(ModelJson.encode).toList(),
+        client.seenMessages.last
+            .map(const ChatMessageWireAdapter().encode)
+            .toList(),
       );
 
       expect(updated.status, TaskStatus.completed);
@@ -2606,14 +2615,14 @@ class _QueueChatClient extends ChatClient {
   @override
   Future<int> countInputTokens({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     CancellationToken? cancellationToken,
   }) async => 0;
 
   @override
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     Object? cancellationToken,
     String diagnosticsLabel = 'Model call',
     int? contextLimitTokens,
@@ -2657,17 +2666,17 @@ class _QueueCompletionClient extends ChatClient {
   @override
   Future<int> countInputTokens({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     CancellationToken? cancellationToken,
   }) async => ContextEstimator.estimateChatCompletionRequest(
     messages: messages,
-    extraParams: extraParams ?? const {},
+    extraParams: extraParams ?? const ModelRequestOptions.empty(),
   );
 
   @override
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     Object? cancellationToken,
     String diagnosticsLabel = 'Model call',
     int? contextLimitTokens,
@@ -2680,14 +2689,8 @@ class _QueueCompletionClient extends ChatClient {
     return _responses[index];
   }
 
-  Set<String> _toolNames(Map<String, dynamic>? extraParams) {
-    final tools = extraParams?['tools'];
-    if (tools is! List) return const {};
-    return {
-      for (final tool in tools.whereType<Map>())
-        if (tool['function'] is Map)
-          ((tool['function'] as Map)['name'] ?? '').toString(),
-    }..remove('');
+  Set<String> _toolNames(ModelRequestOptions? extraParams) {
+    return {for (final tool in extraParams?.tools ?? const []) tool.id};
   }
 
   @override
@@ -2700,14 +2703,14 @@ class _TransportFailureClient extends ChatClient {
   @override
   Future<int> countInputTokens({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     CancellationToken? cancellationToken,
   }) async => 0;
 
   @override
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     Object? cancellationToken,
     String diagnosticsLabel = 'Model call',
     int? contextLimitTokens,
@@ -2727,20 +2730,20 @@ class _RecordingHostCommandRunner extends HostCommandRunner {
   final List<String> commands = [];
 
   @override
-  Future<Map<String, dynamic>> run({
+  Future<WorkspaceCommandResult> run({
     required String commandLine,
     required String workingDirectory,
     required String relativeWorkingDirectory,
     CancellationToken? cancellationToken,
   }) async {
     commands.add(commandLine);
-    return {
-      'command': commandLine,
-      'working_directory': relativeWorkingDirectory,
-      if (includeExitCode) 'exit_code': 0,
-      'stdout': '',
-      'stderr': '',
-    };
+    return WorkspaceCommandResult(
+      command: commandLine,
+      workingDirectory: relativeWorkingDirectory,
+      exitCode: includeExitCode ? 0 : null,
+      stdout: '',
+      stderr: '',
+    );
   }
 }
 

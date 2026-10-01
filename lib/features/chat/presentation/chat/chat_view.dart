@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hermes/features/chat/presentation/responsive.dart';
 import 'package:hermes/features/chat/presentation/scroll.dart';
-import 'package:hermes/shared_kernel/bubble.dart';
+import 'package:hermes/features/chat/application/contracts/bubble.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
 import 'package:hermes/features/chat/application/chat_view_state.dart';
 import 'package:hermes/features/chat/presentation/keyboard_shortcuts.dart';
-import 'package:hermes/shared_kernel/preferences_port.dart';
-import 'package:hermes/shared_kernel/tool_contracts.dart';
+import 'package:hermes/features/settings/application/preferences_port.dart';
+import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/chat/presentation/chat/composer.dart';
 import 'package:hermes/features/chat/presentation/chat/diagnostics_bar.dart';
 import 'package:hermes/features/chat/presentation/chat/task_panel.dart';
@@ -294,12 +294,12 @@ class _ChatViewState extends State<ChatView> {
           preferencesService: widget.preferencesService,
         ),
         ValueListenableBuilder<dynamic>(
-          valueListenable: chat.serverManager.handle,
-          builder: (_, handle, _) {
+          valueListenable: chat.serverManager.session,
+          builder: (_, session, _) {
             return Composer(
               chat: chat,
               toolService: widget.toolService,
-              enabled: handle != null,
+              enabled: session.isActive,
               focusNode: _composerFocusNode,
             );
           },

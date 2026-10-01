@@ -2,13 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:hermes/shared_kernel/message_role.dart';
-import 'package:hermes/shared_kernel/stream_state.dart';
+import 'package:hermes/features/chat/application/contracts/message_role.dart';
+import 'package:hermes/features/chat/application/contracts/stream_state.dart';
 import 'package:hermes/features/chat/presentation/a11y.dart';
 import 'package:hermes/features/chat/presentation/responsive.dart';
-import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
-import 'package:hermes/shared_kernel/tool_contracts.dart';
+import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/chat/presentation/chat/tool_selector.dart';
 
 enum ComposerMode { send, generate, cont, cancel }
@@ -123,7 +123,7 @@ class _ComposerState extends State<Composer> {
     final chat = widget.chat;
     if (_previousStreamState == StreamState.streaming &&
         chat.chatStream.state == StreamState.idle) {
-      final serverActive = chat.serverManager.current != null;
+      final serverActive = chat.serverManager.session.value.isActive;
 
       if (serverActive && widget.enabled) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -492,7 +492,7 @@ class _ComposerState extends State<Composer> {
                   : Icons.account_tree_outlined,
               label: chat.executionMode == ExecutionMode.chat
                   ? 'Send'
-                  : chat.executionMode.label,
+                  : chat.executionModeLabel,
               onPressed: inputEnabled
                   ? () {
                       final trimmed = value.text.trim();

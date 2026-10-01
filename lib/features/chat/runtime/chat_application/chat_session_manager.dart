@@ -1,30 +1,32 @@
 import 'dart:async';
 
-import 'package:hermes/shared_kernel/message_role.dart';
-import 'package:hermes/shared_kernel/stream_state.dart';
-import 'package:hermes/shared_kernel/compaction_manager.dart';
-import 'package:hermes/shared_kernel/content_normaliser.dart';
-import 'package:hermes/shared_kernel/tool_caller.dart';
-import 'package:hermes/shared_kernel/uuid.dart';
-import 'package:hermes/shared_kernel/bubble.dart';
-import 'package:hermes/shared_kernel/chat_token.dart';
-import 'package:hermes/shared_kernel/model_configuration.dart';
-import 'package:hermes/shared_kernel/model_completion_port.dart';
+import 'package:hermes/features/chat/application/contracts/message_role.dart';
+import 'package:hermes/features/chat/application/contracts/stream_state.dart';
+import 'package:hermes/features/chat/application/protocol/compaction_manager.dart';
+import 'package:hermes/features/chat/application/contracts/content_normaliser.dart';
+import 'package:hermes/features/tools/application/protocol/tool_call_protocol_adapter.dart';
+import 'package:hermes/core/uuid.dart';
+import 'package:hermes/features/chat/application/contracts/bubble.dart';
+import 'package:hermes/features/chat/application/contracts/chat_token.dart';
+import 'package:hermes/features/model/application/model_configuration.dart';
+import 'package:hermes/features/model/application/model_completion_port.dart';
 import 'package:hermes/features/chat/runtime/chat_application/chat_stream.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';
-import 'package:hermes/shared_kernel/payload_builder.dart';
-import 'package:hermes/shared_kernel/assistant_ops.dart';
-import 'package:hermes/shared_kernel/buffered_token_writer.dart';
+import 'package:hermes/features/chat/application/protocol/payload_builder.dart';
+import 'package:hermes/features/chat/application/contracts/assistant_ops.dart';
+import 'package:hermes/features/chat/application/contracts/buffered_token_writer.dart';
+import 'package:hermes/features/chat/application/protocol/chat_tool_call_protocol_adapter.dart';
 import 'package:hermes/features/model/application/model_server_port.dart';
-import 'package:hermes/shared_kernel/preferences_port.dart';
-import 'package:hermes/shared_kernel/model_output.dart';
-import 'package:hermes/shared_kernel/tool_contracts.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/features/settings/application/preferences_port.dart';
+import 'package:hermes/features/model/application/model_output.dart';
+import 'package:hermes/features/tools/application/tool_contracts.dart';
+import 'package:hermes/features/tools/application/tool_protocol_adapter.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/chat/runtime/chat_session_host.dart';
 import 'package:hermes/features/chat/runtime/chat_application/chat_tool_execution_service.dart';
 
-import 'package:hermes/shared_kernel/disposable.dart';
+import 'package:hermes/core/disposable.dart';
 
 /// Manages the active chat session's streaming and LLM communication.
 ///
@@ -66,19 +68,14 @@ class ChatSessionManager implements Disposable {
     required ChatStream<ChatToken> chatStream,
     required ModelServerPort serverManager,
     required ToolRegistryPort toolService,
-    ChatToolExecutionPort? toolExecution,
+    required ChatToolExecutionPort toolExecution,
     required PreferencesPort preferencesService,
     required ChatSessionHost host,
   }) : _messageStore = messageStore,
        _chatStream = chatStream,
        _serverManager = serverManager,
        _toolService = toolService,
-       _toolExecution =
-           toolExecution ??
-           ChatToolExecutionService(
-             toolService: toolService,
-             messageStore: messageStore,
-           ),
+       _toolExecution = toolExecution,
        _preferencesService = preferencesService,
        _host = host {
     _tokenWriter = BufferedTokenWriter(
@@ -104,7 +101,7 @@ class ChatSessionManager implements Disposable {
     _tokenWriter.flush();
     if (_chatStream.isStreaming) return;
 
-    final client = _serverManager.chatClient;
+    final client = _serverManager.completionProvider;
     if (client == null) return;
 
     final token = CancellationToken();
@@ -255,7 +252,7 @@ class ChatSessionManager implements Disposable {
       await _finishCancelledGeneration(token, generationId);
     } catch (e) {
       if (!_isActiveGeneration(token, generationId)) return;
-      _serverManager.diagnostics.recordCompactionFailed(e);
+      _serverManager.telemetry.recordCompactionFailed(e);
       _messageStore.clearCurrentId();
       await _chatStream.stop(next: StreamState.error);
       _activeGenerationToken = null;
@@ -318,7 +315,7 @@ class ChatSessionManager implements Disposable {
 
   Future<Set<String>> _compactContextIfNeeded({
     required ModelCompletionPort client,
-    required Map<String, dynamic> extraParams,
+    required ModelRequestOptions extraParams,
     CancellationToken? cancellationToken,
   }) async {
     final snapshot = currentModelSnapshot;
@@ -328,9 +325,9 @@ class ChatSessionManager implements Disposable {
     final manager = CompactionManager(settings: settings, client: client);
     void status(String message) {
       if (_serverManager.diagnostics.compactionActive) {
-        _serverManager.diagnostics.recordCompactionStatus(message);
+        _serverManager.telemetry.recordCompactionStatus(message);
       } else {
-        _serverManager.diagnostics.recordCompactionStarted(message);
+        _serverManager.telemetry.recordCompactionStarted(message);
       }
       _host.sessionNotifyListeners();
     }
@@ -357,7 +354,7 @@ class ChatSessionManager implements Disposable {
         ? result.emergencyOmittedMessageIds.length
         : null;
 
-    _serverManager.diagnostics.recordCompactionFinished(
+    _serverManager.telemetry.recordCompactionFinished(
       status: finishStatus,
       tokensSaved: savedTokens,
       messagesCovered: affectedMessages,
@@ -433,22 +430,40 @@ class ChatSessionManager implements Disposable {
     required CancellationToken token,
     required int generationId,
   }) async {
-    final assistantBubble = await _toolExecution.executePendingCalls(
-      calls: calls,
+    await _toolExecution.executePendingCalls(
+      calls: [
+        for (final entry in calls)
+          const ChatToolCallProtocolAdapter().decode(
+            index: entry.key,
+            call: entry.value,
+          ),
+      ],
       workspace: workspace,
       cancellationToken: token,
+      onResult: (result) {
+        final currentBubble = _messageStore.currentMessage;
+        if (currentBubble == null) return;
+        final existing = currentBubble.tools[result.index];
+        if (existing == null) return;
+        final tools = Map<int, BubbleToolCall>.from(currentBubble.tools);
+        tools[result.index] = existing.copyWith(
+          result: ToolProtocolAdapter.encodeResult(result.result),
+        );
+        _messageStore.upsert(currentBubble.copyWith(tools: tools));
+      },
     );
-    if (assistantBubble == null) return;
+    final currentBubble = _messageStore.currentMessage;
+    if (currentBubble == null) return;
 
     token.throwIfCancelled();
     await _streamGenerationRequest(
-      client: _serverManager.chatClient!,
+      client: _serverManager.completionProvider!,
       token: token,
       generationId: generationId,
       includeToolResults: true,
       addGenerationPrompt: true,
       selectedToolIds: const [],
-      anchorId: assistantBubble.id,
+      anchorId: currentBubble.id,
     );
   }
 

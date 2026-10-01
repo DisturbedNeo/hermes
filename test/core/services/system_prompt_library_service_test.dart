@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
-import 'package:hermes/shared_kernel/prompt_library_seed_data.dart';
+import 'package:hermes/features/chat/infrastructure/prompt_library_seed_data.dart';
 import 'package:hermes/features/chat/infrastructure/system_prompt_library_repository.dart';
 import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
 import 'package:path/path.dart' as path;

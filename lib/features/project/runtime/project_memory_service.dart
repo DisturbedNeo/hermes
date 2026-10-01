@@ -1,5 +1,5 @@
-import 'package:hermes/shared_kernel/uuid.dart';
-import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/core/uuid.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
 
 class ProjectMemoryMutation {
   final ProjectAggregate project;

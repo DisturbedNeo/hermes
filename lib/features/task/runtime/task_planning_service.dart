@@ -1,9 +1,9 @@
-import 'package:hermes/shared_kernel/planning_metrics.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/model_completion_port.dart';
-import 'package:hermes/shared_kernel/planning_runtime.dart';
-import 'package:hermes/shared_kernel/model_output.dart';
+import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/core/cancellation.dart';
+import 'package:hermes/features/model/application/model_completion_port.dart';
+import 'package:hermes/features/task/application/protocol/planning_runtime.dart';
+import 'package:hermes/features/model/application/model_output.dart';
 import 'package:hermes/features/task/runtime/task_planning_tools.dart';
 
 class TaskPlanningResult {

@@ -1,4 +1,4 @@
-import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
 
 enum ProjectPlanPatchSource {
   initialization,

@@ -1,12 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/domain/task.dart';
+import '../helpers/planning_test_helpers.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
 import 'package:hermes/features/project/runtime/project_planning_tools.dart';
 import 'package:hermes/features/project/runtime/project_planning_workspace_reader.dart';
 import 'package:hermes/features/project/runtime/project_view_service.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
 
 void main() {
@@ -36,13 +37,12 @@ void main() {
     expect(ids, isNot(contains('plan_set_project_details')));
     expect(registry.allowsWorkspaceMutation, isFalse);
 
+    final schema = registry.toolDefinitions
+        .singleWhere((item) => item.id == 'plan_add_tasks')
+        .schema
+        .toWire();
     final taskProperties =
-        ((registry.toolDefinitions
-                        .singleWhere((item) => item.id == 'plan_add_tasks')
-                        .schema['properties']
-                    as Map)['tasks']
-                as Map)['items']
-            as Map;
+        ((schema['properties'] as Map)['tasks'] as Map)['items'] as Map;
     final properties = taskProperties['properties'] as Map;
     expect(properties.keys, isNot(contains('id')));
     expect(properties.keys, isNot(contains('status')));
@@ -86,7 +86,7 @@ void main() {
     expect(ids, isNot(contains('write_file')));
     expect(registry.allowsWorkspaceMutation, isFalse);
 
-    final result = await registry.invoke('planning_read_file', {
+    final result = await invokePlanning(registry, 'planning_read_file', {
       'path': 'Design.md',
     });
     expect(result['ok'], isTrue);
@@ -108,14 +108,18 @@ void main() {
         registry.toolDefinitions.map((item) => item.id),
         contains('plan_set_project_details'),
       );
-      final updated = await registry.invoke('plan_set_project_details', {
-        'title': 'A more precise project',
-        'refined_goal': 'Deliver the verified bounded outcome.',
-        'constraints': ['Use only the attached workspace.'],
-      });
+      final updated = await invokePlanning(
+        registry,
+        'plan_set_project_details',
+        {
+          'title': 'A more precise project',
+          'refined_goal': 'Deliver the verified bounded outcome.',
+          'constraints': ['Use only the attached workspace.'],
+        },
+      );
 
       expect(updated['ok'], isTrue);
-      final view = await registry.invoke('project_view', {});
+      final view = await invokePlanning(registry, 'project_view', {});
       expect((view['project'] as Map)['title'], 'A more precise project');
       expect(
         (view['goal'] as Map)['refined'],
@@ -131,7 +135,7 @@ void main() {
     'draft commands use generated IDs and keep create separate from update',
     () async {
       final registry = _registry();
-      final added = await registry.invoke('plan_add_tasks', {
+      final added = await invokePlanning(registry, 'plan_add_tasks', {
         'tasks': [
           {
             'ref': 'scaffold',
@@ -148,7 +152,7 @@ void main() {
       final taskId = (((added['tasks'] as List).single as Map)['id']) as String;
       expect(taskId, startsWith('task_'));
 
-      final repeated = await registry.invoke('plan_add_tasks', {
+      final repeated = await invokePlanning(registry, 'plan_add_tasks', {
         'tasks': [
           {
             'ref': 'scaffold',
@@ -166,29 +170,33 @@ void main() {
         taskId,
       );
 
-      final updated = await registry.invoke('plan_update_task', {
+      final updated = await invokePlanning(registry, 'plan_update_task', {
         'task': 'scaffold',
         'title': 'Scaffold the reviewed slice',
       });
       expect(updated['ok'], isTrue);
       expect((((updated['task'] as Map)['id']) as String), taskId);
 
-      final attemptedCreateWithId = await registry.invoke('plan_add_tasks', {
-        'tasks': [
-          {
-            'id': 'pretend_replace',
-            'title': 'Invalid replacement',
-            'criterion_refs': ['criterion_001'],
-            'done_criteria': ['It is checked.'],
-            'out_of_scope': ['Unrelated work.'],
-          },
-        ],
-      });
+      final attemptedCreateWithId = await invokePlanning(
+        registry,
+        'plan_add_tasks',
+        {
+          'tasks': [
+            {
+              'id': 'pretend_replace',
+              'title': 'Invalid replacement',
+              'criterion_refs': ['criterion_001'],
+              'done_criteria': ['It is checked.'],
+              'out_of_scope': ['Unrelated work.'],
+            },
+          ],
+        },
+      );
       expect(attemptedCreateWithId['ok'], isFalse);
       expect(attemptedCreateWithId['code'], 'invalid_argument');
       expect(attemptedCreateWithId['path'], 'tasks[0].id');
 
-      final view = await registry.invoke('project_view', {});
+      final view = await invokePlanning(registry, 'project_view', {});
       expect(view['ok'], isTrue);
       expect(
         ((view['draft'] as Map)['diff'] as Map)['added_tasks'],
@@ -199,7 +207,7 @@ void main() {
         'Scaffold the reviewed slice',
       );
 
-      final detail = await registry.invoke('project_view', {
+      final detail = await invokePlanning(registry, 'project_view', {
         'task_ref': 'scaffold',
       });
       expect(detail['ok'], isTrue);
@@ -215,7 +223,7 @@ void main() {
     'preview and commit return compact validation and diff results',
     () async {
       final registry = _registry();
-      final added = await registry.invoke('plan_add_tasks', {
+      final added = await invokePlanning(registry, 'plan_add_tasks', {
         'tasks': [
           {
             'ref': 'checked',
@@ -228,7 +236,7 @@ void main() {
       });
       expect(added['ok'], isTrue);
 
-      final preview = await registry.invoke('plan_preview', {
+      final preview = await invokePlanning(registry, 'plan_preview', {
         'summary': 'Add the checked slice.',
         'rationale': 'The criterion needs one bounded implementation task.',
       });
@@ -239,12 +247,12 @@ void main() {
         hasLength(1),
       );
 
-      final committed = await registry.invoke('plan_commit', {});
+      final committed = await invokePlanning(registry, 'plan_commit', {});
       expect(committed['ok'], isTrue);
       expect(committed['changed'], isTrue);
       expect(committed['awaiting_approval'], isFalse);
 
-      final afterCommit = await registry.invoke('plan_add_note', {
+      final afterCommit = await invokePlanning(registry, 'plan_add_note', {
         'kind': 'assumption',
         'content': 'This must not be applied after commit.',
       });
@@ -257,7 +265,7 @@ void main() {
     'a failed batch command does not leave an earlier item in the draft',
     () async {
       final registry = _registry();
-      final result = await registry.invoke('plan_add_criteria', {
+      final result = await invokePlanning(registry, 'plan_add_criteria', {
         'criteria': [
           {'ref': 'temporary', 'statement': 'This item must be rolled back.'},
           {'ref': 'invalid'},
@@ -267,7 +275,7 @@ void main() {
       expect(result['ok'], isFalse);
       expect(result['path'], 'criteria[1].statement');
 
-      final dependent = await registry.invoke('plan_add_tasks', {
+      final dependent = await invokePlanning(registry, 'plan_add_tasks', {
         'tasks': [
           {
             'ref': 'dependent',

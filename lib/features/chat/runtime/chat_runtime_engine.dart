@@ -1,52 +1,60 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:hermes/shared_kernel/message_role.dart';
-import 'package:hermes/shared_kernel/bubble.dart';
-import 'package:hermes/shared_kernel/chat_token.dart';
-import 'package:hermes/shared_kernel/chat_persistence.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/shared_kernel/task_system_settings.dart';
-import 'package:hermes/shared_kernel/model_configuration.dart';
-import 'package:hermes/shared_kernel/saved_chat.dart';
-import 'package:hermes/shared_kernel/system_prompt.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/features/chat/application/contracts/message_role.dart';
+import 'package:hermes/features/chat/application/contracts/bubble.dart';
+import 'package:hermes/features/chat/application/contracts/chat_token.dart';
+import 'package:hermes/features/chat/application/contracts/chat_persistence.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
+import 'package:hermes/features/model/application/model_configuration.dart';
+import 'package:hermes/features/chat/application/contracts/saved_chat.dart';
+import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/runtime/chat_session_host.dart';
 import 'package:hermes/features/chat/runtime/chat_application/chat_command_coordinator.dart';
 import 'package:hermes/features/chat/application/chat_view_state.dart';
+import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
 import 'package:hermes/features/chat/domain/chat_state.dart';
 import 'package:hermes/features/chat/runtime/chat_application/chat_tool_execution_service.dart';
 import 'package:hermes/features/chat/runtime/chat_application/chat_stream.dart';
 import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';
 import 'package:hermes/features/project/application/project_application/project_ports.dart';
-import 'package:hermes/shared_kernel/persistence_contracts.dart';
+import 'package:hermes/features/persistence/application/persistence_contracts.dart';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
-import 'package:hermes/shared_kernel/task_summary.dart';
+import 'package:hermes/features/task/application/contracts/task_commands.dart';
+import 'package:hermes/features/project/application/contracts/project_commands.dart';
+import 'package:hermes/features/task/application/contracts/task_summary.dart';
 import 'package:hermes/features/model/application/model_server_port.dart';
-import 'package:hermes/shared_kernel/preferences_port.dart';
-import 'package:hermes/shared_kernel/tool_contracts.dart';
-import 'package:hermes/shared_kernel/workspace_ports.dart';
+import 'package:hermes/features/settings/application/preferences_port.dart';
+import 'package:hermes/features/tools/application/tool_contracts.dart';
+import 'package:hermes/features/tools/application/tool_protocol_adapter.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
 
-import 'package:hermes/shared_kernel/disposable.dart';
+import 'package:hermes/core/disposable.dart';
 
-import 'package:hermes/features/chat/runtime/chat_runtime_collaborators.dart';
+import 'package:hermes/features/chat/runtime/chat_session_runtime.dart';
+import 'package:hermes/features/chat/infrastructure/chat_panel_protocol_adapter.dart';
 
 class ChatRuntimeController extends ChangeNotifier
     implements Disposable, ChatSessionHost {
   static const String defaultSystemPromptName =
-      ChatRuntimeContext.defaultSystemPromptName;
+      ChatSessionRuntime.defaultSystemPromptName;
   static const String defaultSystemPromptText =
-      ChatRuntimeContext.defaultSystemPromptText;
+      ChatSessionRuntime.defaultSystemPromptText;
 
   ChatRuntimeController({
     String? tabId,
     required ModelServerPort serverManager,
     required ToolRegistryPort toolService,
+    required ToolProtocolAdapter toolProtocol,
+    required ChatToolExecutionPort toolExecution,
     required TaskQueryPort taskQueries,
     required TaskSessionPort taskSessions,
     required TaskPresentationPort taskPresentation,
+    required ChatPanelProtocolAdapter panelProtocol,
     required TaskPlanningPort taskPlanning,
     required TaskExecutionPort taskExecution,
     required TaskRecoveryPort taskRecovery,
@@ -60,15 +68,17 @@ class ChatRuntimeController extends ChangeNotifier
     required WorkspacePort workspaceService,
     required PreferencesPort preferencesService,
     ChatCommandCoordinator? commandCoordinator,
-    ChatToolExecutionPort? toolExecution,
     SystemPromptSnapshot? initialSystemPromptSnapshot,
-  }) : _delegate = ChatRuntimeContext(
+  }) : _delegate = ChatSessionRuntime(
          tabId: tabId,
          serverManager: serverManager,
          toolService: toolService,
+         toolProtocol: toolProtocol,
+         toolExecution: toolExecution,
          taskQueries: taskQueries,
          taskSessions: taskSessions,
          taskPresentation: taskPresentation,
+         panelProtocol: panelProtocol,
          taskPlanning: taskPlanning,
          taskExecution: taskExecution,
          taskRecovery: taskRecovery,
@@ -82,13 +92,12 @@ class ChatRuntimeController extends ChangeNotifier
          workspaceService: workspaceService,
          preferencesService: preferencesService,
          commandCoordinator: commandCoordinator,
-         toolExecution: toolExecution,
          initialSystemPromptSnapshot: initialSystemPromptSnapshot,
        ) {
     _delegate.addListener(_forwardDelegateNotification);
   }
 
-  final ChatRuntimeContext _delegate;
+  final ChatSessionRuntime _delegate;
   bool _disposed = false;
   Future<void>? _disposeFuture;
 
@@ -122,7 +131,15 @@ class ChatRuntimeController extends ChangeNotifier
 
   ExecutionMode get executionMode => _delegate.executionMode;
 
-  ProjectAggregate? get activeProject => _delegate.activeProject;
+  String get executionModeLabel => switch (executionMode) {
+    ExecutionMode.chat => 'Chat',
+    ExecutionMode.refine => 'Refine',
+    ExecutionMode.task => 'TaskAggregate',
+    ExecutionMode.project => 'Project',
+    ExecutionMode.continueTask => 'Continue TaskAggregate',
+  };
+
+  ProjectPanelReadModel? get activeProject => _delegate.state.activeProject;
   void dispatchActiveProject(ProjectAggregate? value) =>
       _delegate.dispatchActiveProject(value);
 
@@ -136,7 +153,7 @@ class ChatRuntimeController extends ChangeNotifier
 
   List<ProjectSummary> get availableProjects => _delegate.availableProjects;
 
-  Task? get activeTask => _delegate.activeTask;
+  TaskPanelReadModel? get activeTask => _delegate.state.activeTask;
   void dispatchActiveTask(Task? value) => _delegate.dispatchActiveTask(value);
 
   List<TaskSummary> get availableTasks => _delegate.availableTasks;
@@ -356,17 +373,17 @@ class ChatRuntimeController extends ChangeNotifier
 
   Future<void> replanRemainingTask() => _delegate.replanRemainingTask();
 
-  Future<void> updateTaskTaskBrief(String rawJson) =>
-      _delegate.updateTaskTaskBrief(rawJson);
+  Future<void> updateTaskTaskBrief(TaskPlanUpdateCommand command) =>
+      _delegate.updateTaskTaskBrief(command);
 
-  Future<void> updateTaskSpec(String rawJson) =>
-      _delegate.updateTaskSpec(rawJson);
+  Future<void> updateTaskSpec(TaskPlanUpdateCommand command) =>
+      _delegate.updateTaskSpec(command);
 
-  Future<void> updateTaskPlan(String rawJson) =>
-      _delegate.updateTaskPlan(rawJson);
+  Future<void> updateTaskPlan(TaskPlanUpdateCommand command) =>
+      _delegate.updateTaskPlan(command);
 
-  Future<void> updateProjectPlan(String rawJson) =>
-      _delegate.updateProjectPlan(rawJson);
+  Future<void> updateProjectPlan(ProjectUpdateCommand command) =>
+      _delegate.updateProjectPlan(command);
 
   Future<String> readTaskArtifact(String artifactPath) =>
       _delegate.readTaskArtifact(artifactPath);

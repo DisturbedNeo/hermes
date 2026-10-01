@@ -3,9 +3,9 @@ import 'package:hermes/app/test_factories.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/chat_message.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/features/chat/application/contracts/chat_message.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/platform/tool_service.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
@@ -137,7 +137,7 @@ class _QueueClient extends ChatClient {
   @override
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     Object? cancellationToken,
     String diagnosticsLabel = 'Model call',
     int? contextLimitTokens,
@@ -149,14 +149,8 @@ class _QueueClient extends ChatClient {
     return ChatCompletionResponse(content: '', toolCalls: [call]);
   }
 
-  Set<String> _toolNames(Map<String, dynamic>? extraParams) {
-    final tools = extraParams?['tools'];
-    if (tools is! List) return const {};
-    return {
-      for (final tool in tools.whereType<Map>())
-        if (tool['function'] is Map)
-          ((tool['function'] as Map)['name'] ?? '').toString(),
-    }..remove('');
+  Set<String> _toolNames(ModelRequestOptions? extraParams) {
+    return {for (final tool in extraParams?.tools ?? const []) tool.id};
   }
 
   @override

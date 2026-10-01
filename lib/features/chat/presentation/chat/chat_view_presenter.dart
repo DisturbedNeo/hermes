@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:hermes/shared_kernel/message_role.dart';
+import 'package:hermes/features/chat/application/contracts/message_role.dart';
 import 'package:hermes/features/chat/presentation/style.dart';
-import 'package:hermes/shared_kernel/bubble.dart';
+import 'package:hermes/features/chat/application/contracts/bubble.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
 import 'package:hermes/features/chat/presentation/chat/message/bubble_surface.dart';
 import 'package:hermes/features/chat/presentation/chat/message/markdown_view.dart';

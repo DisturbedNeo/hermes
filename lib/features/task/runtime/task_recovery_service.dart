@@ -1,4 +1,4 @@
-import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
 
 /// Converts an interrupted running task into a durable, resumable state.
 ///

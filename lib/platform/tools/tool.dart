@@ -1,4 +1,4 @@
-import 'package:hermes/shared_kernel/tool_contracts.dart';
+import 'package:hermes/features/tools/application/tool_contracts.dart';
 
 abstract class Tool {
   abstract final String id;

@@ -8,17 +8,17 @@ import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 import 'package:hermes/features/chat/presentation/keyboard_shortcuts.dart';
-import 'package:hermes/shared_kernel/preferences_port.dart';
+import 'package:hermes/features/settings/application/preferences_port.dart';
 import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
-import 'package:hermes/shared_kernel/tool_contracts.dart';
-import 'package:hermes/shared_kernel/workspace_ports.dart';
+import 'package:hermes/features/tools/application/tool_contracts.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
 import 'package:hermes/features/chat/presentation/overlays/chat_list.dart';
 import 'package:hermes/features/chat/presentation/chat/chat_view.dart';
 import 'package:hermes/features/chat/presentation/chat/model_picker.dart';
 import 'package:hermes/features/chat/presentation/overlays/settings.dart';
 import 'package:hermes/features/chat/presentation/overlays/system_prompt_library_panel.dart';
 import 'package:hermes/features/chat/presentation/overlays/workspace_panel.dart';
-import 'package:hermes/shared_kernel/chat_workspace_contracts.dart';
+import 'package:hermes/features/chat/application/contracts/chat_workspace_contracts.dart';
 
 enum _ChatAppBarAction { model, prompts, workspace, settings }
 

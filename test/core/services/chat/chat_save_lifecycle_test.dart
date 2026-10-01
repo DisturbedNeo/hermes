@@ -3,22 +3,25 @@ import 'package:hermes/app/test_factories.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/message_role.dart';
-import 'package:hermes/shared_kernel/bubble.dart';
-import 'package:hermes/shared_kernel/chat_persistence.dart';
-import 'package:hermes/shared_kernel/model_configuration.dart';
-import 'package:hermes/shared_kernel/saved_chat.dart';
-import 'package:hermes/shared_kernel/system_prompt.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/features/chat/application/contracts/message_role.dart';
+import 'package:hermes/features/chat/application/contracts/bubble.dart';
+import 'package:hermes/features/chat/application/contracts/chat_persistence.dart';
+import 'package:hermes/features/model/application/model_configuration.dart';
+import 'package:hermes/features/chat/application/contracts/saved_chat.dart';
+import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
+import 'package:hermes/features/chat/infrastructure/chat_panel_protocol_adapter.dart';
 import 'package:hermes/features/chat/infrastructure/chat_library_repository.dart';
 import 'package:hermes/features/model/infrastructure/llama_server_manager.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/features/chat/infrastructure/system_prompt_library_repository.dart';
 import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
 import 'package:hermes/platform/tool_service.dart';
+import 'package:hermes/features/tools/application/tool_protocol_adapter.dart';
+import 'package:hermes/features/chat/runtime/chat_application/chat_tool_execution_service.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
 import 'package:hermes/platform/workspace_service.dart';
 import 'package:path/path.dart' as path;
@@ -50,9 +53,14 @@ void main() {
     final chat = ChatController(
       serverManager: serverManager,
       toolService: tools,
+      toolProtocol: ToolProtocolAdapter(registry: tools),
+      toolExecution: ChatToolExecutionService(
+        protocol: ToolProtocolAdapter(registry: tools),
+      ),
       taskQueries: tasks,
       taskSessions: tasks,
       taskPresentation: tasks,
+      panelProtocol: const ChatPanelProtocolAdapter(),
       taskPlanning: tasks,
       taskExecution: tasks,
       taskRecovery: tasks,
@@ -117,9 +125,14 @@ void main() {
     final chat = ChatController(
       serverManager: serverManager,
       toolService: tools,
+      toolProtocol: ToolProtocolAdapter(registry: tools),
+      toolExecution: ChatToolExecutionService(
+        protocol: ToolProtocolAdapter(registry: tools),
+      ),
       taskQueries: tasks,
       taskSessions: tasks,
       taskPresentation: tasks,
+      panelProtocol: const ChatPanelProtocolAdapter(),
       taskPlanning: tasks,
       taskExecution: tasks,
       taskRecovery: tasks,
@@ -179,9 +192,14 @@ void main() {
     final chat = ChatController(
       serverManager: serverManager,
       toolService: tools,
+      toolProtocol: ToolProtocolAdapter(registry: tools),
+      toolExecution: ChatToolExecutionService(
+        protocol: ToolProtocolAdapter(registry: tools),
+      ),
       taskQueries: tasks,
       taskSessions: tasks,
       taskPresentation: tasks,
+      panelProtocol: const ChatPanelProtocolAdapter(),
       taskPlanning: tasks,
       taskExecution: tasks,
       taskRecovery: tasks,
@@ -257,9 +275,14 @@ void main() {
       chatLibrary: chatLibrary,
       systemPromptLibrary: promptLibrary,
       toolService: tools,
+      toolProtocol: ToolProtocolAdapter(registry: tools),
+      toolExecution: ChatToolExecutionService(
+        protocol: ToolProtocolAdapter(registry: tools),
+      ),
       taskQueries: tasks,
       taskSessions: tasks,
       taskPresentation: tasks,
+      panelProtocol: const ChatPanelProtocolAdapter(),
       taskPlanning: tasks,
       taskExecution: tasks,
       taskRecovery: tasks,
@@ -321,7 +344,7 @@ void main() {
 
     await tabs.disposeWithoutSaving();
     expect(tabs.tabs, isEmpty);
-    expect(tabs.serverManager.current, isNull);
+    expect(tabs.serverManager.session.value.isActive, isFalse);
   });
 }
 

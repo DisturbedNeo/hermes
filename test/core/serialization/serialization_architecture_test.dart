@@ -5,15 +5,15 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('DTO source files contain no handwritten JSON methods', () async {
     const dtoSources = [
-      'lib/shared_kernel/chat_message.dart',
-      'lib/shared_kernel/model_configuration.dart',
-      'lib/shared_kernel/model_load_configuration.dart',
-      'lib/features/project/domain/project.dart',
-      'lib/shared_kernel/system_prompt.dart',
-      'lib/features/task/domain/task.dart',
-      'lib/shared_kernel/context_summary_prompt.dart',
-      'lib/shared_kernel/question_policy_service.dart',
-      'lib/features/task/domain/task_planning_models.dart',
+      'lib/features/chat/application/contracts/chat_message.dart',
+      'lib/features/model/application/model_configuration.dart',
+      'lib/features/model/application/model_load_configuration.dart',
+      'lib/features/project/application/contracts/project_snapshot_models.dart',
+      'lib/features/chat/application/contracts/system_prompt.dart',
+      'lib/features/task/application/contracts/task_snapshot_models.dart',
+      'lib/features/chat/application/protocol/context_summary_prompt.dart',
+      'lib/features/task/application/contracts/question_policy_service.dart',
+      'lib/features/task/application/contracts/task_planning_models.dart',
       'lib/platform/tools/calculator_tool.dart',
     ];
 
@@ -48,11 +48,11 @@ void main() {
   test('committed mapper outputs and package initializer exist', () {
     // Canonical feature-domain models own their generated mappers.
     for (final path in [
-      'lib/features/task/domain/task.mapper.dart',
-      'lib/features/project/domain/project.mapper.dart',
-      'lib/shared_kernel/system_prompt.mapper.dart',
-      'lib/shared_kernel/model_configuration.mapper.dart',
-      'lib/shared_kernel/model_load_configuration.mapper.dart',
+      'lib/features/task/application/contracts/task_snapshot_models.mapper.dart',
+      'lib/features/project/application/contracts/project_snapshot_models.mapper.dart',
+      'lib/features/chat/application/contracts/system_prompt.mapper.dart',
+      'lib/features/model/application/model_configuration.mapper.dart',
+      'lib/features/model/application/model_load_configuration.mapper.dart',
       'lib/app/mappers.init.dart',
     ]) {
       expect(File(path).existsSync(), isTrue, reason: '$path is missing.');

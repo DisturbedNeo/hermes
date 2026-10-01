@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-dart run build_runner build --delete-conflicting-outputs
+dart run build_runner build
+# dart_mappable emits one or more terminal blank lines; normalize only that
+# generated whitespace so the final repository-wide diff check stays strict.
+find lib -type f \( -name '*.mapper.dart' -o -name 'mappers.init.dart' \) \
+  -exec perl -0pi -e 's/\n+\z/\n/' {} +
 dart format --output=none --set-exit-if-changed lib test
 dart analyze
 flutter test
-# dart_mappable currently emits a trailing blank line in generated outputs;
-# check all handwritten sources while allowing that generator detail.
-git diff --check -- . ':(exclude)lib/app/mappers.init.dart' ':(exclude,glob)**/*.mapper.dart'
+git diff --check -- .

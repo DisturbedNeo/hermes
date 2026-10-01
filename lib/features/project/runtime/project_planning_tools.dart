@@ -1,8 +1,8 @@
 import 'dart:convert';
 
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/shared_kernel/tool_contracts.dart';
-import 'package:hermes/shared_kernel/planning_runtime.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/tools/application/tool_contracts.dart';
+import 'package:hermes/features/task/application/protocol/planning_runtime.dart';
 import 'package:hermes/features/project/runtime/project_plan_builder.dart';
 import 'package:hermes/features/project/runtime/project_plan_revision_service.dart';
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
@@ -1417,15 +1417,15 @@ class _PlanningArgumentException extends PlanningToolArgumentException {
   const _PlanningArgumentException(super.code, super.path, super.message);
 }
 
-Map<String, dynamic> _schema({
+ToolSchema _schema({
   required Map<String, dynamic> properties,
   List<String> required = const [],
-}) => {
+}) => ToolSchema({
   'type': 'object',
   'properties': properties,
   'required': required,
   'additionalProperties': false,
-};
+});
 
 Map<String, dynamic> _stringArraySchema() => {
   'type': 'array',

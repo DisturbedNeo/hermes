@@ -6,12 +6,14 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:hermes/features/model/infrastructure/llama_server_finder.dart';
 import 'package:hermes/features/model/infrastructure/server_health_checker.dart';
-import 'package:hermes/features/model/application/llama_server_handle.dart';
-import 'package:hermes/shared_kernel/model_configuration.dart';
+import 'package:hermes/features/model/infrastructure/llama_server_handle.dart';
+import 'package:hermes/features/model/application/model_configuration.dart';
 import 'package:hermes/features/model/application/model_session_diagnostics.dart';
+import 'package:hermes/features/model/application/model_session_diagnostics_port.dart';
+import 'package:hermes/features/model/application/model_session_telemetry_port.dart';
 import 'package:hermes/features/model/application/model_server_port.dart';
 import 'package:hermes/features/model/domain/model_provider.dart';
-import 'package:hermes/shared_kernel/model_call_diagnostics.dart';
+import 'package:hermes/features/model/application/model_call_diagnostics.dart';
 import 'package:hermes/features/model/infrastructure/model_diagnostic_bundle_writer.dart';
 
 typedef LlamaProcessLauncher =
@@ -158,13 +160,54 @@ class LlamaServerManager implements ModelServerPort {
   final LlamaPortAllocator _portAllocator;
   final LlamaHealthWaiter _healthWaiter;
   final LlamaModelProviderFactory _clientFactory;
-  final ValueNotifier<LlamaServerHandle?> handle = ValueNotifier(null);
-  final ModelSessionDiagnostics diagnostics = ModelSessionDiagnostics();
-  @override
-  ModelProvider? chatClient;
-  String? currentModelName;
+  final ValueNotifier<LlamaServerHandle?> _handle = ValueNotifier(null);
+  final ValueNotifier<ModelSessionState> _sessionNotifier = ValueNotifier(
+    const ModelSessionState(),
+  );
+  late final ModelSessionPort _session = _ReadOnlyModelSession(
+    _sessionNotifier,
+  );
+  final ModelSessionDiagnostics _diagnostics = ModelSessionDiagnostics();
+  ModelProvider? _completionProvider;
 
-  LlamaServerHandle? get current => handle.value;
+  @override
+  ModelSessionPort get session => _session;
+
+  @override
+  ModelSessionDiagnosticsPort get diagnostics => _diagnostics;
+
+  @override
+  ModelSessionTelemetryPort get telemetry => _diagnostics;
+
+  @override
+  ModelProvider? get completionProvider => _completionProvider;
+
+  @override
+  Future<ModelConfigurationAvailability> validateConfiguration(
+    ModelConfigurationSnapshot snapshot,
+  ) async {
+    final modelExists = await File(snapshot.modelPath).exists();
+    final mtpPath = snapshot.mtpModelPath;
+    final mtpExists =
+        !snapshot.mtpEnabled || mtpPath == null || await File(mtpPath).exists();
+    return ModelConfigurationAvailability(
+      modelPathMissing: !modelExists,
+      mtpModelPathMissing: !mtpExists,
+    );
+  }
+
+  /// Test-only injection for application tests that exercise chat behavior
+  /// without launching a host process. Production code uses lifecycle start.
+  @visibleForTesting
+  void setCompletionProviderForTesting(ModelProvider? provider) {
+    _completionProvider = provider;
+    _sessionNotifier.value = ModelSessionState(isActive: provider != null);
+  }
+
+  @visibleForTesting
+  void setSessionActiveForTesting(bool active) {
+    _sessionNotifier.value = ModelSessionState(isActive: active);
+  }
 
   LlamaServerManager({
     ModelDiagnosticBundleWriter? diagnosticBundleWriter,
@@ -283,7 +326,7 @@ class LlamaServerManager implements ModelServerPort {
 
     if (llamaCppDirectory.isEmpty) {
       final error = FlutterError('llama.cpp directory not specified');
-      diagnostics.recordFailure(error);
+      _diagnostics.recordFailure(error);
       throw error;
     }
 
@@ -296,7 +339,7 @@ class LlamaServerManager implements ModelServerPort {
         'Could not find llama-server binary in $llamaCppDirectory. '
         'Make sure llama.cpp is built and the server binary exists.',
       );
-      diagnostics.recordFailure(error);
+      _diagnostics.recordFailure(error);
       throw error;
     }
 
@@ -308,7 +351,7 @@ class LlamaServerManager implements ModelServerPort {
       _throwIfCancelled(generation);
       final args = buildLlamaServerArguments(snapshot: snapshot, port: port);
       final baseUrl = 'http://127.0.0.1:$port';
-      diagnostics.recordStarting(
+      _diagnostics.recordStarting(
         snapshot: snapshot,
         port: port,
         baseUrl: baseUrl,
@@ -323,19 +366,19 @@ class LlamaServerManager implements ModelServerPort {
           workingDirectory: llamaCppDirectory,
         );
       } catch (e, stackTrace) {
-        diagnostics.recordFailure(e);
+        _diagnostics.recordFailure(e);
         Error.throwWithStackTrace(e, stackTrace);
       }
 
       final startupOutput = _StartupOutput();
       final stdoutSub = process.stdout.transform(utf8.decoder).listen((line) {
         startupOutput.add(line);
-        diagnostics.addLog('stdout', line);
+        _diagnostics.addLog('stdout', line);
         if (kDebugMode) print(line);
       });
       final stderrSub = process.stderr.transform(utf8.decoder).listen((line) {
         startupOutput.add(line);
-        diagnostics.addLog('stderr', line);
+        _diagnostics.addLog('stderr', line);
         if (kDebugMode) print(line);
       });
       final newHandle = LlamaServerHandle(
@@ -360,7 +403,7 @@ class LlamaServerManager implements ModelServerPort {
           model: modelName,
           onDiagnostics: (value) {
             if (generation == _startGeneration) {
-              diagnostics.recordCallDiagnostics(value);
+              _diagnostics.recordCallDiagnostics(value);
             }
           },
         );
@@ -369,15 +412,18 @@ class LlamaServerManager implements ModelServerPort {
           throw const LlamaServerStartupCancelled();
         }
 
-        chatClient = newClient;
-        currentModelName = modelName;
+        _completionProvider = newClient;
         _startingHandle = null;
-        handle.value = newHandle;
-        diagnostics.recordReady();
+        _handle.value = newHandle;
+        _sessionNotifier.value = ModelSessionState(
+          snapshot: snapshot,
+          isActive: true,
+        );
+        _diagnostics.recordReady();
         unawaited(_loadServerProperties(newClient, generation));
         return;
       } catch (e, stackTrace) {
-        chatClient = null;
+        _completionProvider = null;
         if (_startingHandle == newHandle) _startingHandle = null;
         try {
           await newHandle.stop();
@@ -390,9 +436,9 @@ class LlamaServerManager implements ModelServerPort {
         if (retryBindCollision) continue;
 
         if (e is LlamaServerStartupCancelled) {
-          diagnostics.recordCancelled();
+          _diagnostics.recordCancelled();
         } else {
-          diagnostics.recordFailure(
+          _diagnostics.recordFailure(
             e,
             recentOutput: startupOutput.recentOutput,
           );
@@ -409,10 +455,10 @@ class LlamaServerManager implements ModelServerPort {
     final properties = await client.fetchServerProperties();
     if (properties == null ||
         generation != _startGeneration ||
-        !identical(chatClient, client)) {
+        !identical(_completionProvider, client)) {
       return;
     }
-    diagnostics.recordServerProperties(properties);
+    _diagnostics.recordServerProperties(properties);
   }
 
   Future<void> stop() async {
@@ -422,14 +468,14 @@ class LlamaServerManager implements ModelServerPort {
 
   Future<void> _stopHandles() async {
     final startingHandle = _startingHandle;
-    final currentHandle = handle.value;
-    final currentClient = chatClient;
+    final currentHandle = _handle.value;
+    final currentClient = _completionProvider;
 
     _startingHandle = null;
-    handle.value = null;
-    chatClient = null;
-    currentModelName = null;
-    diagnostics.recordStopped();
+    _handle.value = null;
+    _completionProvider = null;
+    _sessionNotifier.value = const ModelSessionState();
+    _diagnostics.recordStopped();
 
     currentClient?.dispose();
 
@@ -451,14 +497,14 @@ class LlamaServerManager implements ModelServerPort {
   void _watchProcessExit(LlamaServerHandle serverHandle) {
     unawaited(
       serverHandle.process.exitCode.then((code) {
-        if (handle.value == serverHandle || _startingHandle == serverHandle) {
-          diagnostics.recordProcessExit(code);
+        if (_handle.value == serverHandle || _startingHandle == serverHandle) {
+          _diagnostics.recordProcessExit(code);
         }
-        if (handle.value == serverHandle) {
-          chatClient?.dispose();
-          chatClient = null;
-          currentModelName = null;
-          handle.value = null;
+        if (_handle.value == serverHandle) {
+          _completionProvider?.dispose();
+          _completionProvider = null;
+          _handle.value = null;
+          _sessionNotifier.value = const ModelSessionState();
         }
       }),
     );
@@ -510,8 +556,24 @@ class LlamaServerManager implements ModelServerPort {
     _isDisposed = true;
 
     await stop();
-    diagnostics.dispose();
+    _diagnostics.dispose();
   }
+}
+
+class _ReadOnlyModelSession implements ModelSessionPort {
+  const _ReadOnlyModelSession(this._source);
+
+  final ValueListenable<ModelSessionState> _source;
+
+  @override
+  ModelSessionState get value => _source.value;
+
+  @override
+  void addListener(VoidCallback listener) => _source.addListener(listener);
+
+  @override
+  void removeListener(VoidCallback listener) =>
+      _source.removeListener(listener);
 }
 
 LlamaModelProviderFactory get _defaultModelProviderFactory =>
@@ -521,7 +583,7 @@ LlamaModelProviderFactory get _defaultModelProviderFactory =>
 /// Compatibility provider used when a manager is constructed outside the
 /// composition root (for example in lifecycle tests). The real chat provider
 /// is injected by the application composition root; this adapter only reads
-/// `/props` so startup diagnostics remain useful without importing the HTTP
+/// `/props` so startup _diagnostics remain useful without importing the HTTP
 /// chat implementation into the shared service.
 class _PropertiesOnlyModelProvider implements ModelProvider {
   _PropertiesOnlyModelProvider(this._baseUrl);

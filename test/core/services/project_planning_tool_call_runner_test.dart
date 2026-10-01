@@ -1,11 +1,11 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/chat_message.dart';
-import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/chat/application/contracts/chat_message.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
-import 'package:hermes/shared_kernel/model_completion_port.dart';
-import 'package:hermes/shared_kernel/planning_runtime.dart';
+import 'package:hermes/features/model/application/model_completion_port.dart';
+import 'package:hermes/features/task/application/protocol/planning_runtime.dart';
 import 'package:hermes/features/project/runtime/project_planning_tools.dart';
 
 void main() {
@@ -100,9 +100,8 @@ void main() {
     );
 
     expect(result['ok'], isTrue);
-    final tools = client.lastExtraParams?['tools'] as List;
     final names = [
-      for (final item in tools) ((item as Map)['function'] as Map)['name'],
+      for (final item in client.lastExtraParams?.tools ?? const []) item.id,
     ];
     expect(names, isNot(contains('read_file')));
     expect(names, isNot(contains('write_file')));
@@ -279,13 +278,13 @@ class _Client extends ChatClient {
 
   final List<ChatCompletionToolCall> _responses;
   final messagesByCall = <List<ChatMessage>>[];
-  Map<String, dynamic>? lastExtraParams;
+  ModelRequestOptions? lastExtraParams;
   var _index = 0;
 
   @override
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     Object? cancellationToken,
     String diagnosticsLabel = 'Model call',
     int? contextLimitTokens,

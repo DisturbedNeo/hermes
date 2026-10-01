@@ -4,13 +4,14 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/app_dependencies.dart';
-import 'package:hermes/shared_kernel/message_role.dart';
-import 'package:hermes/shared_kernel/bubble.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/features/chat/application/contracts/message_role.dart';
+import 'package:hermes/features/chat/application/contracts/bubble.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/features/chat/presentation/theme_manager.dart';
 import 'package:hermes/platform/tool_service.dart';
+import 'package:hermes/features/tools/application/tool_protocol_adapter.dart';
 import 'package:hermes/main.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -51,13 +52,14 @@ void main() {
       isTrue,
     );
 
-    final result = await dependencies.toolService.execute(
-      toolId: 'list_directory',
-      argumentsJson: '{"path":"."}',
-      context: WorkspaceToolContext(
-        workspace: WorkspaceAttachment.fromPath(root.path),
-      ),
-    );
+    final result = await ToolProtocolAdapter(registry: dependencies.toolService)
+        .execute(
+          toolId: 'list_directory',
+          argumentsJson: '{"path":"."}',
+          context: WorkspaceToolContext(
+            workspace: WorkspaceAttachment.fromPath(root.path),
+          ),
+        );
     expect(result, contains('entries'));
   });
 

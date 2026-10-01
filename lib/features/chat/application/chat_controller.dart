@@ -9,9 +9,12 @@ class ChatController extends ChatRuntimeController {
     super.tabId,
     required super.serverManager,
     required super.toolService,
+    required super.toolProtocol,
+    required super.toolExecution,
     required super.taskQueries,
     required super.taskSessions,
     required super.taskPresentation,
+    required super.panelProtocol,
     required super.taskPlanning,
     required super.taskExecution,
     required super.taskRecovery,
@@ -25,7 +28,6 @@ class ChatController extends ChatRuntimeController {
     required super.workspaceService,
     required super.preferencesService,
     super.commandCoordinator,
-    super.toolExecution,
     super.initialSystemPromptSnapshot,
   });
 }

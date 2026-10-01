@@ -1,11 +1,10 @@
 import 'dart:convert';
-import 'dart:io';
 
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/sandbox_policy.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/core/cancellation.dart';
+import 'package:hermes/features/workspace/application/sandbox_policy.dart';
 import 'package:path/path.dart' as path;
-import 'package:hermes/shared_kernel/workspace_ports.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
 
 /// Read-only, budgeted workspace context for the initial project planner.
 ///
@@ -96,7 +95,7 @@ class ProjectPlanningWorkspaceReader {
         cancellationToken: _cancellationToken,
       );
       _cancellationToken?.throwIfCancelled();
-      final content = file['content'] as String;
+      final content = file.content;
       if (content.contains('\u0000')) {
         return _error(
           code: 'workspace_binary_file',
@@ -153,13 +152,13 @@ class ProjectPlanningWorkspaceReader {
       };
     } on WorkspaceSandboxException catch (error) {
       return _error(code: error.code, message: error.message);
-    } on FileSystemException catch (error) {
-      return _error(code: 'workspace_io_failure', message: error.message);
     } on FormatException {
       return _error(
         code: 'workspace_invalid_text',
         message: 'The requested file is not valid UTF-8 text.',
       );
+    } catch (error) {
+      return _error(code: 'workspace_io_failure', message: '$error');
     }
   }
 

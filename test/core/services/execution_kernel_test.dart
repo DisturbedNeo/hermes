@@ -1,14 +1,15 @@
-import 'dart:convert';
-
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/message_role.dart';
-import 'package:hermes/shared_kernel/bubble.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/features/chat/application/contracts/message_role.dart';
+import 'package:hermes/features/chat/application/contracts/bubble.dart';
+import 'package:hermes/features/chat/application/contracts/chat_tool_execution.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/chat/runtime/chat_application/chat_tool_execution_service.dart';
 import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';
 import 'package:hermes/features/task/runtime/task_tool_execution_service.dart';
 import 'package:hermes/platform/tool_service.dart';
+import 'package:hermes/features/tools/application/tool_protocol_adapter.dart';
+import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
 
 void main() {
@@ -32,26 +33,39 @@ void main() {
       );
       messageStore.setMessages([assistant], currentId: assistant.id);
       final executor = ChatToolExecutionService(
-        toolService: ToolService(workspaceSandbox: WorkspaceSandbox()),
-        messageStore: messageStore,
+        protocol: ToolProtocolAdapter(
+          registry: ToolService(workspaceSandbox: WorkspaceSandbox()),
+        ),
       );
 
-      final updated = await executor.executePendingCalls(
-        calls: [MapEntry(0, assistant.tools[0]!)],
+      final results = <ChatToolExecutionResult>[];
+      await executor.executePendingCalls(
+        calls: [
+          const ChatPendingToolCall(
+            index: 0,
+            id: 'call_1',
+            name: 'missing_tool',
+            arguments: ToolArguments(),
+          ),
+        ],
         workspace: null,
         cancellationToken: CancellationToken(),
+        onResult: results.add,
       );
 
-      expect(updated, isNotNull);
-      final result = jsonDecode(updated!.tools[0]!.result!);
-      expect(result['error_code'], 'unknown_tool');
-      expect(messageStore.currentMessage?.tools[0]?.result, isNotNull);
+      expect(results, hasLength(1));
+      final result = results.single.result;
+      expect(result, isA<ToolFailure>());
+      expect((result as ToolFailure).code, 'unknown_tool');
+      expect(messageStore.currentMessage?.tools[0]?.result, isNull);
     },
   );
 
   test('task tool executor derives artifacts only from successful calls', () {
     final executor = TaskToolExecutionService(
-      toolService: ToolService(workspaceSandbox: WorkspaceSandbox()),
+      protocol: ToolProtocolAdapter(
+        registry: ToolService(workspaceSandbox: WorkspaceSandbox()),
+      ),
       sandbox: WorkspaceSandbox(),
     );
     final task = Task(

@@ -1,13 +1,12 @@
-import 'dart:convert';
-
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/message_role.dart';
-import 'package:hermes/shared_kernel/context_estimator.dart';
-import 'package:hermes/shared_kernel/payload_builder.dart';
-import 'package:hermes/shared_kernel/tool_caller.dart';
-import 'package:hermes/shared_kernel/bubble.dart';
-import 'package:hermes/shared_kernel/chat_message.dart';
-import 'package:hermes/shared_kernel/tool_contracts.dart';
+import 'package:hermes/features/chat/application/contracts/message_role.dart';
+import 'package:hermes/features/chat/application/protocol/context_estimator.dart';
+import 'package:hermes/features/chat/application/protocol/payload_builder.dart';
+import 'package:hermes/features/chat/application/protocol/chat_message_wire_adapter.dart';
+import 'package:hermes/features/tools/application/protocol/tool_call_protocol_adapter.dart';
+import 'package:hermes/features/chat/application/contracts/bubble.dart';
+import 'package:hermes/features/chat/application/contracts/chat_message.dart';
+import 'package:hermes/features/tools/application/tool_contracts.dart';
 
 void main() {
   group('ContextEstimator', () {
@@ -27,16 +26,12 @@ void main() {
             role: MessageRole.assistant.wire,
             content: '',
             toolCalls: [
-              {
-                'id': 'call_1',
-                'type': 'function',
-                'function': {
-                  'name': 'read_file',
-                  'arguments': jsonEncode({
-                    'path': 'lib/core/services/chat/chat_controller.dart',
-                  }),
-                },
-              },
+              ChatMessageWireAdapter().toolCall(
+                id: 'call_1',
+                name: 'read_file',
+                argumentsJson:
+                    '{"path":"lib/core/services/chat/chat_controller.dart"}',
+              ),
             ],
           ),
         ],
@@ -114,13 +109,13 @@ void main() {
               id: 'read_file',
               name: 'Read file',
               description: 'Read a file from the active workspace.',
-              schema: {
+              schema: ToolSchema({
                 'type': 'object',
                 'properties': {
                   'path': {'type': 'string'},
                 },
                 'required': ['path'],
-              },
+              }),
             ),
           ],
         ),

@@ -5,11 +5,11 @@ import 'dart:io';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'package:hermes/shared_kernel/system_prompt.dart';
+import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
 import 'package:hermes/features/chat/infrastructure/managed_lazy_database.dart';
-import 'package:hermes/shared_kernel/preferences_port.dart';
-import 'package:hermes/shared_kernel/prompt_library_seed_data.dart';
-import 'package:hermes/shared_kernel/prompt_library_port.dart';
+import 'package:hermes/features/settings/application/preferences_port.dart';
+import 'package:hermes/features/chat/infrastructure/prompt_library_seed_data.dart';
+import 'package:hermes/features/chat/application/contracts/prompt_library_port.dart';
 
 /// Repository layer for the system prompt library.
 ///

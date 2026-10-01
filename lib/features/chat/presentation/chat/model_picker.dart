@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hermes/features/chat/presentation/a11y.dart';
-import 'package:hermes/shared_kernel/model_load_configuration.dart';
+import 'package:hermes/features/model/application/model_load_configuration.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
-import 'package:hermes/shared_kernel/preferences_port.dart';
+import 'package:hermes/features/settings/application/preferences_port.dart';
 import 'package:hermes/features/chat/presentation/chat/message/dot_pulse.dart';
 import 'package:hermes/features/chat/presentation/model_configuration/model_configuration.dart';
 import 'package:path/path.dart' as p;
@@ -79,7 +79,7 @@ class _ModelPickerState extends State<ModelPicker> {
   void initState() {
     super.initState();
     _tabs.addListener(_syncSelectedFromActiveModel);
-    _tabs.serverManager.handle.addListener(_syncSelectedFromActiveModel);
+    _tabs.serverManager.session.addListener(_syncSelectedFromActiveModel);
     _syncSelectedFromActiveModel();
     _loadModels();
   }
@@ -87,12 +87,12 @@ class _ModelPickerState extends State<ModelPicker> {
   @override
   void dispose() {
     _tabs.removeListener(_syncSelectedFromActiveModel);
-    _tabs.serverManager.handle.removeListener(_syncSelectedFromActiveModel);
+    _tabs.serverManager.session.removeListener(_syncSelectedFromActiveModel);
     super.dispose();
   }
 
   void _syncSelectedFromActiveModel() {
-    final activeModel = _tabs.serverManager.currentModelName;
+    final activeModel = _tabs.serverManager.session.value.modelName;
     if (_selected == activeModel) return;
     if (!mounted) {
       _selected = activeModel;
@@ -233,7 +233,9 @@ class _ModelPickerState extends State<ModelPicker> {
                             modelName: v,
                             initialConfiguration:
                                 savedConfiguration ??
-                                ModelLoadConfiguration.defaults(),
+                                ModelLoadConfiguration.defaults(
+                                  nThreads: Platform.numberOfProcessors,
+                                ),
                             hasSavedConfiguration: savedConfiguration != null,
                             onResetSavedConfiguration: () => _preferencesService
                                 .removeModelLoadConfiguration(v),
@@ -247,6 +249,7 @@ class _ModelPickerState extends State<ModelPicker> {
                                     modelName: v,
                                     modelPath: file.path,
                                     llamaCppDirectory: llamaCppDirectory,
+                                    maxThreads: Platform.numberOfProcessors,
                                   );
                                   setState(() {
                                     _selected = v;
@@ -291,7 +294,9 @@ class _ModelPickerState extends State<ModelPicker> {
                                       setState(
                                         () => _selected = _tabs
                                             .serverManager
-                                            .currentModelName,
+                                            .session
+                                            .value
+                                            .modelName,
                                       );
                                     }
 

@@ -70,4 +70,3 @@ class CalculatorOperationMapper extends ClassMapperBase<CalculatorOperation> {
 
 /// @nodoc
 mixin CalculatorOperationMappable {}
-

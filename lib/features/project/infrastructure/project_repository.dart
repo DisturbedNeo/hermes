@@ -1,12 +1,12 @@
 import 'dart:io';
 
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/shared_kernel/atomic_json_snapshot_store.dart';
-import 'package:hermes/shared_kernel/persistence_contracts.dart';
-import 'package:hermes/shared_kernel/workspace_ports.dart';
-import 'package:hermes/shared_kernel/workspace_persistence_coordinator.dart';
-import 'package:hermes/shared_kernel/model_json.dart';
-import 'package:hermes/shared_kernel/schema_migrations.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/persistence/infrastructure/atomic_json_snapshot_store.dart';
+import 'package:hermes/features/persistence/application/persistence_contracts.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
+import 'package:hermes/features/persistence/application/schema_migrations.dart';
+import 'package:hermes/features/persistence/infrastructure/dto/project_persistence_adapter.dart';
+import 'package:hermes/features/persistence/infrastructure/dto/project_snapshot_dto.dart';
 import 'package:hermes/features/project/project_repository_port.dart';
 import 'package:path/path.dart' as path;
 
@@ -16,11 +16,15 @@ class ProjectRepository implements ProjectRepositoryPort {
   static const String projectsRoot = ProjectRepositoryPort.projectsRoot;
   static const String documentFileName = ProjectRepositoryPort.documentFileName;
 
-  ProjectRepository({PersistencePort? coordinator})
-    : _coordinator = coordinator ?? WorkspacePersistenceCoordinator();
+  ProjectRepository({required PersistencePort coordinator})
+    : _coordinator = coordinator;
 
   final AtomicJsonSnapshotStore _snapshots = const AtomicJsonSnapshotStore();
   final PersistencePort _coordinator;
+  static const ProjectPersistenceAdapter _persistence =
+      ProjectPersistenceAdapter();
+
+  PersistencePort get coordinator => _coordinator;
 
   // ── Listing ──────────────────────────────────────────────────────────
 
@@ -373,8 +377,10 @@ class ProjectRepository implements ProjectRepositoryPort {
     bool fromBackup,
   ) {
     final envelope = SnapshotEnvelope.decode(raw);
-    final project = ModelJson.decode<ProjectAggregate>(
-      projectSchemaMigrations.migrate(envelope.document),
+    final project = _persistence.fromDto(
+      ProjectSnapshotDto.fromDocument(
+        projectSchemaMigrations.migrate(envelope.document),
+      ),
     );
     if (project.id.trim().isEmpty) {
       throw const FormatException('Project snapshot has no id');
@@ -387,16 +393,16 @@ class ProjectRepository implements ProjectRepositoryPort {
   }
 
   Map<String, dynamic> _documentMap(ProjectAggregate project) {
-    final map = ModelJson.encode(project.copyWith(persistenceRevision: 0));
-    map.remove('persistenceRevision');
-    return map;
+    return _persistence.toDto(project).document;
   }
 
   bool _isEnvelopeMap(Map<String, dynamic> map) {
     try {
       final envelope = SnapshotEnvelope.decode(map);
-      final project = ModelJson.decode<ProjectAggregate>(
-        projectSchemaMigrations.migrate(envelope.document),
+      final project = _persistence.fromDto(
+        ProjectSnapshotDto.fromDocument(
+          projectSchemaMigrations.migrate(envelope.document),
+        ),
       );
       return project.id.trim().isNotEmpty;
     } catch (_) {

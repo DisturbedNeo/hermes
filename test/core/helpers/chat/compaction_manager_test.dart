@@ -3,12 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/message_role.dart';
-import 'package:hermes/shared_kernel/compaction_manager.dart';
-import 'package:hermes/shared_kernel/bubble.dart';
-import 'package:hermes/shared_kernel/compaction_settings.dart';
+import 'package:hermes/features/chat/application/contracts/message_role.dart';
+import 'package:hermes/features/chat/application/protocol/compaction_manager.dart';
+import 'package:hermes/features/chat/application/contracts/bubble.dart';
+import 'package:hermes/features/chat/application/contracts/compaction_settings.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
-import 'package:hermes/shared_kernel/model_completion_port.dart';
+import 'package:hermes/features/model/application/model_completion_port.dart';
 import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';
 
 void main() {
@@ -133,7 +133,7 @@ void main() {
           manager.shouldCompact(
             messages: store.messages,
             contextLimit: 4096,
-            extraParams: const {},
+            extraParams: const ModelRequestOptions.empty(),
           ),
           isTrue,
         );
@@ -142,7 +142,7 @@ void main() {
         final result = await manager.compactIfNeeded(
           messageStore: store,
           contextLimit: 4096,
-          extraParams: const {},
+          extraParams: const ModelRequestOptions.empty(),
           onStatusChanged: statuses.add,
         );
 
@@ -226,7 +226,7 @@ void main() {
         final result = await manager.compactIfNeeded(
           messageStore: store,
           contextLimit: 4096,
-          extraParams: const {},
+          extraParams: const ModelRequestOptions.empty(),
           onStatusChanged: (_) {},
         );
 
@@ -308,7 +308,7 @@ void main() {
           manager.shouldCompact(
             messages: messages,
             contextLimit: 4096,
-            extraParams: const {},
+            extraParams: const ModelRequestOptions.empty(),
           ),
           isFalse,
         );

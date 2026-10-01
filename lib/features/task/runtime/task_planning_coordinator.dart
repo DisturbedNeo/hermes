@@ -1,6 +1,6 @@
-import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/model_completion_port.dart';
-import 'package:hermes/shared_kernel/model_output.dart';
+import 'package:hermes/core/cancellation.dart';
+import 'package:hermes/features/model/application/model_completion_port.dart';
+import 'package:hermes/features/model/application/model_output.dart';
 import 'package:hermes/features/task/runtime/task_planning_service.dart';
 import 'package:hermes/features/task/runtime/task_planning_tools.dart';
 

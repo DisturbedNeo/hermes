@@ -1,14 +1,14 @@
-import 'package:hermes/shared_kernel/planning_metrics.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/model_completion_port.dart';
+import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/core/cancellation.dart';
+import 'package:hermes/features/model/application/model_completion_port.dart';
 import 'package:hermes/features/project/runtime/project_discovery_service.dart';
 import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
-import 'package:hermes/shared_kernel/model_output.dart';
-import 'package:hermes/shared_kernel/workspace_discovery_service.dart';
+import 'package:hermes/features/model/application/model_output.dart';
+import 'package:hermes/features/workspace/infrastructure/workspace_discovery_service.dart';
 
 typedef ProjectInitialPlanValidator =
-    List<Map<String, String>> Function({
+    List<ProjectPlanValidationIssue> Function({
       required ProjectInitialPlanResult initialPlan,
       required WorkspaceDiscoveryProfile workspaceProfile,
     });
@@ -28,7 +28,7 @@ class ProjectPlanningResult {
 
   final ProjectEvidenceSnapshot discovery;
   final ProjectInitialPlanResult initialPlan;
-  final List<Map<String, String>> validationIssues;
+  final List<ProjectPlanValidationIssue> validationIssues;
   final int modelCallCount;
   final int repairAttempts;
   final PlanningMetrics planningMetrics;
@@ -68,14 +68,18 @@ class ProjectPlanningCoordinator {
       goalContext: userPrompt,
       cancellationToken: cancellationToken,
     );
-    final metadata = {
-      ...discovery.toMap(),
-      'commandExecutionApproved': workspace.commandExecutionApproved,
-    };
-    var issues = <Map<String, String>>[
+    final metadata = ProjectPlanningWorkspaceMetadata(
+      evidence: discovery,
+      commandExecutionApproved: workspace.commandExecutionApproved,
+    );
+    var issues = <ProjectPlanValidationIssue>[
       for (final issue in discovery.workspaceProfile.requiredContextIssues)
         if (blocksContextIssue(issue))
-          {'code': issue.code, 'path': issue.path, 'message': issue.message},
+          ProjectPlanValidationIssue(
+            code: issue.code,
+            path: issue.path,
+            message: issue.message,
+          ),
     ];
     var modelCallCount = 0;
     var repairAttempts = 0;

@@ -1,13 +1,14 @@
 import 'dart:async';
+import 'package:hermes/features/persistence/infrastructure/workspace_persistence_coordinator.dart';
 import 'package:hermes/app/test_factories.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
-import 'package:hermes/shared_kernel/persistence_contracts.dart';
+import 'package:hermes/features/persistence/application/persistence_contracts.dart';
 import 'package:hermes/features/project/application/project_application/project_execution_port.dart';
 import 'package:hermes/features/project/infrastructure/project_repository.dart';
 import 'package:hermes/features/project/runtime/project_completion_service.dart';
@@ -30,7 +31,9 @@ void main() {
       toolService: ToolService(workspaceSandbox: sandbox),
       sandbox: sandbox,
     );
-    projectRepository = ProjectRepository();
+    projectRepository = ProjectRepository(
+      coordinator: WorkspacePersistenceCoordinator(),
+    );
   });
 
   tearDown(() async {

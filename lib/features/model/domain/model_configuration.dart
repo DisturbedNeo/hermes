@@ -1,1 +1,1 @@
-export 'package:hermes/shared_kernel/model_configuration.dart';
+export 'package:hermes/features/model/application/model_configuration.dart';

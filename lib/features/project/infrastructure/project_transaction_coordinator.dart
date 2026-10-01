@@ -2,14 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hermes/shared_kernel/model_json.dart';
-import 'package:hermes/shared_kernel/atomic_json_snapshot_store.dart';
-import 'package:hermes/shared_kernel/persistence_contracts.dart';
-import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/core/model_json.dart';
+import 'package:hermes/features/persistence/infrastructure/atomic_json_snapshot_store.dart';
+import 'package:hermes/features/persistence/application/persistence_contracts.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
 import 'package:hermes/features/project/project_aggregate_repository_port.dart';
 import 'package:hermes/features/project/project_repository_port.dart';
-import 'package:hermes/shared_kernel/project_checkpoint.dart';
-import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/features/project/application/contracts/project_checkpoint.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
 import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
 import 'package:path/path.dart' as path;
 

@@ -1,15 +1,16 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/context_summary_prompt.dart';
-import 'package:hermes/shared_kernel/chat_message.dart';
-import 'package:hermes/shared_kernel/model_configuration.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/shared_kernel/system_prompt.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/shared_kernel/model_json.dart';
-import 'package:hermes/shared_kernel/question_policy_service.dart';
-import 'package:hermes/features/task/domain/task_planning_models.dart';
+import 'package:hermes/features/chat/application/protocol/context_summary_prompt.dart';
+import 'package:hermes/features/chat/application/contracts/chat_message.dart';
+import 'package:hermes/features/chat/application/protocol/chat_message_wire_adapter.dart';
+import 'package:hermes/features/model/application/model_configuration.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/core/model_json.dart';
+import 'package:hermes/features/task/application/contracts/question_policy_service.dart';
+import 'package:hermes/features/task/application/contracts/task_planning_models.dart';
 import 'package:hermes/platform/tools/calculator_tool.dart';
 
 void main() {
@@ -304,7 +305,7 @@ void main() {
         content: 'Done',
         reasoningContent: 'Thought',
       );
-      expect(ModelJson.encode(message), {
+      expect(const ChatMessageWireAdapter().encode(message), {
         'role': 'assistant',
         'content': 'Done',
         'reasoning_content': 'Thought',

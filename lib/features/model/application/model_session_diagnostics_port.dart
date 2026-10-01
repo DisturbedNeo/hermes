@@ -1,13 +1,14 @@
 import 'package:flutter/foundation.dart';
-import 'package:hermes/shared_kernel/model_call_diagnostics.dart';
-import 'package:hermes/shared_kernel/model_configuration.dart';
-import 'package:hermes/shared_kernel/model_session_contracts.dart';
+import 'package:hermes/features/model/application/model_call_diagnostics.dart';
+import 'package:hermes/features/model/application/model_configuration.dart';
+import 'package:hermes/features/model/application/model_session_contracts.dart';
 
 /// Presentation-safe model-session diagnostics capability.
 abstract interface class ModelSessionDiagnosticsPort implements Listenable {
   ModelServerState get state;
   ModelConfigurationSnapshot? get modelSnapshot;
   String? get baseUrl;
+  int? get port;
   String? get executablePath;
   Duration? get startupDuration;
   int? get contextLimitTokens;
@@ -25,19 +26,4 @@ abstract interface class ModelSessionDiagnosticsPort implements Listenable {
   int get activeCallCount;
   int? get displayContextTokens;
   bool get displayContextIsEstimate;
-
-  void setLiveTelemetryEnabled(bool enabled);
-  void updateContextEstimate(
-    int? estimatedContextTokens, {
-    int? contextLimitTokens,
-  });
-  void recordCompactionStarted(String status);
-  void recordCompactionStatus(String status);
-  void recordCompactionFinished({
-    required String status,
-    int? tokensSaved,
-    int? messagesCovered,
-  });
-  void recordCompactionFailed(Object error);
-  void clearLogs();
 }

@@ -3,15 +3,15 @@ import 'package:hermes/app/test_factories.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/compaction_settings.dart';
-import 'package:hermes/shared_kernel/chat_message.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/shared_kernel/task_system_settings.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/features/chat/application/contracts/compaction_settings.dart';
+import 'package:hermes/features/chat/application/contracts/chat_message.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
-import 'package:hermes/shared_kernel/model_completion_port.dart';
+import 'package:hermes/features/model/application/model_completion_port.dart';
 import 'package:hermes/features/project/application/project_application/project_execution_port.dart';
 import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
@@ -20,14 +20,14 @@ import 'package:hermes/features/project/application/project_application/project_
 import 'package:hermes/features/project/infrastructure/project_repository.dart';
 import 'package:hermes/features/project/infrastructure/project_aggregate_repository.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
-import 'package:hermes/features/task/domain/task_planning_models.dart';
-import 'package:hermes/shared_kernel/model_output.dart';
+import 'package:hermes/features/task/application/contracts/task_planning_models.dart';
+import 'package:hermes/features/model/application/model_output.dart';
 import 'package:hermes/features/task/infrastructure/task_repository.dart';
 import 'package:hermes/features/task/application/task_application/task_plan_materializer.dart';
-import 'package:hermes/shared_kernel/persistence_contracts.dart';
+import 'package:hermes/features/persistence/application/persistence_contracts.dart';
 import 'package:hermes/platform/tool_service.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
-import 'package:hermes/shared_kernel/workspace_persistence_coordinator.dart';
+import 'package:hermes/features/persistence/infrastructure/workspace_persistence_coordinator.dart';
 
 extension _ProjectApplicationTestCommands on ProjectApplication {
   Future<ProjectCommandResult> executeProject({
@@ -83,7 +83,9 @@ void main() {
       lastOpenedAt: DateTime(2026, 1, 1),
     );
     final sandbox = WorkspaceSandbox();
-    taskRepository = TaskRepository();
+    taskRepository = TaskRepository(
+      coordinator: WorkspacePersistenceCoordinator(),
+    );
     taskController = createTestTaskController(
       toolService: ToolService(workspaceSandbox: sandbox),
       sandbox: sandbox,
@@ -91,7 +93,9 @@ void main() {
     );
     service = createTestProjectApplication(
       taskController: taskController,
-      repository: ProjectRepository(),
+      repository: ProjectRepository(
+        coordinator: WorkspacePersistenceCoordinator(),
+      ),
     );
   });
 
@@ -184,7 +188,7 @@ void main() {
 
       expect(project.status, ProjectStatus.blocked);
       expect(
-        gateway.validationIssues!.map((issue) => issue['code']),
+        gateway.validationIssues!.map((issue) => issue.code),
         containsAll([
           'cyclic_dependencies',
           'impossible_deterministic_verification',
@@ -329,7 +333,9 @@ void main() {
   });
 
   test('does not rewrite unchanged project tasks during a run', () async {
-    final countingRepository = _CountingTaskRepository();
+    final countingRepository = _CountingTaskRepository(
+      coordinator: WorkspacePersistenceCoordinator(),
+    );
     final countedTaskController = createTestTaskController(
       toolService: ToolService(workspaceSandbox: WorkspaceSandbox()),
       sandbox: WorkspaceSandbox(),
@@ -881,7 +887,7 @@ class _QueueChatClient extends ChatClient {
   @override
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     Object? cancellationToken,
     String diagnosticsLabel = 'Model call',
     int? contextLimitTokens,
@@ -898,6 +904,8 @@ class _QueueChatClient extends ChatClient {
 }
 
 class _CountingTaskRepository extends TaskRepository {
+  _CountingTaskRepository({required super.coordinator});
+
   final List<String> savedTaskIds = [];
 
   @override
@@ -928,7 +936,7 @@ class _InitialisationGateway
   final ProjectInitialPlanResult initialPlan;
   final List<ProjectInitialPlanResult> repairedPlans;
   final ProjectAggregate? revisedProject;
-  List<Map<String, String>>? validationIssues;
+  List<ProjectPlanValidationIssue>? validationIssues;
   var repairCalls = 0;
   var revisePlanCalls = 0;
 
@@ -938,7 +946,7 @@ class _InitialisationGateway
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
-    required Map<String, dynamic> workspaceMetadata,
+    required ProjectPlanningWorkspaceMetadata workspaceMetadata,
     ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async => initialPlan;
@@ -949,9 +957,9 @@ class _InitialisationGateway
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
-    required Map<String, dynamic> workspaceMetadata,
+    required ProjectPlanningWorkspaceMetadata workspaceMetadata,
     required ProjectInitialPlanResult initialPlan,
-    required List<Map<String, String>> validationIssues,
+    required List<ProjectPlanValidationIssue> validationIssues,
     ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {

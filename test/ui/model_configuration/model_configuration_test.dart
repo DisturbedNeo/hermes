@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/model_configuration.dart';
-import 'package:hermes/shared_kernel/model_load_configuration.dart';
+import 'package:hermes/features/model/application/model_configuration.dart';
+import 'package:hermes/features/model/application/model_load_configuration.dart';
 import 'package:hermes/features/chat/presentation/model_configuration/model_configuration.dart';
 
 void main() {
@@ -18,7 +18,10 @@ void main() {
       body: ModelConfiguration(
         modelName: 'model',
         initialConfiguration:
-            initialConfiguration ?? ModelLoadConfiguration.defaults(),
+            initialConfiguration ??
+            ModelLoadConfiguration.defaults(
+              nThreads: Platform.numberOfProcessors,
+            ),
         hasSavedConfiguration: hasSavedConfiguration,
         onConfirm:
             onConfirm ?? (configuration, {required saveAsDefault}) async {},

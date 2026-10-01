@@ -4,11 +4,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/infrastructure/chat_library_repository.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
+import 'package:hermes/features/chat/infrastructure/chat_panel_protocol_adapter.dart';
 import 'package:hermes/features/model/infrastructure/llama_server_manager.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/features/chat/infrastructure/system_prompt_library_repository.dart';
 import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
 import 'package:hermes/platform/tool_service.dart';
+import 'package:hermes/features/tools/application/tool_protocol_adapter.dart';
+import 'package:hermes/features/chat/runtime/chat_application/chat_tool_execution_service.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
 import 'package:hermes/platform/workspace_service.dart';
 import 'package:hermes/features/chat/presentation/chat/chat.dart';
@@ -53,9 +56,14 @@ void main() {
       chatLibrary: chatLibrary,
       systemPromptLibrary: promptLibrary,
       toolService: toolService,
+      toolProtocol: ToolProtocolAdapter(registry: toolService),
+      toolExecution: ChatToolExecutionService(
+        protocol: ToolProtocolAdapter(registry: toolService),
+      ),
       taskQueries: taskController,
       taskSessions: taskController,
       taskPresentation: taskController,
+      panelProtocol: const ChatPanelProtocolAdapter(),
       taskPlanning: taskController,
       taskExecution: taskController,
       taskRecovery: taskController,

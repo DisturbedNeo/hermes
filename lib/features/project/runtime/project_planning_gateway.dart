@@ -1,12 +1,16 @@
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/shared_kernel/planning_metrics.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/model_completion_port.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/core/cancellation.dart';
+import 'package:hermes/features/model/application/model_completion_port.dart';
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
+import 'package:hermes/features/project/runtime/project_plan_validator.dart';
 import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
-import 'package:hermes/shared_kernel/model_output.dart';
-import 'package:hermes/shared_kernel/workspace_discovery_service.dart';
+import 'package:hermes/features/model/application/model_output.dart';
+import 'package:hermes/features/workspace/infrastructure/workspace_discovery_service.dart';
+
+export 'package:hermes/features/project/runtime/project_plan_validator.dart'
+    show ProjectPlanValidationIssue, ProjectPlanValidationSeverity;
 
 /// Canonical result of initial planning.
 ///
@@ -108,6 +112,31 @@ class ProjectEvidenceSnapshot {
   };
 }
 
+/// Typed planning metadata passed from discovery to a model planner.
+/// Wire conversion is intentionally local to the planning protocol adapter.
+class ProjectPlanningWorkspaceMetadata {
+  ProjectPlanningWorkspaceMetadata({
+    required this.evidence,
+    required this.commandExecutionApproved,
+  }) : _wireOverride = null;
+
+  ProjectPlanningWorkspaceMetadata.fromWire(Map<String, Object?> wire)
+    : evidence = null,
+      commandExecutionApproved = wire['commandExecutionApproved'] == true,
+      _wireOverride = Map.unmodifiable(wire);
+
+  final ProjectEvidenceSnapshot? evidence;
+  final bool commandExecutionApproved;
+  final Map<String, Object?>? _wireOverride;
+
+  Map<String, Object?> toWire() =>
+      _wireOverride ??
+      <String, Object?>{
+        ...evidence!.toMap(),
+        'commandExecutionApproved': commandExecutionApproved,
+      };
+}
+
 /// Pure result of evaluating whether the persisted project state is complete.
 class ProjectCompletionAssessment {
   final bool complete;
@@ -158,7 +187,7 @@ abstract interface class ProjectPlanner {
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
-    required Map<String, dynamic> workspaceMetadata,
+    required ProjectPlanningWorkspaceMetadata workspaceMetadata,
     ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });
@@ -168,9 +197,9 @@ abstract interface class ProjectPlanner {
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
-    required Map<String, dynamic> workspaceMetadata,
+    required ProjectPlanningWorkspaceMetadata workspaceMetadata,
     required ProjectInitialPlanResult initialPlan,
-    required List<Map<String, String>> validationIssues,
+    required List<ProjectPlanValidationIssue> validationIssues,
     ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });

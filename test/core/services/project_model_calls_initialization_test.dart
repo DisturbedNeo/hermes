@@ -2,10 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/chat_message.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/features/chat/application/contracts/chat_message.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/features/project/runtime/project_model_calls.dart';
+import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
 
 void main() {
@@ -51,13 +52,13 @@ void main() {
         lastOpenedAt: now,
       ),
       originalGoal: 'Deliver a bounded outcome.',
-      workspaceMetadata: const {
+      workspaceMetadata: ProjectPlanningWorkspaceMetadata.fromWire({
         'workspaceName': 'Workspace',
         'workspaceProfile': {
           'treePaths': ['lib/'],
           'highSignalFiles': [],
         },
-      },
+      }),
     );
 
     final plan = initialPlan.patch.plan;
@@ -76,8 +77,7 @@ void main() {
     expect(initialPlan.planningMetrics.planningCommandCount, 5);
     expect(initialPlan.planningMetrics.promptTokenEstimate, greaterThan(0));
     final toolNames = [
-      for (final item in (client.lastExtraParams?['tools'] as List))
-        ((item as Map)['function'] as Map)['name'],
+      for (final item in client.lastExtraParams?.tools ?? const []) item.id,
     ];
     expect(toolNames, contains('plan_set_project_details'));
   });
@@ -132,7 +132,7 @@ void main() {
           lastOpenedAt: DateTime(2026, 1, 1),
         ),
         originalGoal: 'Deliver an accessible report workflow.',
-        workspaceMetadata: const {
+        workspaceMetadata: ProjectPlanningWorkspaceMetadata.fromWire({
           'workspaceName': 'Workspace',
           'workspaceProfile': {
             'treePaths': ['Design.md'],
@@ -144,7 +144,7 @@ void main() {
               },
             ],
           },
-        },
+        }),
       );
 
       expect(initialPlan.patch.plan.tasks, hasLength(1));
@@ -161,9 +161,9 @@ void main() {
               )
               as Map;
       expect(toolResult['content'], design);
-      final tools = client.lastExtraParams?['tools'] as List;
+      final tools = client.lastExtraParams?.tools ?? const [];
       expect([
-        for (final item in tools) ((item as Map)['function'] as Map)['name'],
+        for (final item in tools) item.id,
       ], contains('planning_read_file'));
 
       final prompt = client.seenMessages
@@ -190,14 +190,14 @@ class _Client extends ChatClient {
   _Client(this._responses) : super(baseUrl: 'http://localhost', model: 'test');
 
   final List<ChatCompletionToolCall> _responses;
-  Map<String, dynamic>? lastExtraParams;
+  ModelRequestOptions? lastExtraParams;
   final List<List<ChatMessage>> seenMessages = [];
   var _index = 0;
 
   @override
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     Object? cancellationToken,
     String diagnosticsLabel = 'Model call',
     int? contextLimitTokens,

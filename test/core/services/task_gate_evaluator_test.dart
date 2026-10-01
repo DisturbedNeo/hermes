@@ -2,14 +2,15 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/chat_message.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/features/chat/application/contracts/chat_message.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/sandbox_policy.dart';
+import 'package:hermes/core/cancellation.dart';
+import 'package:hermes/features/workspace/application/sandbox_policy.dart';
 import 'package:hermes/features/task/runtime/task_gate_evaluator.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
+import 'package:hermes/platform/yaml_document_validator.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
@@ -27,7 +28,10 @@ void main() {
         displayName: 'Workspace',
         lastOpenedAt: DateTime(2026, 1, 1),
       );
-      evaluator = TaskGateEvaluator(sandbox: WorkspaceSandbox());
+      evaluator = TaskGateEvaluator(
+        sandbox: WorkspaceSandbox(),
+        yamlValidator: const YamlDocumentValidator(),
+      );
       step = const TaskStep(
         id: 'step_1',
         title: 'Step',
@@ -846,7 +850,7 @@ class _ReviewClient extends ChatClient {
   @override
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     Object? cancellationToken,
     String diagnosticsLabel = 'Model call',
     int? contextLimitTokens,

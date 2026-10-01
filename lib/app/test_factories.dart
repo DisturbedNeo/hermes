@@ -9,7 +9,7 @@ import 'package:hermes/features/project/runtime/project_lifecycle_service.dart';
 import 'package:hermes/features/project/runtime/project_memory_service.dart';
 import 'package:hermes/features/project/runtime/project_progress_monitor.dart';
 import 'package:hermes/features/project/runtime/project_recovery_service.dart';
-import 'package:hermes/features/project/runtime/project_runtime_collaborators.dart';
+import 'package:hermes/features/project/runtime/project_execution_runtime.dart';
 import 'package:hermes/features/project/runtime/project_model_calls.dart';
 import 'package:hermes/features/project/runtime/project_discovery_service.dart';
 import 'package:hermes/features/project/runtime/project_planning_coordinator.dart';
@@ -33,21 +33,25 @@ import 'package:hermes/features/task/runtime/task_planning_service.dart';
 import 'package:hermes/features/task/runtime/task_planning_coordinator.dart';
 import 'package:hermes/features/task/runtime/task_tool_execution_service.dart';
 import 'package:hermes/features/task/runtime/task_model_completion_service.dart';
-import 'package:hermes/features/task/runtime/task_runtime_collaborators.dart';
+import 'package:hermes/features/task/runtime/task_step_execution_runtime.dart';
 import 'package:hermes/features/task/runtime/task_command_service.dart';
 import 'package:hermes/features/task/runtime/task_step_runner.dart';
 import 'package:hermes/features/task/runtime/task_gate_evaluator.dart';
 import 'package:hermes/features/task/runtime/task_view_service.dart';
 import 'package:hermes/features/project/infrastructure/project_aggregate_repository.dart';
 import 'package:hermes/features/project/infrastructure/project_repository.dart';
-import 'package:hermes/shared_kernel/planning_runtime.dart';
-import 'package:hermes/shared_kernel/planning_structured_output.dart';
-import 'package:hermes/shared_kernel/tool_contracts.dart';
-import 'package:hermes/shared_kernel/workspace_discovery_service.dart';
-import 'package:hermes/shared_kernel/workspace_ports.dart';
-import 'package:hermes/shared_kernel/question_policy_service.dart';
+import 'package:hermes/features/task/application/protocol/planning_runtime.dart';
+import 'package:hermes/features/task/application/protocol/planning_structured_output.dart';
+import 'package:hermes/features/tools/application/tool_contracts.dart';
+import 'package:hermes/features/workspace/infrastructure/workspace_discovery_service.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
+import 'package:hermes/features/workspace/infrastructure/workspace_change_discovery_service.dart';
+import 'package:hermes/platform/yaml_document_validator.dart';
+import 'package:hermes/features/task/application/contracts/question_policy_service.dart';
 import 'package:hermes/platform/tool_service.dart';
+import 'package:hermes/features/tools/application/tool_protocol_adapter.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
+import 'package:hermes/app/modules/persistence_module.dart';
 
 /// Explicit construction helpers for tests that need lightweight adapters.
 /// Production composition is kept in [AppDependencies].
@@ -64,7 +68,9 @@ TaskController createTestTaskController({
   StructuredPlanningOutputService? structuredOutput,
   WorkspaceDiscoveryProfileService? profileService,
 }) {
-  final resolvedPersistence = persistence ?? TaskRepository();
+  final resolvedPersistence =
+      persistence ??
+      TaskRepository(coordinator: PersistenceModule.create().coordinator);
   final resolvedPersistenceStore =
       persistenceStore ??
       TaskPersistenceStore(persistence: resolvedPersistence);
@@ -79,7 +85,10 @@ TaskController createTestTaskController({
       TaskModelCompletionService(structuredOutput: resolvedStructuredOutput);
   final resolvedToolExecution =
       toolExecution ??
-      TaskToolExecutionService(toolService: toolService, sandbox: sandbox);
+      TaskToolExecutionService(
+        protocol: ToolProtocolAdapter(registry: toolService),
+        sandbox: sandbox,
+      );
 
   return TaskController(
     dependencies: TaskRuntimeDependencies(
@@ -89,7 +98,10 @@ TaskController createTestTaskController({
       persistenceStore: resolvedPersistenceStore,
       profileService:
           profileService ?? const WorkspaceDiscoveryProfileService(),
-      gateEvaluator: TaskGateEvaluator(sandbox: sandbox),
+      gateEvaluator: TaskGateEvaluator(
+        sandbox: sandbox,
+        yamlValidator: const YamlDocumentValidator(),
+      ),
       recoveryService: resolvedRecovery,
       modelCompletion: resolvedModelCompletion,
       toolExecution: resolvedToolExecution,
@@ -131,7 +143,12 @@ ProjectApplication createTestProjectApplication({
   ProjectCompletionService? completion,
   ProjectRecoveryService? recoveryService,
 }) {
-  final resolvedTasks = taskPersistence ?? TaskRepository();
+  final resolvedCoordinator =
+      persistenceCoordinator ??
+      taskPersistence?.coordinator ??
+      PersistenceModule.create().coordinator;
+  final resolvedTasks =
+      taskPersistence ?? TaskRepository(coordinator: resolvedCoordinator);
   final resolvedSandbox = sandbox ?? WorkspaceSandbox();
   final resolvedTools =
       toolService ??
@@ -140,7 +157,8 @@ ProjectApplication createTestProjectApplication({
             ? resolvedSandbox
             : WorkspaceSandbox(),
       );
-  final resolvedProjects = repository ?? ProjectRepository();
+  final resolvedProjects =
+      repository ?? ProjectRepository(coordinator: resolvedCoordinator);
   final resolvedAggregate =
       aggregateRepository ??
       ProjectAggregateRepository(
@@ -148,8 +166,6 @@ ProjectApplication createTestProjectApplication({
         taskRepository: resolvedTasks,
         coordinator: persistenceCoordinator ?? resolvedTasks.coordinator,
       );
-  final resolvedCoordinator =
-      persistenceCoordinator ?? resolvedTasks.coordinator;
   final resolvedPlanningRunner =
       planningRunner ?? const PlanningToolCallRunner();
   final resolvedStructuredOutput =
@@ -193,6 +209,7 @@ ProjectApplication createTestProjectApplication({
   );
   final resolvedDiscovery = ProjectDiscoveryService(
     taskController: taskController,
+    changeDiscovery: WorkspaceChangeDiscoveryService(commands: resolvedSandbox),
     memoryService: resolvedMemoryService,
   );
   final resolvedPlanningHandler = ProjectPlanningHandler(
@@ -238,7 +255,6 @@ ProjectApplication createTestProjectApplication({
       taskLifecycleService: resolvedTaskLifecycle,
       completionService: resolvedCompletion,
       recoveryHandler: ProjectRecoveryHandler(resolvedRecoveryService),
-      encoder: const JsonEncoder.withIndent('  '),
       executionPort: executionPort,
       recoveryPort: recoveryPort,
     ),

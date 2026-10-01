@@ -2,15 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:hermes/features/chat/presentation/a11y.dart';
-import 'package:hermes/shared_kernel/planning_metrics.dart';
-import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
-import 'package:hermes/features/project/domain/project_scheduler.dart';
-import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
+import 'package:hermes/features/project/application/project_command_protocol_adapter.dart';
+import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
 import 'package:hermes/features/chat/presentation/chat/task_panel_dialogs.dart';
 
 class ProjectOutcomeSection extends StatelessWidget {
-  final ProjectAggregate project;
+  final ProjectPanelReadModel project;
 
   const ProjectOutcomeSection({super.key, required this.project});
 
@@ -178,16 +177,14 @@ class _CriterionTile extends StatelessWidget {
 }
 
 class ProjectWorkspaceContextSection extends StatelessWidget {
-  final ProjectAggregate project;
+  final ProjectPanelReadModel project;
 
   const ProjectWorkspaceContextSection({super.key, required this.project});
 
   @override
   Widget build(BuildContext context) {
     final graph = project.workspaceGraph;
-    final selection = const ProjectWorkspaceContextService().selectContext(
-      project: project,
-    );
+    final selection = project.workspaceContext;
     final nodes = selection.nodes;
     final edges = selection.edges.take(24).toList();
     final nodeTitles = {for (final node in nodes) node.id: node.title};
@@ -302,18 +299,17 @@ class ProjectWorkspaceContextSection extends StatelessWidget {
 }
 
 class ProjectRoadmapSection extends StatelessWidget {
-  final ProjectAggregate project;
+  final ProjectPanelReadModel project;
 
   const ProjectRoadmapSection({super.key, required this.project});
 
   @override
   Widget build(BuildContext context) {
-    const scheduler = ProjectScheduler();
-    final refreshed = scheduler.refreshReadiness(project);
+    final refreshed = project.schedule;
     final currentTask = project.activeTaskId == null
         ? null
         : project.taskById(project.activeTaskId!);
-    final ready = scheduler.orderedReadyTasks(project);
+    final ready = project.orderedReadyTasks;
     final readyIds = ready.map((item) => item.id).toSet();
     final waitingDependency = project.tasks.where((item) {
       return refreshed.readinessFor(item.id) == TaskReadiness.waitingDependency;
@@ -424,7 +420,7 @@ class ProjectRoadmapSection extends StatelessWidget {
 }
 
 class _MilestoneTile extends StatelessWidget {
-  final ProjectAggregate project;
+  final ProjectPanelReadModel project;
   final ProjectMilestone milestone;
 
   const _MilestoneTile({required this.project, required this.milestone});
@@ -555,7 +551,7 @@ class _RoadmapTaskTile extends StatelessWidget {
 }
 
 class ProjectEvidenceSection extends StatelessWidget {
-  final ProjectAggregate project;
+  final ProjectPanelReadModel project;
   final ChatController chat;
 
   const ProjectEvidenceSection({
@@ -699,7 +695,7 @@ class _EvidenceTile extends StatelessWidget {
 }
 
 class ProjectRevisionSection extends StatelessWidget {
-  final ProjectAggregate project;
+  final ProjectPanelReadModel project;
   final ChatController chat;
 
   const ProjectRevisionSection({
@@ -733,7 +729,7 @@ class ProjectRevisionSection extends StatelessWidget {
 }
 
 class _PendingRevision extends StatelessWidget {
-  final ProjectAggregate project;
+  final ProjectPanelReadModel project;
   final PendingProjectPlanApproval pending;
   final ChatController chat;
 
@@ -794,7 +790,10 @@ class _PendingRevision extends StatelessWidget {
           _DiffList(
             label: 'Split tasks',
             values: proposal.splitTaskIds
-                .map((id) => '${project.taskById(id)?.title ?? 'Task'} ($id)')
+                .map(
+                  (id) =>
+                      '${project.taskById(id)?.title ?? 'TaskPanelReadModel'} ($id)',
+                )
                 .toList(),
           ),
           _DiffList(label: 'Deferred tasks', values: proposal.deferredTaskIds),
@@ -1066,7 +1065,8 @@ Future<void> _showProjectEditor(
   final saved = await EditProjectDialog.show(
     context,
     initialJson: initial,
-    onSave: chat.updateProjectPlan,
+    onSave: (json) =>
+        chat.updateProjectPlan(ProjectCommandProtocolAdapter.decode(json)),
   );
   if (saved && context.mounted) {
     ScaffoldMessenger.of(

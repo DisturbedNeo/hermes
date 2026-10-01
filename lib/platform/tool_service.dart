@@ -1,27 +1,20 @@
-import 'dart:convert';
-
 import 'package:hermes/platform/tools/calculator_tool.dart';
 import 'package:hermes/platform/tools/tool.dart';
 import 'package:hermes/platform/tools/workspace_tools.dart';
-import 'package:hermes/platform/workspace_sandbox.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/tool_contracts.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/subagent_service.dart';
+import 'package:hermes/core/cancellation.dart';
+import 'package:hermes/features/tools/application/subagent_service.dart';
+import 'package:hermes/features/tools/application/tool_contracts.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
 
 class ToolService implements ToolRegistryPort {
-  ToolService({required WorkspaceSandbox workspaceSandbox})
-    : _workspaceSandbox = workspaceSandbox;
+  ToolService({
+    required WorkspaceSandboxPort workspaceSandbox,
+    SubagentService? subagentService,
+  }) : _workspaceSandbox = workspaceSandbox,
+       _subagentService = subagentService;
 
-  final WorkspaceSandbox _workspaceSandbox;
-  SubagentService? _subagentService;
-
-  /// Updates the subagent service. Pass null to disable when the LLM server
-  /// is unavailable.
-  void setSubagentService(SubagentService? service) {
-    _subagentService = service;
-  }
-
+  final WorkspaceSandboxPort _workspaceSandbox;
+  final SubagentService? _subagentService;
   late final List<Tool> _globalTools = [CalculatorTool()];
 
   late final List<Tool> _workspaceTools = [
@@ -60,7 +53,7 @@ class ToolService implements ToolRegistryPort {
             id: tool.id,
             name: tool.name,
             description: tool.description,
-            schema: tool.schema,
+            schema: ToolSchema(tool.schema),
           ),
         )
         .toList();
@@ -74,9 +67,8 @@ class ToolService implements ToolRegistryPort {
 
   /// Typed application boundary for tool execution.
   ///
-  /// [execute] remains as the protocol compatibility adapter for model JSON.
-  /// New application code should pass [ToolRequest] and receive [ToolResult]
-  /// so malformed JSON cannot leak through the feature graph.
+  /// Executes a validated typed request. Wire JSON is decoded by
+  /// [ToolProtocolAdapter] before it reaches this service.
   @override
   Future<ToolResult> executeTyped(ToolRequest request) async {
     final context = request.context;
@@ -118,7 +110,7 @@ class ToolService implements ToolRegistryPort {
                   workspace: context.workspace,
                   permission: context.permission,
                   cancellationToken: context.cancellationToken,
-                  runtimeContext: _subagentService,
+                  subagentService: context.subagentService ?? _subagentService,
                 ),
         ),
       );
@@ -150,30 +142,6 @@ class ToolService implements ToolRegistryPort {
     _ => ToolPermission.none,
   };
 
-  Future<String> execute({
-    String toolId = '',
-    String argumentsJson = '',
-    WorkspaceToolContext? context,
-  }) {
-    final toolContext = context == null
-        ? null
-        : ToolContext(
-            workspace: ToolWorkspace(
-              rootPath: context.workspace.rootPath,
-              displayName: context.workspace.displayName,
-              missing: context.workspace.missing,
-              commandExecutionApproved:
-                  context.workspace.commandExecutionApproved,
-            ),
-            permission: _requiredPermission(toolId),
-            cancellationToken: context.cancellationToken,
-            runtimeContext: _subagentService,
-          );
-    final arguments = argumentsJson.isEmpty
-        ? const <String, Object?>{}
-        : Map<String, Object?>.from(jsonDecode(argumentsJson) as Map);
-    return executeTyped(
-      ToolRequest(toolId: toolId, arguments: arguments, context: toolContext),
-    ).then((result) => result.encode());
-  }
+  @override
+  ToolPermission permissionFor(String toolId) => _requiredPermission(toolId);
 }

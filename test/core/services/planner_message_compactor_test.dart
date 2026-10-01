@@ -1,24 +1,25 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/chat_message.dart';
-import 'package:hermes/shared_kernel/planner_message_compactor.dart';
+import 'package:hermes/features/chat/application/contracts/chat_message.dart';
+import 'package:hermes/features/task/application/protocol/planner_message_compactor.dart';
+import 'package:hermes/features/chat/application/protocol/chat_message_wire_adapter.dart';
 
 void main() {
   test('compacts old planning output while preserving tool call structure', () {
     final messages = [
       const ChatMessage(role: 'system', content: 'System prompt'),
       const ChatMessage(role: 'user', content: 'User request'),
-      const ChatMessage(
+      ChatMessage(
         role: 'assistant',
         content: 'Old reasoning',
         reasoningContent: 'Old reasoning details',
         toolCalls: [
-          {
-            'id': 'old-call',
-            'type': 'function',
-            'function': {'name': 'project_view', 'arguments': '{}'},
-          },
+          ChatMessageWireAdapter().toolCall(
+            id: 'old-call',
+            name: 'project_view',
+            argumentsJson: '{}',
+          ),
         ],
       ),
       const ChatMessage(

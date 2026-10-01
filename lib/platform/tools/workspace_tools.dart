@@ -1,18 +1,17 @@
 import 'dart:io';
 
-import 'package:hermes/shared_kernel/task_execution_contracts.dart';
-import 'package:hermes/shared_kernel/task_tool_contracts.dart';
-import 'package:hermes/shared_kernel/tool_contracts.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/subagent_service.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/sandbox_policy.dart';
-import 'package:hermes/platform/workspace_sandbox.dart';
+import 'package:hermes/features/task/application/contracts/task_execution_contracts.dart';
+import 'package:hermes/features/task/application/contracts/task_tool_contracts.dart';
+import 'package:hermes/features/tools/application/tool_contracts.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
+import 'package:hermes/core/cancellation.dart';
+import 'package:hermes/features/workspace/application/sandbox_policy.dart';
 import 'package:hermes/platform/tools/tool.dart';
-import 'package:hermes/shared_kernel/tool_error.dart';
+import 'package:hermes/features/tools/application/tool_error.dart';
 
 abstract class WorkspaceTool extends Tool {
-  final WorkspaceSandbox sandbox;
+  final WorkspaceSandboxPort sandbox;
 
   WorkspaceTool(this.sandbox);
 
@@ -44,23 +43,23 @@ abstract class WorkspaceTool extends Tool {
         missing: context.workspace!.missing,
         commandExecutionApproved: context.workspace!.commandExecutionApproved,
       ),
-      subagentService: context.runtimeContext,
+      subagentService: context.subagentService,
       cancellationToken: context.cancellationToken,
     );
 
     try {
       final result = await run(
-        Map<String, dynamic>.from(request.arguments),
+        Map<String, dynamic>.from(request.arguments.toValues()),
         workspaceContext,
       );
-      return ToolSuccess(result);
+      return ToolSuccess(ToolPayload(result));
     } on OperationCancelledException {
       rethrow;
     } on WorkspaceSandboxException catch (e) {
       return ToolFailure(
         code: e.code,
         message: e.message,
-        details: const {'error_disposition': 'advisory'},
+        details: const ToolPayload({'error_disposition': 'advisory'}),
       );
     } on FormatException catch (e) {
       return ToolFailure(code: 'invalid_tool_arguments', message: e.toString());
@@ -85,6 +84,53 @@ abstract class WorkspaceTool extends Tool {
 
   bool boolArg(Map<String, dynamic> input, String key) => input[key] == true;
 }
+
+Map<String, Object?> _directoryEntryWire(WorkspaceDirectoryEntry entry) => {
+  'path': entry.path,
+  'name': entry.name,
+  'type': entry.kind.name,
+  'size': entry.size,
+  'modified': entry.modified.toIso8601String(),
+};
+
+Map<String, Object?> _fileReadWire(WorkspaceFileReadResult result) => {
+  'path': result.path,
+  'content': result.content,
+  'bytes': result.bytes,
+};
+
+Map<String, Object?> _fileWriteWire(WorkspaceFileWriteResult result) => {
+  'path': result.path,
+  'bytes': result.bytes,
+};
+
+Map<String, Object?> _patchWire(WorkspaceFilePatchResult result) => {
+  'path': result.path,
+  'replacements': result.replacements,
+};
+
+Map<String, Object?> _pathWire(WorkspacePathResult result) => {
+  'path': result.path,
+};
+
+Map<String, Object?> _renameWire(WorkspaceRenameResult result) => {
+  'from': result.from,
+  'to': result.to,
+};
+
+Map<String, Object?> _searchWire(WorkspaceSearchMatch result) => {
+  'path': result.path,
+  'line': result.line,
+  'preview': result.preview,
+};
+
+Map<String, Object?> _commandWire(WorkspaceCommandResult result) => {
+  'command': result.command,
+  'working_directory': result.workingDirectory,
+  'exit_code': result.exitCode,
+  'stdout': result.stdout,
+  'stderr': result.stderr,
+};
 
 class ListDirectoryTool extends WorkspaceTool {
   ListDirectoryTool(super.sandbox);
@@ -112,13 +158,12 @@ class ListDirectoryTool extends WorkspaceTool {
     Map<String, dynamic> input,
     WorkspaceToolContext context,
   ) async {
-    return {
-      'entries': await sandbox.listDirectory(
-        context.workspace.rootPath,
-        stringArg(input, 'path', fallback: '.'),
-        cancellationToken: context.cancellationToken,
-      ),
-    };
+    final entries = await sandbox.listDirectory(
+      context.workspace.rootPath,
+      stringArg(input, 'path', fallback: '.'),
+      cancellationToken: context.cancellationToken,
+    );
+    return {'entries': entries.map(_directoryEntryWire).toList()};
   }
 }
 
@@ -159,15 +204,16 @@ class ReadFileTool extends WorkspaceTool {
 
     if (request.isEmpty) {
       // Standard read - return full file content
-      return sandbox.readFile(
+      final result = await sandbox.readFile(
         context.workspace.rootPath,
         filePath,
         cancellationToken: context.cancellationToken,
       );
+      return _fileReadWire(result);
     }
 
     // Request mode - extract specific information using subagent
-    final subagentService = context.subagentService as SubagentService?;
+    final subagentService = context.subagentService;
     if (subagentService == null) {
       return {
         ...toolErrorPayload(
@@ -187,11 +233,7 @@ class ReadFileTool extends WorkspaceTool {
       );
 
       // Check if the read returned an error
-      if (fileContent.containsKey('error')) {
-        return fileContent;
-      }
-
-      final content = fileContent['content'] as String? ?? '';
+      final content = fileContent.content;
 
       if (content.isEmpty) {
         return {'extracted': ''};
@@ -247,13 +289,14 @@ class WriteFileTool extends WorkspaceTool {
   Future<Map<String, dynamic>> run(
     Map<String, dynamic> input,
     WorkspaceToolContext context,
-  ) {
-    return sandbox.writeFile(
+  ) async {
+    final result = await sandbox.writeFile(
       context.workspace.rootPath,
       stringArg(input, 'path'),
       stringArg(input, 'content'),
       cancellationToken: context.cancellationToken,
     );
+    return _fileWriteWire(result);
   }
 }
 
@@ -289,8 +332,8 @@ class PatchFileTool extends WorkspaceTool {
   Future<Map<String, dynamic>> run(
     Map<String, dynamic> input,
     WorkspaceToolContext context,
-  ) {
-    return sandbox.patchFile(
+  ) async {
+    final result = await sandbox.patchFile(
       context.workspace.rootPath,
       stringArg(input, 'path'),
       stringArg(input, 'old_text'),
@@ -298,6 +341,7 @@ class PatchFileTool extends WorkspaceTool {
       replaceAll: boolArg(input, 'replace_all'),
       cancellationToken: context.cancellationToken,
     );
+    return _patchWire(result);
   }
 }
 
@@ -331,12 +375,12 @@ class SearchFilesTool extends WorkspaceTool {
     WorkspaceToolContext context,
   ) async {
     return {
-      'matches': await sandbox.searchFiles(
+      'matches': (await sandbox.searchFiles(
         context.workspace.rootPath,
         stringArg(input, 'query'),
         relativePath: stringArg(input, 'path', fallback: '.'),
         cancellationToken: context.cancellationToken,
-      ),
+      )).map(_searchWire).toList(),
     };
   }
 }
@@ -366,11 +410,13 @@ class CreateDirectoryTool extends WorkspaceTool {
   Future<Map<String, dynamic>> run(
     Map<String, dynamic> input,
     WorkspaceToolContext context,
-  ) {
-    return sandbox.createDirectory(
+  ) async {
+    final result = await sandbox.createDirectory(
       context.workspace.rootPath,
       stringArg(input, 'path'),
+      cancellationToken: context.cancellationToken,
     );
+    return _pathWire(result);
   }
 }
 
@@ -398,12 +444,14 @@ class RenamePathTool extends WorkspaceTool {
   Future<Map<String, dynamic>> run(
     Map<String, dynamic> input,
     WorkspaceToolContext context,
-  ) {
-    return sandbox.renamePath(
+  ) async {
+    final result = await sandbox.renamePath(
       context.workspace.rootPath,
       stringArg(input, 'from'),
       stringArg(input, 'to'),
+      cancellationToken: context.cancellationToken,
     );
+    return _renameWire(result);
   }
 }
 
@@ -433,12 +481,14 @@ class DeletePathTool extends WorkspaceTool {
   Future<Map<String, dynamic>> run(
     Map<String, dynamic> input,
     WorkspaceToolContext context,
-  ) {
-    return sandbox.deletePath(
+  ) async {
+    final result = await sandbox.deletePath(
       context.workspace.rootPath,
       stringArg(input, 'path'),
       recursive: boolArg(input, 'recursive'),
+      cancellationToken: context.cancellationToken,
     );
+    return _pathWire(result);
   }
 }
 
@@ -480,7 +530,7 @@ class RunCommandTool extends WorkspaceTool {
   Future<Map<String, dynamic>> run(
     Map<String, dynamic> input,
     WorkspaceToolContext context,
-  ) {
+  ) async {
     if (!context.workspace.commandExecutionApproved) {
       return Future.value(
         toolErrorPayload(
@@ -498,12 +548,13 @@ class RunCommandTool extends WorkspaceTool {
         : <String>[];
     final command = stringArg(input, 'command');
 
-    return sandbox.runCommand(
+    final result = await sandbox.runCommand(
       context.workspace.rootPath,
       command: command,
       arguments: args,
       workingDirectory: stringArg(input, 'working_directory', fallback: '.'),
       cancellationToken: context.cancellationToken,
     );
+    return _commandWire(result);
   }
 }

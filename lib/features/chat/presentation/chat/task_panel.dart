@@ -2,9 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:hermes/features/chat/presentation/a11y.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
+import 'package:hermes/features/project/application/project_command_protocol_adapter.dart';
+import 'package:hermes/features/task/application/task_command_protocol_adapter.dart';
+import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
 import 'package:hermes/features/chat/presentation/common/state_display.dart';
 import 'package:hermes/features/chat/presentation/chat/project_panel_sections.dart';
 import 'package:hermes/features/chat/presentation/chat/task_panel_dialogs.dart';
@@ -76,8 +77,8 @@ class TaskPanel extends StatelessWidget {
 
 class _CollapsedTaskPanel extends StatelessWidget {
   final ChatController chat;
-  final ProjectAggregate? project;
-  final Task? task;
+  final ProjectPanelReadModel? project;
+  final TaskPanelReadModel? task;
   final VoidCallback onToggleExpanded;
 
   const _CollapsedTaskPanel({
@@ -126,7 +127,7 @@ class _CollapsedTaskPanel extends StatelessWidget {
                 )
               else if (task != null)
                 AccessibleWidget(
-                  label: 'Task status: ${task!.status.wire}',
+                  label: 'TaskPanelReadModel status: ${task!.status.wire}',
                   child: _StatusChip(label: task!.status.wire),
                 ),
               IconButton(
@@ -144,8 +145,8 @@ class _CollapsedTaskPanel extends StatelessWidget {
 
 class _Header extends StatelessWidget {
   final ChatController chat;
-  final ProjectAggregate? project;
-  final Task? task;
+  final ProjectPanelReadModel? project;
+  final TaskPanelReadModel? task;
   final VoidCallback onToggleExpanded;
 
   const _Header({
@@ -216,7 +217,7 @@ class _Header extends StatelessWidget {
 
 class _ProjectBody extends StatelessWidget {
   final ChatController chat;
-  final ProjectAggregate project;
+  final ProjectPanelReadModel project;
 
   const _ProjectBody({required this.chat, required this.project});
 
@@ -291,7 +292,7 @@ class _ProjectBody extends StatelessWidget {
         if (activeTask != null) ...[
           const SizedBox(height: 10),
           _Section(
-            title: 'Task Executor',
+            title: 'TaskPanelReadModel Executor',
             child: _CurrentProjectTask(chat: chat, task: activeTask),
           ),
         ],
@@ -387,7 +388,7 @@ class _ProjectBody extends StatelessWidget {
 
 class _ProjectActions extends StatelessWidget {
   final ChatController chat;
-  final ProjectAggregate project;
+  final ProjectPanelReadModel project;
 
   const _ProjectActions({required this.chat, required this.project});
 
@@ -436,7 +437,7 @@ class _ProjectActions extends StatelessWidget {
           enabled: canRun,
           child: FilledButton.icon(
             icon: const Icon(Icons.play_arrow),
-            label: const Text('Run Next Ready Task'),
+            label: const Text('Run Next Ready TaskPanelReadModel'),
             onPressed: canRun
                 ? () => unawaited(chat.runNextProjectTask())
                 : null,
@@ -512,7 +513,9 @@ class _ProjectActions extends StatelessWidget {
                     final saved = await EditProjectDialog.show(
                       context,
                       initialJson: initial,
-                      onSave: chat.updateProjectPlan,
+                      onSave: (json) => chat.updateProjectPlan(
+                        ProjectCommandProtocolAdapter.decode(json),
+                      ),
                     );
                     if (saved && context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -541,7 +544,7 @@ class _ProjectActions extends StatelessWidget {
 
 class _ProjectQuestionCard extends StatefulWidget {
   final ChatController chat;
-  final ProjectAggregate project;
+  final ProjectPanelReadModel project;
 
   const _ProjectQuestionCard({required this.chat, required this.project});
 
@@ -598,7 +601,7 @@ class _ProjectQuestionCardState extends State<_ProjectQuestionCard> {
 }
 
 class _ProjectBlockerCard extends StatelessWidget {
-  final ProjectAggregate project;
+  final ProjectPanelReadModel project;
 
   const _ProjectBlockerCard({required this.project});
 
@@ -618,7 +621,7 @@ class _ProjectBlockerCard extends StatelessWidget {
 
 class _CurrentProjectTask extends StatelessWidget {
   final ChatController chat;
-  final Task task;
+  final TaskPanelReadModel task;
 
   const _CurrentProjectTask({required this.chat, required this.task});
 
@@ -689,7 +692,7 @@ class _CurrentProjectTask extends StatelessWidget {
 
 class _TaskBody extends StatelessWidget {
   final ChatController chat;
-  final Task task;
+  final TaskPanelReadModel task;
 
   const _TaskBody({required this.chat, required this.task});
 
@@ -714,7 +717,7 @@ class _TaskBody extends StatelessWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             AccessibleWidget(
-              label: 'Task status: ${task.status.wire}',
+              label: 'TaskPanelReadModel status: ${task.status.wire}',
               child: _StatusChip(label: task.status.wire),
             ),
             AccessibleWidget(
@@ -724,7 +727,7 @@ class _TaskBody extends StatelessWidget {
               ),
             ),
             AccessibleWidget(
-              label: 'Task ID: .agent/tasks/${task.id}',
+              label: 'TaskPanelReadModel ID: .agent/tasks/${task.id}',
               child: _StatusChip(label: '.agent/tasks/${task.id}'),
             ),
           ],
@@ -794,7 +797,7 @@ class _TaskBody extends StatelessWidget {
 
 class _Actions extends StatelessWidget {
   final ChatController chat;
-  final Task task;
+  final TaskPanelReadModel task;
   final TaskStep? next;
 
   const _Actions({required this.chat, required this.task, required this.next});
@@ -846,7 +849,7 @@ class _Actions extends StatelessWidget {
           enabled: canRun,
           child: FilledButton.tonalIcon(
             icon: const Icon(Icons.fast_forward),
-            label: const Text('Run Task'),
+            label: const Text('Run TaskPanelReadModel'),
             onPressed: canRun ? () => unawaited(chat.runTask()) : null,
           ),
         ),
@@ -877,11 +880,15 @@ class _Actions extends StatelessWidget {
                     final saved = await EditPlanDialog.show(
                       context,
                       initialJson: initial,
-                      onSave: chat.updateTaskPlan,
+                      onSave: (json) => chat.updateTaskPlan(
+                        TaskCommandProtocolAdapter.decode(json),
+                      ),
                     );
                     if (saved && context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Task plan saved')),
+                        const SnackBar(
+                          content: Text('TaskPanelReadModel plan saved'),
+                        ),
                       );
                     }
                   },
@@ -940,7 +947,7 @@ class _Actions extends StatelessWidget {
 
 class _ApprovalCard extends StatelessWidget {
   final ChatController chat;
-  final Task task;
+  final TaskPanelReadModel task;
 
   const _ApprovalCard({required this.chat, required this.task});
 
@@ -978,7 +985,7 @@ class _ApprovalCard extends StatelessWidget {
 
 class _QuestionCard extends StatefulWidget {
   final ChatController chat;
-  final Task task;
+  final TaskPanelReadModel task;
 
   const _QuestionCard({required this.chat, required this.task});
 
@@ -1035,7 +1042,7 @@ class _QuestionCardState extends State<_QuestionCard> {
 }
 
 class _StepList extends StatelessWidget {
-  final Task task;
+  final TaskPanelReadModel task;
 
   const _StepList({required this.task});
 
@@ -1116,7 +1123,7 @@ class _StepTile extends StatelessWidget {
 
 class _ArtifactList extends StatelessWidget {
   final ChatController chat;
-  final Task task;
+  final TaskPanelReadModel task;
 
   const _ArtifactList({required this.chat, required this.task});
 
@@ -1174,7 +1181,7 @@ class _ArtifactList extends StatelessWidget {
 }
 
 class _RunList extends StatelessWidget {
-  final Task task;
+  final TaskPanelReadModel task;
 
   const _RunList({required this.task});
 
@@ -1189,7 +1196,8 @@ class _RunList extends StatelessWidget {
       children: [
         for (final run in runs)
           AccessibleWidget(
-            label: 'Task run: ${run.stepId}, status ${run.status.wire}',
+            label:
+                'TaskPanelReadModel run: ${run.stepId}, status ${run.status.wire}',
             child: ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
@@ -1290,7 +1298,7 @@ class _ProjectTaskBoardList extends StatelessWidget {
 }
 
 class _ProjectQuestionList extends StatelessWidget {
-  final ProjectAggregate project;
+  final ProjectPanelReadModel project;
 
   const _ProjectQuestionList({required this.project});
 
@@ -1319,7 +1327,7 @@ class _ProjectQuestionList extends StatelessWidget {
 }
 
 class _ProjectArtifactBoardList extends StatelessWidget {
-  final ProjectAggregate project;
+  final ProjectPanelReadModel project;
 
   const _ProjectArtifactBoardList({required this.project});
 
@@ -1384,7 +1392,7 @@ class _StringList extends StatelessWidget {
 }
 
 class _ProjectDecisionList extends StatelessWidget {
-  final ProjectAggregate project;
+  final ProjectPanelReadModel project;
 
   const _ProjectDecisionList({required this.project});
 

@@ -1,31 +1,38 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/chat_message.dart';
-import 'package:hermes/shared_kernel/tool_contracts.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
+import '../helpers/planning_test_helpers.dart';
+import 'package:hermes/features/chat/application/contracts/chat_message.dart';
+import 'package:hermes/features/tools/application/tool_contracts.dart';
+import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
-import 'package:hermes/shared_kernel/planning_runtime.dart';
-import 'package:hermes/shared_kernel/planning_structured_output.dart';
+import 'package:hermes/features/task/application/protocol/planning_runtime.dart';
+import 'package:hermes/features/task/application/protocol/planning_structured_output.dart';
 
 void main() {
   test('shared registry owns idempotency and terminal closure', () async {
     final registry = _Registry();
 
-    final first = await registry.invoke('add', {
-      'value': 'one',
-    }, commandId: 'command-1');
-    final repeated = await registry.invoke('add', {
-      'value': 'one',
-    }, commandId: 'command-1');
-    final conflicting = await registry.invoke('add', {
+    final first = await registry.invoke(
+      'add',
+      PlanningArguments.fromWire({'value': 'one'}),
+      commandId: 'command-1',
+    );
+    final repeated = await registry.invoke(
+      'add',
+      PlanningArguments.fromWire({'value': 'one'}),
+      commandId: 'command-1',
+    );
+    final conflicting = await invokePlanning(registry, 'add', {
       'value': 'two',
     }, commandId: 'command-1');
 
     expect(repeated, same(first));
     expect(conflicting['code'], 'duplicate_command');
 
-    final committed = await registry.invoke('commit', const {});
+    final committed = await invokePlanning(registry, 'commit', const {});
     expect(committed['ok'], isTrue);
-    final afterCommit = await registry.invoke('add', {'value': 'late'});
+    final afterCommit = await invokePlanning(registry, 'add', {
+      'value': 'late',
+    });
     expect(afterCommit['code'], 'planning_closed');
   });
 
@@ -86,7 +93,7 @@ void main() {
     );
 
     expect(result.ok, isFalse);
-    expect(result.payload['code'], 'planning_safety_limit');
+    expect(result.response['code'], 'planning_safety_limit');
   });
 
   test('structured output performs one bounded repair attempt', () async {
@@ -148,13 +155,13 @@ class _Registry extends PlanningToolRegistryBase {
       id: 'add',
       name: 'Add',
       description: 'Add a value.',
-      schema: {'type': 'object'},
+      schema: ToolSchema({'type': 'object'}),
     ),
     ToolDefinition(
       id: 'commit',
       name: 'Commit',
       description: 'Commit the draft.',
-      schema: {'type': 'object'},
+      schema: ToolSchema({'type': 'object'}),
     ),
   ];
 
@@ -197,7 +204,7 @@ class _QueueClient extends ChatClient {
   @override
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     Object? cancellationToken,
     String diagnosticsLabel = 'Model call',
     int? contextLimitTokens,

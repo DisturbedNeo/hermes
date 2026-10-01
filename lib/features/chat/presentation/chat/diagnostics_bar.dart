@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:hermes/shared_kernel/diagnostics_visibility.dart';
-import 'package:hermes/shared_kernel/model_call_diagnostics.dart';
-import 'package:hermes/shared_kernel/preferences_port.dart';
-import 'package:hermes/shared_kernel/model_session_contracts.dart';
+import 'package:hermes/features/model/application/diagnostics_visibility.dart';
+import 'package:hermes/features/model/application/model_call_diagnostics.dart';
+import 'package:hermes/features/settings/application/preferences_port.dart';
+import 'package:hermes/features/model/application/model_session_contracts.dart';
 import 'package:hermes/features/model/application/model_session_diagnostics_port.dart';
 
 class DiagnosticsBar extends StatefulWidget {
@@ -40,9 +40,6 @@ class _DiagnosticsBarState extends State<DiagnosticsBar> {
 
   Future<void> _loadVisibility() async {
     final visibility = await _preferences.getDiagnosticsVisibility();
-    widget.diagnostics.setLiveTelemetryEnabled(
-      visibility != DiagnosticsVisibility.off,
-    );
     if (!mounted || visibility == _visibility) return;
     setState(() => _visibility = visibility);
   }
@@ -729,12 +726,6 @@ class _LogViewer extends StatelessWidget {
                           const SnackBar(content: Text('Diagnostics copied')),
                         );
                       },
-              ),
-              const SizedBox(width: 8),
-              TextButton.icon(
-                icon: const Icon(Icons.clear_all, size: 16),
-                label: const Text('Clear view'),
-                onPressed: logs.isEmpty ? null : diagnostics.clearLogs,
               ),
             ],
           ),

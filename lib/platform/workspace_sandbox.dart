@@ -14,11 +14,11 @@ import 'dart:typed_data';
 
 import 'package:path/path.dart' as path;
 
-import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/platform/host_command_runner.dart';
-import 'package:hermes/shared_kernel/terminal_command_parser.dart';
-import 'package:hermes/shared_kernel/sandbox_policy.dart';
-import 'package:hermes/shared_kernel/workspace_ports.dart';
+import 'package:hermes/features/workspace/application/terminal_command_parser.dart';
+import 'package:hermes/features/workspace/application/sandbox_policy.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
 
 class WorkspaceSandbox implements WorkspaceSandboxPort {
   WorkspaceSandbox({
@@ -81,14 +81,14 @@ class WorkspaceSandbox implements WorkspaceSandboxPort {
     );
   }
 
-  Future<List<Map<String, dynamic>>> listDirectory(
+  Future<List<WorkspaceDirectoryEntry>> listDirectory(
     String rootPath,
     String relativePath, {
     CancellationToken? cancellationToken,
   }) async {
     cancellationToken?.throwIfCancelled();
     final resolved = await resolve(rootPath, relativePath, directory: true);
-    final entries = <Map<String, dynamic>>[];
+    final entries = <WorkspaceDirectoryEntry>[];
 
     await for (final entity in Directory(resolved.absolutePath).list()) {
       cancellationToken?.throwIfCancelled();
@@ -101,28 +101,58 @@ class WorkspaceSandbox implements WorkspaceSandboxPort {
       }
       final stat = await entity.stat();
       final type = stat.type == FileSystemEntityType.directory
-          ? 'directory'
+          ? WorkspaceEntryKind.directory
           : stat.type == FileSystemEntityType.link
-          ? 'link'
-          : 'file';
-      entries.add({
-        'path': _relative(resolved.rootPath, entity.path),
-        'name': path.basename(entity.path),
-        'type': type,
-        'size': stat.size,
-        'modified': stat.modified.toIso8601String(),
-      });
+          ? WorkspaceEntryKind.link
+          : WorkspaceEntryKind.file;
+      entries.add(
+        WorkspaceDirectoryEntry(
+          path: _relative(resolved.rootPath, entity.path),
+          name: path.basename(entity.path),
+          kind: type,
+          size: stat.size,
+          modified: stat.modified,
+        ),
+      );
     }
 
     entries.sort((a, b) {
-      final typeCompare = (a['type'] as String).compareTo(b['type'] as String);
+      final typeCompare = a.kind.index.compareTo(b.kind.index);
       if (typeCompare != 0) return typeCompare;
-      return (a['name'] as String).compareTo(b['name'] as String);
+      return a.name.compareTo(b.name);
     });
     return entries;
   }
 
-  Future<Map<String, dynamic>> readFile(
+  @override
+  Future<WorkspacePathInspectionResult> inspectPath(
+    String rootPath,
+    String relativePath, {
+    CancellationToken? cancellationToken,
+  }) async {
+    cancellationToken?.throwIfCancelled();
+    final resolved = await resolve(rootPath, relativePath, mustExist: false);
+    final type = await FileSystemEntity.type(
+      resolved.absolutePath,
+      followLinks: false,
+    );
+    final kind = switch (type) {
+      FileSystemEntityType.file => WorkspaceEntryKind.file,
+      FileSystemEntityType.directory => WorkspaceEntryKind.directory,
+      FileSystemEntityType.link => WorkspaceEntryKind.link,
+      _ => null,
+    };
+    final size = kind == WorkspaceEntryKind.file
+        ? await File(resolved.absolutePath).length()
+        : 0;
+    return WorkspacePathInspectionResult(
+      path: resolved.relativePath,
+      kind: kind,
+      size: size,
+    );
+  }
+
+  Future<WorkspaceFileReadResult> readFile(
     String rootPath,
     String relativePath, {
     CancellationToken? cancellationToken,
@@ -141,11 +171,11 @@ class WorkspaceSandbox implements WorkspaceSandboxPort {
       cancellationToken: cancellationToken,
     );
 
-    return {
-      'path': resolved.relativePath,
-      'content': content.text,
-      'bytes': content.bytes,
-    };
+    return WorkspaceFileReadResult(
+      path: resolved.relativePath,
+      content: content.text,
+      bytes: content.bytes,
+    );
   }
 
   Future<String> readFilePreview(
@@ -184,7 +214,7 @@ class WorkspaceSandbox implements WorkspaceSandboxPort {
     return truncated ? '${buffer.toString()}...' : buffer.toString();
   }
 
-  Future<Map<String, dynamic>> writeFile(
+  Future<WorkspaceFileWriteResult> writeFile(
     String rootPath,
     String relativePath,
     String content, {
@@ -199,10 +229,13 @@ class WorkspaceSandbox implements WorkspaceSandboxPort {
       bytes,
       cancellationToken: cancellationToken,
     );
-    return {'path': resolved.relativePath, 'bytes': bytes.length};
+    return WorkspaceFileWriteResult(
+      path: resolved.relativePath,
+      bytes: bytes.length,
+    );
   }
 
-  Future<Map<String, dynamic>> patchFile(
+  Future<WorkspaceFilePatchResult> patchFile(
     String rootPath,
     String relativePath,
     String oldText,
@@ -227,26 +260,30 @@ class WorkspaceSandbox implements WorkspaceSandboxPort {
     final bytes = utf8.encode(updated);
     _throwIfWriteTooLarge(bytes.length);
     await _atomicWrite(file, bytes, cancellationToken: cancellationToken);
-    return {
-      'path': resolved.relativePath,
-      'replacements': replaceAll ? _countMatches(current, oldText) : 1,
-    };
+    return WorkspaceFilePatchResult(
+      path: resolved.relativePath,
+      replacements: replaceAll ? _countMatches(current, oldText) : 1,
+    );
   }
 
-  Future<Map<String, dynamic>> createDirectory(
+  Future<WorkspacePathResult> createDirectory(
     String rootPath,
-    String relativePath,
-  ) async {
+    String relativePath, {
+    CancellationToken? cancellationToken,
+  }) async {
+    cancellationToken?.throwIfCancelled();
     final resolved = await resolve(rootPath, relativePath, mustExist: false);
     await Directory(resolved.absolutePath).create(recursive: true);
-    return {'path': resolved.relativePath};
+    return WorkspacePathResult(path: resolved.relativePath);
   }
 
-  Future<Map<String, dynamic>> renamePath(
+  Future<WorkspaceRenameResult> renamePath(
     String rootPath,
     String from,
-    String to,
-  ) async {
+    String to, {
+    CancellationToken? cancellationToken,
+  }) async {
+    cancellationToken?.throwIfCancelled();
     final source = await resolve(rootPath, from);
     final destination = await resolve(rootPath, to, mustExist: false);
     await Directory(
@@ -258,14 +295,19 @@ class WorkspaceSandbox implements WorkspaceSandboxPort {
     } else {
       await File(source.absolutePath).rename(destination.absolutePath);
     }
-    return {'from': source.relativePath, 'to': destination.relativePath};
+    return WorkspaceRenameResult(
+      from: source.relativePath,
+      to: destination.relativePath,
+    );
   }
 
-  Future<Map<String, dynamic>> deletePath(
+  Future<WorkspacePathResult> deletePath(
     String rootPath,
     String relativePath, {
     bool recursive = false,
+    CancellationToken? cancellationToken,
   }) async {
+    cancellationToken?.throwIfCancelled();
     final resolved = await resolve(rootPath, relativePath);
     if (resolved.relativePath == '.') {
       throw WorkspaceSandboxException('Refusing to delete the workspace root.');
@@ -276,10 +318,10 @@ class WorkspaceSandbox implements WorkspaceSandboxPort {
     } else {
       await File(resolved.absolutePath).delete();
     }
-    return {'path': resolved.relativePath};
+    return WorkspacePathResult(path: resolved.relativePath);
   }
 
-  Future<List<Map<String, dynamic>>> searchFiles(
+  Future<List<WorkspaceSearchMatch>> searchFiles(
     String rootPath,
     String query, {
     String relativePath = '.',
@@ -298,7 +340,7 @@ class WorkspaceSandbox implements WorkspaceSandboxPort {
     // inside one, e.g. ".agent" or "packages/.cache".
     final isExplicitDotSearch = pathContainsDotEntry(root.relativePath);
 
-    final results = <Map<String, dynamic>>[];
+    final results = <WorkspaceSearchMatch>[];
     final pendingDirectories = <Directory>[Directory(root.absolutePath)];
     final lowerQuery = trimmed.toLowerCase();
     var scannedFiles = 0;
@@ -359,12 +401,15 @@ class WorkspaceSandbox implements WorkspaceSandboxPort {
               if (!line.toLowerCase().contains(lowerQuery)) {
                 continue;
               }
-              final result = {
-                'path': rel,
-                'line': lineNumber,
-                'preview': line.trim(),
-              };
-              throwIfSearchOutputTooLarge([...results, result]);
+              final result = WorkspaceSearchMatch(
+                path: rel,
+                line: lineNumber,
+                preview: line.trim(),
+              );
+              throwIfSearchOutputTooLarge(
+                results.length + 1,
+                preview: result.preview,
+              );
               results.add(result);
               if (results.length >= kMaxSearchResults) break;
             }
@@ -393,7 +438,7 @@ class WorkspaceSandbox implements WorkspaceSandboxPort {
     return results;
   }
 
-  Future<Map<String, dynamic>> runCommand(
+  Future<WorkspaceCommandResult> runCommand(
     String rootPath, {
     String? command,
     List<String> arguments = const [],

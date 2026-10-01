@@ -1,5 +1,5 @@
-import 'package:hermes/shared_kernel/model_configuration.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/features/model/application/model_configuration.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
 
 /// Small state and callback surface required by [ChatSessionManager].
 ///

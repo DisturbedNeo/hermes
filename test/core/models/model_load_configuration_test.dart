@@ -1,16 +1,16 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/model_configuration.dart';
-import 'package:hermes/shared_kernel/model_load_configuration.dart';
-import 'package:hermes/shared_kernel/model_json.dart';
+import 'package:hermes/features/model/application/model_configuration.dart';
+import 'package:hermes/features/model/application/model_load_configuration.dart';
+import 'package:hermes/core/model_json.dart';
 
 void main() {
   test('provides the canonical model dialog defaults', () {
     final config = ModelLoadConfiguration.defaults();
 
     expect(config.nCtx, 32 * 1024);
-    expect(config.nThreads, Platform.numberOfProcessors);
+    expect(config.nThreads, ModelConfigurationSnapshot.defaultNThreads);
     expect(config.temperature, 0.7);
     expect(config.topP, 0.95);
     expect(config.topK, 20);
@@ -109,7 +109,7 @@ void main() {
       'mtpDraftTokens': 99,
       'cacheReuse': 10,
       'kvCacheTypeK': 'invalid',
-    }).normalised();
+    }).normalised(maxThreads: Platform.numberOfProcessors);
 
     expect(normalised.nCtx, 2048 * 1024);
     expect(normalised.nThreads, Platform.numberOfProcessors);

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:hermes/shared_kernel/diagnostics_visibility.dart';
+import 'package:hermes/features/model/application/diagnostics_visibility.dart';
 import 'package:hermes/features/chat/presentation/a11y.dart';
-import 'package:hermes/shared_kernel/compaction_settings.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/shared_kernel/task_system_settings.dart';
-import 'package:hermes/shared_kernel/preferences_port.dart';
+import 'package:hermes/features/chat/application/contracts/compaction_settings.dart';
+import 'package:hermes/features/project/application/contracts/project_planning_contracts.dart';
+import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
+import 'package:hermes/features/settings/application/preferences_port.dart';
 import 'package:hermes/features/chat/presentation/model_configuration/slider_control.dart';
 
 class Settings extends StatefulWidget {

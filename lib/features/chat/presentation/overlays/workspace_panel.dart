@@ -1,10 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
-import 'package:hermes/shared_kernel/workspace_ports.dart';
 import 'package:hermes/features/chat/presentation/common/state_display.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -32,7 +32,7 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
   WorkspacePresentationPort get _workspaceService => widget.workspaceService;
 
   List<WorkspaceAttachment> _recent = const [];
-  List<Map<String, dynamic>> _entries = const [];
+  List<WorkspaceDirectoryEntry> _entries = const [];
   bool _loading = true;
   Object? _error;
 
@@ -77,7 +77,7 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
       final recent = await _workspaceService.recentWorkspaces();
       final workspace = widget.chat?.workspace;
       final entries = workspace == null || workspace.missing
-          ? const <Map<String, dynamic>>[]
+          ? const <WorkspaceDirectoryEntry>[]
           : await _workspaceService.listDirectory(workspace.rootPath, '.');
       if (!mounted) return;
       setState(() {
@@ -288,16 +288,16 @@ class _WorkspacePanelState extends State<WorkspacePanel> {
               ListTile(
                 dense: true,
                 leading: Icon(
-                  entry['type'] == 'directory'
+                  entry.kind == WorkspaceEntryKind.directory
                       ? Icons.folder_outlined
                       : Icons.description_outlined,
                 ),
                 title: Text(
-                  entry['name'] as String,
+                  entry.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                subtitle: Text(entry['path'] as String),
+                subtitle: Text(entry.path),
               ),
           ],
           if ((widget.chat?.availableProjects.isNotEmpty ?? false)) ...[

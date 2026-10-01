@@ -1,5 +1,5 @@
-import 'package:hermes/shared_kernel/system_prompt.dart';
-import 'package:hermes/shared_kernel/prompt_library_port.dart';
+import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
+import 'package:hermes/features/chat/application/contracts/prompt_library_port.dart';
 
 /// In-memory prompt repository for service and UI tests.
 class InMemoryPromptLibrary implements PromptLibraryPort {

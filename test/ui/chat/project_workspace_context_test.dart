@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
 import 'package:hermes/features/chat/presentation/chat/project_panel_sections.dart';
 
 void main() {
@@ -46,7 +47,9 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: SingleChildScrollView(
-          child: ProjectWorkspaceContextSection(project: project),
+          child: ProjectWorkspaceContextSection(
+            project: ProjectPanelReadModel.fromAggregate(project),
+          ),
         ),
       ),
     );
@@ -63,7 +66,11 @@ void main() {
 
   testWidgets('renders an empty graph without errors', (tester) async {
     await tester.pumpWidget(
-      MaterialApp(home: ProjectWorkspaceContextSection(project: _project())),
+      MaterialApp(
+        home: ProjectWorkspaceContextSection(
+          project: ProjectPanelReadModel.fromAggregate(_project()),
+        ),
+      ),
     );
 
     expect(
@@ -94,7 +101,9 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: SingleChildScrollView(
-          child: ProjectWorkspaceContextSection(project: _project(graph)),
+          child: ProjectWorkspaceContextSection(
+            project: ProjectPanelReadModel.fromAggregate(_project(graph)),
+          ),
         ),
       ),
     );

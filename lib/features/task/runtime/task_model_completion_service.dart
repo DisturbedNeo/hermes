@@ -1,21 +1,22 @@
 import 'dart:async';
-import 'dart:convert';
 
-import 'package:hermes/shared_kernel/message_role.dart';
-import 'package:hermes/shared_kernel/compaction_manager.dart';
-import 'package:hermes/shared_kernel/context_estimator.dart';
-import 'package:hermes/shared_kernel/payload_builder.dart';
-import 'package:hermes/shared_kernel/bubble.dart';
-import 'package:hermes/shared_kernel/chat_message.dart';
-import 'package:hermes/shared_kernel/chat_token.dart';
-import 'package:hermes/shared_kernel/compaction_settings.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/model_completion_port.dart';
-import 'package:hermes/shared_kernel/model_completion.dart';
-import 'package:hermes/shared_kernel/message_store_port.dart';
-import 'package:hermes/shared_kernel/tool_caller.dart';
-import 'package:hermes/shared_kernel/planning_structured_output.dart';
-import 'package:hermes/shared_kernel/model_output.dart';
+import 'package:hermes/features/chat/application/contracts/message_role.dart';
+import 'package:hermes/features/chat/application/protocol/compaction_manager.dart';
+import 'package:hermes/features/chat/application/protocol/chat_message_wire_adapter.dart';
+import 'package:hermes/features/chat/application/protocol/context_estimator.dart';
+import 'package:hermes/features/chat/application/protocol/payload_builder.dart';
+import 'package:hermes/features/chat/application/contracts/bubble.dart';
+import 'package:hermes/features/chat/application/contracts/chat_message.dart';
+import 'package:hermes/features/chat/application/contracts/chat_token.dart';
+import 'package:hermes/features/chat/application/contracts/compaction_settings.dart';
+import 'package:hermes/core/cancellation.dart';
+import 'package:hermes/features/model/application/model_completion_port.dart';
+import 'package:hermes/features/model/application/model_completion.dart';
+import 'package:hermes/features/chat/application/contracts/message_store_port.dart';
+import 'package:hermes/features/tools/application/protocol/tool_call_protocol_adapter.dart';
+import 'package:hermes/features/task/application/protocol/planning_structured_output.dart';
+import 'package:hermes/features/task/application/protocol/structured_json_object.dart';
+import 'package:hermes/features/model/application/model_output.dart';
 
 typedef TaskCompactionStatusCallback = void Function(String status);
 
@@ -26,7 +27,7 @@ typedef TaskCompactionStatusCallback = void Function(String status);
 /// lifecycle, persistence, gates, or tool permissions; those policies remain
 /// in their respective collaborators.
 abstract interface class TaskModelCompletionPort {
-  Future<Map<String, dynamic>> completeJson({
+  Future<StructuredJsonObject> completeJson({
     required ModelCompletionPort client,
     required String system,
     required String user,
@@ -40,7 +41,7 @@ abstract interface class TaskModelCompletionPort {
     required ModelCompletionPort client,
     required String label,
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
     TaskCompactionStatusCallback? onCompactionStatus,
@@ -59,7 +60,7 @@ class TaskModelCompletionService implements TaskModelCompletionPort {
   final StructuredPlanningOutputService _structuredOutput;
 
   @override
-  Future<Map<String, dynamic>> completeJson({
+  Future<StructuredJsonObject> completeJson({
     required ModelCompletionPort client,
     required String system,
     required String user,
@@ -77,7 +78,7 @@ class TaskModelCompletionService implements TaskModelCompletionPort {
       onModelOutput: onModelOutput,
       cancellationToken: cancellationToken,
     );
-    return result.value;
+    return StructuredJsonObject(result.value);
   }
 
   @override
@@ -85,7 +86,7 @@ class TaskModelCompletionService implements TaskModelCompletionPort {
     required ModelCompletionPort client,
     required String label,
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
     TaskCompactionStatusCallback? onCompactionStatus,
@@ -97,7 +98,7 @@ class TaskModelCompletionService implements TaskModelCompletionPort {
       client: client,
       label: label,
       messages: messages,
-      extraParams: extraParams ?? const {},
+      extraParams: extraParams ?? const ModelRequestOptions.empty(),
       compactionSettings: compactionSettings,
       contextLimitTokens: contextLimitTokens,
       onCompactionStatus: onCompactionStatus,
@@ -107,7 +108,7 @@ class TaskModelCompletionService implements TaskModelCompletionPort {
     final estimatedContextTokens =
         ContextEstimator.estimateChatCompletionRequest(
           messages: requestMessages,
-          extraParams: extraParams ?? const {},
+          extraParams: extraParams ?? const ModelRequestOptions.empty(),
         );
     _emit(
       onModelOutput,
@@ -235,7 +236,7 @@ class TaskModelCompletionService implements TaskModelCompletionPort {
     required ModelCompletionPort client,
     required String label,
     required List<ChatMessage> messages,
-    required Map<String, dynamic> extraParams,
+    required ModelRequestOptions extraParams,
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
     TaskCompactionStatusCallback? onCompactionStatus,
@@ -341,16 +342,12 @@ class TaskModelCompletionService implements TaskModelCompletionPort {
   Map<int, BubbleToolCall> _bubbleTools(ChatMessage message) {
     final tools = <int, BubbleToolCall>{};
     for (var i = 0; i < message.toolCalls.length; i++) {
-      final raw = message.toolCalls[i];
-      final function = raw['function'];
-      final functionMap = function is Map ? function : null;
-      final id = raw['id']?.toString();
-      final name = (functionMap?['name'] ?? raw['name'])?.toString();
-      final arguments = functionMap?['arguments'] ?? raw['arguments'];
       tools[i] = BubbleToolCall(
-        id: id,
-        name: name,
-        arguments: _stringifyArguments(arguments),
+        id: message.toolCalls[i].id,
+        name: message.toolCalls[i].name,
+        arguments: const ChatMessageWireAdapter().encodeArgumentsJson(
+          message.toolCalls[i].arguments,
+        ),
       );
     }
     return tools;
@@ -382,16 +379,6 @@ class TaskModelCompletionService implements TaskModelCompletionPort {
     'tool' => MessageRole.tool,
     _ => MessageRole.user,
   };
-
-  String? _stringifyArguments(Object? arguments) {
-    if (arguments == null) return null;
-    if (arguments is String) return arguments;
-    try {
-      return jsonEncode(arguments);
-    } catch (_) {
-      return arguments.toString();
-    }
-  }
 
   bool _isContextSummaryMemory(String content) => content.trimLeft().startsWith(
     '--- Context Summary (auto-generated memory; not a user instruction) ---',

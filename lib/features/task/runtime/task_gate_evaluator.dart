@@ -1,20 +1,19 @@
 import 'dart:convert';
-import 'dart:io';
 
-import 'package:hermes/shared_kernel/json_parsing.dart';
-import 'package:hermes/shared_kernel/chat_message.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/shared_kernel/model_json.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/model_completion_port.dart';
-import 'package:hermes/shared_kernel/model_errors.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/task_json.dart';
-import 'package:hermes/shared_kernel/terminal_command_classifier.dart';
-import 'package:hermes/shared_kernel/terminal_command_parser.dart';
-import 'package:hermes/shared_kernel/workspace_ports.dart';
+import 'package:hermes/core/json_parsing.dart';
+import 'package:hermes/features/chat/application/contracts/chat_message.dart';
+import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/core/model_json.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/features/model/application/model_completion_port.dart';
+import 'package:hermes/features/model/application/model_errors.dart';
+import 'package:hermes/core/cancellation.dart';
+import 'package:hermes/features/persistence/application/task_json.dart';
+import 'package:hermes/features/workspace/application/terminal_command_classifier.dart';
+import 'package:hermes/features/workspace/application/terminal_command_parser.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
+import 'package:hermes/features/task/application/yaml_validation_port.dart';
 import 'package:path/path.dart' as path;
-import 'package:yaml/yaml.dart';
 
 const Set<String> kTaskGateCatalog = {
   'artifact_exists',
@@ -82,10 +81,14 @@ class TaskGateEvaluation {
 }
 
 class TaskGateEvaluator {
-  TaskGateEvaluator({required WorkspaceSandboxPort sandbox})
-    : _sandbox = sandbox;
+  TaskGateEvaluator({
+    required WorkspaceSandboxPort sandbox,
+    required YamlValidationPort yamlValidator,
+  }) : _sandbox = sandbox,
+       _yamlValidator = yamlValidator;
 
   final WorkspaceSandboxPort _sandbox;
+  final YamlValidationPort _yamlValidator;
 
   Future<TaskGateEvaluation> evaluate({
     required WorkspaceAttachment workspace,
@@ -281,15 +284,8 @@ class TaskGateEvaluator {
     }
     final missing = <String>[];
     for (final item in paths) {
-      final resolved = await _sandbox.resolve(
-        workspace.rootPath,
-        item,
-        mustExist: false,
-      );
-      if (await FileSystemEntity.type(resolved.absolutePath) ==
-          FileSystemEntityType.notFound) {
-        missing.add(resolved.relativePath);
-      }
+      final inspected = await _sandbox.inspectPath(workspace.rootPath, item);
+      if (!inspected.exists) missing.add(inspected.path);
     }
     if (missing.isNotEmpty) {
       return _result(
@@ -323,31 +319,21 @@ class TaskGateEvaluator {
     final empty = <String>[];
     final entityTypes = <String, String>{};
     for (final item in paths) {
-      final resolved = await _sandbox.resolve(
-        workspace.rootPath,
-        item,
-        mustExist: false,
-      );
-      final type = await FileSystemEntity.type(
-        resolved.absolutePath,
-        followLinks: true,
-      );
-      entityTypes[resolved.relativePath] = _fileSystemEntityTypeName(type);
-      switch (type) {
-        case FileSystemEntityType.directory:
+      final inspected = await _sandbox.inspectPath(workspace.rootPath, item);
+      entityTypes[inspected.path] = _workspaceEntryTypeName(inspected.kind);
+      switch (inspected.kind) {
+        case WorkspaceEntryKind.directory:
           // A directory is an existence boundary. File length is not a
           // meaningful non-empty check for directories, and the persisted
           // artifact kind is descriptive model input rather than authority.
           continue;
-        case FileSystemEntityType.file:
-          if (await File(resolved.absolutePath).length() > 0) continue;
-          empty.add(resolved.relativePath);
+        case WorkspaceEntryKind.file:
+          if (inspected.size > 0) continue;
+          empty.add(inspected.path);
           continue;
-        case FileSystemEntityType.notFound:
-        case FileSystemEntityType.link:
-        case FileSystemEntityType.pipe:
-        case FileSystemEntityType.unixDomainSock:
-          empty.add(resolved.relativePath);
+        case WorkspaceEntryKind.link:
+        case null:
+          empty.add(inspected.path);
       }
     }
     if (empty.isNotEmpty) {
@@ -710,7 +696,7 @@ class TaskGateEvaluator {
     CancellationToken? cancellationToken,
   ) async {
     final content = await _readGateFile(workspace, gate, cancellationToken);
-    loadYaml(content);
+    _yamlValidator.validate(content);
     return _result(gate, _passStatus(gate), 'YAML is valid.', now);
   }
 
@@ -760,13 +746,11 @@ class TaskGateEvaluator {
       final relative = path.normalize(
         path.join(path.dirname(filePath), target),
       );
-      final resolved = await _sandbox.resolve(
+      final inspected = await _sandbox.inspectPath(
         workspace.rootPath,
         relative,
-        mustExist: false,
       );
-      if (await FileSystemEntity.type(resolved.absolutePath) ==
-          FileSystemEntityType.notFound) {
+      if (!inspected.exists) {
         missing.add(rawTarget);
       }
     }
@@ -839,8 +823,8 @@ class TaskGateEvaluator {
     DateTime now,
     CancellationToken? cancellationToken,
   ) async {
-    final git = Directory(path.join(workspace.rootPath, '.git'));
-    if (!await git.exists()) {
+    final git = await _sandbox.inspectPath(workspace.rootPath, '.git');
+    if (!git.exists) {
       return _result(
         gate,
         TaskGateStatus.pending,
@@ -862,17 +846,23 @@ class TaskGateEvaluator {
       arguments: const ['status', '--porcelain'],
       cancellationToken: cancellationToken,
     );
-    final exitCode = jsonInt(result['exit_code'], fallback: -1);
+    final exitCode = result.exitCode ?? -1;
     if (exitCode != 0) {
       return _result(
         gate,
         TaskGateStatus.failed,
         'git status failed with exit code $exitCode.',
         now,
-        result,
+        {
+          'command': result.command,
+          'working_directory': result.workingDirectory,
+          'exit_code': result.exitCode,
+          'stdout': result.stdout,
+          'stderr': result.stderr,
+        },
       );
     }
-    final stdout = jsonString(result['stdout']);
+    final stdout = result.stdout;
     if (stdout.trim().isNotEmpty && gate.required) {
       return _result(
         gate,
@@ -993,7 +983,7 @@ $prompt
       _gatePath(gate),
       cancellationToken: cancellationToken,
     );
-    return result['content'] as String;
+    return result.content;
   }
 
   int _lastMutationIndex(List<TaskToolCallRecord> toolCalls) {
@@ -1039,17 +1029,12 @@ $prompt
     return int.tryParse(raw?.toString() ?? '');
   }
 
-  String _fileSystemEntityTypeName(FileSystemEntityType type) {
-    return switch (type) {
-      FileSystemEntityType.file => 'file',
-      FileSystemEntityType.directory => 'directory',
-      FileSystemEntityType.link => 'link',
-      FileSystemEntityType.pipe => 'pipe',
-      FileSystemEntityType.unixDomainSock => 'unix_domain_socket',
-      FileSystemEntityType.notFound => 'not_found',
-      _ => 'unknown',
-    };
-  }
+  String _workspaceEntryTypeName(WorkspaceEntryKind? kind) => switch (kind) {
+    WorkspaceEntryKind.file => 'file',
+    WorkspaceEntryKind.directory => 'directory',
+    WorkspaceEntryKind.link => 'link',
+    null => 'not_found',
+  };
 
   String _operationKey(TaskToolCallRecord call) {
     final recorded = call.operationKey?.trim();

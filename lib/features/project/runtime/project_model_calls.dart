@@ -1,24 +1,24 @@
 import 'dart:convert';
 
-import 'package:hermes/shared_kernel/json_parsing.dart';
-import 'package:hermes/shared_kernel/uuid.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/shared_kernel/planning_metrics.dart';
-import 'package:hermes/shared_kernel/model_json.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
-import 'package:hermes/shared_kernel/model_completion_port.dart';
-import 'package:hermes/shared_kernel/model_errors.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
-import 'package:hermes/shared_kernel/planning_runtime.dart';
-import 'package:hermes/shared_kernel/planning_structured_output.dart';
+import 'package:hermes/core/json_parsing.dart';
+import 'package:hermes/core/uuid.dart';
+import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
+import 'package:hermes/core/model_json.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/features/model/application/model_completion_port.dart';
+import 'package:hermes/features/model/application/model_errors.dart';
+import 'package:hermes/core/cancellation.dart';
+import 'package:hermes/features/task/application/protocol/planning_runtime.dart';
+import 'package:hermes/features/task/application/protocol/planning_structured_output.dart';
 import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
 import 'package:hermes/features/project/runtime/project_planning_tools.dart';
 import 'package:hermes/features/project/runtime/project_planning_workspace_reader.dart';
 import 'package:hermes/features/project/runtime/project_view_service.dart';
-import 'package:hermes/shared_kernel/question_policy_service.dart';
-import 'package:hermes/shared_kernel/model_output.dart';
-import 'package:hermes/shared_kernel/workspace_ports.dart';
+import 'package:hermes/features/task/application/protocol/question_protocol_adapter.dart';
+import 'package:hermes/features/model/application/model_output.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
 
 export 'package:hermes/features/project/runtime/project_planning_gateway.dart'
     show
@@ -73,7 +73,7 @@ class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
-    required Map<String, dynamic> workspaceMetadata,
+    required ProjectPlanningWorkspaceMetadata workspaceMetadata,
     ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
@@ -105,9 +105,9 @@ class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
-    required Map<String, dynamic> workspaceMetadata,
+    required ProjectPlanningWorkspaceMetadata workspaceMetadata,
     required ProjectInitialPlanResult initialPlan,
-    required List<Map<String, String>> validationIssues,
+    required List<ProjectPlanValidationIssue> validationIssues,
     ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
@@ -128,7 +128,7 @@ the corrected draft through the planning commands and commit it with
 plan_commit.
 
 Validation issues:
-${_encoder.convert(validationIssues)}
+${_encoder.convert(validationIssues.map((issue) => issue.toMap()).toList())}
 
 Previous draft:
 ${_encoder.convert(_initialPlanToMap(initialPlan))}
@@ -462,7 +462,7 @@ ${_encoder.convert(ModelJson.encode(project))}
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
-    required Map<String, dynamic> workspaceMetadata,
+    required ProjectPlanningWorkspaceMetadata workspaceMetadata,
     ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
     String additionalInstruction = '',
@@ -480,7 +480,7 @@ ${_encoder.convert(ModelJson.encode(project))}
       workspaceReader: ProjectPlanningWorkspaceReader(
         workspace: workspace,
         sandbox: _sandbox,
-        allowedPaths: _workspaceFilesFromMetadata(workspaceMetadata),
+        allowedPaths: _workspaceFilesFromMetadata(workspaceMetadata.toWire()),
         cancellationToken: cancellationToken,
       ),
     );
@@ -537,7 +537,7 @@ Original user goal:
 $originalGoal
 
 Bounded workspace profile:
-${_encoder.convert(_compactWorkspaceMetadata(workspaceMetadata))}
+${_encoder.convert(_compactWorkspaceMetadata(workspaceMetadata.toWire()))}
 ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
 ''',
       onModelOutput: onModelOutput,
@@ -721,7 +721,7 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
       final map = Map<String, dynamic>.from(raw);
       map['id'] = jsonString(map['id'], fallback: 'question_${uuid.v7()}');
       map['createdAt'] ??= DateTime.now().toIso8601String();
-      final agentQuestion = AgentQuestion.parse(map);
+      final agentQuestion = const QuestionProtocolAdapter().decode(map);
       if (agentQuestion != null) {
         map['question'] = agentQuestion.displayText;
       }

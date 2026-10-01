@@ -2,10 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/chat_message.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/features/chat/application/contracts/chat_message.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
-import 'package:hermes/shared_kernel/subagent_service.dart';
+import 'package:hermes/features/tools/application/subagent_service.dart';
+import 'package:hermes/features/tools/application/tool_protocol_adapter.dart';
 import 'package:hermes/platform/tool_service.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
 
@@ -25,10 +26,13 @@ void main() {
         reasoning: 'internal extraction reasoning',
       ),
     );
-    final service = ToolService(workspaceSandbox: WorkspaceSandbox())
-      ..setSubagentService(SubagentService(chatClientFactory: () => client));
+    final service = ToolService(
+      workspaceSandbox: WorkspaceSandbox(),
+      subagentService: SubagentService(chatClientFactory: () => client),
+    );
+    final protocol = ToolProtocolAdapter(registry: service);
 
-    final result = await service.execute(
+    final result = await protocol.execute(
       toolId: 'read_file',
       argumentsJson: jsonEncode({
         'path': 'notes.txt',
@@ -44,10 +48,8 @@ void main() {
     expect(decoded['extracted'], 'extracted facts');
     expect(result, isNot(contains('internal extraction reasoning')));
     expect(result, isNot(contains('internal content reasoning')));
-    expect(client.seenExtraParams?['chat_template_kwargs'], {
-      'enable_thinking': false,
-      'reasoning_budget': 0,
-    });
+    expect(client.seenExtraParams?.chatTemplate?.enableThinking, isFalse);
+    expect(client.seenExtraParams?.chatTemplate?.reasoningBudget, 0);
   });
 
   test(
@@ -60,19 +62,20 @@ void main() {
 
       await File('${root.path}/notes.txt').writeAsString('visible facts');
 
-      final service = ToolService(workspaceSandbox: WorkspaceSandbox())
-        ..setSubagentService(
-          SubagentService(
-            chatClientFactory: () => _FakeChatClient(
-              const ChatCompletionResponse(
-                content: '',
-                reasoning: 'internal extraction reasoning',
-              ),
+      final service = ToolService(
+        workspaceSandbox: WorkspaceSandbox(),
+        subagentService: SubagentService(
+          chatClientFactory: () => _FakeChatClient(
+            const ChatCompletionResponse(
+              content: '',
+              reasoning: 'internal extraction reasoning',
             ),
           ),
-        );
+        ),
+      );
+      final protocol = ToolProtocolAdapter(registry: service);
 
-      final result = await service.execute(
+      final result = await protocol.execute(
         toolId: 'read_file',
         argumentsJson: jsonEncode({
           'path': 'notes.txt',
@@ -100,10 +103,13 @@ void main() {
       final client = _FakeChatClient(
         const ChatCompletionResponse(content: 'should not be called'),
       );
-      final service = ToolService(workspaceSandbox: WorkspaceSandbox())
-        ..setSubagentService(SubagentService(chatClientFactory: () => client));
+      final service = ToolService(
+        workspaceSandbox: WorkspaceSandbox(),
+        subagentService: SubagentService(chatClientFactory: () => client),
+      );
+      final protocol = ToolProtocolAdapter(registry: service);
 
-      final result = await service.execute(
+      final result = await protocol.execute(
         toolId: 'read_file',
         argumentsJson: jsonEncode({
           'path': 'missing.txt',
@@ -128,12 +134,12 @@ class _FakeChatClient extends ChatClient {
     : super(baseUrl: 'http://localhost', model: 'test');
 
   final ChatCompletionResponse _response;
-  Map<String, dynamic>? seenExtraParams;
+  ModelRequestOptions? seenExtraParams;
 
   @override
   Future<ChatCompletionResponse> completeChat({
     required List<ChatMessage> messages,
-    Map<String, dynamic>? extraParams,
+    ModelRequestOptions? extraParams,
     Object? cancellationToken,
     String diagnosticsLabel = 'Model call',
     int? contextLimitTokens,

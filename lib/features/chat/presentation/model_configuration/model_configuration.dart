@@ -4,8 +4,8 @@ import 'dart:math' as math;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
-import 'package:hermes/shared_kernel/model_configuration.dart';
-import 'package:hermes/shared_kernel/model_load_configuration.dart';
+import 'package:hermes/features/model/application/model_configuration.dart';
+import 'package:hermes/features/model/application/model_load_configuration.dart';
 import 'package:hermes/features/chat/presentation/model_configuration/slider_control.dart';
 
 typedef ModelConfigurationConfirm =
@@ -102,7 +102,9 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
   }
 
   void _applyConfiguration(ModelLoadConfiguration configuration) {
-    final config = configuration.normalised();
+    final config = configuration.normalised(
+      maxThreads: Platform.numberOfProcessors,
+    );
     _ctx = config.nCtx ~/ 1024;
     _threads = config.nThreads;
     _temperature = config.temperature;
@@ -204,7 +206,9 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
     }
 
     setState(() {
-      _applyConfiguration(ModelLoadConfiguration.defaults());
+      _applyConfiguration(
+        ModelLoadConfiguration.defaults(nThreads: Platform.numberOfProcessors),
+      );
       _hasSavedConfiguration = false;
       _resetting = false;
     });

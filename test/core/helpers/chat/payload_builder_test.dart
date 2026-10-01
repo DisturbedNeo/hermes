@@ -1,10 +1,10 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/message_role.dart';
-import 'package:hermes/shared_kernel/payload_builder.dart';
-import 'package:hermes/shared_kernel/bubble.dart';
-import 'package:hermes/shared_kernel/model_json.dart';
+import 'package:hermes/features/chat/application/contracts/message_role.dart';
+import 'package:hermes/features/chat/application/protocol/payload_builder.dart';
+import 'package:hermes/features/chat/application/protocol/chat_message_wire_adapter.dart';
+import 'package:hermes/features/chat/application/contracts/bubble.dart';
 
 void main() {
   group('PayloadBuilder', () {
@@ -194,12 +194,12 @@ void main() {
           payload.single.reasoningContent,
           'I should read the file first.',
         );
-        expect(payload.single.toolCalls.single['function'], {
-          'name': 'read_file',
-          'arguments': {'path': 'README.md'},
+        expect(payload.single.toolCalls.single.name, 'read_file');
+        expect(payload.single.toolCalls.single.arguments.values, {
+          'path': 'README.md',
         });
         expect(
-          jsonEncode(ModelJson.encode(payload.single)),
+          jsonEncode(const ChatMessageWireAdapter().encode(payload.single)),
           contains('reasoning_content'),
         );
       },

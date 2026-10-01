@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:hermes/features/chat/presentation/theme/hermes_theme_data.dart';
 import 'package:hermes/features/chat/presentation/theme/nexus_theme.dart';
 import 'package:hermes/features/chat/presentation/theme/solarpunk_theme.dart';
-import 'package:hermes/shared_kernel/disposable.dart';
-import 'package:hermes/shared_kernel/preferences_port.dart';
+import 'package:hermes/core/disposable.dart';
+import 'package:hermes/features/settings/application/preferences_port.dart';
 
 class ThemeManager with ChangeNotifier implements Disposable {
   bool _isDarkMode = false;

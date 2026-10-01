@@ -1,4 +1,4 @@
-import 'package:hermes/shared_kernel/model_completion_port.dart';
+import 'package:hermes/features/model/application/model_completion_port.dart';
 
 /// Model completion contract owned by the model feature.
 ///

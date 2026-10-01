@@ -1,14 +1,14 @@
-import 'package:hermes/shared_kernel/bubble.dart';
-import 'package:hermes/shared_kernel/chat_persistence.dart';
-import 'package:hermes/shared_kernel/model_configuration.dart';
-import 'package:hermes/shared_kernel/saved_chat.dart';
-import 'package:hermes/shared_kernel/system_prompt.dart';
-import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/shared_kernel/persistence_contracts.dart';
-import 'package:hermes/shared_kernel/task_summary.dart';
-import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/shared_kernel/task_system_settings.dart';
-import 'package:hermes/shared_kernel/workspace.dart';
+import 'package:hermes/features/chat/application/contracts/bubble.dart';
+import 'package:hermes/features/chat/application/contracts/chat_persistence.dart';
+import 'package:hermes/features/model/application/model_configuration.dart';
+import 'package:hermes/features/chat/application/contracts/saved_chat.dart';
+import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
+import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
+import 'package:hermes/features/chat/domain/chat_state_slices.dart';
+import 'package:hermes/features/persistence/application/persistence_contracts.dart';
+import 'package:hermes/features/task/application/contracts/task_summary.dart';
+import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
+import 'package:hermes/features/workspace/application/workspace.dart';
 
 /// Authoritative immutable state for one chat session.
 ///
@@ -20,64 +20,113 @@ class ChatState {
   ChatState({
     required this.tabId,
     required List<Bubble> messages,
-    required this.historyRevision,
-    this.currentChatId,
-    this.currentSavedChat,
-    this.currentModelSnapshot,
-    this.pendingModelRestore,
-    this.pendingModelRestoreIssue,
-    this.workspace,
-    this.systemPrompt,
-    this.executionMode = ExecutionMode.chat,
-    this.activeProject,
-    this.activeProjectPersistenceDiagnostics,
+    required int historyRevision,
+    String? currentChatId,
+    SavedChat? currentSavedChat,
+    ModelConfigurationSnapshot? currentModelSnapshot,
+    ModelConfigurationSnapshot? pendingModelRestore,
+    String? pendingModelRestoreIssue,
+    WorkspaceAttachment? workspace,
+    SystemPromptSnapshot? systemPrompt,
+    ExecutionMode executionMode = ExecutionMode.chat,
+    ProjectPanelReadModel? activeProject,
+    ProjectPersistenceDiagnostics? activeProjectPersistenceDiagnostics,
     List<ProjectSummary> availableProjects = const [],
-    this.activeTask,
+    TaskPanelReadModel? activeTask,
     List<TaskSummary> availableTasks = const [],
-    this.taskSystemSettings = const TaskSystemSettings(),
-    this.taskBusy = false,
-    this.taskCancellationRequested = false,
-    this.taskStatusMessage,
-    this.taskError,
-    this.taskModelOutputTitle,
-    this.taskModelOutputText = '',
-    this.taskModelOutputReasoning = '',
-    this.taskModelOutputActive = false,
-    this.saveFailure,
+    TaskSystemSettings taskSystemSettings = const TaskSystemSettings(),
+    bool taskBusy = false,
+    bool taskCancellationRequested = false,
+    String? taskStatusMessage,
+    Object? taskError,
+    String? taskModelOutputTitle,
+    String taskModelOutputText = '',
+    String taskModelOutputReasoning = '',
+    bool taskModelOutputActive = false,
+    ChatSaveFailure? saveFailure,
   }) : assert(!taskCancellationRequested || taskBusy),
-       messages = List.unmodifiable(messages),
-       availableProjects = List.unmodifiable(availableProjects),
-       availableTasks = List.unmodifiable(availableTasks);
+       conversation = ChatConversationState(
+         messages: messages,
+         historyRevision: historyRevision,
+       ),
+       modelSession = ChatModelSessionState(
+         currentSnapshot: currentModelSnapshot,
+         pendingRestore: pendingModelRestore,
+         pendingRestoreIssue: pendingModelRestoreIssue,
+       ),
+       projectPanel = ChatProjectPanelState(
+         activeProject: activeProject,
+         persistenceDiagnostics: activeProjectPersistenceDiagnostics,
+         availableProjects: availableProjects,
+       ),
+       taskPanel = ChatTaskPanelState(
+         activeTask: activeTask,
+         availableTasks: availableTasks,
+         settings: taskSystemSettings,
+       ),
+       persistence = ChatPersistenceState(
+         currentChatId: currentChatId,
+         currentSavedChat: currentSavedChat,
+         saveFailure: saveFailure,
+       ),
+       operationStatus = ChatTransientOperationState(
+         taskBusy: taskBusy,
+         taskCancellationRequested: taskCancellationRequested,
+         taskStatusMessage: taskStatusMessage,
+         taskError: taskError,
+         taskModelOutputTitle: taskModelOutputTitle,
+         taskModelOutputText: taskModelOutputText,
+         taskModelOutputReasoning: taskModelOutputReasoning,
+         taskModelOutputActive: taskModelOutputActive,
+       ),
+       context = ChatContextState(
+         workspace: workspace,
+         systemPrompt: systemPrompt,
+         executionMode: executionMode,
+       );
 
   factory ChatState.initial(String tabId, Bubble systemPrompt) =>
       ChatState(tabId: tabId, messages: [systemPrompt], historyRevision: 0);
 
   final String tabId;
-  final List<Bubble> messages;
-  final int historyRevision;
-  final String? currentChatId;
-  final SavedChat? currentSavedChat;
-  final ModelConfigurationSnapshot? currentModelSnapshot;
-  final ModelConfigurationSnapshot? pendingModelRestore;
-  final String? pendingModelRestoreIssue;
-  final WorkspaceAttachment? workspace;
-  final SystemPromptSnapshot? systemPrompt;
-  final ExecutionMode executionMode;
-  final ProjectAggregate? activeProject;
-  final ProjectPersistenceDiagnostics? activeProjectPersistenceDiagnostics;
-  final List<ProjectSummary> availableProjects;
-  final TaskAggregate? activeTask;
-  final List<TaskSummary> availableTasks;
-  final TaskSystemSettings taskSystemSettings;
-  final bool taskBusy;
-  final bool taskCancellationRequested;
-  final String? taskStatusMessage;
-  final Object? taskError;
-  final String? taskModelOutputTitle;
-  final String taskModelOutputText;
-  final String taskModelOutputReasoning;
-  final bool taskModelOutputActive;
-  final ChatSaveFailure? saveFailure;
+  final ChatConversationState conversation;
+  final ChatModelSessionState modelSession;
+  final ChatProjectPanelState projectPanel;
+  final ChatTaskPanelState taskPanel;
+  final ChatPersistenceState persistence;
+  final ChatTransientOperationState operationStatus;
+  final ChatContextState context;
+
+  List<Bubble> get messages => conversation.messages;
+  int get historyRevision => conversation.historyRevision;
+  String? get currentChatId => persistence.currentChatId;
+  SavedChat? get currentSavedChat => persistence.currentSavedChat;
+  ModelConfigurationSnapshot? get currentModelSnapshot =>
+      modelSession.currentSnapshot;
+  ModelConfigurationSnapshot? get pendingModelRestore =>
+      modelSession.pendingRestore;
+  String? get pendingModelRestoreIssue => modelSession.pendingRestoreIssue;
+  WorkspaceAttachment? get workspace => context.workspace;
+  SystemPromptSnapshot? get systemPrompt => context.systemPrompt;
+  ExecutionMode get executionMode => context.executionMode;
+  ProjectPanelReadModel? get activeProject => projectPanel.activeProject;
+  ProjectPersistenceDiagnostics? get activeProjectPersistenceDiagnostics =>
+      projectPanel.persistenceDiagnostics;
+  List<ProjectSummary> get availableProjects => projectPanel.availableProjects;
+  TaskPanelReadModel? get activeTask => taskPanel.activeTask;
+  List<TaskSummary> get availableTasks => taskPanel.availableTasks;
+  TaskSystemSettings get taskSystemSettings => taskPanel.settings;
+  bool get taskBusy => operationStatus.taskBusy;
+  bool get taskCancellationRequested =>
+      operationStatus.taskCancellationRequested;
+  String? get taskStatusMessage => operationStatus.taskStatusMessage;
+  Object? get taskError => operationStatus.taskError;
+  String? get taskModelOutputTitle => operationStatus.taskModelOutputTitle;
+  String get taskModelOutputText => operationStatus.taskModelOutputText;
+  String get taskModelOutputReasoning =>
+      operationStatus.taskModelOutputReasoning;
+  bool get taskModelOutputActive => operationStatus.taskModelOutputActive;
+  ChatSaveFailure? get saveFailure => persistence.saveFailure;
 
   ChatState copyWith({
     Object? currentChatId = _unchanged,
@@ -133,7 +182,7 @@ class ChatState {
     executionMode: executionMode ?? this.executionMode,
     activeProject: identical(activeProject, _unchanged)
         ? this.activeProject
-        : activeProject as ProjectAggregate?,
+        : activeProject as ProjectPanelReadModel?,
     activeProjectPersistenceDiagnostics:
         identical(activeProjectPersistenceDiagnostics, _unchanged)
         ? this.activeProjectPersistenceDiagnostics
@@ -141,7 +190,7 @@ class ChatState {
     availableProjects: availableProjects ?? this.availableProjects,
     activeTask: identical(activeTask, _unchanged)
         ? this.activeTask
-        : activeTask as TaskAggregate?,
+        : activeTask as TaskPanelReadModel?,
     availableTasks: availableTasks ?? this.availableTasks,
     taskSystemSettings: taskSystemSettings ?? this.taskSystemSettings,
     taskBusy: taskBusy ?? this.taskBusy,
@@ -319,7 +368,7 @@ class ChatExecutionModeChanged extends ChatStateEvent {
 class ChatProjectChanged extends ChatStateEvent {
   const ChatProjectChanged(this.project);
 
-  final ProjectAggregate? project;
+  final ProjectPanelReadModel? project;
 }
 
 class ChatProjectDiagnosticsChanged extends ChatStateEvent {
@@ -337,7 +386,7 @@ class ChatProjectsChanged extends ChatStateEvent {
 class ChatTaskChanged extends ChatStateEvent {
   const ChatTaskChanged(this.task);
 
-  final TaskAggregate? task;
+  final TaskPanelReadModel? task;
 }
 
 class ChatTasksChanged extends ChatStateEvent {

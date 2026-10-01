@@ -3,11 +3,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/shared_kernel/chat_message.dart';
-import 'package:hermes/shared_kernel/chat_token.dart';
-import 'package:hermes/shared_kernel/model_call_diagnostics.dart';
+import 'package:hermes/features/chat/application/contracts/chat_message.dart';
+import 'package:hermes/features/chat/application/contracts/chat_token.dart';
+import 'package:hermes/features/model/application/model_call_diagnostics.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
-import 'package:hermes/shared_kernel/cancellation.dart';
+import 'package:hermes/core/cancellation.dart';
 import 'package:http/http.dart' as http;
 
 void main() {
@@ -365,10 +365,12 @@ void main() {
 
         final result = await client.completeChatStreamed(
           messages: const [ChatMessage(role: 'user', content: 'hello')],
-          extraParams: const {
-            'stream_options': {'custom': 'kept'},
-            'temperature': 0.2,
-          },
+          extraParams: const ModelRequestOptions(
+            streamOptions: ModelStreamOptions(
+              custom: [ModelStreamOption(name: 'custom', value: 'kept')],
+            ),
+            temperature: 0.2,
+          ),
           diagnosticsLabel: 'Chat response',
           contextLimitTokens: 4096,
         );
@@ -883,7 +885,7 @@ void main() {
 
         final count = await client.countInputTokens(
           messages: const [ChatMessage(role: 'user', content: 'hello')],
-          extraParams: const {'tools': [], 'add_generation_prompt': true},
+          extraParams: const ModelRequestOptions(addGenerationPrompt: true),
         );
 
         expect(count, 321);
