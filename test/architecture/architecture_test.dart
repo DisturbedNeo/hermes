@@ -21,11 +21,12 @@ class _Directive {
 }
 
 class _Source {
-  const _Source(this.path, this.text, this.imports, this.parts);
+  const _Source(this.path, this.text, this.imports, this.exports, this.parts);
 
   final String path;
   final String text;
   final List<_Directive> imports;
+  final List<_Directive> exports;
   final List<_Directive> parts;
 
   String get module =>
@@ -124,6 +125,7 @@ Future<_Graph> _readGraph() async {
         path,
         text,
         _directives(text, 'import'),
+        _directives(text, 'export'),
         _directives(text, 'part'),
       ),
     );
@@ -137,7 +139,7 @@ Map<String, Set<String>> _importGraph(_Graph graph) {
     for (final source in graph.sources) source.path: <String>{},
   };
   for (final source in graph.sources) {
-    for (final directive in source.imports) {
+    for (final directive in [...source.imports, ...source.exports]) {
       final target = _resolve(source.path, directive.uri);
       if (graph.byPath.containsKey(target)) result[source.path]!.add(target);
     }
@@ -176,6 +178,54 @@ List<String> _cycles(Map<String, Set<String>> graph) {
 bool _isPort(_Source source) =>
     source.path.endsWith('_port.dart') || source.path.endsWith('_ports.dart');
 
+bool _isProtocolAdapter(_Source source) =>
+    source.path.endsWith('_protocol_adapter.dart');
+
+/// These are deliberately explicit compatibility bridges. They keep the
+/// public facade/re-export shape stable while the remaining runtime code is
+/// migrated to the documented layer boundaries. New bridges must be added
+/// here deliberately, so architecture drift cannot hide behind a broad layer
+/// exemption.
+const _legacyArchitectureBridges = <String>{
+  'lib/features/chat/application/chat_controller.dart -> '
+      'lib/features/chat/runtime/chat_controller.dart',
+  'lib/features/chat/application/chat_workspace_controller.dart -> '
+      'lib/features/chat/runtime/chat_workspace_controller.dart',
+  'lib/features/project/application/project_application/project_application.dart -> '
+      'lib/features/project/runtime/project_application.dart',
+  'lib/features/task/application/task_application/task_controller.dart -> '
+      'lib/features/task/runtime/task_controller.dart',
+  'lib/features/model/domain/model_completion.dart -> '
+      'lib/features/model/application/model_completion.dart',
+  'lib/features/model/domain/model_configuration.dart -> '
+      'lib/features/model/application/model_configuration.dart',
+  'lib/features/model/domain/model_errors.dart -> '
+      'lib/features/model/application/model_errors.dart',
+  'lib/features/model/domain/model_request.dart -> '
+      'lib/features/model/application/model_request.dart',
+  'lib/features/workspace/domain/workspace.dart -> '
+      'lib/features/workspace/application/workspace.dart',
+};
+
+/// Workspace discovery is still injected as a concrete service in the legacy
+/// project/task runtime paths. Keep the exception narrow until it is replaced
+/// by an application-layer discovery port.
+const _legacyInfrastructureEdges = <String>{
+  'lib/features/project/runtime/project_discovery_service.dart -> '
+      'lib/features/workspace/infrastructure/workspace_discovery_service.dart',
+  'lib/features/project/runtime/project_execution_runtime.dart -> '
+      'lib/features/workspace/infrastructure/workspace_discovery_service.dart',
+  'lib/features/project/runtime/project_planning_coordinator.dart -> '
+      'lib/features/workspace/infrastructure/workspace_discovery_service.dart',
+  'lib/features/project/runtime/project_planning_gateway.dart -> '
+      'lib/features/workspace/infrastructure/workspace_discovery_service.dart',
+  'lib/features/task/runtime/task_step_execution_runtime.dart -> '
+      'lib/features/workspace/infrastructure/workspace_discovery_service.dart',
+};
+
+String _edgeKey(_Source source, _Source target) =>
+    '${source.path} -> ${target.path}';
+
 bool _allowed(_Source source, _Source target) {
   if (source.module == 'app') return true;
   if (target.module == 'app') return false;
@@ -185,6 +235,27 @@ bool _allowed(_Source source, _Source target) {
         target.module == 'core' ||
         (target.module == 'features' && target.layer == 'application');
   }
+
+  final edge = _edgeKey(source, target);
+  if (_legacyArchitectureBridges.contains(edge)) return true;
+  if (_legacyInfrastructureEdges.contains(edge)) return true;
+
+  // Presentation must consume application/domain projections and ports. It
+  // must not reach around the application boundary into runtime or adapters.
+  if (source.layer == 'presentation' &&
+      (target.layer == 'runtime' || target.layer == 'infrastructure')) {
+    return false;
+  }
+
+  // Application/runtime code may use named protocol adapters, but concrete
+  // persistence, process, filesystem, database, and model-server adapters
+  // must enter through typed application ports.
+  if ((source.layer == 'application' || source.layer == 'runtime') &&
+      target.layer == 'infrastructure' &&
+      !_isProtocolAdapter(target)) {
+    return false;
+  }
+
   if (source.feature != null &&
       target.feature != null &&
       source.feature != target.feature) {
@@ -241,7 +312,11 @@ void main() {
   test('all internal imports and parts resolve', () {
     final violations = <String>[];
     for (final source in graph.sources) {
-      for (final directive in [...source.imports, ...source.parts]) {
+      for (final directive in [
+        ...source.imports,
+        ...source.exports,
+        ...source.parts,
+      ]) {
         final target = _resolve(source.path, directive.uri);
         if (target.isNotEmpty && !graph.byPath.containsKey(target)) {
           violations.add('${source.path}:${directive.line}: missing $target');
@@ -254,10 +329,13 @@ void main() {
   test('dependency direction is explicit and the graph is acyclic', () {
     final violations = <String>[];
     for (final source in graph.sources) {
-      for (final directive in source.imports) {
+      for (final directive in [...source.imports, ...source.exports]) {
         final target = graph.byPath[_resolve(source.path, directive.uri)];
         if (target != null && !_allowed(source, target)) {
-          violations.add('${source.path}:${directive.line}: ${target.path}');
+          violations.add(
+            '${source.path}:${directive.line}: ${target.path} '
+            '(imports and exports are architectural edges)',
+          );
         }
       }
     }
