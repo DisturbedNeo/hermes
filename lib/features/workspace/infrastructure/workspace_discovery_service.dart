@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/workspace/application/workspace_discovery_profile.dart';
+import 'package:hermes/features/workspace/application/workspace_discovery.dart';
 import 'package:hermes/core/cancellation.dart';
 import 'package:path/path.dart' as path;
 import 'package:yaml/yaml.dart';
@@ -10,7 +11,7 @@ import 'package:yaml/yaml.dart';
 export 'package:hermes/features/workspace/application/workspace_discovery_profile.dart';
 
 /// Collects workspace facts without invoking a model or workspace tools.
-class WorkspaceDiscoveryProfileService {
+class WorkspaceDiscoveryProfileService implements WorkspaceDiscoveryPort {
   const WorkspaceDiscoveryProfileService();
 
   static const int maxDepth = 4;
@@ -85,6 +86,7 @@ class WorkspaceDiscoveryProfileService {
     'main.rs',
   };
 
+  @override
   Future<WorkspaceDiscoveryProfile> collect({
     required WorkspaceAttachment workspace,
     Iterable<String> priorityPaths = const [],

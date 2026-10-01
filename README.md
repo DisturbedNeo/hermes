@@ -23,6 +23,10 @@ implementations directly. Project planning stores immutable `ProjectTaskNode`
 values and materializes executable task documents only in the task boundary
 adapter.
 
+Workspace discovery follows the same boundary: runtimes consume the
+application-layer `WorkspaceDiscoveryPort`, while `WorkspaceToolsModule`
+injects the filesystem-backed discovery adapter.
+
 `ChatController`, `TaskController`, and `ProjectApplication` are stable thin
 facades over focused runtime/coordinator implementations. Concrete persistence
 adapters live under feature `infrastructure/` directories and implement typed
@@ -68,9 +72,9 @@ bash tool/verify.sh
 ```
 
 The workflow regenerates mappers, checks formatting, analyzes Dart, runs the
-authoritative architecture suite in
+authoritative analyzer-backed architecture suite in
 `test/architecture/architecture_test.dart` and the full Flutter test suite,
-and checks the final diff. For an individual change, use the narrowest
+checks generated output and the final diff. For an individual change, use the narrowest
 relevant command, then run the complete workflow before handoff.
 
 ## Persistence and compatibility

@@ -8,7 +8,7 @@ import 'package:hermes/features/workspace/application/workspace_ports.dart';
 import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/workspace/application/sandbox_policy.dart';
 import 'package:hermes/platform/tools/tool.dart';
-import 'package:hermes/features/tools/application/tool_error.dart';
+import 'package:hermes/features/tools/application/protocol/tool_error.dart';
 
 abstract class WorkspaceTool extends Tool {
   final WorkspaceSandboxPort sandbox;

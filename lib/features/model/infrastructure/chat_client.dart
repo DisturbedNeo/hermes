@@ -16,6 +16,8 @@ import 'package:hermes/features/model/application/model_request.dart';
 
 export 'package:hermes/features/model/application/model_request.dart';
 import 'package:http/http.dart' as http;
+import 'package:hermes/features/model/infrastructure/chat_model_property_decoder.dart';
+import 'package:hermes/features/model/infrastructure/chat_retry_policy.dart';
 
 export 'package:hermes/features/model/application/model_completion.dart';
 export 'package:hermes/features/model/application/model_errors.dart';
@@ -330,38 +332,6 @@ double? _progressTokensPerSecond(Map? progress) {
   return processed * 1000 / milliseconds;
 }
 
-LlamaServerProperties _serverPropertiesFromWire(Map decoded) {
-  final defaults = decoded['default_generation_settings'];
-  final defaultMap = defaults is Map ? defaults : const <dynamic, dynamic>{};
-  final model = decoded['model'];
-  final modelMap = model is Map ? model : const <dynamic, dynamic>{};
-  final capabilities = decoded['chat_template_caps'];
-  final modalities = decoded['modalities'];
-
-  return LlamaServerProperties(
-    effectiveContextSize:
-        _wireInt(decoded['n_ctx']) ??
-        _wireInt(defaultMap['n_ctx']) ??
-        _wireInt(modelMap['n_ctx_train']),
-    totalSlots:
-        _wireInt(decoded['total_slots']) ?? _wireInt(decoded['n_slots']),
-    modelPath:
-        decoded['model_path']?.toString() ?? modelMap['path']?.toString(),
-    buildInfo:
-        decoded['build_info']?.toString() ??
-        decoded['build']?.toString() ??
-        decoded['version']?.toString(),
-    chatTemplateCapabilities: capabilities is Map
-        ? capabilities.map((key, value) => MapEntry(key.toString(), value))
-        : const {},
-    modalities: modalities is Map
-        ? modalities.map((key, value) => MapEntry(key.toString(), value))
-        : modalities is List
-        ? {'supported': List<Object?>.from(modalities)}
-        : const {},
-  );
-}
-
 List<ChatToken> _tokensFromDelta(Map delta, Uri? chatUri) {
   final tokens = <ChatToken>[];
 
@@ -630,7 +600,7 @@ class _CallDiagnosticsTracker {
 }
 
 class ChatClient implements ModelProvider {
-  static const int _maxAttempts = 4;
+  static const ChatRetryPolicy _retryPolicy = ChatRetryPolicy();
   static const Duration defaultInactivityTimeout = Duration(minutes: 10);
   static const Duration defaultTokenCountTimeout = Duration(seconds: 5);
 
@@ -949,7 +919,7 @@ class ChatClient implements ModelProvider {
     CancellationToken? cancellationToken,
   }) async* {
     var outputStarted = false;
-    for (var attempt = 1; attempt <= _maxAttempts; attempt++) {
+    for (var attempt = 1; attempt <= _retryPolicy.maxAttempts; attempt++) {
       try {
         await for (final token in _streamAttempt(
           chatUri,
@@ -965,7 +935,7 @@ class ChatClient implements ModelProvider {
         cancellationToken?.throwIfCancelled();
         final kind = _transportKind(error);
         if (kind == null) rethrow;
-        final willRetry = !outputStarted && attempt < _maxAttempts;
+        final willRetry = !outputStarted && _retryPolicy.shouldRetry(attempt);
         _emitTransportEvent(
           ChatTransportEvent(
             kind: kind,
@@ -987,7 +957,7 @@ class ChatClient implements ModelProvider {
             causeStackTrace: stackTrace,
           );
         }
-        await Future<void>.delayed(_retryDelayForAttempt(attempt));
+        await Future<void>.delayed(_retryPolicy.delayForAttempt(attempt));
         cancellationToken?.throwIfCancelled();
       }
     }
@@ -1186,7 +1156,9 @@ class ChatClient implements ModelProvider {
           tokenCountTimeout,
         );
         final decoded = jsonDecode(body);
-        return decoded is Map ? _serverPropertiesFromWire(decoded) : null;
+        return decoded is Map
+            ? const ChatModelPropertyDecoder().decode(decoded)
+            : null;
       }, null);
     } catch (_) {
       return null;
@@ -1198,7 +1170,7 @@ class ChatClient implements ModelProvider {
     CancellationToken? cancellationToken,
     Future<T> Function(http.Client client) operation,
   ) async {
-    for (var attempt = 1; attempt <= _maxAttempts; attempt++) {
+    for (var attempt = 1; attempt <= _retryPolicy.maxAttempts; attempt++) {
       try {
         cancellationToken?.throwIfCancelled();
         return await _withClient(operation, cancellationToken);
@@ -1206,7 +1178,7 @@ class ChatClient implements ModelProvider {
         cancellationToken?.throwIfCancelled();
         final kind = _transportKind(error);
         if (kind == null) rethrow;
-        final willRetry = attempt < _maxAttempts;
+        final willRetry = _retryPolicy.shouldRetry(attempt);
         _emitTransportEvent(
           ChatTransportEvent(
             kind: kind,
@@ -1228,16 +1200,11 @@ class ChatClient implements ModelProvider {
             causeStackTrace: stackTrace,
           );
         }
-        await Future<void>.delayed(_retryDelayForAttempt(attempt));
+        await Future<void>.delayed(_retryPolicy.delayForAttempt(attempt));
         cancellationToken?.throwIfCancelled();
       }
     }
     throw StateError('Unreachable retry state');
-  }
-
-  static Duration _retryDelayForAttempt(int attempt) {
-    final backoffMultiplier = 1 << (attempt - 1);
-    return Duration(milliseconds: 100 * backoffMultiplier);
   }
 
   Future<T> _withClient<T>(

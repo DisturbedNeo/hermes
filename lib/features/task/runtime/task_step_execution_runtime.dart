@@ -39,10 +39,10 @@ import 'package:hermes/features/task/runtime/task_tool_execution_service.dart';
 import 'package:hermes/features/task/runtime/task_recovery_service.dart';
 import 'package:hermes/features/task/runtime/task_view_service.dart';
 import 'package:hermes/features/workspace/application/terminal_command_parser.dart';
-import 'package:hermes/features/workspace/infrastructure/workspace_discovery_service.dart';
 import 'package:hermes/features/workspace/application/workspace_ports.dart';
+import 'package:hermes/features/workspace/application/workspace_discovery.dart';
 import 'package:hermes/core/model_json.dart';
-import 'package:hermes/features/tools/application/tool_error.dart';
+import 'package:hermes/features/tools/application/protocol/tool_error.dart';
 import 'package:path/path.dart' as path;
 
 // TaskStepExecutionRuntime
@@ -69,7 +69,7 @@ class TaskRuntimeDependencies {
   final WorkspaceSandboxPort sandbox;
   final TaskPlanningCoordinatorPort planningCoordinator;
   final TaskPersistenceStore persistenceStore;
-  final WorkspaceDiscoveryProfileService profileService;
+  final WorkspaceDiscoveryPort profileService;
   final TaskGateEvaluator gateEvaluator;
   final TaskRecoveryService recoveryService;
   final TaskModelCompletionPort modelCompletion;
@@ -346,7 +346,7 @@ class TaskStepExecutionRuntime {
   final TaskPlanningCoordinatorPort _planningCoordinator;
   final TaskPersistenceStore _persistenceStore;
   final WorkspaceSandboxPort _sandbox;
-  final WorkspaceDiscoveryProfileService _profileService;
+  final WorkspaceDiscoveryPort _profileService;
   final TaskGateEvaluator _gateEvaluator;
   final TaskRecoveryService _recoveryService;
   final TaskModelCompletionPort _modelCompletion;

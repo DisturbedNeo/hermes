@@ -1,8 +1,10 @@
 import 'dart:io';
 
+import 'package:analyzer/dart/analysis/utilities.dart';
+import 'package:analyzer/dart/ast/ast.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Authoritative production architecture gate. It scans every production
+/// Authoritative production architecture gate. It parses every production
 /// source so new files cannot silently join a broad catch-all module.
 const _modules = {'app', 'core', 'features', 'platform'};
 const _featureLayers = {
@@ -61,15 +63,17 @@ int _line(String text, int offset) =>
 
 List<_Directive> _directives(String text, String keyword) {
   final result = <_Directive>[];
-  final pattern = RegExp(
-    r'^\s*' + keyword + r'\s+([\s\S]*?);',
-    multiLine: true,
-  );
-  for (final match in pattern.allMatches(text)) {
-    final uri = RegExp(
-      r'''['"]([^'"]+)['"]''',
-    ).firstMatch(match.group(1) ?? '')?.group(1);
-    if (uri != null) result.add(_Directive(uri, _line(text, match.start)));
+  final unit = parseString(content: text).unit;
+  for (final directive in unit.directives) {
+    final uri = switch (keyword) {
+      'import' when directive is ImportDirective => directive.uri.stringValue,
+      'export' when directive is ExportDirective => directive.uri.stringValue,
+      'part' when directive is PartDirective => directive.uri.stringValue,
+      _ => null,
+    };
+    if (uri != null) {
+      result.add(_Directive(uri, _line(text, directive.offset)));
+    }
   }
   return result;
 }
@@ -181,12 +185,13 @@ bool _isPort(_Source source) =>
 bool _isProtocolAdapter(_Source source) =>
     source.path.endsWith('_protocol_adapter.dart');
 
-/// These are deliberately explicit compatibility bridges. They keep the
-/// public facade/re-export shape stable while the remaining runtime code is
-/// migrated to the documented layer boundaries. New bridges must be added
-/// here deliberately, so architecture drift cannot hide behind a broad layer
-/// exemption.
-const _legacyArchitectureBridges = <String>{
+String? _architecturalLayer(_Source source) =>
+    source.layer ?? (_isPort(source) ? 'application' : null);
+
+/// These are deliberately explicit public-facade edges. The application
+/// facade is the stable API and the runtime implementation remains below it;
+/// only these named facades may cross that boundary.
+const _publicFacadeEdges = <String>{
   'lib/features/chat/application/chat_controller.dart -> '
       'lib/features/chat/runtime/chat_controller.dart',
   'lib/features/chat/application/chat_workspace_controller.dart -> '
@@ -199,28 +204,6 @@ const _legacyArchitectureBridges = <String>{
       'lib/features/model/application/model_completion.dart',
   'lib/features/model/domain/model_configuration.dart -> '
       'lib/features/model/application/model_configuration.dart',
-  'lib/features/model/domain/model_errors.dart -> '
-      'lib/features/model/application/model_errors.dart',
-  'lib/features/model/domain/model_request.dart -> '
-      'lib/features/model/application/model_request.dart',
-  'lib/features/workspace/domain/workspace.dart -> '
-      'lib/features/workspace/application/workspace.dart',
-};
-
-/// Workspace discovery is still injected as a concrete service in the legacy
-/// project/task runtime paths. Keep the exception narrow until it is replaced
-/// by an application-layer discovery port.
-const _legacyInfrastructureEdges = <String>{
-  'lib/features/project/runtime/project_discovery_service.dart -> '
-      'lib/features/workspace/infrastructure/workspace_discovery_service.dart',
-  'lib/features/project/runtime/project_execution_runtime.dart -> '
-      'lib/features/workspace/infrastructure/workspace_discovery_service.dart',
-  'lib/features/project/runtime/project_planning_coordinator.dart -> '
-      'lib/features/workspace/infrastructure/workspace_discovery_service.dart',
-  'lib/features/project/runtime/project_planning_gateway.dart -> '
-      'lib/features/workspace/infrastructure/workspace_discovery_service.dart',
-  'lib/features/task/runtime/task_step_execution_runtime.dart -> '
-      'lib/features/workspace/infrastructure/workspace_discovery_service.dart',
 };
 
 String _edgeKey(_Source source, _Source target) =>
@@ -236,9 +219,11 @@ bool _allowed(_Source source, _Source target) {
         (target.module == 'features' && target.layer == 'application');
   }
 
+  final sourceLayer = _architecturalLayer(source);
+  final targetLayer = _architecturalLayer(target);
+
   final edge = _edgeKey(source, target);
-  if (_legacyArchitectureBridges.contains(edge)) return true;
-  if (_legacyInfrastructureEdges.contains(edge)) return true;
+  if (_publicFacadeEdges.contains(edge)) return true;
 
   // Presentation must consume application/domain projections and ports. It
   // must not reach around the application boundary into runtime or adapters.
@@ -250,34 +235,45 @@ bool _allowed(_Source source, _Source target) {
   // Application/runtime code may use named protocol adapters, but concrete
   // persistence, process, filesystem, database, and model-server adapters
   // must enter through typed application ports.
-  if ((source.layer == 'application' || source.layer == 'runtime') &&
-      target.layer == 'infrastructure' &&
-      !_isProtocolAdapter(target)) {
-    return false;
+  if ((sourceLayer == 'application' || sourceLayer == 'runtime') &&
+      targetLayer == 'infrastructure') {
+    return _isProtocolAdapter(target);
   }
 
   if (source.feature != null &&
       target.feature != null &&
       source.feature != target.feature) {
-    if (target.layer == 'application' || target.layer == 'domain') {
-      return true;
-    }
-    return (source.layer == 'runtime' || source.layer == 'infrastructure') &&
-        (target.feature == 'workspace' || target.feature == 'persistence');
+    return targetLayer == 'application' ||
+        targetLayer == 'domain' ||
+        (sourceLayer == 'infrastructure' &&
+            target.feature == 'persistence' &&
+            targetLayer == 'infrastructure');
   }
   if (source.module == 'features') {
     if (target.module != 'features') return target.module == 'core';
-    if (source.layer == 'domain') {
-      return target.layer == 'domain' ||
-          (target.layer == 'application' &&
+    if (sourceLayer == 'domain') {
+      return targetLayer == 'domain' ||
+          (targetLayer == 'application' &&
               (_isPort(target) || target.path.contains('/contracts/')));
     }
-    if (source.layer == 'presentation') {
-      return target.layer == 'presentation' ||
-          target.layer == 'application' ||
-          target.layer == 'domain';
+    if (sourceLayer == 'presentation') {
+      return targetLayer == 'presentation' ||
+          targetLayer == 'application' ||
+          targetLayer == 'domain';
     }
-    return true;
+    if (sourceLayer == 'application') {
+      return targetLayer == 'application' || targetLayer == 'domain';
+    }
+    if (sourceLayer == 'runtime') {
+      return targetLayer == 'runtime' ||
+          targetLayer == 'application' ||
+          targetLayer == 'domain';
+    }
+    if (sourceLayer == 'infrastructure') {
+      return targetLayer == 'infrastructure' ||
+          targetLayer == 'application' ||
+          targetLayer == 'domain';
+    }
   }
   return false;
 }
@@ -341,6 +337,42 @@ void main() {
     }
     violations.addAll(_cycles(_importGraph(graph)));
     _expectEmpty('dependency graph', violations);
+  });
+
+  test('strict layer matrix rejects prohibited boundary edges', () {
+    _Source source(String path) =>
+        _Source(path, '', const [], const [], const []);
+
+    expect(
+      _allowed(
+        source('lib/features/chat/presentation/chat.dart'),
+        source('lib/features/chat/runtime/chat_session_runtime.dart'),
+      ),
+      isFalse,
+    );
+    expect(
+      _allowed(
+        source('lib/features/task/application/task_service.dart'),
+        source('lib/features/task/infrastructure/task_repository.dart'),
+      ),
+      isFalse,
+    );
+    expect(
+      _allowed(
+        source('lib/features/task/domain/task_policy.dart'),
+        source('lib/features/task/presentation/task_panel.dart'),
+      ),
+      isFalse,
+    );
+    expect(
+      _allowed(
+        source('lib/features/chat/runtime/chat_runtime.dart'),
+        source(
+          'lib/features/chat/infrastructure/chat_panel_protocol_adapter.dart',
+        ),
+      ),
+      isTrue,
+    );
   });
 
   test('core and contract modules stay platform independent', () {
@@ -428,6 +460,46 @@ void main() {
       }
     }
     _expectEmpty('typed ports', violations);
+  });
+
+  test('workspace discovery is an injected application capability', () {
+    final port = graph
+        .byPath['lib/features/workspace/application/workspace_discovery.dart'];
+    final adapter = graph
+        .byPath['lib/features/workspace/infrastructure/workspace_discovery_service.dart'];
+    final composition =
+        graph.byPath['lib/app/modules/workspace_tools_module.dart'];
+    final violations = <String>[];
+    if (port == null || !port.text.contains('WorkspaceDiscoveryPort')) {
+      violations.add('workspace_discovery.dart: application port is missing');
+    }
+    if (adapter == null ||
+        !adapter.text.contains('implements WorkspaceDiscoveryPort')) {
+      violations.add(
+        'workspace_discovery_service.dart: infrastructure adapter is not '
+        'bound to the application port',
+      );
+    }
+    if (composition == null ||
+        !composition.text.contains('WorkspaceDiscoveryPort') ||
+        !composition.text.contains('discovery:')) {
+      violations.add(
+        'workspace_tools_module.dart: discovery adapter is not composed '
+        'and exposed as a typed port',
+      );
+    }
+    for (final source in graph.sources) {
+      if (!source.path.contains('/runtime/') &&
+          !source.path.contains('/application/')) {
+        continue;
+      }
+      if (source.text.contains(
+        'features/workspace/infrastructure/workspace_discovery_service.dart',
+      )) {
+        violations.add('${source.path}: imports concrete workspace discovery');
+      }
+    }
+    _expectEmpty('workspace discovery boundary', violations);
   });
 
   test('model and diagnostics boundaries are hardened', () {
@@ -617,6 +689,7 @@ void main() {
       for (final path in [
         'lib/features/tools/application/tool_protocol_adapter.dart',
         'lib/features/chat/infrastructure/chat_panel_protocol_adapter.dart',
+        'lib/features/task/application/protocol/planning_protocol_adapter.dart',
       ]) {
         if (!graph.byPath.containsKey(path)) {
           violations.add('$path: protocol adapter is missing');
@@ -683,8 +756,17 @@ void main() {
   });
 
   test('module ownership and generated-artifact rules are documented', () {
-    final architecture = File('docs/architecture.md').readAsStringSync();
     final violations = <String>[];
+    final documentation = File('docs/architecture.md');
+    if (!documentation.existsSync()) {
+      violations.add(
+        'docs/architecture.md: required architecture guide is missing; '
+        'restore the tracked file before running architecture tests',
+      );
+      _expectEmpty('documented module ownership', violations);
+      return;
+    }
+    final architecture = documentation.readAsStringSync();
     for (final module in [
       '`core`',
       '`features/persistence`',

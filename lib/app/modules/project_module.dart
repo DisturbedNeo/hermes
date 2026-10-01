@@ -72,6 +72,7 @@ class ProjectModule {
     final discovery = ProjectDiscoveryService(
       taskController: task,
       changeDiscovery: workspace.changeDiscovery,
+      profileService: workspace.discovery,
       memoryService: memory,
     );
     final planningHandler = ProjectPlanningHandler(

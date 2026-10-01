@@ -6,6 +6,7 @@ import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/workspace/application/workspace_change_discovery.dart';
+import 'package:hermes/features/workspace/infrastructure/workspace_discovery_service.dart';
 import 'package:hermes/features/project/runtime/project_discovery_service.dart';
 import 'package:hermes/platform/tool_service.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
@@ -41,6 +42,7 @@ dependencies:
     final sandbox = WorkspaceSandbox();
     final service = ProjectDiscoveryService(
       changeDiscovery: const _StaticChangeDiscovery(),
+      profileService: const WorkspaceDiscoveryProfileService(),
       taskController: createTestTaskController(
         toolService: ToolService(workspaceSandbox: sandbox),
         sandbox: sandbox,
@@ -95,6 +97,7 @@ dependencies:
       final sandbox = WorkspaceSandbox();
       final service = ProjectDiscoveryService(
         changeDiscovery: const _StaticChangeDiscovery(),
+        profileService: const WorkspaceDiscoveryProfileService(),
         taskController: createTestTaskController(
           toolService: ToolService(workspaceSandbox: sandbox),
           sandbox: sandbox,
@@ -135,6 +138,7 @@ dependencies:
     final sandbox = WorkspaceSandbox();
     final service = ProjectDiscoveryService(
       changeDiscovery: const _StaticChangeDiscovery(),
+      profileService: const WorkspaceDiscoveryProfileService(),
       taskController: createTestTaskController(
         toolService: ToolService(workspaceSandbox: sandbox),
         sandbox: sandbox,
@@ -174,6 +178,7 @@ dependencies:
       final sandbox = WorkspaceSandbox();
       final service = ProjectDiscoveryService(
         changeDiscovery: const _StaticChangeDiscovery(),
+        profileService: const WorkspaceDiscoveryProfileService(),
         taskController: createTestTaskController(
           toolService: ToolService(workspaceSandbox: sandbox),
           sandbox: sandbox,

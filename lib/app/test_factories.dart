@@ -44,6 +44,7 @@ import 'package:hermes/features/task/application/protocol/planning_runtime.dart'
 import 'package:hermes/features/task/application/protocol/planning_structured_output.dart';
 import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/workspace/infrastructure/workspace_discovery_service.dart';
+import 'package:hermes/features/workspace/application/workspace_discovery.dart';
 import 'package:hermes/features/workspace/application/workspace_ports.dart';
 import 'package:hermes/features/workspace/infrastructure/workspace_change_discovery_service.dart';
 import 'package:hermes/platform/yaml_document_validator.dart';
@@ -66,7 +67,7 @@ TaskController createTestTaskController({
   TaskModelCompletionPort? modelCompletion,
   TaskToolExecutionPort? toolExecution,
   StructuredPlanningOutputService? structuredOutput,
-  WorkspaceDiscoveryProfileService? profileService,
+  WorkspaceDiscoveryPort? profileService,
 }) {
   final resolvedPersistence =
       persistence ??
@@ -211,6 +212,7 @@ ProjectApplication createTestProjectApplication({
     taskController: taskController,
     changeDiscovery: WorkspaceChangeDiscoveryService(commands: resolvedSandbox),
     memoryService: resolvedMemoryService,
+    profileService: const WorkspaceDiscoveryProfileService(),
   );
   final resolvedPlanningHandler = ProjectPlanningHandler(
     coordinator: ProjectPlanningCoordinator(

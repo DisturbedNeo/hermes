@@ -1,13 +1,13 @@
 import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
 import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
+import 'package:hermes/features/workspace/application/workspace_discovery_profile.dart';
 import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/model/application/model_completion_port.dart';
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
 import 'package:hermes/features/project/runtime/project_plan_validator.dart';
 import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
 import 'package:hermes/features/model/application/model_output.dart';
-import 'package:hermes/features/workspace/infrastructure/workspace_discovery_service.dart';
 
 export 'package:hermes/features/project/runtime/project_plan_validator.dart'
     show ProjectPlanValidationIssue, ProjectPlanValidationSeverity;

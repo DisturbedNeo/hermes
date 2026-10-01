@@ -6,7 +6,6 @@ import 'package:hermes/features/chat/application/contracts/chat_message.dart';
 import 'package:hermes/features/chat/application/protocol/chat_message_wire_adapter.dart';
 import 'package:hermes/features/chat/application/contracts/chat_token.dart';
 import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
-import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/model/application/model_completion_port.dart';
 import 'package:hermes/features/model/application/model_completion.dart';
@@ -16,68 +15,11 @@ import 'package:hermes/features/task/application/protocol/planner_message_compac
 import 'package:hermes/features/model/application/model_output.dart';
 import 'package:hermes/core/model_json.dart';
 
-/// The common model-facing contract for project and task planning registries.
-///
-/// Registries own their domain command vocabulary and in-memory draft state.
-/// They never persist a draft or expose workspace mutation tools.
-abstract interface class PlanningToolRegistry {
-  List<ToolDefinition> get toolDefinitions;
+export 'package:hermes/features/task/application/protocol/planning_protocol_adapter.dart';
+import 'package:hermes/features/task/application/protocol/planning_protocol_adapter.dart';
+import 'package:hermes/features/task/application/protocol/planning_contracts.dart';
 
-  /// The command which ends a planning session when it returns `ok: true`.
-  String get terminalToolId;
-
-  bool get allowsWorkspaceMutation;
-
-  Future<PlanningResponse> invoke(
-    String toolId,
-    PlanningArguments arguments, {
-    String? commandId,
-  });
-}
-
-/// Typed planning command arguments. Wire JSON is owned by
-/// [PlanningProtocolAdapter].
-class PlanningArguments {
-  const PlanningArguments._(this._values);
-
-  factory PlanningArguments.fromWire(Map<String, Object?> values) =>
-      PlanningArguments._(Map.unmodifiable(values));
-
-  final Map<String, Object?> _values;
-
-  Object? operator [](String key) => _values[key];
-  bool containsKey(String key) => _values.containsKey(key);
-  Iterable<String> get keys => _values.keys;
-  Map<String, Object?> toWire() => _values;
-}
-
-/// Typed planning command response. The protocol adapter is the only owner of
-/// its JSON encoding.
-class PlanningResponse {
-  const PlanningResponse._(this._values);
-
-  factory PlanningResponse.fromWire(Map<String, Object?> values) =>
-      PlanningResponse._(Map.unmodifiable(values));
-
-  final Map<String, Object?> _values;
-
-  Object? operator [](String key) => _values[key];
-  bool containsKey(String key) => _values.containsKey(key);
-  bool get ok => _values['ok'] == true;
-  Map<String, Object?> toWire() => _values;
-}
-
-/// Common argument failure used by domain registries while dispatching tools.
-class PlanningToolArgumentException implements Exception {
-  final String code;
-  final String path;
-  final String message;
-
-  const PlanningToolArgumentException(this.code, this.path, this.message);
-
-  @override
-  String toString() => '$code ($path): $message';
-}
+export 'package:hermes/features/task/application/protocol/planning_contracts.dart';
 
 class _PlanningAppliedCommand {
   final String fingerprint;
@@ -210,58 +152,6 @@ abstract class PlanningToolRegistryBase implements PlanningToolRegistry {
     path: 'tool',
     message: 'The planning command could not be applied: $error',
   );
-}
-
-/// Protocol adapter for model tool-call JSON. It is intentionally outside the
-/// typed planning registry port.
-class PlanningProtocolAdapter {
-  const PlanningProtocolAdapter({required this.registry});
-
-  final PlanningToolRegistry registry;
-
-  Future<String> execute(
-    String toolId,
-    String argumentsJson, {
-    String? commandId,
-  }) async {
-    try {
-      final decoded = jsonDecode(argumentsJson);
-      if (decoded is! Map) {
-        return jsonEncode({
-          'ok': false,
-          'code': 'invalid_argument',
-          'path': 'arguments',
-          'message': 'Tool arguments must be a JSON object.',
-        });
-      }
-      final arguments = <String, Object?>{};
-      for (final entry in decoded.entries) {
-        if (entry.key is! String) {
-          return jsonEncode({
-            'ok': false,
-            'code': 'invalid_argument',
-            'path': 'arguments',
-            'message': 'Tool argument names must be strings.',
-          });
-        }
-        arguments[entry.key as String] = entry.value;
-      }
-      return jsonEncode(
-        (await registry.invoke(
-          toolId,
-          PlanningArguments.fromWire(arguments),
-          commandId: commandId,
-        )).toWire(),
-      );
-    } on FormatException catch (error) {
-      return jsonEncode({
-        'ok': false,
-        'code': 'invalid_argument',
-        'path': 'arguments',
-        'message': 'Malformed JSON arguments: ${error.message}',
-      });
-    }
-  }
 }
 
 class PlanningRunRequest {

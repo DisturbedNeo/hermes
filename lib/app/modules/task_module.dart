@@ -15,7 +15,6 @@ import 'package:hermes/features/task/runtime/task_step_execution_runtime.dart';
 import 'package:hermes/features/task/runtime/task_step_runner.dart';
 import 'package:hermes/features/task/runtime/task_tool_execution_service.dart';
 import 'package:hermes/features/task/runtime/task_view_service.dart';
-import 'package:hermes/features/workspace/infrastructure/workspace_discovery_service.dart';
 import 'package:hermes/platform/yaml_document_validator.dart';
 import 'package:hermes/app/modules/persistence_module.dart';
 import 'package:hermes/app/modules/workspace_tools_module.dart';
@@ -48,7 +47,7 @@ class TaskModule {
       sandbox: workspace.sandbox,
       planningCoordinator: planningCoordinator,
       persistenceStore: persistenceStore,
-      profileService: const WorkspaceDiscoveryProfileService(),
+      profileService: workspace.discovery,
       gateEvaluator: TaskGateEvaluator(
         sandbox: workspace.sandbox,
         yamlValidator: const YamlDocumentValidator(),

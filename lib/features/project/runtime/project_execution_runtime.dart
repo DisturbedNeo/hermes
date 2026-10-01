@@ -45,7 +45,7 @@ import 'package:hermes/features/task/domain/task_lifecycle_service.dart';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
 import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/task/application/contracts/task_planning_models.dart';
-import 'package:hermes/features/workspace/infrastructure/workspace_discovery_service.dart';
+import 'package:hermes/features/workspace/application/workspace_discovery_profile.dart';
 import 'package:hermes/features/workspace/application/workspace_ports.dart';
 import 'package:path/path.dart' as path;
 

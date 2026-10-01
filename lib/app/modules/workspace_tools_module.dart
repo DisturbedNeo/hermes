@@ -3,7 +3,9 @@ import 'package:hermes/platform/tool_service.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
 import 'package:hermes/platform/workspace_service.dart';
 import 'package:hermes/features/workspace/application/workspace_change_discovery.dart';
+import 'package:hermes/features/workspace/application/workspace_discovery.dart';
 import 'package:hermes/features/workspace/infrastructure/workspace_change_discovery_service.dart';
+import 'package:hermes/features/workspace/infrastructure/workspace_discovery_service.dart';
 
 /// Workspace and tool capabilities. Host process execution is kept behind
 /// the platform-owned sandbox and is not exposed as a model or domain detail.
@@ -14,6 +16,7 @@ class WorkspaceToolsModule {
     required this.tools,
     required this.toolProtocol,
     required this.changeDiscovery,
+    required this.discovery,
   });
 
   factory WorkspaceToolsModule.create() {
@@ -25,6 +28,7 @@ class WorkspaceToolsModule {
       tools: tools,
       toolProtocol: ToolProtocolAdapter(registry: tools),
       changeDiscovery: WorkspaceChangeDiscoveryService(commands: sandbox),
+      discovery: const WorkspaceDiscoveryProfileService(),
     );
   }
 
@@ -33,4 +37,5 @@ class WorkspaceToolsModule {
   final ToolService tools;
   final ToolProtocolAdapter toolProtocol;
   final WorkspaceChangeDiscoveryPort changeDiscovery;
+  final WorkspaceDiscoveryPort discovery;
 }

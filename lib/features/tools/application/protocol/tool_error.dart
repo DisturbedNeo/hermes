@@ -6,14 +6,12 @@ Map<String, dynamic> toolErrorPayload({
   required String message,
   required TaskToolErrorDisposition disposition,
   Map<String, dynamic> details = const {},
-}) {
-  return {
-    'error': message,
-    'error_code': code,
-    'error_disposition': disposition.wire,
-    ...details,
-  };
-}
+}) => {
+  'error': message,
+  'error_code': code,
+  'error_disposition': disposition.wire,
+  ...details,
+};
 
 TaskToolError? taskToolErrorFromResult(Map<String, dynamic> result) {
   final message = result['error']?.toString().trim();

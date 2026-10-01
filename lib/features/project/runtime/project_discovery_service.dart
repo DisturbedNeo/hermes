@@ -6,8 +6,8 @@ import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
 import 'package:hermes/features/project/domain/project_scheduler.dart';
 import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
-import 'package:hermes/features/workspace/infrastructure/workspace_discovery_service.dart';
 import 'package:hermes/features/workspace/application/workspace_change_discovery.dart';
+import 'package:hermes/features/workspace/application/workspace_discovery.dart';
 
 /// Collects bounded, read-only context for initialization and replanning.
 class ProjectDiscoveryService {
@@ -15,8 +15,7 @@ class ProjectDiscoveryService {
     required TaskQueryPort taskController,
     required WorkspaceChangeDiscoveryPort changeDiscovery,
     ProjectMemoryService memoryService = const ProjectMemoryService(),
-    WorkspaceDiscoveryProfileService profileService =
-        const WorkspaceDiscoveryProfileService(),
+    required WorkspaceDiscoveryPort profileService,
     ProjectWorkspaceContextService workspaceContextService =
         const ProjectWorkspaceContextService(),
   }) : _taskQueries = taskController,
@@ -31,7 +30,7 @@ class ProjectDiscoveryService {
   final TaskQueryPort _taskQueries;
   final WorkspaceChangeDiscoveryPort _changeDiscovery;
   final ProjectMemoryService _memoryService;
-  final WorkspaceDiscoveryProfileService _profileService;
+  final WorkspaceDiscoveryPort _profileService;
   final ProjectWorkspaceContextService _workspaceContextService;
   static const ProjectScheduler _scheduler = ProjectScheduler();
 

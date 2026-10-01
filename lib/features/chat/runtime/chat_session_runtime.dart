@@ -90,6 +90,13 @@ class _PendingScopeMove {
   final String? activeProjectId;
 }
 
+/// Runtime-only aggregate handles used while commands execute. The UI never
+/// reads this object; it receives the value snapshots stored in [ChatState].
+class _ChatExecutionContext {
+  ProjectAggregate? project;
+  Task? task;
+}
+
 class ChatSessionRuntime extends ChangeNotifier implements ChatSessionHost {
   static const String defaultSystemPromptName = 'Default';
   static const String defaultSystemPromptText = 'You are a helpful assistant.';
@@ -142,8 +149,7 @@ class ChatSessionRuntime extends ChangeNotifier implements ChatSessionHost {
   late final ChatSessionManager _session;
 
   late ChatState _state;
-  ProjectAggregate? _activeProjectAggregate;
-  Task? _activeTaskAggregate;
+  final _ChatExecutionContext _executionContext = _ChatExecutionContext();
   final ChatStateReducer _stateReducer = const ChatStateReducer();
 
   /// The only authoritative user-visible state for this tab.
@@ -191,9 +197,9 @@ class ChatSessionRuntime extends ChangeNotifier implements ChatSessionHost {
   void dispatchExecutionMode(ExecutionMode value) =>
       _dispatchChatState(ChatExecutionModeChanged(value));
 
-  ProjectAggregate? get activeProject => _activeProjectAggregate;
+  ProjectAggregate? get activeProject => _executionContext.project;
   void dispatchActiveProject(ProjectAggregate? value) {
-    _activeProjectAggregate = value;
+    _executionContext.project = value;
     _dispatchChatState(
       ChatProjectChanged(
         value == null ? null : ProjectPanelReadModel.fromAggregate(value),
@@ -213,9 +219,9 @@ class ChatSessionRuntime extends ChangeNotifier implements ChatSessionHost {
   void dispatchAvailableProjects(List<ProjectSummary> value) =>
       _dispatchChatState(ChatProjectsChanged(value));
 
-  Task? get activeTask => _activeTaskAggregate;
+  Task? get activeTask => _executionContext.task;
   void dispatchActiveTask(Task? value) {
-    _activeTaskAggregate = value;
+    _executionContext.task = value;
     _dispatchChatState(
       ChatTaskChanged(
         value == null ? null : TaskPanelReadModel.fromAggregate(value),
@@ -467,13 +473,12 @@ class ChatSessionRuntime extends ChangeNotifier implements ChatSessionHost {
   bool get hasActiveWorkspace =>
       workspace != null && workspace?.missing != true;
 
-  String? get activeTaskJson => _activeTaskAggregate == null
-      ? null
-      : _panelProtocol.encodeTask(_activeTaskAggregate!);
+  String? get activeTaskJson =>
+      activeTask == null ? null : _panelProtocol.encodeTask(activeTask!);
 
   String? get activeProjectJson => activeProject == null
       ? null
-      : _panelProtocol.encodeProject(_activeProjectAggregate!);
+      : _panelProtocol.encodeProject(activeProject!);
 
   String get displayTitle {
     final savedTitle = currentSavedChat?.title;
