@@ -462,6 +462,48 @@ void main() {
     _expectEmpty('typed ports', violations);
   });
 
+  test('framework notifier coupling is explicit and documented', () {
+    const justified = <String, String>{
+      'lib/features/chat/application/chat_library_service.dart':
+          'ChatLibraryService',
+      'lib/features/chat/application/system_prompt_library_service.dart':
+          'SystemPromptLibraryService',
+      'lib/features/model/application/model_server_port.dart':
+          'ModelServerPort',
+      'lib/features/model/application/model_session_diagnostics.dart':
+          'ModelSessionDiagnostics',
+    };
+    final violations = <String>[];
+    for (final source in graph.sources.where(
+      (source) => source.layer == 'application',
+    )) {
+      if (!RegExp(
+        r'ChangeNotifier|ValueNotifier|ValueListenable',
+      ).hasMatch(source.text)) {
+        continue;
+      }
+      if (!justified.containsKey(source.path)) {
+        violations.add('${source.path}: undocumented framework notifier edge');
+      }
+    }
+    final documentation = File('docs/architecture.md');
+    if (!documentation.existsSync()) {
+      violations.add(
+        'docs/architecture.md: notifier exceptions cannot be documented',
+      );
+    } else {
+      final text = documentation.readAsStringSync();
+      for (final entry in justified.entries) {
+        if (!text.contains(entry.value)) {
+          violations.add(
+            '${entry.key}: notifier exception missing from architecture docs',
+          );
+        }
+      }
+    }
+    _expectEmpty('framework notifier coupling', violations);
+  });
+
   test('workspace discovery is an injected application capability', () {
     final port = graph
         .byPath['lib/features/workspace/application/workspace_discovery.dart'];
@@ -568,6 +610,21 @@ void main() {
       'lib/features/task/runtime/task_step_execution_runtime.dart': [
         'class TaskStepExecutionRuntime',
       ],
+      'lib/features/task/runtime/task_execution_coordinator.dart': [
+        'class TaskExecutionCoordinator',
+      ],
+      'lib/features/task/runtime/task_execution_policy.dart': [
+        'class TaskExecutionPolicy',
+      ],
+      'lib/features/task/runtime/task_step_execution_loop.dart': [
+        'class _TaskStepExecutionLoop',
+      ],
+      'lib/features/task/runtime/task_planning_coordinator.dart': [
+        'class TaskPlanningCoordinator',
+      ],
+      'lib/features/task/runtime/task_gate_evaluator.dart': [
+        'class TaskGateEvaluator',
+      ],
       'lib/features/task/runtime/task_command_service.dart': [
         'class TaskCommandService',
       ],
@@ -603,7 +660,58 @@ void main() {
         'class ProjectPersistenceRuntime',
       ],
       'lib/features/project/runtime/project_execution_runtime.dart': [
-        'class ProjectExecutionRuntime',
+        'typedef ProjectExecutionRuntime',
+      ],
+      'lib/features/project/runtime/project_execution_state_machine.dart': [
+        'class ProjectExecutionStateMachine',
+      ],
+      'lib/features/project/runtime/project_persistence_coordinator.dart': [
+        'class ProjectPersistenceCoordinator',
+      ],
+      'lib/features/project/runtime/project_plan_revision_coordinator.dart': [
+        'class ProjectPlanRevisionCoordinator',
+      ],
+      'lib/features/project/runtime/project_evaluation_coordinator.dart': [
+        'class ProjectEvaluationCoordinator',
+      ],
+      'lib/features/project/runtime/project_recovery_policy.dart': [
+        'class ProjectRecoveryPolicy',
+      ],
+      'lib/features/project/runtime/project_recovery_service.dart': [
+        'class ProjectRecoveryService',
+      ],
+      'lib/features/project/runtime/project_evidence_service.dart': [
+        'class ProjectEvidenceService',
+      ],
+      'lib/features/project/runtime/project_completion_service.dart': [
+        'class ProjectCompletionService',
+      ],
+      'lib/features/chat/runtime/chat_session_runtime.dart': [
+        'typedef ChatSessionRuntime',
+      ],
+      'lib/features/chat/runtime/chat_session_orchestrator.dart': [
+        'class ChatSessionOrchestrator',
+      ],
+      'lib/features/chat/runtime/chat_presentation_message_builder.dart': [
+        'class ChatPresentationMessageBuilder',
+      ],
+      'lib/features/chat/runtime/chat_autosave_coordinator.dart': [
+        'class ChatAutosaveCoordinator',
+      ],
+      'lib/features/chat/runtime/chat_workspace_lifecycle_coordinator.dart': [
+        'class ChatWorkspaceLifecycleCoordinator',
+      ],
+      'lib/features/chat/runtime/chat_command_dispatcher.dart': [
+        'class ChatCommandDispatcher',
+      ],
+      'lib/features/chat/runtime/chat_task_command_coordinator.dart': [
+        'class ChatTaskCommandCoordinator',
+      ],
+      'lib/features/chat/runtime/chat_project_command_coordinator.dart': [
+        'class ChatProjectCommandCoordinator',
+      ],
+      'lib/features/model/infrastructure/chat_sse_parser.dart': [
+        'class ChatSseParser',
       ],
     };
     for (final entry in requiredTypes.entries) {
@@ -615,6 +723,49 @@ void main() {
       for (final type in entry.value) {
         if (!source.text.contains(type)) {
           violations.add('${entry.key}: missing $type');
+        }
+      }
+    }
+    const facades = <String>{
+      'lib/features/project/runtime/project_execution_runtime.dart',
+      'lib/features/task/runtime/task_step_execution_runtime.dart',
+      'lib/features/chat/runtime/chat_session_runtime.dart',
+    };
+    for (final path in facades) {
+      final source = graph.byPath[path];
+      if (source == null) continue;
+      if (source.text.split('\n').length > 80) {
+        violations.add('$path: compatibility facade is not thin');
+      }
+      if (RegExp(r'^\s*Future<', multiLine: true).hasMatch(source.text)) {
+        violations.add('$path: facade contains runtime implementation methods');
+      }
+    }
+    const collaboratorEdges = <String, List<String>>{
+      'lib/features/project/runtime/project_execution_state_machine.dart': [
+        '_persistenceCoordinator',
+        '_planRevisionCoordinator',
+        '_evaluationCoordinator',
+      ],
+      'lib/features/task/runtime/task_execution_coordinator.dart': [
+        '_stepLoop',
+        '_executionPolicy',
+      ],
+      'lib/features/chat/runtime/chat_session_orchestrator.dart': [
+        '_presentationMessages',
+        '_autosave',
+        '_workspaceLifecycle',
+        '_commandDispatcher',
+        '_taskCommandCoordinator',
+        '_projectCommandCoordinator',
+      ],
+    };
+    for (final entry in collaboratorEdges.entries) {
+      final source = graph.byPath[entry.key];
+      if (source == null) continue;
+      for (final field in entry.value) {
+        if (!source.text.contains(field)) {
+          violations.add('${entry.key}: missing collaborator field $field');
         }
       }
     }
