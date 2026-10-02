@@ -8,7 +8,7 @@ import 'package:hermes/features/project/runtime/project_handlers.dart';
 import 'package:hermes/features/project/runtime/project_aggregate_store.dart';
 import 'package:hermes/features/project/runtime/project_workspace_graph_service.dart';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 
 /// Owns project snapshot queries and writes for the runtime graph.
@@ -155,7 +155,7 @@ class ProjectPersistenceRuntime {
     );
   }
 
-  Future<Task?> loadActiveTask(
+  Future<TaskAggregate?> loadActiveTask(
     WorkspaceAttachment workspace,
     ProjectAggregate project,
   ) {

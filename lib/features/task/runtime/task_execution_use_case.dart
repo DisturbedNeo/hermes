@@ -19,12 +19,14 @@ class TaskExecutionUseCase {
   JsonEncoder get _encoder => _context.encoder;
   TaskExecutionPolicy get _executionPolicy => const TaskExecutionPolicy();
 
-  Future<Task> _persistTask(String workspaceRoot, Task task) =>
-      _context.persistTask(workspaceRoot, task);
+  Future<TaskAggregate> _persistTask(
+    String workspaceRoot,
+    TaskAggregate task,
+  ) => _context.persistTask(workspaceRoot, task);
 
-  Future<Task> _recoverTask({
+  Future<TaskAggregate> _recoverTask({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required bool persist,
   }) async {
     if (snapshot.status != TaskStatus.running) return snapshot;
@@ -35,33 +37,37 @@ class TaskExecutionUseCase {
     return persist ? _persistTask(workspace.rootPath, recovered) : recovered;
   }
 
-  Task _markCompleted(Task snapshot) => _context.markCompleted(snapshot);
-  Task _completeStep(
-    Task snapshot,
+  TaskAggregate _markCompleted(TaskAggregate snapshot) =>
+      _context.markCompleted(snapshot);
+  TaskAggregate _completeStep(
+    TaskAggregate snapshot,
     TaskStep step,
     TaskStepExecutionOutput output,
     DateTime now,
   ) => _context.completeStep(snapshot, step, output, now);
-  Task _blockStep(
-    Task snapshot,
+  TaskAggregate _blockStep(
+    TaskAggregate snapshot,
     TaskStep step,
     TaskStepExecutionOutput output,
     DateTime now,
   ) => _context.blockStep(snapshot, step, output, now);
-  Task _failStep(
-    Task snapshot,
+  TaskAggregate _failStep(
+    TaskAggregate snapshot,
     TaskStep step,
     TaskStepExecutionOutput output,
     DateTime now,
   ) => _context.failStep(snapshot, step, output, now);
-  Task _replaceStep(Task snapshot, String stepId, TaskStep step) =>
-      _context.replaceStep(snapshot, stepId, step);
-  Task _replaceLastRun(Task snapshot, TaskRun run) =>
+  TaskAggregate _replaceStep(
+    TaskAggregate snapshot,
+    String stepId,
+    TaskStep step,
+  ) => _context.replaceStep(snapshot, stepId, step);
+  TaskAggregate _replaceLastRun(TaskAggregate snapshot, TaskRun run) =>
       _context.replaceLastRun(snapshot, run);
   String _appendMemory(String current, String update) =>
       _context.appendMemory(current, update);
-  Task _fallbackReplannedTask(
-    Task snapshot,
+  TaskAggregate _fallbackReplannedTask(
+    TaskAggregate snapshot,
     String reason, {
     required PlanningMetrics planningMetrics,
   }) => _context.fallbackReplannedTask(
@@ -69,7 +75,8 @@ class TaskExecutionUseCase {
     reason,
     planningMetrics: planningMetrics,
   );
-  int _taskPlanningStepLimit(Task task) => _context.taskPlanningStepLimit(task);
+  int _taskPlanningStepLimit(TaskAggregate task) =>
+      _context.taskPlanningStepLimit(task);
   TaskStepExecutionStatus? _parseStepExecutionStatusStrict(String raw) =>
       _context.parseStepExecutionStatus(raw);
   List<TaskEvidenceClaim> _evidenceClaimsFromJson(
@@ -93,10 +100,10 @@ class TaskExecutionUseCase {
     details: details,
   );
 
-  Future<Task> runNextStep({
+  Future<TaskAggregate> runNextStep({
     required ModelConversationPort client,
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required String baseSystemPrompt,
     bool requirePhaseApproval = false,
     CompactionSettings? compactionSettings,
@@ -129,10 +136,10 @@ class TaskExecutionUseCase {
     ),
   );
 
-  Future<Task> replanUnfinished({
+  Future<TaskAggregate> replanUnfinished({
     required ModelGenerationPort client,
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required String baseSystemPrompt,
     String reason = 'User requested a replan of unfinished work.',
     ModelOutputSink? onModelOutput,

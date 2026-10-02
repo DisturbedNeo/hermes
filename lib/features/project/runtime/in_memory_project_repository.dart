@@ -180,16 +180,6 @@ class InMemoryProjectRepository implements ProjectSnapshotStorePort {
       .join(ProjectSnapshotStorePort.projectsRoot, projectId, fileName);
 
   @override
-  String projectSnapshotPath(String workspaceRoot, String projectId) =>
-      path.join(
-        workspaceRoot,
-        projectRelativePath(
-          projectId,
-          ProjectSnapshotStorePort.documentFileName,
-        ),
-      );
-
-  @override
   Future<void> saveLog(
     String workspaceRoot,
     String projectId,

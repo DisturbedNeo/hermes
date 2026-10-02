@@ -4,7 +4,6 @@ import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/persistence/infrastructure/atomic_json_snapshot_store.dart';
 import 'package:hermes/features/persistence/application/persistence_contracts.dart';
 import 'package:hermes/features/workspace/application/workspace_ports.dart';
-import 'package:hermes/features/persistence/application/schema_migrations.dart';
 import 'package:hermes/features/persistence/infrastructure/dto/project_persistence_adapter.dart';
 import 'package:hermes/features/persistence/infrastructure/dto/project_snapshot_dto.dart';
 import 'package:hermes/features/persistence/application/project_snapshot_store_port.dart';
@@ -303,13 +302,6 @@ class ProjectRepository implements ProjectSnapshotStorePort {
     return path.posix.join(projectsRoot, projectId, fileName);
   }
 
-  /// Returns the validated absolute path of a project's snapshot. Aggregate
-  /// migration code uses this only at the persistence boundary.
-  String projectSnapshotPath(String workspaceRoot, String projectId) {
-    final dir = _validatedProjectDirectory(workspaceRoot, projectId);
-    return path.join(dir.path, documentFileName);
-  }
-
   /// Writes [content] to a log file named [name] inside the given
   /// project's `logs/` directory. Throws [ArgumentError] if [name] is
   /// not a plain filename (contains slashes or is absolute).
@@ -379,9 +371,7 @@ class ProjectRepository implements ProjectSnapshotStorePort {
   ) {
     final envelope = SnapshotEnvelope.decode(raw);
     final project = _persistence.fromDto(
-      ProjectSnapshotDto.fromDocument(
-        projectSchemaMigrations.migrate(envelope.document),
-      ),
+      ProjectSnapshotDto.fromDocument(envelope.document),
     );
     if (project.id.trim().isEmpty) {
       throw const FormatException('Project snapshot has no id');
@@ -401,9 +391,7 @@ class ProjectRepository implements ProjectSnapshotStorePort {
     try {
       final envelope = SnapshotEnvelope.decode(map);
       final project = _persistence.fromDto(
-        ProjectSnapshotDto.fromDocument(
-          projectSchemaMigrations.migrate(envelope.document),
-        ),
+        ProjectSnapshotDto.fromDocument(envelope.document),
       );
       return project.id.trim().isNotEmpty;
     } catch (_) {

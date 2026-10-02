@@ -1,8 +1,8 @@
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 
-export 'package:hermes/features/project/application/contracts/project_snapshot_models.dart'
+export 'package:hermes/features/project/domain/project.dart'
     show
         ProjectBlocker,
         ProjectBlockerType,
@@ -29,7 +29,7 @@ export 'package:hermes/features/project/application/contracts/project_task_model
 export 'package:hermes/features/project/application/contracts/project_workspace_graph.dart';
 export 'package:hermes/features/task/application/contracts/task_planning_types.dart';
 export 'package:hermes/features/task/application/contracts/task_execution_contracts.dart';
-export 'package:hermes/features/task/application/contracts/task_snapshot_models.dart'
+export 'package:hermes/features/task/domain/task.dart'
     show
         PendingTaskApproval,
         PendingTaskQuestion,

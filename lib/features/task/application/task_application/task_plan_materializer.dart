@@ -6,7 +6,7 @@ import 'package:hermes/features/task/application/task_application/task_persisten
 class TaskPlanMaterializer implements TaskMaterializerPort {
   const TaskPlanMaterializer();
 
-  Task _createTask(ProjectTaskNode node) => Task(
+  TaskAggregate _createTask(ProjectTaskNode node) => TaskAggregate(
     id: node.id,
     title: node.title,
     originalPrompt: node.objective,
@@ -43,7 +43,7 @@ class TaskPlanMaterializer implements TaskMaterializerPort {
   );
 
   @override
-  Task create(
+  TaskAggregate create(
     ProjectTaskNode node, {
     required String projectId,
     String? chatSessionId,
@@ -52,9 +52,9 @@ class TaskPlanMaterializer implements TaskMaterializerPort {
   ).copyWith(projectId: projectId, chatSessionId: chatSessionId);
 
   @override
-  Task apply(
+  TaskAggregate apply(
     ProjectTaskNode node,
-    Task existing, {
+    TaskAggregate existing, {
     required String projectId,
     String? chatSessionId,
   }) => existing.copyWith(
@@ -91,7 +91,7 @@ class TaskPlanMaterializer implements TaskMaterializerPort {
   );
 
   @override
-  bool matches(ProjectTaskNode node, Task task) =>
+  bool matches(ProjectTaskNode node, TaskAggregate task) =>
       node.title == task.title &&
       node.objective == task.objective &&
       node.constraints.equals(task.constraints) &&

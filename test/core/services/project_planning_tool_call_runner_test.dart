@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/chat/application/contracts/chat_message.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/features/model/application/model_completion_port.dart';
 import 'package:hermes/features/task/application/protocol/planning_runtime.dart';
@@ -243,15 +243,11 @@ Future<Map<String, dynamic>> _complete({
   ),
 )).toMap();
 
-ChatCompletionToolCall _call(
+ModelToolCall _call(
   String name,
   Map<String, dynamic> arguments, {
   required String id,
-}) => ChatCompletionToolCall(
-  id: id,
-  name: name,
-  arguments: jsonEncode(arguments),
-);
+}) => ModelToolCall(id: id, name: name, arguments: jsonEncode(arguments));
 
 ProjectAggregate _project() {
   final now = DateTime(2026, 1, 1);
@@ -276,13 +272,13 @@ ProjectAggregate _project() {
 class _Client extends ChatClient {
   _Client(this._responses) : super(baseUrl: 'http://localhost', model: 'test');
 
-  final List<ChatCompletionToolCall> _responses;
+  final List<ModelToolCall> _responses;
   final messagesByCall = <List<ChatMessage>>[];
   ModelRequestOptions? lastExtraParams;
   var _index = 0;
 
   @override
-  Future<ChatCompletionResponse> completeChat({
+  Future<ModelCompletion> completeChat({
     required List<ChatMessage> messages,
     ModelRequestOptions? extraParams,
     Object? cancellationToken,
@@ -292,10 +288,7 @@ class _Client extends ChatClient {
   }) async {
     messagesByCall.add(List<ChatMessage>.of(messages));
     lastExtraParams = extraParams;
-    return ChatCompletionResponse(
-      content: '',
-      toolCalls: [_responses[_index++]],
-    );
+    return ModelCompletion(content: '', toolCalls: [_responses[_index++]]);
   }
 
   @override

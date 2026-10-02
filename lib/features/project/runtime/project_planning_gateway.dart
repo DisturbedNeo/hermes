@@ -180,7 +180,7 @@ class ProjectIncrementalPlanResult {
 
 /// Boundary between deterministic project orchestration and model-backed
 /// project planning decisions. All planning modes return the same typed patch
-/// protocol; there is no legacy initial-plan branch.
+/// protocol; there is one current initial-plan branch.
 abstract interface class ProjectPlanner {
   Future<ProjectInitialPlanResult> initializePlan({
     required ModelConversationPort client,

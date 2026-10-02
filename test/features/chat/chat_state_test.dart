@@ -5,8 +5,8 @@ import 'package:hermes/features/chat/application/contracts/bubble.dart';
 import 'package:hermes/features/chat/domain/chat_state.dart';
 import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
 import 'package:hermes/features/chat/application/chat_panel_projection.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 
 void main() {
   final systemPrompt = Bubble(
@@ -47,7 +47,7 @@ void main() {
   test('panel projections detach aggregate collections', () {
     final taskSteps = <TaskStep>[];
     final taskConstraints = <String>['keep this'];
-    final task = Task(
+    final task = TaskAggregate(
       id: 'task-1',
       title: 'Task',
       objective: 'Do the task',

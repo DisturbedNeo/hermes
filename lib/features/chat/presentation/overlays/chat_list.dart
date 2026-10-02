@@ -5,13 +5,12 @@ import 'package:hermes/features/chat/presentation/a11y.dart';
 import 'package:hermes/features/chat/presentation/common/state_display.dart';
 import 'package:hermes/features/chat/application/contracts/saved_chat.dart';
 import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
-import 'package:hermes/features/chat/presentation/chat_workspace_port.dart';
 
 class ChatList extends StatefulWidget {
   final FutureOr<void> Function(String chatId) onOpenChat;
   final FutureOr<void> Function(String chatId) onOpenChatInNewTab;
   final FutureOr<void> Function() onNewChat;
-  final ChatWorkspaceController tabs;
+  final ChatWorkspacePresentationPort tabs;
   final ChatLibraryPresentationPort library;
 
   const ChatList({
@@ -37,7 +36,7 @@ class _ChatListState extends State<ChatList> {
 
   final _searchController = TextEditingController();
 
-  ChatWorkspaceController get _tabs => widget.tabs;
+  ChatWorkspacePresentationPort get _tabs => widget.tabs;
   ChatLibraryPresentationPort get _library => widget.library;
 
   List<SavedChat> _chats = const [];

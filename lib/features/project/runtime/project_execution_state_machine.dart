@@ -8,7 +8,7 @@ import 'package:hermes/core/uuid.dart';
 import 'package:hermes/core/contracts/model_conversation.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/contracts/execution_settings.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/model/application/model_completion_port.dart';
@@ -59,8 +59,6 @@ part 'project_user_command_coordinator.dart';
 part 'project_planning_use_case.dart';
 part 'project_execution_context.dart';
 part 'project_execution_use_case.dart';
-
-// ProjectExecutionRuntime
 
 class ProjectRuntimeDependencies {
   const ProjectRuntimeDependencies({
@@ -595,8 +593,6 @@ class ProjectExecutionStateMachine {
   }) => _userCommands.stopProject(workspace: workspace, snapshot: snapshot);
 }
 
-// lib/features/project/runtime/project_operation_models.dart
-
 class _ProjectTaskValidation {
   final bool valid;
   final List<String> violations;
@@ -620,7 +616,7 @@ class _FailedDuplicateProjectTask extends _DuplicateProjectTaskMatch {
 
 class _ProjectTaskExecution {
   final ProjectAggregate project;
-  final Task? activeTask;
+  final TaskAggregate? activeTask;
   final TaskResult? result;
 
   const _ProjectTaskExecution({

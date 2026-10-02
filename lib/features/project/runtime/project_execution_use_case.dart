@@ -2,7 +2,7 @@ part of 'project_execution_state_machine.dart';
 
 /// Owns the project execution workflow behind the stable runtime facade.
 ///
-/// The state machine remains a composition and compatibility boundary. This
+/// The state machine remains a composition boundary. This
 /// use case receives the project capabilities it needs through
 /// [ProjectUseCaseContext] and does not retain a reference to the facade.
 class ProjectExecutionUseCase {

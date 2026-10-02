@@ -8,7 +8,7 @@ import 'package:hermes/features/task/domain/task.dart';
 class TaskRecoveryService {
   const TaskRecoveryService();
 
-  Task recover(Task snapshot, {DateTime? now}) {
+  TaskAggregate recover(TaskAggregate snapshot, {DateTime? now}) {
     if (snapshot.status != TaskStatus.running) return snapshot;
     final timestamp = now ?? DateTime.now();
     final steps = snapshot.steps.map((step) {

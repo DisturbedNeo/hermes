@@ -214,7 +214,7 @@ class TaskExecutionCoordinator {
           ({
             required String callName,
             required Object args,
-            required Task task,
+            required TaskAggregate task,
             required TaskStep step,
             required List<TaskToolCallRecord> existingToolCalls,
             required TaskExecutionRequest executionRequest,
@@ -252,7 +252,8 @@ class TaskExecutionCoordinator {
           _planningUseCase._operationKey(toolName, rawArguments),
       cap: (value, maxChars) => _planningUseCase._cap(value, maxChars),
     );
-    late final Future<Task> Function(String, Task) persistTask;
+    late final Future<TaskAggregate> Function(String, TaskAggregate)
+    persistTask;
     persistTask = (workspaceRoot, task) async {
       final persisted = await _persistenceStore.save(workspaceRoot, task);
       return persisted.value;
@@ -413,36 +414,36 @@ class TaskExecutionCoordinator {
   late final TaskPlanningUseCase _planningUseCase;
   late final TaskExecutionUseCase _executionUseCase;
 
-  Future<Task> approvePendingStep({
+  Future<TaskAggregate> approvePendingStep({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
   }) => _commandUseCase.approvePendingStep(
     workspace: workspace,
     snapshot: snapshot,
   );
 
-  Future<Task> retryCurrentStep({
+  Future<TaskAggregate> retryCurrentStep({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
   }) => _commandUseCase.retryCurrentStep(
     workspace: workspace,
     snapshot: snapshot,
   );
 
-  Future<Task> skipCurrentStep({
+  Future<TaskAggregate> skipCurrentStep({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
   }) =>
       _commandUseCase.skipCurrentStep(workspace: workspace, snapshot: snapshot);
 
-  Future<Task> stopTask({
+  Future<TaskAggregate> stopTask({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
   }) => _commandUseCase.stopTask(workspace: workspace, snapshot: snapshot);
 
-  Future<Task> answerOpenQuestion({
+  Future<TaskAggregate> answerOpenQuestion({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required String answer,
   }) => _commandUseCase.answerOpenQuestion(
     workspace: workspace,
@@ -460,7 +461,7 @@ class TaskExecutionCoordinator {
     projectId: projectId,
   );
 
-  Future<Task?> loadLatestTask(
+  Future<TaskAggregate?> loadLatestTask(
     WorkspaceAttachment workspace, {
     String? chatSessionId,
     String? projectId,
@@ -470,7 +471,7 @@ class TaskExecutionCoordinator {
     projectId: projectId,
   );
 
-  Future<Task?> loadTask(
+  Future<TaskAggregate?> loadTask(
     WorkspaceAttachment workspace,
     String taskId, {
     String? chatSessionId,
@@ -512,9 +513,9 @@ class TaskExecutionCoordinator {
     chatSessionId: chatSessionId,
   );
 
-  Future<Task> recoverTask({
+  Future<TaskAggregate> recoverTask({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     bool persist = true,
   }) => _persistenceUseCase.recoverTask(
     workspace: workspace,
@@ -548,7 +549,7 @@ class TaskExecutionCoordinator {
     cancellationToken: cancellationToken,
   );
 
-  Future<Task> createTask({
+  Future<TaskAggregate> createTask({
     required ModelGenerationPort client,
     required WorkspaceAttachment workspace,
     required String userPrompt,
@@ -574,7 +575,7 @@ class TaskExecutionCoordinator {
     cancellationToken: cancellationToken,
   );
 
-  Future<Task> createProjectTask({
+  Future<TaskAggregate> createProjectTask({
     required WorkspaceAttachment workspace,
     required String userPrompt,
     required String? chatSessionId,
@@ -590,9 +591,9 @@ class TaskExecutionCoordinator {
     canonicalTaskId: canonicalTaskId,
   );
 
-  Future<Task> updateTaskPlan({
+  Future<TaskAggregate> updateTaskPlan({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required TaskPlanUpdateCommand command,
   }) => _planningUseCase.updateTaskPlan(
     workspace: workspace,
@@ -600,10 +601,10 @@ class TaskExecutionCoordinator {
     command: command,
   );
 
-  Future<Task> runNextStep({
+  Future<TaskAggregate> runNextStep({
     required ModelConversationPort client,
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required String baseSystemPrompt,
     bool requirePhaseApproval = false,
     CompactionSettings? compactionSettings,
@@ -630,10 +631,10 @@ class TaskExecutionCoordinator {
     persist: persist,
   );
 
-  Future<Task> replanUnfinished({
+  Future<TaskAggregate> replanUnfinished({
     required ModelGenerationPort client,
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required String baseSystemPrompt,
     String reason = 'User requested a replan of unfinished work.',
     ModelOutputSink? onModelOutput,

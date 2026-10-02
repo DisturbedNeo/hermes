@@ -10,36 +10,36 @@ class TaskCommandUseCase {
 
   TaskCommandService get _commandService => _context.commandService;
 
-  Future<Task> approvePendingStep({
+  Future<TaskAggregate> approvePendingStep({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
   }) => _commandService.approvePendingStep(
     workspace: workspace,
     snapshot: snapshot,
   );
 
-  Future<Task> retryCurrentStep({
+  Future<TaskAggregate> retryCurrentStep({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
   }) => _commandService.retryCurrentStep(
     workspace: workspace,
     snapshot: snapshot,
   );
 
-  Future<Task> skipCurrentStep({
+  Future<TaskAggregate> skipCurrentStep({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
   }) =>
       _commandService.skipCurrentStep(workspace: workspace, snapshot: snapshot);
 
-  Future<Task> stopTask({
+  Future<TaskAggregate> stopTask({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
   }) => _commandService.stopTask(workspace: workspace, snapshot: snapshot);
 
-  Future<Task> answerOpenQuestion({
+  Future<TaskAggregate> answerOpenQuestion({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required String answer,
   }) => _commandService.answerOpenQuestion(
     workspace: workspace,

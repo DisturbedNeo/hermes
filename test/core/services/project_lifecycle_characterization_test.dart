@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/model_json.dart';
 import 'package:hermes/features/project/domain/project_control_state_service.dart';
 
@@ -64,7 +64,7 @@ void main() {
       expect(project.blocker, isNotNull);
     });
 
-    test('derives the new control boundary for older snapshots', () {
+    test('derives a control boundary when one is not yet materialized', () {
       final now = DateTime(2026, 1, 1);
       final question = PendingProjectQuestion(
         id: 'question_1',
@@ -90,7 +90,7 @@ void main() {
     });
 
     test(
-      'persists explicit planning degradation alongside compatibility state',
+      'persists explicit planning degradation alongside lifecycle state',
       () {
         final project = const ProjectControlStateService().withOutcome(
           _project(const []),
@@ -112,7 +112,7 @@ void main() {
       },
     );
 
-    test('preserves the canonical boundary across compatibility drift', () {
+    test('preserves the canonical boundary across lifecycle drift', () {
       final service = const ProjectControlStateService();
       final reduced = service.withOutcome(
         _project(const []),
@@ -139,7 +139,7 @@ void main() {
 }
 
 ProjectAggregate _project(
-  List<Task> tasks, {
+  List<TaskAggregate> tasks, {
   String? activeTaskId,
   ProjectStatus status = ProjectStatus.active,
   List<PendingProjectQuestion> openQuestions = const [],
@@ -170,9 +170,9 @@ ProjectAggregate _project(
   );
 }
 
-Task _task(String id, TaskStatus status) {
+TaskAggregate _task(String id, TaskStatus status) {
   final now = DateTime(2026, 1, 1);
-  return Task(
+  return TaskAggregate(
     id: id,
     title: id,
     objective: 'Do $id',

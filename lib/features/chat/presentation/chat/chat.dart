@@ -5,8 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:hermes/features/chat/presentation/responsive.dart';
 import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
-import 'package:hermes/features/chat/presentation/chat_controller_port.dart';
-import 'package:hermes/features/chat/presentation/chat_workspace_port.dart';
 import 'package:hermes/features/chat/presentation/keyboard_shortcuts.dart';
 import 'package:hermes/features/settings/application/preferences_port.dart';
 import 'package:hermes/features/model/application/model_catalog.dart';
@@ -34,7 +32,7 @@ class Chat extends StatefulWidget {
     required this.toolService,
   });
 
-  final ChatWorkspaceController tabs;
+  final ChatWorkspacePresentationPort tabs;
   final ChatLibraryPresentationPort chatLibrary;
   final SystemPromptLibraryPresentationPort systemPromptLibrary;
   final WorkspacePresentationPort workspaceService;
@@ -53,7 +51,7 @@ class _ChatState extends State<Chat> {
 
   final _shortcuts = KeyboardShortcutsService();
 
-  ChatWorkspaceController get _tabs => widget.tabs;
+  ChatWorkspacePresentationPort get _tabs => widget.tabs;
 
   var isChatListOpen = false;
   var isSettingsOpen = false;
@@ -498,7 +496,7 @@ class _ChatState extends State<Chat> {
     unawaited(_closeTab(activeChat));
   }
 
-  Future<void> _closeTab(ChatController tab) async {
+  Future<void> _closeTab(ChatTabPresentationPort tab) async {
     if (tab.isUnsavedNonEmpty) {
       final choice = await showDialog<_UnsavedTabAction>(
         context: context,
@@ -531,10 +529,10 @@ class _ChatState extends State<Chat> {
 }
 
 class _ChatTabStrip extends StatelessWidget {
-  final List<ChatController> tabs;
+  final List<ChatTabPresentationPort> tabs;
   final String? activeTabId;
-  final ValueChanged<ChatController> onSelect;
-  final ValueChanged<ChatController> onClose;
+  final ValueChanged<ChatTabPresentationPort> onSelect;
+  final ValueChanged<ChatTabPresentationPort> onClose;
 
   const _ChatTabStrip({
     required this.tabs,
@@ -574,7 +572,7 @@ class _ChatTabStrip extends StatelessWidget {
 }
 
 class _ChatTab extends StatelessWidget {
-  final ChatController tab;
+  final ChatTabPresentationPort tab;
   final bool selected;
   final VoidCallback onSelect;
   final VoidCallback onClose;

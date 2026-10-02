@@ -3,9 +3,9 @@ import 'package:hermes/features/project/domain/project_control_state_service.dar
 
 /// Planning-owned view of a project.
 ///
-/// This is intentionally a read model over the compatibility snapshot while
-/// the persisted schema is migrated. New planning code should depend on this
-/// boundary rather than reaching into execution fields on ProjectAggregate.
+/// This is intentionally a read model over the persisted project state. New
+/// planning code should depend on this boundary rather than reaching into
+/// execution fields on ProjectAggregate.
 class ProjectPlan {
   const ProjectPlan({
     required this.id,
@@ -107,9 +107,8 @@ class ProjectEvidenceState {
       );
 }
 
-/// Control state presented to the application. The legacy fields remain in
-/// ProjectAggregate for snapshot compatibility, but callers can consume one
-/// explicit object instead of inferring a stop condition.
+/// Control state presented to the application. Callers consume one explicit
+/// object instead of inferring a stop condition from multiple fields.
 class ProjectControlState {
   const ProjectControlState({
     required this.boundary,

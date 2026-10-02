@@ -41,11 +41,11 @@ void main() {
     () async {
       final registry = _Registry(failFirstCommit: true);
       final client = _QueueClient([
-        ChatCompletionResponse(
+        ModelCompletion(
           content: '',
           toolCalls: [_tool('commit', '{}', id: 'commit-1')],
         ),
-        ChatCompletionResponse(
+        ModelCompletion(
           content: '',
           toolCalls: [_tool('commit', '{}', id: 'commit-2')],
         ),
@@ -71,11 +71,11 @@ void main() {
   test('shared runner enforces the configured safety ceiling', () async {
     final registry = _Registry();
     final client = _QueueClient([
-      ChatCompletionResponse(
+      ModelCompletion(
         content: '',
         toolCalls: [_tool('add', '{"value":"one"}', id: 'add-1')],
       ),
-      ChatCompletionResponse(
+      ModelCompletion(
         content: '',
         toolCalls: [_tool('add', '{"value":"two"}', id: 'add-2')],
       ),
@@ -98,8 +98,8 @@ void main() {
 
   test('structured output performs one bounded repair attempt', () async {
     final client = _QueueClient([
-      ChatCompletionResponse(content: 'not json'),
-      ChatCompletionResponse(content: '{"complete":true}'),
+      ModelCompletion(content: 'not json'),
+      ModelCompletion(content: '{"complete":true}'),
     ]);
 
     final result = await const StructuredPlanningOutputService().completeObject(
@@ -118,7 +118,7 @@ void main() {
   test('planning services honor cancellation before model execution', () async {
     final token = CancellationToken();
     await token.cancel();
-    final client = _QueueClient([ChatCompletionResponse(content: '{}')]);
+    final client = _QueueClient([ModelCompletion(content: '{}')]);
 
     expect(
       () => const PlanningToolCallRunner().complete(
@@ -137,11 +137,8 @@ void main() {
   });
 }
 
-ChatCompletionToolCall _tool(
-  String name,
-  String arguments, {
-  required String id,
-}) => ChatCompletionToolCall(id: id, name: name, arguments: arguments);
+ModelToolCall _tool(String name, String arguments, {required String id}) =>
+    ModelToolCall(id: id, name: name, arguments: arguments);
 
 class _Registry extends PlanningToolRegistryBase {
   _Registry({this.failFirstCommit = false});
@@ -204,12 +201,12 @@ class _QueueClient extends ChatClient {
   _QueueClient(this.responses)
     : super(baseUrl: 'http://localhost', model: 'test');
 
-  final List<ChatCompletionResponse> responses;
+  final List<ModelCompletion> responses;
   var _index = 0;
   var calls = 0;
 
   @override
-  Future<ChatCompletionResponse> completeChat({
+  Future<ModelCompletion> completeChat({
     required List<ChatMessage> messages,
     ModelRequestOptions? extraParams,
     Object? cancellationToken,

@@ -1,5 +1,5 @@
 import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/persistence/application/persistence_contracts.dart';
 import 'package:hermes/features/project/project_aggregate_repository_port.dart';
 import 'package:hermes/features/project/application/contracts/project_checkpoint.dart';
@@ -12,7 +12,10 @@ import 'package:hermes/features/persistence/application/task_snapshot_store_port
 /// context is the write-set used by [ProjectAggregateStore] and is not an
 /// orchestration concern.
 class ProjectPersistenceContext {
-  ProjectPersistenceContext(Iterable<Task> initialTasks, {this.health}) {
+  ProjectPersistenceContext(
+    Iterable<TaskAggregate> initialTasks, {
+    this.health,
+  }) {
     for (final task in initialTasks) {
       _lastPersistedTasks[task.id] = task;
       _expectedTaskRevisions[task.id] = task.persistenceRevision;
@@ -20,11 +23,11 @@ class ProjectPersistenceContext {
   }
 
   final ProjectPersistenceDiagnostics? health;
-  final Map<String, Task> _lastPersistedTasks = {};
+  final Map<String, TaskAggregate> _lastPersistedTasks = {};
   final Map<String, int> _expectedTaskRevisions = {};
-  final Map<String, Task> _stagedTasks = {};
+  final Map<String, TaskAggregate> _stagedTasks = {};
 
-  void stageTask(Task task) {
+  void stageTask(TaskAggregate task) {
     final expected = _expectedTaskRevisions[task.id];
     final effective = expected != null && task.persistenceRevision < expected
         ? task.copyWith(persistenceRevision: expected)
@@ -39,7 +42,7 @@ class ProjectPersistenceContext {
     }
   }
 
-  Iterable<Task> get stagedTasks => _stagedTasks.values;
+  Iterable<TaskAggregate> get stagedTasks => _stagedTasks.values;
 
   int? expectedTaskRevision(String taskId) => _expectedTaskRevisions[taskId];
 
@@ -47,12 +50,12 @@ class ProjectPersistenceContext {
     _expectedTaskRevisions[taskId] = revision;
   }
 
-  bool shouldPersistTask(Task task) {
+  bool shouldPersistTask(TaskAggregate task) {
     final previous = _lastPersistedTasks[task.id];
     return previous == null || previous != task;
   }
 
-  void markPersisted(Task task) {
+  void markPersisted(TaskAggregate task) {
     _lastPersistedTasks[task.id] = task;
     _expectedTaskRevisions[task.id] = task.persistenceRevision;
     _stagedTasks[task.id] = task;
@@ -101,20 +104,22 @@ class ProjectAggregateStore {
     final project = intent.project;
     final context = intent.context;
     final checkpoint = intent.checkpoint;
-    final dirtyTasks = <Task>[...(context?.stagedTasks ?? const <Task>[])];
+    final dirtyTasks = <TaskAggregate>[
+      ...(context?.stagedTasks ?? const <TaskAggregate>[]),
+    ];
     final taskIdsToLoad = <String>{
       ...dirtyTasks.map((task) => task.id),
       ...project.tasks.map((task) => task.id),
     }.toList();
 
     final loadedExisting = taskIdsToLoad.isEmpty
-        ? const <String, PersistedSnapshot<Task>?>{}
+        ? const <String, PersistedSnapshot<TaskAggregate>?>{}
         : await _taskRepository.loadTaskSnapshots(
             workspaceRoot,
             taskIdsToLoad,
             includeHistory: false,
           );
-    final stagedById = <String, Task>{
+    final stagedById = <String, TaskAggregate>{
       for (final task in dirtyTasks) task.id: task,
     };
     for (final taskId in taskIdsToLoad) {
@@ -143,7 +148,7 @@ class ProjectAggregateStore {
         );
       }
     }
-    final preparedById = <String, Task>{
+    final preparedById = <String, TaskAggregate>{
       for (final task in dirtyTasks)
         task.id: task.copyWith(
           projectId: project.id,

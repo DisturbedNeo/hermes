@@ -4,7 +4,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/chat/application/contracts/chat_message.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/platform/tool_service.dart';
@@ -118,8 +118,8 @@ void main() {
   );
 }
 
-ChatCompletionToolCall _call(String name, Map<String, dynamic> arguments) =>
-    ChatCompletionToolCall(
+ModelToolCall _call(String name, Map<String, dynamic> arguments) =>
+    ModelToolCall(
       id: 'call_${name}_${arguments.hashCode}',
       name: name,
       arguments: jsonEncode(arguments),
@@ -129,13 +129,13 @@ class _QueueClient extends ChatClient {
   _QueueClient(this._responses)
     : super(baseUrl: 'http://localhost', model: 'test');
 
-  final List<ChatCompletionToolCall> _responses;
+  final List<ModelToolCall> _responses;
   final List<String> toolNames = [];
   final List<Set<String>> offeredToolNames = [];
   var _index = 0;
 
   @override
-  Future<ChatCompletionResponse> completeChat({
+  Future<ModelCompletion> completeChat({
     required List<ChatMessage> messages,
     ModelRequestOptions? extraParams,
     Object? cancellationToken,
@@ -146,7 +146,7 @@ class _QueueClient extends ChatClient {
     final call = _responses[_index++];
     offeredToolNames.add(_toolNames(extraParams));
     toolNames.add(call.name);
-    return ChatCompletionResponse(content: '', toolCalls: [call]);
+    return ModelCompletion(content: '', toolCalls: [call]);
   }
 
   Set<String> _toolNames(ModelRequestOptions? extraParams) {

@@ -10,8 +10,8 @@ import 'package:hermes/core/uuid.dart';
 import 'package:hermes/features/chat/application/contracts/bubble.dart';
 import 'package:hermes/features/chat/application/contracts/chat_token.dart';
 import 'package:hermes/features/chat/application/contracts/chat_persistence.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/contracts/execution_settings.dart';
 import 'package:hermes/features/model/application/model_configuration.dart';
 import 'package:hermes/features/chat/application/contracts/saved_chat.dart';
@@ -57,8 +57,6 @@ import 'package:hermes/features/tools/application/tool_protocol_adapter.dart';
 import 'package:hermes/features/chat/infrastructure/chat_panel_protocol_adapter.dart';
 import 'package:hermes/features/workspace/application/workspace_ports.dart';
 
-// ChatSessionRuntime
-
 // Chat session operations
 
 // Chat work operations
@@ -102,7 +100,7 @@ class _PendingScopeMove {
 /// reads this object; it receives the value snapshots stored in [ChatState].
 class _ChatExecutionContext {
   ProjectAggregate? project;
-  Task? task;
+  TaskAggregate? task;
 }
 
 class ChatSessionOrchestrator extends ChangeNotifier
@@ -242,8 +240,8 @@ class ChatSessionOrchestrator extends ChangeNotifier
   void dispatchAvailableProjects(List<ProjectSummary> value) =>
       _dispatchChatState(ChatProjectsChanged(value));
 
-  Task? get activeTask => _executionContext.task;
-  void dispatchActiveTask(Task? value) {
+  TaskAggregate? get activeTask => _executionContext.task;
+  void dispatchActiveTask(TaskAggregate? value) {
     _executionContext.task = value;
     _dispatchChatState(
       ChatTaskChanged(value == null ? null : ChatPanelProjection.task(value)),
@@ -500,9 +498,9 @@ class ChatSessionOrchestrator extends ChangeNotifier
   Future<void> replanProject([String reason = '']) =>
       _workUseCase.replanProject(reason);
 
-  // Compatibility callbacks used by the focused work use case context. The
+  // Presentation callbacks used by the focused work use case context. The
   // workflow implementations live on ChatWorkUseCase; these methods keep
-  // the existing host contract stable while the facade remains a coordinator.
+  // the facade as the coordinator.
   bool get isDirty =>
       currentChatId != null &&
       _currentPersistenceRevision != _persistedRevision;
@@ -543,15 +541,15 @@ class ChatSessionOrchestrator extends ChangeNotifier
       serverManager.diagnostics.modelSnapshot?.nCtx;
   bool get _hasPendingPersistence =>
       _currentPersistenceRevision != _persistedRevision;
-  Future<Task?> _recoverTaskSnapshot(
+  Future<TaskAggregate?> _recoverTaskSnapshot(
     WorkspaceAttachment current,
-    Task? snapshot,
+    TaskAggregate? snapshot,
   ) => _workUseCase._recoverTaskSnapshot(current, snapshot);
   Future<ProjectCommandResult?> _recoverProject(
     WorkspaceAttachment current,
     ProjectAggregate? snapshot,
   ) => _workUseCase._recoverProject(current, snapshot);
-  Future<Task?> _taskForActiveProject(
+  Future<TaskAggregate?> _taskForActiveProject(
     WorkspaceAttachment current,
     ProjectAggregate? project,
   ) => _workUseCase._taskForActiveProject(current, project);

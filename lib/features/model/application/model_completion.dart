@@ -30,6 +30,3 @@ class ModelToolCall {
 
   const ModelToolCall({required this.name, this.id, this.arguments = '{}'});
 }
-
-typedef ChatCompletionResponse = ModelCompletion;
-typedef ChatCompletionToolCall = ModelToolCall;

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/core/model_json.dart';
 import 'package:hermes/features/project/runtime/project_plan_builder.dart';
 import 'package:hermes/features/project/runtime/project_plan_revision_service.dart';
@@ -59,17 +59,6 @@ void main() {
     expect(decoded.workspaceGraph.nodes.first.title, 'The archive');
     expect(decoded.workspaceGraph.nodes.first.protected, isTrue);
     expect(decoded.workspaceGraph.edges.single.label, 'reveals evidence for');
-  });
-
-  test('legacy project snapshots decode with an empty workspace graph', () {
-    final legacy = Map<String, dynamic>.from(ModelJson.encode(_project()));
-    legacy.remove('workspaceGraph');
-
-    final decoded = ModelJson.decode<ProjectAggregate>(legacy);
-
-    expect(decoded.workspaceGraph.orientation, isEmpty);
-    expect(decoded.workspaceGraph.nodes, isEmpty);
-    expect(decoded.workspaceGraph.edges, isEmpty);
   });
 
   test('selects relevant graph context within a deterministic budget', () {

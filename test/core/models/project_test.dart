@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/domain/task.dart' as task_domain;
 
 void main() {
@@ -81,7 +81,7 @@ void main() {
 
   test('task lifecycle status is the authority for task state', () {
     final now = DateTime(2026, 1, 1);
-    final task = Task(
+    final task = TaskAggregate(
       id: 'task_1',
       title: 'Task',
       objective: 'Do one thing',
@@ -101,7 +101,7 @@ void main() {
 
   test('addresses the active task through its canonical ID', () {
     final now = DateTime(2026, 1, 1);
-    final task = Task(
+    final task = TaskAggregate(
       id: 'project_task_1',
       title: 'Task',
       objective: 'Do one bounded thing',

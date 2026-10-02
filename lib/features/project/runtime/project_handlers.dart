@@ -1,5 +1,5 @@
 import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/model/application/model_completion_port.dart';
@@ -145,7 +145,7 @@ class ProjectRecoveryHandler {
 
   ProjectAggregate reconcile({
     required ProjectAggregate project,
-    required Task recoveredTask,
+    required TaskAggregate recoveredTask,
     required DateTime now,
   }) => _service.reconcile(
     project: project,

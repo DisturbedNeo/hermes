@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/chat/application/chat_panel_projection.dart';
 import 'package:hermes/features/chat/presentation/chat/project_panel_sections.dart';
 
@@ -96,13 +96,13 @@ void main() {
   });
 }
 
-Task _task({
+TaskAggregate _task({
   required String id,
   required String title,
   required TaskStatus status,
 }) {
   final now = DateTime(2026, 1, 1);
-  return Task(
+  return TaskAggregate(
     id: id,
     title: title,
     objective: 'Complete the bounded task.',

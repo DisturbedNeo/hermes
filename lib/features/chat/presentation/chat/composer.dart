@@ -7,14 +7,14 @@ import 'package:hermes/features/chat/application/contracts/stream_state.dart';
 import 'package:hermes/features/chat/presentation/a11y.dart';
 import 'package:hermes/features/chat/presentation/responsive.dart';
 import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
-import 'package:hermes/features/chat/presentation/chat_controller_port.dart';
+import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
 import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/chat/presentation/chat/tool_selector.dart';
 
 enum ComposerMode { send, generate, cont, cancel }
 
 class Composer extends StatefulWidget {
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
   final ToolRegistryPort toolService;
   final bool enabled;
   final FocusNode? focusNode;
@@ -224,7 +224,7 @@ class _ComposerState extends State<Composer> {
 
   /// Builds the role dropdown widget used in both wide and narrow layouts.
   Widget _buildRoleDropdown(
-    ChatController chat,
+    ChatTabPresentationPort chat,
     bool inputEnabled, {
     required double iconSize,
     required EdgeInsetsGeometry contentPadding,
@@ -263,7 +263,7 @@ class _ComposerState extends State<Composer> {
   }
 
   /// Builds the composer's text input field, shared across wide and narrow layouts.
-  Widget _buildTextField(ChatController chat, bool inputEnabled) {
+  Widget _buildTextField(ChatTabPresentationPort chat, bool inputEnabled) {
     return TextField(
       controller: _controller,
       focusNode: _focusNode,
@@ -285,7 +285,7 @@ class _ComposerState extends State<Composer> {
   }
 
   /// Returns the hint text appropriate for the current chat mode.
-  String _hintTextForMode(ChatController chat) {
+  String _hintTextForMode(ChatTabPresentationPort chat) {
     if (!widget.enabled) return 'Load a model to chat...';
     if (chat.taskBusy) return 'Task is running...';
     if (chat.chatStream.isStreaming) return 'Streaming response...';
@@ -432,7 +432,7 @@ class _ComposerState extends State<Composer> {
   }
 
   Widget _buildActionControls(
-    ChatController chat,
+    ChatTabPresentationPort chat,
     TextEditingValue value,
     bool inputEnabled,
   ) {
@@ -708,7 +708,7 @@ class _ComposerState extends State<Composer> {
 }
 
 class _ExecutionModeSelector extends StatelessWidget {
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
   final bool enabled;
 
   const _ExecutionModeSelector({required this.chat, required this.enabled});

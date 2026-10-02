@@ -3,7 +3,7 @@ import 'package:hermes/features/persistence/infrastructure/workspace_persistence
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/persistence/infrastructure/atomic_json_snapshot_store.dart';
 import 'package:hermes/features/task/infrastructure/task_repository.dart';
 import 'package:hermes/core/model_json.dart';
@@ -148,36 +148,17 @@ void main() {
       expect(loaded?.value.runs.single.runId, 'run_1');
     });
 
-    test(
-      'loads structurally compatible envelopes with unknown metadata',
-      () async {
-        await repository.saveSnapshot(root.path, _task(id: 'task_metadata'));
-        final file = File(
-          path.join(root.path, '.agent', 'tasks', 'task_metadata', 'task.json'),
-        );
-        final envelope =
-            jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-        envelope['schemaVersion'] = 1;
-        await file.writeAsString(jsonEncode(envelope));
-
-        final loaded = await repository.loadTask(root.path, 'task_metadata');
-
-        expect(loaded?.value.id, 'task_metadata');
-        expect(await file.readAsString(), contains('schemaVersion'));
-      },
-    );
-
     test('rejects unwrapped task documents', () async {
-      final task = _task(id: 'task_legacy', runs: [_run()]);
+      final task = _task(id: 'task_unwrapped', runs: [_run()]);
       final taskDir = Directory(
-        path.join(root.path, '.agent', 'tasks', 'task_legacy'),
+        path.join(root.path, '.agent', 'tasks', 'task_unwrapped'),
       );
       await taskDir.create(recursive: true);
       final file = File(path.join(taskDir.path, 'task.json'));
       await file.writeAsString(jsonEncode(ModelJson.encode(task)));
 
       await expectLater(
-        repository.loadTask(root.path, 'task_legacy'),
+        repository.loadTask(root.path, 'task_unwrapped'),
         throwsA(isA<SnapshotCorruptionException>()),
       );
     });
@@ -260,7 +241,7 @@ void main() {
   });
 }
 
-Task _task({
+TaskAggregate _task({
   required String id,
   DateTime? updatedAt,
   String? chatSessionId,
@@ -269,7 +250,7 @@ Task _task({
   int persistenceRevision = 0,
 }) {
   final now = DateTime(2026, 1, 1);
-  return Task(
+  return TaskAggregate(
     persistenceRevision: persistenceRevision,
     id: id,
     title: 'Test task',

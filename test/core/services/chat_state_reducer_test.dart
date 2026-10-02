@@ -4,13 +4,13 @@ import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
 import 'package:hermes/features/chat/application/chat_panel_projection.dart';
 import 'package:hermes/features/chat/domain/chat_state.dart';
 import 'package:hermes/features/chat/application/contracts/message_role.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 
 void main() {
   test('reducer updates task and project panel slices as projections', () {
     final now = DateTime(2026, 1, 1);
-    final task = Task(
+    final task = TaskAggregate(
       id: 'task_slice',
       title: 'Slice task',
       originalPrompt: 'Show the task panel',

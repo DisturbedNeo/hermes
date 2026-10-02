@@ -179,8 +179,8 @@ void main() {
   );
 }
 
-ChatCompletionToolCall _call(String name, Map<String, dynamic> arguments) =>
-    ChatCompletionToolCall(
+ModelToolCall _call(String name, Map<String, dynamic> arguments) =>
+    ModelToolCall(
       id: 'call_${name}_${arguments.hashCode}',
       name: name,
       arguments: jsonEncode(arguments),
@@ -189,13 +189,13 @@ ChatCompletionToolCall _call(String name, Map<String, dynamic> arguments) =>
 class _Client extends ChatClient {
   _Client(this._responses) : super(baseUrl: 'http://localhost', model: 'test');
 
-  final List<ChatCompletionToolCall> _responses;
+  final List<ModelToolCall> _responses;
   ModelRequestOptions? lastExtraParams;
   final List<List<ChatMessage>> seenMessages = [];
   var _index = 0;
 
   @override
-  Future<ChatCompletionResponse> completeChat({
+  Future<ModelCompletion> completeChat({
     required List<ChatMessage> messages,
     ModelRequestOptions? extraParams,
     Object? cancellationToken,
@@ -205,10 +205,7 @@ class _Client extends ChatClient {
   }) async {
     lastExtraParams = extraParams;
     seenMessages.add(List<ChatMessage>.from(messages));
-    return ChatCompletionResponse(
-      content: '',
-      toolCalls: [_responses[_index++]],
-    );
+    return ModelCompletion(content: '', toolCalls: [_responses[_index++]]);
   }
 
   @override

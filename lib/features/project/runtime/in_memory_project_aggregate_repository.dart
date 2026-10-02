@@ -3,7 +3,7 @@ import 'package:hermes/features/project/project_aggregate_repository_port.dart';
 import 'package:hermes/features/project/application/contracts/project_checkpoint.dart';
 import 'package:hermes/features/project/project_repository_port.dart';
 import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
 
 /// In-memory aggregate double used by application-only construction and tests.
@@ -44,7 +44,7 @@ class InMemoryProjectAggregateRepository
       projectId: snapshot.value.id,
       includeHistory: includeHistory,
     );
-    final tasks = <Task>[
+    final tasks = <TaskAggregate>[
       for (final taskId in snapshot.value.taskIds)
         if (taskSnapshots[taskId] != null) taskSnapshots[taskId]!.value,
     ];
@@ -89,13 +89,13 @@ class InMemoryProjectAggregateRepository
   Future<ProjectAggregateCommitResult> commit({
     required String workspaceRoot,
     required ProjectAggregate project,
-    required Iterable<Task> tasks,
+    required Iterable<TaskAggregate> tasks,
     Set<String> deletedTaskIds = const {},
     ProjectPersistenceDiagnostics? knownHealth,
     ProjectPersistenceCheckpoint checkpoint =
         ProjectPersistenceCheckpoint.runtime,
   }) async {
-    final persistedTasks = <String, PersistedSnapshot<Task>>{};
+    final persistedTasks = <String, PersistedSnapshot<TaskAggregate>>{};
     for (final task in tasks) {
       final current = await _tasks.loadTaskSnapshot(
         workspaceRoot,

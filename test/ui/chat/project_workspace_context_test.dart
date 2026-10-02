@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/chat/application/chat_panel_projection.dart';
 import 'package:hermes/features/chat/presentation/chat/project_panel_sections.dart';
 

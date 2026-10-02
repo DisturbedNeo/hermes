@@ -9,6 +9,7 @@ import 'package:hermes/features/model/application/model_configuration.dart';
 import 'package:hermes/core/model_json.dart';
 import 'package:hermes/features/model/application/model_session_contracts.dart';
 import 'package:hermes/features/model/infrastructure/llama_server_manager.dart';
+import 'package:hermes/features/model/infrastructure/chat_client.dart';
 
 void main() {
   const snapshot = ModelConfigurationSnapshot(
@@ -185,6 +186,12 @@ void main() {
     final processes = <_FakeProcess>[];
     var launches = 0;
     final manager = LlamaServerManager(
+      clientFactory: ({required baseUrl, required model, onDiagnostics}) =>
+          ChatClient(
+            baseUrl: baseUrl,
+            model: model,
+            onDiagnostics: onDiagnostics,
+          ),
       portAllocator: () async => ports.removeAt(0),
       processLauncher: (_, _, {workingDirectory}) async {
         final process = _FakeProcess(
@@ -249,6 +256,12 @@ void main() {
       addTearDown(() => directory.delete(recursive: true));
       await File('${directory.path}/llama-server').writeAsString('');
       final manager = LlamaServerManager(
+        clientFactory: ({required baseUrl, required model, onDiagnostics}) =>
+            ChatClient(
+              baseUrl: baseUrl,
+              model: model,
+              onDiagnostics: onDiagnostics,
+            ),
         portAllocator: () async => server.port,
         processLauncher: (_, _, {workingDirectory}) async =>
             _FakeProcess(exitOn: ProcessSignal.sigint),

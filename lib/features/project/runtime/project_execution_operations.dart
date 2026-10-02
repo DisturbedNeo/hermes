@@ -150,7 +150,7 @@ extension ProjectExecutionOperations on ProjectExecutionUseCase {
     ProjectAggregate project,
   ) => _persistenceCoordinator.hydrateProjectTasks(workspace, project);
 
-  Future<Task?> _loadActiveTask(
+  Future<TaskAggregate?> _loadActiveTask(
     WorkspaceAttachment workspace,
     ProjectAggregate project,
   ) => _persistenceCoordinator.loadActiveTask(workspace, project);

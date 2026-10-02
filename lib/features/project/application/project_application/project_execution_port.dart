@@ -1,6 +1,6 @@
 import 'package:hermes/core/contracts/model_conversation.dart';
 import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/contracts/execution_settings.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/core/cancellation.dart';
@@ -9,7 +9,7 @@ import 'package:hermes/features/persistence/application/persistence_contracts.da
 import 'package:hermes/features/project/domain/project_control_state_service.dart';
 import 'package:hermes/features/model/application/model_output.dart';
 
-typedef ProjectTaskSnapshotSink = void Function(Task? task);
+typedef ProjectTaskSnapshotSink = void Function(TaskAggregate? task);
 typedef ProjectCompactionStatusSink = void Function(String status);
 
 /// Why a project command stopped making progress.
@@ -47,7 +47,7 @@ class ProjectLifecycleTransition {
 /// The stable result shape returned by the application-facing orchestrator.
 class ProjectCommandResult {
   final ProjectAggregate project;
-  final Task? activeTask;
+  final TaskAggregate? activeTask;
   final ProjectCommandStopReason stopReason;
   final List<ProjectLifecycleTransition> transitions;
   final ProjectPersistenceDiagnostics? persistenceDiagnostics;
@@ -62,7 +62,7 @@ class ProjectCommandResult {
 
   factory ProjectCommandResult.fromSnapshot({
     required ProjectAggregate project,
-    Task? activeTask,
+    TaskAggregate? activeTask,
     ProjectPersistenceDiagnostics? persistenceDiagnostics,
   }) => ProjectCommandResult(
     project: project,

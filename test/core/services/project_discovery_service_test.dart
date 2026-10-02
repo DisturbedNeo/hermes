@@ -3,7 +3,7 @@ import 'package:hermes/app/test_factories.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/core/cancellation.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/workspace/application/workspace_change_discovery.dart';
 import 'package:hermes/features/workspace/infrastructure/workspace_discovery_service.dart';

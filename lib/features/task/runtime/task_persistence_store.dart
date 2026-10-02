@@ -15,9 +15,9 @@ class TaskPersistenceStore {
 
   final TaskPersistencePort _persistence;
 
-  Future<PersistedSnapshot<Task>> save(
+  Future<PersistedSnapshot<TaskAggregate>> save(
     String workspaceRoot,
-    Task task, {
+    TaskAggregate task, {
     int? expectedRevision,
   }) => _persistence.saveSnapshot(
     workspaceRoot,
@@ -25,7 +25,7 @@ class TaskPersistenceStore {
     expectedRevision: expectedRevision,
   );
 
-  Future<PersistedSnapshot<Task>?> load(
+  Future<PersistedSnapshot<TaskAggregate>?> load(
     String workspaceRoot,
     String taskId, {
     String? chatSessionId,
@@ -39,7 +39,7 @@ class TaskPersistenceStore {
     includeHistory: includeHistory,
   );
 
-  Future<PersistedSnapshot<Task>?> loadSnapshot(
+  Future<PersistedSnapshot<TaskAggregate>?> loadSnapshot(
     String workspaceRoot,
     String taskId, {
     String? chatSessionId,
@@ -59,7 +59,7 @@ class TaskPersistenceStore {
     String? projectId,
   }) => list(workspaceRoot, chatSessionId: chatSessionId, projectId: projectId);
 
-  Future<PersistedSnapshot<Task>?> loadLatest(
+  Future<PersistedSnapshot<TaskAggregate>?> loadLatest(
     String workspaceRoot, {
     String? chatSessionId,
     String? projectId,
@@ -95,7 +95,7 @@ class TaskPersistenceStore {
     retainedChatSessionIds: retainedChatSessionIds,
   );
 
-  Future<bool> delete(String workspaceRoot, Task task) =>
+  Future<bool> delete(String workspaceRoot, TaskAggregate task) =>
       _persistence.deleteTask(workspaceRoot, task.id);
 
   Future<void> saveLog(

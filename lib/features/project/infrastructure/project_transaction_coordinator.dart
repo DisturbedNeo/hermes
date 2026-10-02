@@ -41,7 +41,7 @@ class ProjectTransactionCoordinator {
   Future<ProjectAggregateCommitResult> commit({
     required String workspaceRoot,
     required ProjectAggregate project,
-    required List<Task> tasks,
+    required List<TaskAggregate> tasks,
     required Set<String> deletedTaskIds,
     required ProjectPersistenceDiagnostics health,
     required ProjectPersistenceCheckpoint checkpoint,
@@ -67,7 +67,7 @@ class ProjectTransactionCoordinator {
       );
     }
 
-    final uniqueTasks = <String, Task>{};
+    final uniqueTasks = <String, TaskAggregate>{};
     for (final task in tasks) {
       if (uniqueTasks.containsKey(task.id)) continue;
       uniqueTasks[task.id] = task;
@@ -108,17 +108,20 @@ class ProjectTransactionCoordinator {
     );
     try {
       final persistedTaskEntries =
-          await Future.wait<MapEntry<String, PersistedSnapshot<Task>>>([
-            for (final task in uniqueTasks.values)
-              _saveTask(
-                workspaceRoot,
-                task,
-                currentRevision: taskRevisions[task.id],
-              ),
-          ]);
-      final persistedTasks = Map<String, PersistedSnapshot<Task>>.fromEntries(
-        persistedTaskEntries,
-      );
+          await Future.wait<MapEntry<String, PersistedSnapshot<TaskAggregate>>>(
+            [
+              for (final task in uniqueTasks.values)
+                _saveTask(
+                  workspaceRoot,
+                  task,
+                  currentRevision: taskRevisions[task.id],
+                ),
+            ],
+          );
+      final persistedTasks =
+          Map<String, PersistedSnapshot<TaskAggregate>>.fromEntries(
+            persistedTaskEntries,
+          );
       await Future.wait<void>([
         for (final taskId in deletedTaskIds)
           _tasks.deleteTaskUnlocked(workspaceRoot, taskId),
@@ -265,7 +268,7 @@ class ProjectTransactionCoordinator {
   Future<ProjectTransaction> begin(
     String workspaceRoot, {
     required ProjectAggregate project,
-    required Iterable<Task> tasks,
+    required Iterable<TaskAggregate> tasks,
     required Set<String> deletedTaskIds,
     ProjectPersistenceCheckpoint checkpoint =
         ProjectPersistenceCheckpoint.runtime,
@@ -353,9 +356,9 @@ class ProjectTransactionCoordinator {
     }
   }
 
-  Future<MapEntry<String, PersistedSnapshot<Task>>> _saveTask(
+  Future<MapEntry<String, PersistedSnapshot<TaskAggregate>>> _saveTask(
     String workspaceRoot,
-    Task task, {
+    TaskAggregate task, {
     required PersistedRevision? currentRevision,
   }) async {
     final persisted = await _tasks.saveSnapshotUnlocked(

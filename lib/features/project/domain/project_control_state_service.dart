@@ -2,24 +2,21 @@ import 'package:hermes/features/project/domain/project.dart';
 
 /// The single deterministic reducer for project command boundaries.
 ///
-/// Persistence still carries the legacy status/blocker/question fields, but
-/// every new control decision is derived here. Callers should not duplicate
-/// this precedence order.
+/// Derives the project control outcome from the lifecycle fields when a
+/// boundary has not yet been materialized. Callers should not duplicate this
+/// precedence order.
 class ProjectControlStateMachine {
   const ProjectControlStateMachine();
 
   ProjectBoundary read(ProjectAggregate project, {DateTime? now}) {
     final existing = project.boundary;
     if (existing != null) return existing;
-    return readCompatibility(project, now: now);
+    return _deriveBoundary(project, now: now);
   }
 
-  /// Converts the legacy lifecycle fields at the deserialization boundary
-  /// only. Runtime decisions should use [read], which returns the canonical
-  /// persisted boundary once one exists.
-  ProjectBoundary readCompatibility(ProjectAggregate project, {DateTime? now}) {
+  ProjectBoundary _deriveBoundary(ProjectAggregate project, {DateTime? now}) {
     final timestamp = now ?? project.updatedAt;
-    final outcome = _compatibilityOutcomeFor(project);
+    final outcome = _deriveOutcome(project);
     final blocker = project.blocker;
     final question = project.openQuestions.firstOrNull;
     return ProjectBoundary(
@@ -35,10 +32,10 @@ class ProjectControlStateMachine {
   ProjectControlOutcome outcomeFor(ProjectAggregate project) {
     final boundary = project.boundary;
     if (boundary != null) return boundary.outcome;
-    return _compatibilityOutcomeFor(project);
+    return _deriveOutcome(project);
   }
 
-  ProjectControlOutcome _compatibilityOutcomeFor(ProjectAggregate project) {
+  ProjectControlOutcome _deriveOutcome(ProjectAggregate project) {
     if (project.status == ProjectStatus.initializing) {
       return ProjectControlOutcome.initializing;
     }
@@ -93,9 +90,7 @@ class ProjectControlStateMachine {
 
 /// Owns the durable, application-facing command boundary for a project.
 ///
-/// The older status/blocker/question fields remain readable for persistence
-/// compatibility, but new callers can use [ProjectBoundary] without knowing
-/// which combination of those fields represents a stop condition.
+/// Owns the durable, application-facing command boundary for a project.
 class ProjectControlStateService {
   const ProjectControlStateService({
     this.machine = const ProjectControlStateMachine(),
@@ -105,13 +100,13 @@ class ProjectControlStateService {
 
   ProjectAggregate synchronise(ProjectAggregate project, {DateTime? now}) {
     // Once written, the boundary is canonical. A routine checkpoint must not
-    // reconstruct it from compatibility fields and accidentally erase an
+    // reconstruct it from lifecycle fields and accidentally erase an
     // explicit stop reason or recovery action.
     final boundary = project.boundary;
     if (boundary != null && _boundaryMatchesLifecycle(project, boundary)) {
       return project;
     }
-    return migrateLegacy(project, now: now);
+    return materializeBoundary(project, now: now);
   }
 
   bool _boundaryMatchesLifecycle(
@@ -119,7 +114,7 @@ class ProjectControlStateService {
     ProjectBoundary boundary,
   ) => switch (boundary.outcome) {
     // These outcomes are command-level decisions and must remain durable even
-    // when compatibility fields have not yet caught up with them.
+    // when lifecycle fields have not yet caught up with them.
     ProjectControlOutcome.degradedPlanning ||
     ProjectControlOutcome.awaitingUserInput ||
     ProjectControlOutcome.awaitingPlanApproval ||
@@ -139,14 +134,17 @@ class ProjectControlStateService {
           project.status == ProjectStatus.reviewingTask,
   };
 
-  /// Materializes the canonical boundary from the pre-boundary fields.
+  /// Materializes the boundary from the lifecycle fields.
   ///
   /// This is intentionally called only by deserialization and lifecycle
   /// transition code. Ordinary persistence uses [synchronise], which preserves
   /// an already-reduced boundary.
-  ProjectAggregate migrateLegacy(ProjectAggregate project, {DateTime? now}) {
+  ProjectAggregate materializeBoundary(
+    ProjectAggregate project, {
+    DateTime? now,
+  }) {
     return project.copyWith(
-      boundary: machine.readCompatibility(project, now: now),
+      boundary: machine._deriveBoundary(project, now: now),
     );
   }
 

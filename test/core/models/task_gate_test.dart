@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/model_json.dart';
 
 void main() {
   test('canonical task JSON defaults missing gates to empty', () {
-    final task = ModelJson.decode<Task>({
+    final task = ModelJson.decode<TaskAggregate>({
       'id': 'task_1',
       'title': 'Old task',
       'originalPrompt': 'Do work',
@@ -36,7 +36,7 @@ void main() {
 
   test('serializes task, step, and run gate metadata', () {
     final now = DateTime(2026, 1, 1);
-    final task = Task(
+    final task = TaskAggregate(
       id: 'task_1',
       title: 'Task',
       originalPrompt: 'Do work',
@@ -101,7 +101,7 @@ void main() {
       updatedAt: now,
     );
 
-    final decoded = ModelJson.decode<Task>(ModelJson.encode(task));
+    final decoded = ModelJson.decode<TaskAggregate>(ModelJson.encode(task));
 
     expect(decoded.gates.single.id, 'no_tool_errors');
     expect(decoded.steps.single.gates.single.id, 'artifact_exists');

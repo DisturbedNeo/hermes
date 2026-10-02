@@ -4,7 +4,8 @@ import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/task/runtime/task_persistence_store.dart';
 import 'package:hermes/features/task/runtime/task_recovery_service.dart';
 
-typedef TaskStepExecution = Future<Task> Function(Task recoveredSnapshot);
+typedef TaskStepExecution =
+    Future<TaskAggregate> Function(TaskAggregate recoveredSnapshot);
 
 /// Prepares one task step for execution and hands it to the execution engine.
 ///
@@ -21,9 +22,9 @@ class TaskStepRunner {
   final TaskPersistenceStore _persistence;
   final TaskRecoveryService _recovery;
 
-  Future<Task> run({
+  Future<TaskAggregate> run({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required TaskStepExecution execute,
     CancellationToken? cancellationToken,
     bool persist = true,

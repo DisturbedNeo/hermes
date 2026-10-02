@@ -29,7 +29,7 @@ class TaskAllowedCommand {
 abstract interface class TaskToolExecutionPort {
   Future<ToolResult> execute({
     required ModelToolCall call,
-    required Task task,
+    required TaskAggregate task,
     required TaskStep step,
     required Set<String> allowedToolIds,
     required List<TaskAllowedCommand> allowedCommands,
@@ -57,7 +57,7 @@ class TaskToolExecutionService implements TaskToolExecutionPort {
   @override
   Future<ToolResult> execute({
     required ModelToolCall call,
-    required Task task,
+    required TaskAggregate task,
     required TaskStep step,
     required Set<String> allowedToolIds,
     required List<TaskAllowedCommand> allowedCommands,
@@ -172,7 +172,7 @@ class TaskToolExecutionService implements TaskToolExecutionPort {
 
   Future<ToolResult> _executeReadOnlyArtifactWrite({
     required ModelToolCall call,
-    required Task task,
+    required TaskAggregate task,
     required TaskStep step,
     required WorkspaceToolContext context,
   }) async {
@@ -270,7 +270,7 @@ class TaskToolExecutionService implements TaskToolExecutionPort {
 
   Future<ToolResult?> _taskArtifactWriteError({
     required ModelToolCall call,
-    required Task task,
+    required TaskAggregate task,
     required TaskStep step,
     required WorkspaceToolContext context,
   }) async {

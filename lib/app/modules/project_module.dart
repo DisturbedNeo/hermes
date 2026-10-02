@@ -17,9 +17,9 @@ import 'package:hermes/features/project/runtime/project_plan_revision_service.da
 import 'package:hermes/features/project/runtime/project_planning_coordinator.dart';
 import 'package:hermes/features/project/runtime/project_progress_monitor.dart';
 import 'package:hermes/features/project/runtime/project_recovery_service.dart';
-import 'package:hermes/features/project/runtime/project_execution_runtime.dart';
 import 'package:hermes/features/project/application/project_application/project_workflow_port.dart';
 import 'package:hermes/features/project/runtime/project_workflow_adapter.dart';
+import 'package:hermes/features/project/runtime/project_execution_state_machine.dart';
 import 'package:hermes/features/task/application/contracts/question_policy_service.dart';
 import 'package:hermes/features/task/application/task_application/task_plan_materializer.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';

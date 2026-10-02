@@ -1,13 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/runtime/project_state_models.dart';
 import 'package:hermes/features/project/application/contracts/project_task_models.dart';
 
 void main() {
   test('exposes separate plan, execution, evidence, and control views', () {
     final now = DateTime(2026, 1, 1);
-    final task = Task(
+    final task = TaskAggregate(
       id: 'task_1',
       title: 'Task',
       objective: 'Do the task',

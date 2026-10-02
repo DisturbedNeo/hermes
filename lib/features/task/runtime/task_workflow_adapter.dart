@@ -4,9 +4,8 @@ import 'package:hermes/features/model/application/model_output.dart';
 import 'package:hermes/features/task/application/contracts/task_commands.dart';
 import 'package:hermes/features/task/application/contracts/task_planning_models.dart';
 import 'package:hermes/features/task/application/contracts/task_summary.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
-import 'package:hermes/features/task/application/task_application/task_workflow_port.dart';
 import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/features/task/application/task_application/task_workflow_port.dart';
 import 'package:hermes/features/task/runtime/task_runtime_engine.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 
@@ -18,13 +17,16 @@ class TaskWorkflowAdapter implements TaskWorkflowPort {
 
   final TaskRuntimeController _delegate;
 
-  Future<Task> _load(WorkspaceAttachment workspace, String taskId) async {
+  Future<TaskAggregate> _load(
+    WorkspaceAttachment workspace,
+    String taskId,
+  ) async {
     final task = await _delegate.loadTask(workspace, taskId);
     if (task == null) throw StateError('Task $taskId could not be loaded.');
     return task;
   }
 
-  TaskSummary _summary(Task task) => TaskSummary(
+  TaskSummary _summary(TaskAggregate task) => TaskSummary(
     id: task.id,
     title: task.title,
     status: task.status,
@@ -34,7 +36,7 @@ class TaskWorkflowAdapter implements TaskWorkflowPort {
     projectId: task.projectId,
   );
 
-  TaskWorkflowResult _result(Task task) =>
+  TaskWorkflowResult _result(TaskAggregate task) =>
       TaskWorkflowResult(task: _summary(task));
 
   @override

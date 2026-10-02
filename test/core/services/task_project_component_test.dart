@@ -2,8 +2,8 @@ import 'dart:io';
 import 'package:hermes/features/persistence/infrastructure/workspace_persistence_coordinator.dart';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/features/project/application/project_application/project_execution_port.dart';
@@ -95,7 +95,7 @@ void main() {
         steps: [_step('step_1', TaskStepStatus.running)],
       ),
     );
-    Task? received;
+    TaskAggregate? received;
 
     final result = await runner.run(
       workspace: workspace,
@@ -160,7 +160,7 @@ ProjectExecutionRequest _request(
 );
 
 ProjectAggregate _project({
-  List<Task> tasks = const [],
+  List<TaskAggregate> tasks = const [],
   String? activeTaskId,
   ProjectStatus status = ProjectStatus.active,
 }) {
@@ -187,13 +187,13 @@ ProjectAggregate _project({
   );
 }
 
-Task _task(
+TaskAggregate _task(
   String id, {
   TaskStatus status = TaskStatus.queued,
   List<TaskStep> steps = const [],
 }) {
   final now = DateTime(2026, 1, 1);
-  return Task(
+  return TaskAggregate(
     id: id,
     title: id,
     objective: 'Complete $id.',

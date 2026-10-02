@@ -7,7 +7,7 @@ import 'package:hermes/features/model/application/model_output.dart';
 import 'package:hermes/features/task/runtime/task_planning_tools.dart';
 
 class TaskPlanningResult {
-  final Task? task;
+  final TaskAggregate? task;
   final bool committed;
   final PlanningMetrics planningMetrics;
   final int modelCalls;

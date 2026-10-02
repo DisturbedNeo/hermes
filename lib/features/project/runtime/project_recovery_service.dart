@@ -1,5 +1,5 @@
 import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/runtime/project_lifecycle_service.dart';
 
 /// Reconciles an interrupted task back into its owning project.
@@ -16,7 +16,7 @@ class ProjectRecoveryService {
 
   ProjectAggregate reconcile({
     required ProjectAggregate project,
-    required Task recoveredTask,
+    required TaskAggregate recoveredTask,
     required DateTime now,
   }) {
     final current = project.activeTaskId == null
@@ -64,7 +64,7 @@ class ProjectRecoveryService {
         .project;
   }
 
-  ProjectBlocker? _blockerFor(Task task, DateTime now, String taskId) {
+  ProjectBlocker? _blockerFor(TaskAggregate task, DateTime now, String taskId) {
     if (task.pendingApproval != null) {
       return ProjectBlocker(
         type: ProjectBlockerType.taskEditApproval,

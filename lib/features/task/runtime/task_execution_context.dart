@@ -7,7 +7,8 @@ abstract interface class TaskPlanningCapabilities {
   WorkspaceReadPort get sandbox;
   TaskToolExecutionPort get toolExecution;
   JsonEncoder get encoder;
-  Future<Task> Function(String workspaceRoot, Task task) get persistTask;
+  Future<TaskAggregate> Function(String workspaceRoot, TaskAggregate task)
+  get persistTask;
   String Function(String prompt) get newTaskId;
   Future<WorkspaceMetadata> Function(
     WorkspaceAttachment workspace, {
@@ -29,7 +30,7 @@ abstract interface class TaskPlanningCapabilities {
     CancellationToken? cancellationToken,
   })
   get completeTaskPlanWithCommands;
-  Task Function({
+  TaskAggregate Function({
     required String taskId,
     required String userPrompt,
     required String? chatSessionId,
@@ -37,7 +38,7 @@ abstract interface class TaskPlanningCapabilities {
     required DateTime now,
   })
   get fallbackTask;
-  Task Function({
+  TaskAggregate Function({
     required String taskId,
     required String userPrompt,
     required String? chatSessionId,
@@ -46,7 +47,11 @@ abstract interface class TaskPlanningCapabilities {
     required DateTime now,
   })
   get fallbackProjectBoundedTask;
-  Task Function(Task candidate, Task original, DateTime now)
+  TaskAggregate Function(
+    TaskAggregate candidate,
+    TaskAggregate original,
+    DateTime now,
+  )
   get normaliseEditedTask;
 }
 
@@ -64,39 +69,42 @@ abstract interface class TaskExecutionCapabilities {
   QuestionPolicyService get questionPolicy;
   JsonEncoder get encoder;
   TaskRecoveryService get recoveryService;
-  Future<Task> Function(String workspaceRoot, Task task) get persistTask;
-  Task Function(Task snapshot) get markCompleted;
-  Task Function(
-    Task snapshot,
+  Future<TaskAggregate> Function(String workspaceRoot, TaskAggregate task)
+  get persistTask;
+  TaskAggregate Function(TaskAggregate snapshot) get markCompleted;
+  TaskAggregate Function(
+    TaskAggregate snapshot,
     TaskStep step,
     TaskStepExecutionOutput output,
     DateTime now,
   )
   get completeStep;
-  Task Function(
-    Task snapshot,
+  TaskAggregate Function(
+    TaskAggregate snapshot,
     TaskStep step,
     TaskStepExecutionOutput output,
     DateTime now,
   )
   get blockStep;
-  Task Function(
-    Task snapshot,
+  TaskAggregate Function(
+    TaskAggregate snapshot,
     TaskStep step,
     TaskStepExecutionOutput output,
     DateTime now,
   )
   get failStep;
-  Task Function(Task snapshot, String stepId, TaskStep step) get replaceStep;
-  Task Function(Task snapshot, TaskRun run) get replaceLastRun;
+  TaskAggregate Function(TaskAggregate snapshot, String stepId, TaskStep step)
+  get replaceStep;
+  TaskAggregate Function(TaskAggregate snapshot, TaskRun run)
+  get replaceLastRun;
   String Function(String current, String update) get appendMemory;
-  Task Function(
-    Task snapshot,
+  TaskAggregate Function(
+    TaskAggregate snapshot,
     String reason, {
     required PlanningMetrics planningMetrics,
   })
   get fallbackReplannedTask;
-  int Function(Task task) get taskPlanningStepLimit;
+  int Function(TaskAggregate task) get taskPlanningStepLimit;
   TaskStepExecutionStatus? Function(String raw) get parseStepExecutionStatus;
   List<TaskEvidenceClaim> Function(
     Object? value,
@@ -201,7 +209,8 @@ class TaskUseCaseContext
   final QuestionPolicyService questionPolicy;
   final JsonEncoder encoder;
 
-  final Future<Task> Function(String workspaceRoot, Task task) persistTask;
+  final Future<TaskAggregate> Function(String workspaceRoot, TaskAggregate task)
+  persistTask;
   final String Function(String prompt) newTaskId;
   final Future<WorkspaceMetadata> Function(
     WorkspaceAttachment workspace, {
@@ -223,7 +232,7 @@ class TaskUseCaseContext
     CancellationToken? cancellationToken,
   })
   completeTaskPlanWithCommands;
-  final Task Function({
+  final TaskAggregate Function({
     required String taskId,
     required String userPrompt,
     required String? chatSessionId,
@@ -231,7 +240,7 @@ class TaskUseCaseContext
     required DateTime now,
   })
   fallbackTask;
-  final Task Function({
+  final TaskAggregate Function({
     required String taskId,
     required String userPrompt,
     required String? chatSessionId,
@@ -240,40 +249,50 @@ class TaskUseCaseContext
     required DateTime now,
   })
   fallbackProjectBoundedTask;
-  final Task Function(Task candidate, Task original, DateTime now)
+  final TaskAggregate Function(
+    TaskAggregate candidate,
+    TaskAggregate original,
+    DateTime now,
+  )
   normaliseEditedTask;
-  final Task Function(Task snapshot) markCompleted;
-  final Task Function(
-    Task snapshot,
+  final TaskAggregate Function(TaskAggregate snapshot) markCompleted;
+  final TaskAggregate Function(
+    TaskAggregate snapshot,
     TaskStep step,
     TaskStepExecutionOutput output,
     DateTime now,
   )
   completeStep;
-  final Task Function(
-    Task snapshot,
+  final TaskAggregate Function(
+    TaskAggregate snapshot,
     TaskStep step,
     TaskStepExecutionOutput output,
     DateTime now,
   )
   blockStep;
-  final Task Function(
-    Task snapshot,
+  final TaskAggregate Function(
+    TaskAggregate snapshot,
     TaskStep step,
     TaskStepExecutionOutput output,
     DateTime now,
   )
   failStep;
-  final Task Function(Task snapshot, String stepId, TaskStep step) replaceStep;
-  final Task Function(Task snapshot, TaskRun run) replaceLastRun;
+  final TaskAggregate Function(
+    TaskAggregate snapshot,
+    String stepId,
+    TaskStep step,
+  )
+  replaceStep;
+  final TaskAggregate Function(TaskAggregate snapshot, TaskRun run)
+  replaceLastRun;
   final String Function(String current, String update) appendMemory;
-  final Task Function(
-    Task snapshot,
+  final TaskAggregate Function(
+    TaskAggregate snapshot,
     String reason, {
     required PlanningMetrics planningMetrics,
   })
   fallbackReplannedTask;
-  final int Function(Task task) taskPlanningStepLimit;
+  final int Function(TaskAggregate task) taskPlanningStepLimit;
   final TaskStepExecutionStatus? Function(String raw) parseStepExecutionStatus;
   final List<TaskEvidenceClaim> Function(
     Object? value,

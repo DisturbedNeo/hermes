@@ -14,7 +14,10 @@ class TaskPersistenceUseCase {
   TaskModelCompletionPort get _modelCompletion => _context.modelCompletion;
   JsonEncoder get _encoder => _context.encoder;
 
-  Future<Task> persist(String workspaceRoot, Task task) async {
+  Future<TaskAggregate> persist(
+    String workspaceRoot,
+    TaskAggregate task,
+  ) async {
     final persisted = await _persistenceStore.save(workspaceRoot, task);
     return persisted.value;
   }
@@ -29,7 +32,7 @@ class TaskPersistenceUseCase {
     projectId: projectId,
   );
 
-  Future<Task?> loadLatestTask(
+  Future<TaskAggregate?> loadLatestTask(
     WorkspaceAttachment workspace, {
     String? chatSessionId,
     String? projectId,
@@ -42,7 +45,7 @@ class TaskPersistenceUseCase {
     return snapshot?.value;
   }
 
-  Future<Task?> loadTask(
+  Future<TaskAggregate?> loadTask(
     WorkspaceAttachment workspace,
     String taskId, {
     String? chatSessionId,
@@ -103,9 +106,9 @@ class TaskPersistenceUseCase {
     );
   }
 
-  Future<Task> recoverTask({
+  Future<TaskAggregate> recoverTask({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     bool persist = true,
   }) async {
     if (snapshot.status != TaskStatus.running) return snapshot;

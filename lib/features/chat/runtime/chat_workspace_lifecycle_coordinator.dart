@@ -1,7 +1,7 @@
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/application/project_application/project_execution_port.dart';
 import 'package:hermes/features/project/application/project_application/project_ports.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/application/contracts/task_summary.dart';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
@@ -19,7 +19,7 @@ class ChatWorkspaceLoadResult {
   final WorkspaceAttachment workspace;
   final ProjectAggregate? activeProject;
   final List<ProjectSummary> availableProjects;
-  final Task? activeTask;
+  final TaskAggregate? activeTask;
   final List<TaskSummary> availableTasks;
 }
 
@@ -36,12 +36,12 @@ class ChatWorkspaceLifecycleCoordinator {
       ProjectAggregate? snapshot,
     )
     recoverProject,
-    required Future<Task?> Function(
+    required Future<TaskAggregate?> Function(
       WorkspaceAttachment workspace,
-      Task? snapshot,
+      TaskAggregate? snapshot,
     )
     recoverTask,
-    required Future<Task?> Function(
+    required Future<TaskAggregate?> Function(
       WorkspaceAttachment workspace,
       ProjectAggregate? project,
     )
@@ -65,9 +65,12 @@ class ChatWorkspaceLifecycleCoordinator {
     ProjectAggregate? snapshot,
   )
   _recoverProject;
-  final Future<Task?> Function(WorkspaceAttachment workspace, Task? snapshot)
+  final Future<TaskAggregate?> Function(
+    WorkspaceAttachment workspace,
+    TaskAggregate? snapshot,
+  )
   _recoverTask;
-  final Future<Task?> Function(
+  final Future<TaskAggregate?> Function(
     WorkspaceAttachment workspace,
     ProjectAggregate? project,
   )

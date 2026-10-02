@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:http/http.dart' as http;
 
 import 'package:flutter/foundation.dart';
 import 'package:hermes/features/model/infrastructure/llama_server_finder.dart';
@@ -160,7 +159,7 @@ class LlamaServerManager implements ModelServerPort {
   final LlamaProcessLauncher _processLauncher;
   final LlamaPortAllocator _portAllocator;
   final LlamaHealthWaiter _healthWaiter;
-  final LlamaModelProviderFactory _clientFactory;
+  final LlamaModelProviderFactory? _clientFactory;
   final ValueNotifier<LlamaServerHandle?> _handle = ValueNotifier(null);
   final ValueNotifier<ModelSessionState> _sessionNotifier = ValueNotifier(
     const ModelSessionState(),
@@ -219,7 +218,7 @@ class LlamaServerManager implements ModelServerPort {
   }) : _processLauncher = processLauncher ?? _launchProcess,
        _portAllocator = portAllocator ?? _getFreePort,
        _healthWaiter = healthWaiter ?? _waitForHealth,
-       _clientFactory = clientFactory ?? _defaultModelProviderFactory;
+       _clientFactory = clientFactory;
 
   Future<void> startWithSnapshot(ModelConfigurationSnapshot snapshot) {
     return start(
@@ -399,7 +398,13 @@ class LlamaServerManager implements ModelServerPort {
         );
         _throwIfCancelled(generation);
 
-        final newClient = _clientFactory(
+        final clientFactory = _clientFactory;
+        if (clientFactory == null) {
+          throw StateError(
+            'A model provider factory is required to start the server.',
+          );
+        }
+        final newClient = clientFactory(
           baseUrl: baseUrl,
           model: modelName,
           onDiagnostics: (value) {
@@ -575,67 +580,6 @@ class _ReadOnlyModelSession implements ModelSessionPort {
   @override
   void removeListener(VoidCallback listener) =>
       _source.removeListener(listener);
-}
-
-LlamaModelProviderFactory get _defaultModelProviderFactory =>
-    ({required String baseUrl, required String model, onDiagnostics}) =>
-        _PropertiesOnlyModelProvider(baseUrl);
-
-/// Compatibility provider used when a manager is constructed outside the
-/// composition root (for example in lifecycle tests). The real chat provider
-/// is injected by the application composition root; this adapter only reads
-/// `/props` so startup _diagnostics remain useful without importing the HTTP
-/// chat implementation into the shared service.
-class _PropertiesOnlyModelProvider implements ModelProvider {
-  _PropertiesOnlyModelProvider(this._baseUrl);
-
-  final String _baseUrl;
-  bool _disposed = false;
-
-  @override
-  bool get supportsStreamingCancellation => false;
-
-  @override
-  void dispose() => _disposed = true;
-
-  @override
-  Future<LlamaServerProperties?> fetchServerProperties() async {
-    if (_disposed) return null;
-    try {
-      final response = await http.get(Uri.parse('$_baseUrl/props'));
-      if (response.statusCode < 200 || response.statusCode >= 300) return null;
-      final raw = jsonDecode(response.body);
-      if (raw is! Map) return null;
-      final defaults = raw['default_generation_settings'];
-      final model = raw['model'];
-      final defaultMap = defaults is Map ? defaults : const {};
-      final modelMap = model is Map ? model : const {};
-      int? integer(Object? value) =>
-          value is num ? value.toInt() : int.tryParse(value?.toString() ?? '');
-      return LlamaServerProperties(
-        effectiveContextSize:
-            integer(raw['n_ctx']) ??
-            integer(defaultMap['n_ctx']) ??
-            integer(modelMap['n_ctx_train']),
-        totalSlots: integer(raw['total_slots']) ?? integer(raw['n_slots']),
-        modelPath:
-            raw['model_path']?.toString() ?? modelMap['path']?.toString(),
-        buildInfo: raw['build_info']?.toString() ?? raw['build']?.toString(),
-        chatTemplateCapabilities: raw['chat_template_caps'] is Map
-            ? Map<String, dynamic>.from(raw['chat_template_caps'] as Map)
-            : const {},
-        modalities: raw['modalities'] is Map
-            ? Map<String, dynamic>.from(raw['modalities'] as Map)
-            : const {},
-      );
-    } catch (_) {
-      return null;
-    }
-  }
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      throw UnsupportedError('The compatibility model provider is read-only.');
 }
 
 class _StartupOutput {

@@ -4,9 +4,9 @@ part of 'chat_session_orchestrator.dart';
 abstract interface class ChatTaskReplanCapabilities implements ChatSessionHost {
   ActiveModelSessionPort get activeModelSession;
   WorkspaceAttachment? get workspace;
-  Task? get activeTask;
+  TaskAggregate? get activeTask;
   bool get taskBusy;
-  void dispatchActiveTask(Task? value);
+  void dispatchActiveTask(TaskAggregate? value);
   void dispatchTaskBusy(bool value);
   void dispatchTaskError(Object? value);
   void dispatchTaskStatusMessage(String? value);
@@ -17,7 +17,7 @@ abstract interface class ChatTaskReplanCapabilities implements ChatSessionHost {
   void _finishTaskModelOutput();
   void _handleTaskModelOutput(TaskModelOutputEvent event);
   void _insertTaskAssistantMessage(String text);
-  String _buildTaskSystemPrompt(Task snapshot);
+  String _buildTaskSystemPrompt(TaskAggregate snapshot);
   Future<void> reloadTasks();
   TaskWorkflowPort get _taskPlanning;
 }
@@ -25,10 +25,10 @@ abstract interface class ChatTaskReplanCapabilities implements ChatSessionHost {
 /// Focused capability surface for chat-originated task/project plan edits.
 abstract interface class ChatTaskPlanCapabilities implements ChatSessionHost {
   WorkspaceAttachment? get workspace;
-  Task? get activeTask;
+  TaskAggregate? get activeTask;
   ProjectAggregate? get activeProject;
   bool get taskBusy;
-  void dispatchActiveTask(Task? value);
+  void dispatchActiveTask(TaskAggregate? value);
   void dispatchActiveProject(ProjectAggregate? value);
   void dispatchTaskBusy(bool value);
   void dispatchTaskError(Object? value);
@@ -52,7 +52,7 @@ abstract interface class ChatSessionLifecycleCapabilities {
   ModelConfigurationSnapshot? get currentModelSnapshot;
   ModelConfigurationSnapshot? get pendingModelRestore;
   ProjectAggregate? get activeProject;
-  Task? get activeTask;
+  TaskAggregate? get activeTask;
   bool get loadingSnapshot;
   set loadingSnapshot(bool value);
   ModelConfigurationSnapshot? get _activeServerSnapshot;
@@ -77,22 +77,22 @@ abstract interface class ChatSessionLifecycleCapabilities {
   void dispatchCurrentSystemPromptSnapshot(SystemPromptSnapshot? value);
   void dispatchActiveProject(ProjectAggregate? value);
   void dispatchAvailableProjects(List<ProjectSummary> value);
-  void dispatchActiveTask(Task? value);
+  void dispatchActiveTask(TaskAggregate? value);
   void dispatchAvailableTasks(List<TaskSummary> value);
   void dispatchTaskError(Object? value);
   void dispatchTaskStatusMessage(String? value);
   Future<void> flushCurrentChat();
   Future<void> refreshModelRestorePrompt();
   void updateCurrentModelSnapshot(ModelConfigurationSnapshot snapshot);
-  Future<Task?> _recoverTaskSnapshot(
+  Future<TaskAggregate?> _recoverTaskSnapshot(
     WorkspaceAttachment current,
-    Task? snapshot,
+    TaskAggregate? snapshot,
   );
   Future<ProjectCommandResult?> _recoverProject(
     WorkspaceAttachment current,
     ProjectAggregate? snapshot,
   );
-  Future<Task?> _taskForActiveProject(
+  Future<TaskAggregate?> _taskForActiveProject(
     WorkspaceAttachment current,
     ProjectAggregate? project,
   );
@@ -191,7 +191,7 @@ abstract interface class ChatWorkCapabilities
   ChatStream<ChatToken> get chatStream;
   WorkspaceAttachment? get workspace;
   ProjectAggregate? get activeProject;
-  Task? get activeTask;
+  TaskAggregate? get activeTask;
   TaskSystemSettings get taskSystemSettings;
   bool get taskBusy;
   ExecutionMode get executionMode;
@@ -227,7 +227,7 @@ abstract interface class ChatWorkCapabilities
   void dispatchTaskError(Object? value);
   void dispatchTaskStatusMessage(String? value);
   void dispatchWorkspace(WorkspaceAttachment? value);
-  void dispatchActiveTask(Task? value);
+  void dispatchActiveTask(TaskAggregate? value);
   void dispatchActiveProject(ProjectAggregate? value);
   void dispatchActiveProjectPersistenceDiagnostics(
     ProjectPersistenceDiagnostics? value,
@@ -251,18 +251,18 @@ abstract interface class ChatWorkCapabilities
     required String? currentUserRequest,
     List<String> additionalModuleIds = const [],
   });
-  String _buildTaskSystemPrompt(Task snapshot);
+  String _buildTaskSystemPrompt(TaskAggregate snapshot);
   String _buildProjectSystemPrompt(ProjectAggregate snapshot);
   Future<void> _clearProjectTaskBlocker();
-  Future<Task?> _recoverTaskSnapshot(
+  Future<TaskAggregate?> _recoverTaskSnapshot(
     WorkspaceAttachment current,
-    Task? snapshot,
+    TaskAggregate? snapshot,
   );
   Future<ProjectCommandResult?> _recoverProject(
     WorkspaceAttachment current,
     ProjectAggregate? snapshot,
   );
-  Future<Task?> _taskForActiveProject(
+  Future<TaskAggregate?> _taskForActiveProject(
     WorkspaceAttachment current,
     ProjectAggregate? project,
   );
@@ -330,8 +330,8 @@ abstract interface class ChatUseCaseContext
   );
   List<ProjectSummary> get availableProjects;
   void dispatchAvailableProjects(List<ProjectSummary> value);
-  Task? get activeTask;
-  void dispatchActiveTask(Task? value);
+  TaskAggregate? get activeTask;
+  void dispatchActiveTask(TaskAggregate? value);
   List<TaskSummary> get availableTasks;
   void dispatchAvailableTasks(List<TaskSummary> value);
   TaskSystemSettings get taskSystemSettings;
@@ -400,15 +400,15 @@ abstract interface class ChatUseCaseContext
   void Function() get _handlePreferencesChanged;
   void _disposeChangeNotifier();
 
-  Future<Task?> _recoverTaskSnapshot(
+  Future<TaskAggregate?> _recoverTaskSnapshot(
     WorkspaceAttachment current,
-    Task? snapshot,
+    TaskAggregate? snapshot,
   );
   Future<ProjectCommandResult?> _recoverProject(
     WorkspaceAttachment current,
     ProjectAggregate? snapshot,
   );
-  Future<Task?> _taskForActiveProject(
+  Future<TaskAggregate?> _taskForActiveProject(
     WorkspaceAttachment current,
     ProjectAggregate? project,
   );
@@ -462,7 +462,7 @@ abstract interface class ChatUseCaseContext
     required String? currentUserRequest,
     List<String> additionalModuleIds = const [],
   });
-  String _buildTaskSystemPrompt(Task snapshot);
+  String _buildTaskSystemPrompt(TaskAggregate snapshot);
   String _buildProjectSystemPrompt(ProjectAggregate snapshot);
   List<Bubble> _withCurrentSystemPrompt(
     List<Bubble> messages, {
@@ -652,9 +652,9 @@ final class _ChatUseCaseContextAdapter implements ChatUseCaseContext {
   void _disposeChangeNotifier() => _host._disposeChangeNotifier();
 
   @override
-  Future<Task?> _recoverTaskSnapshot(
+  Future<TaskAggregate?> _recoverTaskSnapshot(
     WorkspaceAttachment current,
-    Task? snapshot,
+    TaskAggregate? snapshot,
   ) => _host._recoverTaskSnapshot(current, snapshot);
   @override
   Future<ProjectCommandResult?> _recoverProject(
@@ -662,7 +662,7 @@ final class _ChatUseCaseContextAdapter implements ChatUseCaseContext {
     ProjectAggregate? snapshot,
   ) => _host._recoverProject(current, snapshot);
   @override
-  Future<Task?> _taskForActiveProject(
+  Future<TaskAggregate?> _taskForActiveProject(
     WorkspaceAttachment current,
     ProjectAggregate? project,
   ) => _host._taskForActiveProject(current, project);
@@ -776,7 +776,7 @@ final class _ChatUseCaseContextAdapter implements ChatUseCaseContext {
     additionalModuleIds: additionalModuleIds,
   );
   @override
-  String _buildTaskSystemPrompt(Task snapshot) =>
+  String _buildTaskSystemPrompt(TaskAggregate snapshot) =>
       _host._buildTaskSystemPrompt(snapshot);
   @override
   String _buildProjectSystemPrompt(ProjectAggregate snapshot) =>
@@ -854,9 +854,10 @@ final class _ChatUseCaseContextAdapter implements ChatUseCaseContext {
   void dispatchAvailableProjects(List<ProjectSummary> value) =>
       _host.dispatchAvailableProjects(value);
   @override
-  Task? get activeTask => _host.activeTask;
+  TaskAggregate? get activeTask => _host.activeTask;
   @override
-  void dispatchActiveTask(Task? value) => _host.dispatchActiveTask(value);
+  void dispatchActiveTask(TaskAggregate? value) =>
+      _host.dispatchActiveTask(value);
   @override
   List<TaskSummary> get availableTasks => _host.availableTasks;
   @override

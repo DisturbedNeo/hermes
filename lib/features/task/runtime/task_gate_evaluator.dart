@@ -96,7 +96,7 @@ class TaskGateEvaluator {
 
   Future<TaskGateEvaluation> evaluate({
     required WorkspaceAttachment workspace,
-    required Task task,
+    required TaskAggregate task,
     required TaskStep step,
     required List<TaskGate> gates,
     List<TaskToolCallRecord> toolCalls = const [],
@@ -139,7 +139,7 @@ class TaskGateEvaluator {
 
   Future<TaskGateResult> _evaluateGate({
     required WorkspaceAttachment workspace,
-    required Task task,
+    required TaskAggregate task,
     required TaskStep step,
     required TaskGate gate,
     required List<TaskToolCallRecord> toolCalls,
@@ -430,7 +430,7 @@ class TaskGateEvaluator {
   }
 
   TaskGateResult _noFailedCommands(
-    Task task,
+    TaskAggregate task,
     TaskStep step,
     TaskGate gate,
     List<TaskToolCallRecord> toolCalls,
@@ -486,7 +486,7 @@ class TaskGateEvaluator {
   }
 
   Set<String> _advisoryCommandKeys(
-    Task task,
+    TaskAggregate task,
     TaskStep step,
     TaskGate noFailedGate,
   ) {
@@ -539,7 +539,7 @@ class TaskGateEvaluator {
   }
 
   Future<TaskGateResult> _modelReview(
-    Task task,
+    TaskAggregate task,
     TaskStep step,
     TaskGate gate,
     ModelTextCompletionPort? client,

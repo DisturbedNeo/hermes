@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/domain/project_scheduler.dart';
 
 void main() {
@@ -119,7 +119,7 @@ void main() {
   });
 }
 
-ProjectAggregate _project(List<Task> tasks) {
+ProjectAggregate _project(List<TaskAggregate> tasks) {
   final now = DateTime.utc(2026, 1, 1);
   return ProjectAggregate(
     id: 'project',
@@ -143,14 +143,14 @@ ProjectAggregate _project(List<Task> tasks) {
   );
 }
 
-Task _task(
+TaskAggregate _task(
   String id, {
   List<String> dependencies = const [],
   TaskPriority priority = TaskPriority.normal,
   TaskStatus status = TaskStatus.queued,
 }) {
   final now = DateTime.utc(2026, 1, 1);
-  return Task(
+  return TaskAggregate(
     id: id,
     title: 'Task $id',
     objective: 'Complete bounded work for $id.',

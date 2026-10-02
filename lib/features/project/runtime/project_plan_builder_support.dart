@@ -32,7 +32,7 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
   ProjectAggregate get _planningProject =>
       _project.copyWith(refinedGoal: _validationRefinedGoal);
 
-  List<String> _addTasksInternal(List<ProjectPlanTaskSpec> specs) {
+  List<String> _addTasksInternal(List<ProjectTaskSpec> specs) {
     if (specs.isEmpty) {
       throw _error('missing_tasks', 'tasks', 'At least one task is required.');
     }
@@ -655,7 +655,7 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
     String message,
   ) => ProjectPlanBuilderException(code: code, path: path, message: message);
 
-  Map<String, dynamic> _specMap(ProjectPlanTaskSpec spec) => {
+  Map<String, dynamic> _specMap(ProjectTaskSpec spec) => {
     'ref': spec.ref,
     'title': spec.title,
     'objective': spec.objective,

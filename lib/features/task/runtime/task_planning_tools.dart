@@ -42,7 +42,7 @@ class TaskPlanningToolContext {
          now: now,
        );
 
-  final Task task;
+  final TaskAggregate task;
   final String workspaceRoot;
   final int maxSteps;
   final String projectGoal;
@@ -58,7 +58,7 @@ class TaskPlanningToolContext {
   final TaskViewService viewService;
   final TaskPlanBuilder builder;
 
-  Task? committedTask;
+  TaskAggregate? committedTask;
   String? replanReason;
   bool closed = false;
 }
@@ -332,7 +332,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     };
   }
 
-  Map<String, dynamic> _planSummary(Task task) => {
+  Map<String, dynamic> _planSummary(TaskAggregate task) => {
     'task_id': task.id,
     'title': task.title,
     'objective': task.objective,

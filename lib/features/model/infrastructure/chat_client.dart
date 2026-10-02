@@ -27,11 +27,6 @@ const _chatMessageWireAdapter = ChatMessageWireAdapter();
 typedef ChatHttpClientFactory = http.Client Function();
 typedef ModelCallDiagnosticsSink = void Function(ModelCallDiagnostics value);
 
-/// Compatibility export for callers that previously imported the parser from
-/// ChatClient's library.
-List<ChatToken> tokensFromPayload(String payload, [Uri? chatUri]) =>
-    chatTokensFromPayload(payload, chatUri);
-
 class _CallDiagnosticsTracker {
   _CallDiagnosticsTracker({
     required this.callId,
@@ -307,7 +302,7 @@ class ChatClient implements ModelProvider {
   }
 
   @override
-  Future<ChatCompletionResponse> completeChat({
+  Future<ModelCompletion> completeChat({
     required List<ChatMessage> messages,
     ModelRequestOptions? extraParams,
     CancellationToken? cancellationToken,
@@ -374,7 +369,7 @@ class ChatClient implements ModelProvider {
   }
 
   @override
-  Future<ChatCompletionResponse> completeChatStreamed({
+  Future<ModelCompletion> completeChatStreamed({
     required List<ChatMessage> messages,
     ModelRequestOptions? extraParams,
     void Function(ChatToken token)? onToken,
@@ -437,14 +432,14 @@ class ChatClient implements ModelProvider {
       record(token);
     }
 
-    return ChatCompletionResponse(
+    return ModelCompletion(
       content: content.toString(),
       reasoning: reasoning.toString(),
       toolCalls:
           (toolCalls.entries.toList()..sort((a, b) => a.key.compareTo(b.key)))
               .where((entry) => entry.value.name?.trim().isNotEmpty == true)
               .map(
-                (entry) => ChatCompletionToolCall(
+                (entry) => ModelToolCall(
                   id: entry.value.id,
                   name: entry.value.name!,
                   arguments: entry.value.arguments.length == 0
@@ -457,7 +452,7 @@ class ChatClient implements ModelProvider {
     );
   }
 
-  ChatCompletionResponse _completionFromBody(
+  ModelCompletion _completionFromBody(
     String body,
     Uri chatUri, {
     _CallDiagnosticsTracker? tracker,
@@ -486,7 +481,7 @@ class ChatClient implements ModelProvider {
       }
     }
 
-    return ChatCompletionResponse(
+    return ModelCompletion(
       content: content is String ? content : '',
       reasoning: reasoning is String ? reasoning : '',
       toolCalls: _completionToolCallsFromWire(message['tool_calls']),
@@ -1019,9 +1014,7 @@ class ChatClient implements ModelProvider {
     }
   }
 
-  static List<ChatCompletionToolCall> _completionToolCallsFromWire(
-    Object? raw,
-  ) {
+  static List<ModelToolCall> _completionToolCallsFromWire(Object? raw) {
     if (raw is! List) return const [];
 
     return raw
@@ -1041,13 +1034,13 @@ class ChatClient implements ModelProvider {
           }
 
           if (name == null || name.trim().isEmpty) return null;
-          return ChatCompletionToolCall(
+          return ModelToolCall(
             id: id,
             name: name,
             arguments: _argumentsJson(args),
           );
         })
-        .whereType<ChatCompletionToolCall>()
+        .whereType<ModelToolCall>()
         .toList();
   }
 
@@ -1061,7 +1054,7 @@ class ChatClient implements ModelProvider {
   }
 
   static void _emitCompletionTokens(
-    ChatCompletionResponse completion,
+    ModelCompletion completion,
     void Function(ChatToken token)? onToken,
   ) {
     if (onToken == null) return;

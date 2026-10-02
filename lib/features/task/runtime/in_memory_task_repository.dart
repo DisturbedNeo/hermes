@@ -7,7 +7,7 @@ import 'package:path/path.dart' as path;
 /// In-memory task persistence double that retains optimistic revision checks.
 class InMemoryTaskRepository implements TaskSnapshotStorePort {
   InMemoryTaskRepository();
-  final Map<String, Map<String, PersistedSnapshot<Task>>> _data = {};
+  final Map<String, Map<String, PersistedSnapshot<TaskAggregate>>> _data = {};
 
   @override
   Future<List<TaskSummary>> listTasks(
@@ -38,7 +38,7 @@ class InMemoryTaskRepository implements TaskSnapshotStorePort {
   }
 
   @override
-  Future<PersistedSnapshot<Task>?> loadLatestTask(
+  Future<PersistedSnapshot<TaskAggregate>?> loadLatestTask(
     String workspaceRoot, {
     String? chatSessionId,
     String? projectId,
@@ -53,7 +53,7 @@ class InMemoryTaskRepository implements TaskSnapshotStorePort {
   }
 
   @override
-  Future<PersistedSnapshot<Task>?> loadTask(
+  Future<PersistedSnapshot<TaskAggregate>?> loadTask(
     String workspaceRoot,
     String taskId, {
     String? chatSessionId,
@@ -68,7 +68,7 @@ class InMemoryTaskRepository implements TaskSnapshotStorePort {
   );
 
   @override
-  Future<PersistedSnapshot<Task>?> loadTaskSnapshot(
+  Future<PersistedSnapshot<TaskAggregate>?> loadTaskSnapshot(
     String workspaceRoot,
     String taskId, {
     String? chatSessionId,
@@ -86,7 +86,7 @@ class InMemoryTaskRepository implements TaskSnapshotStorePort {
   }
 
   @override
-  Future<Map<String, PersistedSnapshot<Task>?>> loadTaskSnapshots(
+  Future<Map<String, PersistedSnapshot<TaskAggregate>?>> loadTaskSnapshots(
     String workspaceRoot,
     Iterable<String> taskIds, {
     String? chatSessionId,
@@ -123,7 +123,7 @@ class InMemoryTaskRepository implements TaskSnapshotStorePort {
   };
 
   @override
-  Future<PersistedSnapshot<Task>?> loadTaskSnapshotUnlocked(
+  Future<PersistedSnapshot<TaskAggregate>?> loadTaskSnapshotUnlocked(
     String workspaceRoot,
     String taskId, {
     String? chatSessionId,
@@ -138,9 +138,9 @@ class InMemoryTaskRepository implements TaskSnapshotStorePort {
   );
 
   @override
-  Future<PersistedSnapshot<Task>> saveSnapshotUnlocked(
+  Future<PersistedSnapshot<TaskAggregate>> saveSnapshotUnlocked(
     String workspaceRoot,
-    Task task, {
+    TaskAggregate task, {
     required int expectedRevision,
     PersistedRevision? currentRevision,
   }) => saveSnapshot(
@@ -151,9 +151,9 @@ class InMemoryTaskRepository implements TaskSnapshotStorePort {
   );
 
   @override
-  Future<PersistedSnapshot<Task>> saveSnapshot(
+  Future<PersistedSnapshot<TaskAggregate>> saveSnapshot(
     String workspaceRoot,
-    Task task, {
+    TaskAggregate task, {
     int? expectedRevision,
     bool assumeLocked = false,
   }) async {
@@ -167,7 +167,7 @@ class InMemoryTaskRepository implements TaskSnapshotStorePort {
       );
     }
     final persisted = task.copyWith(persistenceRevision: current + 1);
-    final snapshot = PersistedSnapshot<Task>(
+    final snapshot = PersistedSnapshot<TaskAggregate>(
       value: persisted,
       revision: current + 1,
     );

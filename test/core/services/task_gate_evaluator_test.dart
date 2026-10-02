@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/chat/application/contracts/chat_message.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/core/cancellation.dart';
@@ -18,7 +18,7 @@ void main() {
     late Directory root;
     late WorkspaceAttachment workspace;
     late TaskGateEvaluator evaluator;
-    late Task task;
+    late TaskAggregate task;
     late TaskStep step;
 
     setUp(() async {
@@ -41,7 +41,7 @@ void main() {
         artifacts: [TaskArtifact(path: 'out.md')],
         status: TaskStepStatus.pending,
       );
-      task = Task(
+      task = TaskAggregate(
         id: 'task_1',
         title: 'Task',
         originalPrompt: 'Do work',
@@ -142,7 +142,7 @@ void main() {
     test('artifact non-empty checks use the actual filesystem type', () async {
       await Directory(path.join(root.path, 'output')).create();
       final directoryStep = step.copyWith(
-        // A malformed or legacy model declaration must not turn a real
+        // A malformed or unsupported model declaration must not turn a real
         // directory into a zero-length file check.
         artifacts: const [TaskArtifact(path: 'output', kind: 'code')],
       );
@@ -848,7 +848,7 @@ class _ReviewClient extends ChatClient {
   final String content;
 
   @override
-  Future<ChatCompletionResponse> completeChat({
+  Future<ModelCompletion> completeChat({
     required List<ChatMessage> messages,
     ModelRequestOptions? extraParams,
     Object? cancellationToken,
@@ -856,7 +856,7 @@ class _ReviewClient extends ChatClient {
     int? contextLimitTokens,
     int? inputTokensHint,
   }) async {
-    return ChatCompletionResponse(content: content);
+    return ModelCompletion(content: content);
   }
 
   @override

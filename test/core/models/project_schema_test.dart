@@ -1,12 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/model_json.dart';
 
 void main() {
   test('persists ordered task IDs without embedding task records', () {
     final now = DateTime(2026, 1, 1);
-    final task = Task(
+    final task = TaskAggregate(
       id: 'task_1',
       title: 'Bounded task',
       objective: 'Do one bounded thing',

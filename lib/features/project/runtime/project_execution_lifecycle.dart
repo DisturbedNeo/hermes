@@ -11,7 +11,10 @@ extension ProjectExecutionLifecycle on ProjectExecutionUseCase {
     return [...current, value];
   }
 
-  TaskResult _taskResultFromTask(ProjectTaskNode projectTask, Task task) {
+  TaskResult _taskResultFromTask(
+    ProjectTaskNode projectTask,
+    TaskAggregate task,
+  ) {
     final latestRun = task.runs.isEmpty ? null : task.runs.last;
     final artifacts = <TaskArtifact>[
       for (final run in task.runs)
@@ -55,7 +58,7 @@ extension ProjectExecutionLifecycle on ProjectExecutionUseCase {
     _ => type.name,
   };
 
-  (ProjectBlockerType, String)? _taskBlocker(Task task) {
+  (ProjectBlockerType, String)? _taskBlocker(TaskAggregate task) {
     if (task.pendingApproval != null) {
       return (
         ProjectBlockerType.taskEditApproval,
@@ -76,7 +79,7 @@ extension ProjectExecutionLifecycle on ProjectExecutionUseCase {
 
   ProjectAggregate _syncCurrentTaskFromTask(
     ProjectAggregate project,
-    Task task,
+    TaskAggregate task,
     DateTime now,
   ) {
     final current = _activeProjectTask(project);
@@ -591,7 +594,7 @@ extension ProjectExecutionLifecycle on ProjectExecutionUseCase {
   String _buildTaskSystemPrompt(
     String baseSystemPrompt,
     ProjectAggregate project,
-    Task? task,
+    TaskAggregate? task,
   ) {
     final activeTaskLine = task == null
         ? ''

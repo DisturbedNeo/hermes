@@ -134,14 +134,11 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
     });
   }
 
-  String addTask(ProjectPlanTaskSpec spec, {String? commandId}) {
+  String addTask(ProjectTaskSpec spec, {String? commandId}) {
     return addTasks([spec], commandId: commandId).single;
   }
 
-  List<String> addTasks(
-    Iterable<ProjectPlanTaskSpec> specs, {
-    String? commandId,
-  }) {
+  List<String> addTasks(Iterable<ProjectTaskSpec> specs, {String? commandId}) {
     final items = [...specs];
     final fingerprint = _encode({
       'op': 'add_tasks',
@@ -609,7 +606,7 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
   /// by a model-supplied task record.
   List<String> splitTask({
     required String taskReference,
-    required Iterable<ProjectPlanTaskSpec> children,
+    required Iterable<ProjectTaskSpec> children,
     String? commandId,
   }) {
     final items = [...children];
@@ -691,9 +688,9 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
     });
   }
 
-  ProjectPlanTaskSpec _splitChildSpec({
+  ProjectTaskSpec _splitChildSpec({
     required ProjectTaskNode source,
-    required ProjectPlanTaskSpec child,
+    required ProjectTaskSpec child,
     required List<String> sourceContext,
     required List<String> inheritedCriteria,
     required List<String> inheritedDependencies,
@@ -714,7 +711,7 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
         );
       }
     }
-    return ProjectPlanTaskSpec(
+    return ProjectTaskSpec(
       ref: child.ref,
       title: child.title,
       objective: child.objective,
@@ -786,7 +783,7 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
             'Retry failed task after addressing the previous failure: '
             '$baseObjective';
         final failureContext = source.failureKey?.trim();
-        final spec = ProjectPlanTaskSpec(
+        final spec = ProjectTaskSpec(
           ref: ref,
           title: title?.trim().isNotEmpty == true
               ? title!.trim()

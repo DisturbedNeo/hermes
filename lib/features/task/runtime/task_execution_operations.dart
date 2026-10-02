@@ -1,10 +1,10 @@
 part of 'task_execution_coordinator.dart';
 
 extension TaskExecutionOperations on TaskExecutionUseCase {
-  Future<Task> _runNextStepCore({
+  Future<TaskAggregate> _runNextStepCore({
     required ModelConversationPort client,
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required String baseSystemPrompt,
     bool requirePhaseApproval = false,
     CompactionSettings? compactionSettings,
@@ -22,7 +22,7 @@ extension TaskExecutionOperations on TaskExecutionUseCase {
       snapshot: snapshot,
       persist: persist,
     );
-    Future<Task> save(Task task) =>
+    Future<TaskAggregate> save(TaskAggregate task) =>
         persist ? _persistTask(workspace.rootPath, task) : Future.value(task);
     if (working.isTerminal) return working;
     final step = working.nextRunnableStep;
@@ -257,7 +257,7 @@ extension TaskExecutionOperations on TaskExecutionUseCase {
   Future<TaskStepExecutionOutput> _executeStep({
     required ModelConversationPort client,
     required WorkspaceAttachment workspace,
-    required Task task,
+    required TaskAggregate task,
     required TaskStep step,
     required TaskRun run,
     required String baseSystemPrompt,
@@ -285,7 +285,7 @@ extension TaskExecutionOperations on TaskExecutionUseCase {
   Future<TaskStepExecutionOutput> _applyCompletionGates({
     required ModelConversationPort client,
     required WorkspaceAttachment workspace,
-    required Task task,
+    required TaskAggregate task,
     required TaskStep step,
     required TaskStepExecutionOutput execution,
     required String baseSystemPrompt,
@@ -393,7 +393,7 @@ extension TaskExecutionOperations on TaskExecutionUseCase {
   TaskTerminalToolCallResult _terminalTaskToolCall({
     required String callName,
     required Object args,
-    required Task task,
+    required TaskAggregate task,
     required TaskStep step,
     required List<TaskToolCallRecord> existingToolCalls,
     required TaskExecutionRequest executionRequest,
@@ -429,7 +429,7 @@ extension TaskExecutionOperations on TaskExecutionUseCase {
 
   TaskTerminalToolCallResult _invalidTaskControlCall(
     String error, {
-    required Task task,
+    required TaskAggregate task,
     required TaskStep step,
     required List<TaskToolCallRecord> existingToolCalls,
   }) {
@@ -460,7 +460,7 @@ extension TaskExecutionOperations on TaskExecutionUseCase {
 
   TaskTerminalToolCallResult _requestUserDecisionFromToolCall({
     required Object args,
-    required Task task,
+    required TaskAggregate task,
     required TaskStep step,
     required List<TaskToolCallRecord> existingToolCalls,
   }) {
@@ -508,7 +508,7 @@ extension TaskExecutionOperations on TaskExecutionUseCase {
 
   TaskTerminalToolCallResult _requestReplanFromToolCall({
     required Object args,
-    required Task task,
+    required TaskAggregate task,
     required TaskStep step,
     required List<TaskToolCallRecord> existingToolCalls,
   }) {
@@ -555,7 +555,7 @@ extension TaskExecutionOperations on TaskExecutionUseCase {
 
   TaskTerminalToolCallResult _finishStepFromToolCall({
     required Object args,
-    required Task task,
+    required TaskAggregate task,
     required TaskStep step,
     required List<TaskToolCallRecord> existingToolCalls,
     required TaskExecutionRequest executionRequest,
@@ -643,10 +643,10 @@ extension TaskExecutionOperations on TaskExecutionUseCase {
     );
   }
 
-  Future<Task> _replanUnfinished({
+  Future<TaskAggregate> _replanUnfinished({
     required ModelGenerationPort client,
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required String baseSystemPrompt,
     required String reason,
     ModelOutputSink? onModelOutput,

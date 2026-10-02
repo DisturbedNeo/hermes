@@ -14,9 +14,9 @@ class TaskCommandService {
 
   final TaskPersistenceStore _persistence;
 
-  Future<Task> approvePendingStep({
+  Future<TaskAggregate> approvePendingStep({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
   }) async {
     final approval = snapshot.pendingApproval;
     if (approval == null) return snapshot;
@@ -36,9 +36,9 @@ class TaskCommandService {
     return _save(workspace, updated);
   }
 
-  Future<Task> retryCurrentStep({
+  Future<TaskAggregate> retryCurrentStep({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
   }) async {
     final step = snapshot.currentStep ?? snapshot.nextRunnableStep;
     if (step == null) return snapshot;
@@ -57,9 +57,9 @@ class TaskCommandService {
     return _save(workspace, updated);
   }
 
-  Future<Task> skipCurrentStep({
+  Future<TaskAggregate> skipCurrentStep({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
   }) async {
     final step = snapshot.currentStep ?? snapshot.nextRunnableStep;
     if (step == null) return snapshot;
@@ -88,9 +88,9 @@ class TaskCommandService {
     return _save(workspace, updated);
   }
 
-  Future<Task> stopTask({
+  Future<TaskAggregate> stopTask({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
   }) => _save(
     workspace,
     snapshot.copyWith(
@@ -103,9 +103,9 @@ class TaskCommandService {
     ),
   );
 
-  Future<Task> answerOpenQuestion({
+  Future<TaskAggregate> answerOpenQuestion({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required String answer,
   }) async {
     final question = snapshot.pendingQuestion;
@@ -140,21 +140,26 @@ class TaskCommandService {
     return _save(workspace, updated);
   }
 
-  Future<Task> _save(WorkspaceAttachment workspace, Task task) async =>
-      (await _persistence.save(workspace.rootPath, task)).value;
+  Future<TaskAggregate> _save(
+    WorkspaceAttachment workspace,
+    TaskAggregate task,
+  ) async => (await _persistence.save(workspace.rootPath, task)).value;
 
-  Task _replaceStep(Task task, String stepId, TaskStep replacement) =>
-      task.copyWith(
-        steps: () {
-          final index = task.steps.indexWhere((step) => step.id == stepId);
-          if (index < 0) return task.steps;
-          final steps = [...task.steps];
-          steps[index] = replacement;
-          return steps;
-        }(),
-      );
+  TaskAggregate _replaceStep(
+    TaskAggregate task,
+    String stepId,
+    TaskStep replacement,
+  ) => task.copyWith(
+    steps: () {
+      final index = task.steps.indexWhere((step) => step.id == stepId);
+      if (index < 0) return task.steps;
+      final steps = [...task.steps];
+      steps[index] = replacement;
+      return steps;
+    }(),
+  );
 
-  Task _advanceAfterStep(Task snapshot, DateTime now) {
+  TaskAggregate _advanceAfterStep(TaskAggregate snapshot, DateTime now) {
     final next = snapshot.steps.firstWhere(
       (step) =>
           step.status == TaskStepStatus.pending ||

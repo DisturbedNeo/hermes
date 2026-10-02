@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hermes/features/chat/application/contracts/message_role.dart';
 import 'package:hermes/features/chat/presentation/style.dart';
 import 'package:hermes/features/chat/application/contracts/bubble.dart';
-import 'package:hermes/features/chat/presentation/chat_controller_port.dart';
+import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
 import 'package:hermes/features/chat/presentation/chat/message/bubble_surface.dart';
 import 'package:hermes/features/chat/presentation/chat/message/markdown_view.dart';
 import 'package:hermes/features/chat/presentation/chat/message/message_actions.dart';
@@ -130,7 +130,7 @@ class _MessageListWidgetState extends State<MessageListWidget> {
 
 /// Renders a single live chat message with its bubble and actions.
 class LiveMessageItemWidget extends StatefulWidget {
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
   final String messageId;
   final bool isSummary;
   final List<String> coveredMessageIds;

@@ -3,7 +3,7 @@ import 'package:hermes/features/persistence/infrastructure/workspace_persistence
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/persistence/infrastructure/atomic_json_snapshot_store.dart';
 import 'package:hermes/features/project/infrastructure/project_repository.dart';
 import 'package:path/path.dart' as path;

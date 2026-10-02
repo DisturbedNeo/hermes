@@ -2,8 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/chat/application/contracts/chat_message.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/features/project/runtime/project_model_calls.dart';
@@ -111,8 +111,8 @@ void main() {
   );
 }
 
-ChatCompletionToolCall _call(String name, Map<String, dynamic> arguments) =>
-    ChatCompletionToolCall(
+ModelToolCall _call(String name, Map<String, dynamic> arguments) =>
+    ModelToolCall(
       id: 'call_${name}_${arguments.hashCode}',
       name: name,
       arguments: jsonEncode(arguments),
@@ -129,7 +129,7 @@ ProjectEvidenceSnapshot _snapshot() => ProjectEvidenceSnapshot(
   collectedAt: DateTime(2026, 1, 1),
 );
 
-ProjectAggregate _project({List<Task> tasks = const []}) {
+ProjectAggregate _project({List<TaskAggregate> tasks = const []}) {
   final now = DateTime(2026, 1, 1);
   return ProjectAggregate(
     id: 'project_incremental',
@@ -157,9 +157,9 @@ ProjectAggregate _project({List<Task> tasks = const []}) {
   );
 }
 
-Task _task(String id) {
+TaskAggregate _task(String id) {
   final now = DateTime(2026, 1, 1);
-  return Task(
+  return TaskAggregate(
     id: id,
     title: 'Bounded implementation',
     objective: 'Implement the bounded outcome.',
@@ -184,13 +184,13 @@ Task _task(String id) {
 class _Client extends ChatClient {
   _Client(this._responses) : super(baseUrl: 'http://localhost', model: 'test');
 
-  final List<ChatCompletionToolCall> _responses;
+  final List<ModelToolCall> _responses;
   final List<String> toolNames = [];
   final List<List<ChatMessage>> seenMessages = [];
   var _index = 0;
 
   @override
-  Future<ChatCompletionResponse> completeChat({
+  Future<ModelCompletion> completeChat({
     required List<ChatMessage> messages,
     ModelRequestOptions? extraParams,
     Object? cancellationToken,
@@ -200,10 +200,7 @@ class _Client extends ChatClient {
   }) async {
     seenMessages.add(List<ChatMessage>.from(messages));
     if (_index < _responses.length) toolNames.add(_responses[_index].name);
-    return ChatCompletionResponse(
-      content: '',
-      toolCalls: [_responses[_index++]],
-    );
+    return ModelCompletion(content: '', toolCalls: [_responses[_index++]]);
   }
 
   @override

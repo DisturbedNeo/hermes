@@ -6,8 +6,8 @@ import 'package:hermes/features/chat/application/contracts/bubble.dart';
 import 'package:hermes/features/chat/application/contracts/chat_token.dart';
 import 'package:hermes/features/chat/application/contracts/chat_persistence.dart';
 import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/contracts/execution_settings.dart';
 import 'package:hermes/features/model/application/model_configuration.dart';
 import 'package:hermes/features/chat/application/contracts/saved_chat.dart';
@@ -23,8 +23,10 @@ import 'package:hermes/features/chat/runtime/chat_application/chat_tool_executio
 import 'package:hermes/features/chat/runtime/chat_application/chat_stream.dart';
 import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';
 import 'package:hermes/features/project/application/project_application/project_ports.dart';
+import 'package:hermes/features/project/application/project_application/project_workflow_port.dart';
 import 'package:hermes/features/persistence/application/persistence_contracts.dart';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
+import 'package:hermes/features/task/application/task_application/task_workflow_port.dart';
 import 'package:hermes/features/task/application/contracts/task_commands.dart';
 import 'package:hermes/features/project/application/contracts/project_commands.dart';
 import 'package:hermes/features/task/application/contracts/task_summary.dart';
@@ -35,17 +37,15 @@ import 'package:hermes/features/tools/application/tool_protocol_adapter.dart';
 import 'package:hermes/features/workspace/application/workspace_ports.dart';
 
 import 'package:hermes/core/disposable.dart';
-import 'package:hermes/features/chat/runtime/chat_workflow_compatibility.dart';
-
-import 'package:hermes/features/chat/runtime/chat_session_runtime.dart';
+import 'package:hermes/features/chat/runtime/chat_session_orchestrator.dart';
 import 'package:hermes/features/chat/infrastructure/chat_panel_protocol_adapter.dart';
 
 class ChatRuntimeController extends ChangeNotifier
     implements Disposable, ChatSessionHost, ChatTabPresentationPort {
   static const String defaultSystemPromptName =
-      ChatSessionRuntime.defaultSystemPromptName;
+      ChatSessionOrchestrator.defaultSystemPromptName;
   static const String defaultSystemPromptText =
-      ChatSessionRuntime.defaultSystemPromptText;
+      ChatSessionOrchestrator.defaultSystemPromptText;
 
   ChatRuntimeController({
     String? tabId,
@@ -57,21 +57,21 @@ class ChatRuntimeController extends ChangeNotifier
     required TaskSessionPort taskSessions,
     required TaskPresentationPort taskPresentation,
     required ChatPanelProtocolAdapter panelProtocol,
-    required Object taskPlanning,
-    required Object taskExecution,
-    required Object taskRecovery,
+    required TaskWorkflowPort taskPlanning,
+    required TaskWorkflowPort taskExecution,
+    required TaskWorkflowPort taskRecovery,
     required ProjectWorkflowQueryPort projectQueries,
     required ProjectSessionPort projectSessions,
-    required Object projectPlanning,
-    required Object projectCommands,
-    required Object projectExecution,
-    required Object projectRecovery,
+    required ProjectWorkflowPort projectPlanning,
+    required ProjectWorkflowPort projectCommands,
+    required ProjectWorkflowPort projectExecution,
+    required ProjectWorkflowPort projectRecovery,
     required ChatLibraryService chatLibrary,
     required WorkspacePort workspaceService,
     required ChatRuntimePreferencesPort preferencesService,
     ChatCommandCoordinator? commandCoordinator,
     SystemPromptSnapshot? initialSystemPromptSnapshot,
-  }) : _delegate = ChatSessionRuntime(
+  }) : _delegate = ChatSessionOrchestrator(
          tabId: tabId,
          serverManager: serverManager,
          toolService: toolService,
@@ -81,47 +81,15 @@ class ChatRuntimeController extends ChangeNotifier
          taskSessions: taskSessions,
          taskPresentation: taskPresentation,
          panelProtocol: panelProtocol,
-         taskPlanning: resolveTaskWorkflowPort(
-           taskPlanning,
-           taskExecution,
-           taskRecovery,
-         ),
-         taskExecution: resolveTaskWorkflowPort(
-           taskPlanning,
-           taskExecution,
-           taskRecovery,
-         ),
-         taskRecovery: resolveTaskWorkflowPort(
-           taskPlanning,
-           taskExecution,
-           taskRecovery,
-         ),
+         taskPlanning: taskPlanning,
+         taskExecution: taskExecution,
+         taskRecovery: taskRecovery,
          projectQueries: projectQueries,
          projectSessions: projectSessions,
-         projectPlanning: resolveProjectWorkflowPort(
-           projectPlanning,
-           projectCommands,
-           projectExecution,
-           projectRecovery,
-         ),
-         projectCommands: resolveProjectWorkflowPort(
-           projectPlanning,
-           projectCommands,
-           projectExecution,
-           projectRecovery,
-         ),
-         projectExecution: resolveProjectWorkflowPort(
-           projectPlanning,
-           projectCommands,
-           projectExecution,
-           projectRecovery,
-         ),
-         projectRecovery: resolveProjectWorkflowPort(
-           projectPlanning,
-           projectCommands,
-           projectExecution,
-           projectRecovery,
-         ),
+         projectPlanning: projectPlanning,
+         projectCommands: projectCommands,
+         projectExecution: projectExecution,
+         projectRecovery: projectRecovery,
          chatLibrary: chatLibrary,
          workspaceService: workspaceService,
          preferencesService: preferencesService,
@@ -131,7 +99,7 @@ class ChatRuntimeController extends ChangeNotifier
     _delegate.addListener(_forwardDelegateNotification);
   }
 
-  final ChatSessionRuntime _delegate;
+  final ChatSessionOrchestrator _delegate;
   bool _disposed = false;
   Future<void>? _disposeFuture;
 
@@ -192,7 +160,8 @@ class ChatRuntimeController extends ChangeNotifier
   List<ProjectSummary> get availableProjects => _delegate.availableProjects;
 
   TaskPanelReadModel? get activeTask => _delegate.state.activeTask;
-  void dispatchActiveTask(Task? value) => _delegate.dispatchActiveTask(value);
+  void dispatchActiveTask(TaskAggregate? value) =>
+      _delegate.dispatchActiveTask(value);
 
   List<TaskSummary> get availableTasks => _delegate.availableTasks;
 

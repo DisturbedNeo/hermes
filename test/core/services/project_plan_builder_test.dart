@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/runtime/project_plan_builder.dart';
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
 import 'package:hermes/features/project/runtime/project_plan_revision_service.dart';
@@ -19,7 +19,7 @@ void main() {
         statement: 'The bounded implementation is verified.',
       );
       final taskId = builder.addTask(
-        const ProjectPlanTaskSpec(
+        const ProjectTaskSpec(
           ref: 'implementation',
           title: 'Implement the bounded slice',
           objective: 'Implement one bounded slice of the outcome.',
@@ -70,7 +70,7 @@ void main() {
   test('links dependencies and applies an explicit deferral', () async {
     final builder = ProjectPlanBuilder(project: _project());
     final firstId = builder.addTask(
-      const ProjectPlanTaskSpec(
+      const ProjectTaskSpec(
         ref: 'first',
         title: 'First bounded slice',
         objective: 'Implement the first bounded slice.',
@@ -80,7 +80,7 @@ void main() {
       ),
     );
     final secondId = builder.addTask(
-      const ProjectPlanTaskSpec(
+      const ProjectTaskSpec(
         ref: 'second',
         title: 'Second bounded slice',
         objective: 'Implement the second bounded slice.',
@@ -156,7 +156,7 @@ void main() {
 
   test('command idempotency includes artifact metadata', () {
     final builder = ProjectPlanBuilder(project: _project());
-    final spec = const ProjectPlanTaskSpec(
+    final spec = const ProjectTaskSpec(
       ref: 'artifact_task',
       title: 'Produce output',
       objective: 'Produce the bounded output.',
@@ -169,7 +169,7 @@ void main() {
 
     expect(
       () => builder.addTask(
-        const ProjectPlanTaskSpec(
+        const ProjectTaskSpec(
           ref: 'artifact_task',
           title: 'Produce output',
           objective: 'Produce the bounded output.',
@@ -192,7 +192,7 @@ void main() {
 
   test('rejects duplicate references without partially changing the draft', () {
     final builder = ProjectPlanBuilder(project: _project());
-    final spec = const ProjectPlanTaskSpec(
+    final spec = const ProjectTaskSpec(
       ref: 'same',
       title: 'A bounded slice',
       objective: 'Implement a bounded slice.',
@@ -216,7 +216,7 @@ void main() {
 
     expect(
       () => builder.addTasks([
-        const ProjectPlanTaskSpec(
+        const ProjectTaskSpec(
           ref: 'valid_batch_item',
           title: 'Another bounded slice',
           objective: 'Implement another bounded slice.',
@@ -224,7 +224,7 @@ void main() {
           doneCriteria: ['The other slice is checked.'],
           outOfScope: ['Unrelated work.'],
         ),
-        const ProjectPlanTaskSpec(
+        const ProjectTaskSpec(
           ref: 'invalid_batch_item',
           title: 'Invalid bounded slice',
           objective: 'Implement an invalid bounded slice.',
@@ -243,7 +243,7 @@ void main() {
 
   test('retries the same command without creating another task', () {
     final builder = ProjectPlanBuilder(project: _project());
-    const spec = ProjectPlanTaskSpec(
+    const spec = ProjectTaskSpec(
       ref: 'idempotent',
       title: 'An idempotent slice',
       objective: 'Implement an idempotent bounded slice.',
@@ -258,7 +258,7 @@ void main() {
     expect(retryId, firstId);
     expect(
       () => builder.addTask(
-        const ProjectPlanTaskSpec(
+        const ProjectTaskSpec(
           ref: 'idempotent',
           title: 'A changed slice',
           objective: 'Implement a changed bounded slice.',
@@ -285,7 +285,7 @@ void main() {
       for (var index = 0; index < 50; index++) {
         ids.add(
           builder.addTask(
-            ProjectPlanTaskSpec(
+            ProjectTaskSpec(
               ref: 'sequence_${sequence}_$index',
               title: 'Generated task $sequence-$index',
               objective: 'Implement generated slice $sequence-$index.',
@@ -365,12 +365,12 @@ void main() {
       final childIds = builder.splitTask(
         taskReference: 'parent',
         children: const [
-          ProjectPlanTaskSpec(
+          ProjectTaskSpec(
             ref: 'child_one',
             title: 'First child',
             objective: 'Implement the first child slice.',
           ),
-          ProjectPlanTaskSpec(
+          ProjectTaskSpec(
             ref: 'child_two',
             title: 'Second child',
             objective: 'Implement the second child slice.',
@@ -407,12 +407,12 @@ void main() {
     final childIds = builder.splitTask(
       taskReference: 'parent',
       children: const [
-        ProjectPlanTaskSpec(
+        ProjectTaskSpec(
           ref: 'child_one',
           title: 'First child',
           objective: 'Implement the first child slice.',
         ),
-        ProjectPlanTaskSpec(
+        ProjectTaskSpec(
           ref: 'child_two',
           title: 'Second child',
           objective: 'Implement the second child slice.',
@@ -437,7 +437,7 @@ void main() {
       builder.splitTask(
         taskReference: 'parent',
         children: const [
-          ProjectPlanTaskSpec(
+          ProjectTaskSpec(
             ref: 'child',
             title: 'Bounded child',
             objective: 'Implement the bounded child slice.',
@@ -466,7 +466,7 @@ void main() {
   );
 }
 
-ProjectAggregate _project({List<Task> tasks = const []}) {
+ProjectAggregate _project({List<TaskAggregate> tasks = const []}) {
   final now = DateTime(2026, 1, 1);
   return ProjectAggregate(
     id: 'project_1',
@@ -491,10 +491,10 @@ ProjectAggregate _project({List<Task> tasks = const []}) {
   );
 }
 
-Task _task(String id) {
+TaskAggregate _task(String id) {
   final now = DateTime(2026, 1, 1);
   final objective = 'Implement bounded slice $id.';
-  return Task(
+  return TaskAggregate(
     id: id,
     title: 'Bounded slice $id',
     objective: objective,

@@ -63,7 +63,7 @@ class TaskPlanStepSpec {
 }
 
 class TaskPlanBuilderPreview {
-  final Task task;
+  final TaskAggregate task;
   final List<TaskPlanIssue> issues;
 
   const TaskPlanBuilderPreview({required this.task, required this.issues});
@@ -72,7 +72,7 @@ class TaskPlanBuilderPreview {
 }
 
 class TaskPlanBuilderCommit {
-  final Task task;
+  final TaskAggregate task;
   final List<TaskPlanIssue> issues;
 
   const TaskPlanBuilderCommit({required this.task, required this.issues});
@@ -85,7 +85,7 @@ class TaskPlanBuilderCommit {
 /// result after the command loop succeeds.
 class TaskPlanBuilder {
   TaskPlanBuilder({
-    required Task task,
+    required TaskAggregate task,
     required this.maxSteps,
     this.projectGoal = '',
     this.doneCriteria = const [],
@@ -125,7 +125,7 @@ class TaskPlanBuilder {
     _dedupeTaskGates();
   }
 
-  final Task _source;
+  final TaskAggregate _source;
   final int maxSteps;
   final String projectGoal;
   final List<String> doneCriteria;
@@ -148,7 +148,7 @@ class TaskPlanBuilder {
   String? _replanReason;
   PendingTaskQuestion? _pendingQuestion;
 
-  Task get source => _source;
+  TaskAggregate get source => _source;
   List<TaskStep> get steps => List.unmodifiable(_steps);
   List<TaskGate> get taskGates => List.unmodifiable(_taskGates);
 
@@ -434,7 +434,7 @@ class TaskPlanBuilder {
   final Map<String, String> _stepRefs = {};
   final Map<String, _AppliedCommand> _commands = {};
 
-  Task _materialize() {
+  TaskAggregate _materialize() {
     final nextStep = _nextStepId(_steps);
     final hasQuestion = _pendingQuestion != null;
     final status = hasQuestion
@@ -465,7 +465,7 @@ class TaskPlanBuilder {
     );
   }
 
-  List<TaskPlanIssue> _validate(Task task) {
+  List<TaskPlanIssue> _validate(TaskAggregate task) {
     final issues = <TaskPlanIssue>[];
     final sourceHasUnfinishedSteps = _source.steps.any(
       (step) => !_isPreserved(step),
@@ -740,7 +740,7 @@ class TaskPlanBuilder {
     ];
   }
 
-  bool _hasMatchingGate(Task task, TaskGate required) {
+  bool _hasMatchingGate(TaskAggregate task, TaskGate required) {
     return task.gates.any((gate) {
       if (gate.id != required.id) {
         return false;

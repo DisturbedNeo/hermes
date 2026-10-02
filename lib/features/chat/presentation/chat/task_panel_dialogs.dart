@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:hermes/features/chat/presentation/chat_controller_port.dart';
+import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
 
 /// Collects optional context for a user-requested project replan.
 class ProjectReplanDialog extends StatefulWidget {
@@ -272,7 +272,7 @@ class _EditPlanDialogState extends State<EditPlanDialog> {
 /// Dialog for viewing an artifact's file content.
 class ArtifactViewerDialog extends StatefulWidget {
   final String path;
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
   final void Function(String error)? onError;
 
   const ArtifactViewerDialog({
@@ -286,7 +286,7 @@ class ArtifactViewerDialog extends StatefulWidget {
   static Future<void> show(
     BuildContext context, {
     required String path,
-    required ChatController chat,
+    required ChatTabPresentationPort chat,
     void Function(String error)? onError,
   }) {
     return showDialog<void>(

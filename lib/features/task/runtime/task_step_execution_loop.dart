@@ -4,7 +4,7 @@ typedef TaskTerminalToolCall =
     TaskTerminalToolCallResult Function({
       required String callName,
       required Object args,
-      required Task task,
+      required TaskAggregate task,
       required TaskStep step,
       required List<TaskToolCallRecord> existingToolCalls,
       required TaskExecutionRequest executionRequest,
@@ -13,7 +13,7 @@ typedef TaskTerminalToolCall =
 typedef TaskStepOutputParser =
     TaskStepExecutionOutput Function(
       String raw,
-      Task task,
+      TaskAggregate task,
       TaskStep step,
       List<TaskToolCallRecord> toolCalls,
       TaskExecutionRequest executionRequest,
@@ -21,7 +21,7 @@ typedef TaskStepOutputParser =
 
 typedef TaskStepPromptBuilder =
     String Function(
-      Task task,
+      TaskAggregate task,
       TaskStep step,
       WorkspaceAttachment workspace,
       TaskExecutionRequest executionRequest,
@@ -93,7 +93,7 @@ class TaskStepExecutionLoop {
   Future<TaskStepExecutionOutput> execute({
     required ModelConversationPort client,
     required WorkspaceAttachment workspace,
-    required Task task,
+    required TaskAggregate task,
     required TaskStep step,
     required TaskRun run,
     required String baseSystemPrompt,

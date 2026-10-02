@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/application/contracts/project_task_models.dart';
 import 'package:hermes/features/task/application/task_application/task_plan_materializer.dart';
 
@@ -26,7 +26,7 @@ void main() {
       startedAt: now,
       completedAt: now,
     );
-    final existing = Task(
+    final existing = TaskAggregate(
       id: 'task_1',
       title: 'Old title',
       objective: 'Old objective',

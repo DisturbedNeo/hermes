@@ -23,7 +23,6 @@ import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/core/disposable.dart';
 import 'package:hermes/features/chat/application/contracts/chat_workspace_contracts.dart';
 import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
-import 'package:hermes/features/chat/runtime/chat_workflow_compatibility.dart';
 
 typedef ChatTabFactory =
     ChatRuntimeController Function({
@@ -92,15 +91,15 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
     required TaskSessionPort taskSessions,
     required TaskPresentationPort taskPresentation,
     required ChatPanelProtocolAdapter panelProtocol,
-    required Object taskPlanning,
-    required Object taskExecution,
-    required Object taskRecovery,
+    required TaskWorkflowPort taskPlanning,
+    required TaskWorkflowPort taskExecution,
+    required TaskWorkflowPort taskRecovery,
     required ProjectWorkflowQueryPort projectQueries,
     required ProjectSessionPort projectSessions,
-    required Object projectPlanning,
-    required Object projectCommands,
-    required Object projectExecution,
-    required Object projectRecovery,
+    required ProjectWorkflowPort projectPlanning,
+    required ProjectWorkflowPort projectCommands,
+    required ProjectWorkflowPort projectExecution,
+    required ProjectWorkflowPort projectRecovery,
     required WorkspacePort workspaceService,
     required ChatRuntimePreferencesPort preferencesService,
     ChatTabFactory? tabFactory,
@@ -113,47 +112,15 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
        _taskSessions = taskSessions,
        _taskPresentation = taskPresentation,
        _panelProtocol = panelProtocol,
-       _taskPlanning = resolveTaskWorkflowPort(
-         taskPlanning,
-         taskExecution,
-         taskRecovery,
-       ),
-       _taskExecution = resolveTaskWorkflowPort(
-         taskPlanning,
-         taskExecution,
-         taskRecovery,
-       ),
-       _taskRecovery = resolveTaskWorkflowPort(
-         taskPlanning,
-         taskExecution,
-         taskRecovery,
-       ),
+       _taskPlanning = taskPlanning,
+       _taskExecution = taskExecution,
+       _taskRecovery = taskRecovery,
        _projectQueries = projectQueries,
        _projectSessions = projectSessions,
-       _projectPlanning = resolveProjectWorkflowPort(
-         projectPlanning,
-         projectCommands,
-         projectExecution,
-         projectRecovery,
-       ),
-       _projectCommands = resolveProjectWorkflowPort(
-         projectPlanning,
-         projectCommands,
-         projectExecution,
-         projectRecovery,
-       ),
-       _projectExecution = resolveProjectWorkflowPort(
-         projectPlanning,
-         projectCommands,
-         projectExecution,
-         projectRecovery,
-       ),
-       _projectRecovery = resolveProjectWorkflowPort(
-         projectPlanning,
-         projectCommands,
-         projectExecution,
-         projectRecovery,
-       ),
+       _projectPlanning = projectPlanning,
+       _projectCommands = projectCommands,
+       _projectExecution = projectExecution,
+       _projectRecovery = projectRecovery,
        _workspaceService = workspaceService,
        _preferencesService = preferencesService,
        _tabFactory = tabFactory {

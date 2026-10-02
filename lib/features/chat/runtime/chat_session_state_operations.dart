@@ -606,7 +606,7 @@ extension ChatSessionStateOperations on ChatSessionOrchestrator {
     );
   }
 
-  String _buildTaskSystemPrompt(Task snapshot) {
+  String _buildTaskSystemPrompt(TaskAggregate snapshot) {
     return _buildSystemPrompt(currentUserRequest: snapshot.originalPrompt);
   }
 

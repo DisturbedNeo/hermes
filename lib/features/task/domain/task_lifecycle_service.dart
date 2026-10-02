@@ -30,7 +30,7 @@ class InvalidTaskTransitionException implements Exception {
 }
 
 class TaskTransitionResult {
-  final Task task;
+  final TaskAggregate task;
   final TaskStatus from;
   final TaskStatus to;
   final TaskLifecycleTrigger trigger;
@@ -50,7 +50,7 @@ class TaskLifecycleService {
   const TaskLifecycleService();
 
   TaskTransitionResult transition({
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required TaskStatus to,
     required TaskLifecycleTrigger trigger,
     String reason = '',
@@ -76,7 +76,7 @@ class TaskLifecycleService {
   }
 
   void _validate(
-    Task task,
+    TaskAggregate task,
     TaskStatus to,
     TaskLifecycleTrigger trigger,
     String reason,

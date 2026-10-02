@@ -5,7 +5,8 @@ import 'package:hermes/features/task/domain/task.dart';
 class TaskPersistenceAdapter {
   const TaskPersistenceAdapter();
 
-  TaskSnapshotDto toDto(Task task) => TaskSnapshotDto.fromAggregate(task);
+  TaskSnapshotDto toDto(TaskAggregate task) =>
+      TaskSnapshotDto.fromAggregate(task);
 
-  Task fromDto(TaskSnapshotDto dto) => dto.toAggregate();
+  TaskAggregate fromDto(TaskSnapshotDto dto) => dto.toAggregate();
 }

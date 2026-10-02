@@ -615,5 +615,3 @@ class PendingTaskQuestion with PendingTaskQuestionMappable {
     required this.createdAt,
   });
 }
-
-typedef Task = TaskSnapshotAggregate;

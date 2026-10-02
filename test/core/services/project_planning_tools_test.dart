@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/planning_test_helpers.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/runtime/project_planning_tools.dart';
 import 'package:hermes/features/project/runtime/project_planning_workspace_reader.dart';
 import 'package:hermes/features/project/runtime/project_view_service.dart';
@@ -334,7 +334,7 @@ ProjectPlanningToolRegistry _registry() => ProjectPlanningToolRegistry(
   ),
 );
 
-ProjectAggregate _project({List<Task> tasks = const []}) {
+ProjectAggregate _project({List<TaskAggregate> tasks = const []}) {
   final now = DateTime(2026, 1, 1);
   return ProjectAggregate(
     id: 'project_1',
@@ -359,10 +359,10 @@ ProjectAggregate _project({List<Task> tasks = const []}) {
   );
 }
 
-Task _task(String id) {
+TaskAggregate _task(String id) {
   final now = DateTime(2026, 1, 1);
   final objective = 'Implement bounded slice $id.';
-  return Task(
+  return TaskAggregate(
     id: id,
     title: 'Bounded slice $id',
     objective: objective,

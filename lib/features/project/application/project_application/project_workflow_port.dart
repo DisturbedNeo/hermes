@@ -5,7 +5,7 @@ import 'package:hermes/features/model/application/model_output.dart';
 import 'package:hermes/features/model/application/model_capabilities.dart';
 import 'package:hermes/features/persistence/application/persistence_contracts.dart';
 import 'package:hermes/features/project/application/contracts/project_commands.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/application/contracts/task_summary.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 

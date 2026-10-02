@@ -2,17 +2,16 @@ import 'dart:async';
 
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/persistence/application/persistence_contracts.dart';
-import 'package:hermes/features/project/infrastructure/project_snapshot_migrator.dart';
 import 'package:hermes/features/project/infrastructure/project_transaction_coordinator.dart';
 import 'package:hermes/features/project/project_aggregate_repository_port.dart';
 import 'package:hermes/features/persistence/application/project_snapshot_store_port.dart';
 import 'package:hermes/features/project/application/contracts/project_checkpoint.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/persistence/application/task_snapshot_store_port.dart';
 import 'package:hermes/features/workspace/application/workspace_ports.dart';
 
-/// Reads and coordinates project aggregates while delegating migration and
-/// transaction mechanics to focused infrastructure collaborators.
+/// Reads and coordinates project aggregates while delegating transaction
+/// mechanics to a focused infrastructure collaborator.
 class ProjectAggregateRepository implements ProjectAggregateRepositoryPort {
   ProjectAggregateRepository({
     required ProjectSnapshotStorePort projectRepository,
@@ -22,10 +21,6 @@ class ProjectAggregateRepository implements ProjectAggregateRepositoryPort {
   }) : _projects = projectRepository,
        _tasks = taskRepository,
        _coordinator = coordinator,
-       _migrator = ProjectSnapshotMigrator(
-         projectRepository: projectRepository,
-         taskRepository: taskRepository,
-       ),
        _transactions = ProjectTransactionCoordinator(
          projectRepository: projectRepository,
          taskRepository: taskRepository,
@@ -35,7 +30,6 @@ class ProjectAggregateRepository implements ProjectAggregateRepositoryPort {
   final ProjectSnapshotStorePort _projects;
   final TaskSnapshotStorePort _tasks;
   final PersistencePort _coordinator;
-  final ProjectSnapshotMigrator _migrator;
   final ProjectTransactionCoordinator _transactions;
   final FutureOr<void> Function(String phase)? onTransactionPhase;
 
@@ -63,7 +57,6 @@ class ProjectAggregateRepository implements ProjectAggregateRepositoryPort {
     String? chatSessionId,
     bool includeHistory = true,
   }) async {
-    await _migrator.migrateLegacyEmbeddedTasks(workspaceRoot, projectId);
     final projectSnapshot = await _projects.loadProjectSnapshotUnlocked(
       workspaceRoot,
       projectId,
@@ -92,7 +85,7 @@ class ProjectAggregateRepository implements ProjectAggregateRepositoryPort {
       for (final taskId in projectSnapshot.value.taskIds)
         _readTask(workspaceRoot, taskId, includeHistory: includeHistory),
     ]);
-    final canonicalTasks = <Task>[];
+    final canonicalTasks = <TaskAggregate>[];
     for (final read in reads) {
       final task = read.snapshot;
       if (read.error != null) {
@@ -223,7 +216,7 @@ class ProjectAggregateRepository implements ProjectAggregateRepositoryPort {
   Future<ProjectAggregateCommitResult> commit({
     required String workspaceRoot,
     required ProjectAggregate project,
-    required Iterable<Task> tasks,
+    required Iterable<TaskAggregate> tasks,
     Set<String> deletedTaskIds = const {},
     ProjectPersistenceDiagnostics? knownHealth,
     ProjectPersistenceCheckpoint checkpoint =
@@ -343,7 +336,7 @@ class _TaskLoadRead {
   const _TaskLoadRead(this.taskId, this.snapshot, [this.error]);
 
   final String taskId;
-  final PersistedSnapshot<Task>? snapshot;
+  final PersistedSnapshot<TaskAggregate>? snapshot;
   final Object? error;
 }
 

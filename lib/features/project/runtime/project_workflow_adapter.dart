@@ -5,14 +5,13 @@ import 'package:hermes/features/model/application/model_output.dart';
 import 'package:hermes/features/project/application/project_application/project_execution_port.dart';
 import 'package:hermes/features/project/application/project_application/project_workflow_port.dart';
 import 'package:hermes/features/project/application/contracts/project_commands.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/runtime/project_runtime_engine.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/application/contracts/task_summary.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 
-/// Converts the legacy owner-internal project runtime into the aggregate-free
+/// Converts the owner-internal project runtime into the aggregate-free
 /// feature-facing workflow port. Hydration happens only inside this adapter.
 class ProjectWorkflowAdapter implements ProjectWorkflowPort {
   const ProjectWorkflowAdapter({required ProjectRuntimeApplication delegate})
@@ -43,7 +42,7 @@ class ProjectWorkflowAdapter implements ProjectWorkflowPort {
 
   ProjectWorkflowResult _projectResult(
     ProjectAggregate project, {
-    Task? activeTask,
+    TaskAggregate? activeTask,
   }) => ProjectWorkflowResult(
     project: _projectSummary(project),
     activeTask: activeTask == null ? null : _taskSummary(activeTask),
@@ -59,7 +58,7 @@ class ProjectWorkflowAdapter implements ProjectWorkflowPort {
     chatSessionId: project.chatSessionId,
   );
 
-  TaskSummary _taskSummary(Task task) => TaskSummary(
+  TaskSummary _taskSummary(TaskAggregate task) => TaskSummary(
     id: task.id,
     title: task.title,
     status: task.status,

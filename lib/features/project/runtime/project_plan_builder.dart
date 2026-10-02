@@ -26,9 +26,6 @@ class ProjectPlanBuilderException implements Exception {
   String toString() => '$code${path.isEmpty ? '' : ' ($path)'}: $message';
 }
 
-/// Backwards-compatible name for callers that used the older builder API.
-typedef ProjectPlanTaskSpec = ProjectTaskSpec;
-
 enum ProjectPlanTaskDisposition { deferred, obsolete }
 
 class ProjectPlanBuilderCommit {

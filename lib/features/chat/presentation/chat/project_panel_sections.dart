@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hermes/features/chat/presentation/a11y.dart';
 import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
-import 'package:hermes/features/chat/presentation/chat_controller_port.dart';
+import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
 import 'package:hermes/features/project/application/project_command_protocol_adapter.dart';
 import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
 import 'package:hermes/features/chat/presentation/chat/task_panel_dialogs.dart';
@@ -552,7 +552,7 @@ class _RoadmapTaskTile extends StatelessWidget {
 
 class ProjectEvidenceSection extends StatelessWidget {
   final ProjectPanelReadModel project;
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
 
   const ProjectEvidenceSection({
     super.key,
@@ -601,7 +601,7 @@ class _EvidenceGroup extends StatelessWidget {
   final String title;
   final String criterionId;
   final List<ProjectEvidence> evidence;
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
 
   const _EvidenceGroup({
     required this.title,
@@ -638,7 +638,7 @@ class _EvidenceGroup extends StatelessWidget {
 
 class _EvidenceTile extends StatelessWidget {
   final ProjectEvidence evidence;
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
 
   const _EvidenceTile({required this.evidence, required this.chat});
 
@@ -696,7 +696,7 @@ class _EvidenceTile extends StatelessWidget {
 
 class ProjectRevisionSection extends StatelessWidget {
   final ProjectPanelReadModel project;
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
 
   const ProjectRevisionSection({
     super.key,
@@ -731,7 +731,7 @@ class ProjectRevisionSection extends StatelessWidget {
 class _PendingRevision extends StatelessWidget {
   final ProjectPanelReadModel project;
   final PendingProjectPlanApproval pending;
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
 
   const _PendingRevision({
     required this.project,
@@ -1058,7 +1058,7 @@ class _Subheading extends StatelessWidget {
 
 Future<void> _showProjectEditor(
   BuildContext context,
-  ChatController chat,
+  ChatTabPresentationPort chat,
 ) async {
   final initial = chat.activeProjectJson;
   if (initial == null) return;

@@ -8,10 +8,10 @@ library;
 import 'package:hermes/core/sentinel.dart' show kSentinel, resolve;
 import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
 import 'package:hermes/features/project/application/contracts/project_task_models.dart';
-import 'package:hermes/features/task/application/contracts/task_state_models.dart'
+import 'package:hermes/features/persistence/infrastructure/dto/task_state_models.dart'
     hide TaskSnapshotAggregate;
 
-export 'package:hermes/features/task/application/contracts/task_state_models.dart'
+export 'package:hermes/features/persistence/infrastructure/dto/task_state_models.dart'
     hide TaskSnapshotAggregate;
 
 class TaskAggregate implements TaskProjectNodeSource, TaskExecutionSource {
@@ -283,5 +283,3 @@ class TaskAggregate implements TaskProjectNodeSource, TaskExecutionSource {
     return null;
   }
 }
-
-typedef Task = TaskAggregate;

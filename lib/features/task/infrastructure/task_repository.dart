@@ -9,7 +9,6 @@ import 'package:hermes/features/workspace/application/workspace_ports.dart';
 import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
 import 'package:hermes/features/persistence/application/task_snapshot_store_port.dart';
 import 'package:path/path.dart' as path;
-import 'package:hermes/features/persistence/application/schema_migrations.dart';
 import 'package:hermes/features/persistence/infrastructure/dto/task_persistence_adapter.dart';
 import 'package:hermes/features/persistence/infrastructure/dto/task_snapshot_dto.dart';
 
@@ -93,7 +92,7 @@ class TaskRepository
     return summaries;
   }
 
-  Future<PersistedSnapshot<Task>?> loadLatestTask(
+  Future<PersistedSnapshot<TaskAggregate>?> loadLatestTask(
     String workspaceRoot, {
     String? chatSessionId,
     String? projectId,
@@ -111,7 +110,7 @@ class TaskRepository
     );
   }
 
-  Future<PersistedSnapshot<Task>?> loadTask(
+  Future<PersistedSnapshot<TaskAggregate>?> loadTask(
     String workspaceRoot,
     String taskId, {
     String? chatSessionId,
@@ -128,7 +127,7 @@ class TaskRepository
     return snapshot;
   }
 
-  Future<PersistedSnapshot<Task>?> loadTaskSnapshot(
+  Future<PersistedSnapshot<TaskAggregate>?> loadTaskSnapshot(
     String workspaceRoot,
     String taskId, {
     String? chatSessionId,
@@ -163,7 +162,7 @@ class TaskRepository
   /// The individual filesystem reads are allowed to overlap, but callers still
   /// get one coordinated persistence operation. This is used by aggregate
   /// project loads and commits to avoid one lock acquisition per task.
-  Future<Map<String, PersistedSnapshot<Task>?>> loadTaskSnapshots(
+  Future<Map<String, PersistedSnapshot<TaskAggregate>?>> loadTaskSnapshots(
     String workspaceRoot,
     Iterable<String> taskIds, {
     String? chatSessionId,
@@ -183,7 +182,8 @@ class TaskRepository
   }
 
   /// Internal batch load. The caller must hold the workspace lock.
-  Future<Map<String, PersistedSnapshot<Task>?>> loadTaskSnapshotsUnlocked(
+  Future<Map<String, PersistedSnapshot<TaskAggregate>?>>
+  loadTaskSnapshotsUnlocked(
     String workspaceRoot,
     Iterable<String> taskIds, {
     String? chatSessionId,
@@ -195,7 +195,7 @@ class TaskRepository
     for (final taskId in taskIds) {
       if (seen.add(taskId)) ids.add(taskId);
     }
-    final snapshots = await Future.wait<PersistedSnapshot<Task>?>([
+    final snapshots = await Future.wait<PersistedSnapshot<TaskAggregate>?>([
       for (final taskId in ids)
         _loadTaskSnapshotUnlocked(
           workspaceRoot,
@@ -211,7 +211,7 @@ class TaskRepository
     };
   }
 
-  Future<PersistedSnapshot<Task>?> _loadTaskSnapshotUnlocked(
+  Future<PersistedSnapshot<TaskAggregate>?> _loadTaskSnapshotUnlocked(
     String workspaceRoot,
     String taskId, {
     String? chatSessionId,
@@ -242,11 +242,7 @@ class TaskRepository
     if (raw == null) return null;
     final envelope = SnapshotEnvelope.decode(raw.map);
     final decoded = _persistence
-        .fromDto(
-          TaskSnapshotDto.fromDocument(
-            taskSchemaMigrations.migrate(envelope.document),
-          ),
-        )
+        .fromDto(TaskSnapshotDto.fromDocument(envelope.document))
         .copyWith(persistenceRevision: envelope.revision);
     final task = includeHistory
         ? decoded
@@ -310,9 +306,9 @@ class TaskRepository
     };
   }
 
-  Future<PersistedSnapshot<Task>> saveSnapshot(
+  Future<PersistedSnapshot<TaskAggregate>> saveSnapshot(
     String workspaceRoot,
-    Task task, {
+    TaskAggregate task, {
     int? expectedRevision,
     bool assumeLocked = false,
   }) async {
@@ -334,9 +330,9 @@ class TaskRepository
     );
   }
 
-  Future<PersistedSnapshot<Task>> _saveSnapshotUnlocked(
+  Future<PersistedSnapshot<TaskAggregate>> _saveSnapshotUnlocked(
     String workspaceRoot,
-    Task task, {
+    TaskAggregate task, {
     int? expectedRevision,
     PersistedRevision? currentRevision,
   }) async {
@@ -381,7 +377,7 @@ class TaskRepository
     );
   }
 
-  Future<PersistedSnapshot<Task>?> loadTaskSnapshotUnlocked(
+  Future<PersistedSnapshot<TaskAggregate>?> loadTaskSnapshotUnlocked(
     String workspaceRoot,
     String taskId, {
     String? chatSessionId,
@@ -395,9 +391,9 @@ class TaskRepository
     includeHistory: includeHistory,
   );
 
-  Future<PersistedSnapshot<Task>> saveSnapshotUnlocked(
+  Future<PersistedSnapshot<TaskAggregate>> saveSnapshotUnlocked(
     String workspaceRoot,
-    Task task, {
+    TaskAggregate task, {
     required int expectedRevision,
     PersistedRevision? currentRevision,
   }) => _saveSnapshotUnlocked(
@@ -517,9 +513,7 @@ class TaskRepository
     try {
       final envelope = SnapshotEnvelope.decode(raw);
       final task = _persistence.fromDto(
-        TaskSnapshotDto.fromDocument(
-          taskSchemaMigrations.migrate(_withoutRuns(envelope.document)),
-        ),
+        TaskSnapshotDto.fromDocument(_withoutRuns(envelope.document)),
       );
       return TaskSummary(
         id: task.id,
@@ -535,7 +529,7 @@ class TaskRepository
     }
   }
 
-  Task _cachedMetadataTask(
+  TaskAggregate _cachedMetadataTask(
     File file,
     FileStat stat,
     Map<String, dynamic> raw,
@@ -552,7 +546,7 @@ class TaskRepository
     return task;
   }
 
-  Map<String, dynamic> _compactTaskMap(Task task) {
+  Map<String, dynamic> _compactTaskMap(TaskAggregate task) {
     final map = _persistence
         .toDto(task.copyWith(runs: const [], persistenceRevision: 0))
         .document;
@@ -607,9 +601,7 @@ class TaskRepository
     try {
       final envelope = SnapshotEnvelope.decode(map);
       final task = _persistence.fromDto(
-        TaskSnapshotDto.fromDocument(
-          taskSchemaMigrations.migrate(envelope.document),
-        ),
+        TaskSnapshotDto.fromDocument(envelope.document),
       );
       return task.id.trim().isNotEmpty;
     } catch (_) {
@@ -643,7 +635,7 @@ class _TaskSummaryCacheEntry {
 
 class _TaskCacheEntry {
   final FileStat stat;
-  final Task task;
+  final TaskAggregate task;
   final int revision;
 
   const _TaskCacheEntry(this.stat, this.task, this.revision);

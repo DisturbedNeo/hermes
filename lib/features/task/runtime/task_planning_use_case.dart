@@ -13,7 +13,7 @@ class TaskPlanningUseCase {
   TaskToolExecutionPort get _toolExecution => _context.toolExecution;
   TaskExecutionPolicy get _executionPolicy => const TaskExecutionPolicy();
 
-  Future<Task> createTask({
+  Future<TaskAggregate> createTask({
     required ModelGenerationPort client,
     required WorkspaceAttachment workspace,
     required String userPrompt,
@@ -33,7 +33,7 @@ class TaskPlanningUseCase {
       chatSessionId: chatSessionId,
     );
 
-    Task task;
+    TaskAggregate task;
     var planningMetrics = PlanningMetrics(planningStartedAt: now);
     try {
       final incremental = await _context.completeTaskPlanWithCommands(
@@ -125,7 +125,7 @@ class TaskPlanningUseCase {
     return _context.persistTask(workspace.rootPath, task);
   }
 
-  Future<Task> createProjectTask({
+  Future<TaskAggregate> createProjectTask({
     required WorkspaceAttachment workspace,
     required String userPrompt,
     required String? chatSessionId,
@@ -154,12 +154,12 @@ class TaskPlanningUseCase {
     return _context.persistTask(workspace.rootPath, prepared);
   }
 
-  Future<Task> updateTaskPlan({
+  Future<TaskAggregate> updateTaskPlan({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required TaskPlanUpdateCommand command,
   }) async {
-    final parsed = ModelJson.decode<Task>(command.toWire());
+    final parsed = ModelJson.decode<TaskAggregate>(command.toWire());
     final now = DateTime.now();
     final normalised = _context.normaliseEditedTask(
       parsed.copyWith(

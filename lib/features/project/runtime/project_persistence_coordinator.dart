@@ -5,7 +5,7 @@ import 'package:hermes/features/project/runtime/project_aggregate_store.dart';
 import 'package:hermes/features/project/runtime/project_persistence_runtime.dart';
 import 'package:hermes/features/project/project_aggregate_repository_port.dart';
 import 'package:hermes/features/project/application/contracts/project_checkpoint.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 
 /// Owns project persistence queries and write-boundary coordination.
@@ -129,7 +129,7 @@ class ProjectPersistenceCoordinator {
     sourceId: sourceId,
   );
 
-  Future<Task?> loadActiveTask(
+  Future<TaskAggregate?> loadActiveTask(
     WorkspaceAttachment workspace,
     ProjectAggregate project,
   ) => _persistence.loadActiveTask(workspace, project);

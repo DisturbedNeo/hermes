@@ -5,8 +5,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/chat/application/contracts/compaction_settings.dart';
 import 'package:hermes/features/chat/application/contracts/chat_message.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/core/cancellation.dart';
@@ -861,7 +861,7 @@ class _QueueChatClient extends ChatClient {
   var index = 0;
 
   @override
-  Future<ChatCompletionResponse> completeChat({
+  Future<ModelCompletion> completeChat({
     required List<ChatMessage> messages,
     ModelRequestOptions? extraParams,
     Object? cancellationToken,
@@ -872,7 +872,7 @@ class _QueueChatClient extends ChatClient {
     final response =
         responses[index < responses.length ? index : responses.length - 1];
     index++;
-    return ChatCompletionResponse(content: response);
+    return ModelCompletion(content: response);
   }
 
   @override
@@ -885,9 +885,9 @@ class _CountingTaskRepository extends TaskRepository {
   final List<String> savedTaskIds = [];
 
   @override
-  Future<PersistedSnapshot<Task>> saveSnapshot(
+  Future<PersistedSnapshot<TaskAggregate>> saveSnapshot(
     String workspaceRoot,
-    Task task, {
+    TaskAggregate task, {
     int? expectedRevision,
     bool assumeLocked = false,
   }) async {

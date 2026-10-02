@@ -11,6 +11,4 @@ abstract interface class ProjectSnapshotStorePort
   static const String documentFileName = 'project.json';
 
   String projectRelativePath(String projectId, String fileName);
-
-  String projectSnapshotPath(String workspaceRoot, String projectId);
 }

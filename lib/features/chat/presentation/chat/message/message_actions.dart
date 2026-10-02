@@ -5,7 +5,7 @@ import 'package:hermes/features/chat/application/contracts/message_role.dart';
 import 'package:hermes/features/chat/presentation/a11y.dart';
 import 'package:hermes/features/chat/presentation/action_spec.dart';
 import 'package:hermes/features/chat/application/contracts/bubble.dart';
-import 'package:hermes/features/chat/presentation/chat_controller_port.dart';
+import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
 import 'package:hermes/features/chat/presentation/chat/message/delete_message_dialog.dart';
 
 class MessageActions extends StatelessWidget {
@@ -13,12 +13,12 @@ class MessageActions extends StatelessWidget {
   final double _iconSize;
   final EdgeInsetsGeometry _padding;
   final Bubble _message;
-  final ChatController _chat;
+  final ChatTabPresentationPort _chat;
 
   const MessageActions({
     super.key,
     required Bubble message,
-    required ChatController chat,
+    required ChatTabPresentationPort chat,
     int maxInline = 3,
     double iconSize = 18,
     EdgeInsetsGeometry padding = const EdgeInsets.symmetric(horizontal: 4),
@@ -30,7 +30,7 @@ class MessageActions extends StatelessWidget {
 
   List<ActionSpec> _getActionsForRole(
     BuildContext context,
-    ChatController chat,
+    ChatTabPresentationPort chat,
     MessageRole role,
   ) {
     List<ActionSpec> actions = [];

@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/planning_test_helpers.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/runtime/task_plan_builder.dart';
 import 'package:hermes/features/task/runtime/task_planning_tools.dart';
 
@@ -277,9 +277,9 @@ void main() {
   });
 }
 
-Task _task({List<TaskStep> steps = const []}) {
+TaskAggregate _task({List<TaskStep> steps = const []}) {
   final now = DateTime(2026, 1, 1);
-  return Task(
+  return TaskAggregate(
     id: 'task_1',
     title: 'Bounded task',
     objective: 'Complete the bounded task.',

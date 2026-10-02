@@ -98,7 +98,7 @@ class PlannerMessageCompactor {
         }
       }
     } on FormatException {
-      // Keep the compact marker for malformed or non-JSON historical output.
+      // Keep the compact marker for malformed or non-JSON output.
     }
     return jsonEncode(compact);
   }

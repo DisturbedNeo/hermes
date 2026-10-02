@@ -4,7 +4,7 @@ import 'package:hermes/features/project/domain/project_workspace_context_service
 
 /// A bounded read model for project planning.
 ///
-/// This deliberately does not serialize [ProjectAggregate] or [Task]. Runtime
+/// This deliberately does not serialize [ProjectAggregate] or [TaskAggregate]. Runtime
 /// execution data such as runs, logs, gate results, and full evidence stays
 /// behind the task and execution services.
 class ProjectViewService {

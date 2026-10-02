@@ -113,9 +113,9 @@ class ProjectTaskRef {
 
 /// Planning-only task node used by project state and scheduling policy.
 ///
-/// It is deliberately constructed from the canonical Task at the read/write
+/// It is deliberately constructed from the canonical TaskAggregate at the read/write
 /// boundary, but it does not expose steps, runs, or tool history.  This is the
-/// authoritative project-side task representation; the full [Task] document
+/// authoritative project-side task representation; the full [TaskAggregate] document
 /// remains owned by the task system.
 @MappableClass(ignoreNull: true)
 class ProjectTaskNode with ProjectTaskNodeMappable {

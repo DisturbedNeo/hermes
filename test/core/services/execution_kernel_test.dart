@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/chat/application/contracts/message_role.dart';
 import 'package:hermes/features/chat/application/contracts/bubble.dart';
 import 'package:hermes/features/chat/application/contracts/chat_tool_execution.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/chat/runtime/chat_application/chat_tool_execution_service.dart';
 import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';
@@ -68,7 +68,7 @@ void main() {
       ),
       sandbox: WorkspaceSandbox(),
     );
-    final task = Task(
+    final task = TaskAggregate(
       id: 'task_1',
       title: 'Task',
       createdAt: DateTime(2026, 1, 1),

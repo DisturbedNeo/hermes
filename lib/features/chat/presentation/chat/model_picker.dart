@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hermes/features/chat/presentation/a11y.dart';
 import 'package:hermes/features/model/application/model_load_configuration.dart';
-import 'package:hermes/features/chat/presentation/chat_workspace_port.dart';
+import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
 import 'package:hermes/features/settings/application/preferences_port.dart';
 import 'package:hermes/features/model/application/model_catalog.dart';
 import 'package:hermes/features/chat/presentation/chat/message/dot_pulse.dart';
@@ -34,7 +34,7 @@ class ModelPicker extends StatefulWidget {
     required this.modelCatalog,
   });
 
-  final ChatWorkspaceController tabs;
+  final ChatWorkspacePresentationPort tabs;
   final ModelPickerPreferencesPort preferencesService;
   final ModelCatalogPort modelCatalog;
 
@@ -49,7 +49,7 @@ class _ModelPickerState extends State<ModelPicker> {
   bool _loading = true;
   String? _error;
 
-  ChatWorkspaceController get _tabs => widget.tabs;
+  ChatWorkspacePresentationPort get _tabs => widget.tabs;
   ModelPickerPreferencesPort get _preferencesService =>
       widget.preferencesService;
   ModelCatalogPort get _modelCatalog => widget.modelCatalog;

@@ -1,7 +1,7 @@
 part of 'task_panel.dart';
 
 class _ProjectBody extends StatelessWidget {
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
   final ProjectPanelReadModel project;
 
   const _ProjectBody({required this.chat, required this.project});
@@ -172,7 +172,7 @@ class _ProjectBody extends StatelessWidget {
 }
 
 class _ProjectActions extends StatelessWidget {
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
   final ProjectPanelReadModel project;
 
   const _ProjectActions({required this.chat, required this.project});
@@ -328,7 +328,7 @@ class _ProjectActions extends StatelessWidget {
 }
 
 class _ProjectQuestionCard extends StatefulWidget {
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
   final ProjectPanelReadModel project;
 
   const _ProjectQuestionCard({required this.chat, required this.project});
@@ -405,7 +405,7 @@ class _ProjectBlockerCard extends StatelessWidget {
 }
 
 class _CurrentProjectTask extends StatelessWidget {
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
   final TaskPanelReadModel task;
 
   const _CurrentProjectTask({required this.chat, required this.task});

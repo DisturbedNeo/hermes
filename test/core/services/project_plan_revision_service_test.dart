@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/runtime/project_criterion_evaluator.dart';
 import 'package:hermes/features/project/runtime/project_plan_revision_service.dart';
 
@@ -642,7 +642,7 @@ void main() {
 }
 
 ProjectAggregate _project(
-  List<Task> tasks, {
+  List<TaskAggregate> tasks, {
   String? activeTaskId,
   List<ProjectMilestone> milestones = const [],
   List<ProjectMemoryEntry> memory = const [],
@@ -676,7 +676,7 @@ ProjectAggregate _project(
 
 ProjectDesiredPlan _desired(
   ProjectAggregate project,
-  List<Task> tasks, {
+  List<TaskAggregate> tasks, {
   List<ProjectCriterion>? criteria,
   List<ProjectMilestone>? milestones,
   List<PendingProjectQuestion>? openQuestions,
@@ -706,7 +706,7 @@ ProjectDesiredPlan _desired(
   );
 }
 
-Task _task(
+TaskAggregate _task(
   String id, {
   List<String> dependencies = const [],
   List<String> writePaths = const ['lib/feature.dart'],
@@ -718,7 +718,7 @@ Task _task(
 }) {
   final now = DateTime(2026, 1, 2);
   final objective = 'Implement bounded slice $id.';
-  return Task(
+  return TaskAggregate(
     id: id,
     title: 'Bounded slice $id',
     objective: objective,

@@ -1,4 +1,4 @@
-/// Typed project-plan update command. JSON compatibility is isolated to this
+/// Typed project-plan update command. Wire conversion is isolated to this
 /// command value before it reaches project application ports.
 class ProjectUpdateCommand {
   const ProjectUpdateCommand._(this._values);

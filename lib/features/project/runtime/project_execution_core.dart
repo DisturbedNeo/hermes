@@ -751,7 +751,7 @@ extension ProjectExecutionCore on ProjectExecutionUseCase {
     );
 
     final planningContext = _planningContext(workingProject, projectTask);
-    late Task activeTask;
+    late TaskAggregate activeTask;
     if (existingTask != null) {
       activeTask = existingTask;
     } else {

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:hermes/features/chat/presentation/responsive.dart';
 import 'package:hermes/features/chat/presentation/scroll.dart';
 import 'package:hermes/features/chat/application/contracts/bubble.dart';
-import 'package:hermes/features/chat/presentation/chat_controller_port.dart';
+import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
 import 'package:hermes/features/chat/application/chat_view_state.dart';
 import 'package:hermes/features/chat/presentation/keyboard_shortcuts.dart';
 import 'package:hermes/features/settings/application/preferences_port.dart';
@@ -17,7 +17,7 @@ import 'package:hermes/features/chat/presentation/chat/chat_view_presenter.dart'
 import 'package:hermes/features/model/application/model_server_port.dart';
 
 class ChatView extends StatefulWidget {
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
   final DiagnosticsBarPreferencesPort preferencesService;
   final ToolRegistryPort toolService;
   final VoidCallback onOpenWorkspace;
@@ -203,7 +203,7 @@ class _ChatViewState extends State<ChatView> {
   }
 
   Widget _buildMainColumn({
-    required ChatController chat,
+    required ChatTabPresentationPort chat,
     required ChatViewState state,
     required bool showTaskPanel,
     required bool includeInlineTaskPanel,
@@ -245,7 +245,7 @@ class _ChatViewState extends State<ChatView> {
     );
   }
 
-  Future<void> _retrySave(ChatController chat) async {
+  Future<void> _retrySave(ChatTabPresentationPort chat) async {
     try {
       await chat.retrySave();
     } catch (error) {
@@ -256,7 +256,10 @@ class _ChatViewState extends State<ChatView> {
     }
   }
 
-  Widget _buildModelRestoreBanner(ChatController chat, ChatViewState state) {
+  Widget _buildModelRestoreBanner(
+    ChatTabPresentationPort chat,
+    ChatViewState state,
+  ) {
     final snapshot = state.pendingModelRestore!;
     final issue = state.pendingModelRestoreIssue;
 
@@ -277,7 +280,7 @@ class _ChatViewState extends State<ChatView> {
     );
   }
 
-  Widget _buildMessageList(ChatController chat) {
+  Widget _buildMessageList(ChatTabPresentationPort chat) {
     return _MessageListPresenter(
       scroll: _scroll,
       chat: chat,
@@ -286,7 +289,7 @@ class _ChatViewState extends State<ChatView> {
   }
 
   Widget _buildFooter({
-    required ChatController chat,
+    required ChatTabPresentationPort chat,
     required bool scrollable,
     required double? maxHeight,
   }) {
@@ -348,7 +351,7 @@ class _ChatViewState extends State<ChatView> {
 /// UI rendering to [MessageListWidget] from the presenter module.
 class _MessageListPresenter extends StatefulWidget {
   final ChatScrollController scroll;
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
   final VoidCallback onScrollToBottom;
 
   const _MessageListPresenter({

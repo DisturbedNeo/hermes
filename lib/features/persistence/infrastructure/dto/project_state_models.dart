@@ -186,10 +186,9 @@ enum ProjectDecisionType {
 
 /// The durable reason a project command stopped, paused, or completed.
 ///
-/// [ProjectStatus] remains part of the compatibility surface and continues to
-/// describe the lifecycle phase. This value describes the actionable boundary
-/// presented to the application, so callers do not need to infer it from
-/// several nullable fields.
+/// [ProjectStatus] describes the lifecycle phase. This value describes the
+/// actionable boundary presented to the application, so callers do not need
+/// to infer it from several nullable fields.
 @MappableEnum(defaultValue: ProjectControlOutcome.running)
 enum ProjectControlOutcome {
   initializing,
@@ -862,8 +861,7 @@ class ProjectSnapshotAggregate with ProjectSnapshotAggregateMappable {
   final ProjectCompletionReviewCheckpoint? completionReviewCheckpoint;
 
   /// Durable, application-facing explanation of the current command boundary.
-  /// Older snapshots may omit this field; the control-state service derives it
-  /// from the compatibility fields when they are loaded.
+  /// The control-state service materializes this field before persistence.
   final ProjectBoundary? boundary;
   @MappableField(hook: JsonObjectListHook())
   final List<PendingProjectQuestion> openQuestions;

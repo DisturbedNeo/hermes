@@ -8,7 +8,7 @@ import 'package:hermes/features/chat/application/protocol/context_estimator.dart
 import 'package:hermes/features/chat/application/protocol/chat_message_wire_adapter.dart';
 import 'package:hermes/features/chat/application/contracts/chat_message.dart';
 import 'package:hermes/features/chat/application/contracts/compaction_settings.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/workspace/application/workspace_ports.dart';
@@ -112,10 +112,10 @@ void main() {
       'planner falls back when it returns JSON instead of commands',
       () async {
         final client = _QueueCompletionClient([
-          ChatCompletionResponse(
+          ModelCompletion(
             content: jsonEncode(_planJson(title: 'Plain JSON task')),
           ),
-          ChatCompletionResponse(
+          ModelCompletion(
             content: jsonEncode(_planJson(title: 'Repaired JSON task')),
           ),
         ]);
@@ -468,10 +468,10 @@ void main() {
     test('runs one step from finish task step tool call', () async {
       final task = _task();
       final client = _QueueCompletionClient([
-        ChatCompletionResponse(
+        ModelCompletion(
           content: '',
           toolCalls: [
-            ChatCompletionToolCall(
+            ModelToolCall(
               name: 'finish_task_step',
               arguments: jsonEncode({
                 'status': 'completed',
@@ -510,10 +510,10 @@ void main() {
     test('does not accept an unknown finish status as completion', () async {
       final task = _task();
       final client = _QueueCompletionClient([
-        ChatCompletionResponse(
+        ModelCompletion(
           content: '',
           toolCalls: [
-            ChatCompletionToolCall(
+            ModelToolCall(
               name: 'finish_task_step',
               arguments: jsonEncode({
                 'status': 'done',
@@ -541,7 +541,7 @@ void main() {
       () async {
         final task = _task();
         final client = _QueueCompletionClient([
-          ChatCompletionResponse(content: 'The work is complete.'),
+          ModelCompletion(content: 'The work is complete.'),
         ]);
 
         final updated = await service.runNextStep(
@@ -560,10 +560,10 @@ void main() {
     test('uses an explicit tool for a blocking user decision', () async {
       final task = _task();
       final client = _QueueCompletionClient([
-        ChatCompletionResponse(
+        ModelCompletion(
           content: '',
           toolCalls: [
-            ChatCompletionToolCall(
+            ModelToolCall(
               name: 'task_request_user_decision',
               arguments: jsonEncode({
                 'question': 'Which production account should be used?',
@@ -625,10 +625,10 @@ void main() {
         currentStepId: 'stale',
       );
       final client = _QueueCompletionClient([
-        ChatCompletionResponse(
+        ModelCompletion(
           content: '',
           toolCalls: [
-            ChatCompletionToolCall(
+            ModelToolCall(
               name: 'task_request_replan',
               arguments: jsonEncode({
                 'reason': 'The old approach is no longer valid.',
@@ -703,10 +703,10 @@ void main() {
           ),
         );
         final client = _QueueCompletionClient([
-          ChatCompletionResponse(
+          ModelCompletion(
             content: '',
             toolCalls: [
-              ChatCompletionToolCall(
+              ModelToolCall(
                 name: 'write_file',
                 arguments: jsonEncode({
                   'path': '.agent/tasks/task_test/report.md',
@@ -715,10 +715,10 @@ void main() {
               ),
             ],
           ),
-          ChatCompletionResponse(
+          ModelCompletion(
             content: '',
             toolCalls: [
-              ChatCompletionToolCall(
+              ModelToolCall(
                 name: 'finish_task_step',
                 arguments: jsonEncode({
                   'status': 'completed',
@@ -769,10 +769,10 @@ void main() {
       () async {
         final task = _task();
         final client = _QueueCompletionClient([
-          ChatCompletionResponse(
+          ModelCompletion(
             content: '',
             toolCalls: [
-              ChatCompletionToolCall(
+              ModelToolCall(
                 name: 'finish_task_step',
                 arguments: jsonEncode({
                   'status': 'completed',
@@ -860,14 +860,14 @@ void main() {
       () async {
         final task = _task();
         final client = _QueueCompletionClient([
-          ChatCompletionResponse(
+          ModelCompletion(
             content: '',
             toolCalls: [
-              ChatCompletionToolCall(
+              ModelToolCall(
                 name: 'read_file',
                 arguments: jsonEncode({'path': 'missing.txt'}),
               ),
-              ChatCompletionToolCall(
+              ModelToolCall(
                 name: 'finish_task_step',
                 arguments: jsonEncode({
                   'status': 'completed',
@@ -1083,10 +1083,10 @@ void main() {
     test('read-only steps reject writes outside the task folder', () async {
       final task = _task();
       final client = _QueueCompletionClient([
-        ChatCompletionResponse(
+        ModelCompletion(
           content: '',
           toolCalls: [
-            ChatCompletionToolCall(
+            ModelToolCall(
               name: 'write_file',
               arguments: jsonEncode({
                 'path': 'should-not-exist.txt',
@@ -1095,7 +1095,7 @@ void main() {
             ),
           ],
         ),
-        ChatCompletionResponse(
+        ModelCompletion(
           content: jsonEncode({
             'status': 'completed',
             'summary': 'Stayed read-only.',
@@ -1142,10 +1142,10 @@ void main() {
           ),
         );
         final client = _QueueCompletionClient([
-          ChatCompletionResponse(
+          ModelCompletion(
             content: '',
             toolCalls: [
-              ChatCompletionToolCall(
+              ModelToolCall(
                 name: 'read_file',
                 arguments: jsonEncode({
                   'path': 'README.md',
@@ -1154,7 +1154,7 @@ void main() {
               ),
             ],
           ),
-          ChatCompletionResponse(
+          ModelCompletion(
             content: jsonEncode({
               'status': 'completed',
               'summary': 'Stayed read-only.',
@@ -1200,16 +1200,16 @@ void main() {
         ),
       );
       final client = _QueueCompletionClient([
-        ChatCompletionResponse(
+        ModelCompletion(
           content: '',
           toolCalls: [
-            ChatCompletionToolCall(
+            ModelToolCall(
               name: 'run_command',
               arguments: jsonEncode({'command': 'dart --version'}),
             ),
           ],
         ),
-        ChatCompletionResponse(
+        ModelCompletion(
           content: jsonEncode({
             'status': 'completed',
             'summary': 'Verified dart.',
@@ -1268,16 +1268,16 @@ void main() {
           gates: const [TaskGate(id: 'no_tool_errors')],
         );
         final client = _QueueCompletionClient([
-          ChatCompletionResponse(
+          ModelCompletion(
             content: '',
             toolCalls: [
-              ChatCompletionToolCall(
+              ModelToolCall(
                 name: 'run_command',
                 arguments: jsonEncode({'command': 'dart --version'}),
               ),
             ],
           ),
-          ChatCompletionResponse(
+          ModelCompletion(
             content: jsonEncode({'status': 'completed', 'summary': 'Done.'}),
           ),
         ]);
@@ -1327,16 +1327,16 @@ void main() {
           ),
         );
         final client = _QueueCompletionClient([
-          ChatCompletionResponse(
+          ModelCompletion(
             content: '',
             toolCalls: [
-              ChatCompletionToolCall(
+              ModelToolCall(
                 name: 'run_command',
                 arguments: jsonEncode({'command': 'dart --version'}),
               ),
             ],
           ),
-          ChatCompletionResponse(
+          ModelCompletion(
             content: jsonEncode({
               'status': 'completed',
               'summary': 'Verified dart.',
@@ -1400,10 +1400,10 @@ void main() {
           ),
         );
         final client = _QueueCompletionClient([
-          ChatCompletionResponse(
+          ModelCompletion(
             content: '',
             toolCalls: [
-              ChatCompletionToolCall(
+              ModelToolCall(
                 name: 'run_command',
                 arguments: jsonEncode({
                   'command': 'dotnet build Observability.sln',
@@ -1412,7 +1412,7 @@ void main() {
               ),
             ],
           ),
-          ChatCompletionResponse(
+          ModelCompletion(
             content: jsonEncode({
               'status': 'completed',
               'summary': 'Verified the solution build.',
@@ -1461,16 +1461,16 @@ void main() {
           ),
         );
         final client = _QueueCompletionClient([
-          ChatCompletionResponse(
+          ModelCompletion(
             content: '',
             toolCalls: [
-              ChatCompletionToolCall(
+              ModelToolCall(
                 name: 'run_command',
                 arguments: jsonEncode({'command': 'dart --version'}),
               ),
             ],
           ),
-          ChatCompletionResponse(
+          ModelCompletion(
             content: jsonEncode({
               'status': 'completed',
               'summary': 'Collected advisory evidence.',
@@ -1529,20 +1529,20 @@ void main() {
           ),
         );
         final client = _QueueCompletionClient([
-          ChatCompletionResponse(
+          ModelCompletion(
             content: '',
             toolCalls: [
-              ChatCompletionToolCall(
+              ModelToolCall(
                 name: 'run_command',
                 arguments: jsonEncode({'command': 'dart analyze'}),
               ),
-              ChatCompletionToolCall(
+              ModelToolCall(
                 name: 'run_command',
                 arguments: jsonEncode({'command': 'flutter test'}),
               ),
             ],
           ),
-          ChatCompletionResponse(
+          ModelCompletion(
             content: jsonEncode({
               'status': 'completed',
               'summary': 'Collected analyzer and test evidence.',
@@ -1593,7 +1593,7 @@ void main() {
         ),
       );
       final client = _QueueCompletionClient([
-        ChatCompletionResponse(
+        ModelCompletion(
           content: jsonEncode({
             'status': 'completed',
             'summary': 'Skipped unsafe commands.',
@@ -1639,7 +1639,7 @@ void main() {
           ),
         );
         final client = _QueueCompletionClient([
-          ChatCompletionResponse(
+          ModelCompletion(
             content: jsonEncode({
               'status': 'completed',
               'summary': 'The unsafe command was unavailable.',
@@ -1700,16 +1700,16 @@ void main() {
           ),
         );
         final client = _QueueCompletionClient([
-          ChatCompletionResponse(
+          ModelCompletion(
             content: '',
             toolCalls: [
-              ChatCompletionToolCall(
+              ModelToolCall(
                 name: 'run_command',
                 arguments: jsonEncode({'command': 'dart --version'}),
               ),
             ],
           ),
-          ChatCompletionResponse(
+          ModelCompletion(
             content: jsonEncode({
               'status': 'completed',
               'summary': 'Terminal access was unavailable.',
@@ -1756,10 +1756,10 @@ void main() {
           ),
         );
         final client = _QueueCompletionClient([
-          ChatCompletionResponse(
+          ModelCompletion(
             content: '',
             toolCalls: [
-              ChatCompletionToolCall(
+              ModelToolCall(
                 name: 'run_command',
                 arguments: jsonEncode({
                   'command': 'dart --version > version.txt',
@@ -1767,7 +1767,7 @@ void main() {
               ),
             ],
           ),
-          ChatCompletionResponse(
+          ModelCompletion(
             content: jsonEncode({
               'status': 'completed',
               'summary': 'Tried a redirected command.',
@@ -1843,16 +1843,16 @@ void main() {
           ),
         );
         final client = _QueueCompletionClient([
-          ChatCompletionResponse(
+          ModelCompletion(
             content: '',
             toolCalls: [
-              ChatCompletionToolCall(
+              ModelToolCall(
                 name: 'run_command',
                 arguments: jsonEncode({'command': 'dart --version'}),
               ),
             ],
           ),
-          ChatCompletionResponse(
+          ModelCompletion(
             content: jsonEncode({
               'status': 'completed',
               'summary': 'Verified dart.',
@@ -1891,7 +1891,7 @@ void main() {
         ),
       );
       final client = _QueueCompletionClient([
-        ChatCompletionResponse(
+        ModelCompletion(
           content: jsonEncode({
             'status': 'completed',
             'summary': 'Inspected the document.',
@@ -1933,10 +1933,10 @@ void main() {
         ),
       );
       final client = _QueueCompletionClient([
-        ChatCompletionResponse(
+        ModelCompletion(
           content: '',
           toolCalls: [
-            ChatCompletionToolCall(
+            ModelToolCall(
               name: 'write_file',
               arguments: jsonEncode({
                 'path': '.agent/tasks/task_test/report.md',
@@ -1945,7 +1945,7 @@ void main() {
             ),
           ],
         ),
-        ChatCompletionResponse(
+        ModelCompletion(
           content: jsonEncode({
             'status': 'completed',
             'summary': 'Report written.',
@@ -2004,10 +2004,10 @@ void main() {
         ],
       );
       final client = _QueueCompletionClient([
-        ChatCompletionResponse(
+        ModelCompletion(
           content: '',
           toolCalls: [
-            ChatCompletionToolCall(
+            ModelToolCall(
               name: 'write_file',
               arguments: jsonEncode({
                 'path': '.agent/tasks/task_test/final_report.md',
@@ -2016,7 +2016,7 @@ void main() {
             ),
           ],
         ),
-        ChatCompletionResponse(
+        ModelCompletion(
           content: jsonEncode({
             'status': 'completed',
             'summary': 'Stayed on current step.',
@@ -2081,10 +2081,10 @@ void main() {
         ],
       );
       final client = _QueueCompletionClient([
-        ChatCompletionResponse(
+        ModelCompletion(
           content: '',
           toolCalls: [
-            ChatCompletionToolCall(
+            ModelToolCall(
               name: 'write_file',
               arguments: jsonEncode({
                 'path': '.agent/tasks/task_test/final_report.md',
@@ -2093,7 +2093,7 @@ void main() {
             ),
           ],
         ),
-        ChatCompletionResponse(
+        ModelCompletion(
           content: jsonEncode({
             'status': 'completed',
             'summary': 'Did not write a future artifact.',
@@ -2222,10 +2222,10 @@ void main() {
         currentStepId: 'step_2',
       );
       final client = _QueueCompletionClient([
-        ChatCompletionResponse(
+        ModelCompletion(
           content: '',
           toolCalls: [
-            ChatCompletionToolCall(
+            ModelToolCall(
               name: 'read_file',
               arguments: jsonEncode({
                 'path': '.agent/tasks/task_test/overview.md',
@@ -2233,7 +2233,7 @@ void main() {
             ),
           ],
         ),
-        ChatCompletionResponse(
+        ModelCompletion(
           content: jsonEncode({
             'status': 'completed',
             'summary': 'Read prior artifact.',
@@ -2295,40 +2295,40 @@ void main() {
       final task = _task();
       final statuses = <String>[];
       final client = _QueueCompletionClient([
-        ChatCompletionResponse(
+        ModelCompletion(
           content: '',
           toolCalls: [
-            ChatCompletionToolCall(
+            ModelToolCall(
               name: 'read_file',
               arguments: jsonEncode({'path': 'large.txt'}),
             ),
           ],
         ),
-        ChatCompletionResponse(
+        ModelCompletion(
           content: '',
           toolCalls: [
-            ChatCompletionToolCall(
+            ModelToolCall(
               name: 'read_file',
               arguments: jsonEncode({'path': 'missing_2.txt'}),
             ),
           ],
         ),
-        ChatCompletionResponse(
+        ModelCompletion(
           content: '',
           toolCalls: [
-            ChatCompletionToolCall(
+            ModelToolCall(
               name: 'read_file',
               arguments: jsonEncode({'path': 'missing_3.txt'}),
             ),
           ],
         ),
-        ChatCompletionResponse(
+        ModelCompletion(
           content: jsonEncode({
             'task': 'Continue the task step.',
             'current_state': 'A large file was inspected earlier.',
           }),
         ),
-        ChatCompletionResponse(
+        ModelCompletion(
           content: jsonEncode({
             'status': 'completed',
             'summary': 'Finished after compacting older context.',
@@ -2371,15 +2371,15 @@ void main() {
 
     test('finalizes instead of looping on repeated tool calls', () async {
       final task = _task();
-      final repeatedCall = ChatCompletionToolCall(
+      final repeatedCall = ModelToolCall(
         name: 'read_file',
         arguments: jsonEncode({'path': 'missing.txt'}),
       );
       final client = _QueueCompletionClient([
-        ChatCompletionResponse(content: '', toolCalls: [repeatedCall]),
-        ChatCompletionResponse(content: '', toolCalls: [repeatedCall]),
-        ChatCompletionResponse(content: '', toolCalls: [repeatedCall]),
-        ChatCompletionResponse(
+        ModelCompletion(content: '', toolCalls: [repeatedCall]),
+        ModelCompletion(content: '', toolCalls: [repeatedCall]),
+        ModelCompletion(content: '', toolCalls: [repeatedCall]),
+        ModelCompletion(
           content: jsonEncode({
             'status': 'completed',
             'summary': 'Stopped repeating and finalized.',
@@ -2426,7 +2426,7 @@ void main() {
   });
 }
 
-Task _task({
+TaskAggregate _task({
   TaskStep? step,
   List<TaskStep>? steps,
   String? currentStepId,
@@ -2434,7 +2434,7 @@ Task _task({
 }) {
   final now = DateTime(2026, 1, 1);
   final resolvedSteps = steps ?? [step ?? _step()];
-  return Task(
+  return TaskAggregate(
     id: 'task_test',
     title: 'Test task',
     originalPrompt: 'Run the task',
@@ -2489,21 +2489,21 @@ Map<String, dynamic> _planJson({required String title}) {
   };
 }
 
-ChatCompletionResponse _planResponse(
+ModelCompletion _planResponse(
   Map<String, dynamic> plan, {
   String idSuffix = '',
   bool resetFirst = false,
 }) {
   String callId(String base) => idSuffix.isEmpty ? base : '${base}_$idSuffix';
 
-  final calls = <ChatCompletionToolCall>[
+  final calls = <ModelToolCall>[
     if (resetFirst)
-      ChatCompletionToolCall(
+      ModelToolCall(
         id: callId('call_task_reset_plan'),
         name: 'task_reset_plan',
         arguments: '{}',
       ),
-    ChatCompletionToolCall(
+    ModelToolCall(
       id: callId('call_task_set_brief'),
       name: 'task_set_brief',
       arguments: jsonEncode({
@@ -2515,7 +2515,7 @@ ChatCompletionResponse _planResponse(
     ),
     for (final raw in (plan['steps'] as List? ?? const []))
       if (raw is Map)
-        ChatCompletionToolCall(
+        ModelToolCall(
           id: callId('call_task_add_step_${raw['id'] ?? raw['title']}'),
           name: 'task_add_step',
           arguments: jsonEncode({
@@ -2527,25 +2527,25 @@ ChatCompletionResponse _planResponse(
             'artifacts': raw['artifacts'] ?? const [],
           }),
         ),
-    ChatCompletionToolCall(
+    ModelToolCall(
       id: callId('call_task_commit_plan'),
       name: 'task_commit_plan',
       arguments: '{}',
     ),
   ];
-  return ChatCompletionResponse(content: '', toolCalls: calls);
+  return ModelCompletion(content: '', toolCalls: calls);
 }
 
-ChatCompletionResponse _replanResponse(
+ModelCompletion _replanResponse(
   Map<String, dynamic> plan, {
   String idSuffix = '',
 }) {
   String callId(String base) => idSuffix.isEmpty ? base : '${base}_$idSuffix';
 
-  final calls = <ChatCompletionToolCall>[
+  final calls = <ModelToolCall>[
     for (final raw in (plan['steps'] as List? ?? const []))
       if (raw is Map)
-        ChatCompletionToolCall(
+        ModelToolCall(
           id: callId('call_task_add_step_${raw['id'] ?? raw['title']}'),
           name: 'task_add_step',
           arguments: jsonEncode({
@@ -2557,13 +2557,13 @@ ChatCompletionResponse _replanResponse(
             'artifacts': raw['artifacts'] ?? const [],
           }),
         ),
-    ChatCompletionToolCall(
+    ModelToolCall(
       id: callId('call_task_commit_replan'),
       name: 'task_commit_plan',
       arguments: '{}',
     ),
   ];
-  return ChatCompletionResponse(content: '', toolCalls: calls);
+  return ModelCompletion(content: '', toolCalls: calls);
 }
 
 Map<String, dynamic> _projectBoundedPlanJson({required String title}) {
@@ -2620,7 +2620,7 @@ class _QueueChatClient extends ChatClient {
   }) async => 0;
 
   @override
-  Future<ChatCompletionResponse> completeChat({
+  Future<ModelCompletion> completeChat({
     required List<ChatMessage> messages,
     ModelRequestOptions? extraParams,
     Object? cancellationToken,
@@ -2645,7 +2645,7 @@ class _QueueChatClient extends ChatClient {
     } on FormatException {
       // Keep malformed responses as plain model output for fallback tests.
     }
-    return ChatCompletionResponse(content: response);
+    return ModelCompletion(content: response);
   }
 
   @override
@@ -2656,7 +2656,7 @@ class _QueueCompletionClient extends ChatClient {
   _QueueCompletionClient(this._responses)
     : super(baseUrl: 'http://localhost', model: 'test');
 
-  final List<ChatCompletionResponse> _responses;
+  final List<ModelCompletion> _responses;
   final List<Set<String>> seenToolNames = [];
   final List<List<ChatMessage>> seenMessages = [];
   var _index = 0;
@@ -2674,7 +2674,7 @@ class _QueueCompletionClient extends ChatClient {
   );
 
   @override
-  Future<ChatCompletionResponse> completeChat({
+  Future<ModelCompletion> completeChat({
     required List<ChatMessage> messages,
     ModelRequestOptions? extraParams,
     Object? cancellationToken,
@@ -2708,7 +2708,7 @@ class _TransportFailureClient extends ChatClient {
   }) async => 0;
 
   @override
-  Future<ChatCompletionResponse> completeChat({
+  Future<ModelCompletion> completeChat({
     required List<ChatMessage> messages,
     ModelRequestOptions? extraParams,
     Object? cancellationToken,

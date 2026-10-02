@@ -1,5 +1,5 @@
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 
 /// Builds user-facing chat messages from immutable task and project results.
 ///
@@ -46,7 +46,7 @@ class ChatPresentationMessageBuilder {
     return buffer.toString().trim();
   }
 
-  String taskCreated(Task snapshot) {
+  String taskCreated(TaskAggregate snapshot) {
     final buffer = StringBuffer()
       ..writeln('Task created: **${snapshot.title}**')
       ..writeln()
@@ -77,7 +77,7 @@ class ChatPresentationMessageBuilder {
     return buffer.toString().trim();
   }
 
-  String projectStatus(ProjectAggregate snapshot, {Task? activeTask}) {
+  String projectStatus(ProjectAggregate snapshot, {TaskAggregate? activeTask}) {
     final buffer = StringBuffer()
       ..writeln('Project status: **${snapshot.title}**')
       ..writeln()
@@ -105,7 +105,7 @@ class ChatPresentationMessageBuilder {
     return buffer.toString().trim();
   }
 
-  String stepFinished(Task snapshot) {
+  String stepFinished(TaskAggregate snapshot) {
     final latestRun = snapshot.runs.isEmpty ? null : snapshot.runs.last;
     final buffer = StringBuffer()
       ..writeln('Task step finished: **${latestRun?.stepId ?? 'step'}**')
@@ -149,7 +149,7 @@ class ChatPresentationMessageBuilder {
     return buffer.toString().trim();
   }
 
-  bool taskHasTransportFailure(Task? snapshot) {
+  bool taskHasTransportFailure(TaskAggregate? snapshot) {
     if (snapshot == null ||
         snapshot.status != TaskStatus.paused ||
         snapshot.runs.isEmpty) {
@@ -162,7 +162,7 @@ class ChatPresentationMessageBuilder {
 
   bool projectHasTransportFailure(
     ProjectAggregate snapshot, {
-    Task? activeTask,
+    TaskAggregate? activeTask,
   }) {
     if (snapshot.status != ProjectStatus.paused ||
         snapshot.activeTaskId == null) {
@@ -176,7 +176,7 @@ class ChatPresentationMessageBuilder {
     return taskHasTransportFailure(activeTask);
   }
 
-  bool taskNeedsIntervention(Task snapshot) {
+  bool taskNeedsIntervention(TaskAggregate snapshot) {
     if (snapshot.status != TaskStatus.paused) return false;
     if (snapshot.pendingApproval != null || snapshot.pendingQuestion != null) {
       return true;

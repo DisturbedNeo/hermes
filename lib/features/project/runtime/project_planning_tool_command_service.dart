@@ -347,10 +347,7 @@ class ProjectPlanningToolCommandService {
     return response;
   }
 
-  static ProjectPlanTaskSpec _taskSpec(
-    Map<String, dynamic> value,
-    String path,
-  ) {
+  static ProjectTaskSpec _taskSpec(Map<String, dynamic> value, String path) {
     _rejectPersistentFields(value, path);
     _keys(value, const {
       'ref',
@@ -372,7 +369,7 @@ class ProjectPlanningToolCommandService {
       'context',
       'expected_artifacts',
     });
-    return ProjectPlanTaskSpec(
+    return ProjectTaskSpec(
       ref: _optionalString(value['ref'], '$path.ref') ?? '',
       title: _optionalString(value['title'], '$path.title') ?? '',
       objective: _optionalString(value['objective'], '$path.objective') ?? '',

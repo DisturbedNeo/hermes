@@ -5,7 +5,7 @@ import 'package:hermes/features/model/application/model_output.dart';
 import 'package:hermes/features/task/application/contracts/task_summary.dart';
 import 'package:hermes/core/contracts/execution_settings.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/application/contracts/task_planning_models.dart';
 import 'package:hermes/features/task/application/contracts/task_commands.dart';
 
@@ -21,13 +21,13 @@ abstract interface class TaskSummaryQueryPort {
 /// Owning-feature task hydration seam. Runtime workflows use this explicitly;
 /// presentation and saved-task lists should use summaries.
 abstract interface class TaskAggregateQueryPort {
-  Future<Task?> loadLatestTask(
+  Future<TaskAggregate?> loadLatestTask(
     WorkspaceAttachment workspace, {
     String? chatSessionId,
     String? projectId,
   });
 
-  Future<Task?> loadTask(
+  Future<TaskAggregate?> loadTask(
     WorkspaceAttachment workspace,
     String taskId, {
     String? chatSessionId,
@@ -81,7 +81,7 @@ abstract interface class TaskPlanningPort {
     CancellationToken? cancellationToken,
   });
 
-  Future<Task> createTask({
+  Future<TaskAggregate> createTask({
     required ModelGenerationPort client,
     required WorkspaceAttachment workspace,
     required String userPrompt,
@@ -95,16 +95,16 @@ abstract interface class TaskPlanningPort {
     CancellationToken? cancellationToken,
   });
 
-  Future<Task> updateTaskPlan({
+  Future<TaskAggregate> updateTaskPlan({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required TaskPlanUpdateCommand command,
   });
 
-  Future<Task> replanUnfinished({
+  Future<TaskAggregate> replanUnfinished({
     required ModelGenerationPort client,
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required String baseSystemPrompt,
     String reason = 'User requested a replan of unfinished work.',
     ModelOutputSink? onModelOutput,
@@ -113,7 +113,7 @@ abstract interface class TaskPlanningPort {
 }
 
 abstract interface class TaskProjectPlanningPort {
-  Future<Task> createProjectTask({
+  Future<TaskAggregate> createProjectTask({
     required WorkspaceAttachment workspace,
     required String userPrompt,
     required String? chatSessionId,
@@ -124,10 +124,10 @@ abstract interface class TaskProjectPlanningPort {
 }
 
 abstract interface class TaskExecutionPort {
-  Future<Task> runNextStep({
+  Future<TaskAggregate> runNextStep({
     required ModelConversationPort client,
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required String baseSystemPrompt,
     bool requirePhaseApproval = false,
     CompactionSettings? compactionSettings,
@@ -140,37 +140,37 @@ abstract interface class TaskExecutionPort {
     bool persist = true,
   });
 
-  Future<Task> approvePendingStep({
+  Future<TaskAggregate> approvePendingStep({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
   });
 
-  Future<Task> retryCurrentStep({
+  Future<TaskAggregate> retryCurrentStep({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
   });
 
-  Future<Task> skipCurrentStep({
+  Future<TaskAggregate> skipCurrentStep({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
   });
 
-  Future<Task> stopTask({
+  Future<TaskAggregate> stopTask({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
   });
 
-  Future<Task> answerOpenQuestion({
+  Future<TaskAggregate> answerOpenQuestion({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required String answer,
   });
 }
 
 abstract interface class TaskRecoveryPort {
-  Future<Task> recoverTask({
+  Future<TaskAggregate> recoverTask({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     bool persist = true,
   });
 }

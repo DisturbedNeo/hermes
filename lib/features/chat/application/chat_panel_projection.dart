@@ -1,5 +1,4 @@
 import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/domain/project_scheduler.dart';
 import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
@@ -11,7 +10,7 @@ import 'package:hermes/features/task/domain/task.dart';
 /// widgets from retaining domain aggregates while preserving the domain
 /// scheduler and workspace selector as the single sources of derived values.
 abstract final class ChatPanelProjection {
-  static TaskPanelReadModel task(Task source) {
+  static TaskPanelReadModel task(TaskAggregate source) {
     final snapshot = _snapshotTask(source);
     return TaskPanelReadModel(
       id: snapshot.id,
@@ -87,7 +86,7 @@ abstract final class ChatPanelProjection {
   }
 }
 
-Task _snapshotTask(Task source) => source.copyWith(
+TaskAggregate _snapshotTask(TaskAggregate source) => source.copyWith(
   constraints: List.unmodifiable(source.constraints),
   successCriteria: List.unmodifiable(source.successCriteria),
   gates: List.unmodifiable(source.gates.map(_snapshotGate)),

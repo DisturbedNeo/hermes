@@ -1,7 +1,7 @@
 import 'package:hermes/features/persistence/application/persistence_contracts.dart';
 import 'package:hermes/features/project/application/contracts/project_checkpoint.dart';
 import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 
 /// Read-only aggregate operations used by project queries and hydration.
 abstract interface class ProjectAggregateReadPort {
@@ -35,7 +35,7 @@ abstract interface class ProjectAggregateCommitPort {
   Future<ProjectAggregateCommitResult> commit({
     required String workspaceRoot,
     required ProjectAggregate project,
-    required Iterable<Task> tasks,
+    required Iterable<TaskAggregate> tasks,
     Set<String> deletedTaskIds = const {},
     ProjectPersistenceDiagnostics? knownHealth,
     ProjectPersistenceCheckpoint checkpoint =
@@ -76,7 +76,7 @@ class ProjectLoadResult {
 
   final ProjectAggregate? project;
   final ProjectPersistenceDiagnostics diagnostics;
-  final List<Task> canonicalTasks;
+  final List<TaskAggregate> canonicalTasks;
 }
 
 class ProjectRevisionCheckResult {
@@ -98,7 +98,7 @@ class ProjectAggregateCommitResult {
   });
 
   final PersistedSnapshot<ProjectAggregate> project;
-  final Map<String, PersistedSnapshot<Task>> tasks;
+  final Map<String, PersistedSnapshot<TaskAggregate>> tasks;
 }
 
 class ProjectTransactionRecoveryResult {

@@ -1,4 +1,4 @@
-/// Typed task-plan update command. JSON compatibility is isolated to this
+/// Typed task-plan update command. Wire conversion is isolated to this
 /// command value before it reaches task application ports.
 class TaskPlanUpdateCommand {
   const TaskPlanUpdateCommand._(this._values);

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/runtime/project_plan_validator.dart';
 
 void main() {
@@ -435,7 +435,7 @@ ProjectAggregate _project({List<ProjectMemoryEntry> memory = const []}) {
   );
 }
 
-ProjectAggregate _projectWithTasks(List<Task> tasks) {
+ProjectAggregate _projectWithTasks(List<TaskAggregate> tasks) {
   final project = _project();
   return project.copyWith(
     tasks: [for (final task in tasks) ProjectTaskNode.fromTask(task)],
@@ -444,7 +444,7 @@ ProjectAggregate _projectWithTasks(List<Task> tasks) {
 
 ProjectDesiredPlan _desired(
   ProjectAggregate project,
-  List<Task> tasks, {
+  List<TaskAggregate> tasks, {
   bool includeCriteria = true,
   List<ProjectMemoryEntry> memoryAdditions = const [],
   List<ProjectMemorySupersession> memorySupersessions = const [],
@@ -488,7 +488,7 @@ ProjectMemoryEntry _memory(
   );
 }
 
-Task _task(
+TaskAggregate _task(
   String id, {
   List<String> dependencies = const [],
   List<String> writePaths = const ['lib/feature.dart'],
@@ -497,7 +497,7 @@ Task _task(
 }) {
   final now = DateTime(2026, 1, 2);
   final objective = 'Implement bounded slice $id.';
-  return Task(
+  return TaskAggregate(
     id: id,
     title: 'Bounded slice $id',
     objective: objective,

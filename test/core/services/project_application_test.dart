@@ -4,8 +4,8 @@ import 'package:hermes/app/test_factories.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/features/persistence/application/persistence_contracts.dart';
@@ -221,7 +221,7 @@ ProjectExecutionRequest _request(ProjectAggregate project, String rootPath) =>
     );
 
 ProjectAggregate _project({
-  List<Task> tasks = const [],
+  List<TaskAggregate> tasks = const [],
   List<ProjectCriterion>? criteria,
 }) {
   final now = DateTime(2026, 1, 1);
@@ -249,9 +249,9 @@ ProjectAggregate _project({
   );
 }
 
-Task _task(String id, {TaskStatus status = TaskStatus.queued}) {
+TaskAggregate _task(String id, {TaskStatus status = TaskStatus.queued}) {
   final now = DateTime(2026, 1, 1);
-  return Task(
+  return TaskAggregate(
     id: id,
     title: id,
     objective: 'Complete $id.',

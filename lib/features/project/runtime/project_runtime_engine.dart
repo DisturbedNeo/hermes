@@ -15,7 +15,7 @@ import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/project/application/project_application/project_ports.dart';
 import 'package:hermes/features/project/application/contracts/project_commands.dart';
 
-import 'package:hermes/features/project/runtime/project_execution_runtime.dart';
+import 'package:hermes/features/project/runtime/project_execution_state_machine.dart';
 
 class ProjectRuntimeApplication
     implements
@@ -46,7 +46,7 @@ class ProjectRuntimeApplication
         CallbackProjectRecoveryPort(
           (request) => _delegate.recoverProjectForCommand(request),
         );
-    _delegate = ProjectExecutionRuntime(
+    _delegate = ProjectExecutionStateMachine(
       taskQueries: taskQueries,
       taskPlanning: taskPlanning,
       taskProjectPlanning: taskProjectPlanning,
@@ -61,7 +61,7 @@ class ProjectRuntimeApplication
     );
   }
 
-  late final ProjectExecutionRuntime _delegate;
+  late final ProjectExecutionStateMachine _delegate;
 
   Future<ProjectCommandResult> execute(ProjectExecutionRequest request) =>
       _delegate.execute(request);

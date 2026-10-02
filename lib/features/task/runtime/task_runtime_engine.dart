@@ -12,7 +12,7 @@ import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/model/application/model_output.dart';
 import 'package:hermes/features/task/application/contracts/task_summary.dart';
 
-import 'package:hermes/features/task/runtime/task_step_execution_runtime.dart';
+import 'package:hermes/features/task/runtime/task_execution_coordinator.dart';
 
 class TaskRuntimeController
     implements
@@ -24,9 +24,9 @@ class TaskRuntimeController
         TaskExecutionPort,
         TaskRecoveryPort {
   TaskRuntimeController({required TaskRuntimeDependencies dependencies})
-    : _delegate = TaskStepExecutionRuntime(dependencies: dependencies);
+    : _delegate = TaskExecutionCoordinator(dependencies: dependencies);
 
-  final TaskStepExecutionRuntime _delegate;
+  final TaskExecutionCoordinator _delegate;
 
   @override
   Future<List<TaskSummary>> listTasks(
@@ -40,7 +40,7 @@ class TaskRuntimeController
   );
 
   @override
-  Future<Task?> loadLatestTask(
+  Future<TaskAggregate?> loadLatestTask(
     WorkspaceAttachment workspace, {
     String? chatSessionId,
     String? projectId,
@@ -51,7 +51,7 @@ class TaskRuntimeController
   );
 
   @override
-  Future<Task?> loadTask(
+  Future<TaskAggregate?> loadTask(
     WorkspaceAttachment workspace,
     String taskId, {
     String? chatSessionId,
@@ -97,9 +97,9 @@ class TaskRuntimeController
   );
 
   @override
-  Future<Task> recoverTask({
+  Future<TaskAggregate> recoverTask({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     bool persist = true,
   }) => _delegate.recoverTask(
     workspace: workspace,
@@ -137,7 +137,7 @@ class TaskRuntimeController
   );
 
   @override
-  Future<Task> createTask({
+  Future<TaskAggregate> createTask({
     required ModelGenerationPort client,
     required WorkspaceAttachment workspace,
     required String userPrompt,
@@ -164,7 +164,7 @@ class TaskRuntimeController
   );
 
   @override
-  Future<Task> createProjectTask({
+  Future<TaskAggregate> createProjectTask({
     required WorkspaceAttachment workspace,
     required String userPrompt,
     required String? chatSessionId,
@@ -181,9 +181,9 @@ class TaskRuntimeController
   );
 
   @override
-  Future<Task> updateTaskPlan({
+  Future<TaskAggregate> updateTaskPlan({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required TaskPlanUpdateCommand command,
   }) => _delegate.updateTaskPlan(
     workspace: workspace,
@@ -192,10 +192,10 @@ class TaskRuntimeController
   );
 
   @override
-  Future<Task> runNextStep({
+  Future<TaskAggregate> runNextStep({
     required ModelConversationPort client,
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required String baseSystemPrompt,
     bool requirePhaseApproval = false,
     CompactionSettings? compactionSettings,
@@ -223,33 +223,33 @@ class TaskRuntimeController
   );
 
   @override
-  Future<Task> approvePendingStep({
+  Future<TaskAggregate> approvePendingStep({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
   }) => _delegate.approvePendingStep(workspace: workspace, snapshot: snapshot);
 
   @override
-  Future<Task> retryCurrentStep({
+  Future<TaskAggregate> retryCurrentStep({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
   }) => _delegate.retryCurrentStep(workspace: workspace, snapshot: snapshot);
 
   @override
-  Future<Task> skipCurrentStep({
+  Future<TaskAggregate> skipCurrentStep({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
   }) => _delegate.skipCurrentStep(workspace: workspace, snapshot: snapshot);
 
   @override
-  Future<Task> stopTask({
+  Future<TaskAggregate> stopTask({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
   }) => _delegate.stopTask(workspace: workspace, snapshot: snapshot);
 
   @override
-  Future<Task> answerOpenQuestion({
+  Future<TaskAggregate> answerOpenQuestion({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required String answer,
   }) => _delegate.answerOpenQuestion(
     workspace: workspace,
@@ -258,10 +258,10 @@ class TaskRuntimeController
   );
 
   @override
-  Future<Task> replanUnfinished({
+  Future<TaskAggregate> replanUnfinished({
     required ModelGenerationPort client,
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required TaskAggregate snapshot,
     required String baseSystemPrompt,
     String reason = 'User requested a replan of unfinished work.',
     ModelOutputSink? onModelOutput,

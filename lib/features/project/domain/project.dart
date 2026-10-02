@@ -1,15 +1,14 @@
 /// Domain-owned project aggregate.
 ///
 /// The aggregate contains business state and behavior only. Snapshot mapping is
-/// provided by the persistence infrastructure; the application contract remains a
-/// compatibility export for callers that have not migrated their imports yet.
+/// provided by the persistence infrastructure.
 library;
 
 import 'package:hermes/core/sentinel.dart' show kSentinel, resolve;
-import 'package:hermes/features/project/application/contracts/project_state_models.dart'
+import 'package:hermes/features/persistence/infrastructure/dto/project_state_models.dart'
     hide ProjectSnapshotAggregate;
 
-export 'package:hermes/features/project/application/contracts/project_state_models.dart'
+export 'package:hermes/features/persistence/infrastructure/dto/project_state_models.dart'
     hide ProjectSnapshotAggregate;
 
 class ProjectAggregate {
@@ -50,8 +49,8 @@ class ProjectAggregate {
   final ProjectCompletionReviewCheckpoint? completionReviewCheckpoint;
 
   /// Durable, application-facing explanation of the current command boundary.
-  /// Older snapshots may omit this field; the control-state service derives it
-  /// from the compatibility fields when they are loaded.
+  /// The control-state service materializes this boundary after lifecycle
+  /// transitions and before persistence.
   final ProjectBoundary? boundary;
   final List<PendingProjectQuestion> openQuestions;
   final ProjectStatus status;

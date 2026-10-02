@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:hermes/features/chat/presentation/a11y.dart';
-import 'package:hermes/features/chat/presentation/chat_controller_port.dart';
+import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
 import 'package:hermes/features/project/application/project_command_protocol_adapter.dart';
 import 'package:hermes/features/task/application/task_command_protocol_adapter.dart';
 import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
@@ -13,7 +13,7 @@ import 'package:hermes/features/chat/presentation/chat/task_panel_dialogs.dart';
 part 'task_panel_project_sections.dart';
 
 class TaskPanel extends StatelessWidget {
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
   final bool expanded;
   final VoidCallback onToggleExpanded;
 
@@ -78,7 +78,7 @@ class TaskPanel extends StatelessWidget {
 }
 
 class _CollapsedTaskPanel extends StatelessWidget {
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
   final ProjectPanelReadModel? project;
   final TaskPanelReadModel? task;
   final VoidCallback onToggleExpanded;
@@ -146,7 +146,7 @@ class _CollapsedTaskPanel extends StatelessWidget {
 }
 
 class _Header extends StatelessWidget {
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
   final ProjectPanelReadModel? project;
   final TaskPanelReadModel? task;
   final VoidCallback onToggleExpanded;
@@ -218,7 +218,7 @@ class _Header extends StatelessWidget {
 }
 
 class _TaskBody extends StatelessWidget {
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
   final TaskPanelReadModel task;
 
   const _TaskBody({required this.chat, required this.task});
@@ -323,7 +323,7 @@ class _TaskBody extends StatelessWidget {
 }
 
 class _Actions extends StatelessWidget {
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
   final TaskPanelReadModel task;
   final TaskStep? next;
 
@@ -473,7 +473,7 @@ class _Actions extends StatelessWidget {
 }
 
 class _ApprovalCard extends StatelessWidget {
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
   final TaskPanelReadModel task;
 
   const _ApprovalCard({required this.chat, required this.task});
@@ -511,7 +511,7 @@ class _ApprovalCard extends StatelessWidget {
 }
 
 class _QuestionCard extends StatefulWidget {
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
   final TaskPanelReadModel task;
 
   const _QuestionCard({required this.chat, required this.task});
@@ -649,7 +649,7 @@ class _StepTile extends StatelessWidget {
 }
 
 class _ArtifactList extends StatelessWidget {
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
   final TaskPanelReadModel task;
 
   const _ArtifactList({required this.chat, required this.task});
@@ -757,7 +757,7 @@ class _RunList extends StatelessWidget {
 }
 
 class _WorkList extends StatelessWidget {
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
 
   const _WorkList({required this.chat});
 

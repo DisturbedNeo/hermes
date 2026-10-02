@@ -1,7 +1,7 @@
 part of 'task_execution_coordinator.dart';
 
 extension TaskExecutionPlanning on TaskPlanningUseCase {
-  int _taskPlanningStepLimit(Task task) {
+  int _taskPlanningStepLimit(TaskAggregate task) {
     final effortLimit = switch (task.effort) {
       TaskEffort.small => 1,
       TaskEffort.medium => 4,
@@ -99,7 +99,7 @@ or an explicit user command. Task memories remain separate from that graph.
     );
   }
 
-  Task _taskPlanningSeed({
+  TaskAggregate _taskPlanningSeed({
     required String taskId,
     required String userPrompt,
     required TaskPlanningContext? planningContext,
@@ -123,7 +123,7 @@ or an explicit user command. Task memories remain separate from that graph.
       if (planningContext?.outOfScope.isNotEmpty == true)
         ...planningContext!.outOfScope.map((item) => 'Out of scope: $item'),
     ];
-    return Task(
+    return TaskAggregate(
       id: taskId,
       title: title,
       originalPrompt: userPrompt,
@@ -253,8 +253,8 @@ or an explicit user command. Task memories remain separate from that graph.
   /// Converts an already-bounded Project task directly into one executable
   /// task step without invoking the Task Planner model.
 
-  Task _fallbackReplannedTask(
-    Task snapshot,
+  TaskAggregate _fallbackReplannedTask(
+    TaskAggregate snapshot,
     String reason, {
     PlanningMetrics planningMetrics = const PlanningMetrics(),
   }) {
@@ -308,7 +308,7 @@ or an explicit user command. Task memories remain separate from that graph.
 
   TaskStepExecutionOutput _parseStepOutput(
     String raw,
-    Task task,
+    TaskAggregate task,
     TaskStep step,
     List<TaskToolCallRecord> toolCalls,
     TaskExecutionRequest executionRequest,
@@ -391,8 +391,8 @@ or an explicit user command. Task memories remain separate from that graph.
     );
   }
 
-  Task _completeStep(
-    Task snapshot,
+  TaskAggregate _completeStep(
+    TaskAggregate snapshot,
     TaskStep step,
     TaskStepExecutionOutput output,
     DateTime now,
@@ -410,8 +410,8 @@ or an explicit user command. Task memories remain separate from that graph.
     return _advanceAfterStep(updated, now);
   }
 
-  Task _blockStep(
-    Task snapshot,
+  TaskAggregate _blockStep(
+    TaskAggregate snapshot,
     TaskStep step,
     TaskStepExecutionOutput output,
     DateTime now,
@@ -452,8 +452,8 @@ or an explicit user command. Task memories remain separate from that graph.
     );
   }
 
-  Task _failStep(
-    Task snapshot,
+  TaskAggregate _failStep(
+    TaskAggregate snapshot,
     TaskStep step,
     TaskStepExecutionOutput output,
     DateTime now,
@@ -473,7 +473,7 @@ or an explicit user command. Task memories remain separate from that graph.
     );
   }
 
-  Task _advanceAfterStep(Task snapshot, DateTime now) {
+  TaskAggregate _advanceAfterStep(TaskAggregate snapshot, DateTime now) {
     final currentStepId = _nextStepId(snapshot.steps);
     return snapshot.copyWith(
       status: currentStepId == null ? TaskStatus.completed : TaskStatus.paused,
@@ -485,7 +485,7 @@ or an explicit user command. Task memories remain separate from that graph.
     );
   }
 
-  Task _markCompleted(Task snapshot) {
+  TaskAggregate _markCompleted(TaskAggregate snapshot) {
     final now = DateTime.now();
     return snapshot.copyWith(
       status: TaskStatus.completed,
@@ -495,7 +495,11 @@ or an explicit user command. Task memories remain separate from that graph.
     );
   }
 
-  Task _replaceStep(Task snapshot, String stepId, TaskStep step) {
+  TaskAggregate _replaceStep(
+    TaskAggregate snapshot,
+    String stepId,
+    TaskStep step,
+  ) {
     final index = snapshot.steps.indexWhere((item) => item.id == stepId);
     if (index < 0) return snapshot;
     final steps = [...snapshot.steps];
@@ -503,7 +507,7 @@ or an explicit user command. Task memories remain separate from that graph.
     return snapshot.copyWith(steps: steps);
   }
 
-  Task _replaceLastRun(Task snapshot, TaskRun run) {
+  TaskAggregate _replaceLastRun(TaskAggregate snapshot, TaskRun run) {
     if (snapshot.runs.isEmpty) return snapshot.copyWith(runs: [run]);
     final runs = [...snapshot.runs];
     runs[runs.length - 1] = run;
@@ -523,7 +527,7 @@ or an explicit user command. Task memories remain separate from that graph.
   }
 
   String _buildStepPrompt(
-    Task task,
+    TaskAggregate task,
     TaskStep step,
     WorkspaceAttachment workspace,
     TaskExecutionRequest executionRequest,
@@ -595,7 +599,7 @@ task_request_replan with a concrete reason. Those tools end the step.
   }
 
   String _stepToolPermissionText(
-    Task task,
+    TaskAggregate task,
     TaskStep step,
     WorkspaceAttachment workspace,
   ) {
@@ -626,7 +630,7 @@ $whitelist
         .trim();
   }
 
-  String _buildAvailableArtifactInputs(Task task, TaskStep step) {
+  String _buildAvailableArtifactInputs(TaskAggregate task, TaskStep step) {
     final currentIndex = task.steps.indexWhere((item) => item.id == step.id);
     final priorStepIds = <String>{};
     if (currentIndex > 0) {
@@ -659,7 +663,11 @@ $whitelist
     return lines.isEmpty ? 'None.' : lines.join('\n');
   }
 
-  Task _normaliseEditedTask(Task candidate, Task original, DateTime now) {
+  TaskAggregate _normaliseEditedTask(
+    TaskAggregate candidate,
+    TaskAggregate original,
+    DateTime now,
+  ) {
     final steps = candidate.steps.isEmpty
         ? original.steps
         : _normaliseUniqueSteps(candidate.steps);
@@ -888,7 +896,7 @@ $whitelist
     );
   }
 
-  Task _fallbackTask({
+  TaskAggregate _fallbackTask({
     required String taskId,
     required String userPrompt,
     required String? chatSessionId,
@@ -896,7 +904,7 @@ $whitelist
     required DateTime now,
   }) {
     final step = _fallbackExecutionStep(taskId, userPrompt);
-    return Task(
+    return TaskAggregate(
       id: taskId,
       title: _titleFromPrompt(userPrompt),
       originalPrompt: userPrompt,
@@ -916,7 +924,7 @@ $whitelist
     );
   }
 
-  Task _fallbackProjectBoundedTask({
+  TaskAggregate _fallbackProjectBoundedTask({
     required String taskId,
     required String userPrompt,
     required String? chatSessionId,
@@ -973,7 +981,7 @@ $whitelist
           : _defaultArtifactGates(artifactPaths),
       status: TaskStepStatus.pending,
     );
-    return Task(
+    return TaskAggregate(
       id: taskId,
       title: planningContext.projectTaskTitle.trim().isEmpty
           ? _titleFromPrompt(planningContext.projectTaskObjective)

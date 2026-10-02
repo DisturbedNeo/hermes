@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:hermes/features/chat/presentation/a11y.dart';
-import 'package:hermes/features/chat/presentation/chat_controller_port.dart';
+import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
 
 class WorkspaceBar extends StatelessWidget {
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
   final VoidCallback onOpenWorkspace;
 
   const WorkspaceBar({
@@ -133,7 +133,7 @@ class WorkspaceBar extends StatelessWidget {
 }
 
 class _WorkspaceActionsMenu extends StatelessWidget {
-  final ChatController chat;
+  final ChatTabPresentationPort chat;
   final bool missing;
   final VoidCallback onOpenWorkspace;
 
@@ -199,7 +199,7 @@ enum _WorkspaceAction { toggleTerminal, change, detach }
 
 Future<void> _setHostTerminalApproval(
   BuildContext context,
-  ChatController chat,
+  ChatTabPresentationPort chat,
   bool approved,
 ) async {
   if (!approved) {

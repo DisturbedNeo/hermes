@@ -5,7 +5,7 @@ import 'package:hermes/features/persistence/infrastructure/dto/aggregate_snapsho
 class TaskSnapshotDto {
   const TaskSnapshotDto._(this.document);
 
-  factory TaskSnapshotDto.fromAggregate(Task task) =>
+  factory TaskSnapshotDto.fromAggregate(TaskAggregate task) =>
       TaskSnapshotDto._(TaskSnapshotCodec.encode(task));
 
   factory TaskSnapshotDto.fromDocument(Map<String, dynamic> document) =>
@@ -13,5 +13,5 @@ class TaskSnapshotDto {
 
   final Map<String, dynamic> document;
 
-  Task toAggregate() => TaskSnapshotCodec.decode(document);
+  TaskAggregate toAggregate() => TaskSnapshotCodec.decode(document);
 }

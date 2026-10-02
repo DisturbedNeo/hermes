@@ -29,7 +29,7 @@ class TaskExecutionPolicy {
 
   const TaskExecutionPolicy();
 
-  List<TaskGate> completionGates(Task task, TaskStep step) {
+  List<TaskGate> completionGates(TaskAggregate task, TaskStep step) {
     final hasRemainingSteps = task.steps.any((candidate) {
       if (candidate.id == step.id) return false;
       return candidate.status == TaskStepStatus.pending ||
@@ -53,7 +53,7 @@ class TaskExecutionPolicy {
     return {...readOnlyToolIds, ...mutatingToolIds};
   }
 
-  List<TaskAllowedCommand> allowedCommands(Task task, TaskStep step) {
+  List<TaskAllowedCommand> allowedCommands(TaskAggregate task, TaskStep step) {
     final seen = <String>{};
     final commands = <TaskAllowedCommand>[];
     for (final gate in completionGates(task, step)) {

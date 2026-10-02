@@ -2,15 +2,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/persistence/application/persistence_contracts.dart';
 import 'package:hermes/features/project/infrastructure/project_aggregate_repository.dart';
 import 'package:hermes/features/project/application/contracts/project_checkpoint.dart';
 import 'package:hermes/features/project/infrastructure/project_repository.dart';
 import 'package:hermes/features/task/infrastructure/task_repository.dart';
 import 'package:hermes/features/persistence/infrastructure/workspace_persistence_coordinator.dart';
-import 'package:hermes/core/model_json.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
@@ -127,49 +126,6 @@ void main() {
       final loaded = await aggregate.loadProject(root.path, project.id);
       expect(loaded.project?.tasks, isEmpty);
       expect(loaded.diagnostics.isEmpty, isTrue);
-    },
-  );
-
-  test(
-    'migrates legacy embedded tasks into canonical task documents',
-    () async {
-      final task = _task('legacy_task');
-      final project = _project('legacy_project');
-      final document = ModelJson.encode(project)
-        ..['tasks'] = [ModelJson.encode(task)]
-        ..['taskIds'] = <String>[];
-      final file = File(
-        path.join(
-          root.path,
-          ProjectRepository.projectsRoot,
-          project.id,
-          ProjectRepository.documentFileName,
-        ),
-      );
-      await file.parent.create(recursive: true);
-      await file.writeAsString(
-        jsonEncode(SnapshotEnvelope.encode(document, 1)),
-      );
-
-      final loaded = await aggregate.loadProject(root.path, project.id);
-
-      expect(loaded.project?.taskIds, ['legacy_task']);
-      expect(loaded.canonicalTasks.single.id, 'legacy_task');
-      expect(loaded.canonicalTasks.single.title, task.title);
-      final normalized = jsonDecode(await file.readAsString()) as Map;
-      final normalizedDocument = normalized['document'] as Map;
-      expect(normalizedDocument, isNot(contains('tasks')));
-      expect(
-        await File(
-          path.join(
-            root.path,
-            TaskRepository.tasksRoot,
-            'legacy_task',
-            TaskRepository.documentFileName,
-          ),
-        ).exists(),
-        isTrue,
-      );
     },
   );
 
@@ -305,7 +261,7 @@ void main() {
   );
 }
 
-ProjectAggregate _project(String id, {List<Task> tasks = const []}) {
+ProjectAggregate _project(String id, {List<TaskAggregate> tasks = const []}) {
   final now = DateTime(2026, 1, 1);
   return ProjectAggregate(
     id: id,
@@ -322,9 +278,9 @@ ProjectAggregate _project(String id, {List<Task> tasks = const []}) {
   );
 }
 
-Task _task(String id, {List<TaskRun> runs = const []}) {
+TaskAggregate _task(String id, {List<TaskRun> runs = const []}) {
   final now = DateTime(2026, 1, 1);
-  return Task(
+  return TaskAggregate(
     id: id,
     title: 'Task',
     originalPrompt: 'Task',

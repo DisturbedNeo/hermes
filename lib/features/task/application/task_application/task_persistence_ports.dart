@@ -5,25 +5,25 @@ import 'package:hermes/features/task/application/contracts/task_summary.dart';
 
 /// Application-owned conversion boundary for planning-only project nodes.
 abstract interface class TaskMaterializerPort {
-  Task create(
+  TaskAggregate create(
     ProjectTaskNode node, {
     required String projectId,
     String? chatSessionId,
   });
 
-  Task apply(
+  TaskAggregate apply(
     ProjectTaskNode node,
-    Task existing, {
+    TaskAggregate existing, {
     required String projectId,
     String? chatSessionId,
   });
 
-  bool matches(ProjectTaskNode node, Task task);
+  bool matches(ProjectTaskNode node, TaskAggregate task);
 }
 
 /// Read-only task persistence capabilities.
 abstract interface class TaskReadPort {
-  Future<PersistedSnapshot<Task>?> loadTaskSnapshot(
+  Future<PersistedSnapshot<TaskAggregate>?> loadTaskSnapshot(
     String workspaceRoot,
     String taskId, {
     String? chatSessionId,
@@ -31,7 +31,7 @@ abstract interface class TaskReadPort {
     bool includeHistory = true,
   });
 
-  Future<Map<String, PersistedSnapshot<Task>?>> loadTaskSnapshots(
+  Future<Map<String, PersistedSnapshot<TaskAggregate>?>> loadTaskSnapshots(
     String workspaceRoot,
     Iterable<String> taskIds, {
     String? chatSessionId,
@@ -49,7 +49,7 @@ abstract interface class TaskReadPort {
     Iterable<String> taskIds,
   );
 
-  Future<PersistedSnapshot<Task>?> loadTaskSnapshotUnlocked(
+  Future<PersistedSnapshot<TaskAggregate>?> loadTaskSnapshotUnlocked(
     String workspaceRoot,
     String taskId, {
     String? chatSessionId,
@@ -63,13 +63,13 @@ abstract interface class TaskReadPort {
     String? projectId,
   });
 
-  Future<PersistedSnapshot<Task>?> loadLatestTask(
+  Future<PersistedSnapshot<TaskAggregate>?> loadLatestTask(
     String workspaceRoot, {
     String? chatSessionId,
     String? projectId,
   });
 
-  Future<PersistedSnapshot<Task>?> loadTask(
+  Future<PersistedSnapshot<TaskAggregate>?> loadTask(
     String workspaceRoot,
     String taskId, {
     String? chatSessionId,
@@ -80,18 +80,18 @@ abstract interface class TaskReadPort {
 
 /// Task snapshot and history writes.
 abstract interface class TaskWritePort {
-  Future<PersistedSnapshot<Task>> saveSnapshotUnlocked(
+  Future<PersistedSnapshot<TaskAggregate>> saveSnapshotUnlocked(
     String workspaceRoot,
-    Task task, {
+    TaskAggregate task, {
     required int expectedRevision,
     PersistedRevision? currentRevision,
   });
 
   Future<bool> deleteTaskUnlocked(String workspaceRoot, String taskId);
 
-  Future<PersistedSnapshot<Task>> saveSnapshot(
+  Future<PersistedSnapshot<TaskAggregate>> saveSnapshot(
     String workspaceRoot,
-    Task task, {
+    TaskAggregate task, {
     int? expectedRevision,
     bool assumeLocked = false,
   });

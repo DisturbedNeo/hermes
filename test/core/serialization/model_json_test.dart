@@ -5,9 +5,9 @@ import 'package:hermes/features/chat/application/protocol/context_summary_prompt
 import 'package:hermes/features/chat/application/contracts/chat_message.dart';
 import 'package:hermes/features/chat/application/protocol/chat_message_wire_adapter.dart';
 import 'package:hermes/features/model/application/model_configuration.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/model_json.dart';
 import 'package:hermes/features/task/application/contracts/question_policy_service.dart';
 import 'package:hermes/features/task/application/contracts/task_planning_models.dart';
@@ -153,7 +153,7 @@ void main() {
       kind: 'file',
       createdAt: now,
     );
-    final task = Task(
+    final task = TaskAggregate(
       id: 'project_task_1',
       title: 'Task',
       objective: 'Work',

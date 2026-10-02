@@ -11,8 +11,8 @@ import 'package:hermes/features/chat/application/protocol/context_estimator.dart
 import 'package:hermes/features/chat/application/contracts/chat_message.dart';
 import 'package:hermes/features/chat/application/contracts/chat_token.dart';
 import 'package:hermes/features/chat/application/contracts/bubble.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/model/application/model_configuration.dart';
 import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
 import 'package:hermes/features/chat/application/contracts/chat_workspace_contracts.dart';
@@ -86,15 +86,15 @@ void main() {
         taskSessions: taskController,
         taskPresentation: taskController,
         panelProtocol: const ChatPanelProtocolAdapter(),
-        taskPlanning: taskController,
-        taskExecution: taskController,
-        taskRecovery: taskController,
+        taskPlanning: createTestTaskWorkflow(taskController),
+        taskExecution: createTestTaskWorkflow(taskController),
+        taskRecovery: createTestTaskWorkflow(taskController),
         projectQueries: projectApplication,
         projectSessions: projectApplication,
-        projectPlanning: projectApplication,
-        projectCommands: projectApplication,
-        projectExecution: projectApplication,
-        projectRecovery: projectApplication,
+        projectPlanning: createTestProjectWorkflow(projectApplication),
+        projectCommands: createTestProjectWorkflow(projectApplication),
+        projectExecution: createTestProjectWorkflow(projectApplication),
+        projectRecovery: createTestProjectWorkflow(projectApplication),
         chatLibrary: chatLibrary,
         workspaceService: WorkspaceService(sandbox: sandbox),
         preferencesService: preferences,
@@ -300,7 +300,7 @@ void main() {
       serverManager.setCompletionProviderForTesting(
         _QueueCompletionClient([
           _commandPlanTaskResponse(_planJson(title: 'Runnable task')),
-          ChatCompletionResponse(
+          ModelCompletion(
             content: jsonEncode({
               'status': 'completed',
               'summary': 'Step complete.',
@@ -339,14 +339,14 @@ void main() {
               },
             ],
           }),
-          ChatCompletionResponse(
+          ModelCompletion(
             content: jsonEncode({
               'status': 'completed',
               'summary': 'Inspection complete.',
               'memoryUpdate': 'The workspace was inspected.',
             }),
           ),
-          ChatCompletionResponse(
+          ModelCompletion(
             content: jsonEncode({
               'status': 'completed',
               'summary': 'Report complete.',
@@ -376,7 +376,7 @@ void main() {
             ],
             'openQuestions': [],
           }),
-          ChatCompletionResponse(
+          ModelCompletion(
             content: jsonEncode({
               'task': _projectTaskJson(
                 relevantSuccessCriteria: const ['Finish'],
@@ -384,14 +384,14 @@ void main() {
             }),
           ),
           _commandPlanTaskResponse(_projectPlanJson(title: 'Project task')),
-          ChatCompletionResponse(
+          ModelCompletion(
             content: jsonEncode({
               'status': 'completed',
               'summary': 'Project task complete.',
               'memoryUpdate': 'Screen built.',
             }),
           ),
-          ChatCompletionResponse(
+          ModelCompletion(
             content: jsonEncode({
               'complete': true,
               'finalSummary': 'All done.',
@@ -491,11 +491,11 @@ void main() {
               reasoning: 'Planning rationale.',
               content: jsonEncode(_planJson(title: 'Visible task')),
             ),
-            ChatCompletionResponse(
+            ModelCompletion(
               reasoning: 'Need a calculation.',
               content: '',
               toolCalls: [
-                ChatCompletionToolCall(
+                ModelToolCall(
                   id: 'call_calc',
                   name: 'calculator',
                   arguments: jsonEncode({
@@ -506,7 +506,7 @@ void main() {
                 ),
               ],
             ),
-            ChatCompletionResponse(
+            ModelCompletion(
               reasoning: 'Finalizing from tool output.',
               content: jsonEncode({
                 'status': 'completed',
@@ -822,15 +822,15 @@ void main() {
         taskSessions: taskController,
         taskPresentation: taskController,
         panelProtocol: const ChatPanelProtocolAdapter(),
-        taskPlanning: taskController,
-        taskExecution: taskController,
-        taskRecovery: taskController,
+        taskPlanning: createTestTaskWorkflow(taskController),
+        taskExecution: createTestTaskWorkflow(taskController),
+        taskRecovery: createTestTaskWorkflow(taskController),
         projectQueries: projectApplication,
         projectSessions: projectApplication,
-        projectPlanning: projectApplication,
-        projectCommands: projectApplication,
-        projectExecution: projectApplication,
-        projectRecovery: projectApplication,
+        projectPlanning: createTestProjectWorkflow(projectApplication),
+        projectCommands: createTestProjectWorkflow(projectApplication),
+        projectExecution: createTestProjectWorkflow(projectApplication),
+        projectRecovery: createTestProjectWorkflow(projectApplication),
         workspaceService: WorkspaceService(sandbox: sandbox),
         preferencesService: preferences,
       );
@@ -1039,9 +1039,9 @@ Map<String, dynamic> _projectTaskJson({
   };
 }
 
-Task _taskDocument({String id = 'task_test', String? chatSessionId}) {
+TaskAggregate _taskDocument({String id = 'task_test', String? chatSessionId}) {
   final now = DateTime(2026, 1, 1);
-  return Task(
+  return TaskAggregate(
     id: id,
     title: 'Test task',
     originalPrompt: 'Run the task',
@@ -1092,12 +1092,12 @@ ProjectAggregate _projectDocument({
   );
 }
 
-ChatCompletionResponse _commandPlanTaskResponse(
+ModelCompletion _commandPlanTaskResponse(
   Map<String, dynamic> arguments, {
   String content = '',
   String reasoning = '',
 }) {
-  final calls = <ChatCompletionToolCall>[
+  final calls = <ModelToolCall>[
     _toolCall('task_set_brief', {
       'title': arguments['title'] ?? 'Task',
       'objective': arguments['objective'] ?? arguments['goal'] ?? '',
@@ -1119,19 +1119,19 @@ ChatCompletionResponse _commandPlanTaskResponse(
         }),
     _toolCall('task_commit_plan', const {}),
   ];
-  return ChatCompletionResponse(
+  return ModelCompletion(
     content: content,
     reasoning: reasoning,
     toolCalls: calls,
   );
 }
 
-ChatCompletionResponse _commandPlanProjectResponse(
+ModelCompletion _commandPlanProjectResponse(
   Map<String, dynamic> arguments, {
   String content = '',
   String reasoning = '',
 }) {
-  final calls = <ChatCompletionToolCall>[
+  final calls = <ModelToolCall>[
     if (arguments['title'] != null || arguments['refinedGoal'] != null)
       _toolCall('plan_set_project_details', {
         'title': arguments['title'] ?? 'Project',
@@ -1205,15 +1205,15 @@ ChatCompletionResponse _commandPlanProjectResponse(
       'rationale': arguments['rationale'] ?? 'Commit the bounded project plan.',
     }),
   ];
-  return ChatCompletionResponse(
+  return ModelCompletion(
     content: content,
     reasoning: reasoning,
     toolCalls: calls,
   );
 }
 
-ChatCompletionToolCall _toolCall(String name, Map<String, dynamic> arguments) =>
-    ChatCompletionToolCall(
+ModelToolCall _toolCall(String name, Map<String, dynamic> arguments) =>
+    ModelToolCall(
       id: 'call_${name}_${arguments.hashCode}',
       name: name,
       arguments: jsonEncode(arguments),
@@ -1235,7 +1235,7 @@ class _QueueChatClient extends ChatClient {
   }) async => 0;
 
   @override
-  Future<ChatCompletionResponse> completeChat({
+  Future<ModelCompletion> completeChat({
     required List<ChatMessage> messages,
     ModelRequestOptions? extraParams,
     Object? cancellationToken,
@@ -1256,7 +1256,7 @@ class _QueueChatClient extends ChatClient {
     } on FormatException {
       // Preserve non-JSON responses for tests that exercise transport errors.
     }
-    return ChatCompletionResponse(content: response);
+    return ModelCompletion(content: response);
   }
 
   @override
@@ -1293,7 +1293,7 @@ class _RecordingStreamClient extends ChatClient {
   }
 
   @override
-  Future<ChatCompletionResponse> completeChat({
+  Future<ModelCompletion> completeChat({
     required List<ChatMessage> messages,
     ModelRequestOptions? extraParams,
     Object? cancellationToken,
@@ -1316,7 +1316,7 @@ class _QueueCompletionClient extends ChatClient {
   _QueueCompletionClient(this._responses)
     : super(baseUrl: 'http://localhost', model: 'test');
 
-  final List<ChatCompletionResponse> _responses;
+  final List<ModelCompletion> _responses;
   var _index = 0;
 
   @override
@@ -1327,7 +1327,7 @@ class _QueueCompletionClient extends ChatClient {
   }) async => 0;
 
   @override
-  Future<ChatCompletionResponse> completeChat({
+  Future<ModelCompletion> completeChat({
     required List<ChatMessage> messages,
     ModelRequestOptions? extraParams,
     Object? cancellationToken,
@@ -1441,7 +1441,7 @@ class _StuckTaskClient extends ChatClient {
   }
 
   @override
-  Future<ChatCompletionResponse> completeChat({
+  Future<ModelCompletion> completeChat({
     required List<ChatMessage> messages,
     ModelRequestOptions? extraParams,
     Object? cancellationToken,

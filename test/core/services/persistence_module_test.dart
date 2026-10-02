@@ -2,8 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/app/modules/persistence_module.dart';
 import 'package:hermes/features/persistence/infrastructure/dto/project_persistence_adapter.dart';
 import 'package:hermes/features/persistence/infrastructure/dto/task_persistence_adapter.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 
 void main() {
   test('all persistence repositories share the module coordinator', () {
@@ -26,7 +26,7 @@ void main() {
     'project and task persistence DTO adapters round-trip domain values',
     () {
       final now = DateTime(2026, 1, 1);
-      final task = Task(
+      final task = TaskAggregate(
         id: 'task_dto',
         title: 'DTO task',
         originalPrompt: 'Preserve this task',

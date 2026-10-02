@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:hermes/app/test_factories.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/infrastructure/chat_library_repository.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
@@ -57,15 +57,15 @@ void main() {
       taskSessions: taskController,
       taskPresentation: taskController,
       panelProtocol: const ChatPanelProtocolAdapter(),
-      taskPlanning: taskController,
-      taskExecution: taskController,
-      taskRecovery: taskController,
+      taskPlanning: createTestTaskWorkflow(taskController),
+      taskExecution: createTestTaskWorkflow(taskController),
+      taskRecovery: createTestTaskWorkflow(taskController),
       projectQueries: projectApplication,
       projectSessions: projectApplication,
-      projectPlanning: projectApplication,
-      projectCommands: projectApplication,
-      projectExecution: projectApplication,
-      projectRecovery: projectApplication,
+      projectPlanning: createTestProjectWorkflow(projectApplication),
+      projectCommands: createTestProjectWorkflow(projectApplication),
+      projectExecution: createTestProjectWorkflow(projectApplication),
+      projectRecovery: createTestProjectWorkflow(projectApplication),
       chatLibrary: chatLibrary,
       workspaceService: WorkspaceService(sandbox: sandbox),
       preferencesService: preferences,
@@ -231,9 +231,9 @@ void main() {
   });
 }
 
-Task _taskWithArtifact() {
+TaskAggregate _taskWithArtifact() {
   final now = DateTime(2024, 1, 1);
-  return Task(
+  return TaskAggregate(
     id: 'task_test',
     title: 'Test task',
     originalPrompt: 'Create an artifact.',
@@ -301,7 +301,7 @@ ProjectAggregate _projectWithTask() {
     completionSummary: '',
     tasks: [
       ProjectTaskNode.fromTask(
-        Task(
+        TaskAggregate(
           id: 'task_test',
           title: 'Project task',
           objective: 'Do the project task.',
@@ -362,7 +362,7 @@ ProjectAggregate _projectWithExhaustedRecovery() {
     ],
     tasks: [
       ProjectTaskNode.fromTask(
-        Task(
+        TaskAggregate(
           id: 'failed_task',
           title: 'Failed task',
           objective: 'Build the project.',
@@ -418,7 +418,7 @@ ProjectAggregate _projectWithPlanReview() {
     createdAt: now,
     updatedAt: now,
   );
-  final ready = Task(
+  final ready = TaskAggregate(
     id: 'ready_task',
     title: 'Finish keyboard flow',
     objective: 'Complete the remaining keyboard interactions.',
@@ -435,7 +435,7 @@ ProjectAggregate _projectWithPlanReview() {
     createdAt: now,
     updatedAt: now,
   );
-  final waiting = Task(
+  final waiting = TaskAggregate(
     id: 'waiting_task',
     title: 'Polish the dialog',
     objective: 'Polish the completed keyboard dialog.',

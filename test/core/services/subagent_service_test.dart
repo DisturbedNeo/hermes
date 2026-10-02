@@ -20,7 +20,7 @@ void main() {
     await File('${root.path}/notes.txt').writeAsString('visible facts');
 
     final client = _FakeChatClient(
-      const ChatCompletionResponse(
+      const ModelCompletion(
         content:
             '<think>internal content reasoning</think>\n  extracted facts  ',
         reasoning: 'internal extraction reasoning',
@@ -66,7 +66,7 @@ void main() {
         workspaceSandbox: WorkspaceSandbox(),
         subagentService: SubagentService(
           chatClientFactory: () => _FakeChatClient(
-            const ChatCompletionResponse(
+            const ModelCompletion(
               content: '',
               reasoning: 'internal extraction reasoning',
             ),
@@ -101,7 +101,7 @@ void main() {
       });
 
       final client = _FakeChatClient(
-        const ChatCompletionResponse(content: 'should not be called'),
+        const ModelCompletion(content: 'should not be called'),
       );
       final service = ToolService(
         workspaceSandbox: WorkspaceSandbox(),
@@ -133,11 +133,11 @@ class _FakeChatClient extends ChatClient {
   _FakeChatClient(this._response)
     : super(baseUrl: 'http://localhost', model: 'test');
 
-  final ChatCompletionResponse _response;
+  final ModelCompletion _response;
   ModelRequestOptions? seenExtraParams;
 
   @override
-  Future<ChatCompletionResponse> completeChat({
+  Future<ModelCompletion> completeChat({
     required List<ChatMessage> messages,
     ModelRequestOptions? extraParams,
     Object? cancellationToken,

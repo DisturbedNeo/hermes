@@ -14,7 +14,7 @@ class ChatWorkUseCase {
   ChatStream<ChatToken> get chatStream => _host.chatStream;
   WorkspaceAttachment? get workspace => _host.workspace;
   ProjectAggregate? get activeProject => _host.activeProject;
-  Task? get activeTask => _host.activeTask;
+  TaskAggregate? get activeTask => _host.activeTask;
   TaskSystemSettings get taskSystemSettings => _host.taskSystemSettings;
   bool get taskBusy => _host.taskBusy;
   ExecutionMode get executionMode => _host.executionMode;
@@ -46,7 +46,8 @@ class ChatWorkUseCase {
   void dispatchTaskError(Object? value) => _host.dispatchTaskError(value);
   void dispatchTaskStatusMessage(String? value) =>
       _host.dispatchTaskStatusMessage(value);
-  void dispatchActiveTask(Task? value) => _host.dispatchActiveTask(value);
+  void dispatchActiveTask(TaskAggregate? value) =>
+      _host.dispatchActiveTask(value);
   void dispatchActiveProject(ProjectAggregate? value) =>
       _host.dispatchActiveProject(value);
   void dispatchActiveProjectPersistenceDiagnostics(
@@ -76,7 +77,7 @@ class ChatWorkUseCase {
       _host._adoptActiveModelIfRestoreDismissed();
   String _buildSystemPrompt({String? currentUserRequest}) =>
       _host.buildSystemPromptInternal(currentUserRequest: currentUserRequest);
-  String _buildTaskSystemPrompt(Task snapshot) =>
+  String _buildTaskSystemPrompt(TaskAggregate snapshot) =>
       _host._buildTaskSystemPrompt(snapshot);
   String _buildProjectSystemPrompt(ProjectAggregate snapshot) =>
       _host._buildProjectSystemPrompt(snapshot);

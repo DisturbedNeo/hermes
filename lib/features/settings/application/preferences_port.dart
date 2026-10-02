@@ -74,21 +74,3 @@ abstract interface class ChatPresentationPreferencesPort
         SettingsPreferencesPort,
         ModelPickerPreferencesPort,
         DiagnosticsBarPreferencesPort {}
-
-/// Combined adapter retained for composition and compatibility. Feature
-/// services should depend on the smallest focused port or bundle above.
-abstract interface class PreferencesPort
-    implements
-        PreferencesNotificationsPort,
-        AppearanceSettingsPort,
-        ModelDirectorySettingsPort,
-        ModelPreferencesPort,
-        DiagnosticsSettingsPort,
-        CompactionSettingsPort,
-        ExecutionSettingsPort,
-        PersistenceSettingsPort,
-        ChatRuntimePreferencesPort,
-        SettingsPreferencesPort,
-        ModelPickerPreferencesPort,
-        DiagnosticsBarPreferencesPort,
-        ChatPresentationPreferencesPort {}

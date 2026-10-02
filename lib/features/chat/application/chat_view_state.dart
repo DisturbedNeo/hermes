@@ -12,8 +12,8 @@ import 'package:hermes/features/workspace/application/workspace.dart';
 
 /// Immutable presentation snapshot for one chat tab.
 ///
-/// Compatibility getters retain the existing widget-facing API, while the
-/// slice fields make ownership explicit for new consumers.
+/// The getters expose the presentation state while the slice fields make
+/// ownership explicit.
 class ChatViewState {
   ChatViewState({
     required this.tabId,

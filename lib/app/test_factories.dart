@@ -8,7 +8,9 @@ import 'package:hermes/features/project/runtime/project_lifecycle_service.dart';
 import 'package:hermes/features/project/runtime/project_memory_service.dart';
 import 'package:hermes/features/project/runtime/project_progress_monitor.dart';
 import 'package:hermes/features/project/runtime/project_recovery_service.dart';
-import 'package:hermes/features/project/runtime/project_execution_runtime.dart';
+import 'package:hermes/features/project/application/project_application/project_workflow_port.dart';
+import 'package:hermes/features/project/runtime/project_workflow_adapter.dart';
+import 'package:hermes/features/project/runtime/project_execution_state_machine.dart';
 import 'package:hermes/features/project/runtime/project_model_calls.dart';
 import 'package:hermes/features/project/runtime/project_discovery_service.dart';
 import 'package:hermes/features/project/runtime/project_planning_coordinator.dart';
@@ -32,7 +34,9 @@ import 'package:hermes/features/task/runtime/task_planning_service.dart';
 import 'package:hermes/features/task/runtime/task_planning_coordinator.dart';
 import 'package:hermes/features/task/runtime/task_tool_execution_service.dart';
 import 'package:hermes/features/task/runtime/task_model_completion_service.dart';
-import 'package:hermes/features/task/runtime/task_step_execution_runtime.dart';
+import 'package:hermes/features/task/application/task_application/task_workflow_port.dart';
+import 'package:hermes/features/task/runtime/task_workflow_adapter.dart';
+import 'package:hermes/features/task/runtime/task_execution_coordinator.dart';
 import 'package:hermes/features/task/runtime/task_command_service.dart';
 import 'package:hermes/features/task/runtime/task_step_runner.dart';
 import 'package:hermes/features/task/runtime/task_gate_evaluator.dart';
@@ -57,6 +61,12 @@ import 'package:hermes/features/persistence/application/project_snapshot_store_p
 
 /// Explicit construction helpers for tests that need lightweight adapters.
 /// Production composition is kept in [AppDependencies].
+TaskWorkflowPort createTestTaskWorkflow(TaskController controller) =>
+    TaskWorkflowAdapter(delegate: controller);
+
+ProjectWorkflowPort createTestProjectWorkflow(ProjectApplication application) =>
+    ProjectWorkflowAdapter(delegate: application);
+
 TaskController createTestTaskController({
   required ToolRegistryPort toolService,
   required WorkspaceSandboxPort sandbox,

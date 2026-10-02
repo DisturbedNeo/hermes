@@ -43,9 +43,9 @@ extension ChatSessionOperations on ChatWorkUseCase {
     return first.length <= 40 ? first : '${first.substring(0, 37)}...';
   }
 
-  Future<Task?> _recoverTaskSnapshot(
+  Future<TaskAggregate?> _recoverTaskSnapshot(
     WorkspaceAttachment current,
-    Task? snapshot,
+    TaskAggregate? snapshot,
   ) async {
     if (snapshot == null) return null;
     final result = await _taskRecovery.recoverTask(
@@ -94,7 +94,7 @@ extension ChatSessionOperations on ChatWorkUseCase {
     );
   }
 
-  Future<Task?> _taskForActiveProject(
+  Future<TaskAggregate?> _taskForActiveProject(
     WorkspaceAttachment current,
     ProjectAggregate? project,
   ) async {

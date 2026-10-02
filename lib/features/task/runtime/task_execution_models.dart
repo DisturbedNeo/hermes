@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:hermes/core/sentinel.dart' show kSentinel, resolve;
 import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
 import 'package:hermes/features/task/application/contracts/question_policy_service.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/runtime/task_command_service.dart';
 import 'package:hermes/features/task/runtime/task_gate_evaluator.dart';
@@ -127,7 +126,7 @@ class TaskTerminalToolCallResult {
 }
 
 class TaskIncrementalPlanAttempt {
-  final Task? task;
+  final TaskAggregate? task;
   final bool usedPlanningTools;
   final PlanningMetrics planningMetrics;
   final String? planningError;

@@ -12,7 +12,12 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hermes/features/settings/application/preferences_port.dart';
 
-class PreferencesService extends ChangeNotifier implements PreferencesPort {
+class PreferencesService extends ChangeNotifier
+    implements
+        AppearanceSettingsPort,
+        PersistenceSettingsPort,
+        ChatRuntimePreferencesPort,
+        ChatPresentationPreferencesPort {
   final Future<SharedPreferences> _prefs = SharedPreferences.getInstance();
 
   Future<String> getDataDirectoryPath() async {

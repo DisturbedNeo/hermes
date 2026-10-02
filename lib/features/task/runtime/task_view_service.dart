@@ -12,7 +12,7 @@ class TaskViewService {
   final int maxTextLength;
 
   Map<String, dynamic> query(
-    Task task, {
+    TaskAggregate task, {
     String? stepRef,
     int? maxItems,
     int? maxSteps,
