@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
 import 'package:hermes/features/task/application/contracts/task_commands.dart';
-import 'package:hermes/features/chat/application/contracts/compaction_settings.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/core/contracts/model_conversation.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/application/contracts/task_planning_models.dart';
-import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
+import 'package:hermes/core/contracts/execution_settings.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/model/application/model_completion_port.dart';
 import 'package:hermes/core/cancellation.dart';
@@ -119,7 +119,7 @@ class TaskRuntimeController
 
   @override
   Future<RefinedTaskBrief> refineTaskBrief({
-    required ModelCompletionPort client,
+    required ModelGenerationPort client,
     WorkspaceAttachment? workspace,
     required String userPrompt,
     ExecutionMode selectedMode = ExecutionMode.refine,
@@ -136,7 +136,7 @@ class TaskRuntimeController
 
   @override
   Future<Task> createTask({
-    required ModelCompletionPort client,
+    required ModelGenerationPort client,
     required WorkspaceAttachment workspace,
     required String userPrompt,
     required ExecutionMode selectedMode,
@@ -191,7 +191,7 @@ class TaskRuntimeController
 
   @override
   Future<Task> runNextStep({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required WorkspaceAttachment workspace,
     required Task snapshot,
     required String baseSystemPrompt,
@@ -257,7 +257,7 @@ class TaskRuntimeController
 
   @override
   Future<Task> replanUnfinished({
-    required ModelCompletionPort client,
+    required ModelGenerationPort client,
     required WorkspaceAttachment workspace,
     required Task snapshot,
     required String baseSystemPrompt,

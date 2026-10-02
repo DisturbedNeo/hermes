@@ -197,6 +197,96 @@ abstract interface class WorkspaceFileOperationsPort {
   });
 }
 
+/// Read-only workspace capability used by gates, execution recovery, and
+/// artifact inspection.
+abstract interface class WorkspaceReadPort {
+  Future<WorkspacePathInspectionResult> inspectPath(
+    String rootPath,
+    String relativePath, {
+    CancellationToken? cancellationToken,
+  });
+
+  Future<List<WorkspaceDirectoryEntry>> listDirectory(
+    String rootPath,
+    String relativePath, {
+    CancellationToken? cancellationToken,
+  });
+
+  Future<WorkspaceFileReadResult> readFile(
+    String rootPath,
+    String relativePath, {
+    CancellationToken? cancellationToken,
+  });
+
+  Future<String> readFilePreview(
+    String rootPath,
+    String relativePath, {
+    required int maxChars,
+    CancellationToken? cancellationToken,
+  });
+}
+
+/// Mutation capability for workspace-owned files and directories.
+abstract interface class WorkspaceWritePort {
+  Future<WorkspaceFileWriteResult> writeFile(
+    String rootPath,
+    String relativePath,
+    String content, {
+    CancellationToken? cancellationToken,
+  });
+
+  Future<WorkspaceFilePatchResult> patchFile(
+    String rootPath,
+    String relativePath,
+    String oldText,
+    String newText, {
+    bool replaceAll,
+    CancellationToken? cancellationToken,
+  });
+
+  Future<WorkspacePathResult> createDirectory(
+    String rootPath,
+    String relativePath, {
+    CancellationToken? cancellationToken,
+  });
+
+  Future<WorkspaceRenameResult> renamePath(
+    String rootPath,
+    String relativePath,
+    String newRelativePath, {
+    CancellationToken? cancellationToken,
+  });
+
+  Future<WorkspacePathResult> deletePath(
+    String rootPath,
+    String relativePath, {
+    bool recursive = false,
+    CancellationToken? cancellationToken,
+  });
+}
+
+/// Search capability kept separate from file reads and writes.
+abstract interface class WorkspaceSearchPort {
+  Future<List<WorkspaceSearchMatch>> searchFiles(
+    String rootPath,
+    String query, {
+    String relativePath,
+    CancellationToken? cancellationToken,
+  });
+}
+
+/// Capability bundle for the bounded planning context reader.
+abstract interface class WorkspacePlanningReadPort
+    implements WorkspacePathPolicyPort, WorkspaceReadPort {}
+
+/// Capability bundle for task artifact tools.
+abstract interface class WorkspaceTaskToolPort
+    implements WorkspacePathPolicyPort, WorkspaceReadPort, WorkspaceWritePort {}
+
+/// Capability bundle for deterministic task verification gates.
+abstract interface class WorkspaceVerificationPort
+    implements WorkspaceReadPort, HostCommandExecutionPort {}
+
 /// Executes approved host commands. This capability is intentionally separate
 /// from workspace file access.
 abstract interface class HostCommandExecutionPort {
@@ -215,7 +305,10 @@ abstract interface class WorkspaceSandboxPort
     implements
         WorkspacePathPolicyPort,
         WorkspaceFileOperationsPort,
-        HostCommandExecutionPort {}
+        HostCommandExecutionPort,
+        WorkspacePlanningReadPort,
+        WorkspaceTaskToolPort,
+        WorkspaceVerificationPort {}
 
 abstract interface class WorkspacePort {
   void addListener(void Function() listener);

@@ -1,5 +1,5 @@
 import 'package:hermes/core/uuid.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
 
 /// Applies explicit user-authored graph edits. User entries are confirmed and

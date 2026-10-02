@@ -6,7 +6,7 @@ import 'package:hermes/features/task/runtime/task_planning_tools.dart';
 
 abstract interface class TaskPlanningCoordinatorPort {
   Future<TaskPlanningResult> plan({
-    required ModelCompletionPort client,
+    required ModelGenerationPort client,
     required TaskPlanningToolContext context,
     required String label,
     required String system,
@@ -16,7 +16,7 @@ abstract interface class TaskPlanningCoordinatorPort {
   });
 
   Future<TaskPlanningResult> replan({
-    required ModelCompletionPort client,
+    required ModelGenerationPort client,
     required TaskPlanningToolContext context,
     required String label,
     required String system,
@@ -38,7 +38,7 @@ class TaskPlanningCoordinator implements TaskPlanningCoordinatorPort {
 
   @override
   Future<TaskPlanningResult> plan({
-    required ModelCompletionPort client,
+    required ModelGenerationPort client,
     required TaskPlanningToolContext context,
     required String label,
     required String system,
@@ -60,7 +60,7 @@ class TaskPlanningCoordinator implements TaskPlanningCoordinatorPort {
 
   @override
   Future<TaskPlanningResult> replan({
-    required ModelCompletionPort client,
+    required ModelGenerationPort client,
     required TaskPlanningToolContext context,
     required String label,
     required String system,

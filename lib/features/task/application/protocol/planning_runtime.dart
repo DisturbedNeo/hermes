@@ -2,9 +2,8 @@ import 'dart:convert';
 
 import 'package:hermes/features/chat/application/protocol/context_estimator.dart';
 import 'package:hermes/features/tools/application/protocol/tool_call_protocol_adapter.dart';
-import 'package:hermes/features/chat/application/contracts/chat_message.dart';
+import 'package:hermes/core/contracts/model_conversation.dart';
 import 'package:hermes/features/chat/application/protocol/chat_message_wire_adapter.dart';
-import 'package:hermes/features/chat/application/contracts/chat_token.dart';
 import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
 import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/model/application/model_completion_port.dart';
@@ -155,7 +154,7 @@ abstract class PlanningToolRegistryBase implements PlanningToolRegistry {
 }
 
 class PlanningRunRequest {
-  final ModelCompletionPort client;
+  final ModelGenerationPort client;
   final PlanningToolRegistry registry;
   final String label;
   final String system;

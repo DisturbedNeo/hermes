@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 
 /// Converts task output into durable, deduplicated Project evidence.
 class ProjectEvidenceService {

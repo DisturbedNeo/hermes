@@ -418,6 +418,85 @@ void main() {
     _expectEmpty('contract platform isolation', violations);
   });
 
+  test('shared model/workflow contracts have neutral ownership', () {
+    final violations = <String>[];
+    final neutral = graph.byPath['lib/core/contracts/model_conversation.dart'];
+    final store = graph.byPath['lib/core/contracts/conversation_store.dart'];
+    if (neutral == null) {
+      violations.add('core/contracts/model_conversation.dart: missing');
+    } else {
+      for (final symbol in [
+        'class ChatMessage',
+        'enum MessageRole',
+        'class ChatToken',
+        'class ToolCallDelta',
+        'class CompactionSettings',
+      ]) {
+        if (!neutral.text.contains(symbol)) {
+          violations.add('model_conversation.dart: missing $symbol');
+        }
+      }
+    }
+    if (store == null) {
+      violations.add('core/contracts/conversation_store.dart: missing');
+    }
+    final oldSharedContract = RegExp(
+      r'features/chat/application/contracts/(?:chat_message|chat_token|message_role|compaction_settings|bubble|message_store_port)\.dart',
+    );
+    for (final source in graph.sources) {
+      if (source.feature == 'chat') continue;
+      if (oldSharedContract.hasMatch(source.text)) {
+        violations.add(
+          '${source.path}: imports a chat-owned shared model/workflow contract',
+        );
+      }
+    }
+    _expectEmpty('neutral contract ownership', violations);
+  });
+
+  test('domain state and persistence mapping have explicit homes', () {
+    final violations = <String>[];
+    for (final path in [
+      'lib/features/task/domain/task.dart',
+      'lib/features/project/domain/project.dart',
+    ]) {
+      final source = graph.byPath[path];
+      if (source == null) {
+        violations.add('$path: domain state surface is missing');
+        continue;
+      }
+      if (RegExp(
+        r'dart_mappable|core/serialization/json_hooks|features/persistence/infrastructure|\.mapper\.dart',
+      ).hasMatch(source.text)) {
+        violations.add('$path: domain surface owns persistence concerns');
+      }
+    }
+    final taskLifecycle =
+        graph.byPath['lib/features/task/domain/task_lifecycle_service.dart'];
+    final projectControl = graph
+        .byPath['lib/features/project/domain/project_control_state_service.dart'];
+    if (taskLifecycle == null ||
+        !taskLifecycle.text.contains('features/task/domain/task.dart')) {
+      violations.add('task lifecycle policy is not domain-owned');
+    }
+    if (projectControl == null ||
+        !projectControl.text.contains('features/project/domain/project.dart')) {
+      violations.add('project control policy is not domain-owned');
+    }
+    for (final path in [
+      'lib/features/persistence/infrastructure/dto/project_snapshot_dto.dart',
+      'lib/features/persistence/infrastructure/dto/task_snapshot_dto.dart',
+      'lib/features/persistence/infrastructure/dto/project_persistence_adapter.dart',
+      'lib/features/persistence/infrastructure/dto/task_persistence_adapter.dart',
+    ]) {
+      final source = graph.byPath[path];
+      if (source == null) {
+        violations.add('$path: explicit persistence mapper is missing');
+      }
+    }
+    _expectEmpty('domain/persistence ownership', violations);
+  });
+
   test('application and runtime orchestration use typed platform ports', () {
     final violations = <String>[];
     for (final source in graph.sources) {
@@ -755,6 +834,156 @@ void main() {
       }
     }
     _expectEmpty('runtime orchestration decomposition', violations);
+  });
+
+  test('orchestration budgets and focused capability seams are enforced', () {
+    const budgets = <String, int>{
+      'lib/features/project/runtime/project_execution_state_machine.dart': 700,
+      'lib/features/task/runtime/task_execution_coordinator.dart': 700,
+      'lib/features/chat/runtime/chat_session_orchestrator.dart': 800,
+    };
+    final violations = <String>[];
+    for (final entry in budgets.entries) {
+      final source = graph.byPath[entry.key];
+      if (source == null) {
+        violations.add('${entry.key}: orchestration facade is missing');
+        continue;
+      }
+      final lineCount = source.text.split('\n').length;
+      if (lineCount > entry.value) {
+        violations.add(
+          '${entry.key}: $lineCount lines exceeds facade budget ${entry.value}',
+        );
+      }
+    }
+
+    final constructorBudgets = <String, int>{
+      'lib/features/project/runtime/project_execution_state_machine.dart': 20,
+      'lib/features/chat/runtime/chat_session_orchestrator.dart': 24,
+    };
+    for (final entry in constructorBudgets.entries) {
+      final source = graph.byPath[entry.key]!;
+      final className = entry.key.contains('project_execution')
+          ? 'ProjectExecutionStateMachine'
+          : 'ChatSessionOrchestrator';
+      final classOffset = source.text.indexOf('class $className');
+      final constructorOffset = source.text.indexOf('$className(', classOffset);
+      final constructorEnd = source.text.indexOf('})', constructorOffset);
+      if (classOffset < 0 || constructorOffset < 0 || constructorEnd < 0) {
+        violations.add('${entry.key}: constructor cannot be measured');
+        continue;
+      }
+      final constructor = source.text.substring(
+        constructorOffset,
+        constructorEnd,
+      );
+      final requiredCount = RegExp(
+        r'\brequired\b',
+      ).allMatches(constructor).length;
+      if (requiredCount > entry.value) {
+        violations.add(
+          '${entry.key}: constructor has $requiredCount required inputs; '
+          'budget is ${entry.value}',
+        );
+      }
+    }
+
+    final modelCapabilities =
+        graph.byPath['lib/features/model/application/model_capabilities.dart'];
+    if (modelCapabilities == null) {
+      violations.add(
+        'model_capabilities.dart: focused model ports are missing',
+      );
+    } else {
+      for (final name in [
+        'ModelTextCompletionPort',
+        'ModelStreamingPort',
+        'ModelTokenCountingPort',
+        'ModelMetadataPort',
+        'ModelLifecyclePort',
+        'ModelGenerationPort',
+        'ModelContextPort',
+        'ModelConversationPort',
+      ]) {
+        if (!modelCapabilities.text.contains('class $name')) {
+          violations.add('model_capabilities.dart: missing $name');
+        }
+      }
+    }
+    const focusedWorkspaceConsumers = <String>{
+      'lib/features/task/runtime/task_execution_coordinator.dart',
+      'lib/features/task/runtime/task_tool_execution_service.dart',
+      'lib/features/task/runtime/task_gate_evaluator.dart',
+      'lib/features/project/runtime/project_planning_workspace_reader.dart',
+    };
+    for (final path in focusedWorkspaceConsumers) {
+      final source = graph.byPath[path];
+      if (source != null && source.text.contains('WorkspaceSandboxPort')) {
+        violations.add(
+          '$path: broad WorkspaceSandboxPort leaked into feature runtime',
+        );
+      }
+    }
+    const focusedPreferencesConsumers = <String>{
+      'lib/features/chat/runtime/chat_session_orchestrator.dart',
+      'lib/features/chat/runtime/chat_application/chat_session_manager.dart',
+      'lib/features/chat/presentation/theme_manager.dart',
+      'lib/features/chat/presentation/chat/model_picker.dart',
+      'lib/features/chat/presentation/overlays/settings.dart',
+      'lib/features/chat/presentation/chat/diagnostics_bar.dart',
+    };
+    for (final path in focusedPreferencesConsumers) {
+      final source = graph.byPath[path];
+      if (source != null &&
+          RegExp(r'\bPreferencesPort\b').hasMatch(source.text)) {
+        violations.add('$path: broad PreferencesPort leaked into feature code');
+      }
+    }
+    final picker =
+        graph.byPath['lib/features/chat/presentation/chat/model_picker.dart'];
+    if (picker == null) {
+      violations.add('model_picker.dart: presentation model picker is missing');
+    } else {
+      for (final forbidden in [
+        'dart:io',
+        'ModelsDirectory',
+        'Platform.numberOfProcessors',
+        'List<dynamic>',
+      ]) {
+        if (picker.text.contains(forbidden)) {
+          violations.add('model_picker.dart: platform/untyped seam $forbidden');
+        }
+      }
+      for (final required in ['ModelCatalogPort', 'ModelDescriptor']) {
+        if (!picker.text.contains(required)) {
+          violations.add(
+            'model_picker.dart: missing typed catalog seam $required',
+          );
+        }
+      }
+    }
+    for (final source in graph.sources.where(
+      (source) => source.path.contains('/presentation/'),
+    )) {
+      if (RegExp(r'''import ['"]dart:io['"]''').hasMatch(source.text)) {
+        violations.add('${source.path}: presentation imports dart:io');
+      }
+      if (source.text.contains('Platform.numberOfProcessors')) {
+        violations.add(
+          '${source.path}: presentation reads platform processor defaults',
+        );
+      }
+    }
+    for (final source in graph.sources.where(
+      (source) => source.path.endsWith('.mapper.dart'),
+    )) {
+      if (source.layer == 'domain' || source.layer == 'runtime') {
+        violations.add(
+          '${source.path}: generated mapper is inside domain/runtime code',
+        );
+      }
+    }
+    _expectEmpty('architecture budgets and focused capabilities', violations);
   });
 
   test('presentation consumes projections instead of aggregates', () {

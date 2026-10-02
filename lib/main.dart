@@ -9,6 +9,7 @@ import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 import 'package:hermes/features/chat/presentation/keyboard_shortcuts.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
+import 'package:hermes/features/model/application/model_catalog.dart';
 import 'package:hermes/features/project/application/project_application/project_application.dart';
 import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
@@ -105,6 +106,7 @@ class _AppState extends State<App> {
           systemPromptLibrary: context.read<SystemPromptLibraryService>(),
           workspaceService: context.read<WorkspaceService>(),
           preferencesService: context.read<PreferencesService>(),
+          modelCatalog: dependencies.modelCatalog,
           toolService: context.read<ToolService>(),
           disposeWithoutSavingDependencies: dependencies.disposeWithoutSaving,
           exitApplication:
@@ -126,6 +128,7 @@ class _AppShell extends StatefulWidget {
     required this.systemPromptLibrary,
     required this.workspaceService,
     required this.preferencesService,
+    required this.modelCatalog,
     required this.toolService,
     required this.disposeWithoutSavingDependencies,
     required this.exitApplication,
@@ -138,6 +141,7 @@ class _AppShell extends StatefulWidget {
   final SystemPromptLibraryService systemPromptLibrary;
   final WorkspaceService workspaceService;
   final PreferencesService preferencesService;
+  final ModelCatalogPort modelCatalog;
   final ToolService toolService;
   final Future<void> Function() disposeWithoutSavingDependencies;
   final Future<AppExitResponse> Function(AppExitType type) exitApplication;
@@ -330,6 +334,7 @@ class _AppShellState extends State<_AppShell> {
           systemPromptLibrary: widget.systemPromptLibrary,
           workspaceService: widget.workspaceService,
           preferencesService: widget.preferencesService,
+          modelCatalog: widget.modelCatalog,
           toolService: widget.toolService,
         ),
       ),

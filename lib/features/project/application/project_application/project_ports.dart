@@ -1,9 +1,9 @@
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/application/project_application/project_execution_port.dart';
 import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/model/application/model_output.dart';
 import 'package:hermes/features/model/application/model_completion_port.dart';
-import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
+import 'package:hermes/core/contracts/execution_settings.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/project/application/contracts/project_commands.dart';
 

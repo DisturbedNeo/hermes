@@ -1,4 +1,4 @@
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 
 /// A bounded read model used by the task-planning agent.
 ///

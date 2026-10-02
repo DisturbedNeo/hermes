@@ -9,6 +9,7 @@ import 'package:hermes/features/chat/application/chat_controller.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 import 'package:hermes/features/chat/presentation/keyboard_shortcuts.dart';
 import 'package:hermes/features/settings/application/preferences_port.dart';
+import 'package:hermes/features/model/application/model_catalog.dart';
 import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
 import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/workspace/application/workspace_ports.dart';
@@ -30,6 +31,7 @@ class Chat extends StatefulWidget {
     required this.systemPromptLibrary,
     required this.workspaceService,
     required this.preferencesService,
+    required this.modelCatalog,
     required this.toolService,
   });
 
@@ -37,7 +39,8 @@ class Chat extends StatefulWidget {
   final ChatLibraryService chatLibrary;
   final SystemPromptLibraryService systemPromptLibrary;
   final WorkspacePresentationPort workspaceService;
-  final PreferencesPort preferencesService;
+  final ChatPresentationPreferencesPort preferencesService;
+  final ModelCatalogPort modelCatalog;
   final ToolRegistryPort toolService;
 
   @override
@@ -164,7 +167,11 @@ class _ChatState extends State<Chat> {
 
   List<Widget> _fullAppBarActions() {
     return [
-      ModelPicker(tabs: _tabs, preferencesService: widget.preferencesService),
+      ModelPicker(
+        tabs: _tabs,
+        preferencesService: widget.preferencesService,
+        modelCatalog: widget.modelCatalog,
+      ),
       IconButton(
         tooltip: 'System prompts',
         icon: const Icon(Icons.display_settings_outlined),
@@ -189,7 +196,11 @@ class _ChatState extends State<Chat> {
   List<Widget> _compactAppBarActions({required bool showModelPicker}) {
     return [
       if (showModelPicker)
-        ModelPicker(tabs: _tabs, preferencesService: widget.preferencesService),
+        ModelPicker(
+          tabs: _tabs,
+          preferencesService: widget.preferencesService,
+          modelCatalog: widget.modelCatalog,
+        ),
       PopupMenuButton<_ChatAppBarAction>(
         tooltip: 'More',
         icon: const Icon(Icons.more_vert),
@@ -269,6 +280,7 @@ class _ChatState extends State<Chat> {
           child: ModelPicker(
             tabs: _tabs,
             preferencesService: widget.preferencesService,
+            modelCatalog: widget.modelCatalog,
           ),
         ),
         actions: [

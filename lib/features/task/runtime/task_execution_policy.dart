@@ -1,5 +1,5 @@
 import 'package:hermes/core/json_parsing.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/runtime/task_tool_execution_service.dart';
 import 'package:hermes/features/workspace/application/terminal_command_parser.dart';
 import 'package:path/path.dart' as path;

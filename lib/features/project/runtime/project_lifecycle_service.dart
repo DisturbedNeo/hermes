@@ -1,5 +1,5 @@
 import 'package:hermes/core/sentinel.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/application/project_application/project_execution_port.dart';
 import 'package:hermes/features/project/domain/project_control_state_service.dart';
 

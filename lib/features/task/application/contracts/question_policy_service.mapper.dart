@@ -151,3 +151,4 @@ class AgentQuestionMapper extends ClassMapperBase<AgentQuestion> {
 
 /// @nodoc
 mixin AgentQuestionMappable {}
+

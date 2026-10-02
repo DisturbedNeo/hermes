@@ -1,4 +1,4 @@
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/application/contracts/project_commands.dart';
 import 'package:hermes/features/project/runtime/project_aggregate_hydrator.dart';
 import 'package:hermes/features/project/runtime/project_aggregate_store.dart';

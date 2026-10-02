@@ -1,11 +1,11 @@
 import 'dart:convert';
 
-import 'package:hermes/features/chat/application/contracts/bubble.dart';
-import 'package:hermes/features/chat/application/contracts/chat_token.dart';
+import 'package:hermes/core/contracts/conversation_store.dart';
+import 'package:hermes/core/contracts/model_conversation.dart';
 import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/model/application/model_request.dart';
 
-class ToolCaller {
+class ToolCaller implements ToolCallerPort {
   final Map<String, Map<int, StringBuffer>> _toolBuffers = {};
 
   static final RegExp _toolCallBlockRegex = RegExp(

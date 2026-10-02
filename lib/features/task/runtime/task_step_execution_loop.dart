@@ -91,7 +91,7 @@ class _TaskStepExecutionLoop {
   final _TaskTextCapper _capCallback;
 
   Future<_StepExecutionOutput> execute({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required WorkspaceAttachment workspace,
     required Task task,
     required TaskStep step,
@@ -417,7 +417,7 @@ class _TaskStepExecutionLoop {
   }
 
   Future<ModelCompletion> finalizeStepAfterToolGuard({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required TaskStep step,
     required List<ChatMessage> messages,
     required String reason,

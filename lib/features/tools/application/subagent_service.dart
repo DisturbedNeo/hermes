@@ -1,7 +1,7 @@
 import 'dart:developer' as developer;
 
-import 'package:hermes/features/chat/application/contracts/chat_message.dart';
-import 'package:hermes/features/model/application/model_completion_port.dart';
+import 'package:hermes/core/contracts/model_conversation.dart';
+import 'package:hermes/features/model/application/model_capabilities.dart';
 import 'package:hermes/features/model/application/model_errors.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 
@@ -11,10 +11,11 @@ import 'package:hermes/features/workspace/application/workspace.dart';
 class SubagentService implements WorkspaceSubagentCapability {
   static const bool _debugMode = !bool.fromEnvironment('dart.vm.product');
 
-  final ModelCompletionPort Function() _chatClientFactory;
+  final ModelTextCompletionPort Function() _chatClientFactory;
 
-  SubagentService({required ModelCompletionPort Function() chatClientFactory})
-    : _chatClientFactory = chatClientFactory;
+  SubagentService({
+    required ModelTextCompletionPort Function() chatClientFactory,
+  }) : _chatClientFactory = chatClientFactory;
 
   /// Extracts specific information from [fileContent] based on the
   /// [extractionRequest]. The subagent is instructed to return only the

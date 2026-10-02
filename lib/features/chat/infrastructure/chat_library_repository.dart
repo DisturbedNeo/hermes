@@ -22,14 +22,14 @@ import 'package:hermes/features/chat/application/contracts/chat_library_port.dar
 /// interactions.  Contains zero business logic — it is a pure data-access
 /// abstraction over the chat store.
 class ChatLibraryRepository implements ChatLibraryPort {
-  final PreferencesPort _preferencesService;
+  final PersistenceSettingsPort _preferencesService;
   final DatabaseFactory _databaseFactory;
   final String? _databasePath;
 
   late final ManagedLazyDatabase _database;
 
   ChatLibraryRepository({
-    required PreferencesPort preferencesService,
+    required PersistenceSettingsPort preferencesService,
     DatabaseFactory? databaseFactory,
     String? databasePath,
   }) : _preferencesService = preferencesService,

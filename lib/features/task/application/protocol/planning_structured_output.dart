@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:hermes/features/chat/application/contracts/chat_message.dart';
+import 'package:hermes/core/contracts/model_conversation.dart';
 import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
 import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/model/application/model_completion_port.dart';
@@ -33,7 +33,7 @@ class StructuredPlanningOutputService {
   const StructuredPlanningOutputService();
 
   Future<StructuredPlanningOutputResult<Map<String, dynamic>>> completeObject({
-    required ModelCompletionPort client,
+    required ModelGenerationPort client,
     required String label,
     required String system,
     required String user,
@@ -92,7 +92,7 @@ Return only the repaired JSON object.''',
   }
 
   Future<String> _completeRaw({
-    required ModelCompletionPort client,
+    required ModelGenerationPort client,
     required String label,
     required String system,
     required String user,

@@ -1,9 +1,9 @@
 import 'package:hermes/core/cancellation.dart';
-import 'package:hermes/features/chat/application/contracts/compaction_settings.dart';
+import 'package:hermes/core/contracts/model_conversation.dart';
 import 'package:hermes/features/model/application/model_completion_port.dart';
 import 'package:hermes/features/model/application/model_output.dart';
 import 'package:hermes/features/task/application/contracts/task_summary.dart';
-import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
+import 'package:hermes/core/contracts/execution_settings.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
 import 'package:hermes/features/task/application/contracts/task_planning_models.dart';
@@ -59,7 +59,7 @@ abstract interface class TaskPresentationPort {
 
 abstract interface class TaskPlanningPort {
   Future<RefinedTaskBrief> refineTaskBrief({
-    required ModelCompletionPort client,
+    required ModelGenerationPort client,
     WorkspaceAttachment? workspace,
     required String userPrompt,
     ExecutionMode selectedMode = ExecutionMode.refine,
@@ -68,7 +68,7 @@ abstract interface class TaskPlanningPort {
   });
 
   Future<Task> createTask({
-    required ModelCompletionPort client,
+    required ModelGenerationPort client,
     required WorkspaceAttachment workspace,
     required String userPrompt,
     required ExecutionMode selectedMode,
@@ -88,7 +88,7 @@ abstract interface class TaskPlanningPort {
   });
 
   Future<Task> replanUnfinished({
-    required ModelCompletionPort client,
+    required ModelGenerationPort client,
     required WorkspaceAttachment workspace,
     required Task snapshot,
     required String baseSystemPrompt,
@@ -111,7 +111,7 @@ abstract interface class TaskProjectPlanningPort {
 
 abstract interface class TaskExecutionPort {
   Future<Task> runNextStep({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required WorkspaceAttachment workspace,
     required Task snapshot,
     required String baseSystemPrompt,

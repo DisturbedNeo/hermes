@@ -1,5 +1,5 @@
 import 'package:hermes/core/uuid.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/task/runtime/task_persistence_store.dart';
 

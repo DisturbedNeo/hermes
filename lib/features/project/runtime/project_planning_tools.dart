@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/task/application/protocol/planning_runtime.dart';
 import 'package:hermes/features/project/runtime/project_plan_builder.dart';

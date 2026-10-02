@@ -1,11 +1,11 @@
 import 'dart:convert';
 
 import 'package:hermes/core/json_parsing.dart';
-import 'package:hermes/features/chat/application/contracts/chat_message.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/core/contracts/model_conversation.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/model_json.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
-import 'package:hermes/features/model/application/model_completion_port.dart';
+import 'package:hermes/features/model/application/model_capabilities.dart';
 import 'package:hermes/features/model/application/model_errors.dart';
 import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/persistence/application/task_json.dart';
@@ -82,12 +82,12 @@ class TaskGateEvaluation {
 
 class TaskGateEvaluator {
   TaskGateEvaluator({
-    required WorkspaceSandboxPort sandbox,
+    required WorkspaceVerificationPort sandbox,
     required YamlValidationPort yamlValidator,
   }) : _sandbox = sandbox,
        _yamlValidator = yamlValidator;
 
-  final WorkspaceSandboxPort _sandbox;
+  final WorkspaceVerificationPort _sandbox;
   final YamlValidationPort _yamlValidator;
 
   Future<TaskGateEvaluation> evaluate({
@@ -98,7 +98,7 @@ class TaskGateEvaluator {
     List<TaskToolCallRecord> toolCalls = const [],
     List<TaskArtifact> artifacts = const [],
     TaskGateEvidence? evidence,
-    ModelCompletionPort? client,
+    ModelTextCompletionPort? client,
     String baseSystemPrompt = '',
     bool humanApprovalGranted = false,
     CancellationToken? cancellationToken,
@@ -140,7 +140,7 @@ class TaskGateEvaluator {
     required TaskGate gate,
     required List<TaskToolCallRecord> toolCalls,
     required List<TaskArtifact> artifacts,
-    required ModelCompletionPort? client,
+    required ModelTextCompletionPort? client,
     required String baseSystemPrompt,
     required bool humanApprovalGranted,
     CancellationToken? cancellationToken,
@@ -887,7 +887,7 @@ class TaskGateEvaluator {
     Task task,
     TaskStep step,
     TaskGate gate,
-    ModelCompletionPort? client,
+    ModelTextCompletionPort? client,
     String baseSystemPrompt,
     DateTime now,
     CancellationToken? cancellationToken,

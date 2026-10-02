@@ -7,7 +7,7 @@ import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
 import 'package:hermes/features/chat/domain/chat_state_slices.dart';
 import 'package:hermes/features/persistence/application/persistence_contracts.dart';
 import 'package:hermes/features/task/application/contracts/task_summary.dart';
-import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
+import 'package:hermes/core/contracts/execution_settings.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 
 /// Authoritative immutable state for one chat session.

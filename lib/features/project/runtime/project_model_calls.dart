@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:hermes/core/json_parsing.dart';
 import 'package:hermes/core/uuid.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
 import 'package:hermes/core/model_json.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
@@ -31,7 +31,7 @@ export 'package:hermes/features/project/runtime/project_planning_gateway.dart'
 
 class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
   ProjectModelCalls({
-    required WorkspaceSandboxPort sandbox,
+    required WorkspacePlanningReadPort sandbox,
     ProjectViewService projectViewService = const ProjectViewService(),
     PlanningToolCallRunner planningRunner = const PlanningToolCallRunner(),
     StructuredPlanningOutputService structuredOutput =
@@ -42,7 +42,7 @@ class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
        _structuredOutput = structuredOutput;
 
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
-  final WorkspaceSandboxPort _sandbox;
+  final WorkspacePlanningReadPort _sandbox;
   final ProjectViewService _projectViewService;
   final PlanningToolCallRunner _planningRunner;
   final StructuredPlanningOutputService _structuredOutput;

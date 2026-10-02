@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
-import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
+import 'package:hermes/core/contracts/execution_settings.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/model/application/model_completion_port.dart';
 import 'package:hermes/core/cancellation.dart';

@@ -14,14 +14,14 @@ class DiagnosticsBar extends StatefulWidget {
   });
 
   final ModelSessionDiagnosticsPort diagnostics;
-  final PreferencesPort preferencesService;
+  final DiagnosticsBarPreferencesPort preferencesService;
 
   @override
   State<DiagnosticsBar> createState() => _DiagnosticsBarState();
 }
 
 class _DiagnosticsBarState extends State<DiagnosticsBar> {
-  PreferencesPort get _preferences => widget.preferencesService;
+  DiagnosticsBarPreferencesPort get _preferences => widget.preferencesService;
 
   DiagnosticsVisibility _visibility = DiagnosticsVisibility.off;
 

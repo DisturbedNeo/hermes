@@ -14,10 +14,11 @@ import 'package:hermes/features/chat/presentation/chat/diagnostics_bar.dart';
 import 'package:hermes/features/chat/presentation/chat/task_panel.dart';
 import 'package:hermes/features/chat/presentation/chat/workspace_bar.dart';
 import 'package:hermes/features/chat/presentation/chat/chat_view_presenter.dart';
+import 'package:hermes/features/model/application/model_server_port.dart';
 
 class ChatView extends StatefulWidget {
   final ChatController chat;
-  final PreferencesPort preferencesService;
+  final DiagnosticsBarPreferencesPort preferencesService;
   final ToolRegistryPort toolService;
   final VoidCallback onOpenWorkspace;
 
@@ -293,7 +294,7 @@ class _ChatViewState extends State<ChatView> {
           diagnostics: chat.serverManager.diagnostics,
           preferencesService: widget.preferencesService,
         ),
-        ValueListenableBuilder<dynamic>(
+        ValueListenableBuilder<ModelSessionState>(
           valueListenable: chat.serverManager.session,
           builder: (_, session, _) {
             return Composer(
@@ -335,29 +336,6 @@ class _ChatViewState extends State<ChatView> {
 }
 
 // ---------------------------------------------------------------------------
-// Display item data classes (used by business logic in _MessageListPresenterState)
-// ---------------------------------------------------------------------------
-
-/// Base class for items in the message display list.
-class _DisplayItem {
-  final String messageId;
-
-  const _DisplayItem(this.messageId);
-}
-
-/// Represents a regular chat message bubble.
-class _MessageDisplayItem extends _DisplayItem {
-  const _MessageDisplayItem(super.messageId);
-}
-
-/// Represents a summarised memory group with its covered message IDs.
-class _SummaryDisplayItem extends _DisplayItem {
-  final List<String> coveredMessageIds;
-
-  const _SummaryDisplayItem(super.messageId, {required this.coveredMessageIds});
-}
-
-// ---------------------------------------------------------------------------
 // Message list presenter — manages display-item computation and message store
 // subscriptions (business logic + state), delegates rendering to presenter.
 // ---------------------------------------------------------------------------
@@ -382,7 +360,7 @@ class _MessageListPresenter extends StatefulWidget {
 
 class _MessageListPresenterState extends State<_MessageListPresenter> {
   bool _showScrollButton = false;
-  late List<_DisplayItem> _displayItems;
+  late List<ChatDisplayItem> _displayItems;
   late Map<String, int> _displayItemIndices;
   late int _displayRevision;
 
@@ -477,8 +455,8 @@ class _MessageListPresenterState extends State<_MessageListPresenter> {
                 key: ValueKey('message_${item.messageId}'),
                 chat: widget.chat,
                 messageId: item.messageId,
-                isSummary: item is _SummaryDisplayItem,
-                coveredMessageIds: item is _SummaryDisplayItem
+                isSummary: item is ChatSummaryDisplayItem,
+                coveredMessageIds: item is ChatSummaryDisplayItem
                     ? item.coveredMessageIds
                     : const [],
               );
@@ -493,7 +471,7 @@ class _MessageListPresenterState extends State<_MessageListPresenter> {
 
   // -- Business logic: display item computation --------------------------------
 
-  List<_DisplayItem> _buildDisplayItems(List<Bubble> messages) {
+  List<ChatDisplayItem> _buildDisplayItems(List<Bubble> messages) {
     final bySummary = <String, List<String>>{};
     for (final message in messages) {
       final summaryId = message.summaryId;
@@ -505,16 +483,16 @@ class _MessageListPresenterState extends State<_MessageListPresenter> {
     return [
       for (final message in messages)
         if (message.isSummaryMemory)
-          _SummaryDisplayItem(
+          ChatSummaryDisplayItem(
             message.id,
             coveredMessageIds: bySummary[message.id] ?? const [],
           )
         else if (!message.omittedFromModelPayload)
-          _MessageDisplayItem(message.id),
+          ChatMessageDisplayItem(message.id),
     ];
   }
 
-  Map<String, int> _buildDisplayItemIndices(List<_DisplayItem> items) {
+  Map<String, int> _buildDisplayItemIndices(List<ChatDisplayItem> items) {
     return {
       for (var i = 0; i < items.length; i++) 'message_${items[i].messageId}': i,
     };

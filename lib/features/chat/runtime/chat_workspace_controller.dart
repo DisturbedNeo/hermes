@@ -42,7 +42,7 @@ typedef ChatTabFactory =
       required ProjectRecoveryCommandsPort projectRecovery,
       required ChatLibraryService chatLibrary,
       required WorkspacePort workspaceService,
-      required PreferencesPort preferencesService,
+      required ChatRuntimePreferencesPort preferencesService,
       SystemPromptSnapshot? initialSystemPromptSnapshot,
     });
 
@@ -67,7 +67,7 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
   final ProjectExecutionPort _projectExecution;
   final ProjectRecoveryCommandsPort _projectRecovery;
   final WorkspacePort _workspaceService;
-  final PreferencesPort _preferencesService;
+  final ChatRuntimePreferencesPort _preferencesService;
   final ChatTabFactory? _tabFactory;
 
   final ModelServerPort serverManager;
@@ -98,7 +98,7 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
     required ProjectExecutionPort projectExecution,
     required ProjectRecoveryCommandsPort projectRecovery,
     required WorkspacePort workspaceService,
-    required PreferencesPort preferencesService,
+    required ChatRuntimePreferencesPort preferencesService,
     ChatTabFactory? tabFactory,
   }) : _chatLibrary = chatLibrary,
        _systemPromptLibrary = systemPromptLibrary,

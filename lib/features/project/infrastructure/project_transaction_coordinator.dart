@@ -2,14 +2,15 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hermes/core/model_json.dart';
 import 'package:hermes/features/persistence/infrastructure/atomic_json_snapshot_store.dart';
 import 'package:hermes/features/persistence/application/persistence_contracts.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/project_aggregate_repository_port.dart';
 import 'package:hermes/features/project/project_repository_port.dart';
 import 'package:hermes/features/project/application/contracts/project_checkpoint.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/persistence/infrastructure/dto/project_persistence_adapter.dart';
+import 'package:hermes/features/persistence/infrastructure/dto/task_persistence_adapter.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
 import 'package:path/path.dart' as path;
 
@@ -27,6 +28,10 @@ class ProjectTransactionCoordinator {
        _snapshots = snapshots;
 
   static const String transactionsDirectoryName = '.agent/transactions';
+  static const ProjectPersistenceAdapter _projectPersistence =
+      ProjectPersistenceAdapter();
+  static const TaskPersistenceAdapter _taskPersistence =
+      TaskPersistenceAdapter();
 
   final ProjectRepositoryPort _projects;
   final TaskPersistencePort _tasks;
@@ -321,10 +326,14 @@ class ProjectTransactionCoordinator {
     await _snapshots.writeMap(
       File(path.join(staged.path, 'manifest-input.json')),
       {
-        'project': ModelJson.encode(project.copyWith(persistenceRevision: 0)),
+        'project': _projectPersistence
+            .toDto(project.copyWith(persistenceRevision: 0))
+            .document,
         'tasks': [
           for (final task in tasks)
-            ModelJson.encode(task.copyWith(persistenceRevision: 0)),
+            _taskPersistence
+                .toDto(task.copyWith(persistenceRevision: 0))
+                .document,
         ],
       },
     );

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/features/chat/presentation/overlays/settings.dart';
 import 'package:shared_preferences/shared_preferences.dart';

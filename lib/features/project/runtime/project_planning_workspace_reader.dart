@@ -14,7 +14,7 @@ import 'package:hermes/features/workspace/application/workspace_ports.dart';
 class ProjectPlanningWorkspaceReader {
   ProjectPlanningWorkspaceReader({
     required WorkspaceAttachment workspace,
-    required WorkspaceSandboxPort sandbox,
+    required WorkspacePlanningReadPort sandbox,
     required Iterable<String> allowedPaths,
     CancellationToken? cancellationToken,
     this.maxTotalBytes = defaultMaxTotalBytes,
@@ -35,7 +35,7 @@ class ProjectPlanningWorkspaceReader {
   static const int defaultMaxWindowLines = 240;
 
   final WorkspaceAttachment _workspace;
-  final WorkspaceSandboxPort _sandbox;
+  final WorkspacePlanningReadPort _sandbox;
   final CancellationToken? _cancellationToken;
   final Map<String, String> _allowedPaths;
   final int maxTotalBytes;

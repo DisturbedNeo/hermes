@@ -1,5 +1,5 @@
 import 'package:hermes/core/model_json.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 
 /// Persistence-only representation of a task document.
 class TaskSnapshotDto {

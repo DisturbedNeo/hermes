@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:hermes/features/chat/application/contracts/chat_message.dart';
+import 'package:hermes/core/contracts/model_conversation.dart';
 import 'package:hermes/features/chat/application/protocol/chat_message_wire_adapter.dart';
 
 /// Keeps long-running planning conversations within a useful context size.

@@ -20,7 +20,7 @@ export 'package:hermes/features/project/application/contracts/project_workspace_
         ProjectWorkspaceNode,
         ProjectWorkspaceNodeSpec,
         ProjectWorkspaceSourceType;
-export 'package:hermes/features/project/application/contracts/project_planning_contracts.dart'
+export 'package:hermes/core/contracts/execution_settings.dart'
     show ProjectPlanApprovalPolicy;
 
 part 'project_snapshot_models.mapper.dart';

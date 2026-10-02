@@ -1,6 +1,6 @@
 import 'package:hermes/features/persistence/application/persistence_contracts.dart';
 import 'package:hermes/features/project/project_repository_port.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:path/path.dart' as path;
 
 /// Deterministic project repository for application and reducer tests.

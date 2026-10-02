@@ -10,6 +10,8 @@ import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
 import 'package:hermes/features/chat/application/contracts/chat_persistence.dart';
 import 'package:hermes/features/model/infrastructure/llama_server_manager.dart';
+import 'package:hermes/features/model/application/model_catalog.dart';
+import 'package:hermes/features/model/infrastructure/model_catalog_service.dart';
 import 'package:hermes/features/project/application/project_application/project_application.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
@@ -31,6 +33,7 @@ class AppDependencies implements ApplicationLifecycle {
     required this.workspaceService,
     required this.toolService,
     required this.modelManager,
+    required this.modelCatalog,
     required this.taskController,
     required this.projectApplication,
     required this.chatLibraryService,
@@ -42,6 +45,7 @@ class AppDependencies implements ApplicationLifecycle {
   static AppDependencies create() {
     initializeMappers();
     final preferencesService = PreferencesService();
+    final modelCatalog = ModelCatalogService(preferences: preferencesService);
     final workspaceModule = WorkspaceToolsModule.create();
     final persistenceModule = PersistenceModule.create();
     final modelModule = ModelModule.create();
@@ -101,6 +105,7 @@ class AppDependencies implements ApplicationLifecycle {
       workspaceService: workspaceModule.workspace,
       toolService: workspaceModule.tools,
       modelManager: modelModule.manager,
+      modelCatalog: modelCatalog,
       taskController: taskModule.controller,
       projectApplication: projectModule.application,
       chatLibraryService: chatModule.chatLibrary,
@@ -116,6 +121,7 @@ class AppDependencies implements ApplicationLifecycle {
   final WorkspaceService workspaceService;
   final ToolService toolService;
   final LlamaServerManager modelManager;
+  final ModelCatalogPort modelCatalog;
   final TaskController taskController;
   final ProjectApplication projectApplication;
   final ChatLibraryService chatLibraryService;

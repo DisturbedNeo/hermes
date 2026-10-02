@@ -1,5 +1,5 @@
 import 'package:hermes/features/persistence/infrastructure/dto/project_snapshot_dto.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 
 /// Converts between the project domain boundary and its durable DTO.
 class ProjectPersistenceAdapter {

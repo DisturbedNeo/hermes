@@ -6,6 +6,7 @@ import 'package:hermes/features/chat/infrastructure/chat_library_repository.dart
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 import 'package:hermes/features/chat/infrastructure/chat_panel_protocol_adapter.dart';
 import 'package:hermes/features/model/infrastructure/llama_server_manager.dart';
+import 'package:hermes/features/model/infrastructure/model_catalog_service.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/features/chat/infrastructure/system_prompt_library_repository.dart';
 import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
@@ -93,6 +94,7 @@ void main() {
       systemPromptLibrary: promptLibrary,
       workspaceService: workspaceService,
       preferencesService: preferences,
+      modelCatalog: ModelCatalogService(preferences: preferences),
       toolService: toolService,
     ),
   );

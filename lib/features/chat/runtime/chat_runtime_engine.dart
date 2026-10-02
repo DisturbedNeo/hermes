@@ -7,7 +7,7 @@ import 'package:hermes/features/chat/application/contracts/chat_token.dart';
 import 'package:hermes/features/chat/application/contracts/chat_persistence.dart';
 import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
 import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
-import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
+import 'package:hermes/core/contracts/execution_settings.dart';
 import 'package:hermes/features/model/application/model_configuration.dart';
 import 'package:hermes/features/chat/application/contracts/saved_chat.dart';
 import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
@@ -66,7 +66,7 @@ class ChatRuntimeController extends ChangeNotifier
     required ProjectRecoveryCommandsPort projectRecovery,
     required ChatLibraryService chatLibrary,
     required WorkspacePort workspaceService,
-    required PreferencesPort preferencesService,
+    required ChatRuntimePreferencesPort preferencesService,
     ChatCommandCoordinator? commandCoordinator,
     SystemPromptSnapshot? initialSystemPromptSnapshot,
   }) : _delegate = ChatSessionRuntime(

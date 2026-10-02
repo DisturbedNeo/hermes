@@ -6,7 +6,7 @@ import 'package:hermes/features/chat/application/contracts/saved_chat.dart';
 import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
 import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
 import 'package:hermes/features/chat/domain/chat_state_slices.dart';
-import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
+import 'package:hermes/core/contracts/execution_settings.dart';
 import 'package:hermes/features/task/application/contracts/task_summary.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 

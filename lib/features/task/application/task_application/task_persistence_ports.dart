@@ -1,8 +1,7 @@
 import 'package:hermes/features/persistence/application/persistence_contracts.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/application/contracts/task_summary.dart';
 import 'package:hermes/features/workspace/application/workspace_ports.dart';
-import 'package:hermes/features/project/application/contracts/project_task_models.dart';
 
 class TaskStorageLayout {
   static const String tasksRoot = '.agent/tasks';

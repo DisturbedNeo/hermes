@@ -2,16 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hermes/features/model/application/diagnostics_visibility.dart';
 import 'package:hermes/features/chat/presentation/a11y.dart';
-import 'package:hermes/features/chat/application/contracts/compaction_settings.dart';
-import 'package:hermes/features/project/application/contracts/project_planning_contracts.dart';
-import 'package:hermes/features/task/application/contracts/task_system_settings.dart';
+import 'package:hermes/core/contracts/model_conversation.dart';
+import 'package:hermes/core/contracts/execution_settings.dart';
 import 'package:hermes/features/settings/application/preferences_port.dart';
 import 'package:hermes/features/chat/presentation/model_configuration/slider_control.dart';
 
 class Settings extends StatefulWidget {
   const Settings({super.key, required this.preferencesService});
 
-  final PreferencesPort preferencesService;
+  final SettingsPreferencesPort preferencesService;
 
   @override
   State<Settings> createState() => _SettingsState();
@@ -26,7 +25,7 @@ class _SettingsState extends State<Settings> {
   CompactionSettings _compactionSettings = const CompactionSettings();
   TaskSystemSettings _taskSystemSettings = const TaskSystemSettings();
 
-  PreferencesPort get preferencesService => widget.preferencesService;
+  SettingsPreferencesPort get preferencesService => widget.preferencesService;
 
   void loadSettings() async {
     final llamaCppDir = await preferencesService.getLlamaCppDirectory();

@@ -1,5 +1,5 @@
 import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/model/application/model_completion_port.dart';
 import 'package:hermes/features/task/application/protocol/planning_runtime.dart';
@@ -26,7 +26,7 @@ class TaskPlanningResult {
 /// the in-memory [TaskPlanningToolContext] supplied for one planning session.
 abstract interface class TaskPlanner {
   Future<TaskPlanningResult> plan({
-    required ModelCompletionPort client,
+    required ModelGenerationPort client,
     required TaskPlanningToolContext context,
     required String label,
     required String system,
@@ -36,7 +36,7 @@ abstract interface class TaskPlanner {
   });
 
   Future<TaskPlanningResult> replan({
-    required ModelCompletionPort client,
+    required ModelGenerationPort client,
     required TaskPlanningToolContext context,
     required String label,
     required String system,
@@ -53,7 +53,7 @@ class TaskPlanningService implements TaskPlanner {
 
   @override
   Future<TaskPlanningResult> plan({
-    required ModelCompletionPort client,
+    required ModelGenerationPort client,
     required TaskPlanningToolContext context,
     required String label,
     required String system,
@@ -72,7 +72,7 @@ class TaskPlanningService implements TaskPlanner {
 
   @override
   Future<TaskPlanningResult> replan({
-    required ModelCompletionPort client,
+    required ModelGenerationPort client,
     required TaskPlanningToolContext context,
     required String label,
     required String system,
@@ -90,7 +90,7 @@ class TaskPlanningService implements TaskPlanner {
   );
 
   Future<TaskPlanningResult> _run({
-    required ModelCompletionPort client,
+    required ModelGenerationPort client,
     required TaskPlanningToolContext context,
     required String label,
     required String system,

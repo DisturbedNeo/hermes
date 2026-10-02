@@ -1,39 +1,14 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hermes/features/chat/presentation/a11y.dart';
 import 'package:hermes/features/model/application/model_load_configuration.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
 import 'package:hermes/features/settings/application/preferences_port.dart';
+import 'package:hermes/features/model/application/model_catalog.dart';
 import 'package:hermes/features/chat/presentation/chat/message/dot_pulse.dart';
 import 'package:hermes/features/chat/presentation/model_configuration/model_configuration.dart';
-import 'package:path/path.dart' as p;
 
 enum ModelConfigurationSaveOutcome { notRequested, saved, failed }
-
-Future<Map<String, File>> _getModels(PreferencesPort preferences) async {
-  final directoryPath = await preferences.getModelsDirectory();
-  if (directoryPath == null) return {};
-  final directory = Directory(directoryPath);
-  if (!await directory.exists()) return {};
-
-  final models = <String, File>{};
-  final shardPattern = RegExp(
-    r'^(.*)-(\d{5})-of-(\d{5})\.gguf$',
-    caseSensitive: false,
-  );
-  for (final entity in directory.listSync().whereType<File>()) {
-    final name = p.basename(entity.path);
-    if (!name.toLowerCase().endsWith('.gguf')) continue;
-    final match = shardPattern.firstMatch(name);
-    if (match != null) {
-      if (int.parse(match.group(2)!) == 1) models[match.group(1)!] = entity;
-    } else {
-      models[name.substring(0, name.length - 5)] = entity;
-    }
-  }
-  return models;
-}
 
 @visibleForTesting
 Future<ModelConfigurationSaveOutcome> startModelAndMaybeSaveConfiguration({
@@ -56,24 +31,28 @@ class ModelPicker extends StatefulWidget {
     super.key,
     required this.tabs,
     required this.preferencesService,
+    required this.modelCatalog,
   });
 
   final ChatWorkspaceController tabs;
-  final PreferencesPort preferencesService;
+  final ModelPickerPreferencesPort preferencesService;
+  final ModelCatalogPort modelCatalog;
 
   @override
   State<ModelPicker> createState() => _ModelPickerState();
 }
 
 class _ModelPickerState extends State<ModelPicker> {
-  Map<String, File> _models = {};
+  List<ModelDescriptor> _models = const [];
   String? _selected;
 
   bool _loading = true;
   String? _error;
 
   ChatWorkspaceController get _tabs => widget.tabs;
-  PreferencesPort get _preferencesService => widget.preferencesService;
+  ModelPickerPreferencesPort get _preferencesService =>
+      widget.preferencesService;
+  ModelCatalogPort get _modelCatalog => widget.modelCatalog;
 
   @override
   void initState() {
@@ -107,7 +86,7 @@ class _ModelPickerState extends State<ModelPicker> {
       _error = null;
     });
     try {
-      final models = await _getModels(_preferencesService);
+      final models = await _modelCatalog.listModels();
       if (!mounted) return;
       setState(() {
         _models = models;
@@ -172,7 +151,8 @@ class _ModelPickerState extends State<ModelPicker> {
       );
     }
 
-    final aliases = _models.keys.toList()..sort((a, b) => a.compareTo(b));
+    final byAlias = {for (final model in _models) model.alias: model};
+    final aliases = byAlias.keys.toList()..sort((a, b) => a.compareTo(b));
     final selected = _selected;
     if (selected != null && !aliases.contains(selected)) {
       aliases.insert(0, selected);
@@ -206,7 +186,7 @@ class _ModelPickerState extends State<ModelPicker> {
                       ),
                       dropdownColor: bgColor,
                       items: aliases.map((alias) {
-                        final modelIsAvailable = _models.containsKey(alias);
+                        final modelIsAvailable = byAlias.containsKey(alias);
                         return DropdownMenuItem(
                           value: alias,
                           enabled: modelIsAvailable,
@@ -217,8 +197,8 @@ class _ModelPickerState extends State<ModelPicker> {
                         );
                       }).toList(),
                       onChanged: (v) async {
-                        if (v == null || !_models.containsKey(v)) return;
-                        final file = _models[v]!;
+                        if (v == null || !byAlias.containsKey(v)) return;
+                        final model = byAlias[v]!;
                         final llamaCppDirectory =
                             await _preferencesService.getLlamaCppDirectory() ??
                             '';
@@ -231,10 +211,11 @@ class _ModelPickerState extends State<ModelPicker> {
                           barrierDismissible: false,
                           builder: (_) => ModelConfiguration(
                             modelName: v,
+                            maxThreads: _modelCatalog.defaultThreadCount,
                             initialConfiguration:
                                 savedConfiguration ??
                                 ModelLoadConfiguration.defaults(
-                                  nThreads: Platform.numberOfProcessors,
+                                  nThreads: _modelCatalog.defaultThreadCount,
                                 ),
                             hasSavedConfiguration: savedConfiguration != null,
                             onResetSavedConfiguration: () => _preferencesService
@@ -247,9 +228,10 @@ class _ModelPickerState extends State<ModelPicker> {
                                 }) async {
                                   final snapshot = configuration.toSnapshot(
                                     modelName: v,
-                                    modelPath: file.path,
+                                    modelPath: model.path,
                                     llamaCppDirectory: llamaCppDirectory,
-                                    maxThreads: Platform.numberOfProcessors,
+                                    maxThreads:
+                                        _modelCatalog.defaultThreadCount,
                                   );
                                   setState(() {
                                     _selected = v;

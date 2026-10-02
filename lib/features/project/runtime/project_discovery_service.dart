@@ -1,4 +1,4 @@
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/project/runtime/project_memory_service.dart';

@@ -11,13 +11,13 @@ import 'package:hermes/features/chat/application/contracts/bubble.dart';
 import 'package:hermes/features/chat/application/contracts/chat_message.dart';
 import 'package:hermes/core/model_json.dart';
 import 'package:hermes/features/chat/application/contracts/compaction_settings.dart';
-import 'package:hermes/features/model/application/model_completion_port.dart';
+import 'package:hermes/features/model/application/model_capabilities.dart';
 import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/chat/application/contracts/message_store_port.dart';
 
 class CompactionManager {
   final CompactionSettings settings;
-  final ModelCompletionPort client;
+  final ModelContextPort client;
 
   const CompactionManager({required this.settings, required this.client});
 

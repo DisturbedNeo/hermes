@@ -1,6 +1,6 @@
 import 'package:hermes/core/json_parsing.dart';
 import 'package:hermes/core/uuid.dart';
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/workspace/application/sandbox_policy.dart';
 import 'package:hermes/features/model/application/model_completion.dart';
@@ -47,12 +47,12 @@ abstract interface class TaskToolExecutionPort {
 class TaskToolExecutionService implements TaskToolExecutionPort {
   const TaskToolExecutionService({
     required ToolProtocolAdapter protocol,
-    required WorkspaceSandboxPort sandbox,
+    required WorkspaceTaskToolPort sandbox,
   }) : _protocol = protocol,
        _sandbox = sandbox;
 
   final ToolProtocolAdapter _protocol;
-  final WorkspaceSandboxPort _sandbox;
+  final WorkspaceTaskToolPort _sandbox;
 
   @override
   Future<ToolResult> execute({

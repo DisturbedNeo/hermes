@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:file_selector/file_selector.dart';
@@ -22,6 +21,7 @@ class ModelConfiguration extends StatefulWidget {
     required this.modelName,
     required this.initialConfiguration,
     required this.hasSavedConfiguration,
+    required this.maxThreads,
     required this.onConfirm,
     required this.onResetSavedConfiguration,
     this.onCancel,
@@ -30,6 +30,7 @@ class ModelConfiguration extends StatefulWidget {
   final String modelName;
   final ModelLoadConfiguration initialConfiguration;
   final bool hasSavedConfiguration;
+  final int maxThreads;
 
   final ModelConfigurationConfirm onConfirm;
   final ModelConfigurationReset onResetSavedConfiguration;
@@ -102,9 +103,7 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
   }
 
   void _applyConfiguration(ModelLoadConfiguration configuration) {
-    final config = configuration.normalised(
-      maxThreads: Platform.numberOfProcessors,
-    );
+    final config = configuration.normalised(maxThreads: widget.maxThreads);
     _ctx = config.nCtx ~/ 1024;
     _threads = config.nThreads;
     _temperature = config.temperature;
@@ -207,7 +206,7 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
 
     setState(() {
       _applyConfiguration(
-        ModelLoadConfiguration.defaults(nThreads: Platform.numberOfProcessors),
+        ModelLoadConfiguration.defaults(nThreads: widget.maxThreads),
       );
       _hasSavedConfiguration = false;
       _resetting = false;
@@ -327,7 +326,7 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
                   label: 'Threads',
                   value: _threads,
                   min: 1,
-                  max: Platform.numberOfProcessors,
+                  max: widget.maxThreads,
                   step: 1,
                   onChanged: (v) => setState(() => _threads = v),
                 ),

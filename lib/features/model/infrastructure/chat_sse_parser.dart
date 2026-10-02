@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:hermes/features/chat/application/contracts/chat_token.dart';
+import 'package:hermes/core/contracts/model_conversation.dart';
 import 'package:hermes/features/model/application/model_errors.dart';
 
 class ChatSseParser {

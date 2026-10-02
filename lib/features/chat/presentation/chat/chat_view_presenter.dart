@@ -10,15 +10,34 @@ import 'package:hermes/features/chat/presentation/chat/message/message_bubble.da
 import 'package:hermes/features/chat/presentation/chat/message/message_row.dart';
 import 'package:hermes/features/chat/presentation/chat/message/message_timestamp.dart';
 
+sealed class ChatDisplayItem {
+  const ChatDisplayItem(this.messageId);
+
+  final String messageId;
+}
+
+class ChatMessageDisplayItem extends ChatDisplayItem {
+  const ChatMessageDisplayItem(super.messageId);
+}
+
+class ChatSummaryDisplayItem extends ChatDisplayItem {
+  const ChatSummaryDisplayItem(
+    super.messageId, {
+    required this.coveredMessageIds,
+  });
+
+  final List<String> coveredMessageIds;
+}
+
 // -----------------------------------------------------------------------------
 // Message list widget (scrollable list + floating scroll-to-bottom button)
 // -----------------------------------------------------------------------------
 
 /// Scrollable message list with a floating "scroll to bottom" button.
 class MessageListWidget extends StatefulWidget {
-  final List<dynamic> displayItems;
+  final List<ChatDisplayItem> displayItems;
   final Map<String, int> displayItemIndices;
-  final Widget Function(dynamic item, int index) itemBuilder;
+  final Widget Function(ChatDisplayItem item, int index) itemBuilder;
   final ScrollController controller;
   final VoidCallback onScrollToBottom;
   final bool showScrollButton;

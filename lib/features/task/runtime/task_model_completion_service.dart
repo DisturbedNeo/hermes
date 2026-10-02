@@ -1,18 +1,14 @@
 import 'dart:async';
 
-import 'package:hermes/features/chat/application/contracts/message_role.dart';
+import 'package:hermes/core/contracts/model_conversation.dart';
 import 'package:hermes/features/chat/application/protocol/compaction_manager.dart';
 import 'package:hermes/features/chat/application/protocol/chat_message_wire_adapter.dart';
 import 'package:hermes/features/chat/application/protocol/context_estimator.dart';
 import 'package:hermes/features/chat/application/protocol/payload_builder.dart';
-import 'package:hermes/features/chat/application/contracts/bubble.dart';
-import 'package:hermes/features/chat/application/contracts/chat_message.dart';
-import 'package:hermes/features/chat/application/contracts/chat_token.dart';
-import 'package:hermes/features/chat/application/contracts/compaction_settings.dart';
 import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/model/application/model_completion_port.dart';
 import 'package:hermes/features/model/application/model_completion.dart';
-import 'package:hermes/features/chat/application/contracts/message_store_port.dart';
+import 'package:hermes/core/contracts/conversation_store.dart';
 import 'package:hermes/features/tools/application/protocol/tool_call_protocol_adapter.dart';
 import 'package:hermes/features/task/application/protocol/planning_structured_output.dart';
 import 'package:hermes/features/task/application/protocol/structured_json_object.dart';
@@ -28,7 +24,7 @@ typedef TaskCompactionStatusCallback = void Function(String status);
 /// in their respective collaborators.
 abstract interface class TaskModelCompletionPort {
   Future<StructuredJsonObject> completeJson({
-    required ModelCompletionPort client,
+    required ModelGenerationPort client,
     required String system,
     required String user,
     required String label,
@@ -38,7 +34,7 @@ abstract interface class TaskModelCompletionPort {
   });
 
   Future<ModelCompletion> completeChat({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required String label,
     required List<ChatMessage> messages,
     ModelRequestOptions? extraParams,
@@ -61,7 +57,7 @@ class TaskModelCompletionService implements TaskModelCompletionPort {
 
   @override
   Future<StructuredJsonObject> completeJson({
-    required ModelCompletionPort client,
+    required ModelGenerationPort client,
     required String system,
     required String user,
     required String label,
@@ -83,7 +79,7 @@ class TaskModelCompletionService implements TaskModelCompletionPort {
 
   @override
   Future<ModelCompletion> completeChat({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required String label,
     required List<ChatMessage> messages,
     ModelRequestOptions? extraParams,
@@ -233,7 +229,7 @@ class TaskModelCompletionService implements TaskModelCompletionPort {
   }
 
   Future<List<ChatMessage>> _prepareMessages({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required String label,
     required List<ChatMessage> messages,
     required ModelRequestOptions extraParams,

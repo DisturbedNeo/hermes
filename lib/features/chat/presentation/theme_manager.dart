@@ -10,7 +10,7 @@ class ThemeManager with ChangeNotifier implements Disposable {
   HermesThemeData _currentTheme = allThemes.first;
   bool _disposed = false;
 
-  final PreferencesPort _preferencesService;
+  final AppearanceSettingsPort _preferencesService;
 
   /// All available themes, built once at class load time.
   static List<HermesThemeData> allThemes = _buildAllThemes();
@@ -22,7 +22,7 @@ class ThemeManager with ChangeNotifier implements Disposable {
 
   final Duration _themeSwitchDuration = const Duration(milliseconds: 300);
 
-  ThemeManager({required PreferencesPort preferencesService})
+  ThemeManager({required AppearanceSettingsPort preferencesService})
     : _preferencesService = preferencesService {
     _loadThemePreferences();
   }

@@ -9,7 +9,7 @@ import 'package:hermes/core/uuid.dart';
 import 'package:hermes/features/chat/application/contracts/bubble.dart';
 import 'package:hermes/features/chat/application/contracts/chat_token.dart';
 import 'package:hermes/features/model/application/model_configuration.dart';
-import 'package:hermes/features/model/application/model_completion_port.dart';
+import 'package:hermes/features/model/application/model_capabilities.dart';
 import 'package:hermes/features/chat/runtime/chat_application/chat_stream.dart';
 import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';
@@ -40,7 +40,7 @@ class ChatSessionManager implements Disposable {
   final ModelServerPort _serverManager;
   final ToolRegistryPort _toolService;
   final ChatToolExecutionPort _toolExecution;
-  final PreferencesPort _preferencesService;
+  final CompactionSettingsPort _preferencesService;
   late final BufferedTokenWriter _tokenWriter;
 
   final ChatSessionHost _host;
@@ -69,7 +69,7 @@ class ChatSessionManager implements Disposable {
     required ModelServerPort serverManager,
     required ToolRegistryPort toolService,
     required ChatToolExecutionPort toolExecution,
-    required PreferencesPort preferencesService,
+    required CompactionSettingsPort preferencesService,
     required ChatSessionHost host,
   }) : _messageStore = messageStore,
        _chatStream = chatStream,
@@ -122,7 +122,7 @@ class ChatSessionManager implements Disposable {
   }
 
   Future<void> _streamGenerationRequest({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required CancellationToken token,
     required int generationId,
     required bool includeToolResults,
@@ -314,7 +314,7 @@ class ChatSessionManager implements Disposable {
   // ── Streaming internals ─────────────────────────────────────────────────
 
   Future<Set<String>> _compactContextIfNeeded({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required ModelRequestOptions extraParams,
     CancellationToken? cancellationToken,
   }) async {

@@ -1,5 +1,5 @@
 import 'package:hermes/core/model_json.dart';
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 
 /// Persistence-only representation of a project document.
 class ProjectSnapshotDto {

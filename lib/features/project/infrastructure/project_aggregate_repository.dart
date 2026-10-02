@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
+import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/persistence/application/persistence_contracts.dart';
 import 'package:hermes/features/project/infrastructure/project_snapshot_migrator.dart';
 import 'package:hermes/features/project/infrastructure/project_transaction_coordinator.dart';

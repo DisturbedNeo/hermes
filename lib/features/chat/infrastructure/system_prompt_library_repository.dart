@@ -17,14 +17,14 @@ import 'package:hermes/features/chat/application/contracts/prompt_library_port.d
 /// interactions.  Contains zero business logic — it is a pure data-access
 /// abstraction over the prompt-preset / prompt-module store.
 class SystemPromptLibraryRepository implements PromptLibraryPort {
-  final PreferencesPort _preferencesService;
+  final PersistenceSettingsPort _preferencesService;
   final DatabaseFactory _databaseFactory;
   final String? _databasePath;
 
   late final ManagedLazyDatabase _database;
 
   SystemPromptLibraryRepository({
-    required PreferencesPort preferencesService,
+    required PersistenceSettingsPort preferencesService,
     DatabaseFactory? databaseFactory,
     String? databasePath,
   }) : _preferencesService = preferencesService,

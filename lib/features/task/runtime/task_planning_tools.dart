@@ -1,4 +1,4 @@
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/task/application/protocol/planning_runtime.dart';
 import 'package:hermes/features/task/runtime/task_plan_builder.dart';

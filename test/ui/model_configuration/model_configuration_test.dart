@@ -23,6 +23,7 @@ void main() {
               nThreads: Platform.numberOfProcessors,
             ),
         hasSavedConfiguration: hasSavedConfiguration,
+        maxThreads: Platform.numberOfProcessors,
         onConfirm:
             onConfirm ?? (configuration, {required saveAsDefault}) async {},
         onResetSavedConfiguration: onReset ?? () async => true,
