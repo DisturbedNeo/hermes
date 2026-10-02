@@ -57,7 +57,6 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   build_runner: ^2.10.1
   dart_mappable_builder: ^4.9.0
-  analyzer: ^13.0.0
 
 
 # For information on the generic Dart part of this file, see the
