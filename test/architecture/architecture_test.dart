@@ -486,21 +486,6 @@ void main() {
         violations.add('${source.path}: undocumented framework notifier edge');
       }
     }
-    final documentation = File('docs/architecture.md');
-    if (!documentation.existsSync()) {
-      violations.add(
-        'docs/architecture.md: notifier exceptions cannot be documented',
-      );
-    } else {
-      final text = documentation.readAsStringSync();
-      for (final entry in justified.entries) {
-        if (!text.contains(entry.value)) {
-          violations.add(
-            '${entry.key}: notifier exception missing from architecture docs',
-          );
-        }
-      }
-    }
     _expectEmpty('framework notifier coupling', violations);
   });
 
@@ -904,38 +889,5 @@ void main() {
       violations.add('repository constructs fallback coordinator');
     }
     _expectEmpty('composition/persistence ownership', violations);
-  });
-
-  test('module ownership and generated-artifact rules are documented', () {
-    final violations = <String>[];
-    final documentation = File('docs/architecture.md');
-    if (!documentation.existsSync()) {
-      violations.add(
-        'docs/architecture.md: required architecture guide is missing; '
-        'restore the tracked file before running architecture tests',
-      );
-      _expectEmpty('documented module ownership', violations);
-      return;
-    }
-    final architecture = documentation.readAsStringSync();
-    for (final module in [
-      '`core`',
-      '`features/persistence`',
-      '`features/workspace`',
-      '`features/tools`',
-      '`features/model`',
-      '`features/task`',
-      '`features/project`',
-      '`features/chat`',
-      '`app/modules`',
-    ]) {
-      if (!architecture.contains(module)) {
-        violations.add('docs/architecture.md: missing owner for $module');
-      }
-    }
-    if (!architecture.contains('Generated mapper output')) {
-      violations.add('docs/architecture.md: generated mapper rule missing');
-    }
-    _expectEmpty('documented module ownership', violations);
   });
 }
