@@ -48,7 +48,7 @@ abstract interface class ProjectPlanningPort {
     required WorkspaceAttachment workspace,
     required String userPrompt,
     String? chatSessionId,
-    ModelCompletionPort? client,
+    ModelConversationPort? client,
     String baseSystemPrompt = '',
     int? maxIterations,
     ModelOutputSink? onModelOutput,

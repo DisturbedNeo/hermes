@@ -126,7 +126,7 @@ class ProjectCommandStopReasonFor {
 
 /// All inputs required to run one project command.
 class ProjectExecutionRequest {
-  final ModelCompletionPort client;
+  final ModelConversationPort client;
   final WorkspaceAttachment workspace;
   final ProjectAggregate snapshot;
   final String baseSystemPrompt;

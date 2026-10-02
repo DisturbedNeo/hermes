@@ -2,7 +2,8 @@ library;
 
 import 'package:hermes/features/chat/runtime/chat_session_orchestrator.dart';
 
-export 'chat_session_orchestrator.dart' show ChatSessionOperations;
+export 'chat_session_orchestrator.dart'
+    show ChatSessionOperations, ChatSessionCommands, ChatSessionStateOperations;
 
 /// Stable compatibility name for the chat-session facade.
 ///

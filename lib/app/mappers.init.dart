@@ -9,7 +9,7 @@ import '../features/chat/application/protocol/context_summary_prompt.dart'
     as p1;
 import '../features/model/application/model_configuration.dart' as p2;
 import '../features/model/application/model_load_configuration.dart' as p3;
-import '../features/project/application/contracts/project_snapshot_models.dart'
+import '../features/project/application/contracts/project_state_models.dart'
     as p4;
 import '../features/project/application/contracts/project_task_models.dart'
     as p5;
@@ -23,8 +23,7 @@ import '../features/task/application/contracts/task_execution_contracts.dart'
 import '../features/task/application/contracts/task_planning_models.dart'
     as p10;
 import '../features/task/application/contracts/task_planning_types.dart' as p11;
-import '../features/task/application/contracts/task_snapshot_models.dart'
-    as p12;
+import '../features/task/application/contracts/task_state_models.dart' as p12;
 import '../features/task/application/contracts/task_tool_contracts.dart' as p13;
 import '../features/workspace/application/workspace_discovery_profile.dart'
     as p14;
@@ -49,7 +48,7 @@ void initializeMappers() {
   p4.PendingProjectPlanApprovalMapper.ensureInitialized();
   p4.ProjectCompletionReviewCheckpointMapper.ensureInitialized();
   p4.ProjectBoundaryMapper.ensureInitialized();
-  p4.ProjectAggregateMapper.ensureInitialized();
+  p4.ProjectSnapshotAggregateMapper.ensureInitialized();
   p4.ProjectRecoveryIncidentMapper.ensureInitialized();
   p4.ProjectDecisionRecordMapper.ensureInitialized();
   p4.ProjectBlockerMapper.ensureInitialized();
@@ -101,7 +100,7 @@ void initializeMappers() {
   p12.TaskProjectCriterionMapper.ensureInitialized();
   p12.TaskProjectEvidenceExpectationMapper.ensureInitialized();
   p12.RefinedTaskBriefMapper.ensureInitialized();
-  p12.TaskAggregateMapper.ensureInitialized();
+  p12.TaskSnapshotAggregateMapper.ensureInitialized();
   p12.TaskStepMapper.ensureInitialized();
   p12.TaskRunMapper.ensureInitialized();
   p12.TaskToolCallRecordMapper.ensureInitialized();

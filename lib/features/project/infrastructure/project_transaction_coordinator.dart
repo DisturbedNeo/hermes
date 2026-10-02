@@ -6,12 +6,12 @@ import 'package:hermes/features/persistence/infrastructure/atomic_json_snapshot_
 import 'package:hermes/features/persistence/application/persistence_contracts.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/project_aggregate_repository_port.dart';
-import 'package:hermes/features/project/project_repository_port.dart';
+import 'package:hermes/features/persistence/application/project_snapshot_store_port.dart';
 import 'package:hermes/features/project/application/contracts/project_checkpoint.dart';
 import 'package:hermes/features/persistence/infrastructure/dto/project_persistence_adapter.dart';
 import 'package:hermes/features/persistence/infrastructure/dto/task_persistence_adapter.dart';
 import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
+import 'package:hermes/features/persistence/application/task_snapshot_store_port.dart';
 import 'package:path/path.dart' as path;
 
 /// Owns aggregate transaction manifests, commit ordering, and recovery.
@@ -19,8 +19,8 @@ import 'package:path/path.dart' as path;
 /// reader/coordinator for aggregate snapshots.
 class ProjectTransactionCoordinator {
   ProjectTransactionCoordinator({
-    required ProjectRepositoryPort projectRepository,
-    required TaskPersistencePort taskRepository,
+    required ProjectSnapshotStorePort projectRepository,
+    required TaskSnapshotStorePort taskRepository,
     this.onTransactionPhase,
     AtomicJsonSnapshotStore snapshots = const AtomicJsonSnapshotStore(),
   }) : _projects = projectRepository,
@@ -33,8 +33,8 @@ class ProjectTransactionCoordinator {
   static const TaskPersistenceAdapter _taskPersistence =
       TaskPersistenceAdapter();
 
-  final ProjectRepositoryPort _projects;
-  final TaskPersistencePort _tasks;
+  final ProjectSnapshotStorePort _projects;
+  final TaskSnapshotStorePort _tasks;
   final AtomicJsonSnapshotStore _snapshots;
   final FutureOr<void> Function(String phase)? onTransactionPhase;
 
@@ -60,7 +60,7 @@ class ProjectTransactionCoordinator {
       throw StaleSnapshotException(
         path: _projects.projectRelativePath(
           project.id,
-          ProjectRepositoryPort.documentFileName,
+          ProjectSnapshotStorePort.documentFileName,
         ),
         expectedRevision: expectedProjectRevision,
         actualRevision: actualProjectRevision,
@@ -83,7 +83,7 @@ class ProjectTransactionCoordinator {
         throw StaleSnapshotException(
           path: _tasks.taskRelativePath(
             task.id,
-            TaskStorageLayout.documentFileName,
+            TaskSnapshotStorePort.documentFileName,
           ),
           expectedRevision: task.persistenceRevision,
           actualRevision: actualRevision,
@@ -283,7 +283,7 @@ class ProjectTransactionCoordinator {
         'kind': 'project',
         'path': _projects.projectRelativePath(
           project.id,
-          ProjectRepositoryPort.documentFileName,
+          ProjectSnapshotStorePort.documentFileName,
         ),
         'operation': deletingProject ? 'delete' : 'write',
         'expectedRevision': project.persistenceRevision,
@@ -296,7 +296,7 @@ class ProjectTransactionCoordinator {
           'kind': 'task',
           'path': _tasks.taskRelativePath(
             task.id,
-            TaskStorageLayout.documentFileName,
+            TaskSnapshotStorePort.documentFileName,
           ),
           'operation': 'write',
           'expectedRevision': task.persistenceRevision,
@@ -307,7 +307,7 @@ class ProjectTransactionCoordinator {
           'kind': 'task',
           'path': _tasks.taskRelativePath(
             taskId,
-            TaskStorageLayout.documentFileName,
+            TaskSnapshotStorePort.documentFileName,
           ),
           'operation': 'delete',
           'expectedRevision': deletedTaskRevisions[taskId],

@@ -7,6 +7,7 @@ import 'package:hermes/core/model_json.dart';
 import 'package:hermes/features/task/application/contracts/task_summary.dart';
 import 'package:hermes/features/workspace/application/workspace_ports.dart';
 import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
+import 'package:hermes/features/persistence/application/task_snapshot_store_port.dart';
 import 'package:path/path.dart' as path;
 import 'package:hermes/features/persistence/application/schema_migrations.dart';
 import 'package:hermes/features/persistence/infrastructure/dto/task_persistence_adapter.dart';
@@ -17,10 +18,11 @@ class TaskRepository
         TaskReadPort,
         TaskWritePort,
         TaskCleanupPort,
-        TaskPersistencePort {
-  static const String tasksRoot = '.agent/tasks';
-  static const String documentFileName = 'task.json';
-  static const String runsDirectoryName = 'runs';
+        TaskSnapshotStorePort {
+  static const String tasksRoot = TaskSnapshotStorePort.tasksRoot;
+  static const String documentFileName = TaskSnapshotStorePort.documentFileName;
+  static const String runsDirectoryName =
+      TaskSnapshotStorePort.runsDirectoryName;
 
   TaskRepository({required PersistencePort coordinator})
     : _coordinator = coordinator;

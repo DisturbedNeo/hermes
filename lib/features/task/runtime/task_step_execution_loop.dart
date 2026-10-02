@@ -1,7 +1,7 @@
 part of 'task_execution_coordinator.dart';
 
-typedef _TaskTerminalToolCall =
-    _TaskTerminalToolCallResult Function({
+typedef TaskTerminalToolCall =
+    TaskTerminalToolCallResult Function({
       required String callName,
       required Object args,
       required Task task,
@@ -10,8 +10,8 @@ typedef _TaskTerminalToolCall =
       required TaskExecutionRequest executionRequest,
     });
 
-typedef _TaskStepOutputParser =
-    _StepExecutionOutput Function(
+typedef TaskStepOutputParser =
+    TaskStepExecutionOutput Function(
       String raw,
       Task task,
       TaskStep step,
@@ -19,7 +19,7 @@ typedef _TaskStepOutputParser =
       TaskExecutionRequest executionRequest,
     );
 
-typedef _TaskStepPromptBuilder =
+typedef TaskStepPromptBuilder =
     String Function(
       Task task,
       TaskStep step,
@@ -27,39 +27,39 @@ typedef _TaskStepPromptBuilder =
       TaskExecutionRequest executionRequest,
     );
 
-typedef _TaskStructuredToolResult =
+typedef TaskStructuredToolResult =
     Map<String, dynamic>? Function(String toolName, String resultJson);
 
-typedef _TaskToolErrorResolver =
+typedef TaskToolErrorResolver =
     TaskToolError? Function(String toolName, Map<String, dynamic>? result);
 
-typedef _TaskToolOutcomeResolver =
+typedef TaskToolOutcomeResolver =
     TaskToolCallOutcome Function(
       Map<String, dynamic>? result,
       TaskToolError? error,
     );
 
-typedef _TaskOperationKeyBuilder =
+typedef TaskOperationKeyBuilder =
     String Function(String toolName, Object? rawArguments);
 
-typedef _TaskTextCapper = String Function(String value, int maxChars);
+typedef TaskTextCapper = String Function(String value, int maxChars);
 
-class _TaskStepExecutionLoop {
-  _TaskStepExecutionLoop({
+class TaskStepExecutionLoop {
+  TaskStepExecutionLoop({
     required ToolRegistryPort toolService,
     required TaskModelCompletionPort modelCompletion,
     required TaskToolExecutionPort toolExecution,
     required TaskExecutionPolicy executionPolicy,
     required JsonEncoder encoder,
-    required _TaskTerminalToolCall terminalToolCall,
-    required _TaskStepOutputParser parseStepOutput,
+    required TaskTerminalToolCall terminalToolCall,
+    required TaskStepOutputParser parseStepOutput,
     required TaskPersistenceStore persistenceStore,
-    required _TaskStepPromptBuilder buildStepPrompt,
-    required _TaskStructuredToolResult structuredToolResult,
-    required _TaskToolErrorResolver toolErrorInfoForCall,
-    required _TaskToolOutcomeResolver toolCallOutcome,
-    required _TaskOperationKeyBuilder operationKey,
-    required _TaskTextCapper cap,
+    required TaskStepPromptBuilder buildStepPrompt,
+    required TaskStructuredToolResult structuredToolResult,
+    required TaskToolErrorResolver toolErrorInfoForCall,
+    required TaskToolOutcomeResolver toolCallOutcome,
+    required TaskOperationKeyBuilder operationKey,
+    required TaskTextCapper cap,
   }) : _toolService = toolService,
        _modelCompletion = modelCompletion,
        _toolExecution = toolExecution,
@@ -80,17 +80,17 @@ class _TaskStepExecutionLoop {
   final TaskToolExecutionPort _toolExecution;
   final TaskExecutionPolicy _executionPolicy;
   final JsonEncoder _encoder;
-  final _TaskTerminalToolCall _terminalToolCall;
-  final _TaskStepOutputParser _parseStepOutputCallback;
+  final TaskTerminalToolCall _terminalToolCall;
+  final TaskStepOutputParser _parseStepOutputCallback;
   final TaskPersistenceStore _persistenceStore;
-  final _TaskStepPromptBuilder _buildStepPromptCallback;
-  final _TaskStructuredToolResult _structuredToolResultCallback;
-  final _TaskToolErrorResolver _toolErrorInfoForCallCallback;
-  final _TaskToolOutcomeResolver _toolCallOutcomeCallback;
-  final _TaskOperationKeyBuilder _operationKeyCallback;
-  final _TaskTextCapper _capCallback;
+  final TaskStepPromptBuilder _buildStepPromptCallback;
+  final TaskStructuredToolResult _structuredToolResultCallback;
+  final TaskToolErrorResolver _toolErrorInfoForCallCallback;
+  final TaskToolOutcomeResolver _toolCallOutcomeCallback;
+  final TaskOperationKeyBuilder _operationKeyCallback;
+  final TaskTextCapper _capCallback;
 
-  Future<_StepExecutionOutput> execute({
+  Future<TaskStepExecutionOutput> execute({
     required ModelConversationPort client,
     required WorkspaceAttachment workspace,
     required Task task,
@@ -140,7 +140,7 @@ class _TaskStepExecutionLoop {
     final toolCalls = <TaskToolCallRecord>[];
     var finalText = '';
     var finalContent = '';
-    _StepExecutionOutput? forcedOutput;
+    TaskStepExecutionOutput? forcedOutput;
     String? previousToolKey;
     var consecutiveRepeatCount = 0;
 
@@ -358,8 +358,8 @@ class _TaskStepExecutionLoop {
             executionRequest,
           );
         } else {
-          forcedOutput = _StepExecutionOutput(
-            status: _StepExecutionStatus.failed,
+          forcedOutput = TaskStepExecutionOutput(
+            status: TaskStepExecutionStatus.failed,
             runStatus: TaskRunStatus.failed,
             summary:
                 'Stopped step after a tool-call loop guard fired. $loopGuardReason',
@@ -373,7 +373,7 @@ class _TaskStepExecutionLoop {
       }
     }
 
-    await _persistenceStore.persistence.saveLog(
+    await _persistenceStore.saveLog(
       workspace.rootPath,
       task.id,
       '${step.id}-${run.runId}.md',

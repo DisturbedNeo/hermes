@@ -4,6 +4,7 @@ import 'package:hermes/features/persistence/application/persistence_contracts.da
 import 'package:hermes/features/project/project_aggregate_repository_port.dart';
 import 'package:hermes/features/project/application/contracts/project_checkpoint.dart';
 import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
+import 'package:hermes/features/persistence/application/task_snapshot_store_port.dart';
 
 /// Tracks the last task snapshots included in one project command.
 ///
@@ -84,15 +85,15 @@ class ProjectCommitIntent {
 /// do not coordinate task revisions or repository transactions themselves.
 class ProjectAggregateStore {
   ProjectAggregateStore({
-    required ProjectAggregateRepositoryPort aggregateRepository,
-    required TaskPersistencePort taskRepository,
+    required ProjectAggregateCommitPort aggregateRepository,
+    required TaskSnapshotStorePort taskRepository,
     required TaskMaterializerPort materializer,
   }) : _aggregateRepository = aggregateRepository,
        _taskRepository = taskRepository,
        _materializer = materializer;
 
-  final ProjectAggregateRepositoryPort _aggregateRepository;
-  final TaskPersistencePort _taskRepository;
+  final ProjectAggregateCommitPort _aggregateRepository;
+  final TaskSnapshotStorePort _taskRepository;
   final TaskMaterializerPort _materializer;
 
   Future<ProjectAggregate> commit(ProjectCommitIntent intent) async {
@@ -135,7 +136,7 @@ class ProjectAggregateStore {
         throw StaleSnapshotException(
           path: _taskRepository.taskRelativePath(
             taskId,
-            TaskStorageLayout.documentFileName,
+            TaskSnapshotStorePort.documentFileName,
           ),
           expectedRevision: expected,
           actualRevision: actual ?? 0,

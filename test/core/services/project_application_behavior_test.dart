@@ -31,7 +31,7 @@ import 'package:hermes/features/persistence/infrastructure/workspace_persistence
 
 extension _ProjectApplicationTestCommands on ProjectApplication {
   Future<ProjectCommandResult> executeProject({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required WorkspaceAttachment workspace,
     required ProjectAggregate snapshot,
     required String baseSystemPrompt,
@@ -918,7 +918,7 @@ class _InitialisationGateway
 
   @override
   Future<ProjectInitialPlanResult> initializePlan({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
@@ -929,7 +929,7 @@ class _InitialisationGateway
 
   @override
   Future<ProjectInitialPlanResult?> repairInitialPlan({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
@@ -949,7 +949,7 @@ class _InitialisationGateway
 
   @override
   Future<ProjectIncrementalPlanResult> revisePlanWithCommands({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required ProjectAggregate project,
@@ -973,7 +973,7 @@ class _InitialisationGateway
 
   @override
   Future<ProjectIncrementalPlanResult> splitTaskWithCommands({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required ProjectAggregate project,
@@ -993,7 +993,7 @@ class _InitialisationGateway
 
   @override
   Future<ProjectCompletionAssessment> evaluateCompletion({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required String baseSystemPrompt,
     required ProjectAggregate project,
     ModelOutputSink? onModelOutput,

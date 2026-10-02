@@ -183,7 +183,7 @@ class ProjectIncrementalPlanResult {
 /// protocol; there is no legacy initial-plan branch.
 abstract interface class ProjectPlanner {
   Future<ProjectInitialPlanResult> initializePlan({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
@@ -193,7 +193,7 @@ abstract interface class ProjectPlanner {
   });
 
   Future<ProjectInitialPlanResult?> repairInitialPlan({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
@@ -204,7 +204,7 @@ abstract interface class ProjectPlanner {
     CancellationToken? cancellationToken,
   });
   Future<ProjectIncrementalPlanResult> revisePlanWithCommands({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required ProjectAggregate project,
@@ -216,7 +216,7 @@ abstract interface class ProjectPlanner {
   });
 
   Future<ProjectIncrementalPlanResult> splitTaskWithCommands({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required ProjectAggregate project,
@@ -231,7 +231,7 @@ abstract interface class ProjectPlanner {
 /// Domain-specific structured evaluator used by project completion.
 abstract interface class ProjectCompletionEvaluator {
   Future<ProjectCompletionAssessment> evaluateCompletion({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required String baseSystemPrompt,
     required ProjectAggregate project,
     ModelOutputSink? onModelOutput,

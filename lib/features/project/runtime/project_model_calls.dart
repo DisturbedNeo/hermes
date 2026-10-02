@@ -48,7 +48,7 @@ class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
   final StructuredPlanningOutputService _structuredOutput;
 
   Future<Map<String, dynamic>> _runPlanning({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required PlanningToolRegistry registry,
     required String label,
     required String system,
@@ -69,7 +69,7 @@ class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
 
   @override
   Future<ProjectInitialPlanResult> initializePlan({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
@@ -101,7 +101,7 @@ class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
 
   @override
   Future<ProjectInitialPlanResult?> repairInitialPlan({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,
@@ -145,7 +145,7 @@ ${_encoder.convert(_initialPlanToMap(initialPlan))}
 
   @override
   Future<ProjectIncrementalPlanResult> revisePlanWithCommands({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required ProjectAggregate project,
@@ -231,7 +231,7 @@ ${_encoder.convert(_projectViewService.query(project))}
 
   @override
   Future<ProjectIncrementalPlanResult> splitTaskWithCommands({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required ProjectAggregate project,
@@ -356,7 +356,7 @@ ${_encoder.convert(_projectViewService.query(project, taskRef: oversizedTask.id)
 
   @override
   Future<ProjectCompletionAssessment> evaluateCompletion({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required String baseSystemPrompt,
     required ProjectAggregate project,
     ModelOutputSink? onModelOutput,
@@ -437,7 +437,7 @@ ${_encoder.convert(ModelJson.encode(project))}
   }
 
   Future<Map<String, dynamic>> _completeJson({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required String system,
     required String user,
     required String label,
@@ -458,7 +458,7 @@ ${_encoder.convert(ModelJson.encode(project))}
   }
 
   Future<ProjectInitialPlanResult> _completeInitialPlanning({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required String baseSystemPrompt,
     required WorkspaceAttachment workspace,
     required String originalGoal,

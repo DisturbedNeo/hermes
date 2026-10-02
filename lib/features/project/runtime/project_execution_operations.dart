@@ -1,6 +1,6 @@
 part of 'project_execution_state_machine.dart';
 
-extension ProjectExecutionOperations on ProjectExecutionStateMachine {
+extension ProjectExecutionOperations on ProjectExecutionUseCase {
   ProjectTaskNode? _activeProjectTask(ProjectAggregate project) {
     final id = project.activeTaskId;
     return id == null ? null : project.taskById(id);
@@ -150,137 +150,13 @@ extension ProjectExecutionOperations on ProjectExecutionStateMachine {
     ProjectAggregate project,
   ) => _persistenceCoordinator.hydrateProjectTasks(workspace, project);
 
-  Future<List<ProjectSummary>> listProjects(
-    WorkspaceAttachment workspace, {
-    String? chatSessionId,
-  }) => _persistenceCoordinator.listProjects(
-    workspace,
-    chatSessionId: chatSessionId,
-  );
-
-  Future<ProjectAggregate?> loadLatestProject(
-    WorkspaceAttachment workspace, {
-    String? chatSessionId,
-  }) async => (await _persistenceCoordinator.loadLatestProject(
-    workspace,
-    chatSessionId: chatSessionId,
-  )).project;
-
-  Future<ProjectLoadResult> loadLatestProjectResult(
-    WorkspaceAttachment workspace, {
-    String? chatSessionId,
-  }) => _persistenceCoordinator.loadLatestProject(
-    workspace,
-    chatSessionId: chatSessionId,
-  );
-
-  Future<ProjectAggregate?> loadProject(
-    WorkspaceAttachment workspace,
-    String projectId, {
-    String? chatSessionId,
-  }) async => (await _persistenceCoordinator.loadProject(
-    workspace,
-    projectId,
-    chatSessionId: chatSessionId,
-  )).project;
-
-  Future<ProjectLoadResult> loadProjectResult(
-    WorkspaceAttachment workspace,
-    String projectId, {
-    String? chatSessionId,
-  }) => _persistenceCoordinator.loadProject(
-    workspace,
-    projectId,
-    chatSessionId: chatSessionId,
-  );
-
-  Future<int> deleteProjectsForChatSession(
-    WorkspaceAttachment workspace, {
-    required String chatSessionId,
-  }) => _persistenceCoordinator.deleteProjectsForChatSession(
-    workspace,
-    chatSessionId: chatSessionId,
-  );
-
-  Future<int> deleteOrphanedChatProjects(
-    WorkspaceAttachment workspace, {
-    required Set<String> retainedChatSessionIds,
-  }) => _persistenceCoordinator.deleteOrphanedChatProjects(
-    workspace,
-    retainedChatSessionIds: retainedChatSessionIds,
-  );
-
-  Future<ProjectAggregate> updateProjectChatSessionId({
-    required WorkspaceAttachment workspace,
-    required ProjectAggregate snapshot,
-    required String chatSessionId,
-  }) => _persistenceCoordinator.updateProjectChatSessionId(
-    workspace: workspace,
-    snapshot: snapshot,
-    chatSessionId: chatSessionId,
-  );
-
-  Future<ProjectAggregate> updateProject({
-    required WorkspaceAttachment workspace,
-    required ProjectAggregate snapshot,
-    required ProjectUpdateCommand command,
-  }) => _persistenceCoordinator.updateProject(
-    workspace: workspace,
-    snapshot: snapshot,
-    command: command,
-  );
-
-  Future<ProjectAggregate> upsertUserWorkspaceNode({
-    required WorkspaceAttachment workspace,
-    required ProjectAggregate snapshot,
-    String? id,
-    required String type,
-    required String title,
-    String description = '',
-    List<String> aliases = const [],
-    List<String> tags = const [],
-    List<String> references = const [],
-    String? sourceId,
-  }) => _persistenceCoordinator.upsertUserWorkspaceNode(
-    workspace: workspace,
-    snapshot: snapshot,
-    id: id,
-    type: type,
-    title: title,
-    description: description,
-    aliases: aliases,
-    tags: tags,
-    references: references,
-    sourceId: sourceId,
-  );
-
-  Future<ProjectAggregate> upsertUserWorkspaceEdge({
-    required WorkspaceAttachment workspace,
-    required ProjectAggregate snapshot,
-    String? id,
-    required String sourceNodeId,
-    required String targetNodeId,
-    required String label,
-    String description = '',
-    String? sourceId,
-  }) => _persistenceCoordinator.upsertUserWorkspaceEdge(
-    workspace: workspace,
-    snapshot: snapshot,
-    id: id,
-    sourceNodeId: sourceNodeId,
-    targetNodeId: targetNodeId,
-    label: label,
-    description: description,
-    sourceId: sourceId,
-  );
-
   Future<Task?> _loadActiveTask(
     WorkspaceAttachment workspace,
     ProjectAggregate project,
   ) => _persistenceCoordinator.loadActiveTask(workspace, project);
 
   Future<ProjectAggregate> _revisePlan({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required WorkspaceAttachment workspace,
     required ProjectAggregate project,
     required List<ProjectPlanRevisionTrigger> triggers,
@@ -436,7 +312,7 @@ extension ProjectExecutionOperations on ProjectExecutionStateMachine {
   }
 
   Future<ProjectAggregate> _handleInvalidProjectTask({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required WorkspaceAttachment workspace,
     required ProjectAggregate project,
     required ProjectTaskNode task,
@@ -842,7 +718,7 @@ extension ProjectExecutionOperations on ProjectExecutionStateMachine {
 
   // Project evaluation operations
   Future<ProjectAggregate> _applyCompletionEvaluation({
-    required ModelCompletionPort client,
+    required ModelConversationPort client,
     required ProjectAggregate project,
     required String baseSystemPrompt,
     ProjectCompletionReviewReason? reviewReason,

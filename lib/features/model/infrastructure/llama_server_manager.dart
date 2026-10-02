@@ -12,6 +12,7 @@ import 'package:hermes/features/model/application/model_session_diagnostics.dart
 import 'package:hermes/features/model/application/model_session_diagnostics_port.dart';
 import 'package:hermes/features/model/application/model_session_telemetry_port.dart';
 import 'package:hermes/features/model/application/model_server_port.dart';
+import 'package:hermes/features/model/application/model_capabilities.dart';
 import 'package:hermes/features/model/domain/model_provider.dart';
 import 'package:hermes/features/model/application/model_call_diagnostics.dart';
 import 'package:hermes/features/model/infrastructure/model_diagnostic_bundle_writer.dart';
@@ -180,7 +181,7 @@ class LlamaServerManager implements ModelServerPort {
   ModelSessionTelemetryPort get telemetry => _diagnostics;
 
   @override
-  ModelProvider? get completionProvider => _completionProvider;
+  ModelConversationPort? get completionProvider => _completionProvider;
 
   @override
   Future<ModelConfigurationAvailability> validateConfiguration(

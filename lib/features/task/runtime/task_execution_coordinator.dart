@@ -6,7 +6,6 @@ import 'dart:convert';
 import 'package:hermes/features/tools/application/protocol/tool_call_protocol_adapter.dart';
 import 'package:hermes/features/tools/application/tool_protocol_adapter.dart';
 import 'package:hermes/core/json_parsing.dart';
-import 'package:hermes/core/sentinel.dart' show kSentinel, resolve;
 import 'package:hermes/core/uuid.dart';
 import 'package:hermes/core/contracts/model_conversation.dart';
 import 'package:hermes/features/chat/application/protocol/chat_message_wire_adapter.dart';
@@ -43,123 +42,18 @@ import 'package:hermes/features/workspace/application/workspace_discovery.dart';
 import 'package:hermes/core/model_json.dart';
 import 'package:hermes/features/tools/application/protocol/tool_error.dart';
 import 'package:path/path.dart' as path;
+import 'package:hermes/features/task/runtime/task_execution_models.dart';
+
+export 'task_execution_models.dart' show TaskRuntimeDependencies;
 
 part 'task_step_execution_loop.dart';
 part 'task_execution_operations.dart';
-
-// TaskStepExecutionRuntime
-
-class TaskRuntimeDependencies {
-  const TaskRuntimeDependencies({
-    required this.toolService,
-    required this.sandbox,
-    required this.planningCoordinator,
-    required this.persistenceStore,
-    required this.profileService,
-    required this.gateEvaluator,
-    required this.recoveryService,
-    required this.modelCompletion,
-    required this.toolExecution,
-    required this.commandService,
-    required this.stepRunner,
-    required this.taskViewService,
-    required this.questionPolicy,
-    required this.encoder,
-  });
-
-  final ToolRegistryPort toolService;
-  final WorkspaceReadPort sandbox;
-  final TaskPlanningCoordinatorPort planningCoordinator;
-  final TaskPersistenceStore persistenceStore;
-  final WorkspaceDiscoveryPort profileService;
-  final TaskGateEvaluator gateEvaluator;
-  final TaskRecoveryService recoveryService;
-  final TaskModelCompletionPort modelCompletion;
-  final TaskToolExecutionPort toolExecution;
-  final TaskCommandService commandService;
-  final TaskStepRunner stepRunner;
-  final TaskViewService taskViewService;
-  final QuestionPolicyService questionPolicy;
-  final JsonEncoder encoder;
-}
-
-// Task execution operations
-
-enum _StepExecutionStatus { completed, blocked, needsReplan, failed }
-
-class _StepExecutionOutput {
-  final _StepExecutionStatus status;
-  final TaskRunStatus runStatus;
-  final String summary;
-  final String memoryUpdate;
-  final List<TaskArtifact> artifacts;
-  final List<TaskToolCallRecord> toolCalls;
-  final List<TaskGateResult> gateResults;
-  final List<TaskEvidenceClaim> evidenceClaims;
-  final String? userQuestion;
-  final AgentQuestion? agentQuestion;
-  final String? replanRequest;
-  final String? error;
-
-  const _StepExecutionOutput({
-    required this.status,
-    required this.runStatus,
-    required this.summary,
-    required this.memoryUpdate,
-    required this.artifacts,
-    required this.toolCalls,
-    this.gateResults = const [],
-    this.evidenceClaims = const [],
-    this.userQuestion,
-    this.agentQuestion,
-    this.replanRequest,
-    this.error,
-  });
-
-  _StepExecutionOutput copyWith({
-    _StepExecutionStatus? status,
-    TaskRunStatus? runStatus,
-    String? summary,
-    String? memoryUpdate,
-    List<TaskArtifact>? artifacts,
-    List<TaskToolCallRecord>? toolCalls,
-    List<TaskGateResult>? gateResults,
-    List<TaskEvidenceClaim>? evidenceClaims,
-    Object? userQuestion = kSentinel,
-    Object? agentQuestion = kSentinel,
-    Object? replanRequest = kSentinel,
-    Object? error = kSentinel,
-  }) {
-    return _StepExecutionOutput(
-      status: status ?? this.status,
-      runStatus: runStatus ?? this.runStatus,
-      summary: summary ?? this.summary,
-      memoryUpdate: memoryUpdate ?? this.memoryUpdate,
-      artifacts: artifacts ?? this.artifacts,
-      toolCalls: toolCalls ?? this.toolCalls,
-      gateResults: gateResults ?? this.gateResults,
-      evidenceClaims: evidenceClaims ?? this.evidenceClaims,
-      userQuestion: resolve(userQuestion, this.userQuestion),
-      agentQuestion: resolve(agentQuestion, this.agentQuestion),
-      replanRequest: resolve(replanRequest, this.replanRequest),
-      error: resolve(error, this.error),
-    );
-  }
-}
-
-class _TaskTerminalToolCallResult {
-  final String resultJson;
-  final String finalContent;
-  final _StepExecutionOutput output;
-  final String? error;
-
-  const _TaskTerminalToolCallResult({
-    required this.resultJson,
-    required this.finalContent,
-    required this.output,
-    this.error,
-  });
-}
+part 'task_execution_planning.dart';
+part 'task_command_use_case.dart';
+part 'task_persistence_use_case.dart';
+part 'task_planning_use_case.dart';
+part 'task_execution_use_case.dart';
+part 'task_execution_context.dart';
 
 const String _refinerSystemInstruction = '''
 You refine user requests for a long-horizon AI task runner.
@@ -212,22 +106,6 @@ Use task_request_replan when the current unfinished approach is demonstrably
 wrong, and include a concrete reason. A successful task_commit_plan is the
 only completion signal.
 ''';
-
-// Task planning operations
-
-class _IncrementalTaskPlanAttempt {
-  final Task? task;
-  final bool usedPlanningTools;
-  final PlanningMetrics planningMetrics;
-  final String? planningError;
-
-  const _IncrementalTaskPlanAttempt({
-    this.task,
-    this.usedPlanningTools = false,
-    this.planningMetrics = const PlanningMetrics(),
-    this.planningError,
-  });
-}
 
 const int _maxConsecutiveRepeatedToolCalls = 3;
 
@@ -326,22 +204,192 @@ class TaskExecutionCoordinator {
       _taskViewService = dependencies.taskViewService,
       _questionPolicy = dependencies.questionPolicy,
       _encoder = dependencies.encoder {
-    _stepLoop = _TaskStepExecutionLoop(
+    _stepLoop = TaskStepExecutionLoop(
       toolService: _toolService,
       modelCompletion: _modelCompletion,
       toolExecution: _toolExecution,
       executionPolicy: _executionPolicy,
       encoder: _encoder,
-      terminalToolCall: _terminalTaskToolCall,
-      parseStepOutput: _parseStepOutput,
+      terminalToolCall:
+          ({
+            required String callName,
+            required Object args,
+            required Task task,
+            required TaskStep step,
+            required List<TaskToolCallRecord> existingToolCalls,
+            required TaskExecutionRequest executionRequest,
+          }) => _executionUseCase._terminalTaskToolCall(
+            callName: callName,
+            args: args,
+            task: task,
+            step: step,
+            existingToolCalls: existingToolCalls,
+            executionRequest: executionRequest,
+          ),
+      parseStepOutput: (raw, task, step, toolCalls, executionRequest) =>
+          _planningUseCase._parseStepOutput(
+            raw,
+            task,
+            step,
+            toolCalls,
+            executionRequest,
+          ),
       persistenceStore: _persistenceStore,
-      buildStepPrompt: _buildStepPrompt,
-      structuredToolResult: _structuredToolResult,
-      toolErrorInfoForCall: _toolErrorInfoForCall,
-      toolCallOutcome: _toolCallOutcome,
-      operationKey: _operationKey,
-      cap: _cap,
+      buildStepPrompt: (task, step, workspace, executionRequest) =>
+          _planningUseCase._buildStepPrompt(
+            task,
+            step,
+            workspace,
+            executionRequest,
+          ),
+      structuredToolResult: (toolName, resultJson) =>
+          _planningUseCase._structuredToolResult(toolName, resultJson),
+      toolErrorInfoForCall: (toolName, result) =>
+          _planningUseCase._toolErrorInfoForCall(toolName, result),
+      toolCallOutcome: (result, error) =>
+          _planningUseCase._toolCallOutcome(result, error),
+      operationKey: (toolName, rawArguments) =>
+          _planningUseCase._operationKey(toolName, rawArguments),
+      cap: (value, maxChars) => _planningUseCase._cap(value, maxChars),
     );
+    late final Future<Task> Function(String, Task) persistTask;
+    persistTask = (workspaceRoot, task) async {
+      final persisted = await _persistenceStore.save(workspaceRoot, task);
+      return persisted.value;
+    };
+    final useCaseContext = TaskUseCaseContext(
+      toolService: _toolService,
+      planningCoordinator: _planningCoordinator,
+      persistenceStore: _persistenceStore,
+      sandbox: _sandbox,
+      profileService: _profileService,
+      recoveryService: _recoveryService,
+      gateEvaluator: _gateEvaluator,
+      modelCompletion: _modelCompletion,
+      toolExecution: _toolExecution,
+      stepLoop: _stepLoop,
+      stepRunner: _stepRunner,
+      commandService: _commandService,
+      taskViewService: _taskViewService,
+      questionPolicy: _questionPolicy,
+      encoder: _encoder,
+      persistTask: persistTask,
+      newTaskId: (prompt) => _planningUseCase._newTaskId(prompt),
+      collectWorkspaceMetadata: (workspace, {String? chatSessionId}) =>
+          _executionUseCase._collectWorkspaceMetadata(
+            workspace,
+            chatSessionId: chatSessionId,
+          ),
+      completeTaskPlanWithCommands:
+          ({
+            required client,
+            required workspace,
+            required baseSystemPrompt,
+            required taskId,
+            required userPrompt,
+            required metadata,
+            required planningContext,
+            required now,
+            required chatSessionId,
+            required projectId,
+            onModelOutput,
+            cancellationToken,
+          }) => _planningUseCase._completeTaskPlanWithCommands(
+            client: client,
+            workspace: workspace,
+            baseSystemPrompt: baseSystemPrompt,
+            taskId: taskId,
+            userPrompt: userPrompt,
+            metadata: metadata,
+            planningContext: planningContext,
+            now: now,
+            chatSessionId: chatSessionId,
+            projectId: projectId,
+            onModelOutput: onModelOutput,
+            cancellationToken: cancellationToken,
+          ),
+      fallbackTask:
+          ({
+            required taskId,
+            required userPrompt,
+            required chatSessionId,
+            required projectId,
+            required now,
+          }) => _planningUseCase._fallbackTask(
+            taskId: taskId,
+            userPrompt: userPrompt,
+            chatSessionId: chatSessionId,
+            projectId: projectId,
+            now: now,
+          ),
+      fallbackProjectBoundedTask:
+          ({
+            required taskId,
+            required userPrompt,
+            required chatSessionId,
+            required projectId,
+            required planningContext,
+            required now,
+          }) => _planningUseCase._fallbackProjectBoundedTask(
+            taskId: taskId,
+            userPrompt: userPrompt,
+            chatSessionId: chatSessionId,
+            projectId: projectId,
+            planningContext: planningContext,
+            now: now,
+          ),
+      normaliseEditedTask: (candidate, original, now) =>
+          _planningUseCase._normaliseEditedTask(candidate, original, now),
+      markCompleted: (snapshot) => _planningUseCase._markCompleted(snapshot),
+      completeStep: (snapshot, step, output, now) =>
+          _planningUseCase._completeStep(snapshot, step, output, now),
+      blockStep: (snapshot, step, output, now) =>
+          _planningUseCase._blockStep(snapshot, step, output, now),
+      failStep: (snapshot, step, output, now) =>
+          _planningUseCase._failStep(snapshot, step, output, now),
+      replaceStep: (snapshot, stepId, step) =>
+          _planningUseCase._replaceStep(snapshot, stepId, step),
+      replaceLastRun: (snapshot, run) =>
+          _planningUseCase._replaceLastRun(snapshot, run),
+      appendMemory: (current, update) =>
+          _planningUseCase._appendMemory(current, update),
+      fallbackReplannedTask: (snapshot, reason, {required planningMetrics}) =>
+          _planningUseCase._fallbackReplannedTask(
+            snapshot,
+            reason,
+            planningMetrics: planningMetrics,
+          ),
+      taskPlanningStepLimit: (task) =>
+          _planningUseCase._taskPlanningStepLimit(task),
+      parseStepExecutionStatus: (raw) =>
+          _planningUseCase._parseStepExecutionStatusStrict(raw),
+      evidenceClaimsFromJson:
+          (value, allowedCriterionIds, {expectedEvidence = const []}) =>
+              _planningUseCase._evidenceClaimsFromJson(
+                value,
+                allowedCriterionIds,
+                expectedEvidence: expectedEvidence,
+              ),
+      taskToolErrorJson:
+          ({
+            required code,
+            required message,
+            required disposition,
+            details = const {},
+          }) => _planningUseCase._taskToolErrorJson(
+            code: code,
+            message: message,
+            disposition: disposition,
+            details: details,
+          ),
+      normaliseBrief: (brief, prompt) =>
+          _planningUseCase._normaliseBrief(brief, prompt),
+      fallbackBrief: (prompt) => _planningUseCase._fallbackBrief(prompt),
+    );
+    _commandUseCase = TaskCommandUseCase(useCaseContext);
+    _persistenceUseCase = TaskPersistenceUseCase(useCaseContext);
+    _planningUseCase = TaskPlanningUseCase(useCaseContext);
+    _executionUseCase = TaskExecutionUseCase(useCaseContext);
   }
 
   final ToolRegistryPort _toolService;
@@ -359,5 +407,242 @@ class TaskExecutionCoordinator {
   final QuestionPolicyService _questionPolicy;
   final JsonEncoder _encoder;
   final TaskExecutionPolicy _executionPolicy = const TaskExecutionPolicy();
-  late final _TaskStepExecutionLoop _stepLoop;
+  late final TaskStepExecutionLoop _stepLoop;
+  late final TaskCommandUseCase _commandUseCase;
+  late final TaskPersistenceUseCase _persistenceUseCase;
+  late final TaskPlanningUseCase _planningUseCase;
+  late final TaskExecutionUseCase _executionUseCase;
+
+  Future<Task> approvePendingStep({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+  }) => _commandUseCase.approvePendingStep(
+    workspace: workspace,
+    snapshot: snapshot,
+  );
+
+  Future<Task> retryCurrentStep({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+  }) => _commandUseCase.retryCurrentStep(
+    workspace: workspace,
+    snapshot: snapshot,
+  );
+
+  Future<Task> skipCurrentStep({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+  }) =>
+      _commandUseCase.skipCurrentStep(workspace: workspace, snapshot: snapshot);
+
+  Future<Task> stopTask({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+  }) => _commandUseCase.stopTask(workspace: workspace, snapshot: snapshot);
+
+  Future<Task> answerOpenQuestion({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+    required String answer,
+  }) => _commandUseCase.answerOpenQuestion(
+    workspace: workspace,
+    snapshot: snapshot,
+    answer: answer,
+  );
+
+  Future<List<TaskSummary>> listTasks(
+    WorkspaceAttachment workspace, {
+    String? chatSessionId,
+    String? projectId,
+  }) => _persistenceUseCase.listTasks(
+    workspace,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+  );
+
+  Future<Task?> loadLatestTask(
+    WorkspaceAttachment workspace, {
+    String? chatSessionId,
+    String? projectId,
+  }) => _persistenceUseCase.loadLatestTask(
+    workspace,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+  );
+
+  Future<Task?> loadTask(
+    WorkspaceAttachment workspace,
+    String taskId, {
+    String? chatSessionId,
+    String? projectId,
+    bool includeHistory = true,
+  }) => _persistenceUseCase.loadTask(
+    workspace,
+    taskId,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+    includeHistory: includeHistory,
+  );
+
+  Future<int> deleteTasksForChatSession(
+    WorkspaceAttachment workspace, {
+    required String chatSessionId,
+  }) => _persistenceUseCase.deleteTasksForChatSession(
+    workspace,
+    chatSessionId: chatSessionId,
+  );
+
+  Future<int> deleteOrphanedChatTasks(
+    WorkspaceAttachment workspace, {
+    required Set<String> retainedChatSessionIds,
+  }) => _persistenceUseCase.deleteOrphanedChatTasks(
+    workspace,
+    retainedChatSessionIds: retainedChatSessionIds,
+  );
+
+  Future<Task> updateTaskChatSessionId({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+    required String chatSessionId,
+  }) => _persistenceUseCase.updateTaskChatSessionId(
+    workspace: workspace,
+    snapshot: snapshot,
+    chatSessionId: chatSessionId,
+  );
+
+  Future<Task> recoverTask({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+    bool persist = true,
+  }) => _persistenceUseCase.recoverTask(
+    workspace: workspace,
+    snapshot: snapshot,
+    persist: persist,
+  );
+
+  Future<String> readArtifact({
+    required WorkspaceAttachment workspace,
+    required String artifactPath,
+    CancellationToken? cancellationToken,
+  }) => _persistenceUseCase.readArtifact(
+    workspace: workspace,
+    artifactPath: artifactPath,
+    cancellationToken: cancellationToken,
+  );
+
+  Future<RefinedTaskBrief> refineTaskBrief({
+    required ModelGenerationPort client,
+    WorkspaceAttachment? workspace,
+    required String userPrompt,
+    ExecutionMode selectedMode = ExecutionMode.refine,
+    ModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  }) => _persistenceUseCase.refineTaskBrief(
+    client: client,
+    workspace: workspace,
+    userPrompt: userPrompt,
+    selectedMode: selectedMode,
+    onModelOutput: onModelOutput,
+    cancellationToken: cancellationToken,
+  );
+
+  Future<Task> createTask({
+    required ModelGenerationPort client,
+    required WorkspaceAttachment workspace,
+    required String userPrompt,
+    required ExecutionMode selectedMode,
+    required String baseSystemPrompt,
+    String? chatSessionId,
+    String? projectId,
+    String? canonicalTaskId,
+    TaskPlanningContext? planningContext,
+    ModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  }) => _planningUseCase.createTask(
+    client: client,
+    workspace: workspace,
+    userPrompt: userPrompt,
+    selectedMode: selectedMode,
+    baseSystemPrompt: baseSystemPrompt,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+    canonicalTaskId: canonicalTaskId,
+    planningContext: planningContext,
+    onModelOutput: onModelOutput,
+    cancellationToken: cancellationToken,
+  );
+
+  Future<Task> createProjectTask({
+    required WorkspaceAttachment workspace,
+    required String userPrompt,
+    required String? chatSessionId,
+    required String? projectId,
+    required TaskPlanningContext planningContext,
+    String? canonicalTaskId,
+  }) => _planningUseCase.createProjectTask(
+    workspace: workspace,
+    userPrompt: userPrompt,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+    planningContext: planningContext,
+    canonicalTaskId: canonicalTaskId,
+  );
+
+  Future<Task> updateTaskPlan({
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+    required TaskPlanUpdateCommand command,
+  }) => _planningUseCase.updateTaskPlan(
+    workspace: workspace,
+    snapshot: snapshot,
+    command: command,
+  );
+
+  Future<Task> runNextStep({
+    required ModelConversationPort client,
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+    required String baseSystemPrompt,
+    bool requirePhaseApproval = false,
+    CompactionSettings? compactionSettings,
+    int? contextLimitTokens,
+    TaskCompactionStatusSink? onCompactionStatus,
+    ModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+    QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
+    TaskExecutionRequest executionRequest = const TaskExecutionRequest(),
+    bool persist = true,
+  }) => _executionUseCase.runNextStep(
+    client: client,
+    workspace: workspace,
+    snapshot: snapshot,
+    baseSystemPrompt: baseSystemPrompt,
+    requirePhaseApproval: requirePhaseApproval,
+    compactionSettings: compactionSettings,
+    contextLimitTokens: contextLimitTokens,
+    onCompactionStatus: onCompactionStatus,
+    onModelOutput: onModelOutput,
+    cancellationToken: cancellationToken,
+    questionAutonomy: questionAutonomy,
+    executionRequest: executionRequest,
+    persist: persist,
+  );
+
+  Future<Task> replanUnfinished({
+    required ModelGenerationPort client,
+    required WorkspaceAttachment workspace,
+    required Task snapshot,
+    required String baseSystemPrompt,
+    String reason = 'User requested a replan of unfinished work.',
+    ModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  }) => _executionUseCase.replanUnfinished(
+    client: client,
+    workspace: workspace,
+    snapshot: snapshot,
+    baseSystemPrompt: baseSystemPrompt,
+    reason: reason,
+    onModelOutput: onModelOutput,
+    cancellationToken: cancellationToken,
+  );
 }

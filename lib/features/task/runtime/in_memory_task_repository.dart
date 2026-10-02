@@ -1,20 +1,13 @@
 import 'package:hermes/features/persistence/application/persistence_contracts.dart';
-import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
+import 'package:hermes/features/persistence/application/task_snapshot_store_port.dart';
 import 'package:hermes/features/task/application/contracts/task_summary.dart';
 import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/features/workspace/application/workspace_ports.dart';
 import 'package:path/path.dart' as path;
 
 /// In-memory task persistence double that retains optimistic revision checks.
-class InMemoryTaskRepository implements TaskPersistencePort {
-  InMemoryTaskRepository({PersistencePort? coordinator})
-    : _coordinator = coordinator ?? const _InMemoryPersistence();
-
-  final PersistencePort _coordinator;
+class InMemoryTaskRepository implements TaskSnapshotStorePort {
+  InMemoryTaskRepository();
   final Map<String, Map<String, PersistedSnapshot<Task>>> _data = {};
-
-  @override
-  PersistencePort get coordinator => _coordinator;
 
   @override
   Future<List<TaskSummary>> listTasks(
@@ -168,7 +161,7 @@ class InMemoryTaskRepository implements TaskPersistencePort {
     final expected = expectedRevision ?? task.persistenceRevision;
     if (current != expected) {
       throw StaleSnapshotException(
-        path: taskRelativePath(task.id, TaskStorageLayout.documentFileName),
+        path: taskRelativePath(task.id, TaskSnapshotStorePort.documentFileName),
         expectedRevision: expected,
         actualRevision: current,
       );
@@ -234,18 +227,5 @@ class InMemoryTaskRepository implements TaskPersistencePort {
 
   @override
   String taskRelativePath(String taskId, String fileName) =>
-      path.posix.join(TaskStorageLayout.tasksRoot, taskId, fileName);
-}
-
-class _InMemoryPersistence implements PersistencePort {
-  const _InMemoryPersistence();
-
-  @override
-  String canonicalWorkspacePath(String workspaceRoot) => workspaceRoot;
-
-  @override
-  Future<T> synchronized<T>(
-    String workspaceRoot,
-    Future<T> Function() operation,
-  ) => operation();
+      path.posix.join(TaskSnapshotStorePort.tasksRoot, taskId, fileName);
 }

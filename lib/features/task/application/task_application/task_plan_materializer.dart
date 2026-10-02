@@ -1,4 +1,5 @@
 import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/features/project/application/contracts/project_task_models.dart';
 import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
 
 /// Explicit task-boundary adapter for planning-only project nodes.

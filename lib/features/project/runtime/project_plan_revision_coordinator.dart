@@ -20,7 +20,7 @@ class ProjectPlanRevisionRequest {
     this.cancellationToken,
   });
 
-  final ModelCompletionPort client;
+  final ModelConversationPort client;
   final WorkspaceAttachment workspace;
   final ProjectAggregate project;
   final List<ProjectPlanRevisionTrigger> triggers;

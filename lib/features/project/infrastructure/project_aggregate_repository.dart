@@ -5,18 +5,18 @@ import 'package:hermes/features/persistence/application/persistence_contracts.da
 import 'package:hermes/features/project/infrastructure/project_snapshot_migrator.dart';
 import 'package:hermes/features/project/infrastructure/project_transaction_coordinator.dart';
 import 'package:hermes/features/project/project_aggregate_repository_port.dart';
-import 'package:hermes/features/project/project_repository_port.dart';
+import 'package:hermes/features/persistence/application/project_snapshot_store_port.dart';
 import 'package:hermes/features/project/application/contracts/project_checkpoint.dart';
 import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
-import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
+import 'package:hermes/features/persistence/application/task_snapshot_store_port.dart';
 import 'package:hermes/features/workspace/application/workspace_ports.dart';
 
 /// Reads and coordinates project aggregates while delegating migration and
 /// transaction mechanics to focused infrastructure collaborators.
 class ProjectAggregateRepository implements ProjectAggregateRepositoryPort {
   ProjectAggregateRepository({
-    required ProjectRepositoryPort projectRepository,
-    required TaskPersistencePort taskRepository,
+    required ProjectSnapshotStorePort projectRepository,
+    required TaskSnapshotStorePort taskRepository,
     required PersistencePort coordinator,
     this.onTransactionPhase,
   }) : _projects = projectRepository,
@@ -32,8 +32,8 @@ class ProjectAggregateRepository implements ProjectAggregateRepositoryPort {
          onTransactionPhase: onTransactionPhase,
        );
 
-  final ProjectRepositoryPort _projects;
-  final TaskPersistencePort _tasks;
+  final ProjectSnapshotStorePort _projects;
+  final TaskSnapshotStorePort _tasks;
   final PersistencePort _coordinator;
   final ProjectSnapshotMigrator _migrator;
   final ProjectTransactionCoordinator _transactions;
@@ -261,7 +261,7 @@ class ProjectAggregateRepository implements ProjectAggregateRepositoryPort {
           throw StaleSnapshotException(
             path: _projects.projectRelativePath(
               project.id,
-              ProjectRepositoryPort.documentFileName,
+              ProjectSnapshotStorePort.documentFileName,
             ),
             expectedRevision: project.persistenceRevision,
             actualRevision: actual,

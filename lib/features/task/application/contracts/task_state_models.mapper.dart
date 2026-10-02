@@ -6,7 +6,7 @@
 // ignore_for_file: unused_element, unnecessary_cast, override_on_non_overriding_member
 // ignore_for_file: strict_raw_type, inference_failure_on_untyped_parameter
 
-part of 'task_snapshot_models.dart';
+part of 'task_state_models.dart';
 
 /// @nodoc
 
@@ -536,13 +536,14 @@ mixin RefinedTaskBriefMappable {
 }
 
 /// @nodoc
-class TaskAggregateMapper extends ClassMapperBase<TaskAggregate> {
-  TaskAggregateMapper._();
+class TaskSnapshotAggregateMapper
+    extends ClassMapperBase<TaskSnapshotAggregate> {
+  TaskSnapshotAggregateMapper._();
 
-  static TaskAggregateMapper? _instance;
-  static TaskAggregateMapper ensureInitialized() {
+  static TaskSnapshotAggregateMapper? _instance;
+  static TaskSnapshotAggregateMapper ensureInitialized() {
     if (_instance == null) {
-      MapperContainer.globals.use(_instance = TaskAggregateMapper._());
+      MapperContainer.globals.use(_instance = TaskSnapshotAggregateMapper._());
       TaskGateMapper.ensureInitialized();
       TaskStepMapper.ensureInitialized();
       TaskStatusMapper.ensureInitialized();
@@ -562,161 +563,172 @@ class TaskAggregateMapper extends ClassMapperBase<TaskAggregate> {
   }
 
   @override
-  final String id = 'TaskAggregate';
+  final String id = 'TaskSnapshotAggregate';
 
-  static int _$persistenceRevision(TaskAggregate v) => v.persistenceRevision;
-  static const Field<TaskAggregate, int> _f$persistenceRevision = Field(
+  static int _$persistenceRevision(TaskSnapshotAggregate v) =>
+      v.persistenceRevision;
+  static const Field<TaskSnapshotAggregate, int> _f$persistenceRevision = Field(
     'persistenceRevision',
     _$persistenceRevision,
     opt: true,
     def: 0,
     hook: JsonIntHook(min: 0),
   );
-  static String _$id(TaskAggregate v) => v.id;
-  static const Field<TaskAggregate, String> _f$id = Field(
+  static String _$id(TaskSnapshotAggregate v) => v.id;
+  static const Field<TaskSnapshotAggregate, String> _f$id = Field(
     'id',
     _$id,
     hook: JsonStringHook(),
   );
-  static String _$title(TaskAggregate v) => v.title;
-  static const Field<TaskAggregate, String> _f$title = Field(
+  static String _$title(TaskSnapshotAggregate v) => v.title;
+  static const Field<TaskSnapshotAggregate, String> _f$title = Field(
     'title',
     _$title,
     hook: JsonStringHook(fallback: 'Untitled task'),
   );
-  static String _$originalPrompt(TaskAggregate v) => v.originalPrompt;
-  static const Field<TaskAggregate, String> _f$originalPrompt = Field(
+  static String _$originalPrompt(TaskSnapshotAggregate v) => v.originalPrompt;
+  static const Field<TaskSnapshotAggregate, String> _f$originalPrompt = Field(
     'originalPrompt',
     _$originalPrompt,
     opt: true,
     hook: JsonStringHook(),
   );
-  static String _$objective(TaskAggregate v) => v.objective;
-  static const Field<TaskAggregate, String> _f$objective = Field(
+  static String _$objective(TaskSnapshotAggregate v) => v.objective;
+  static const Field<TaskSnapshotAggregate, String> _f$objective = Field(
     'objective',
     _$objective,
     opt: true,
     hook: JsonStringHook(),
   );
-  static List<String> _$constraints(TaskAggregate v) => v.constraints;
-  static const Field<TaskAggregate, List<String>> _f$constraints = Field(
-    'constraints',
-    _$constraints,
-    opt: true,
-    def: const [],
-    hook: JsonStringListHook(),
-  );
-  static List<String> _$successCriteria(TaskAggregate v) => v.successCriteria;
-  static const Field<TaskAggregate, List<String>> _f$successCriteria = Field(
-    'successCriteria',
-    _$successCriteria,
-    opt: true,
-    def: const [],
-    hook: JsonStringListHook(),
-  );
-  static List<TaskGate> _$gates(TaskAggregate v) => v.gates;
-  static const Field<TaskAggregate, List<TaskGate>> _f$gates = Field(
+  static List<String> _$constraints(TaskSnapshotAggregate v) => v.constraints;
+  static const Field<TaskSnapshotAggregate, List<String>> _f$constraints =
+      Field(
+        'constraints',
+        _$constraints,
+        opt: true,
+        def: const [],
+        hook: JsonStringListHook(),
+      );
+  static List<String> _$successCriteria(TaskSnapshotAggregate v) =>
+      v.successCriteria;
+  static const Field<TaskSnapshotAggregate, List<String>> _f$successCriteria =
+      Field(
+        'successCriteria',
+        _$successCriteria,
+        opt: true,
+        def: const [],
+        hook: JsonStringListHook(),
+      );
+  static List<TaskGate> _$gates(TaskSnapshotAggregate v) => v.gates;
+  static const Field<TaskSnapshotAggregate, List<TaskGate>> _f$gates = Field(
     'gates',
     _$gates,
     opt: true,
     def: const [],
     hook: JsonObjectListHook(),
   );
-  static List<TaskStep> _$steps(TaskAggregate v) => v.steps;
-  static const Field<TaskAggregate, List<TaskStep>> _f$steps = Field(
+  static List<TaskStep> _$steps(TaskSnapshotAggregate v) => v.steps;
+  static const Field<TaskSnapshotAggregate, List<TaskStep>> _f$steps = Field(
     'steps',
     _$steps,
     opt: true,
     def: const [],
     hook: JsonObjectListHook(),
   );
-  static TaskStatus _$status(TaskAggregate v) => v.status;
-  static const Field<TaskAggregate, TaskStatus> _f$status = Field(
+  static TaskStatus _$status(TaskSnapshotAggregate v) => v.status;
+  static const Field<TaskSnapshotAggregate, TaskStatus> _f$status = Field(
     'status',
     _$status,
     opt: true,
     def: TaskStatus.paused,
   );
-  static List<String> _$criterionIds(TaskAggregate v) => v.criterionIds;
-  static const Field<TaskAggregate, List<String>> _f$criterionIds = Field(
-    'criterionIds',
-    _$criterionIds,
-    opt: true,
-    def: const [],
-    hook: JsonStringListHook(),
-  );
-  static String? _$milestoneId(TaskAggregate v) => v.milestoneId;
-  static const Field<TaskAggregate, String> _f$milestoneId = Field(
+  static List<String> _$criterionIds(TaskSnapshotAggregate v) => v.criterionIds;
+  static const Field<TaskSnapshotAggregate, List<String>> _f$criterionIds =
+      Field(
+        'criterionIds',
+        _$criterionIds,
+        opt: true,
+        def: const [],
+        hook: JsonStringListHook(),
+      );
+  static String? _$milestoneId(TaskSnapshotAggregate v) => v.milestoneId;
+  static const Field<TaskSnapshotAggregate, String> _f$milestoneId = Field(
     'milestoneId',
     _$milestoneId,
     opt: true,
     hook: JsonNullableStringHook(),
   );
-  static List<String> _$dependsOnTaskIds(TaskAggregate v) => v.dependsOnTaskIds;
-  static const Field<TaskAggregate, List<String>> _f$dependsOnTaskIds = Field(
-    'dependsOnTaskIds',
-    _$dependsOnTaskIds,
-    opt: true,
-    def: const [],
-    hook: JsonStringListHook(),
-  );
-  static TaskPriority _$priority(TaskAggregate v) => v.priority;
-  static const Field<TaskAggregate, TaskPriority> _f$priority = Field(
+  static List<String> _$dependsOnTaskIds(TaskSnapshotAggregate v) =>
+      v.dependsOnTaskIds;
+  static const Field<TaskSnapshotAggregate, List<String>> _f$dependsOnTaskIds =
+      Field(
+        'dependsOnTaskIds',
+        _$dependsOnTaskIds,
+        opt: true,
+        def: const [],
+        hook: JsonStringListHook(),
+      );
+  static TaskPriority _$priority(TaskSnapshotAggregate v) => v.priority;
+  static const Field<TaskSnapshotAggregate, TaskPriority> _f$priority = Field(
     'priority',
     _$priority,
     opt: true,
     def: TaskPriority.normal,
   );
-  static TaskRisk _$risk(TaskAggregate v) => v.risk;
-  static const Field<TaskAggregate, TaskRisk> _f$risk = Field(
+  static TaskRisk _$risk(TaskSnapshotAggregate v) => v.risk;
+  static const Field<TaskSnapshotAggregate, TaskRisk> _f$risk = Field(
     'risk',
     _$risk,
     opt: true,
     def: TaskRisk.unknown,
   );
-  static ProjectRiskReduction _$riskReduction(TaskAggregate v) =>
+  static ProjectRiskReduction _$riskReduction(TaskSnapshotAggregate v) =>
       v.riskReduction;
-  static const Field<TaskAggregate, ProjectRiskReduction> _f$riskReduction =
-      Field(
-        'riskReduction',
-        _$riskReduction,
-        opt: true,
-        def: ProjectRiskReduction.none,
-      );
-  static TaskEffort _$effort(TaskAggregate v) => v.effort;
-  static const Field<TaskAggregate, TaskEffort> _f$effort = Field(
+  static const Field<TaskSnapshotAggregate, ProjectRiskReduction>
+  _f$riskReduction = Field(
+    'riskReduction',
+    _$riskReduction,
+    opt: true,
+    def: ProjectRiskReduction.none,
+  );
+  static TaskEffort _$effort(TaskSnapshotAggregate v) => v.effort;
+  static const Field<TaskSnapshotAggregate, TaskEffort> _f$effort = Field(
     'effort',
     _$effort,
     opt: true,
     def: TaskEffort.small,
   );
-  static String _$selectionRationale(TaskAggregate v) => v.selectionRationale;
-  static const Field<TaskAggregate, String> _f$selectionRationale = Field(
-    'selectionRationale',
-    _$selectionRationale,
-    opt: true,
-    def: '',
-    hook: JsonStringHook(),
-  );
-  static int _$revisionIntroduced(TaskAggregate v) => v.revisionIntroduced;
-  static const Field<TaskAggregate, int> _f$revisionIntroduced = Field(
+  static String _$selectionRationale(TaskSnapshotAggregate v) =>
+      v.selectionRationale;
+  static const Field<TaskSnapshotAggregate, String> _f$selectionRationale =
+      Field(
+        'selectionRationale',
+        _$selectionRationale,
+        opt: true,
+        def: '',
+        hook: JsonStringHook(),
+      );
+  static int _$revisionIntroduced(TaskSnapshotAggregate v) =>
+      v.revisionIntroduced;
+  static const Field<TaskSnapshotAggregate, int> _f$revisionIntroduced = Field(
     'revisionIntroduced',
     _$revisionIntroduced,
     opt: true,
     def: 1,
     hook: JsonIntHook(fallback: 1, min: 1),
   );
-  static int _$revisionUpdated(TaskAggregate v) => v.revisionUpdated;
-  static const Field<TaskAggregate, int> _f$revisionUpdated = Field(
+  static int _$revisionUpdated(TaskSnapshotAggregate v) => v.revisionUpdated;
+  static const Field<TaskSnapshotAggregate, int> _f$revisionUpdated = Field(
     'revisionUpdated',
     _$revisionUpdated,
     opt: true,
     def: 1,
     hook: JsonIntHook(fallback: 1, min: 1),
   );
-  static List<TaskEvidenceExpectation> _$expectedEvidence(TaskAggregate v) =>
-      v.expectedEvidence;
-  static const Field<TaskAggregate, List<TaskEvidenceExpectation>>
+  static List<TaskEvidenceExpectation> _$expectedEvidence(
+    TaskSnapshotAggregate v,
+  ) => v.expectedEvidence;
+  static const Field<TaskSnapshotAggregate, List<TaskEvidenceExpectation>>
   _f$expectedEvidence = Field(
     'expectedEvidence',
     _$expectedEvidence,
@@ -724,158 +736,163 @@ class TaskAggregateMapper extends ClassMapperBase<TaskAggregate> {
     def: const [],
     hook: JsonObjectListHook(),
   );
-  static List<String> _$readPaths(TaskAggregate v) => v.readPaths;
-  static const Field<TaskAggregate, List<String>> _f$readPaths = Field(
+  static List<String> _$readPaths(TaskSnapshotAggregate v) => v.readPaths;
+  static const Field<TaskSnapshotAggregate, List<String>> _f$readPaths = Field(
     'readPaths',
     _$readPaths,
     opt: true,
     def: const [],
     hook: JsonStringListHook(),
   );
-  static List<String> _$writePaths(TaskAggregate v) => v.writePaths;
-  static const Field<TaskAggregate, List<String>> _f$writePaths = Field(
+  static List<String> _$writePaths(TaskSnapshotAggregate v) => v.writePaths;
+  static const Field<TaskSnapshotAggregate, List<String>> _f$writePaths = Field(
     'writePaths',
     _$writePaths,
     opt: true,
     def: const [],
     hook: JsonStringListHook(),
   );
-  static List<String> _$doneCriteria(TaskAggregate v) => v.doneCriteria;
-  static const Field<TaskAggregate, List<String>> _f$doneCriteria = Field(
-    'doneCriteria',
-    _$doneCriteria,
-    opt: true,
-    def: const [],
-    hook: JsonStringListHook(),
-  );
-  static List<String> _$outOfScope(TaskAggregate v) => v.outOfScope;
-  static const Field<TaskAggregate, List<String>> _f$outOfScope = Field(
+  static List<String> _$doneCriteria(TaskSnapshotAggregate v) => v.doneCriteria;
+  static const Field<TaskSnapshotAggregate, List<String>> _f$doneCriteria =
+      Field(
+        'doneCriteria',
+        _$doneCriteria,
+        opt: true,
+        def: const [],
+        hook: JsonStringListHook(),
+      );
+  static List<String> _$outOfScope(TaskSnapshotAggregate v) => v.outOfScope;
+  static const Field<TaskSnapshotAggregate, List<String>> _f$outOfScope = Field(
     'outOfScope',
     _$outOfScope,
     opt: true,
     def: const [],
     hook: JsonStringListHook(),
   );
-  static List<String> _$context(TaskAggregate v) => v.context;
-  static const Field<TaskAggregate, List<String>> _f$context = Field(
+  static List<String> _$context(TaskSnapshotAggregate v) => v.context;
+  static const Field<TaskSnapshotAggregate, List<String>> _f$context = Field(
     'context',
     _$context,
     opt: true,
     def: const [],
     hook: JsonStringListHook(),
   );
-  static List<TaskArtifact> _$expectedArtifacts(TaskAggregate v) =>
+  static List<TaskArtifact> _$expectedArtifacts(TaskSnapshotAggregate v) =>
       v.expectedArtifacts;
-  static const Field<TaskAggregate, List<TaskArtifact>> _f$expectedArtifacts =
-      Field(
-        'expectedArtifacts',
-        _$expectedArtifacts,
-        opt: true,
-        def: const [],
-        hook: JsonObjectListHook(),
-      );
-  static String? _$recoveryIncidentId(TaskAggregate v) => v.recoveryIncidentId;
-  static const Field<TaskAggregate, String> _f$recoveryIncidentId = Field(
-    'recoveryIncidentId',
-    _$recoveryIncidentId,
+  static const Field<TaskSnapshotAggregate, List<TaskArtifact>>
+  _f$expectedArtifacts = Field(
+    'expectedArtifacts',
+    _$expectedArtifacts,
     opt: true,
-    hook: JsonNullableStringHook(),
+    def: const [],
+    hook: JsonObjectListHook(),
   );
-  static String _$fingerprint(TaskAggregate v) => v.fingerprint;
-  static const Field<TaskAggregate, String> _f$fingerprint = Field(
+  static String? _$recoveryIncidentId(TaskSnapshotAggregate v) =>
+      v.recoveryIncidentId;
+  static const Field<TaskSnapshotAggregate, String> _f$recoveryIncidentId =
+      Field(
+        'recoveryIncidentId',
+        _$recoveryIncidentId,
+        opt: true,
+        hook: JsonNullableStringHook(),
+      );
+  static String _$fingerprint(TaskSnapshotAggregate v) => v.fingerprint;
+  static const Field<TaskSnapshotAggregate, String> _f$fingerprint = Field(
     'fingerprint',
     _$fingerprint,
     opt: true,
     def: '',
     hook: JsonStringHook(),
   );
-  static String? _$rejectionReason(TaskAggregate v) => v.rejectionReason;
-  static const Field<TaskAggregate, String> _f$rejectionReason = Field(
+  static String? _$rejectionReason(TaskSnapshotAggregate v) =>
+      v.rejectionReason;
+  static const Field<TaskSnapshotAggregate, String> _f$rejectionReason = Field(
     'rejectionReason',
     _$rejectionReason,
     opt: true,
     hook: JsonNullableStringHook(),
   );
-  static TaskFailure? _$failure(TaskAggregate v) => v.failure;
-  static const Field<TaskAggregate, TaskFailure> _f$failure = Field(
+  static TaskFailure? _$failure(TaskSnapshotAggregate v) => v.failure;
+  static const Field<TaskSnapshotAggregate, TaskFailure> _f$failure = Field(
     'failure',
     _$failure,
     opt: true,
   );
-  static String? _$currentStepId(TaskAggregate v) => v.currentStepId;
-  static const Field<TaskAggregate, String> _f$currentStepId = Field(
+  static String? _$currentStepId(TaskSnapshotAggregate v) => v.currentStepId;
+  static const Field<TaskSnapshotAggregate, String> _f$currentStepId = Field(
     'currentStepId',
     _$currentStepId,
     opt: true,
     hook: JsonNullableStringHook(),
   );
-  static String _$memorySummary(TaskAggregate v) => v.memorySummary;
-  static const Field<TaskAggregate, String> _f$memorySummary = Field(
+  static String _$memorySummary(TaskSnapshotAggregate v) => v.memorySummary;
+  static const Field<TaskSnapshotAggregate, String> _f$memorySummary = Field(
     'memorySummary',
     _$memorySummary,
     opt: true,
     def: '',
     hook: JsonStringHook(),
   );
-  static List<TaskRun> _$runs(TaskAggregate v) => v.runs;
-  static const Field<TaskAggregate, List<TaskRun>> _f$runs = Field(
+  static List<TaskRun> _$runs(TaskSnapshotAggregate v) => v.runs;
+  static const Field<TaskSnapshotAggregate, List<TaskRun>> _f$runs = Field(
     'runs',
     _$runs,
     opt: true,
     def: const [],
     hook: JsonObjectListHook(),
   );
-  static DateTime _$createdAt(TaskAggregate v) => v.createdAt;
-  static const Field<TaskAggregate, DateTime> _f$createdAt = Field(
+  static DateTime _$createdAt(TaskSnapshotAggregate v) => v.createdAt;
+  static const Field<TaskSnapshotAggregate, DateTime> _f$createdAt = Field(
     'createdAt',
     _$createdAt,
     hook: JsonDateHook(),
   );
-  static DateTime _$updatedAt(TaskAggregate v) => v.updatedAt;
-  static const Field<TaskAggregate, DateTime> _f$updatedAt = Field(
+  static DateTime _$updatedAt(TaskSnapshotAggregate v) => v.updatedAt;
+  static const Field<TaskSnapshotAggregate, DateTime> _f$updatedAt = Field(
     'updatedAt',
     _$updatedAt,
     hook: JsonDateHook(),
   );
-  static PendingTaskApproval? _$pendingApproval(TaskAggregate v) =>
+  static PendingTaskApproval? _$pendingApproval(TaskSnapshotAggregate v) =>
       v.pendingApproval;
-  static const Field<TaskAggregate, PendingTaskApproval> _f$pendingApproval =
-      Field('pendingApproval', _$pendingApproval, opt: true);
-  static PendingTaskQuestion? _$pendingQuestion(TaskAggregate v) =>
+  static const Field<TaskSnapshotAggregate, PendingTaskApproval>
+  _f$pendingApproval = Field('pendingApproval', _$pendingApproval, opt: true);
+  static PendingTaskQuestion? _$pendingQuestion(TaskSnapshotAggregate v) =>
       v.pendingQuestion;
-  static const Field<TaskAggregate, PendingTaskQuestion> _f$pendingQuestion =
-      Field('pendingQuestion', _$pendingQuestion, opt: true);
-  static String? _$chatSessionId(TaskAggregate v) => v.chatSessionId;
-  static const Field<TaskAggregate, String> _f$chatSessionId = Field(
+  static const Field<TaskSnapshotAggregate, PendingTaskQuestion>
+  _f$pendingQuestion = Field('pendingQuestion', _$pendingQuestion, opt: true);
+  static String? _$chatSessionId(TaskSnapshotAggregate v) => v.chatSessionId;
+  static const Field<TaskSnapshotAggregate, String> _f$chatSessionId = Field(
     'chatSessionId',
     _$chatSessionId,
     opt: true,
     hook: JsonNullableStringHook(),
   );
-  static String? _$projectId(TaskAggregate v) => v.projectId;
-  static const Field<TaskAggregate, String> _f$projectId = Field(
+  static String? _$projectId(TaskSnapshotAggregate v) => v.projectId;
+  static const Field<TaskSnapshotAggregate, String> _f$projectId = Field(
     'projectId',
     _$projectId,
     opt: true,
     hook: JsonNullableStringHook(),
   );
-  static PlanningMetrics _$planningMetrics(TaskAggregate v) =>
+  static PlanningMetrics _$planningMetrics(TaskSnapshotAggregate v) =>
       v.planningMetrics;
-  static const Field<TaskAggregate, PlanningMetrics> _f$planningMetrics = Field(
+  static const Field<TaskSnapshotAggregate, PlanningMetrics>
+  _f$planningMetrics = Field(
     'planningMetrics',
     _$planningMetrics,
     opt: true,
     def: const PlanningMetrics(),
   );
-  static String? _$planningError(TaskAggregate v) => v.planningError;
-  static const Field<TaskAggregate, String> _f$planningError = Field(
+  static String? _$planningError(TaskSnapshotAggregate v) => v.planningError;
+  static const Field<TaskSnapshotAggregate, String> _f$planningError = Field(
     'planningError',
     _$planningError,
     opt: true,
     hook: JsonNullableStringHook(),
   );
-  static DateTime? _$completedAt(TaskAggregate v) => v.completedAt;
-  static const Field<TaskAggregate, DateTime> _f$completedAt = Field(
+  static DateTime? _$completedAt(TaskSnapshotAggregate v) => v.completedAt;
+  static const Field<TaskSnapshotAggregate, DateTime> _f$completedAt = Field(
     'completedAt',
     _$completedAt,
     opt: true,
@@ -883,7 +900,7 @@ class TaskAggregateMapper extends ClassMapperBase<TaskAggregate> {
   );
 
   @override
-  final MappableFields<TaskAggregate> fields = const {
+  final MappableFields<TaskSnapshotAggregate> fields = const {
     #persistenceRevision: _f$persistenceRevision,
     #id: _f$id,
     #title: _f$title,
@@ -933,8 +950,8 @@ class TaskAggregateMapper extends ClassMapperBase<TaskAggregate> {
 
   @override
   final MappingHook hook = const TaskJsonHook();
-  static TaskAggregate _instantiate(DecodingData data) {
-    return TaskAggregate(
+  static TaskSnapshotAggregate _instantiate(DecodingData data) {
+    return TaskSnapshotAggregate(
       persistenceRevision: data.dec(_f$persistenceRevision),
       id: data.dec(_f$id),
       title: data.dec(_f$title),
@@ -984,27 +1001,25 @@ class TaskAggregateMapper extends ClassMapperBase<TaskAggregate> {
   @override
   final Function instantiate = _instantiate;
 
-  static TaskAggregate fromMap(Map<String, dynamic> map) {
-    return ensureInitialized().decodeMap<TaskAggregate>(map);
+  static TaskSnapshotAggregate fromMap(Map<String, dynamic> map) {
+    return ensureInitialized().decodeMap<TaskSnapshotAggregate>(map);
   }
 
-  static TaskAggregate fromJson(String json) {
-    return ensureInitialized().decodeJson<TaskAggregate>(json);
+  static TaskSnapshotAggregate fromJson(String json) {
+    return ensureInitialized().decodeJson<TaskSnapshotAggregate>(json);
   }
 }
 
 /// @nodoc
-mixin TaskAggregateMappable {
+mixin TaskSnapshotAggregateMappable {
   String toJson() {
-    return TaskAggregateMapper.ensureInitialized().encodeJson<TaskAggregate>(
-      this as TaskAggregate,
-    );
+    return TaskSnapshotAggregateMapper.ensureInitialized()
+        .encodeJson<TaskSnapshotAggregate>(this as TaskSnapshotAggregate);
   }
 
   Map<String, dynamic> toMap() {
-    return TaskAggregateMapper.ensureInitialized().encodeMap<TaskAggregate>(
-      this as TaskAggregate,
-    );
+    return TaskSnapshotAggregateMapper.ensureInitialized()
+        .encodeMap<TaskSnapshotAggregate>(this as TaskSnapshotAggregate);
   }
 }
 
@@ -1612,3 +1627,4 @@ mixin PendingTaskQuestionMappable {
         .encodeMap<PendingTaskQuestion>(this as PendingTaskQuestion);
   }
 }
+

@@ -17,6 +17,9 @@ import 'package:hermes/features/chat/presentation/theme_manager.dart';
 import 'package:hermes/platform/tool_service.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
 import 'package:hermes/platform/workspace_service.dart';
+import 'package:hermes/features/settings/application/preferences_port.dart';
+import 'package:hermes/features/tools/application/tool_contracts.dart';
+import 'package:hermes/features/workspace/application/workspace_ports.dart';
 import 'package:hermes/features/chat/presentation/chat/chat.dart';
 import 'package:hermes/features/chat/presentation/overlays/keyboard_shortcuts_panel.dart';
 import 'package:hermes/features/chat/presentation/routes.dart';
@@ -83,7 +86,16 @@ class _AppState extends State<App> {
         ChangeNotifierProvider<WorkspaceService>.value(
           value: dependencies.workspaceService,
         ),
+        InheritedProvider<WorkspacePresentationPort>.value(
+          value: dependencies.workspaceService,
+          startListening: (element, value) {
+            value.addListener(element.markNeedsNotifyDependents);
+            return () =>
+                value.removeListener(element.markNeedsNotifyDependents);
+          },
+        ),
         Provider<ToolService>.value(value: dependencies.toolService),
+        Provider<ToolRegistryPort>.value(value: dependencies.toolService),
         Provider<TaskController>.value(value: dependencies.taskController),
         Provider<ProjectApplication>.value(
           value: dependencies.projectApplication,
@@ -97,6 +109,14 @@ class _AppState extends State<App> {
         ChangeNotifierProvider<ChatWorkspaceController>.value(
           value: dependencies.chatWorkspaceController,
         ),
+        InheritedProvider<ChatPresentationPreferencesPort>.value(
+          value: dependencies.preferencesService,
+          startListening: (element, value) {
+            value.addListener(element.markNeedsNotifyDependents);
+            return () =>
+                value.removeListener(element.markNeedsNotifyDependents);
+          },
+        ),
       ],
       child: Builder(
         builder: (context) => _AppShell(
@@ -104,10 +124,10 @@ class _AppState extends State<App> {
           tabs: context.read<ChatWorkspaceController>(),
           chatLibrary: context.read<ChatLibraryService>(),
           systemPromptLibrary: context.read<SystemPromptLibraryService>(),
-          workspaceService: context.read<WorkspaceService>(),
-          preferencesService: context.read<PreferencesService>(),
+          workspaceService: context.read<WorkspacePresentationPort>(),
+          preferencesService: context.read<ChatPresentationPreferencesPort>(),
           modelCatalog: dependencies.modelCatalog,
-          toolService: context.read<ToolService>(),
+          toolService: context.read<ToolRegistryPort>(),
           disposeWithoutSavingDependencies: dependencies.disposeWithoutSaving,
           exitApplication:
               widget.exitApplication ?? WidgetsBinding.instance.exitApplication,
@@ -139,10 +159,10 @@ class _AppShell extends StatefulWidget {
   final ChatWorkspaceController tabs;
   final ChatLibraryService chatLibrary;
   final SystemPromptLibraryService systemPromptLibrary;
-  final WorkspaceService workspaceService;
-  final PreferencesService preferencesService;
+  final WorkspacePresentationPort workspaceService;
+  final ChatPresentationPreferencesPort preferencesService;
   final ModelCatalogPort modelCatalog;
-  final ToolService toolService;
+  final ToolRegistryPort toolService;
   final Future<void> Function() disposeWithoutSavingDependencies;
   final Future<AppExitResponse> Function(AppExitType type) exitApplication;
   final Future<void> Function(NewChatExitPolicy policy) prepareForExit;

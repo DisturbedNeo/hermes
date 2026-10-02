@@ -20,6 +20,7 @@ import 'package:hermes/platform/workspace_sandbox.dart';
 import 'package:hermes/platform/workspace_service.dart';
 import 'package:hermes/core/application_lifecycle.dart';
 import 'package:hermes/app/mappers.init.dart';
+import 'package:hermes/features/persistence/infrastructure/dto/aggregate_snapshot_codecs.dart';
 
 /// The eagerly-created, application-scoped dependency graph.
 ///
@@ -44,6 +45,7 @@ class AppDependencies implements ApplicationLifecycle {
 
   static AppDependencies create() {
     initializeMappers();
+    registerAggregateSnapshotCodecs();
     final preferencesService = PreferencesService();
     final modelCatalog = ModelCatalogService(preferences: preferencesService);
     final workspaceModule = WorkspaceToolsModule.create();

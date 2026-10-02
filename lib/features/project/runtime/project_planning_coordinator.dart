@@ -54,7 +54,7 @@ class ProjectPlanningCoordinator {
   Future<ProjectPlanningResult> initialise({
     required WorkspaceAttachment workspace,
     required String userPrompt,
-    required ModelCompletionPort? client,
+    required ModelConversationPort? client,
     required String baseSystemPrompt,
     required ProjectInitialPlanResult Function() fallback,
     required ProjectInitialPlanValidator validate,

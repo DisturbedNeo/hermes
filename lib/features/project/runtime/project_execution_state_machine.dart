@@ -9,7 +9,6 @@ import 'package:hermes/core/contracts/model_conversation.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
 import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
-import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
 import 'package:hermes/core/contracts/execution_settings.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/model/application/model_completion_port.dart';
@@ -30,7 +29,6 @@ import 'package:hermes/features/project/runtime/project_plan_validator.dart';
 import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
 import 'package:hermes/features/project/runtime/project_state_models.dart';
 import 'package:hermes/features/project/runtime/project_progress_monitor.dart';
-import 'package:hermes/features/project/project_repository_port.dart';
 import 'package:hermes/features/project/project_aggregate_repository_port.dart';
 import 'package:hermes/features/project/runtime/project_aggregate_store.dart';
 import 'package:hermes/features/project/runtime/project_handlers.dart';
@@ -46,6 +44,7 @@ import 'package:hermes/features/task/application/contracts/question_policy_servi
 import 'package:hermes/features/model/application/model_output.dart';
 import 'package:hermes/features/task/domain/task_lifecycle_service.dart';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
+import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
 import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/task/application/contracts/task_planning_models.dart';
 import 'package:hermes/features/workspace/application/workspace_discovery_profile.dart';
@@ -55,6 +54,11 @@ import 'package:path/path.dart' as path;
 part 'project_recovery_policy.dart';
 part 'project_execution_operations.dart';
 part 'project_execution_core.dart';
+part 'project_execution_lifecycle.dart';
+part 'project_user_command_coordinator.dart';
+part 'project_planning_use_case.dart';
+part 'project_execution_context.dart';
+part 'project_execution_use_case.dart';
 
 // ProjectExecutionRuntime
 
@@ -117,11 +121,9 @@ class ProjectExecutionStateMachine {
     required TaskProjectPlanningPort taskProjectPlanning,
     required TaskExecutionPort taskExecution,
     required TaskRecoveryPort taskRecovery,
-    required this.taskPersistence,
     required this.toolService,
     required this.materializer,
-    required ProjectRepositoryPort repository,
-    required ProjectAggregateRepositoryPort aggregateRepository,
+    required ProjectAggregateReadPort aggregateRepository,
     required ProjectRuntimeDependencies dependencies,
     required ProjectCommandExecutionPort executionPort,
     required ProjectRecoveryPort recoveryPort,
@@ -129,7 +131,6 @@ class ProjectExecutionStateMachine {
        _taskProjectPlanning = taskProjectPlanning,
        _taskExecution = taskExecution,
        _taskRecovery = taskRecovery,
-       _repository = repository,
        _aggregateRepository = aggregateRepository,
        _planner = dependencies.planner,
        _completionEvaluator = dependencies.completionEvaluator,
@@ -161,11 +162,119 @@ class ProjectExecutionStateMachine {
        _planningHandler = dependencies.planningHandler,
        _decisionEngine = dependencies.decisionEngine,
        _controlStateService = dependencies.controlStateService {
+    final useCaseContext = ProjectUseCaseContext(
+      taskPlanning: _taskPlanning,
+      taskProjectPlanning: _taskProjectPlanning,
+      taskExecution: _taskExecution,
+      taskRecovery: _taskRecovery,
+      toolService: toolService,
+      materializer: materializer,
+      aggregateRepository: _aggregateRepository,
+      persistenceCoordinator: _persistenceCoordinator,
+      planner: _planner,
+      completionEvaluator: _completionEvaluator,
+      completionService: completionService,
+      progressMonitor: _progressMonitor,
+      evidenceService: _evidenceService,
+      criterionEvaluator: _criterionEvaluator,
+      planRevisionCoordinator: _planRevisionCoordinator,
+      decisionEngine: _decisionEngine,
+      questionPolicy: _questionPolicy,
+      recoveryHandler: recoveryHandler,
+      evaluationCoordinator: () => _evaluationCoordinator,
+      planningHandler: _planningHandler,
+      controlStateService: _controlStateService,
+      memoryService: _memoryService,
+      recoveryPolicy: _recoveryPolicy,
+      scheduler: _scheduler,
+      lifecycleService: lifecycleService,
+      fallbackInitialPlan: (goal) =>
+          _executionUseCase._fallbackInitialPlan(goal),
+      validateInitialPlan:
+          ({required initialPlan, required workspaceProfile}) =>
+              _executionUseCase._validateInitialPlan(
+                initialPlan: initialPlan,
+                workspaceProfile: workspaceProfile,
+              ),
+      blocksInitialPlanningForContextIssue: (issue) =>
+          _executionUseCase._blocksInitialPlanningForContextIssue(issue),
+      filterProjectQuestions: (questions, {required autonomy}) =>
+          _executionUseCase._filterProjectQuestions(
+            questions,
+            autonomy: autonomy,
+          ),
+      normaliseInitialBacklog: (tasks, criterionIds) =>
+          _executionUseCase._normaliseInitialBacklog(tasks, criterionIds),
+      initialMilestones:
+          ({
+            required milestones,
+            required refinedGoal,
+            required criteria,
+            required now,
+          }) => _executionUseCase._initialMilestones(
+            milestones: milestones,
+            refinedGoal: refinedGoal,
+            criteria: criteria,
+            now: now,
+          ),
+      initialMemory:
+          ({required memory, required policyAssumptions, required now}) =>
+              _executionUseCase._initialMemory(
+                memory: memory,
+                policyAssumptions: policyAssumptions,
+                now: now,
+              ),
+      titleFromPrompt: (prompt) => _executionUseCase._titleFromPrompt(prompt),
+      newProjectId: (prompt) => _executionUseCase._newProjectId(prompt),
+      normaliseOptionalLimit: (value, {fallback = 0}) =>
+          _executionUseCase._normaliseOptionalLimit(value, fallback: fallback),
+      initialPlanningBlockerMessage: (issues) =>
+          _executionUseCase._initialPlanningBlockerMessage(issues),
+      transitionProject:
+          ({
+            required snapshot,
+            required to,
+            required trigger,
+            required reason,
+            blocker,
+            required now,
+          }) => _executionUseCase._transitionProject(
+            snapshot: snapshot,
+            to: to,
+            trigger: trigger,
+            reason: reason,
+            blocker: blocker,
+            now: now,
+          ),
+      persistProject:
+          (
+            workspaceRoot,
+            project, {
+            persistenceContext,
+            checkpoint = ProjectPersistenceCheckpoint.runtime,
+          }) => _executionUseCase._persistProject(
+            workspaceRoot,
+            project,
+            persistenceContext: persistenceContext,
+            checkpoint: checkpoint,
+          ),
+      appendTrigger: (current, trigger) =>
+          _executionUseCase._appendTrigger(current, trigger),
+      appendUnique: (current, value) =>
+          _executionUseCase._appendUnique(current, value),
+      decision: (type, summary, rationale, {task}) =>
+          _executionUseCase._decision(type, summary, rationale, task: task),
+      activeProjectTask: (project) =>
+          _executionUseCase._activeProjectTask(project),
+    );
+    _userCommands = ProjectUserCommandCoordinator(useCaseContext);
+    _planningUseCase = ProjectPlanningUseCase(useCaseContext);
+    _executionUseCase = ProjectExecutionUseCase(useCaseContext);
     _evaluationCoordinator = ProjectEvaluationCoordinator(
       evidenceService: _evidenceService,
       criterionEvaluator: _criterionEvaluator,
-      remainingCriteria: _remainingCriteria,
-      projectForModel: _projectForModel,
+      remainingCriteria: _executionUseCase._remainingCriteria,
+      projectForModel: _executionUseCase._projectForModel,
     );
   }
 
@@ -173,10 +282,8 @@ class ProjectExecutionStateMachine {
   final TaskProjectPlanningPort _taskProjectPlanning;
   final TaskExecutionPort _taskExecution;
   final TaskRecoveryPort _taskRecovery;
-  final TaskPersistencePort taskPersistence;
   final ToolRegistryPort toolService;
   final TaskMaterializerPort materializer;
-  final ProjectRepositoryPort _repository;
   final ProjectPlanner _planner;
   final ProjectCompletionEvaluator _completionEvaluator;
   final ProjectScheduler _scheduler;
@@ -186,7 +293,7 @@ class ProjectExecutionStateMachine {
   final TaskLifecycleService taskLifecycleService;
   final ProjectCompletionService completionService;
   final ProjectRecoveryHandler recoveryHandler;
-  final ProjectAggregateRepositoryPort _aggregateRepository;
+  final ProjectAggregateReadPort _aggregateRepository;
   final ProjectPersistenceCoordinator _persistenceCoordinator;
   final ProjectCommandService _commandService;
   final ProjectCommandExecutionPort _executionPort;
@@ -200,6 +307,9 @@ class ProjectExecutionStateMachine {
   final ProjectControlStateService _controlStateService;
   late final ProjectEvaluationCoordinator _evaluationCoordinator;
   final ProjectRecoveryPolicy _recoveryPolicy = ProjectRecoveryPolicy();
+  late final ProjectUserCommandCoordinator _userCommands;
+  late final ProjectPlanningUseCase _planningUseCase;
+  late final ProjectExecutionUseCase _executionUseCase;
 
   static const Set<ProjectPlanRevisionTrigger> _runtimeReplanTriggers = {
     ProjectPlanRevisionTrigger.noReadyTask,
@@ -232,37 +342,255 @@ class ProjectExecutionStateMachine {
   Future<ProjectCommandResult> recover(ProjectRecoveryRequest request) =>
       _commandService.recover(request, port: _recoveryPort);
 
+  Future<ProjectCommandResult> execute(ProjectExecutionRequest request) =>
+      _commandService.execute(request, port: _executionPort);
+
+  Future<List<ProjectSummary>> listProjects(
+    WorkspaceAttachment workspace, {
+    String? chatSessionId,
+  }) => _persistenceCoordinator.listProjects(
+    workspace,
+    chatSessionId: chatSessionId,
+  );
+
+  Future<ProjectAggregate?> loadLatestProject(
+    WorkspaceAttachment workspace, {
+    String? chatSessionId,
+  }) async => (await _persistenceCoordinator.loadLatestProject(
+    workspace,
+    chatSessionId: chatSessionId,
+  )).project;
+
+  Future<ProjectLoadResult> loadLatestProjectResult(
+    WorkspaceAttachment workspace, {
+    String? chatSessionId,
+  }) => _persistenceCoordinator.loadLatestProject(
+    workspace,
+    chatSessionId: chatSessionId,
+  );
+
+  Future<ProjectAggregate?> loadProject(
+    WorkspaceAttachment workspace,
+    String projectId, {
+    String? chatSessionId,
+  }) async => (await _persistenceCoordinator.loadProject(
+    workspace,
+    projectId,
+    chatSessionId: chatSessionId,
+  )).project;
+
+  Future<ProjectLoadResult> loadProjectResult(
+    WorkspaceAttachment workspace,
+    String projectId, {
+    String? chatSessionId,
+  }) => _persistenceCoordinator.loadProject(
+    workspace,
+    projectId,
+    chatSessionId: chatSessionId,
+  );
+
+  Future<int> deleteProjectsForChatSession(
+    WorkspaceAttachment workspace, {
+    required String chatSessionId,
+  }) => _persistenceCoordinator.deleteProjectsForChatSession(
+    workspace,
+    chatSessionId: chatSessionId,
+  );
+
+  Future<int> deleteOrphanedChatProjects(
+    WorkspaceAttachment workspace, {
+    required Set<String> retainedChatSessionIds,
+  }) => _persistenceCoordinator.deleteOrphanedChatProjects(
+    workspace,
+    retainedChatSessionIds: retainedChatSessionIds,
+  );
+
+  Future<ProjectAggregate> updateProjectChatSessionId({
+    required WorkspaceAttachment workspace,
+    required ProjectAggregate snapshot,
+    required String chatSessionId,
+  }) => _persistenceCoordinator.updateProjectChatSessionId(
+    workspace: workspace,
+    snapshot: snapshot,
+    chatSessionId: chatSessionId,
+  );
+
+  Future<ProjectAggregate> updateProject({
+    required WorkspaceAttachment workspace,
+    required ProjectAggregate snapshot,
+    required ProjectUpdateCommand command,
+  }) => _persistenceCoordinator.updateProject(
+    workspace: workspace,
+    snapshot: snapshot,
+    command: command,
+  );
+
+  Future<ProjectAggregate> upsertUserWorkspaceNode({
+    required WorkspaceAttachment workspace,
+    required ProjectAggregate snapshot,
+    String? id,
+    required String type,
+    required String title,
+    String description = '',
+    List<String> aliases = const [],
+    List<String> tags = const [],
+    List<String> references = const [],
+    String? sourceId,
+  }) => _persistenceCoordinator.upsertUserWorkspaceNode(
+    workspace: workspace,
+    snapshot: snapshot,
+    id: id,
+    type: type,
+    title: title,
+    description: description,
+    aliases: aliases,
+    tags: tags,
+    references: references,
+    sourceId: sourceId,
+  );
+
+  Future<ProjectAggregate> upsertUserWorkspaceEdge({
+    required WorkspaceAttachment workspace,
+    required ProjectAggregate snapshot,
+    String? id,
+    required String sourceNodeId,
+    required String targetNodeId,
+    required String label,
+    String description = '',
+    String? sourceId,
+  }) => _persistenceCoordinator.upsertUserWorkspaceEdge(
+    workspace: workspace,
+    snapshot: snapshot,
+    id: id,
+    sourceNodeId: sourceNodeId,
+    targetNodeId: targetNodeId,
+    label: label,
+    description: description,
+    sourceId: sourceId,
+  );
+
   Future<ProjectTransactionRecoveryResult> recoverPersistence(
     WorkspaceAttachment workspace,
   ) => _persistenceCoordinator.recoverInterruptedTransactions(workspace);
 
+  Future<ProjectAggregate> createProject({
+    required WorkspaceAttachment workspace,
+    required String userPrompt,
+    String? chatSessionId,
+    ModelConversationPort? client,
+    String baseSystemPrompt = '',
+    int? maxIterations,
+    ModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+    QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
+  }) => _planningUseCase.createProject(
+    workspace: workspace,
+    userPrompt: userPrompt,
+    chatSessionId: chatSessionId,
+    client: client,
+    baseSystemPrompt: baseSystemPrompt,
+    maxIterations: maxIterations,
+    onModelOutput: onModelOutput,
+    cancellationToken: cancellationToken,
+    questionAutonomy: questionAutonomy,
+  );
+
   Future<ProjectCommandResult> runProjectForCommand(
     ProjectExecutionRequest request,
-  ) => _runProjectCore(
-    client: request.client,
-    workspace: request.workspace,
-    snapshot: request.snapshot,
-    baseSystemPrompt: request.baseSystemPrompt,
-    maxNewTasks: request.maxNewTasks,
-    maxIterations: request.maxIterations,
-    requirePhaseApproval: request.requirePhaseApproval,
-    compactionSettings: request.compactionSettings,
-    contextLimitTokens: request.contextLimitTokens,
-    onCompactionStatus: request.onCompactionStatus,
-    onModelOutput: request.onModelOutput,
-    onTaskUpdated: request.onTaskUpdated,
-    cancellationToken: request.cancellationToken,
-    questionAutonomy: request.questionAutonomy,
-    planApprovalPolicy: request.planApprovalPolicy,
-  );
+  ) => _executionUseCase.runProjectForCommand(request);
 
   Future<ProjectCommandResult> recoverProjectForCommand(
     ProjectRecoveryRequest request,
-  ) => _recoverProjectCore(
-    workspace: request.workspace,
-    snapshot: request.snapshot,
-    onTaskUpdated: request.onTaskUpdated,
+  ) => _executionUseCase.recoverProjectForCommand(request);
+
+  Future<ProjectAggregate> retryRecoveryIncident({
+    required WorkspaceAttachment workspace,
+    required ProjectAggregate snapshot,
+    required String incidentId,
+  }) => _userCommands.retryRecoveryIncident(
+    workspace: workspace,
+    snapshot: snapshot,
+    incidentId: incidentId,
   );
+
+  Future<ProjectAggregate> answerOpenQuestion({
+    required WorkspaceAttachment workspace,
+    required ProjectAggregate snapshot,
+    required String answer,
+  }) => _userCommands.answerOpenQuestion(
+    workspace: workspace,
+    snapshot: snapshot,
+    answer: answer,
+  );
+
+  Future<ProjectAggregate> addUserContext({
+    required WorkspaceAttachment workspace,
+    required ProjectAggregate snapshot,
+    required String text,
+  }) => _userCommands.addUserContext(
+    workspace: workspace,
+    snapshot: snapshot,
+    text: text,
+  );
+
+  Future<ProjectAggregate> requestScopeChange({
+    required WorkspaceAttachment workspace,
+    required ProjectAggregate snapshot,
+    required String context,
+  }) => _userCommands.requestScopeChange(
+    workspace: workspace,
+    snapshot: snapshot,
+    context: context,
+  );
+
+  Future<ProjectAggregate> compactMemory({
+    required WorkspaceAttachment workspace,
+    required ProjectAggregate snapshot,
+    required List<String> coveredEntryIds,
+    required String summary,
+  }) => _userCommands.compactMemory(
+    workspace: workspace,
+    snapshot: snapshot,
+    coveredEntryIds: coveredEntryIds,
+    summary: summary,
+  );
+
+  Future<ProjectAggregate> pauseProject({
+    required WorkspaceAttachment workspace,
+    required ProjectAggregate snapshot,
+  }) => _userCommands.pauseProject(workspace: workspace, snapshot: snapshot);
+
+  Future<ProjectAggregate> clearTaskBlocker({
+    required WorkspaceAttachment workspace,
+    required ProjectAggregate snapshot,
+  }) =>
+      _userCommands.clearTaskBlocker(workspace: workspace, snapshot: snapshot);
+
+  Future<ProjectAggregate> approvePlanRevision({
+    required WorkspaceAttachment workspace,
+    required ProjectAggregate snapshot,
+  }) => _userCommands.approvePlanRevision(
+    workspace: workspace,
+    snapshot: snapshot,
+  );
+
+  Future<ProjectAggregate> rejectPlanRevision({
+    required WorkspaceAttachment workspace,
+    required ProjectAggregate snapshot,
+  }) => _userCommands.rejectPlanRevision(
+    workspace: workspace,
+    snapshot: snapshot,
+  );
+
+  Future<ProjectAggregate> cancelProject({
+    required WorkspaceAttachment workspace,
+    required ProjectAggregate snapshot,
+  }) => _userCommands.cancelProject(workspace: workspace, snapshot: snapshot);
+
+  Future<ProjectAggregate> stopProject({
+    required WorkspaceAttachment workspace,
+    required ProjectAggregate snapshot,
+  }) => _userCommands.stopProject(workspace: workspace, snapshot: snapshot);
 }
 
 // lib/features/project/runtime/project_operation_models.dart
@@ -330,11 +658,11 @@ class ProjectRecoveryUpdate {
   });
 }
 
-class _FilteredProjectQuestions {
+class ProjectFilteredQuestions {
   final List<PendingProjectQuestion> blocking;
   final List<String> assumptions;
 
-  const _FilteredProjectQuestions({
+  const ProjectFilteredQuestions({
     required this.blocking,
     required this.assumptions,
   });

@@ -6,7 +6,8 @@ export 'project_execution_state_machine.dart'
     show
         ProjectRuntimeDependencies,
         ProjectExecutionOperations,
-        ProjectExecutionCore;
+        ProjectExecutionCore,
+        ProjectExecutionLifecycle;
 
 /// Stable compatibility name for the project execution facade.
 ///

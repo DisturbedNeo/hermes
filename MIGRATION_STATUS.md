@@ -8,14 +8,16 @@ truth.
 
 - Overall status: `COMPLETE`
 - Active item: none
-- Last verified baseline: 2026-10-02
+- Last verified: 2026-10-02 (STRICT-003 complete)
 - Pre-existing user change: `README.md` was modified before migration setup;
   preserve it unless the migration explicitly updates the same documentation.
-- Migration implementation is complete through ARCH-016.
-- Final verification: `bash tool/verify.sh` passed; mapper generation,
-  formatting (432 files unchanged), analysis, the 21-test architecture suite,
-  all 608 Flutter tests, and generated-file-aware diff whitespace checks all
-  completed successfully.
+- The historical ARCH-001 through ARCH-016 migration rows remain complete. The
+  stricter facade follow-up below is also complete after the repository-wide
+  audit was resolved with focused runtime contexts, use-case-owned workflow
+  cores, and explicit architecture checks.
+- Final verification after the strict follow-up passed: mapper generation,
+  formatting (458 files), analysis, the 27-test architecture suite, all 614
+  Flutter tests, and generated-file-aware diff whitespace checks.
 
 ## Baseline evidence before migration setup
 
@@ -107,7 +109,7 @@ and blockers here with dates and affected milestone IDs.
 Complete only after every milestone has evidence and the final verification
 commands pass.
 
-### Final audit (2026-10-02)
+### Historical migration final audit (2026-10-02)
 
 - All ARCH-001 through ARCH-016 rows are `DONE`; no mandatory item remains
   unchecked or duplicated.
@@ -130,3 +132,186 @@ commands pass.
 - `git diff -- README.md` is empty, preserving the pre-existing README change.
 - CI verification is recorded in `.github/workflows/ci.yml`, and the local
   closeout entry point is executable `tool/verify.sh`.
+
+## Post-migration architecture hardening
+
+The original migration closeout was green, but the repository-wide review
+identified residual target-state violations that the existing checks did not
+detect. The follow-up track below is part of the current architecture goal.
+
+| ID | Status | Objective |
+|---|---|---|
+| HARDEN-001 | `DONE` | Domain aggregates are plain classes; named snapshot state and explicit persistence codecs own mapping. Architecture, serialization, schema, and persistence tests pass. |
+| HARDEN-002 | `DONE` | Replace remaining persistence-shaped application ports and narrow project/task exchange models. |
+| HARDEN-003 | `DONE` | Reduce shared-state orchestration units into explicit use-case coordinators. |
+| HARDEN-004 | `DONE` | Introduce presentation-facing capability ports and typed root provider surfaces. |
+| HARDEN-005 | `DONE` | Remove residual broad model-session capability leakage. |
+| HARDEN-006 | `DONE` | Run full verification and record the final repository-wide audit. |
+
+### HARDEN-001 inventory (2026-10-02)
+
+- `lib/features/project/domain/project.dart` and
+  `lib/features/task/domain/task.dart` re-export mapper-backed aggregate
+  definitions from `application/contracts`.
+- `project_snapshot_models.dart` and `task_snapshot_models.dart` directly
+  import `dart_mappable`, JSON hooks, and generated mapper parts.
+- `ProjectSnapshotDto` and `TaskSnapshotDto` currently wrap `ModelJson` around
+  the aggregate types instead of mapping independent persistence DTOs.
+- `ProjectRepositoryPort`, `TaskPersistencePort`, and
+  `ProjectAggregateRepositoryPort` expose persistence revisions, lock state,
+  file paths, raw snapshot envelopes, and full cross-feature aggregates.
+- The architecture suite checks the domain facade file text but not its
+  transitive exports, so the current violation passes the existing gate.
+
+### HARDEN-001 completion (2026-10-02)
+
+- `ProjectAggregate` and `TaskAggregate` are defined in the feature domain
+  libraries without mapper annotations, JSON hooks, generated parts, or
+  persistence imports.
+- Mapper-backed wire state is named `ProjectSnapshotAggregate` and
+  `TaskSnapshotAggregate` under application state contracts; the old snapshot
+  paths are compatibility exports only.
+- `aggregate_snapshot_codecs.dart` performs the explicit domain/snapshot
+  conversion at the persistence boundary. `ModelJson` supports registered
+  boundary codecs without importing feature adapters.
+- `flutter analyze`, targeted serialization/schema/persistence tests, and the
+  architecture suite passed after the move.
+
+### HARDEN-002 progress (2026-10-02)
+
+- Filesystem layout methods were removed from `ProjectRepositoryPort` and
+  moved to `ProjectSnapshotStorePort`, which is consumed by infrastructure
+  transaction/migration code.
+- `TaskPersistencePort` no longer exposes its workspace lock coordinator or
+  task path helper. The infrastructure-only `TaskSnapshotStorePort` carries
+  those layout details; task runtime uses `TaskPersistenceStore` methods
+  instead of reaching through the repository adapter.
+- Model server consumers now receive `ModelConversationPort` for generation,
+  and chat session work uses the focused `ActiveModelSessionPort` rather than
+  the lifecycle/configuration server port.
+
+### HARDEN-002 completion (2026-10-02)
+
+- Project and task filesystem layout capabilities now live in dedicated
+  persistence-store ports; high-level repositories no longer expose path
+  construction or workspace-lock/coordinator seams.
+- Task runtime storage is mediated by `TaskPersistenceStore`, and project
+  transaction/migration code receives the lower-level store capability only
+  where layout access is required.
+- The focused model/workspace/preferences capability surfaces remain typed at
+  feature boundaries; full Flutter tests passed with 612 tests.
+
+### HARDEN-003 completion (2026-10-02)
+
+- The remaining large same-library orchestration units were split into
+  explicit project lifecycle/core/operation parts, task planning/operation
+  parts, and chat command/state/operation parts while preserving private state
+  and public compatibility facades.
+- Extracted operation parts now have deterministic source-size budgets in the
+  architecture suite. The project/task/chat facade budgets remain enforced.
+- `flutter analyze`, the architecture suite, and the full Flutter suite passed
+  after the split.
+
+### HARDEN-004 completion (2026-10-02)
+
+- Root app wiring now exposes `WorkspacePresentationPort`,
+  `ToolRegistryPort`, and `ChatPresentationPreferencesPort` instead of making
+  the app shell consume concrete workspace/tool/preferences services.
+- Interface-typed inherited providers forward source notifications without
+  exposing concrete implementation types to presentation code.
+- App dependency and exit-lifecycle tests passed after the provider change.
+
+### HARDEN-005 completion (2026-10-02)
+
+- Model consumers use focused conversation/generation capabilities, while
+  `ActiveModelSessionPort` isolates chat session work from server lifecycle and
+  configuration operations.
+- The model boundary architecture checks reject `ModelProvider` and
+  `ModelCompletionPort` leakage from the focused server contract and reject
+  broad server injection into chat session management.
+
+### HARDEN-006 completion (2026-10-02)
+
+- `dart run build_runner build` completed successfully and regenerated mapper
+  outputs.
+- `flutter test` passed with 612 tests, including the strengthened 25-test
+  architecture suite.
+- `bash tool/verify.sh` passed end-to-end: mapper generation, formatting,
+  analysis, architecture tests, all 612 Flutter tests, and generated-file-aware
+  whitespace checks.
+
+### Final hardening audit (2026-10-02)
+
+- Domain aggregate roots are plain domain classes; mapper-backed snapshot state
+  and explicit aggregate codecs remain outside the domain boundary.
+- Filesystem layout, repository coordination, and model-session capabilities
+  are not exposed through the focused feature-facing ports.
+- Project, task, and chat orchestration implementation is divided into
+  responsibility-focused collaborators and bounded operation parts, with
+  facade and operation size budgets enforced by architecture tests.
+- Presentation receives typed capability interfaces and typed model catalog
+  data; no new platform or concrete-service dependency was introduced into
+  the app shell.
+- Existing compatibility exports, persistence revisions/backups/migrations,
+  transaction recovery, cancellation, lifecycle disposal, and workspace
+  safety paths remain covered by the passing full suite.
+- The pre-existing README change remains untouched.
+
+## Strict architecture follow-up
+
+The original closeout treated same-library extension parts and delegation-only
+facades as sufficient decomposition. The stricter review required explicit
+application/use-case owners for public planning, execution, persistence,
+recovery, command, session-lifecycle, and work flows. This section supersedes
+the earlier closeout claim and is now closed.
+
+| ID | Status | Evidence / notes |
+|---|---|---|
+| STRICT-001 | `DONE` | Added explicit project planning and user-command use cases; task planning, execution, command, and persistence use cases; and chat session-lifecycle and work use cases. Project aggregate persistence capabilities are split into focused read/hydration/recovery/commit/delete ports. `flutter analyze`, architecture tests, and focused project/chat tests pass. |
+| STRICT-002 | `DONE` | Reran mapper generation, formatting (458 files), analysis, the 27-test architecture suite, all 614 Flutter tests, and diff-whitespace validation. The residual-boundary audit confirmed that former orchestration parts contain no public workflow implementations; remaining state/reducer extensions are intentionally limited to the chat state host. |
+| STRICT-003 | `DONE` | Replaced concrete runtime-facade references in project, task, and chat use-case services with focused runtime contexts. Moved project execution/lifecycle, task planning/execution, and chat command/work workflow cores behind their use-case boundaries; kept the facades as stable coordination/state hosts. Added architecture checks for context ownership, workflow-part targets, concrete-facade leakage, and facade size. Mapper generation, formatting (458 files), analysis, the 27-test architecture suite, all 614 Flutter tests, and diff-whitespace validation passed. |
+
+### Strict decomposition inventory (2026-10-02)
+
+- Project public planning and user-directed command workflows are owned by
+  `ProjectPlanningUseCase` and `ProjectUserCommandCoordinator`; persistence
+  queries and updates are exposed through `ProjectPersistenceCoordinator`.
+- Project execution and lifecycle workflow cores are owned by
+  `ProjectExecutionUseCase` through `ProjectUseCaseContext`; the
+  `ProjectExecutionStateMachine` remains the stable composition and state
+  facade.
+- Task public planning, step execution/replanning, commands, and persistence
+  workflows are owned by `TaskPlanningUseCase`, `TaskExecutionUseCase`,
+  `TaskCommandUseCase`, and `TaskPersistenceUseCase`.
+- Task planning and execution operation parts target their respective use-case
+  boundaries; `TaskExecutionCoordinator` remains a stable composition and
+  compatibility facade.
+- Chat saved-session lifecycle and active workspace/task/project work are
+  owned by `ChatSessionLifecycleUseCase` and `ChatWorkUseCase`; plan edits,
+  replanning, exit, and command handling remain separate collaborators.
+- Chat workflow operation parts target `ChatWorkUseCase`; the
+  `ChatSessionOrchestrator` remains the stable notifier/state and composition
+  facade, with state reducers intentionally retained at that host boundary.
+- `ProjectUseCaseContext`, `TaskUseCaseContext`, and `ChatUseCaseContext` keep
+  use-case services independent of the concrete runtime facades. Architecture
+  tests enforce these context and workflow-target invariants.
+
+### Strict final audit (2026-10-02)
+
+- `ProjectPlanningUseCase`, `ProjectUserCommandCoordinator`, and
+  `ProjectPersistenceCoordinator` own project planning, user commands, and
+  persistence entry points.
+- `TaskPlanningUseCase`, `TaskExecutionUseCase`, `TaskCommandUseCase`, and
+  `TaskPersistenceUseCase` own task planning, execution/replanning, commands,
+  and persistence/recovery/artifact workflows.
+- `ChatSessionLifecycleUseCase`, `ChatWorkUseCase`,
+  `ChatStateMutationUseCase`, `ChatTaskPlanUseCase`,
+  `ChatTaskReplanUseCase`, and `ChatExitUseCase` own chat lifecycle, work,
+  state mutation, plan, replan, and exit boundaries.
+- Runtime facade sizes are 669 lines (project), 648 lines (task), and 700
+  lines (chat), all within the enforced budgets. Workflow operation parts
+  target use-case classes rather than concrete runtime facades.
+- `bash tool/verify.sh` passed end to end after the final changes: mapper
+  generation, formatting (458 files), analysis, 27 architecture tests, 614
+  Flutter tests, and diff-whitespace validation. No required migration or
+  strict follow-up item remains open.

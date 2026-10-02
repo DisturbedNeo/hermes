@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:hermes/features/project/application/project_application/project_application.dart';
 import 'package:hermes/features/project/project_aggregate_repository_port.dart';
-import 'package:hermes/features/project/project_repository_port.dart';
 import 'package:hermes/features/project/runtime/project_command_service.dart';
 import 'package:hermes/features/project/runtime/project_completion_service.dart';
 import 'package:hermes/features/project/runtime/project_lifecycle_service.dart';
@@ -53,6 +52,8 @@ import 'package:hermes/platform/tool_service.dart';
 import 'package:hermes/features/tools/application/tool_protocol_adapter.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
 import 'package:hermes/app/modules/persistence_module.dart';
+import 'package:hermes/features/persistence/application/task_snapshot_store_port.dart';
+import 'package:hermes/features/persistence/application/project_snapshot_store_port.dart';
 
 /// Explicit construction helpers for tests that need lightweight adapters.
 /// Production composition is kept in [AppDependencies].
@@ -122,11 +123,11 @@ TaskController createTestTaskController({
 /// Defaults are adapters local to this factory, never runtime fallbacks.
 ProjectApplication createTestProjectApplication({
   required TaskController taskController,
-  TaskPersistencePort? taskPersistence,
+  TaskSnapshotStorePort? taskPersistence,
   ToolRegistryPort? toolService,
   WorkspaceSandboxPort? sandbox,
   TaskMaterializerPort? materializer,
-  ProjectRepositoryPort? repository,
+  ProjectSnapshotStorePort? repository,
   ProjectAggregateRepositoryPort? aggregateRepository,
   ProjectPlanner? planner,
   ProjectCompletionEvaluator? completionEvaluator,
@@ -146,7 +147,9 @@ ProjectApplication createTestProjectApplication({
 }) {
   final resolvedCoordinator =
       persistenceCoordinator ??
-      taskPersistence?.coordinator ??
+      (taskPersistence is TaskRepository
+          ? taskPersistence.coordinator
+          : null) ??
       PersistenceModule.create().coordinator;
   final resolvedTasks =
       taskPersistence ?? TaskRepository(coordinator: resolvedCoordinator);
@@ -165,7 +168,11 @@ ProjectApplication createTestProjectApplication({
       ProjectAggregateRepository(
         projectRepository: resolvedProjects,
         taskRepository: resolvedTasks,
-        coordinator: persistenceCoordinator ?? resolvedTasks.coordinator,
+        coordinator:
+            persistenceCoordinator ??
+            (resolvedTasks is TaskRepository
+                ? resolvedTasks.coordinator
+                : resolvedCoordinator),
       );
   final resolvedPlanningRunner =
       planningRunner ?? const PlanningToolCallRunner();
@@ -230,10 +237,8 @@ ProjectApplication createTestProjectApplication({
     taskProjectPlanning: taskController,
     taskExecution: taskController,
     taskRecovery: taskController,
-    taskPersistence: resolvedTasks,
     toolService: resolvedTools,
     materializer: materializer ?? const TaskPlanMaterializer(),
-    repository: resolvedProjects,
     aggregateRepository: resolvedAggregate,
     dependencies: ProjectRuntimeDependencies(
       planner: resolvedPlanner,

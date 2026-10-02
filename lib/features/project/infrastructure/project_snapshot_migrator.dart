@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:hermes/features/persistence/infrastructure/atomic_json_snapshot_store.dart';
 import 'package:hermes/features/persistence/application/persistence_contracts.dart';
 import 'package:hermes/core/model_json.dart';
-import 'package:hermes/features/project/project_repository_port.dart';
+import 'package:hermes/features/persistence/application/project_snapshot_store_port.dart';
 import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
 import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
 
@@ -12,14 +12,14 @@ import 'package:hermes/features/task/application/task_application/task_persisten
 /// reads so migration policy cannot leak into aggregate behavior.
 class ProjectSnapshotMigrator {
   ProjectSnapshotMigrator({
-    required ProjectRepositoryPort projectRepository,
+    required ProjectSnapshotStorePort projectRepository,
     required TaskPersistencePort taskRepository,
     AtomicJsonSnapshotStore snapshots = const AtomicJsonSnapshotStore(),
   }) : _projects = projectRepository,
        _tasks = taskRepository,
        _snapshots = snapshots;
 
-  final ProjectRepositoryPort _projects;
+  final ProjectSnapshotStorePort _projects;
   final TaskPersistencePort _tasks;
   final AtomicJsonSnapshotStore _snapshots;
 

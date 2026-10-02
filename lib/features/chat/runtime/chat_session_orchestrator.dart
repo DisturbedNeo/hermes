@@ -69,6 +69,15 @@ import 'package:hermes/features/workspace/application/workspace_ports.dart';
 // Chat operation models
 
 part 'chat_session_operations.dart';
+part 'chat_session_commands.dart';
+part 'chat_session_state_operations.dart';
+part 'chat_task_plan_use_case.dart';
+part 'chat_task_replan_use_case.dart';
+part 'chat_exit_use_case.dart';
+part 'chat_session_lifecycle_use_case.dart';
+part 'chat_work_use_case.dart';
+part 'chat_state_mutation_use_case.dart';
+part 'chat_use_case_context.dart';
 
 class _PendingScopeMove {
   const _PendingScopeMove({
@@ -134,6 +143,12 @@ class ChatSessionOrchestrator extends ChangeNotifier
       const ChatCommandDispatcher();
   late final ChatTaskCommandCoordinator _taskCommandCoordinator;
   late final ChatProjectCommandCoordinator _projectCommandCoordinator;
+  late final ChatTaskPlanUseCase _taskPlanUseCase;
+  late final ChatTaskReplanUseCase _taskReplanUseCase;
+  late final ChatExitUseCase _exitUseCase;
+  late final ChatSessionLifecycleUseCase _sessionLifecycleUseCase;
+  late final ChatWorkUseCase _workUseCase;
+  late final ChatStateMutationUseCase _stateMutationUseCase;
 
   late final Bubble systemPrompt;
 
@@ -354,6 +369,213 @@ class ChatSessionOrchestrator extends ChangeNotifier
     _requestContextEstimateUpdate(immediate: immediate);
   }
 
+  Future<void> updateTaskTaskBrief(TaskPlanUpdateCommand command) =>
+      _taskPlanUseCase.updateTaskTaskBrief(command);
+
+  Future<void> updateTaskSpec(TaskPlanUpdateCommand command) =>
+      _taskPlanUseCase.updateTaskSpec(command);
+
+  Future<void> updateTaskPlan(TaskPlanUpdateCommand command) =>
+      _taskPlanUseCase.updateTaskPlan(command);
+
+  Future<void> updateProjectPlan(ProjectUpdateCommand command) =>
+      _taskPlanUseCase.updateProjectPlan(command);
+
+  Future<String> readTaskArtifact(String artifactPath) =>
+      _taskPlanUseCase.readTaskArtifact(artifactPath);
+
+  Future<void> replanRemainingTask() => _taskReplanUseCase.execute();
+
+  Future<void> quiesceForExit({
+    Duration timeout = const Duration(seconds: 5),
+  }) => _exitUseCase.quiesceForExit(timeout: timeout);
+
+  Future<void> disposeAsync() => _exitUseCase.disposeAsync();
+
+  Future<void> disposeWithoutSavingAsync() =>
+      _exitUseCase.disposeWithoutSavingAsync();
+
+  Future<void> newChat({SystemPromptSnapshot? systemPromptSnapshot}) =>
+      _sessionLifecycleUseCase.newChat(
+        systemPromptSnapshot: systemPromptSnapshot,
+      );
+
+  Future<bool> openChat(String id) => _sessionLifecycleUseCase.openChat(id);
+
+  Future<SavedChat> saveCurrentChat({String? title}) =>
+      _sessionLifecycleUseCase.saveCurrentChat(title: title);
+
+  Future<SavedChat> retrySave() => _sessionLifecycleUseCase.retrySave();
+
+  Future<void> deleteSavedChat(String chatId) =>
+      _sessionLifecycleUseCase.deleteSavedChat(chatId);
+
+  Future<void> resetIfCurrentSavedChatDeleted(String chatId) =>
+      _sessionLifecycleUseCase.resetIfCurrentSavedChatDeleted(chatId);
+
+  Future<void> flushCurrentChat() =>
+      _sessionLifecycleUseCase.flushCurrentChat();
+
+  Future<void> restorePendingModel() =>
+      _sessionLifecycleUseCase.restorePendingModel();
+
+  Future<void> refreshModelRestorePrompt() =>
+      _sessionLifecycleUseCase.refreshModelRestorePrompt();
+
+  void updateCurrentModelSnapshot(ModelConfigurationSnapshot snapshot) =>
+      _stateMutationUseCase.updateCurrentModelSnapshot(snapshot);
+
+  void dismissPendingModelRestore() =>
+      _stateMutationUseCase.dismissPendingModelRestore();
+
+  void updateSystemPromptSnapshot(SystemPromptSnapshot snapshot) =>
+      _stateMutationUseCase.updateSystemPromptSnapshot(snapshot);
+
+  String buildSystemPromptForTesting({
+    String? currentUserRequest,
+    List<String> additionalModuleIds = const [],
+  }) => _stateMutationUseCase.buildSystemPromptForTesting(
+    currentUserRequest: currentUserRequest,
+    additionalModuleIds: additionalModuleIds,
+  );
+
+  void insertMessage(String text, MessageRole role) =>
+      _stateMutationUseCase.insertMessage(text, role);
+
+  void updateCommandExecutionApproval(bool approved) =>
+      _stateMutationUseCase.updateCommandExecutionApproval(approved);
+
+  void updateExecutionMode(ExecutionMode mode) =>
+      _stateMutationUseCase.updateExecutionMode(mode);
+
+  Future<void> attachWorkspace(String folderPath) =>
+      _workUseCase.attachWorkspace(folderPath);
+
+  Future<void> detachWorkspace() => _workUseCase.detachWorkspace();
+
+  Future<void> send(String text, {List<String>? tools = const []}) =>
+      _workUseCase.send(text, tools: tools);
+
+  Future<void> generateOrContinue({
+    List<String>? tools = const [],
+    bool preferActiveWork = true,
+  }) => _workUseCase.generateOrContinue(
+    tools: tools,
+    preferActiveWork: preferActiveWork,
+  );
+
+  Future<void> cancelGeneration() => _workUseCase.cancelGeneration();
+  Future<void> cancelTaskRun() => _workUseCase.cancelTaskRun();
+  Future<void> reloadTasks() => _workUseCase.reloadTasks();
+  Future<void> resumeLatestTask() => _workUseCase.resumeLatestTask();
+  Future<void> loadTask(String taskId) => _workUseCase.loadTask(taskId);
+  Future<void> resumeLatestProject() => _workUseCase.resumeLatestProject();
+  Future<void> loadProject(String projectId) =>
+      _workUseCase.loadProject(projectId);
+  Future<void> runNextProjectTask() => _workUseCase.runNextProjectTask();
+  Future<void> runProject() => _workUseCase.runProject();
+  Future<void> runNextTaskPhase() => _workUseCase.runNextTaskPhase();
+  Future<void> runTask() => _workUseCase.runTask();
+  Future<void> planActiveTask({bool runAfterPlanning = false}) =>
+      _workUseCase.planActiveTask(runAfterPlanning: runAfterPlanning);
+  Future<void> retryTaskPhase() => _workUseCase.retryTaskPhase();
+  Future<void> skipTaskPhase() => _workUseCase.skipTaskPhase();
+  Future<void> stopTask() => _workUseCase.stopTask();
+  Future<void> answerTaskQuestion(String answer) =>
+      _workUseCase.answerTaskQuestion(answer);
+  Future<void> approveTaskStep() => _workUseCase.approveTaskStep();
+  Future<void> answerProjectQuestion(String answer) =>
+      _workUseCase.answerProjectQuestion(answer);
+  Future<void> stopProject() => _workUseCase.stopProject();
+  Future<void> pauseProject() => _workUseCase.pauseProject();
+  Future<void> retryProjectRecovery(String incidentId) =>
+      _workUseCase.retryProjectRecovery(incidentId);
+  Future<void> approveProjectPlanRevision() =>
+      _workUseCase.approveProjectPlanRevision();
+  Future<void> rejectProjectPlanRevision() =>
+      _workUseCase.rejectProjectPlanRevision();
+  Future<void> replanProject([String reason = '']) =>
+      _workUseCase.replanProject(reason);
+
+  // Compatibility callbacks used by the focused work use case context. The
+  // workflow implementations live on ChatWorkUseCase; these methods keep
+  // the existing host contract stable while the facade remains a coordinator.
+  bool get isDirty =>
+      currentChatId != null &&
+      _currentPersistenceRevision != _persistedRevision;
+  bool get hasMeaningfulContent => messageStore.messages.any(
+    (message) =>
+        message.role != MessageRole.system &&
+        (message.text.trim().isNotEmpty ||
+            message.reasoning.trim().isNotEmpty ||
+            message.tools.isNotEmpty),
+  );
+  bool get isUnsavedNonEmpty => currentChatId == null && hasMeaningfulContent;
+  bool get isSystemPromptLocked =>
+      chatStream.isStreaming || hasMeaningfulContent || currentChatId != null;
+  bool get hasActiveWorkspace =>
+      workspace != null && workspace?.missing != true;
+  String? get activeTaskJson =>
+      activeTask == null ? null : _panelProtocol.encodeTask(activeTask!);
+  String? get activeProjectJson => activeProject == null
+      ? null
+      : _panelProtocol.encodeProject(activeProject!);
+  String get displayTitle {
+    final savedTitle = currentSavedChat?.title;
+    if (savedTitle != null && savedTitle.trim().isNotEmpty) return savedTitle;
+    final first = messageStore.messages
+        .where((m) => m.role != MessageRole.system && m.text.trim().isNotEmpty)
+        .map((m) => m.text.trim().replaceAll(RegExp(r'\s+'), ' '))
+        .firstOrNull;
+    if (first == null) return 'New chat';
+    return first.length <= 40 ? first : '${first.substring(0, 37)}...';
+  }
+
+  ModelConfigurationSnapshot? get _activeServerSnapshot =>
+      !serverManager.session.value.isActive
+      ? null
+      : serverManager.diagnostics.modelSnapshot;
+  int? get _diagnosticsContextLimit =>
+      currentModelSnapshot?.nCtx ??
+      serverManager.diagnostics.modelSnapshot?.nCtx;
+  bool get _hasPendingPersistence =>
+      _currentPersistenceRevision != _persistedRevision;
+  Future<Task?> _recoverTaskSnapshot(
+    WorkspaceAttachment current,
+    Task? snapshot,
+  ) => _workUseCase._recoverTaskSnapshot(current, snapshot);
+  Future<ProjectCommandResult?> _recoverProject(
+    WorkspaceAttachment current,
+    ProjectAggregate? snapshot,
+  ) => _workUseCase._recoverProject(current, snapshot);
+  Future<Task?> _taskForActiveProject(
+    WorkspaceAttachment current,
+    ProjectAggregate? project,
+  ) => _workUseCase._taskForActiveProject(current, project);
+  Future<void> _runTaskInternal({bool keepBusy = false}) =>
+      _workUseCase._runTaskInternal(keepBusy: keepBusy);
+  Future<void> _refinePromptFromCommand(ChatSlashCommand command) =>
+      _workUseCase._refinePromptFromCommand(command);
+  Future<void> _continueTaskFromCommand(String rawCommand) =>
+      _workUseCase._continueTaskFromCommand(rawCommand);
+  Future<void> _continueProjectFromCommand(String rawCommand) =>
+      _workUseCase._continueProjectFromCommand(rawCommand);
+  Future<void> _startProjectFromPrompt(
+    String prompt, {
+    required bool runAfterCreation,
+  }) => _workUseCase._startProjectFromPrompt(
+    prompt,
+    runAfterCreation: runAfterCreation,
+  );
+  Future<void> _runProjectInternal({int? maxNewTasks}) =>
+      _workUseCase._runProjectInternal(maxNewTasks: maxNewTasks);
+  Future<void> _runNextTaskStepInternal({bool keepBusy = false}) =>
+      _workUseCase._runNextTaskStepInternal(keepBusy: keepBusy);
+  Future<void> _startTaskFromPrompt(
+    String prompt, {
+    required bool runFirstPhase,
+  }) => _workUseCase._startTaskFromPrompt(prompt, runFirstPhase: runFirstPhase);
+
   bool get workspaceToolsEnabled => hasActiveWorkspace;
 
   List<String> get defaultToolIds => workspaceToolsEnabled
@@ -425,6 +647,13 @@ class ChatSessionOrchestrator extends ChangeNotifier
       commands: _projectCommands,
       recovery: _projectRecovery,
     );
+    final useCaseContext = _ChatUseCaseContextAdapter(this);
+    _taskPlanUseCase = ChatTaskPlanUseCase(useCaseContext);
+    _taskReplanUseCase = ChatTaskReplanUseCase(useCaseContext);
+    _exitUseCase = ChatExitUseCase(useCaseContext);
+    _sessionLifecycleUseCase = ChatSessionLifecycleUseCase(useCaseContext);
+    _workUseCase = ChatWorkUseCase(useCaseContext);
+    _stateMutationUseCase = ChatStateMutationUseCase(useCaseContext);
     _state = ChatState(
       tabId: this.tabId,
       messages: const <Bubble>[],

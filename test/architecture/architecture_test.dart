@@ -497,6 +497,122 @@ void main() {
     _expectEmpty('domain/persistence ownership', violations);
   });
 
+  test('durable aggregates are defined in domain rather than re-exported', () {
+    final violations = <String>[];
+    const domainSurfaces = <String, String>{
+      'lib/features/project/domain/project.dart': 'ProjectAggregate',
+      'lib/features/task/domain/task.dart': 'class TaskAggregate',
+    };
+    for (final entry in domainSurfaces.entries) {
+      final source = graph.byPath[entry.key];
+      if (source == null) {
+        violations.add('${entry.key}: domain surface is missing');
+        continue;
+      }
+      if (!source.text.contains(entry.value)) {
+        violations.add(
+          '${entry.key}: ${entry.value} is still owned by another layer',
+        );
+      }
+      if (RegExp(
+        r'features/(?:project|task)/application/contracts/.*snapshot_models',
+      ).hasMatch(source.text)) {
+        violations.add('${entry.key}: re-exports application snapshot models');
+      }
+      if (RegExp(
+        r'dart_mappable|core/serialization/json_hooks|\.mapper\.dart',
+      ).hasMatch(source.text)) {
+        violations.add('${entry.key}: domain surface depends on mapping code');
+      }
+    }
+    for (final source in graph.sources.where(
+      (source) =>
+          source.path.contains('/features/project/domain/') ||
+          source.path.contains('/features/task/domain/'),
+    )) {
+      if (RegExp(
+        r'''import ['"](?:dart:convert|package:dart_mappable)|core/model_json|features/persistence|application/contracts/.*snapshot_models''',
+      ).hasMatch(source.text)) {
+        violations.add(
+          '${source.path}: domain imports persistence/wire concerns',
+        );
+      }
+    }
+    _expectEmpty('durable aggregate ownership', violations);
+  });
+
+  test('durable aggregate mappers live at the persistence boundary', () {
+    final violations = <String>[];
+    for (final path in [
+      'lib/features/project/application/contracts/project_snapshot_models.dart',
+      'lib/features/task/application/contracts/task_snapshot_models.dart',
+    ]) {
+      final source = graph.byPath[path];
+      if (source == null) continue;
+      if (source.text.contains('dart_mappable') ||
+          source.text.contains('.mapper.dart')) {
+        violations.add(
+          '$path: durable aggregate mapper remains in application',
+        );
+      }
+    }
+    for (final source in graph.sources.where(
+      (source) => source.path.endsWith('.mapper.dart'),
+    )) {
+      if (source.path.contains('project_snapshot_models') ||
+          source.path.contains('task_snapshot_models')) {
+        if (!source.path.contains('/features/persistence/infrastructure/')) {
+          violations.add(
+            '${source.path}: durable aggregate mapper is outside persistence',
+          );
+        }
+      }
+    }
+    final codec = graph
+        .byPath['lib/features/persistence/infrastructure/dto/aggregate_snapshot_codecs.dart'];
+    if (codec == null ||
+        !codec.text.contains('class ProjectSnapshotCodec') ||
+        !codec.text.contains('class TaskSnapshotCodec') ||
+        !codec.text.contains('ModelJson.register')) {
+      violations.add(
+        'aggregate_snapshot_codecs.dart: explicit aggregate mapping is missing',
+      );
+    }
+    _expectEmpty('durable mapper placement', violations);
+  });
+
+  test('application persistence ports do not expose adapter layout seams', () {
+    final violations = <String>[];
+    final projectPort =
+        graph.byPath['lib/features/project/project_repository_port.dart'];
+    final taskPort = graph
+        .byPath['lib/features/task/application/task_application/task_persistence_ports.dart'];
+    if (projectPort == null ||
+        RegExp(
+          r'projectRelativePath|projectSnapshotPath|projectsRoot|documentFileName',
+        ).hasMatch(projectPort.text)) {
+      violations.add('project_repository_port.dart: filesystem layout leaked');
+    }
+    if (taskPort == null ||
+        RegExp(
+          r'coordinator|taskRelativePath|TaskStorageLayout',
+        ).hasMatch(taskPort.text)) {
+      violations.add('task_persistence_ports.dart: adapter seam leaked');
+    }
+    for (final path in [
+      'lib/features/persistence/application/project_snapshot_store_port.dart',
+      'lib/features/persistence/application/task_snapshot_store_port.dart',
+    ]) {
+      final source = graph.byPath[path];
+      if (source == null ||
+          !source.text.contains('SnapshotStorePort') ||
+          !source.text.contains('RelativePath')) {
+        violations.add('$path: infrastructure storage capability is missing');
+      }
+    }
+    _expectEmpty('persistence port seams', violations);
+  });
+
   test('application and runtime orchestration use typed platform ports', () {
     final violations = <String>[];
     for (final source in graph.sources) {
@@ -613,9 +729,11 @@ void main() {
         graph.byPath['lib/features/model/application/model_server_port.dart']!;
     final diagnostics = graph
         .byPath['lib/features/model/application/model_session_diagnostics_port.dart']!;
+    final sessionManager = graph
+        .byPath['lib/features/chat/runtime/chat_application/chat_session_manager.dart'];
     final violations = <String>[];
     if (RegExp(
-      r'Process|StreamSubscription|LlamaServerHandle|ValueNotifier|set[A-Z]',
+      r'Process|StreamSubscription|LlamaServerHandle|ValueNotifier|set[A-Z]|ModelProvider|ModelCompletionPort',
     ).hasMatch(model.text)) {
       violations.add(
         'model_server_port.dart exposes infrastructure or setters',
@@ -631,6 +749,12 @@ void main() {
       r'\b(?:record|update|clear|set)[A-Z]',
     ).hasMatch(diagnostics.text)) {
       violations.add('diagnostics read port exposes telemetry mutation');
+    }
+    if (sessionManager != null &&
+        sessionManager.text.contains('ModelServerPort')) {
+      violations.add(
+        'chat_session_manager.dart: broad server lifecycle port leaked into session work',
+      );
     }
     final requestOptions =
         graph.byPath['lib/features/model/application/model_request.dart']!;
@@ -681,7 +805,7 @@ void main() {
         'class TaskExecutionPolicy',
       ],
       'lib/features/task/runtime/task_step_execution_loop.dart': [
-        'class _TaskStepExecutionLoop',
+        'class TaskStepExecutionLoop',
       ],
       'lib/features/task/runtime/task_planning_coordinator.dart': [
         'class TaskPlanningCoordinator',
@@ -700,6 +824,18 @@ void main() {
       ],
       'lib/features/task/runtime/task_persistence_store.dart': [
         'class TaskPersistenceStore',
+      ],
+      'lib/features/task/runtime/task_command_use_case.dart': [
+        'class TaskCommandUseCase',
+      ],
+      'lib/features/task/runtime/task_planning_use_case.dart': [
+        'class TaskPlanningUseCase',
+      ],
+      'lib/features/task/runtime/task_persistence_use_case.dart': [
+        'class TaskPersistenceUseCase',
+      ],
+      'lib/features/task/runtime/task_execution_use_case.dart': [
+        'class TaskExecutionUseCase',
       ],
       'lib/features/project/runtime/project_command_service.dart': [
         'class ProjectCommandService',
@@ -738,6 +874,12 @@ void main() {
       'lib/features/project/runtime/project_evaluation_coordinator.dart': [
         'class ProjectEvaluationCoordinator',
       ],
+      'lib/features/project/runtime/project_planning_use_case.dart': [
+        'class ProjectPlanningUseCase',
+      ],
+      'lib/features/project/runtime/project_user_command_coordinator.dart': [
+        'class ProjectUserCommandCoordinator',
+      ],
       'lib/features/project/runtime/project_recovery_policy.dart': [
         'class ProjectRecoveryPolicy',
       ],
@@ -773,6 +915,24 @@ void main() {
       ],
       'lib/features/chat/runtime/chat_project_command_coordinator.dart': [
         'class ChatProjectCommandCoordinator',
+      ],
+      'lib/features/chat/runtime/chat_session_lifecycle_use_case.dart': [
+        'class ChatSessionLifecycleUseCase',
+      ],
+      'lib/features/chat/runtime/chat_state_mutation_use_case.dart': [
+        'class ChatStateMutationUseCase',
+      ],
+      'lib/features/chat/runtime/chat_work_use_case.dart': [
+        'class ChatWorkUseCase',
+      ],
+      'lib/features/chat/runtime/chat_task_plan_use_case.dart': [
+        'class ChatTaskPlanUseCase',
+      ],
+      'lib/features/chat/runtime/chat_task_replan_use_case.dart': [
+        'class ChatTaskReplanUseCase',
+      ],
+      'lib/features/chat/runtime/chat_exit_use_case.dart': [
+        'class ChatExitUseCase',
       ],
       'lib/features/model/infrastructure/chat_sse_parser.dart': [
         'class ChatSseParser',
@@ -810,10 +970,16 @@ void main() {
         '_persistenceCoordinator',
         '_planRevisionCoordinator',
         '_evaluationCoordinator',
+        '_planningUseCase',
+        '_userCommands',
       ],
       'lib/features/task/runtime/task_execution_coordinator.dart': [
         '_stepLoop',
         '_executionPolicy',
+        '_commandUseCase',
+        '_planningUseCase',
+        '_persistenceUseCase',
+        '_executionUseCase',
       ],
       'lib/features/chat/runtime/chat_session_orchestrator.dart': [
         '_presentationMessages',
@@ -822,6 +988,12 @@ void main() {
         '_commandDispatcher',
         '_taskCommandCoordinator',
         '_projectCommandCoordinator',
+        '_taskPlanUseCase',
+        '_taskReplanUseCase',
+        '_exitUseCase',
+        '_sessionLifecycleUseCase',
+        '_workUseCase',
+        '_stateMutationUseCase',
       ],
     };
     for (final entry in collaboratorEdges.entries) {
@@ -834,6 +1006,131 @@ void main() {
       }
     }
     _expectEmpty('runtime orchestration decomposition', violations);
+  });
+
+  test('use-case services do not depend on concrete runtime facades', () {
+    const useCasePaths = <String>{
+      'lib/features/project/runtime/project_planning_use_case.dart',
+      'lib/features/project/runtime/project_user_command_coordinator.dart',
+      'lib/features/task/runtime/task_planning_use_case.dart',
+      'lib/features/task/runtime/task_execution_use_case.dart',
+      'lib/features/task/runtime/task_command_use_case.dart',
+      'lib/features/task/runtime/task_persistence_use_case.dart',
+      'lib/features/chat/runtime/chat_session_lifecycle_use_case.dart',
+      'lib/features/chat/runtime/chat_work_use_case.dart',
+      'lib/features/chat/runtime/chat_state_mutation_use_case.dart',
+      'lib/features/chat/runtime/chat_task_plan_use_case.dart',
+      'lib/features/chat/runtime/chat_task_replan_use_case.dart',
+      'lib/features/chat/runtime/chat_exit_use_case.dart',
+    };
+    const forbiddenConcreteHosts = <String>{
+      'ProjectExecutionStateMachine',
+      'TaskExecutionCoordinator',
+      'ChatSessionOrchestrator',
+    };
+    const requiredContexts = <String, String>{
+      'lib/features/project/runtime/project_planning_use_case.dart':
+          'ProjectUseCaseContext',
+      'lib/features/project/runtime/project_user_command_coordinator.dart':
+          'ProjectUseCaseContext',
+      'lib/features/task/runtime/task_planning_use_case.dart':
+          'TaskUseCaseContext',
+      'lib/features/task/runtime/task_execution_use_case.dart':
+          'TaskUseCaseContext',
+      'lib/features/task/runtime/task_command_use_case.dart':
+          'TaskUseCaseContext',
+      'lib/features/task/runtime/task_persistence_use_case.dart':
+          'TaskUseCaseContext',
+      'lib/features/chat/runtime/chat_session_lifecycle_use_case.dart':
+          'ChatUseCaseContext',
+      'lib/features/chat/runtime/chat_work_use_case.dart': 'ChatUseCaseContext',
+      'lib/features/chat/runtime/chat_state_mutation_use_case.dart':
+          'ChatUseCaseContext',
+      'lib/features/chat/runtime/chat_task_plan_use_case.dart':
+          'ChatUseCaseContext',
+      'lib/features/chat/runtime/chat_task_replan_use_case.dart':
+          'ChatUseCaseContext',
+      'lib/features/chat/runtime/chat_exit_use_case.dart': 'ChatUseCaseContext',
+    };
+    final violations = <String>[];
+    for (final path in useCasePaths) {
+      final source = graph.byPath[path];
+      if (source == null) {
+        violations.add('$path: use-case source is missing');
+        continue;
+      }
+      for (final host in forbiddenConcreteHosts) {
+        if (RegExp('\\b$host\\b').hasMatch(source.text)) {
+          violations.add(
+            '$path: concrete runtime host $host leaked into use case',
+          );
+        }
+      }
+      final context = requiredContexts[path]!;
+      if (!source.text.contains(context)) {
+        violations.add('$path: missing focused $context dependency');
+      }
+      if (RegExp(r'\b(?:UseCase|Coordinator)\(this\)').hasMatch(source.text)) {
+        violations.add('$path: use case is constructed from a concrete host');
+      }
+    }
+    for (final path in <String>[
+      'lib/features/project/runtime/project_execution_state_machine.dart',
+      'lib/features/task/runtime/task_execution_coordinator.dart',
+      'lib/features/chat/runtime/chat_session_orchestrator.dart',
+    ]) {
+      final source = graph.byPath[path];
+      if (source == null) continue;
+      if (RegExp(r'\b(?:UseCase|Coordinator)\(this\)').hasMatch(source.text)) {
+        violations.add(
+          '$path: facade directly constructs a host-coupled use case',
+        );
+      }
+    }
+    _expectEmpty('use-case context boundaries', violations);
+  });
+
+  test('workflow operation parts target use-case boundaries', () {
+    const requiredTargets = <String, String>{
+      'lib/features/project/runtime/project_execution_core.dart':
+          'extension ProjectExecutionCore on ProjectExecutionUseCase',
+      'lib/features/project/runtime/project_execution_operations.dart':
+          'extension ProjectExecutionOperations on ProjectExecutionUseCase',
+      'lib/features/project/runtime/project_execution_lifecycle.dart':
+          'extension ProjectExecutionLifecycle on ProjectExecutionUseCase',
+      'lib/features/task/runtime/task_execution_planning.dart':
+          'extension TaskExecutionPlanning on TaskPlanningUseCase',
+      'lib/features/task/runtime/task_execution_operations.dart':
+          'extension TaskExecutionOperations on TaskExecutionUseCase',
+      'lib/features/chat/runtime/chat_session_commands.dart':
+          'extension ChatSessionCommands on ChatWorkUseCase',
+      'lib/features/chat/runtime/chat_session_operations.dart':
+          'extension ChatSessionOperations on ChatWorkUseCase',
+    };
+    final violations = <String>[];
+    for (final entry in requiredTargets.entries) {
+      final source = graph.byPath[entry.key];
+      if (source == null) {
+        violations.add('${entry.key}: workflow part is missing');
+      } else if (!source.text.contains(entry.value)) {
+        violations.add('${entry.key}: workflow part targets a facade');
+      }
+    }
+    const forbiddenFacadeTargets = <String>{
+      'ProjectExecutionStateMachine',
+      'TaskExecutionCoordinator',
+      'ChatSessionOrchestrator',
+    };
+    for (final entry in requiredTargets.entries) {
+      final source = graph.byPath[entry.key];
+      if (source == null) continue;
+      for (final facade in forbiddenFacadeTargets) {
+        if (RegExp('extension [^\\n]+ on $facade').hasMatch(source.text)) {
+          violations.add('${entry.key}: concrete facade target $facade');
+        }
+      }
+    }
+    _expectEmpty('workflow use-case targets', violations);
   });
 
   test('orchestration budgets and focused capability seams are enforced', () {
@@ -984,6 +1281,37 @@ void main() {
       }
     }
     _expectEmpty('architecture budgets and focused capabilities', violations);
+  });
+
+  test('orchestration operation parts stay responsibility-sized', () {
+    const budgets = <String, int>{
+      'lib/features/project/runtime/project_recovery_policy.dart': 650,
+      'lib/features/project/runtime/project_execution_operations.dart': 1500,
+      'lib/features/project/runtime/project_execution_core.dart': 1100,
+      'lib/features/project/runtime/project_execution_lifecycle.dart': 1900,
+      'lib/features/task/runtime/task_step_execution_loop.dart': 650,
+      'lib/features/task/runtime/task_execution_operations.dart': 1000,
+      'lib/features/task/runtime/task_execution_planning.dart': 1700,
+      'lib/features/chat/runtime/chat_session_operations.dart': 1100,
+      'lib/features/chat/runtime/chat_session_commands.dart': 750,
+      'lib/features/chat/runtime/chat_session_state_operations.dart': 1000,
+    };
+    final violations = <String>[];
+    for (final entry in budgets.entries) {
+      final source = graph.byPath[entry.key];
+      if (source == null) {
+        violations.add('${entry.key}: orchestration part is missing');
+        continue;
+      }
+      final lineCount = source.text.split('\n').length;
+      if (lineCount > entry.value) {
+        violations.add(
+          '${entry.key}: $lineCount lines exceeds operation budget '
+          '${entry.value}',
+        );
+      }
+    }
+    _expectEmpty('orchestration operation budgets', violations);
   });
 
   test('presentation consumes projections instead of aggregates', () {

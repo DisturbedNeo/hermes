@@ -37,7 +37,7 @@ import 'package:hermes/core/disposable.dart';
 class ChatSessionManager implements Disposable {
   final MessageStore _messageStore;
   final ChatStream<ChatToken> _chatStream;
-  final ModelServerPort _serverManager;
+  final ActiveModelSessionPort _serverManager;
   final ToolRegistryPort _toolService;
   final ChatToolExecutionPort _toolExecution;
   final CompactionSettingsPort _preferencesService;
@@ -66,7 +66,7 @@ class ChatSessionManager implements Disposable {
   ChatSessionManager({
     required MessageStore messageStore,
     required ChatStream<ChatToken> chatStream,
-    required ModelServerPort serverManager,
+    required ActiveModelSessionPort serverManager,
     required ToolRegistryPort toolService,
     required ChatToolExecutionPort toolExecution,
     required CompactionSettingsPort preferencesService,

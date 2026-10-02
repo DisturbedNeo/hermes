@@ -14,15 +14,15 @@ import 'package:hermes/features/task/application/task_application/task_ports.dar
 /// ordinary domain objects instead of repository details.
 class ProjectAggregateHydrator {
   ProjectAggregateHydrator({
-    required ProjectRepositoryPort projectRepository,
-    required ProjectAggregateRepositoryPort aggregateRepository,
+    required ProjectReadPort projectRepository,
+    required ProjectAggregateHydrationPort aggregateRepository,
     required TaskQueryPort taskQueries,
   }) : _projectRepository = projectRepository,
        _aggregateRepository = aggregateRepository,
        _taskQueries = taskQueries;
 
-  final ProjectRepositoryPort _projectRepository;
-  final ProjectAggregateRepositoryPort _aggregateRepository;
+  final ProjectReadPort _projectRepository;
+  final ProjectAggregateHydrationPort _aggregateRepository;
   final TaskQueryPort _taskQueries;
   final ProjectControlStateService _controlStateService =
       const ProjectControlStateService();

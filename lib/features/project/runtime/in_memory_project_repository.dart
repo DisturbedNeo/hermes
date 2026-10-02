@@ -1,5 +1,5 @@
 import 'package:hermes/features/persistence/application/persistence_contracts.dart';
-import 'package:hermes/features/project/project_repository_port.dart';
+import 'package:hermes/features/persistence/application/project_snapshot_store_port.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:path/path.dart' as path;
 
@@ -7,7 +7,7 @@ import 'package:path/path.dart' as path;
 ///
 /// It deliberately models revisions and optimistic conflicts while avoiding
 /// filesystem construction, backup repair, and transaction side effects.
-class InMemoryProjectRepository implements ProjectRepositoryPort {
+class InMemoryProjectRepository implements ProjectSnapshotStorePort {
   final Map<String, Map<String, PersistedSnapshot<ProjectAggregate>>> _data =
       {};
 
@@ -91,7 +91,7 @@ class InMemoryProjectRepository implements ProjectRepositoryPort {
       throw StaleSnapshotException(
         path: projectRelativePath(
           project.id,
-          ProjectRepositoryPort.documentFileName,
+          ProjectSnapshotStorePort.documentFileName,
         ),
         expectedRevision: expected,
         actualRevision: current,
@@ -176,14 +176,17 @@ class InMemoryProjectRepository implements ProjectRepositoryPort {
   }
 
   @override
-  String projectRelativePath(String projectId, String fileName) =>
-      path.posix.join(ProjectRepositoryPort.projectsRoot, projectId, fileName);
+  String projectRelativePath(String projectId, String fileName) => path.posix
+      .join(ProjectSnapshotStorePort.projectsRoot, projectId, fileName);
 
   @override
   String projectSnapshotPath(String workspaceRoot, String projectId) =>
       path.join(
         workspaceRoot,
-        projectRelativePath(projectId, ProjectRepositoryPort.documentFileName),
+        projectRelativePath(
+          projectId,
+          ProjectSnapshotStorePort.documentFileName,
+        ),
       );
 
   @override

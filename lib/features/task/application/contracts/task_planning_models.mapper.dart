@@ -283,3 +283,4 @@ mixin WorkspaceMetadataMappable {
         .encodeMap<WorkspaceMetadata>(this as WorkspaceMetadata);
   }
 }
+

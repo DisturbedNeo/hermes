@@ -1,17 +1,16 @@
 import 'dart:async';
 
 import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
 import 'package:hermes/core/contracts/execution_settings.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/model/application/model_completion_port.dart';
 import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/project/application/project_application/project_execution_port.dart';
-import 'package:hermes/features/project/project_repository_port.dart';
 import 'package:hermes/features/project/project_aggregate_repository_port.dart';
 import 'package:hermes/features/project/runtime/project_command_service.dart';
 import 'package:hermes/features/model/application/model_output.dart';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
+import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
 import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/project/application/project_application/project_ports.dart';
 import 'package:hermes/features/project/application/contracts/project_commands.dart';
@@ -32,11 +31,9 @@ class ProjectRuntimeApplication
     required TaskProjectPlanningPort taskProjectPlanning,
     required TaskExecutionPort taskExecution,
     required TaskRecoveryPort taskRecovery,
-    required TaskPersistencePort taskPersistence,
     required ToolRegistryPort toolService,
     required TaskMaterializerPort materializer,
-    required ProjectRepositoryPort repository,
-    required ProjectAggregateRepositoryPort aggregateRepository,
+    required ProjectAggregateReadPort aggregateRepository,
     required ProjectRuntimeDependencies dependencies,
   }) {
     final executionPort =
@@ -55,10 +52,8 @@ class ProjectRuntimeApplication
       taskProjectPlanning: taskProjectPlanning,
       taskExecution: taskExecution,
       taskRecovery: taskRecovery,
-      taskPersistence: taskPersistence,
       toolService: toolService,
       materializer: materializer,
-      repository: repository,
       aggregateRepository: aggregateRepository,
       dependencies: dependencies,
       executionPort: executionPort,
@@ -139,7 +134,7 @@ class ProjectRuntimeApplication
     required WorkspaceAttachment workspace,
     required String userPrompt,
     String? chatSessionId,
-    ModelCompletionPort? client,
+    ModelConversationPort? client,
     String baseSystemPrompt = '',
     int? maxIterations,
     ModelOutputSink? onModelOutput,

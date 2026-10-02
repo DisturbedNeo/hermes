@@ -46,14 +46,22 @@ void main() {
   });
 
   test('committed mapper outputs and package initializer exist', () {
-    // Canonical feature-domain models own their generated mappers.
+    // Persistence-facing state contracts own generated wire mappers. The
+    // aggregate DTOs themselves are explicit infrastructure codecs.
     for (final path in [
-      'lib/features/task/application/contracts/task_snapshot_models.mapper.dart',
-      'lib/features/project/application/contracts/project_snapshot_models.mapper.dart',
+      'lib/features/task/application/contracts/task_state_models.mapper.dart',
+      'lib/features/project/application/contracts/project_state_models.mapper.dart',
       'lib/features/chat/application/contracts/system_prompt.mapper.dart',
       'lib/features/model/application/model_configuration.mapper.dart',
       'lib/features/model/application/model_load_configuration.mapper.dart',
       'lib/app/mappers.init.dart',
+    ]) {
+      expect(File(path).existsSync(), isTrue, reason: '$path is missing.');
+    }
+    for (final path in [
+      'lib/features/persistence/infrastructure/dto/aggregate_snapshot_codecs.dart',
+      'lib/features/persistence/infrastructure/dto/project_snapshot_dto.dart',
+      'lib/features/persistence/infrastructure/dto/task_snapshot_dto.dart',
     ]) {
       expect(File(path).existsSync(), isTrue, reason: '$path is missing.');
     }

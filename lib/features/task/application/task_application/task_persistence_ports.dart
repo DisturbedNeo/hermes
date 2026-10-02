@@ -1,13 +1,7 @@
 import 'package:hermes/features/persistence/application/persistence_contracts.dart';
 import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/features/project/application/contracts/project_task_models.dart';
 import 'package:hermes/features/task/application/contracts/task_summary.dart';
-import 'package:hermes/features/workspace/application/workspace_ports.dart';
-
-class TaskStorageLayout {
-  static const String tasksRoot = '.agent/tasks';
-  static const String documentFileName = 'task.json';
-  static const String runsDirectoryName = 'runs';
-}
 
 /// Application-owned conversion boundary for planning-only project nodes.
 abstract interface class TaskMaterializerPort {
@@ -29,8 +23,6 @@ abstract interface class TaskMaterializerPort {
 
 /// Read-only task persistence capabilities.
 abstract interface class TaskReadPort {
-  PersistencePort get coordinator;
-
   Future<PersistedSnapshot<Task>?> loadTaskSnapshot(
     String workspaceRoot,
     String taskId, {
@@ -94,8 +86,6 @@ abstract interface class TaskWritePort {
     required int expectedRevision,
     PersistedRevision? currentRevision,
   });
-
-  String taskRelativePath(String taskId, String fileName);
 
   Future<bool> deleteTaskUnlocked(String workspaceRoot, String taskId);
 

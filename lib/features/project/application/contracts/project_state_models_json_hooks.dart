@@ -1,8 +1,8 @@
-part of 'project_snapshot_models.dart';
+part of 'project_state_models.dart';
 
 /// Project documents use the single schema supported by the current baseline.
-class ProjectAggregateJsonHook extends JsonModelHook {
-  const ProjectAggregateJsonHook()
+class ProjectSnapshotAggregateJsonHook extends JsonModelHook {
+  const ProjectSnapshotAggregateJsonHook()
     : super(removeKeys: const {'tasks', 'persistenceRevision'});
 
   @override
@@ -10,7 +10,7 @@ class ProjectAggregateJsonHook extends JsonModelHook {
     final normalized = super.beforeDecode(value);
     if (normalized is! Map) return normalized;
     final json = Map<String, dynamic>.from(normalized);
-    // Legacy embedded tasks are normalized by ProjectAggregateRepository at
+    // Legacy embedded tasks are normalized by ProjectSnapshotAggregateRepository at
     // the load boundary. The mapper must still tolerate the old field while
     // direct project decoding is used by migration and diagnostics.
     return json;

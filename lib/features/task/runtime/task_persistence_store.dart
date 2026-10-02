@@ -15,8 +15,6 @@ class TaskPersistenceStore {
 
   final TaskPersistencePort _persistence;
 
-  TaskPersistencePort get persistence => _persistence;
-
   Future<PersistedSnapshot<Task>> save(
     String workspaceRoot,
     Task task, {
@@ -40,6 +38,26 @@ class TaskPersistenceStore {
     projectId: projectId,
     includeHistory: includeHistory,
   );
+
+  Future<PersistedSnapshot<Task>?> loadSnapshot(
+    String workspaceRoot,
+    String taskId, {
+    String? chatSessionId,
+    String? projectId,
+    bool includeHistory = true,
+  }) => _persistence.loadTaskSnapshot(
+    workspaceRoot,
+    taskId,
+    chatSessionId: chatSessionId,
+    projectId: projectId,
+    includeHistory: includeHistory,
+  );
+
+  Future<List<TaskSummary>> listTasks(
+    String workspaceRoot, {
+    String? chatSessionId,
+    String? projectId,
+  }) => list(workspaceRoot, chatSessionId: chatSessionId, projectId: projectId);
 
   Future<PersistedSnapshot<Task>?> loadLatest(
     String workspaceRoot, {
@@ -79,4 +97,11 @@ class TaskPersistenceStore {
 
   Future<bool> delete(String workspaceRoot, Task task) =>
       _persistence.deleteTask(workspaceRoot, task.id);
+
+  Future<void> saveLog(
+    String workspaceRoot,
+    String taskId,
+    String name,
+    String content,
+  ) => _persistence.saveLog(workspaceRoot, taskId, name, content);
 }

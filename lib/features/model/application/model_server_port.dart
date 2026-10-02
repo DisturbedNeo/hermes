@@ -3,7 +3,7 @@ import 'package:hermes/features/model/application/model_session_diagnostics_port
 import 'package:hermes/features/model/application/model_session_telemetry_port.dart';
 import 'package:hermes/core/disposable.dart';
 import 'package:hermes/features/model/application/model_configuration.dart';
-import 'package:hermes/features/model/domain/model_provider.dart';
+import 'package:hermes/features/model/application/model_capabilities.dart';
 
 /// Read-only lifecycle state for the active model session.
 class ModelSessionState {
@@ -33,15 +33,20 @@ class ModelConfigurationAvailability {
 abstract interface class ModelSessionPort
     implements ValueListenable<ModelSessionState> {}
 
-/// Application-facing lifecycle port for the local model server.
-///
-/// Chat depends on this capability rather than on process or HTTP adapters.
-abstract interface class ModelServerPort implements Disposable {
+/// Focused capability for work that needs the currently active model session.
+/// It deliberately excludes server lifecycle and configuration mutation.
+abstract interface class ActiveModelSessionPort {
   ModelSessionPort get session;
   ModelSessionDiagnosticsPort get diagnostics;
   ModelSessionTelemetryPort get telemetry;
-  ModelProvider? get completionProvider;
+  ModelConversationPort? get completionProvider;
+}
 
+/// Application-facing lifecycle port for the local model server.
+///
+/// Chat depends on this capability rather than on process or HTTP adapters.
+abstract interface class ModelServerPort
+    implements Disposable, ActiveModelSessionPort {
   Future<ModelConfigurationAvailability> validateConfiguration(
     ModelConfigurationSnapshot snapshot,
   );

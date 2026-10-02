@@ -7,14 +7,15 @@ import 'package:hermes/features/workspace/application/workspace_ports.dart';
 import 'package:hermes/features/persistence/application/schema_migrations.dart';
 import 'package:hermes/features/persistence/infrastructure/dto/project_persistence_adapter.dart';
 import 'package:hermes/features/persistence/infrastructure/dto/project_snapshot_dto.dart';
-import 'package:hermes/features/project/project_repository_port.dart';
+import 'package:hermes/features/persistence/application/project_snapshot_store_port.dart';
 import 'package:path/path.dart' as path;
 
 /// Repository responsible for all project data access, JSON mapping,
 /// and file system interactions.
-class ProjectRepository implements ProjectRepositoryPort {
-  static const String projectsRoot = ProjectRepositoryPort.projectsRoot;
-  static const String documentFileName = ProjectRepositoryPort.documentFileName;
+class ProjectRepository implements ProjectSnapshotStorePort {
+  static const String projectsRoot = ProjectSnapshotStorePort.projectsRoot;
+  static const String documentFileName =
+      ProjectSnapshotStorePort.documentFileName;
 
   ProjectRepository({required PersistencePort coordinator})
     : _coordinator = coordinator;
