@@ -1,5 +1,4 @@
-import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/project/application/project_application/project_ports.dart';
+import 'package:hermes/features/project/application/project_application/project_workflow_port.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 
 sealed class ChatProjectCommand {
@@ -44,52 +43,52 @@ class RequestProjectReplanCommand extends ChatProjectCommand {
 /// ports. Chat state updates remain in the session orchestrator.
 class ChatProjectCommandCoordinator {
   const ChatProjectCommandCoordinator({
-    required ProjectPlanningPort planning,
-    required ProjectCommandPort commands,
-    required ProjectRecoveryCommandsPort recovery,
+    required ProjectWorkflowPort planning,
+    required ProjectWorkflowPort commands,
+    required ProjectWorkflowPort recovery,
   }) : _planning = planning,
        _commands = commands,
        _recovery = recovery;
 
-  final ProjectPlanningPort _planning;
-  final ProjectCommandPort _commands;
-  final ProjectRecoveryCommandsPort _recovery;
+  final ProjectWorkflowPort _planning;
+  final ProjectWorkflowPort _commands;
+  final ProjectWorkflowPort _recovery;
 
-  Future<ProjectAggregate> execute({
+  Future<ProjectWorkflowResult> execute({
     required ChatProjectCommand command,
     required WorkspaceAttachment workspace,
-    required ProjectAggregate snapshot,
+    required String projectId,
   }) => switch (command) {
     AnswerProjectQuestionCommand(:final answer) => _commands.answerOpenQuestion(
       workspace: workspace,
-      snapshot: snapshot,
+      projectId: projectId,
       answer: answer,
     ),
     StopProjectCommand() => _commands.stopProject(
       workspace: workspace,
-      snapshot: snapshot,
+      projectId: projectId,
     ),
     PauseProjectCommand() => _commands.pauseProject(
       workspace: workspace,
-      snapshot: snapshot,
+      projectId: projectId,
     ),
     RetryProjectRecoveryCommand(:final incidentId) =>
       _recovery.retryRecoveryIncident(
         workspace: workspace,
-        snapshot: snapshot,
+        projectId: projectId,
         incidentId: incidentId,
       ),
     ApproveProjectPlanCommand() => _commands.approvePlanRevision(
       workspace: workspace,
-      snapshot: snapshot,
+      projectId: projectId,
     ),
     RejectProjectPlanCommand() => _commands.rejectPlanRevision(
       workspace: workspace,
-      snapshot: snapshot,
+      projectId: projectId,
     ),
     RequestProjectReplanCommand(:final reason) => _planning.requestScopeChange(
       workspace: workspace,
-      snapshot: snapshot,
+      projectId: projectId,
       context: reason.trim().isEmpty
           ? 'User explicitly requested a roadmap revision.'
           : reason,

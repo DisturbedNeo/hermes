@@ -4,13 +4,12 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:hermes/features/chat/presentation/responsive.dart';
-import 'package:hermes/features/chat/application/chat_library_service.dart';
-import 'package:hermes/features/chat/application/chat_controller.dart';
-import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
+import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
+import 'package:hermes/features/chat/presentation/chat_controller_port.dart';
+import 'package:hermes/features/chat/presentation/chat_workspace_port.dart';
 import 'package:hermes/features/chat/presentation/keyboard_shortcuts.dart';
 import 'package:hermes/features/settings/application/preferences_port.dart';
 import 'package:hermes/features/model/application/model_catalog.dart';
-import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
 import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/workspace/application/workspace_ports.dart';
 import 'package:hermes/features/chat/presentation/overlays/chat_list.dart';
@@ -36,8 +35,8 @@ class Chat extends StatefulWidget {
   });
 
   final ChatWorkspaceController tabs;
-  final ChatLibraryService chatLibrary;
-  final SystemPromptLibraryService systemPromptLibrary;
+  final ChatLibraryPresentationPort chatLibrary;
+  final SystemPromptLibraryPresentationPort systemPromptLibrary;
   final WorkspacePresentationPort workspaceService;
   final ChatPresentationPreferencesPort preferencesService;
   final ModelCatalogPort modelCatalog;
@@ -180,7 +179,7 @@ class _ChatState extends State<Chat> {
       IconButton(
         tooltip: 'Workspace',
         icon: AnimatedBuilder(
-          animation: _tabs,
+          animation: _tabs as Listenable,
           builder: (_, _) => Icon(_workspaceIcon()),
         ),
         onPressed: () => toggleWorkspace(),
@@ -245,7 +244,7 @@ class _ChatState extends State<Chat> {
   }
 
   IconData _workspaceIcon() {
-    final workspace = _tabs.activeChat?.workspace;
+    final workspace = _tabs.presentationActiveChat?.workspace;
     return workspace == null
         ? Icons.folder_open_outlined
         : workspace.missing
@@ -295,9 +294,9 @@ class _ChatState extends State<Chat> {
 
   Widget _buildBody(BuildContext context) {
     return AnimatedBuilder(
-      animation: _tabs,
+      animation: _tabs as Listenable,
       builder: (context, _) {
-        final activeChat = _tabs.activeChat;
+        final activeChat = _tabs.presentationActiveChat;
         return LayoutBuilder(
           builder: (context, constraints) {
             final tiny =
@@ -309,7 +308,7 @@ class _ChatState extends State<Chat> {
             return Column(
               children: [
                 _ChatTabStrip(
-                  tabs: _tabs.tabs.cast<ChatController>().toList(),
+                  tabs: _tabs.presentationTabs,
                   activeTabId: _tabs.activeTabId,
                   onSelect: (tab) => unawaited(_tabs.selectTab(tab.tabId)),
                   onClose: (tab) => unawaited(_closeTab(tab)),
@@ -324,7 +323,7 @@ class _ChatState extends State<Chat> {
                             ? const SizedBox.shrink()
                             : ChatView(
                                 key: ValueKey('chat_${activeChat.tabId}'),
-                                chat: activeChat as ChatController,
+                                chat: activeChat,
                                 preferencesService: widget.preferencesService,
                                 toolService: widget.toolService,
                                 onOpenWorkspace: _selectWorkspaceForActiveChat,
@@ -391,7 +390,7 @@ class _ChatState extends State<Chat> {
                         open: isWorkspaceOpen,
                         width: 420,
                         child: WorkspacePanel(
-                          chat: activeChat as ChatController?,
+                          chat: activeChat,
                           workspaceService: widget.workspaceService,
                           onSelectWorkspace: _selectWorkspaceForActiveChat,
                         ),
@@ -420,7 +419,7 @@ class _ChatState extends State<Chat> {
 
   Future<void> _openSavedChatInCurrentTab(String chatId) async {
     if (!_tabs.isSavedChatOpen(chatId) &&
-        (_tabs.activeChat?.isUnsavedNonEmpty ?? false)) {
+        (_tabs.presentationActiveChat?.isUnsavedNonEmpty ?? false)) {
       final choice = await showDialog<_UnsavedTabAction>(
         context: context,
         builder: (_) => const _ReplaceUnsavedTabDialog(),
@@ -429,7 +428,7 @@ class _ChatState extends State<Chat> {
 
       if (choice == _UnsavedTabAction.save) {
         try {
-          await _tabs.activeChat?.saveCurrentChat();
+          await _tabs.presentationActiveChat?.saveCurrentChat();
         } catch (e) {
           if (!mounted) return;
           ScaffoldMessenger.of(
@@ -455,7 +454,7 @@ class _ChatState extends State<Chat> {
   }
 
   Future<void> _selectWorkspaceForActiveChat() async {
-    final activeChat = _tabs.activeChat;
+    final activeChat = _tabs.presentationActiveChat;
     if (activeChat == null || activeChat.chatStream.isStreaming) return;
 
     final directory = await getDirectoryPath(
@@ -494,9 +493,9 @@ class _ChatState extends State<Chat> {
   }
 
   void _closeActiveTab() {
-    final activeChat = _tabs.activeChat;
+    final activeChat = _tabs.presentationActiveChat;
     if (activeChat == null) return;
-    unawaited(_closeTab(activeChat as ChatController));
+    unawaited(_closeTab(activeChat));
   }
 
   Future<void> _closeTab(ChatController tab) async {
@@ -598,7 +597,11 @@ class _ChatTab extends StatelessWidget {
         : scheme.outlineVariant.withValues(alpha: 0.65);
 
     return AnimatedBuilder(
-      animation: Listenable.merge([tab, tab.messageStore, tab.chatStream]),
+      animation: Listenable.merge([
+        tab as Listenable,
+        tab.messageStore as Listenable,
+        tab.chatStream as Listenable,
+      ]),
       builder: (context, _) {
         return Material(
           color: background,

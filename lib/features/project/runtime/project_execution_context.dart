@@ -1,12 +1,142 @@
 part of 'project_execution_state_machine.dart';
 
+/// Execution-only capability surface for project execution use cases.
+abstract interface class ProjectExecutionCapabilities {
+  TaskPlanningPort get taskPlanning;
+  TaskProjectPlanningPort get taskProjectPlanning;
+  TaskExecutionPort get taskExecution;
+  TaskRecoveryPort get taskRecovery;
+  ToolRegistryPort get toolService;
+  TaskMaterializerPort get materializer;
+  ProjectAggregateReadPort get aggregateRepository;
+  ProjectPersistenceCoordinator get persistenceCoordinator;
+  ProjectPlanner get planner;
+  ProjectCompletionEvaluator get completionEvaluator;
+  ProjectCompletionService get completionService;
+  ProjectProgressMonitor get progressMonitor;
+  ProjectCriterionEvaluator get criterionEvaluator;
+  ProjectPlanRevisionCoordinator get planRevisionCoordinator;
+  ProjectDecisionEngine get decisionEngine;
+  QuestionPolicyService get questionPolicy;
+  ProjectRecoveryHandler get recoveryHandler;
+  ProjectEvaluationCoordinator Function() get evaluationCoordinator;
+  ProjectPlanningHandler get planningHandler;
+  ProjectControlStateService get controlStateService;
+  ProjectMemoryService get memoryService;
+  ProjectRecoveryPolicy get recoveryPolicy;
+  ProjectScheduler get scheduler;
+  ProjectLifecycleService get lifecycleService;
+}
+
+/// Planning-only capability surface for project planning use cases.
+abstract interface class ProjectPlanningCapabilities {
+  ProjectControlStateService get controlStateService;
+  ProjectInitialPlanResult Function(String originalGoal)
+  get fallbackInitialPlan;
+  List<ProjectPlanValidationIssue> Function({
+    required ProjectInitialPlanResult initialPlan,
+    required WorkspaceDiscoveryProfile workspaceProfile,
+  })
+  get validateInitialPlan;
+  bool Function(WorkspaceRequiredContextIssue issue)
+  get blocksInitialPlanningForContextIssue;
+  ProjectFilteredQuestions Function(
+    List<PendingProjectQuestion> questions, {
+    required QuestionAutonomy autonomy,
+  })
+  get filterProjectQuestions;
+  List<ProjectTaskNode> Function(
+    List<ProjectTaskNode> tasks,
+    List<String> criterionIds,
+  )
+  get normaliseInitialBacklog;
+  List<ProjectMilestone> Function({
+    required List<ProjectMilestone> milestones,
+    required String refinedGoal,
+    required List<ProjectCriterion>? criteria,
+    required DateTime now,
+  })
+  get initialMilestones;
+  List<ProjectMemoryEntry> Function({
+    required List<ProjectMemoryEntry> memory,
+    required List<String> policyAssumptions,
+    required DateTime now,
+  })
+  get initialMemory;
+  String Function(String prompt) get titleFromPrompt;
+  String Function(String prompt) get newProjectId;
+  int Function(int? value, {required int fallback}) get normaliseOptionalLimit;
+  String Function(List<ProjectPlanValidationIssue> issues)
+  get initialPlanningBlockerMessage;
+  ProjectAggregate Function({
+    required ProjectAggregate snapshot,
+    required ProjectStatus to,
+    required ProjectLifecycleTrigger trigger,
+    required String reason,
+    ProjectBlocker? blocker,
+    required DateTime now,
+  })
+  get transitionProject;
+  Future<ProjectAggregate> Function(
+    String workspaceRoot,
+    ProjectAggregate project, {
+    ProjectPersistenceContext? persistenceContext,
+    ProjectPersistenceCheckpoint checkpoint,
+  })
+  get persistProject;
+  ProjectPlanningHandler get planningHandler;
+}
+
+/// Command/recovery capability surface for project user commands.
+abstract interface class ProjectCommandCapabilities {
+  ProjectTaskNode? Function(ProjectAggregate project) get activeProjectTask;
+  List<ProjectPlanRevisionTrigger> Function(
+    List<ProjectPlanRevisionTrigger> current,
+    ProjectPlanRevisionTrigger trigger,
+  )
+  get appendTrigger;
+  List<String> Function(List<String> current, String value) get appendUnique;
+  ProjectDecisionRecord Function(
+    ProjectDecisionType type,
+    String summary,
+    String rationale, {
+    ProjectTaskNode? task,
+  })
+  get decision;
+  ProjectLifecycleService get lifecycleService;
+  ProjectMemoryService get memoryService;
+  Future<ProjectAggregate> Function(
+    String workspaceRoot,
+    ProjectAggregate project, {
+    ProjectPersistenceContext? persistenceContext,
+    ProjectPersistenceCheckpoint checkpoint,
+  })
+  get persistProject;
+  ProjectPlanningHandler get planningHandler;
+  ProjectRecoveryPolicy get recoveryPolicy;
+  ProjectScheduler get scheduler;
+  ProjectAggregate Function({
+    required ProjectAggregate snapshot,
+    required ProjectStatus to,
+    required ProjectLifecycleTrigger trigger,
+    required String reason,
+    ProjectBlocker? blocker,
+    required DateTime now,
+  })
+  get transitionProject;
+}
+
 /// The application context exposed to project use cases.
 ///
 /// This is deliberately a capability bundle rather than a reference to
 /// [ProjectExecutionStateMachine]. The stable runtime facade assembles this
 /// context at the composition boundary; use cases cannot reach back into the
 /// facade or its unrelated state.
-class ProjectUseCaseContext {
+class ProjectUseCaseContext
+    implements
+        ProjectExecutionCapabilities,
+        ProjectPlanningCapabilities,
+        ProjectCommandCapabilities {
   const ProjectUseCaseContext({
     required this.taskPlanning,
     required this.taskProjectPlanning,

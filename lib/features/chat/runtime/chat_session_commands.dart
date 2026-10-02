@@ -2,7 +2,7 @@ part of 'chat_session_orchestrator.dart';
 
 extension ChatSessionCommands on ChatWorkUseCase {
   Future<void> _refinePromptFromCommand(ChatSlashCommand command) async {
-    final client = serverManager.completionProvider;
+    final client = activeModelSession.completionProvider;
     if (client == null) return;
 
     final prompt = command.argument.trim();
@@ -204,7 +204,7 @@ extension ChatSessionCommands on ChatWorkUseCase {
     required bool runAfterCreation,
   }) async {
     final currentWorkspace = workspace;
-    final client = serverManager.completionProvider;
+    final client = activeModelSession.completionProvider;
     if (client == null) return;
     final settings = await _refreshTaskSystemSettings();
     if (!settings.enabled) {
@@ -251,12 +251,10 @@ extension ChatSessionCommands on ChatWorkUseCase {
           ),
         ))?.project;
     if (existingProject != null && !existingProject.isTerminal) {
-      dispatchActiveProject(
-        await _projectPlanning.addUserContext(
-          workspace: currentWorkspace,
-          snapshot: existingProject,
-          text: prompt,
-        ),
+      await _projectPlanning.addUserContext(
+        workspace: currentWorkspace,
+        projectId: existingProject.id,
+        text: prompt,
       );
       dispatchActiveTask(null);
       await reloadTasks();
@@ -284,7 +282,7 @@ extension ChatSessionCommands on ChatWorkUseCase {
     emitChange();
 
     try {
-      final project = await _projectPlanning.createProject(
+      final result = await _projectPlanning.createProject(
         workspace: currentWorkspace,
         userPrompt: prompt,
         chatSessionId: scopeId,
@@ -295,6 +293,16 @@ extension ChatSessionCommands on ChatWorkUseCase {
         cancellationToken: token,
         questionAutonomy: settings.questionAutonomy,
       );
+      final project = await _projectQueries.loadProject(
+        currentWorkspace,
+        result.project.id,
+        chatSessionId: scopeId,
+      );
+      if (project == null) {
+        throw StateError(
+          'Created project ${result.project.id} could not be loaded.',
+        );
+      }
       dispatchActiveProject(project);
       dispatchActiveTask(null);
       await reloadTasks();
@@ -303,7 +311,6 @@ extension ChatSessionCommands on ChatWorkUseCase {
       );
 
       if (runAfterCreation) {
-        dispatchActiveProject(project);
         await _runProjectInternal(keepBusy: true);
       }
     } on OperationCancelledException {
@@ -325,7 +332,7 @@ extension ChatSessionCommands on ChatWorkUseCase {
     int? maxNewTasks,
   }) async {
     final currentWorkspace = workspace;
-    final client = serverManager.completionProvider;
+    final client = activeModelSession.completionProvider;
     final snapshot = activeProject;
     if (currentWorkspace == null ||
         currentWorkspace.missing ||
@@ -351,10 +358,10 @@ extension ChatSessionCommands on ChatWorkUseCase {
       final compactionSettings = await _preferencesService
           .getCompactionSettings();
       final result = await _projectExecution.executeUntilStop(
-        ProjectExecutionRequest(
+        ProjectWorkflowExecution(
           client: client,
           workspace: currentWorkspace,
-          snapshot: snapshot,
+          projectId: snapshot.id,
           baseSystemPrompt: _buildProjectSystemPrompt(snapshot),
           maxNewTasks: maxNewTasks ?? settings.maxProjectTasksPerRun,
           maxIterations: settings.maxProjectIterations,
@@ -369,15 +376,25 @@ extension ChatSessionCommands on ChatWorkUseCase {
           },
           onModelOutput: _handleTaskModelOutput,
           onTaskUpdated: (task) {
-            dispatchActiveTask(task);
-            emitChange();
+            if (task == null) return;
+            unawaited(
+              _taskQueries
+                  .loadTask(
+                    currentWorkspace,
+                    task.id,
+                    chatSessionId: task.chatSessionId,
+                    projectId: task.projectId,
+                  )
+                  .then((value) {
+                    if (value != null) dispatchActiveTask(value);
+                    emitChange();
+                  }),
+            );
           },
           cancellationToken: token,
         ),
         boundedRun: maxNewTasks != null,
       );
-      dispatchActiveProject(result.project);
-      dispatchActiveTask(result.activeTask);
       dispatchActiveProjectPersistenceDiagnostics(
         result.persistenceDiagnostics,
       );
@@ -407,7 +424,7 @@ extension ChatSessionCommands on ChatWorkUseCase {
 
   Future<void> _runNextTaskStepInternal({bool keepBusy = false}) async {
     final currentWorkspace = workspace;
-    final client = serverManager.completionProvider;
+    final client = activeModelSession.completionProvider;
     final snapshot = activeTask;
     if (currentWorkspace == null ||
         currentWorkspace.missing ||
@@ -439,25 +456,32 @@ extension ChatSessionCommands on ChatWorkUseCase {
     try {
       final compactionSettings = await _preferencesService
           .getCompactionSettings();
-      final updated = await _taskExecution.runNextStep(
-        client: client,
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-        baseSystemPrompt: _buildTaskSystemPrompt(snapshot),
-        requirePhaseApproval: taskSystemSettings.requireApprovalBeforeFileEdits,
-        questionAutonomy: taskSystemSettings.questionAutonomy,
-        compactionSettings: compactionSettings,
-        contextLimitTokens: _diagnosticsContextLimit,
-        onCompactionStatus: (status) {
-          dispatchTaskStatusMessage(status);
-          emitChange();
-        },
-        onModelOutput: _handleTaskModelOutput,
-        cancellationToken: token,
+      await _taskExecution.runNextStep(
+        TaskWorkflowExecution(
+          client: client,
+          workspace: currentWorkspace,
+          taskId: snapshot.id,
+          baseSystemPrompt: _buildTaskSystemPrompt(snapshot),
+          requirePhaseApproval:
+              taskSystemSettings.requireApprovalBeforeFileEdits,
+          questionAutonomy: taskSystemSettings.questionAutonomy,
+          compactionSettings: compactionSettings,
+          contextLimitTokens: _diagnosticsContextLimit,
+          onCompactionStatus: (status) {
+            dispatchTaskStatusMessage(status);
+            emitChange();
+          },
+          onModelOutput: _handleTaskModelOutput,
+          cancellationToken: token,
+        ),
       );
-      dispatchActiveTask(updated);
       await reloadTasks();
-      _insertTaskAssistantMessage(_presentationMessages.stepFinished(updated));
+      final updated = activeTask;
+      if (updated != null) {
+        _insertTaskAssistantMessage(
+          _presentationMessages.stepFinished(updated),
+        );
+      }
     } on OperationCancelledException {
       _insertTaskAssistantMessage('Task step cancelled.');
     } catch (e) {
@@ -481,7 +505,7 @@ extension ChatSessionCommands on ChatWorkUseCase {
     required bool runFirstPhase,
   }) async {
     final currentWorkspace = workspace;
-    final client = serverManager.completionProvider;
+    final client = activeModelSession.completionProvider;
     if (client == null) return;
     final settings = await _refreshTaskSystemSettings();
     if (!settings.enabled) {
@@ -530,7 +554,7 @@ extension ChatSessionCommands on ChatWorkUseCase {
 
     try {
       final scopeId = await _ensureTaskScopeId();
-      final snapshot = await _taskPlanning.createTask(
+      final result = await _taskPlanning.createTask(
         client: client,
         workspace: currentWorkspace,
         userPrompt: prompt,
@@ -540,6 +564,15 @@ extension ChatSessionCommands on ChatWorkUseCase {
         onModelOutput: _handleTaskModelOutput,
         cancellationToken: token,
       );
+      final snapshot = await _taskQueries.loadTask(
+        currentWorkspace,
+        result.task.id,
+        chatSessionId: result.task.chatSessionId,
+        projectId: result.task.projectId,
+      );
+      if (snapshot == null) {
+        throw StateError('Created task ${result.task.id} could not be loaded.');
+      }
       dispatchActiveTask(snapshot);
       await reloadTasks();
       _insertTaskAssistantMessage(_presentationMessages.taskCreated(snapshot));

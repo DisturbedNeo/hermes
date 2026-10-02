@@ -1,6 +1,4 @@
 import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
-import 'package:hermes/features/project/domain/project_scheduler.dart';
-import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
 import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
 import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
 
@@ -42,8 +40,6 @@ export 'package:hermes/features/task/application/contracts/task_snapshot_models.
         TaskStatus,
         TaskStep,
         TaskStepStatus;
-export 'package:hermes/features/project/domain/project_scheduler.dart'
-    show ProjectScheduleResult;
 
 extension ChatProjectStatusWire on ProjectStatus {
   String get wire => switch (this) {
@@ -91,279 +87,186 @@ extension ChatTaskRunStatusWire on TaskRunStatus {
   String get wire => this == TaskRunStatus.needsReplan ? 'needs_replan' : name;
 }
 
+/// Scheduler output needed by the project panel without exposing an aggregate.
+class ProjectScheduleReadModel {
+  const ProjectScheduleReadModel({
+    required this.readiness,
+    required this.readinessReasons,
+  });
+
+  final Map<String, TaskReadiness> readiness;
+  final Map<String, List<String>> readinessReasons;
+
+  TaskReadiness readinessFor(String taskId) =>
+      readiness[taskId] ?? TaskReadiness.notEligible;
+
+  List<String> reasonsFor(String taskId) =>
+      readinessReasons[taskId] ?? const [];
+}
+
+/// Bounded workspace context prepared for display.
+class ProjectWorkspaceContextReadModel {
+  const ProjectWorkspaceContextReadModel({
+    required this.orientation,
+    required this.nodes,
+    required this.edges,
+    required this.maxCharacters,
+    required this.usedCharacters,
+    required this.truncated,
+  });
+
+  final String orientation;
+  final List<ProjectWorkspaceNode> nodes;
+  final List<ProjectWorkspaceEdge> edges;
+  final int maxCharacters;
+  final int usedCharacters;
+  final bool truncated;
+}
+
 /// Immutable task projection owned by the chat presentation boundary.
-///
-/// The aggregate is retained only inside the runtime while commands execute;
-/// callers of this projection receive the fields needed to render the task
-/// panel and never receive the aggregate itself.
 class TaskPanelReadModel {
-  const TaskPanelReadModel._(this._snapshot);
+  const TaskPanelReadModel({
+    required this.id,
+    required this.title,
+    required this.objective,
+    required this.status,
+    required this.steps,
+    required this.runs,
+    required this.pendingApproval,
+    required this.pendingQuestion,
+    required this.planningMetrics,
+    required this.memorySummary,
+    required this.doneCriteria,
+    required this.outOfScope,
+    required this.currentStepId,
+    required this.projectId,
+    required this.chatSessionId,
+    required this.failure,
+  });
 
-  factory TaskPanelReadModel.fromAggregate(Task? source) => source == null
-      ? throw ArgumentError.notNull('source')
-      : TaskPanelReadModel._(_snapshotTask(source));
+  final String id;
+  final String title;
+  final String objective;
+  final TaskStatus status;
+  final List<TaskStep> steps;
+  final List<TaskRun> runs;
+  final PendingTaskApproval? pendingApproval;
+  final PendingTaskQuestion? pendingQuestion;
+  final PlanningMetrics planningMetrics;
+  final String memorySummary;
+  final List<String> doneCriteria;
+  final List<String> outOfScope;
+  final String? currentStepId;
+  final String? projectId;
+  final String? chatSessionId;
+  final TaskFailure? failure;
 
-  /// A detached aggregate snapshot. Runtime updates replace the aggregate;
-  /// they cannot mutate an already-published panel value.
-  final Task _snapshot;
+  String? get failureKey => failure?.failureKey;
+  int get unresolvedErrorCount => failure?.unresolvedErrorCount ?? 0;
 
-  String get id => _snapshot.id;
-  String get title => _snapshot.title;
-  String get objective => _snapshot.objective;
-  TaskStatus get status => _snapshot.status;
-  List<TaskStep> get steps => _snapshot.steps;
-  List<TaskRun> get runs => _snapshot.runs;
-  PendingTaskApproval? get pendingApproval => _snapshot.pendingApproval;
-  PendingTaskQuestion? get pendingQuestion => _snapshot.pendingQuestion;
-  PlanningMetrics get planningMetrics => _snapshot.planningMetrics;
-  String get memorySummary => _snapshot.memorySummary;
-  List<String> get doneCriteria => _snapshot.doneCriteria;
-  List<String> get outOfScope => _snapshot.outOfScope;
-  String? get currentStepId => _snapshot.currentStepId;
-  String? get projectId => _snapshot.projectId;
-  String? get chatSessionId => _snapshot.chatSessionId;
-  TaskFailure? get failure => _snapshot.failure;
-  String? get failureKey => _snapshot.failure?.failureKey;
-  int get unresolvedErrorCount => _snapshot.failure?.unresolvedErrorCount ?? 0;
-  bool get isTerminal => _snapshot.isTerminal;
-  TaskStep? get nextRunnableStep => _snapshot.nextRunnableStep;
-  TaskStep? stepById(String id) => _snapshot.stepById(id);
+  bool get isTerminal =>
+      status == TaskStatus.completed ||
+      status == TaskStatus.rejected ||
+      status == TaskStatus.split ||
+      status == TaskStatus.cancelled ||
+      status == TaskStatus.failed;
+
+  TaskStep? get nextRunnableStep => steps
+      .where(
+        (step) =>
+            step.status == TaskStepStatus.pending ||
+            step.status == TaskStepStatus.approved ||
+            step.status == TaskStepStatus.blocked ||
+            step.status == TaskStepStatus.failed,
+      )
+      .firstOrNull;
+
+  TaskStep? stepById(String id) {
+    for (final step in steps) {
+      if (step.id == id) return step;
+    }
+    return null;
+  }
 }
 
 /// Immutable project projection owned by the chat presentation boundary.
 class ProjectPanelReadModel {
-  const ProjectPanelReadModel._(this._snapshot);
+  const ProjectPanelReadModel({
+    required this.id,
+    required this.title,
+    required this.originalGoal,
+    required this.refinedGoal,
+    required this.status,
+    required this.activeTaskId,
+    required this.chatSessionId,
+    required this.iterationCount,
+    required this.maxIterations,
+    required this.completionSummary,
+    required this.constraints,
+    required this.tasks,
+    required this.artifacts,
+    required this.criteria,
+    required this.recoveryIncidents,
+    required this.evidence,
+    required this.milestones,
+    required this.memory,
+    required this.decisions,
+    required this.planHistory,
+    required this.workspaceGraph,
+    required this.pendingPlanApproval,
+    required this.blocker,
+    required this.openQuestions,
+    required this.diagnostics,
+    required this.schedule,
+    required this.orderedReadyTasks,
+    required this.workspaceContext,
+  });
 
-  factory ProjectPanelReadModel.fromAggregate(ProjectAggregate? source) =>
-      source == null
-      ? throw ArgumentError.notNull('source')
-      : ProjectPanelReadModel._(_snapshotProject(source));
+  final String id;
+  final String title;
+  final String originalGoal;
+  final String refinedGoal;
+  final ProjectStatus status;
+  final String? activeTaskId;
+  final String? chatSessionId;
+  final int iterationCount;
+  final int maxIterations;
+  final String completionSummary;
+  final List<String> constraints;
+  final List<ProjectTaskNode> tasks;
+  final List<TaskArtifact> artifacts;
+  final List<ProjectCriterion> criteria;
+  final List<ProjectRecoveryIncident> recoveryIncidents;
+  final List<ProjectEvidence> evidence;
+  final List<ProjectMilestone> milestones;
+  final List<ProjectMemoryEntry> memory;
+  final List<ProjectDecisionRecord> decisions;
+  final List<ProjectPlanRevision> planHistory;
+  final ProjectWorkspaceGraph workspaceGraph;
+  final PendingProjectPlanApproval? pendingPlanApproval;
+  final ProjectBlocker? blocker;
+  final List<PendingProjectQuestion> openQuestions;
+  final ProjectDiagnostics diagnostics;
+  final ProjectScheduleReadModel schedule;
+  final List<ProjectTaskNode> orderedReadyTasks;
+  final ProjectWorkspaceContextReadModel workspaceContext;
 
-  /// A detached aggregate snapshot retained only to calculate derived panel
-  /// values such as readiness and workspace context.
-  final ProjectAggregate _snapshot;
+  bool get isTerminal =>
+      status == ProjectStatus.completed ||
+      status == ProjectStatus.cancelled ||
+      status == ProjectStatus.failed;
 
-  String get id => _snapshot.id;
-  String get title => _snapshot.title;
-  String get originalGoal => _snapshot.originalGoal;
-  String get refinedGoal => _snapshot.refinedGoal;
-  ProjectStatus get status => _snapshot.status;
-  String? get activeTaskId => _snapshot.activeTaskId;
-  String? get chatSessionId => _snapshot.chatSessionId;
-  int get iterationCount => _snapshot.iterationCount;
-  int get maxIterations => _snapshot.maxIterations;
-  String get completionSummary => _snapshot.completionSummary;
-  List<String> get constraints => _snapshot.constraints;
-  List<ProjectTaskNode> get tasks => _snapshot.tasks;
-  List<TaskArtifact> get artifacts => _snapshot.artifacts;
-  List<ProjectCriterion> get criteria => _snapshot.criteria;
-  List<ProjectRecoveryIncident> get recoveryIncidents =>
-      _snapshot.recoveryIncidents;
-  List<ProjectEvidence> get evidence => _snapshot.evidence;
-  List<ProjectMilestone> get milestones => _snapshot.milestones;
-  List<ProjectMemoryEntry> get memory => _snapshot.memory;
-  List<ProjectDecisionRecord> get decisions => _snapshot.decisions;
-  List<ProjectPlanRevision> get planHistory => _snapshot.planHistory;
-  ProjectWorkspaceGraph get workspaceGraph => _snapshot.workspaceGraph;
-  PendingProjectPlanApproval? get pendingPlanApproval =>
-      _snapshot.pendingPlanApproval;
-  ProjectBlocker? get blocker => _snapshot.blocker;
-  List<PendingProjectQuestion> get openQuestions => _snapshot.openQuestions;
-  ProjectDiagnostics get diagnostics => _snapshot.diagnostics;
-  bool get isTerminal => _snapshot.isTerminal;
-  ProjectTaskNode? taskById(String id) => _snapshot.taskById(id);
-  String criterionStatement(String id) => _snapshot.criterionStatement(id);
-
-  ProjectScheduleResult get schedule =>
-      const ProjectScheduler().refreshReadiness(_snapshot);
-
-  List<ProjectTaskNode> get orderedReadyTasks =>
-      const ProjectScheduler().orderedReadyTasks(_snapshot);
-
-  ProjectWorkspaceContextSelection get workspaceContext =>
-      const ProjectWorkspaceContextService().selectContext(project: _snapshot);
-}
-
-Task _snapshotTask(Task source) => source.copyWith(
-  constraints: List.unmodifiable(source.constraints),
-  successCriteria: List.unmodifiable(source.successCriteria),
-  gates: List.unmodifiable(source.gates.map(_snapshotGate)),
-  steps: List.unmodifiable(source.steps.map(_snapshotStep)),
-  criterionIds: List.unmodifiable(source.criterionIds),
-  dependsOnTaskIds: List.unmodifiable(source.dependsOnTaskIds),
-  expectedEvidence: List.unmodifiable(
-    source.expectedEvidence.map(_snapshotEvidenceExpectation),
-  ),
-  readPaths: List.unmodifiable(source.readPaths),
-  writePaths: List.unmodifiable(source.writePaths),
-  doneCriteria: List.unmodifiable(source.doneCriteria),
-  outOfScope: List.unmodifiable(source.outOfScope),
-  context: List.unmodifiable(source.context),
-  expectedArtifacts: List.unmodifiable(
-    source.expectedArtifacts.map(_snapshotArtifact),
-  ),
-  runs: List.unmodifiable(source.runs.map(_snapshotRun)),
-);
-
-TaskGate _snapshotGate(TaskGate source) => TaskGate(
-  id: source.id,
-  required: source.required,
-  scope: source.scope,
-  params: _snapshotMap(source.params),
-  description: source.description,
-);
-
-TaskEvidenceExpectation _snapshotEvidenceExpectation(
-  TaskEvidenceExpectation source,
-) => TaskEvidenceExpectation(
-  id: source.id,
-  type: source.type,
-  criterionIds: List.unmodifiable(source.criterionIds),
-  description: source.description,
-  required: source.required,
-  sourceRef: source.sourceRef,
-  details: _snapshotMap(source.details),
-);
-
-TaskArtifact _snapshotArtifact(TaskArtifact source) => source.copyWith();
-
-TaskStep _snapshotStep(TaskStep source) => source.copyWith(
-  instructions: List.unmodifiable(source.instructions),
-  artifacts: List.unmodifiable(source.artifacts.map(_snapshotArtifact)),
-  gates: List.unmodifiable(source.gates.map(_snapshotGate)),
-);
-
-TaskRun _snapshotRun(TaskRun source) => source.copyWith(
-  toolCalls: List.unmodifiable(source.toolCalls),
-  artifacts: List.unmodifiable(source.artifacts.map(_snapshotArtifact)),
-  gateResults: List.unmodifiable(source.gateResults),
-  evidenceClaims: List.unmodifiable(source.evidenceClaims),
-);
-
-ProjectAggregate _snapshotProject(ProjectAggregate source) => source.copyWith(
-  criteria: List.unmodifiable(source.criteria.map(_snapshotCriterion)),
-  constraints: List.unmodifiable(source.constraints),
-  taskIds: List.unmodifiable(source.taskIds),
-  currentBatchTaskIds: List.unmodifiable(source.currentBatchTaskIds),
-  tasks: List.unmodifiable(source.tasks.map(_snapshotProjectTask)),
-  artifacts: List.unmodifiable(source.artifacts.map(_snapshotArtifact)),
-  recoveryIncidents: List.unmodifiable(
-    source.recoveryIncidents.map(_snapshotRecoveryIncident),
-  ),
-  evidence: List.unmodifiable(source.evidence.map(_snapshotEvidence)),
-  milestones: List.unmodifiable(source.milestones.map(_snapshotMilestone)),
-  memory: List.unmodifiable(source.memory.map(_snapshotMemory)),
-  workspaceGraph: source.workspaceGraph.copyWith(
-    nodes: List.unmodifiable(
-      source.workspaceGraph.nodes.map(_snapshotWorkspaceNode),
-    ),
-    edges: List.unmodifiable(
-      source.workspaceGraph.edges.map(_snapshotWorkspaceEdge),
-    ),
-  ),
-  planHistory: List.unmodifiable(source.planHistory.map(_snapshotPlanRevision)),
-  pendingReplanTriggers: List.unmodifiable(source.pendingReplanTriggers),
-  openQuestions: List.unmodifiable(source.openQuestions),
-  decisions: List.unmodifiable(source.decisions),
-);
-
-ProjectCriterion _snapshotCriterion(ProjectCriterion source) =>
-    source.copyWith();
-
-ProjectEvidence _snapshotEvidence(ProjectEvidence source) => source.copyWith(
-  criterionIds: List.unmodifiable(source.criterionIds),
-  expectationIds: List.unmodifiable(source.expectationIds),
-  details: _snapshotMap(source.details),
-);
-
-ProjectMilestone _snapshotMilestone(ProjectMilestone source) =>
-    ProjectMilestone(
-      id: source.id,
-      title: source.title,
-      objective: source.objective,
-      criterionIds: List.unmodifiable(source.criterionIds),
-      status: source.status,
-      exitConditions: List.unmodifiable(source.exitConditions),
-      order: source.order,
-      createdAt: source.createdAt,
-      updatedAt: source.updatedAt,
-      completedAt: source.completedAt,
-    );
-
-ProjectMemoryEntry _snapshotMemory(ProjectMemoryEntry source) =>
-    source.copyWith(coveredEntryIds: List.unmodifiable(source.coveredEntryIds));
-
-ProjectRecoveryIncident _snapshotRecoveryIncident(
-  ProjectRecoveryIncident source,
-) => source.copyWith(
-  sourceTaskIds: List.unmodifiable(source.sourceTaskIds),
-  sourceTaskTitles: List.unmodifiable(source.sourceTaskTitles),
-  recoveryTaskIds: List.unmodifiable(source.recoveryTaskIds),
-);
-
-ProjectPlanRevision _snapshotPlanRevision(ProjectPlanRevision source) =>
-    ProjectPlanRevision(
-      revision: source.revision,
-      trigger: source.trigger,
-      summary: source.summary,
-      rationale: source.rationale,
-      addedTaskIds: List.unmodifiable(source.addedTaskIds),
-      updatedTaskIds: List.unmodifiable(source.updatedTaskIds),
-      removedTaskIds: List.unmodifiable(source.removedTaskIds),
-      criterionChanges: List.unmodifiable(source.criterionChanges),
-      milestoneChanges: List.unmodifiable(source.milestoneChanges),
-      validationWarnings: List.unmodifiable(source.validationWarnings),
-      createdAt: source.createdAt,
-      approvedAt: source.approvedAt,
-      approvedBy: source.approvedBy,
-    );
-
-ProjectWorkspaceNode _snapshotWorkspaceNode(ProjectWorkspaceNode source) =>
-    source.copyWith(
-      aliases: List.unmodifiable(source.aliases),
-      tags: List.unmodifiable(source.tags),
-      references: List.unmodifiable(source.references),
-    );
-
-ProjectWorkspaceEdge _snapshotWorkspaceEdge(ProjectWorkspaceEdge source) =>
-    source.copyWith();
-
-ProjectTaskNode _snapshotProjectTask(ProjectTaskNode source) => source.copyWith(
-  gates: List.unmodifiable(source.gates.map(_snapshotGate)),
-  constraints: List.unmodifiable(source.constraints),
-  successCriteria: List.unmodifiable(source.successCriteria),
-  criterionIds: List.unmodifiable(source.criterionIds),
-  dependsOnTaskIds: List.unmodifiable(source.dependsOnTaskIds),
-  expectedEvidence: List.unmodifiable(
-    source.expectedEvidence.map(_snapshotEvidenceExpectation),
-  ),
-  readPaths: List.unmodifiable(source.readPaths),
-  writePaths: List.unmodifiable(source.writePaths),
-  doneCriteria: List.unmodifiable(source.doneCriteria),
-  outOfScope: List.unmodifiable(source.outOfScope),
-  context: List.unmodifiable(source.context),
-  expectedArtifacts: List.unmodifiable(
-    source.expectedArtifacts.map(_snapshotArtifact),
-  ),
-  failureErrorCodes: List.unmodifiable(source.failureErrorCodes),
-);
-
-Map<String, dynamic> _snapshotMap(Map<String, dynamic> source) =>
-    Map.unmodifiable({
-      for (final entry in source.entries)
-        entry.key: _snapshotValue(entry.value),
-    });
-
-Object? _snapshotValue(Object? value) {
-  if (value is Map<String, dynamic>) return _snapshotMap(value);
-  if (value is Map) {
-    return Map.unmodifiable({
-      for (final entry in value.entries)
-        entry.key.toString(): _snapshotValue(entry.value),
-    });
+  ProjectTaskNode? taskById(String id) {
+    for (final task in tasks) {
+      if (task.id == id) return task;
+    }
+    return null;
   }
-  if (value is Iterable) {
-    return List.unmodifiable(value.map(_snapshotValue));
+
+  String criterionStatement(String id) {
+    for (final criterion in criteria) {
+      if (criterion.id == id) return criterion.statement;
+    }
+    return id;
   }
-  return value;
 }

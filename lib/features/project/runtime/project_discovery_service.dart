@@ -12,7 +12,7 @@ import 'package:hermes/features/workspace/application/workspace_discovery.dart';
 /// Collects bounded, read-only context for initialization and replanning.
 class ProjectDiscoveryService {
   const ProjectDiscoveryService({
-    required TaskQueryPort taskController,
+    required TaskWorkflowQueryPort taskController,
     required WorkspaceChangeDiscoveryPort changeDiscovery,
     ProjectMemoryService memoryService = const ProjectMemoryService(),
     required WorkspaceDiscoveryPort profileService,
@@ -27,7 +27,7 @@ class ProjectDiscoveryService {
   static const int _maxRootEntries = 80;
   static const int _maxRecentItems = 12;
 
-  final TaskQueryPort _taskQueries;
+  final TaskWorkflowQueryPort _taskQueries;
   final WorkspaceChangeDiscoveryPort _changeDiscovery;
   final ProjectMemoryService _memoryService;
   final WorkspaceDiscoveryPort _profileService;

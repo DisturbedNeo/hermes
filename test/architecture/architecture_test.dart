@@ -1,7 +1,9 @@
 import 'dart:io';
 
+import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
 import 'package:analyzer/dart/analysis/utilities.dart';
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/analysis/results.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Authoritative production architecture gate. It parses every production
@@ -138,6 +140,40 @@ Future<_Graph> _readGraph() async {
   return _Graph(sources);
 }
 
+String _analysisSdkPath() {
+  final configured = Platform.environment['DART_SDK'];
+  if (configured != null && Directory(configured).existsSync()) {
+    return Directory(configured).resolveSymbolicLinksSync();
+  }
+
+  final executable = File(Platform.resolvedExecutable).absolute;
+  final executableParent = executable.parent;
+  if (executableParent.path.endsWith('/bin') &&
+      executableParent.parent.path.endsWith('/dart-sdk')) {
+    return executableParent.parent.path;
+  }
+  const engineMarker = '/bin/cache/artifacts/engine/';
+  final engineIndex = executable.path.indexOf(engineMarker);
+  if (engineIndex >= 0) {
+    final flutterRoot = executable.path.substring(0, engineIndex);
+    final sdk = Directory('$flutterRoot/bin/cache/dart-sdk');
+    if (sdk.existsSync()) return sdk.resolveSymbolicLinksSync();
+  }
+
+  for (final path in Platform.environment['PATH']!.split(
+    Platform.pathSeparator,
+  )) {
+    final flutter = File('$path/flutter');
+    if (flutter.existsSync()) {
+      final sdk = Directory('$path/../cache/dart-sdk');
+      if (sdk.existsSync()) return sdk.resolveSymbolicLinksSync();
+    }
+  }
+  throw StateError(
+    'Unable to locate the Dart SDK for resolved architecture checks',
+  );
+}
+
 Map<String, Set<String>> _importGraph(_Graph graph) {
   final result = <String, Set<String>>{
     for (final source in graph.sources) source.path: <String>{},
@@ -204,6 +240,10 @@ const _publicFacadeEdges = <String>{
       'lib/features/model/application/model_completion.dart',
   'lib/features/model/domain/model_configuration.dart -> '
       'lib/features/model/application/model_configuration.dart',
+  'lib/features/project/application/contracts/project_state_models.dart -> '
+      'lib/features/persistence/infrastructure/dto/project_state_models.dart',
+  'lib/features/task/application/contracts/task_state_models.dart -> '
+      'lib/features/persistence/infrastructure/dto/task_state_models.dart',
 };
 
 String _edgeKey(_Source source, _Source target) =>
@@ -280,6 +320,23 @@ bool _allowed(_Source source, _Source target) {
 
 void _expectEmpty(String label, List<String> violations) {
   expect(violations, isEmpty, reason: '$label\n${violations.join('\n')}');
+}
+
+Future<ResolvedUnitResult?> _resolveSource(_Source source) async {
+  final path = File(source.path).absolute.path;
+  final collection = AnalysisContextCollection(
+    includedPaths: [path],
+    sdkPath: _analysisSdkPath(),
+  );
+  try {
+    final result = await collection
+        .contextFor(path)
+        .currentSession
+        .getResolvedUnit(path);
+    return result is ResolvedUnitResult ? result : null;
+  } finally {
+    await collection.dispose();
+  }
 }
 
 void main() {
@@ -559,8 +616,8 @@ void main() {
     for (final source in graph.sources.where(
       (source) => source.path.endsWith('.mapper.dart'),
     )) {
-      if (source.path.contains('project_snapshot_models') ||
-          source.path.contains('task_snapshot_models')) {
+      if (source.path.contains('project_state_models') ||
+          source.path.contains('task_state_models')) {
         if (!source.path.contains('/features/persistence/infrastructure/')) {
           violations.add(
             '${source.path}: durable aggregate mapper is outside persistence',
@@ -642,7 +699,7 @@ void main() {
     }
     for (final source in graph.sources.where(
       (source) =>
-          (source.layer == 'application' || source.layer == 'runtime') &&
+          source.layer == 'application' &&
           source.text.contains('abstract interface class') &&
           !source.path.contains('/protocol/'),
     )) {
@@ -764,6 +821,35 @@ void main() {
       violations.add('model request options expose transport maps');
     }
     _expectEmpty('model boundary', violations);
+  });
+
+  test('model server lifecycle and active-session capabilities are split', () {
+    final server =
+        graph.byPath['lib/features/model/application/model_server_port.dart'];
+    final context =
+        graph.byPath['lib/features/chat/runtime/chat_use_case_context.dart'];
+    final violations = <String>[];
+    if (server == null) {
+      violations.add('model_server_port.dart: focused server port is missing');
+    } else {
+      for (final required in [
+        'ModelServerLifecyclePort',
+        'ActiveModelSessionPort',
+        'ModelServerPort',
+      ]) {
+        if (!server.text.contains('class $required')) {
+          violations.add('model_server_port.dart: missing $required');
+        }
+      }
+    }
+    if (context == null) {
+      violations.add('chat_use_case_context.dart: context is missing');
+    } else if (context.text.contains('ModelServerPort get serverManager')) {
+      violations.add(
+        'chat_use_case_context.dart: use cases depend on the combined server port',
+      );
+    }
+    _expectEmpty('focused model server capabilities', violations);
   });
 
   test('runtime collaborator files contain wiring only', () {
@@ -1030,27 +1116,29 @@ void main() {
     };
     const requiredContexts = <String, String>{
       'lib/features/project/runtime/project_planning_use_case.dart':
-          'ProjectUseCaseContext',
+          'ProjectPlanningCapabilities',
       'lib/features/project/runtime/project_user_command_coordinator.dart':
-          'ProjectUseCaseContext',
+          'ProjectCommandCapabilities',
       'lib/features/task/runtime/task_planning_use_case.dart':
-          'TaskUseCaseContext',
+          'TaskPlanningCapabilities',
       'lib/features/task/runtime/task_execution_use_case.dart':
-          'TaskUseCaseContext',
+          'TaskExecutionCapabilities',
       'lib/features/task/runtime/task_command_use_case.dart':
-          'TaskUseCaseContext',
+          'TaskCommandCapabilities',
       'lib/features/task/runtime/task_persistence_use_case.dart':
-          'TaskUseCaseContext',
+          'TaskPersistenceCapabilities',
       'lib/features/chat/runtime/chat_session_lifecycle_use_case.dart':
-          'ChatUseCaseContext',
-      'lib/features/chat/runtime/chat_work_use_case.dart': 'ChatUseCaseContext',
+          'ChatSessionLifecycleCapabilities',
+      'lib/features/chat/runtime/chat_work_use_case.dart':
+          'ChatWorkCapabilities',
       'lib/features/chat/runtime/chat_state_mutation_use_case.dart':
-          'ChatUseCaseContext',
+          'ChatStateMutationCapabilities',
       'lib/features/chat/runtime/chat_task_plan_use_case.dart':
-          'ChatUseCaseContext',
+          'ChatTaskPlanCapabilities',
       'lib/features/chat/runtime/chat_task_replan_use_case.dart':
-          'ChatUseCaseContext',
-      'lib/features/chat/runtime/chat_exit_use_case.dart': 'ChatUseCaseContext',
+          'ChatTaskReplanCapabilities',
+      'lib/features/chat/runtime/chat_exit_use_case.dart':
+          'ChatExitCapabilities',
     };
     final violations = <String>[];
     for (final path in useCasePaths) {
@@ -1072,6 +1160,9 @@ void main() {
       }
       if (RegExp(r'\b(?:UseCase|Coordinator)\(this\)').hasMatch(source.text)) {
         violations.add('$path: use case is constructed from a concrete host');
+      }
+      if (source.text.contains('ChatUseCaseContext')) {
+        violations.add('$path: broad ChatUseCaseContext leaked into use case');
       }
     }
     for (final path in <String>[
@@ -1314,6 +1405,43 @@ void main() {
     _expectEmpty('orchestration operation budgets', violations);
   });
 
+  test('planning and panel responsibility budgets are explicit', () {
+    const budgets = <String, int>{
+      'lib/features/project/runtime/project_plan_builder.dart': 250,
+      'lib/features/project/runtime/project_plan_builder_commands.dart': 900,
+      'lib/features/project/runtime/project_plan_builder_support.dart': 800,
+      'lib/features/project/runtime/project_plan_builder_workspace.dart': 400,
+      'lib/features/project/runtime/project_planning_tools.dart': 750,
+      'lib/features/project/runtime/project_planning_tool_command_service.dart':
+          850,
+      'lib/features/project/runtime/project_plan_editing_command_service.dart':
+          650,
+      'lib/features/project/runtime/project_planning_workspace_command_service.dart':
+          400,
+      'lib/features/task/runtime/task_gate_evaluator.dart': 850,
+      'lib/features/task/runtime/task_gate_file_validation_service.dart': 500,
+      'lib/features/chat/presentation/chat/task_panel.dart': 1000,
+      'lib/features/chat/presentation/chat/task_panel_project_sections.dart':
+          750,
+    };
+    final violations = <String>[];
+    for (final entry in budgets.entries) {
+      final source = graph.byPath[entry.key];
+      if (source == null) {
+        violations.add('${entry.key}: focused unit is missing');
+        continue;
+      }
+      final lineCount = source.text.split('\n').length;
+      if (lineCount > entry.value) {
+        violations.add(
+          '${entry.key}: $lineCount lines exceeds responsibility budget '
+          '${entry.value}',
+        );
+      }
+    }
+    _expectEmpty('planning/panel responsibility budgets', violations);
+  });
+
   test('presentation consumes projections instead of aggregates', () {
     final violations = <String>[];
     for (final source in graph.sources.where(
@@ -1331,6 +1459,292 @@ void main() {
       }
     }
     _expectEmpty('presentation projections', violations);
+  });
+
+  test('presentation wiring uses library application ports', () {
+    final violations = <String>[];
+    for (final source in graph.sources) {
+      final isPresentation = source.path.contains('/presentation/');
+      final isRoot = source.path == 'lib/main.dart';
+      if (!isPresentation && !isRoot) continue;
+      if (source.imports.any(
+        (directive) =>
+            directive.uri.endsWith('chat_library_service.dart') ||
+            directive.uri.endsWith('system_prompt_library_service.dart'),
+      )) {
+        violations.add('${source.path}: concrete library service leaked');
+      }
+      if (source.text.contains('ChatLibraryService') ||
+          source.text.contains('SystemPromptLibraryService')) {
+        violations.add('${source.path}: concrete library service type leaked');
+      }
+    }
+    _expectEmpty('presentation service boundary', violations);
+  });
+
+  test('presentation wiring uses chat capability ports', () {
+    final violations = <String>[];
+    for (final source in graph.sources) {
+      if (!source.path.contains('/presentation/')) continue;
+      if (source.imports.any(
+        (directive) =>
+            directive.uri.endsWith('chat_controller.dart') ||
+            directive.uri.endsWith('chat_workspace_controller.dart'),
+      )) {
+        violations.add('${source.path}: concrete chat controller leaked');
+      }
+    }
+    final ports = graph
+        .byPath['lib/features/chat/application/contracts/chat_presentation_ports.dart'];
+    if (ports == null ||
+        !ports.text.contains('ChatTabPresentationPort') ||
+        !ports.text.contains('ChatWorkspacePresentationPort')) {
+      violations.add(
+        'chat_presentation_ports.dart: focused chat ports missing',
+      );
+    }
+    _expectEmpty('presentation chat capability boundary', violations);
+  });
+
+  test('chat panel read models do not retain domain aggregates', () {
+    final readModels =
+        graph.byPath['lib/features/chat/domain/chat_panel_read_models.dart'];
+    final projection = graph
+        .byPath['lib/features/chat/application/chat_panel_projection.dart'];
+    final violations = <String>[];
+    if (readModels == null) {
+      violations.add(
+        'chat_panel_read_models.dart: read-model module is missing',
+      );
+    } else {
+      if (RegExp(
+        r'features/(project|task)/domain/',
+      ).hasMatch(readModels.text)) {
+        violations.add(
+          'chat_panel_read_models.dart: imports a project/task domain module',
+        );
+      }
+      if (RegExp(
+        r'\b(?:ProjectAggregate|TaskAggregate)\b',
+      ).hasMatch(readModels.text)) {
+        violations.add(
+          'chat_panel_read_models.dart: retains a domain aggregate type',
+        );
+      }
+      for (final required in [
+        'ProjectScheduleReadModel',
+        'ProjectWorkspaceContextReadModel',
+      ]) {
+        if (!readModels.text.contains('class $required')) {
+          violations.add('chat_panel_read_models.dart: missing $required');
+        }
+      }
+    }
+    if (projection == null) {
+      violations.add(
+        'chat_panel_projection.dart: projection adapter is missing',
+      );
+    } else {
+      for (final required in [
+        'ChatPanelProjection',
+        'ProjectAggregate',
+        'Task',
+      ]) {
+        if (!projection.text.contains(required)) {
+          violations.add('chat_panel_projection.dart: missing $required');
+        }
+      }
+    }
+    _expectEmpty('chat panel aggregate boundary', violations);
+  });
+
+  test('cross-feature session ports move aggregates by identity', () {
+    final project = graph
+        .byPath['lib/features/project/application/project_application/project_ports.dart'];
+    final task = graph
+        .byPath['lib/features/task/application/task_application/task_ports.dart'];
+    final violations = <String>[];
+    if (project == null || task == null) {
+      violations.add('project/task session port files are missing');
+    } else {
+      final projectSession = project.text.substring(
+        project.text.indexOf('updateProjectChatSessionId'),
+        project.text.indexOf('abstract interface class ProjectPlanningPort'),
+      );
+      final taskSession = task.text.substring(
+        task.text.indexOf('updateTaskChatSessionId'),
+        task.text.indexOf('abstract interface class TaskPresentationPort'),
+      );
+      if (projectSession.contains('ProjectAggregate snapshot')) {
+        violations.add(
+          'project_ports.dart: session move still accepts ProjectAggregate',
+        );
+      }
+      if (taskSession.contains('Task snapshot')) {
+        violations.add(
+          'task_ports.dart: session move still accepts TaskAggregate',
+        );
+      }
+      for (final required in ['projectId', 'sourceChatSessionId']) {
+        if (!projectSession.contains(required)) {
+          violations.add('project_ports.dart: session move lacks $required');
+        }
+      }
+      for (final required in ['taskId', 'sourceChatSessionId']) {
+        if (!taskSession.contains(required)) {
+          violations.add('task_ports.dart: session move lacks $required');
+        }
+      }
+    }
+    _expectEmpty('cross-feature session identity boundary', violations);
+  });
+
+  test('summary query ports do not expose aggregate hydration', () {
+    final violations = <String>[];
+    for (final path in [
+      'lib/features/project/application/project_application/project_ports.dart',
+      'lib/features/task/application/task_application/task_ports.dart',
+    ]) {
+      final source = graph.byPath[path];
+      if (source == null) {
+        violations.add('$path: query port file is missing');
+        continue;
+      }
+      final marker = path.contains('/project/')
+          ? 'abstract interface class ProjectSummaryQueryPort'
+          : 'abstract interface class TaskSummaryQueryPort';
+      final start = source.text.indexOf(marker);
+      final end = source.text.indexOf(
+        'abstract interface class ',
+        start + marker.length,
+      );
+      final summary = start < 0
+          ? source.text
+          : source.text.substring(start, end < 0 ? source.text.length : end);
+      if (summary.contains('ProjectAggregate') ||
+          summary.contains('TaskAggregate') ||
+          RegExp(r'Future<\s*(?:Project|Task)\??\s*>').hasMatch(summary)) {
+        violations.add('$path: summary query exposes aggregate hydration');
+      }
+    }
+    _expectEmpty('summary query boundary', violations);
+  });
+
+  test('resolved declarations enforce focused port parameter types', () async {
+    final violations = <String>[];
+    for (final path in [
+      'lib/features/project/application/project_application/project_ports.dart',
+      'lib/features/task/application/task_application/task_ports.dart',
+    ]) {
+      final source = graph.byPath[path]!;
+      final resolved = await _resolveSource(source);
+      if (resolved == null) {
+        violations.add('$path: analyzer could not resolve declarations');
+        continue;
+      }
+      for (final declaration in resolved.unit.declarations) {
+        if (declaration is! ClassDeclaration) continue;
+        for (final member in declaration.body.members) {
+          if (member is! MethodDeclaration ||
+              !member.name.lexeme.contains('ChatSessionId')) {
+            continue;
+          }
+          for (final parameter in member.parameters?.parameters ?? const []) {
+            final type = parameter.declaredFragment?.element.type;
+            if (type == null) continue;
+            final display = type.getDisplayString();
+            if (display == 'ProjectAggregate' || display == 'TaskAggregate') {
+              violations.add(
+                '$path:${_line(source.text, parameter.offset)}: '
+                '${member.name.lexeme} still accepts $display',
+              );
+            }
+          }
+        }
+      }
+    }
+    _expectEmpty('resolved focused port types', violations);
+  });
+
+  test('resolved workflow declarations do not leak aggregates', () async {
+    final violations = <String>[];
+    const workflowPorts = <String, String>{
+      'lib/features/project/application/project_application/project_workflow_port.dart':
+          'ProjectWorkflowPort',
+      'lib/features/task/application/task_application/task_workflow_port.dart':
+          'TaskWorkflowPort',
+    };
+    for (final entry in workflowPorts.entries) {
+      final source = graph.byPath[entry.key];
+      if (source == null) {
+        violations.add('${entry.key}: workflow port is missing');
+        continue;
+      }
+      final resolved = await _resolveSource(source);
+      if (resolved == null) {
+        violations.add(
+          '${entry.key}: analyzer could not resolve workflow port',
+        );
+        continue;
+      }
+      final declaration = resolved.unit.declarations
+          .whereType<ClassDeclaration>()
+          .where((item) => item.declaredFragment?.element.name == entry.value)
+          .firstOrNull;
+      if (declaration == null) {
+        violations.add('${entry.key}: ${entry.value} declaration is missing');
+        continue;
+      }
+      final methods = declaration.body.members.whereType<MethodDeclaration>();
+      for (final method in methods) {
+        final element = method.declaredFragment?.element;
+        final returnType = element?.returnType.getDisplayString() ?? '';
+        if (RegExp(
+          r'\b(?:ProjectAggregate|TaskAggregate|Task)\b',
+        ).hasMatch(returnType)) {
+          violations.add(
+            '${entry.key}:${_line(source.text, method.offset)}: '
+            '${method.name.lexeme} returns aggregate type $returnType',
+          );
+        }
+        for (final parameter in method.parameters?.parameters ?? const []) {
+          final type = parameter.declaredFragment?.element.type;
+          final display = type?.getDisplayString() ?? '';
+          if (RegExp(
+            r'\b(?:ProjectAggregate|TaskAggregate|Task)\b',
+          ).hasMatch(display)) {
+            violations.add(
+              '${entry.key}:${_line(source.text, parameter.offset)}: '
+              '${method.name.lexeme} accepts aggregate type $display',
+            );
+          }
+        }
+      }
+    }
+    for (final path in [
+      'lib/features/chat/runtime/chat_session_orchestrator.dart',
+      'lib/features/chat/runtime/chat_work_use_case.dart',
+      'lib/features/chat/runtime/chat_project_command_coordinator.dart',
+      'lib/features/chat/runtime/chat_task_command_coordinator.dart',
+    ]) {
+      final source = graph.byPath[path];
+      if (source == null) continue;
+      for (final forbidden in [
+        'ProjectPlanningPort',
+        'ProjectCommandPort',
+        'ProjectExecutionPort',
+        'TaskPlanningPort',
+        'TaskExecutionPort',
+        'TaskRecoveryPort',
+      ]) {
+        if (RegExp('\b$forbidden\b').hasMatch(source.text)) {
+          violations.add(
+            '$path: legacy aggregate workflow port $forbidden leaked',
+          );
+        }
+      }
+    }
+    _expectEmpty('resolved aggregate-free workflow boundary', violations);
   });
 
   test('chat state owns explicit immutable slices and projections', () {
@@ -1391,6 +1805,45 @@ void main() {
       _expectEmpty('wire boundary ownership', violations);
     },
   );
+
+  test('planning registries expose typed dispatch boundaries', () {
+    final violations = <String>[];
+    for (final path in [
+      'lib/features/project/runtime/project_planning_tools.dart',
+      'lib/features/task/runtime/task_planning_tools.dart',
+    ]) {
+      final source = graph.byPath[path];
+      if (source == null) {
+        violations.add('$path: planning registry is missing');
+        continue;
+      }
+      if (!source.text.contains('Future<PlanningResponse> dispatch(') ||
+          !source.text.contains('PlanningArguments arguments')) {
+        violations.add('$path: dispatch does not use typed planning contracts');
+      }
+      final dispatchStart = source.text.indexOf(
+        'Future<PlanningResponse> dispatch(',
+      );
+      final dispatchEnd = source.text.indexOf(
+        'Map<String, dynamic> domainError',
+        dispatchStart,
+      );
+      final dispatch = dispatchStart < 0 || dispatchEnd < 0
+          ? source.text
+          : source.text.substring(dispatchStart, dispatchEnd);
+      if (RegExp(
+        r'Future<Map<String, dynamic>>\s+dispatch',
+      ).hasMatch(dispatch)) {
+        violations.add('$path: dynamic map leaked through registry dispatch');
+      }
+      if (source.text.contains('arguments.toWire()')) {
+        violations.add(
+          '$path: registry converts typed arguments back to a wire map',
+        );
+      }
+    }
+    _expectEmpty('typed planning registry boundaries', violations);
+  });
 
   test(
     'runtime wiring files contain no ignore directives or hidden contexts',

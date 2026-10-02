@@ -2,9 +2,9 @@ part of 'task_execution_coordinator.dart';
 
 /// Owns task creation and plan-edit application at the task boundary.
 class TaskPlanningUseCase {
-  TaskPlanningUseCase(this._context);
+  TaskPlanningUseCase(TaskPlanningCapabilities context) : _context = context;
 
-  final TaskUseCaseContext _context;
+  final TaskPlanningCapabilities _context;
 
   TaskPersistenceStore get _persistenceStore => _context.persistenceStore;
   TaskPlanningCoordinatorPort get _planningCoordinator =>

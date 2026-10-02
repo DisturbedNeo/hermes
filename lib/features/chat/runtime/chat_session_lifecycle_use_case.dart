@@ -4,7 +4,7 @@ part of 'chat_session_orchestrator.dart';
 class ChatSessionLifecycleUseCase {
   ChatSessionLifecycleUseCase(this._host);
 
-  final ChatUseCaseContext _host;
+  final ChatSessionLifecycleCapabilities _host;
 
   Future<void> newChat({SystemPromptSnapshot? systemPromptSnapshot}) async {
     await flushCurrentChat();
@@ -50,7 +50,7 @@ class ChatSessionLifecycleUseCase {
     _host.loadingSnapshot = true;
     try {
       _host.dispatchCurrentChatId(snapshot.chat.id);
-      _host._chatSessionScopeId = snapshot.chat.id;
+      _host.chatSessionScopeId = snapshot.chat.id;
       _host.dispatchCurrentSavedChat(snapshot.chat);
       _host.dispatchCurrentModelSnapshot(snapshot.chat.modelSnapshot);
       _host._clearTaskModelOutput(notify: false);
@@ -163,7 +163,7 @@ class ChatSessionLifecycleUseCase {
     final snapshot = _host.pendingModelRestore;
     if (snapshot == null) return;
 
-    final availability = await _host.serverManager.validateConfiguration(
+    final availability = await _host.serverLifecycle.validateConfiguration(
       snapshot,
     );
     if (availability.modelPathMissing) {
@@ -178,7 +178,7 @@ class ChatSessionLifecycleUseCase {
     _host.dispatchPendingModelRestoreIssue(null);
     _host.emitChange();
 
-    await _host.serverManager.startWithSnapshot(snapshot);
+    await _host.serverLifecycle.startWithSnapshot(snapshot);
     _host.updateCurrentModelSnapshot(snapshot);
   }
 

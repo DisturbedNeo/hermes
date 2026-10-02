@@ -7,7 +7,7 @@ import 'package:hermes/features/chat/application/contracts/stream_state.dart';
 import 'package:hermes/features/chat/presentation/a11y.dart';
 import 'package:hermes/features/chat/presentation/responsive.dart';
 import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
-import 'package:hermes/features/chat/application/chat_controller.dart';
+import 'package:hermes/features/chat/presentation/chat_controller_port.dart';
 import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/chat/presentation/chat/tool_selector.dart';
 
@@ -123,7 +123,7 @@ class _ComposerState extends State<Composer> {
     final chat = widget.chat;
     if (_previousStreamState == StreamState.streaming &&
         chat.chatStream.state == StreamState.idle) {
-      final serverActive = chat.serverManager.session.value.isActive;
+      final serverActive = chat.activeModelSession.session.value.isActive;
 
       if (serverActive && widget.enabled) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -587,7 +587,7 @@ class _ComposerState extends State<Composer> {
       Expanded(child: _buildTextField(chat, inputEnabled)),
       const SizedBox(width: 8),
       AnimatedBuilder(
-        animation: chat.chatStream,
+        animation: chat.chatStream as Listenable,
         builder: (_, _) {
           return ValueListenableBuilder<TextEditingValue>(
             valueListenable: _controller,
@@ -647,7 +647,7 @@ class _ComposerState extends State<Composer> {
       const SizedBox(height: 8),
       // Action buttons
       AnimatedBuilder(
-        animation: chat.chatStream,
+        animation: chat.chatStream as Listenable,
         builder: (_, _) {
           return ValueListenableBuilder<TextEditingValue>(
             valueListenable: _controller,

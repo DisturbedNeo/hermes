@@ -69,20 +69,14 @@ abstract class PlanningToolRegistryBase implements PlanningToolRegistry {
         }
       }
 
-      final result = await dispatch(
-        toolId,
-        Map<String, dynamic>.from(arguments.toWire()),
-        commandId: commandId,
-      );
-      final response = {'ok': true, ...result};
-      final typedResponse = PlanningResponse.fromWire(response);
+      final response = await dispatch(toolId, arguments, commandId: commandId);
       if (key != null && key.isNotEmpty) {
-        _commands[key] = _PlanningAppliedCommand(fingerprint!, typedResponse);
+        _commands[key] = _PlanningAppliedCommand(fingerprint!, response);
       }
-      if (toolId == terminalToolId && response['ok'] == true) {
+      if (toolId == terminalToolId && response.ok) {
         _terminalCommitted = true;
       }
-      return typedResponse;
+      return response;
     } on PlanningToolArgumentException catch (error) {
       return PlanningResponse.fromWire(
         this.error(code: error.code, path: error.path, message: error.message),
@@ -92,10 +86,11 @@ abstract class PlanningToolRegistryBase implements PlanningToolRegistry {
     }
   }
 
-  /// Dispatches a validated JSON object to domain-specific planning logic.
-  Future<Map<String, dynamic>> dispatch(
+  /// Dispatches typed protocol arguments to domain-specific planning logic.
+  /// JSON encoding remains owned by [PlanningProtocolAdapter].
+  Future<PlanningResponse> dispatch(
     String toolId,
-    Map<String, dynamic> arguments, {
+    PlanningArguments arguments, {
     String? commandId,
   });
 
@@ -109,7 +104,7 @@ abstract class PlanningToolRegistryBase implements PlanningToolRegistry {
   /// Domains can add fields specific to their document shape while sharing
   /// the common ownership boundary.
   void rejectPersistentFields(
-    Map<String, dynamic> value,
+    Object value,
     String fieldPath, {
     Set<String> additional = const {},
     String message =
@@ -130,8 +125,11 @@ abstract class PlanningToolRegistryBase implements PlanningToolRegistry {
       'completed_at',
       'completedAt',
     };
+    bool contains(String field) => value is PlanningArguments
+        ? value.containsKey(field)
+        : (value as Map<String, dynamic>).containsKey(field);
     for (final field in {...common, ...additional}) {
-      if (value.containsKey(field)) {
+      if (contains(field)) {
         throw argument('invalid_argument', '$fieldPath.$field', message);
       }
     }

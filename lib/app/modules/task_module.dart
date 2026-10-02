@@ -15,13 +15,15 @@ import 'package:hermes/features/task/runtime/task_step_execution_runtime.dart';
 import 'package:hermes/features/task/runtime/task_step_runner.dart';
 import 'package:hermes/features/task/runtime/task_tool_execution_service.dart';
 import 'package:hermes/features/task/runtime/task_view_service.dart';
+import 'package:hermes/features/task/application/task_application/task_workflow_port.dart';
+import 'package:hermes/features/task/runtime/task_workflow_adapter.dart';
 import 'package:hermes/platform/yaml_document_validator.dart';
 import 'package:hermes/app/modules/persistence_module.dart';
 import 'package:hermes/app/modules/workspace_tools_module.dart';
 
 /// Task planning, step execution, recovery, and persistence capabilities.
 class TaskModule {
-  TaskModule._({required this.controller});
+  TaskModule._({required this.controller, required this.workflow});
 
   factory TaskModule.create({
     required PersistenceModule persistence,
@@ -64,8 +66,13 @@ class TaskModule {
       questionPolicy: const QuestionPolicyService(),
       encoder: const JsonEncoder.withIndent('  '),
     );
-    return TaskModule._(controller: TaskController(dependencies: dependencies));
+    final controller = TaskController(dependencies: dependencies);
+    return TaskModule._(
+      controller: controller,
+      workflow: TaskWorkflowAdapter(delegate: controller),
+    );
   }
 
   final TaskController controller;
+  final TaskWorkflowPort workflow;
 }

@@ -6,9 +6,10 @@ part of 'project_execution_state_machine.dart';
 /// use case receives the project capabilities it needs through
 /// [ProjectUseCaseContext] and does not retain a reference to the facade.
 class ProjectExecutionUseCase {
-  ProjectExecutionUseCase(this._context);
+  ProjectExecutionUseCase(ProjectExecutionCapabilities context)
+    : _context = context;
 
-  final ProjectUseCaseContext _context;
+  final ProjectExecutionCapabilities _context;
 
   TaskPlanningPort get _taskPlanning => _context.taskPlanning;
   TaskProjectPlanningPort get _taskProjectPlanning =>

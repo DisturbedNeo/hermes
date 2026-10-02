@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:hermes/features/chat/application/contracts/stream_state.dart';
+import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
 
-class ChatStream<T> extends ChangeNotifier {
+class ChatStream<T> extends ChangeNotifier
+    implements ChatStreamPresentationPort {
   StreamState _state = StreamState.idle;
   StreamSubscription<T>? _sub;
   VoidCallback? onStop;

@@ -42,11 +42,9 @@ abstract interface class ActiveModelSessionPort {
   ModelConversationPort? get completionProvider;
 }
 
-/// Application-facing lifecycle port for the local model server.
-///
-/// Chat depends on this capability rather than on process or HTTP adapters.
-abstract interface class ModelServerPort
-    implements Disposable, ActiveModelSessionPort {
+/// Focused lifecycle capability for starting and stopping the local model
+/// server. It deliberately excludes active-session completion and diagnostics.
+abstract interface class ModelServerLifecyclePort {
   Future<ModelConfigurationAvailability> validateConfiguration(
     ModelConfigurationSnapshot snapshot,
   );
@@ -55,3 +53,9 @@ abstract interface class ModelServerPort
 
   Future<void> stop();
 }
+
+/// Application-facing lifecycle port for the local model server.
+///
+/// Chat depends on this capability rather than on process or HTTP adapters.
+abstract interface class ModelServerPort
+    implements Disposable, ActiveModelSessionPort, ModelServerLifecyclePort {}

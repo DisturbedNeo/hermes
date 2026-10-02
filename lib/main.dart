@@ -5,13 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:hermes/app_dependencies.dart';
 import 'package:hermes/app/application_exit_coordinator.dart';
 import 'package:hermes/features/chat/application/contracts/chat_persistence.dart';
-import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
+import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
 import 'package:hermes/features/chat/presentation/keyboard_shortcuts.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/features/model/application/model_catalog.dart';
 import 'package:hermes/features/project/application/project_application/project_application.dart';
-import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/features/chat/presentation/theme_manager.dart';
 import 'package:hermes/platform/tool_service.dart';
@@ -100,14 +99,32 @@ class _AppState extends State<App> {
         Provider<ProjectApplication>.value(
           value: dependencies.projectApplication,
         ),
-        ChangeNotifierProvider<ChatLibraryService>.value(
+        InheritedProvider<ChatLibraryPresentationPort>.value(
           value: dependencies.chatLibraryService,
+          startListening: (element, value) {
+            value.addListener(element.markNeedsNotifyDependents);
+            return () =>
+                value.removeListener(element.markNeedsNotifyDependents);
+          },
         ),
-        ChangeNotifierProvider<SystemPromptLibraryService>.value(
+        InheritedProvider<SystemPromptLibraryPresentationPort>.value(
           value: dependencies.systemPromptLibraryService,
+          startListening: (element, value) {
+            value.addListener(element.markNeedsNotifyDependents);
+            return () =>
+                value.removeListener(element.markNeedsNotifyDependents);
+          },
         ),
         ChangeNotifierProvider<ChatWorkspaceController>.value(
           value: dependencies.chatWorkspaceController,
+        ),
+        InheritedProvider<ChatWorkspacePresentationPort>.value(
+          value: dependencies.chatWorkspaceController,
+          startListening: (element, value) {
+            value.addListener(element.markNeedsNotifyDependents);
+            return () =>
+                value.removeListener(element.markNeedsNotifyDependents);
+          },
         ),
         InheritedProvider<ChatPresentationPreferencesPort>.value(
           value: dependencies.preferencesService,
@@ -121,9 +138,10 @@ class _AppState extends State<App> {
       child: Builder(
         builder: (context) => _AppShell(
           themeManager: context.read<ThemeManager>(),
-          tabs: context.read<ChatWorkspaceController>(),
-          chatLibrary: context.read<ChatLibraryService>(),
-          systemPromptLibrary: context.read<SystemPromptLibraryService>(),
+          tabs: context.read<ChatWorkspacePresentationPort>(),
+          chatLibrary: context.read<ChatLibraryPresentationPort>(),
+          systemPromptLibrary: context
+              .read<SystemPromptLibraryPresentationPort>(),
           workspaceService: context.read<WorkspacePresentationPort>(),
           preferencesService: context.read<ChatPresentationPreferencesPort>(),
           modelCatalog: dependencies.modelCatalog,
@@ -156,9 +174,9 @@ class _AppShell extends StatefulWidget {
   });
 
   final ThemeManager themeManager;
-  final ChatWorkspaceController tabs;
-  final ChatLibraryService chatLibrary;
-  final SystemPromptLibraryService systemPromptLibrary;
+  final ChatWorkspacePresentationPort tabs;
+  final ChatLibraryPresentationPort chatLibrary;
+  final SystemPromptLibraryPresentationPort systemPromptLibrary;
   final WorkspacePresentationPort workspaceService;
   final ChatPresentationPreferencesPort preferencesService;
   final ModelCatalogPort modelCatalog;
@@ -206,7 +224,7 @@ class _AppShellState extends State<_AppShell> {
       () => unawaited(themeManager.toggleTheme()),
     );
     _shortcuts.register(HermesShortcut.cancelGeneration, () {
-      final activeChat = tabs.activeChat;
+      final activeChat = tabs.presentationActiveChat;
       if (activeChat == null) return;
       if (activeChat.taskBusy) {
         if (!activeChat.taskCancellationRequested) {
@@ -235,7 +253,7 @@ class _AppShellState extends State<_AppShell> {
 
   Future<void> _beginExit() async {
     var policy = NewChatExitPolicy.discard;
-    if (widget.tabs.tabs.any((tab) => tab.isUnsavedNonEmpty)) {
+    if (widget.tabs.presentationTabs.any((tab) => tab.isUnsavedNonEmpty)) {
       final choice = await _showUnsavedChatsDialog();
       if (choice == null || choice == _UnsavedChatsExitAction.cancel) {
         _exitCoordinator.reset();
@@ -279,7 +297,9 @@ class _AppShellState extends State<_AppShell> {
   Future<_UnsavedChatsExitAction?> _showUnsavedChatsDialog() {
     final dialogContext = _dialogContext;
     if (dialogContext == null) return Future.value();
-    final count = widget.tabs.tabs.where((tab) => tab.isUnsavedNonEmpty).length;
+    final count = widget.tabs.presentationTabs
+        .where((tab) => tab.isUnsavedNonEmpty)
+        .length;
     return showDialog<_UnsavedChatsExitAction>(
       context: dialogContext,
       barrierDismissible: false,

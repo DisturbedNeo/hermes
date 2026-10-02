@@ -5,10 +5,12 @@ import 'package:hermes/features/chat/application/contracts/message_role.dart';
 import 'package:hermes/core/upsert_result.dart';
 import 'package:hermes/features/tools/application/protocol/tool_call_protocol_adapter.dart';
 import 'package:hermes/features/chat/application/contracts/message_store_port.dart';
+import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
 import 'package:hermes/core/uuid.dart';
 import 'package:hermes/features/chat/application/contracts/bubble.dart';
 
-class MessageStore extends ChangeNotifier implements MessageStorePort {
+class MessageStore extends ChangeNotifier
+    implements MessageStorePort, ChatPresentationMessageStorePort {
   MessageStore({ToolCaller? toolCaller})
     : toolCaller = toolCaller ?? ToolCaller();
 

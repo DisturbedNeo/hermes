@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/workspace/application/workspace_ports.dart';
-import 'package:hermes/features/chat/application/chat_controller.dart';
+import 'package:hermes/features/chat/presentation/chat_controller_port.dart';
 import 'package:hermes/features/chat/presentation/common/state_display.dart';
 import 'package:url_launcher/url_launcher.dart';
 

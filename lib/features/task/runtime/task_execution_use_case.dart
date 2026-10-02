@@ -2,9 +2,9 @@ part of 'task_execution_coordinator.dart';
 
 /// Owns task-step execution and explicit unfinished-work replanning commands.
 class TaskExecutionUseCase {
-  TaskExecutionUseCase(this._context);
+  TaskExecutionUseCase(TaskExecutionCapabilities context) : _context = context;
 
-  final TaskUseCaseContext _context;
+  final TaskExecutionCapabilities _context;
 
   TaskPlanningCoordinatorPort get _planningCoordinator =>
       _context.planningCoordinator;

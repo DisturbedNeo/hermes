@@ -88,12 +88,12 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
   bool get allowsWorkspaceMutation => false;
 
   @override
-  Future<Map<String, dynamic>> dispatch(
+  Future<PlanningResponse> dispatch(
     String toolId,
-    Map<String, dynamic> arguments, {
+    PlanningArguments arguments, {
     String? commandId,
   }) async {
-    return switch (toolId) {
+    final result = switch (toolId) {
       'task_view' => _view(arguments),
       'task_set_brief' => _setBrief(arguments),
       'task_reset_plan' => _resetPlan(arguments, commandId),
@@ -109,6 +109,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
         'Unknown task planning tool $toolId.',
       ),
     };
+    return PlanningResponse.fromWire({'ok': true, ...result});
   }
 
   @override
@@ -122,7 +123,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     return super.domainError(error);
   }
 
-  Map<String, dynamic> _view(Map<String, dynamic> arguments) {
+  Map<String, dynamic> _view(PlanningArguments arguments) {
     _keys(arguments, const {'step_ref', 'max_items'});
     final stepRef = _optionalString(arguments['step_ref'], 'step_ref');
     final preview = context.builder.preview();
@@ -152,7 +153,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     };
   }
 
-  Map<String, dynamic> _setBrief(Map<String, dynamic> arguments) {
+  Map<String, dynamic> _setBrief(PlanningArguments arguments) {
     _ensureOpen();
     _keys(arguments, const {
       'title',
@@ -192,7 +193,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
   }
 
   Map<String, dynamic> _resetPlan(
-    Map<String, dynamic> arguments,
+    PlanningArguments arguments,
     String? commandId,
   ) {
     _ensureOpen();
@@ -205,7 +206,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
   }
 
   Map<String, dynamic> _addStep(
-    Map<String, dynamic> arguments,
+    PlanningArguments arguments,
     String? commandId,
   ) {
     _ensureOpen();
@@ -243,7 +244,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
   }
 
   Map<String, dynamic> _addCheck(
-    Map<String, dynamic> arguments,
+    PlanningArguments arguments,
     String? commandId,
   ) {
     _ensureOpen();
@@ -273,7 +274,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     };
   }
 
-  Map<String, dynamic> _preview(Map<String, dynamic> arguments) {
+  Map<String, dynamic> _preview(PlanningArguments arguments) {
     _ensureOpen();
     _keys(arguments, const {});
     final preview = context.builder.preview();
@@ -283,7 +284,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     };
   }
 
-  Map<String, dynamic> _commit(Map<String, dynamic> arguments) {
+  Map<String, dynamic> _commit(PlanningArguments arguments) {
     _ensureOpen();
     _keys(arguments, const {});
     final committed = context.builder.commit();
@@ -305,7 +306,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     return response;
   }
 
-  Map<String, dynamic> _requestReplan(Map<String, dynamic> arguments) {
+  Map<String, dynamic> _requestReplan(PlanningArguments arguments) {
     _ensureOpen();
     _keys(arguments, const {'reason'});
     final reason = _requiredString(arguments['reason'], 'reason');
@@ -315,7 +316,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
   }
 
   Map<String, dynamic> _requestDecision(
-    Map<String, dynamic> arguments,
+    PlanningArguments arguments,
     String? commandId,
   ) {
     _ensureOpen();
@@ -354,7 +355,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     }
   }
 
-  void _rejectPersistentFields(Map<String, dynamic> value, String fieldPath) {
+  void _rejectPersistentFields(Object value, String fieldPath) {
     rejectPersistentFields(
       value,
       fieldPath,
@@ -406,11 +407,14 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
   }
 
   void _keys(
-    Map<String, dynamic> value,
+    Object value,
     Set<String> allowed, {
     String fieldPath = 'arguments',
   }) {
-    for (final key in value.keys) {
+    final keys = value is PlanningArguments
+        ? value.keys
+        : (value as Map<String, dynamic>).keys;
+    for (final key in keys) {
       if (!allowed.contains(key)) {
         throw _argument(
           'invalid_argument',

@@ -120,11 +120,9 @@ extension ChatSessionStateOperations on ChatSessionOrchestrator {
         type != ProjectBlockerType.taskFailed) {
       return;
     }
-    dispatchActiveProject(
-      await _projectCommands.clearTaskBlocker(
-        workspace: currentWorkspace,
-        snapshot: project,
-      ),
+    await _projectCommands.clearTaskBlocker(
+      workspace: currentWorkspace,
+      projectId: project.id,
     );
   }
 
@@ -177,7 +175,7 @@ extension ChatSessionStateOperations on ChatSessionOrchestrator {
       case TaskModelOutputEventType.start:
         notifyImmediately = true;
         _taskModelOutputContextEstimate = event.estimatedContextTokens;
-        serverManager.telemetry.updateContextEstimate(
+        activeModelSession.telemetry.updateContextEstimate(
           event.estimatedContextTokens,
           contextLimitTokens: _diagnosticsContextLimit,
         );
@@ -322,7 +320,7 @@ extension ChatSessionStateOperations on ChatSessionOrchestrator {
 
   void _updateContextEstimate() {
     if (taskModelOutputActive && _taskModelOutputContextEstimate != null) {
-      serverManager.telemetry.updateContextEstimate(
+      activeModelSession.telemetry.updateContextEstimate(
         _taskModelOutputContextEstimate,
         contextLimitTokens: _diagnosticsContextLimit,
       );
@@ -331,7 +329,7 @@ extension ChatSessionStateOperations on ChatSessionOrchestrator {
 
     final snapshot = currentModelSnapshot;
     if (snapshot == null || messageStore.messages.isEmpty) {
-      serverManager.telemetry.updateContextEstimate(null);
+      activeModelSession.telemetry.updateContextEstimate(null);
       return;
     }
 
@@ -340,7 +338,7 @@ extension ChatSessionStateOperations on ChatSessionOrchestrator {
       upToIndexInclusive: messageStore.messages.length - 1,
       omitCoveredMessages: true,
     );
-    serverManager.telemetry.updateContextEstimate(
+    activeModelSession.telemetry.updateContextEstimate(
       ContextEstimator.estimateChatCompletionRequest(messages: payload),
       contextLimitTokens: snapshot.nCtx,
     );
@@ -460,19 +458,20 @@ extension ChatSessionStateOperations on ChatSessionOrchestrator {
       chatSessionId: previousScopeId,
     );
     for (final task in tasks) {
-      final snapshot = await _taskQueries.loadTask(
-        currentWorkspace,
-        task.id,
-        chatSessionId: previousScopeId,
-      );
-      if (snapshot == null) continue;
-      final updated = await _taskSessions.updateTaskChatSessionId(
+      await _taskSessions.updateTaskChatSessionId(
         workspace: currentWorkspace,
-        snapshot: snapshot,
+        taskId: task.id,
+        sourceChatSessionId: previousScopeId,
         chatSessionId: savedChatId,
       );
-      if (updated.id == activeTaskId &&
-          workspace?.rootPath == currentWorkspace.rootPath) {
+      final updated = task.id == activeTaskId
+          ? await _taskQueries.loadTask(
+              currentWorkspace,
+              task.id,
+              chatSessionId: savedChatId,
+            )
+          : null;
+      if (updated != null && workspace?.rootPath == currentWorkspace.rootPath) {
         dispatchActiveTask(updated);
       }
     }
@@ -500,19 +499,20 @@ extension ChatSessionStateOperations on ChatSessionOrchestrator {
       chatSessionId: previousScopeId,
     );
     for (final project in projects) {
-      final snapshot = await _projectQueries.loadProject(
-        currentWorkspace,
-        project.id,
-        chatSessionId: previousScopeId,
-      );
-      if (snapshot == null) continue;
-      final updated = await _projectSessions.updateProjectChatSessionId(
+      await _projectSessions.updateProjectChatSessionId(
         workspace: currentWorkspace,
-        snapshot: snapshot,
+        projectId: project.id,
+        sourceChatSessionId: previousScopeId,
         chatSessionId: savedChatId,
       );
-      if (updated.id == activeProjectId &&
-          workspace?.rootPath == currentWorkspace.rootPath) {
+      final updated = project.id == activeProjectId
+          ? await _projectQueries.loadProject(
+              currentWorkspace,
+              project.id,
+              chatSessionId: savedChatId,
+            )
+          : null;
+      if (updated != null && workspace?.rootPath == currentWorkspace.rootPath) {
         dispatchActiveProject(updated);
       }
     }
@@ -534,7 +534,7 @@ extension ChatSessionStateOperations on ChatSessionOrchestrator {
     if (snapshot == null || snapshot.matches(_activeServerSnapshot)) return;
 
     dispatchPendingModelRestore(snapshot);
-    final availability = await serverManager.validateConfiguration(snapshot);
+    final availability = await serverLifecycle.validateConfiguration(snapshot);
     if (availability.modelPathMissing) {
       dispatchPendingModelRestoreIssue(
         'Saved model file not found: ${snapshot.modelPath}',

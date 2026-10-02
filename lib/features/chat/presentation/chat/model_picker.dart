@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hermes/features/chat/presentation/a11y.dart';
 import 'package:hermes/features/model/application/model_load_configuration.dart';
-import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
+import 'package:hermes/features/chat/presentation/chat_workspace_port.dart';
 import 'package:hermes/features/settings/application/preferences_port.dart';
 import 'package:hermes/features/model/application/model_catalog.dart';
 import 'package:hermes/features/chat/presentation/chat/message/dot_pulse.dart';
@@ -58,7 +58,9 @@ class _ModelPickerState extends State<ModelPicker> {
   void initState() {
     super.initState();
     _tabs.addListener(_syncSelectedFromActiveModel);
-    _tabs.serverManager.session.addListener(_syncSelectedFromActiveModel);
+    _tabs.presentationActiveChat?.activeModelSession.session.addListener(
+      _syncSelectedFromActiveModel,
+    );
     _syncSelectedFromActiveModel();
     _loadModels();
   }
@@ -66,12 +68,19 @@ class _ModelPickerState extends State<ModelPicker> {
   @override
   void dispose() {
     _tabs.removeListener(_syncSelectedFromActiveModel);
-    _tabs.serverManager.session.removeListener(_syncSelectedFromActiveModel);
+    _tabs.presentationActiveChat?.activeModelSession.session.removeListener(
+      _syncSelectedFromActiveModel,
+    );
     super.dispose();
   }
 
   void _syncSelectedFromActiveModel() {
-    final activeModel = _tabs.serverManager.session.value.modelName;
+    final activeModel = _tabs
+        .presentationActiveChat
+        ?.activeModelSession
+        .session
+        .value
+        .modelName;
     if (_selected == activeModel) return;
     if (!mounted) {
       _selected = activeModel;
@@ -220,7 +229,10 @@ class _ModelPickerState extends State<ModelPicker> {
                             hasSavedConfiguration: savedConfiguration != null,
                             onResetSavedConfiguration: () => _preferencesService
                                 .removeModelLoadConfiguration(v),
-                            onCancel: _tabs.serverManager.stop,
+                            onCancel: () => _tabs
+                                .presentationActiveChat
+                                ?.serverLifecycle
+                                .stop(),
                             onConfirm:
                                 (
                                   configuration, {
@@ -242,9 +254,12 @@ class _ModelPickerState extends State<ModelPicker> {
                                   try {
                                     final saveOutcome =
                                         await startModelAndMaybeSaveConfiguration(
-                                          startModel: () => _tabs.serverManager
+                                          startModel: () => _tabs
+                                              .presentationActiveChat!
+                                              .serverLifecycle
                                               .startWithSnapshot(snapshot),
-                                          onModelStarted: () => _tabs.activeChat
+                                          onModelStarted: () => _tabs
+                                              .presentationActiveChat
                                               ?.updateCurrentModelSnapshot(
                                                 snapshot,
                                               ),
@@ -275,7 +290,8 @@ class _ModelPickerState extends State<ModelPicker> {
                                     if (mounted) {
                                       setState(
                                         () => _selected = _tabs
-                                            .serverManager
+                                            .presentationActiveChat
+                                            ?.activeModelSession
                                             .session
                                             .value
                                             .modelName,

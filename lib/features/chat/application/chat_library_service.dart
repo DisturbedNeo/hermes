@@ -8,6 +8,7 @@ import 'package:hermes/features/chat/application/contracts/saved_chat.dart';
 import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/chat/application/contracts/chat_library_port.dart';
+import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
 
 import 'package:hermes/core/disposable.dart';
 
@@ -17,7 +18,8 @@ import 'package:hermes/core/disposable.dart';
 /// all data access to [ChatLibraryRepository].  This class has a single
 /// responsibility: coordinating high-level service methods while maintaining
 /// reactive state.
-class ChatLibraryService extends ChangeNotifier implements Disposable {
+class ChatLibraryService extends ChangeNotifier
+    implements Disposable, ChatLibraryPresentationPort {
   final ChatLibraryPort _repository;
   bool _disposed = false;
 

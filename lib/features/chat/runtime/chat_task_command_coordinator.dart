@@ -1,5 +1,4 @@
-import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
-import 'package:hermes/features/task/application/task_application/task_ports.dart';
+import 'package:hermes/features/task/application/task_application/task_workflow_port.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 
 sealed class ChatTaskCommand {
@@ -30,35 +29,35 @@ class AnswerTaskQuestionCommand extends ChatTaskCommand {
 
 /// Executes typed task commands against the task application port.
 class ChatTaskCommandCoordinator {
-  const ChatTaskCommandCoordinator({required TaskExecutionPort execution})
+  const ChatTaskCommandCoordinator({required TaskWorkflowPort execution})
     : _execution = execution;
 
-  final TaskExecutionPort _execution;
+  final TaskWorkflowPort _execution;
 
-  Future<Task> execute({
+  Future<TaskWorkflowResult> execute({
     required ChatTaskCommand command,
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required String taskId,
   }) => switch (command) {
     RetryTaskPhaseCommand() => _execution.retryCurrentStep(
       workspace: workspace,
-      snapshot: snapshot,
+      taskId: taskId,
     ),
     SkipTaskPhaseCommand() => _execution.skipCurrentStep(
       workspace: workspace,
-      snapshot: snapshot,
+      taskId: taskId,
     ),
     StopTaskCommand() => _execution.stopTask(
       workspace: workspace,
-      snapshot: snapshot,
+      taskId: taskId,
     ),
     ApproveTaskStepCommand() => _execution.approvePendingStep(
       workspace: workspace,
-      snapshot: snapshot,
+      taskId: taskId,
     ),
     AnswerTaskQuestionCommand(:final answer) => _execution.answerOpenQuestion(
       workspace: workspace,
-      snapshot: snapshot,
+      taskId: taskId,
       answer: answer,
     ),
   };

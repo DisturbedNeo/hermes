@@ -16,6 +16,22 @@ import 'package:hermes/platform/tools/calculator_tool.dart';
 void main() {
   final now = DateTime(2026, 1, 2, 3, 4, 5);
 
+  test('codec registry rejects accidental replacement', () {
+    final registry = ModelJsonCodecRegistry();
+    registry.register<String>(
+      encode: (value) => {'value': value},
+      decode: (value) => value['value']! as String,
+    );
+    expect(
+      () => registry.register<String>(
+        encode: (value) => {'other': value},
+        decode: (value) => value['other']! as String,
+      ),
+      throwsStateError,
+    );
+    expect(registry.hasCodec<String>(), isTrue);
+  });
+
   test('facade supports untyped maps and compact or indented strings', () {
     final snapshot = ModelJson.decode<ModelConfigurationSnapshot>(const {});
     expect(snapshot.nCtx, 4096);

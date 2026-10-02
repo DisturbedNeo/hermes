@@ -5,7 +5,7 @@ import 'package:hermes/features/chat/application/contracts/message_role.dart';
 import 'package:hermes/features/chat/presentation/a11y.dart';
 import 'package:hermes/features/chat/presentation/action_spec.dart';
 import 'package:hermes/features/chat/application/contracts/bubble.dart';
-import 'package:hermes/features/chat/application/chat_controller.dart';
+import 'package:hermes/features/chat/presentation/chat_controller_port.dart';
 import 'package:hermes/features/chat/presentation/chat/message/delete_message_dialog.dart';
 
 class MessageActions extends StatelessWidget {
@@ -113,7 +113,7 @@ class MessageActions extends StatelessWidget {
     final chat = _chat;
 
     return AnimatedBuilder(
-      animation: chat.chatStream,
+      animation: chat.chatStream as Listenable,
       builder: (_, _) {
         final actions = _getActionsForRole(context, chat, _message.role);
 

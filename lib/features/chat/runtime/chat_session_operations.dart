@@ -46,22 +46,51 @@ extension ChatSessionOperations on ChatWorkUseCase {
   Future<Task?> _recoverTaskSnapshot(
     WorkspaceAttachment current,
     Task? snapshot,
-  ) {
-    if (snapshot == null) return Future.value();
-    return _taskRecovery.recoverTask(workspace: current, snapshot: snapshot);
+  ) async {
+    if (snapshot == null) return null;
+    final result = await _taskRecovery.recoverTask(
+      workspace: current,
+      taskId: snapshot.id,
+      persist: true,
+    );
+    return _taskQueries.loadTask(
+      current,
+      result.task.id,
+      chatSessionId: snapshot.chatSessionId,
+      projectId: snapshot.projectId,
+    );
   }
 
   Future<ProjectCommandResult?> _recoverProject(
     WorkspaceAttachment current,
     ProjectAggregate? snapshot,
-  ) {
-    if (snapshot == null) return Future.value();
-    return _projectExecution.recover(
-      ProjectRecoveryRequest(
+  ) async {
+    if (snapshot == null) return null;
+    final result = await _projectRecovery.recover(
+      ProjectWorkflowRecovery(
         workspace: current,
-        snapshot: snapshot,
-        onTaskUpdated: (task) => dispatchActiveTask(task),
+        projectId: snapshot.id,
+        onTaskUpdated: (_) {},
       ),
+    );
+    final project = await _projectQueries.loadProject(
+      current,
+      result.project.id,
+      chatSessionId: snapshot.chatSessionId,
+    );
+    if (project == null) return null;
+    final task = result.activeTask == null
+        ? null
+        : await _taskQueries.loadTask(
+            current,
+            result.activeTask!.id,
+            chatSessionId: result.activeTask!.chatSessionId,
+            projectId: result.activeTask!.projectId,
+          );
+    return ProjectCommandResult.fromSnapshot(
+      project: project,
+      activeTask: task,
+      persistenceDiagnostics: result.persistenceDiagnostics,
     );
   }
 
@@ -86,7 +115,7 @@ extension ChatSessionOperations on ChatWorkUseCase {
 
   Future<void> _runTaskInternal({bool keepBusy = false}) async {
     final currentWorkspace = workspace;
-    final client = serverManager.completionProvider;
+    final client = activeModelSession.completionProvider;
     if (currentWorkspace == null ||
         currentWorkspace.missing ||
         client == null ||

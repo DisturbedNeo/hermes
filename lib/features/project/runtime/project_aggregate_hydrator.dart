@@ -16,14 +16,14 @@ class ProjectAggregateHydrator {
   ProjectAggregateHydrator({
     required ProjectReadPort projectRepository,
     required ProjectAggregateHydrationPort aggregateRepository,
-    required TaskQueryPort taskQueries,
+    required TaskWorkflowQueryPort taskQueries,
   }) : _projectRepository = projectRepository,
        _aggregateRepository = aggregateRepository,
        _taskQueries = taskQueries;
 
   final ProjectReadPort _projectRepository;
   final ProjectAggregateHydrationPort _aggregateRepository;
-  final TaskQueryPort _taskQueries;
+  final TaskWorkflowQueryPort _taskQueries;
   final ProjectControlStateService _controlStateService =
       const ProjectControlStateService();
 

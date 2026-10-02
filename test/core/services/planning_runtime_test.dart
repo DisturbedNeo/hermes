@@ -172,22 +172,29 @@ class _Registry extends PlanningToolRegistryBase {
   bool get allowsWorkspaceMutation => false;
 
   @override
-  Future<Map<String, dynamic>> dispatch(
+  Future<PlanningResponse> dispatch(
     String toolId,
-    Map<String, dynamic> arguments, {
+    PlanningArguments arguments, {
     String? commandId,
   }) async {
-    if (toolId == 'add') return {'value': arguments['value']};
+    if (toolId == 'add') {
+      return PlanningResponse.fromWire({
+        'ok': true,
+        'value': arguments['value'],
+      });
+    }
     if (toolId == 'commit') {
       commitAttempts++;
       if (failFirstCommit && commitAttempts == 1) {
-        return error(
-          code: 'invalid_plan',
-          path: 'plan',
-          message: 'The draft is incomplete.',
+        return PlanningResponse.fromWire(
+          error(
+            code: 'invalid_plan',
+            path: 'plan',
+            message: 'The draft is incomplete.',
+          ),
         );
       }
-      return {'committed': true};
+      return PlanningResponse.fromWire({'ok': true, 'committed': true});
     }
     throw argument('unknown_tool', 'tool', 'Unknown tool $toolId.');
   }

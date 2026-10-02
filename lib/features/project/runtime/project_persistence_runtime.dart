@@ -25,7 +25,7 @@ class ProjectPersistenceRuntime {
 
   final ProjectAggregateHydrator stateStore;
   final ProjectPersistenceHandler persistenceHandler;
-  final TaskQueryPort taskQueries;
+  final TaskWorkflowQueryPort taskQueries;
 
   Future<ProjectAggregate> hydrateProjectTasks(
     WorkspaceAttachment workspace,
@@ -62,13 +62,20 @@ class ProjectPersistenceRuntime {
     retainedChatSessionIds: retainedChatSessionIds,
   );
 
-  Future<ProjectAggregate> updateProjectChatSessionId({
+  Future<void> updateProjectChatSessionId({
     required WorkspaceAttachment workspace,
-    required ProjectAggregate snapshot,
+    required String projectId,
+    required String sourceChatSessionId,
     required String chatSessionId,
   }) async {
-    if (snapshot.chatSessionId == chatSessionId) return snapshot;
-    return persistProject(
+    final snapshot = (await stateStore.load(
+      workspace,
+      projectId,
+      chatSessionId: sourceChatSessionId,
+    )).project;
+    if (snapshot == null) return;
+    if (snapshot.chatSessionId == chatSessionId) return;
+    await persistProject(
       workspace.rootPath,
       snapshot.copyWith(
         chatSessionId: chatSessionId,

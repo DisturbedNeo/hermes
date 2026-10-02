@@ -7,7 +7,9 @@ import 'package:hermes/features/chat/application/contracts/chat_persistence.dart
 import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/runtime/chat_controller.dart';
 import 'package:hermes/features/project/application/project_application/project_ports.dart';
+import 'package:hermes/features/project/application/project_application/project_workflow_port.dart';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
+import 'package:hermes/features/task/application/task_application/task_workflow_port.dart';
 import 'package:hermes/features/model/application/model_server_port.dart';
 import 'package:hermes/features/settings/application/preferences_port.dart';
 import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
@@ -20,6 +22,8 @@ import 'package:hermes/features/workspace/application/workspace.dart';
 
 import 'package:hermes/core/disposable.dart';
 import 'package:hermes/features/chat/application/contracts/chat_workspace_contracts.dart';
+import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
+import 'package:hermes/features/chat/runtime/chat_workflow_compatibility.dart';
 
 typedef ChatTabFactory =
     ChatRuntimeController Function({
@@ -27,19 +31,19 @@ typedef ChatTabFactory =
       required ToolRegistryPort toolService,
       required ToolProtocolAdapter toolProtocol,
       required ChatToolExecutionPort toolExecution,
-      required TaskQueryPort taskQueries,
+      required TaskWorkflowQueryPort taskQueries,
       required TaskSessionPort taskSessions,
       required TaskPresentationPort taskPresentation,
       required ChatPanelProtocolAdapter panelProtocol,
-      required TaskPlanningPort taskPlanning,
-      required TaskExecutionPort taskExecution,
-      required TaskRecoveryPort taskRecovery,
-      required ProjectQueryPort projectQueries,
+      required TaskWorkflowPort taskPlanning,
+      required TaskWorkflowPort taskExecution,
+      required TaskWorkflowPort taskRecovery,
+      required ProjectWorkflowQueryPort projectQueries,
       required ProjectSessionPort projectSessions,
-      required ProjectPlanningPort projectPlanning,
-      required ProjectCommandPort projectCommands,
-      required ProjectExecutionPort projectExecution,
-      required ProjectRecoveryCommandsPort projectRecovery,
+      required ProjectWorkflowPort projectPlanning,
+      required ProjectWorkflowPort projectCommands,
+      required ProjectWorkflowPort projectExecution,
+      required ProjectWorkflowPort projectRecovery,
       required ChatLibraryService chatLibrary,
       required WorkspacePort workspaceService,
       required ChatRuntimePreferencesPort preferencesService,
@@ -47,25 +51,25 @@ typedef ChatTabFactory =
     });
 
 class ChatRuntimeWorkspaceController extends ChangeNotifier
-    implements Disposable {
+    implements Disposable, ChatWorkspacePresentationPort {
   final ChatLibraryService _chatLibrary;
   final SystemPromptLibraryService _systemPromptLibrary;
   final ToolRegistryPort _toolService;
   final ToolProtocolAdapter _toolProtocol;
   final ChatToolExecutionPort _toolExecution;
-  final TaskQueryPort _taskQueries;
+  final TaskWorkflowQueryPort _taskQueries;
   final TaskSessionPort _taskSessions;
   final TaskPresentationPort _taskPresentation;
   final ChatPanelProtocolAdapter _panelProtocol;
-  final TaskPlanningPort _taskPlanning;
-  final TaskExecutionPort _taskExecution;
-  final TaskRecoveryPort _taskRecovery;
-  final ProjectQueryPort _projectQueries;
+  final TaskWorkflowPort _taskPlanning;
+  final TaskWorkflowPort _taskExecution;
+  final TaskWorkflowPort _taskRecovery;
+  final ProjectWorkflowQueryPort _projectQueries;
   final ProjectSessionPort _projectSessions;
-  final ProjectPlanningPort _projectPlanning;
-  final ProjectCommandPort _projectCommands;
-  final ProjectExecutionPort _projectExecution;
-  final ProjectRecoveryCommandsPort _projectRecovery;
+  final ProjectWorkflowPort _projectPlanning;
+  final ProjectWorkflowPort _projectCommands;
+  final ProjectWorkflowPort _projectExecution;
+  final ProjectWorkflowPort _projectRecovery;
   final WorkspacePort _workspaceService;
   final ChatRuntimePreferencesPort _preferencesService;
   final ChatTabFactory? _tabFactory;
@@ -84,19 +88,19 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
     required ToolRegistryPort toolService,
     required ToolProtocolAdapter toolProtocol,
     required ChatToolExecutionPort toolExecution,
-    required TaskQueryPort taskQueries,
+    required TaskWorkflowQueryPort taskQueries,
     required TaskSessionPort taskSessions,
     required TaskPresentationPort taskPresentation,
     required ChatPanelProtocolAdapter panelProtocol,
-    required TaskPlanningPort taskPlanning,
-    required TaskExecutionPort taskExecution,
-    required TaskRecoveryPort taskRecovery,
-    required ProjectQueryPort projectQueries,
+    required Object taskPlanning,
+    required Object taskExecution,
+    required Object taskRecovery,
+    required ProjectWorkflowQueryPort projectQueries,
     required ProjectSessionPort projectSessions,
-    required ProjectPlanningPort projectPlanning,
-    required ProjectCommandPort projectCommands,
-    required ProjectExecutionPort projectExecution,
-    required ProjectRecoveryCommandsPort projectRecovery,
+    required Object projectPlanning,
+    required Object projectCommands,
+    required Object projectExecution,
+    required Object projectRecovery,
     required WorkspacePort workspaceService,
     required ChatRuntimePreferencesPort preferencesService,
     ChatTabFactory? tabFactory,
@@ -109,15 +113,47 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
        _taskSessions = taskSessions,
        _taskPresentation = taskPresentation,
        _panelProtocol = panelProtocol,
-       _taskPlanning = taskPlanning,
-       _taskExecution = taskExecution,
-       _taskRecovery = taskRecovery,
+       _taskPlanning = resolveTaskWorkflowPort(
+         taskPlanning,
+         taskExecution,
+         taskRecovery,
+       ),
+       _taskExecution = resolveTaskWorkflowPort(
+         taskPlanning,
+         taskExecution,
+         taskRecovery,
+       ),
+       _taskRecovery = resolveTaskWorkflowPort(
+         taskPlanning,
+         taskExecution,
+         taskRecovery,
+       ),
        _projectQueries = projectQueries,
        _projectSessions = projectSessions,
-       _projectPlanning = projectPlanning,
-       _projectCommands = projectCommands,
-       _projectExecution = projectExecution,
-       _projectRecovery = projectRecovery,
+       _projectPlanning = resolveProjectWorkflowPort(
+         projectPlanning,
+         projectCommands,
+         projectExecution,
+         projectRecovery,
+       ),
+       _projectCommands = resolveProjectWorkflowPort(
+         projectPlanning,
+         projectCommands,
+         projectExecution,
+         projectRecovery,
+       ),
+       _projectExecution = resolveProjectWorkflowPort(
+         projectPlanning,
+         projectCommands,
+         projectExecution,
+         projectRecovery,
+       ),
+       _projectRecovery = resolveProjectWorkflowPort(
+         projectPlanning,
+         projectCommands,
+         projectExecution,
+         projectRecovery,
+       ),
        _workspaceService = workspaceService,
        _preferencesService = preferencesService,
        _tabFactory = tabFactory {
@@ -127,11 +163,18 @@ class ChatRuntimeWorkspaceController extends ChangeNotifier
   UnmodifiableListView<ChatRuntimeController> get tabs =>
       UnmodifiableListView(_tabs);
 
+  @override
+  List<ChatTabPresentationPort> get presentationTabs =>
+      List<ChatTabPresentationPort>.unmodifiable(_tabs);
+
   ChatRuntimeController? get activeChat {
     final id = activeTabId;
     if (id == null) return _tabs.firstOrNull;
     return _tabs.where((tab) => tab.tabId == id).firstOrNull;
   }
+
+  @override
+  ChatTabPresentationPort? get presentationActiveChat => activeChat;
 
   ChatRuntimeController newTab({SystemPromptSnapshot? systemPromptSnapshot}) {
     final tab = _createTab(systemPromptSnapshot: systemPromptSnapshot);

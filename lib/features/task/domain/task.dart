@@ -15,6 +15,8 @@ export 'package:hermes/features/task/application/contracts/task_state_models.dar
     hide TaskSnapshotAggregate;
 
 class TaskAggregate implements TaskProjectNodeSource, TaskExecutionSource {
+  static final Object _ownedCollectionsToken = Object();
+
   /// Revision of the canonical task snapshot. This is runtime metadata and
   /// is omitted from the document nested in the persistence envelope.
   final int persistenceRevision;
@@ -68,20 +70,20 @@ class TaskAggregate implements TaskProjectNodeSource, TaskExecutionSource {
   @override
   Object? get latestRun => runs.isEmpty ? null : runs.last;
 
-  const TaskAggregate({
+  TaskAggregate({
     this.persistenceRevision = 0,
     required this.id,
     required this.title,
     String? originalPrompt,
     String? objective,
-    this.constraints = const [],
-    this.successCriteria = const [],
-    this.gates = const [],
-    this.steps = const [],
+    List<String> constraints = const [],
+    List<String> successCriteria = const [],
+    List<TaskGate> gates = const [],
+    List<TaskStep> steps = const [],
     this.status = TaskStatus.paused,
-    this.criterionIds = const [],
+    List<String> criterionIds = const [],
     this.milestoneId,
-    this.dependsOnTaskIds = const [],
+    List<String> dependsOnTaskIds = const [],
     this.priority = TaskPriority.normal,
     this.risk = TaskRisk.unknown,
     this.riskReduction = ProjectRiskReduction.none,
@@ -89,20 +91,20 @@ class TaskAggregate implements TaskProjectNodeSource, TaskExecutionSource {
     this.selectionRationale = '',
     this.revisionIntroduced = 1,
     this.revisionUpdated = 1,
-    this.expectedEvidence = const [],
-    this.readPaths = const [],
-    this.writePaths = const [],
-    this.doneCriteria = const [],
-    this.outOfScope = const [],
-    this.context = const [],
-    this.expectedArtifacts = const [],
+    List<TaskEvidenceExpectation> expectedEvidence = const [],
+    List<String> readPaths = const [],
+    List<String> writePaths = const [],
+    List<String> doneCriteria = const [],
+    List<String> outOfScope = const [],
+    List<String> context = const [],
+    List<TaskArtifact> expectedArtifacts = const [],
     this.recoveryIncidentId,
     this.fingerprint = '',
     this.rejectionReason,
     this.failure,
     this.currentStepId,
     this.memorySummary = '',
-    this.runs = const [],
+    List<TaskRun> runs = const [],
     required this.createdAt,
     required this.updatedAt,
     this.pendingApproval,
@@ -112,7 +114,53 @@ class TaskAggregate implements TaskProjectNodeSource, TaskExecutionSource {
     this.planningMetrics = const PlanningMetrics(),
     this.planningError,
     this.completedAt,
-  }) : originalPrompt = originalPrompt ?? objective ?? '',
+    Object? collectionsOwnership,
+  }) : constraints = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? constraints
+           : List.unmodifiable(constraints),
+       successCriteria = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? successCriteria
+           : List.unmodifiable(successCriteria),
+       gates = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? gates
+           : List.unmodifiable(gates),
+       steps = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? steps
+           : List.unmodifiable(steps),
+       criterionIds = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? criterionIds
+           : List.unmodifiable(criterionIds),
+       dependsOnTaskIds =
+           identical(collectionsOwnership, _ownedCollectionsToken)
+           ? dependsOnTaskIds
+           : List.unmodifiable(dependsOnTaskIds),
+       expectedEvidence =
+           identical(collectionsOwnership, _ownedCollectionsToken)
+           ? expectedEvidence
+           : List.unmodifiable(expectedEvidence),
+       readPaths = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? readPaths
+           : List.unmodifiable(readPaths),
+       writePaths = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? writePaths
+           : List.unmodifiable(writePaths),
+       doneCriteria = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? doneCriteria
+           : List.unmodifiable(doneCriteria),
+       outOfScope = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? outOfScope
+           : List.unmodifiable(outOfScope),
+       context = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? context
+           : List.unmodifiable(context),
+       expectedArtifacts =
+           identical(collectionsOwnership, _ownedCollectionsToken)
+           ? expectedArtifacts
+           : List.unmodifiable(expectedArtifacts),
+       runs = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? runs
+           : List.unmodifiable(runs),
+       originalPrompt = originalPrompt ?? objective ?? '',
        objective = objective ?? originalPrompt ?? '';
 
   TaskAggregate copyWith({
@@ -204,6 +252,7 @@ class TaskAggregate implements TaskProjectNodeSource, TaskExecutionSource {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       completedAt: resolve(completedAt, this.completedAt),
+      collectionsOwnership: _ownedCollectionsToken,
     );
   }
 

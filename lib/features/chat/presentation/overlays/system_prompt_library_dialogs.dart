@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/chat/application/contracts/prompt_assembler.dart';
-import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
+import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
 
 // ── Data classes ──────────────────────────────────────────────────────────────
 
@@ -248,7 +248,7 @@ class PromptLibraryPreviewDialog extends StatelessWidget {
 class PromptLibraryPresetLoadDialog extends StatefulWidget {
   final PromptPreset preset;
   final List<PromptModule> modules;
-  final SystemPromptLibraryService library;
+  final SystemPromptLibraryPresentationPort library;
   final WorkspaceAttachment? workspace;
 
   const PromptLibraryPresetLoadDialog({
@@ -264,7 +264,7 @@ class PromptLibraryPresetLoadDialog extends StatefulWidget {
     BuildContext context, {
     required PromptPreset preset,
     required List<PromptModule> modules,
-    required SystemPromptLibraryService library,
+    required SystemPromptLibraryPresentationPort library,
     required WorkspaceAttachment? workspace,
   }) {
     return showDialog<List<String>>(

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:hermes/features/chat/presentation/responsive.dart';
 import 'package:hermes/features/chat/presentation/scroll.dart';
 import 'package:hermes/features/chat/application/contracts/bubble.dart';
-import 'package:hermes/features/chat/application/chat_controller.dart';
+import 'package:hermes/features/chat/presentation/chat_controller_port.dart';
 import 'package:hermes/features/chat/application/chat_view_state.dart';
 import 'package:hermes/features/chat/presentation/keyboard_shortcuts.dart';
 import 'package:hermes/features/settings/application/preferences_port.dart';
@@ -125,7 +125,10 @@ class _ChatViewState extends State<ChatView> {
         child: Focus(
           autofocus: true,
           child: AnimatedBuilder(
-            animation: Listenable.merge([chat, chat.chatStream]),
+            animation: Listenable.merge([
+              chat as Listenable,
+              chat.chatStream as Listenable,
+            ]),
             builder: (_, _) {
               final state = chat.viewState;
               final showTaskPanel = _showTaskPanel(state);
@@ -291,11 +294,11 @@ class _ChatViewState extends State<ChatView> {
       mainAxisSize: MainAxisSize.min,
       children: [
         DiagnosticsBar(
-          diagnostics: chat.serverManager.diagnostics,
+          diagnostics: chat.activeModelSession.diagnostics,
           preferencesService: widget.preferencesService,
         ),
         ValueListenableBuilder<ModelSessionState>(
-          valueListenable: chat.serverManager.session,
+          valueListenable: chat.activeModelSession.session,
           builder: (_, session, _) {
             return Composer(
               chat: chat,

@@ -5,9 +5,10 @@ part of 'project_execution_state_machine.dart';
 /// persistence helpers; this coordinator owns the command decisions and
 /// transitions themselves.
 class ProjectUserCommandCoordinator {
-  ProjectUserCommandCoordinator(this._context);
+  ProjectUserCommandCoordinator(ProjectCommandCapabilities context)
+    : _context = context;
 
-  final ProjectUseCaseContext _context;
+  final ProjectCommandCapabilities _context;
 
   ProjectMemoryService get _memoryService => _context.memoryService;
   ProjectPlanningHandler get _planningHandler => _context.planningHandler;

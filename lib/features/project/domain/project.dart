@@ -13,6 +13,7 @@ export 'package:hermes/features/project/application/contracts/project_state_mode
     hide ProjectSnapshotAggregate;
 
 class ProjectAggregate {
+  static final Object _ownedCollectionsToken = Object();
   static const int defaultMaxIterations = 25;
   static const int defaultMaxFailedTasks = 3;
 
@@ -73,11 +74,11 @@ class ProjectAggregate {
     required this.title,
     required this.originalGoal,
     required this.refinedGoal,
-    required this.criteria,
-    required this.constraints,
+    required List<ProjectCriterion> criteria,
+    required List<String> constraints,
     List<ProjectTaskNode>? tasks,
     List<String>? taskIds,
-    this.currentBatchTaskIds = const [],
+    List<String> currentBatchTaskIds = const [],
     this.currentBatchIndex = 0,
     this.currentBatchPlanRevision = 0,
     this.currentBatchProgressObserved = false,
@@ -90,10 +91,10 @@ class ProjectAggregate {
     ProjectWorkspaceGraph? workspaceGraph,
     List<ProjectPlanRevision>? planHistory,
     this.pendingPlanApproval,
-    this.pendingReplanTriggers = const [],
+    List<ProjectPlanRevisionTrigger> pendingReplanTriggers = const [],
     this.completionReviewCheckpoint,
     this.boundary,
-    this.openQuestions = const [],
+    List<PendingProjectQuestion> openQuestions = const [],
     required this.status,
     int? iterationCount,
     this.maxIterations = defaultMaxIterations,
@@ -102,34 +103,82 @@ class ProjectAggregate {
     this.chatSessionId,
     this.completionSummary = '',
     this.blocker,
-    this.decisions = const [],
+    List<ProjectDecisionRecord> decisions = const [],
     this.diagnostics = const ProjectDiagnostics(),
     required this.createdAt,
     required this.updatedAt,
     this.completedAt,
-  }) : tasks = List.unmodifiable(tasks ?? const <ProjectTaskNode>[]),
-       taskIds =
-           taskIds ??
-           [for (final task in tasks ?? const <ProjectTaskNode>[]) task.id],
-       artifacts = artifacts ?? const [],
-       recoveryIncidents = recoveryIncidents ?? const [],
-       evidence = evidence ?? const [],
-       milestones = milestones ?? const [],
-       memory = memory ?? const [],
-       workspaceGraph = workspaceGraph ?? ProjectWorkspaceGraph.empty(),
-       planHistory =
-           planHistory ??
-           [
-             ProjectPlanRevision(
-               revision: 1,
-               trigger: ProjectPlanRevisionTrigger.initialization,
-               summary: 'Initial project plan.',
-               rationale: 'Created from the initial project definition.',
-               createdAt: createdAt,
-               approvedAt: createdAt,
-               approvedBy: ProjectPlanRevisionApprover.automatic,
+    Object? collectionsOwnership,
+  }) : criteria = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? criteria
+           : List.unmodifiable(criteria),
+       constraints = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? constraints
+           : List.unmodifiable(constraints),
+       tasks = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? (tasks ?? const <ProjectTaskNode>[])
+           : List.unmodifiable(tasks ?? const <ProjectTaskNode>[]),
+       taskIds = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? (taskIds ??
+                 [
+                   for (final task in tasks ?? const <ProjectTaskNode>[])
+                     task.id,
+                 ])
+           : List.unmodifiable(
+               taskIds ??
+                   [
+                     for (final task in tasks ?? const <ProjectTaskNode>[])
+                       task.id,
+                   ],
              ),
-           ],
+       currentBatchTaskIds =
+           identical(collectionsOwnership, _ownedCollectionsToken)
+           ? currentBatchTaskIds
+           : List.unmodifiable(currentBatchTaskIds),
+       artifacts = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? (artifacts ?? const [])
+           : List.unmodifiable(artifacts ?? const []),
+       recoveryIncidents =
+           identical(collectionsOwnership, _ownedCollectionsToken)
+           ? (recoveryIncidents ?? const [])
+           : List.unmodifiable(recoveryIncidents ?? const []),
+       evidence = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? (evidence ?? const [])
+           : List.unmodifiable(evidence ?? const []),
+       milestones = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? (milestones ?? const [])
+           : List.unmodifiable(milestones ?? const []),
+       memory = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? (memory ?? const [])
+           : List.unmodifiable(memory ?? const []),
+       workspaceGraph = workspaceGraph ?? ProjectWorkspaceGraph.empty(),
+       planHistory = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? (planHistory ?? const [])
+           : List.unmodifiable(
+               planHistory ??
+                   [
+                     ProjectPlanRevision(
+                       revision: 1,
+                       trigger: ProjectPlanRevisionTrigger.initialization,
+                       summary: 'Initial project plan.',
+                       rationale:
+                           'Created from the initial project definition.',
+                       createdAt: createdAt,
+                       approvedAt: createdAt,
+                       approvedBy: ProjectPlanRevisionApprover.automatic,
+                     ),
+                   ],
+             ),
+       pendingReplanTriggers =
+           identical(collectionsOwnership, _ownedCollectionsToken)
+           ? pendingReplanTriggers
+           : List.unmodifiable(pendingReplanTriggers),
+       openQuestions = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? openQuestions
+           : List.unmodifiable(openQuestions),
+       decisions = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? decisions
+           : List.unmodifiable(decisions),
        iterationCount =
            iterationCount ??
            (tasks
@@ -296,6 +345,7 @@ class ProjectAggregate {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       completedAt: resolve(completedAt, this.completedAt),
+      collectionsOwnership: _ownedCollectionsToken,
     );
   }
 }

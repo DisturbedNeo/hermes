@@ -5,7 +5,7 @@ part of 'chat_session_orchestrator.dart';
 class ChatStateMutationUseCase {
   ChatStateMutationUseCase(this._host);
 
-  final ChatUseCaseContext _host;
+  final ChatStateMutationCapabilities _host;
 
   void updateCurrentModelSnapshot(ModelConfigurationSnapshot snapshot) {
     _host.dispatchCurrentModelSnapshot(snapshot);

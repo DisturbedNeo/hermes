@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/chat/application/contracts/bubble.dart';
 import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
+import 'package:hermes/features/chat/application/chat_panel_projection.dart';
 import 'package:hermes/features/chat/domain/chat_state.dart';
 import 'package:hermes/features/chat/application/contracts/message_role.dart';
 import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
@@ -47,9 +48,9 @@ void main() {
     final next = reducer.reduce(
       reducer.reduce(
         state,
-        ChatProjectChanged(ProjectPanelReadModel.fromAggregate(project)),
+        ChatProjectChanged(ChatPanelProjection.project(project)),
       ),
-      ChatTaskChanged(TaskPanelReadModel.fromAggregate(task)),
+      ChatTaskChanged(ChatPanelProjection.task(task)),
     );
 
     expect(next.activeProject?.id, 'project_slice');

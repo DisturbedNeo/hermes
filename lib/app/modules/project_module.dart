@@ -18,6 +18,8 @@ import 'package:hermes/features/project/runtime/project_planning_coordinator.dar
 import 'package:hermes/features/project/runtime/project_progress_monitor.dart';
 import 'package:hermes/features/project/runtime/project_recovery_service.dart';
 import 'package:hermes/features/project/runtime/project_execution_runtime.dart';
+import 'package:hermes/features/project/application/project_application/project_workflow_port.dart';
+import 'package:hermes/features/project/runtime/project_workflow_adapter.dart';
 import 'package:hermes/features/task/application/contracts/question_policy_service.dart';
 import 'package:hermes/features/task/application/task_application/task_plan_materializer.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
@@ -29,7 +31,7 @@ import 'package:hermes/app/modules/workspace_tools_module.dart';
 
 /// Project planning, execution, recovery, and persistence capabilities.
 class ProjectModule {
-  ProjectModule._({required this.application});
+  ProjectModule._({required this.application, required this.workflow});
 
   factory ProjectModule.create({
     required PersistenceModule persistence,
@@ -105,20 +107,23 @@ class ProjectModule {
       completionService: ProjectCompletionService(lifecycle: lifecycle),
       recoveryHandler: ProjectRecoveryHandler(const ProjectRecoveryService()),
     );
+    final application = ProjectApplication(
+      taskQueries: task,
+      taskPlanning: task,
+      taskProjectPlanning: task,
+      taskExecution: task,
+      taskRecovery: task,
+      toolService: workspace.tools,
+      materializer: materializer,
+      aggregateRepository: persistence.projectAggregates,
+      dependencies: dependencies,
+    );
     return ProjectModule._(
-      application: ProjectApplication(
-        taskQueries: task,
-        taskPlanning: task,
-        taskProjectPlanning: task,
-        taskExecution: task,
-        taskRecovery: task,
-        toolService: workspace.tools,
-        materializer: materializer,
-        aggregateRepository: persistence.projectAggregates,
-        dependencies: dependencies,
-      ),
+      application: application,
+      workflow: ProjectWorkflowAdapter(delegate: application),
     );
   }
 
   final ProjectApplication application;
+  final ProjectWorkflowPort workflow;
 }

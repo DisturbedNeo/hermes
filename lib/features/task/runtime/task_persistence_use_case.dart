@@ -3,9 +3,10 @@ part of 'task_execution_coordinator.dart';
 /// Owns task-document queries, lifecycle persistence, recovery persistence,
 /// and artifact reads exposed by the task application boundary.
 class TaskPersistenceUseCase {
-  TaskPersistenceUseCase(this._context);
+  TaskPersistenceUseCase(TaskPersistenceCapabilities context)
+    : _context = context;
 
-  final TaskUseCaseContext _context;
+  final TaskPersistenceCapabilities _context;
 
   TaskPersistenceStore get _persistenceStore => _context.persistenceStore;
   TaskRecoveryService get _recoveryService => _context.recoveryService;
@@ -80,13 +81,20 @@ class TaskPersistenceUseCase {
     );
   }
 
-  Future<Task> updateTaskChatSessionId({
+  Future<void> updateTaskChatSessionId({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required String taskId,
+    required String sourceChatSessionId,
     required String chatSessionId,
   }) async {
-    if (snapshot.chatSessionId == chatSessionId) return snapshot;
-    return persist(
+    final snapshot = await loadTask(
+      workspace,
+      taskId,
+      chatSessionId: sourceChatSessionId,
+    );
+    if (snapshot == null) return;
+    if (snapshot.chatSessionId == chatSessionId) return;
+    await persist(
       workspace.rootPath,
       snapshot.copyWith(
         chatSessionId: chatSessionId,

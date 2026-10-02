@@ -4,9 +4,9 @@ part of 'task_execution_coordinator.dart';
 /// responsible for step mechanics, while this use case delegates validated
 /// command transitions to the focused task command service.
 class TaskCommandUseCase {
-  TaskCommandUseCase(this._context);
+  TaskCommandUseCase(TaskCommandCapabilities context) : _context = context;
 
-  final TaskUseCaseContext _context;
+  final TaskCommandCapabilities _context;
 
   TaskCommandService get _commandService => _context.commandService;
 

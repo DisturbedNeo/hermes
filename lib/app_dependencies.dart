@@ -66,6 +66,8 @@ class AppDependencies implements ApplicationLifecycle {
       workspace: workspaceModule,
       task: taskModule.controller,
       project: projectModule.application,
+      taskWorkflow: taskModule.workflow,
+      projectWorkflow: projectModule.workflow,
     );
     final themeManager = ThemeManager(preferencesService: preferencesService);
     final lifecycleCoordinator = ApplicationLifecycleCoordinator();

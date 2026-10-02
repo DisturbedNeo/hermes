@@ -2,13 +2,13 @@ part of 'chat_session_orchestrator.dart';
 
 /// Coordinates the explicit user request to replan unfinished task work.
 class ChatTaskReplanUseCase {
-  ChatTaskReplanUseCase(this._host);
+  ChatTaskReplanUseCase(ChatTaskReplanCapabilities host) : _host = host;
 
-  final ChatUseCaseContext _host;
+  final ChatTaskReplanCapabilities _host;
 
   Future<void> execute() async {
     final currentWorkspace = _host.workspace;
-    final client = _host.serverManager.completionProvider;
+    final client = _host.activeModelSession.completionProvider;
     final snapshot = _host.activeTask;
     if (currentWorkspace == null ||
         currentWorkspace.missing ||
@@ -25,15 +25,13 @@ class ChatTaskReplanUseCase {
     _host._beginTaskModelOutput('Replan Model Output');
     _host.emitChange();
     try {
-      _host.dispatchActiveTask(
-        await _host._taskPlanning.replanUnfinished(
-          client: client,
-          workspace: currentWorkspace,
-          snapshot: snapshot,
-          baseSystemPrompt: _host._buildTaskSystemPrompt(snapshot),
-          onModelOutput: _host._handleTaskModelOutput,
-          cancellationToken: token,
-        ),
+      await _host._taskPlanning.replanUnfinished(
+        client: client,
+        workspace: currentWorkspace,
+        taskId: snapshot.id,
+        baseSystemPrompt: _host._buildTaskSystemPrompt(snapshot),
+        onModelOutput: _host._handleTaskModelOutput,
+        cancellationToken: token,
       );
       await _host.reloadTasks();
       _host._insertTaskAssistantMessage(

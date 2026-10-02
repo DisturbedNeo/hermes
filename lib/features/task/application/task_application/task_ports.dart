@@ -9,13 +9,18 @@ import 'package:hermes/features/task/application/contracts/task_snapshot_models.
 import 'package:hermes/features/task/application/contracts/task_planning_models.dart';
 import 'package:hermes/features/task/application/contracts/task_commands.dart';
 
-abstract interface class TaskQueryPort {
+/// Stable cross-feature projection query. It returns detached summaries only.
+abstract interface class TaskSummaryQueryPort {
   Future<List<TaskSummary>> listTasks(
     WorkspaceAttachment workspace, {
     String? chatSessionId,
     String? projectId,
   });
+}
 
+/// Owning-feature task hydration seam. Runtime workflows use this explicitly;
+/// presentation and saved-task lists should use summaries.
+abstract interface class TaskAggregateQueryPort {
   Future<Task?> loadLatestTask(
     WorkspaceAttachment workspace, {
     String? chatSessionId,
@@ -31,6 +36,14 @@ abstract interface class TaskQueryPort {
   });
 }
 
+/// Summary-only query surface for feature-facing callers.
+abstract interface class TaskQueryPort implements TaskSummaryQueryPort {}
+
+/// Internal workflow query surface that composes summary and owner-bound task
+/// hydration for runtime orchestration.
+abstract interface class TaskWorkflowQueryPort
+    implements TaskSummaryQueryPort, TaskAggregateQueryPort {}
+
 abstract interface class TaskSessionPort {
   Future<int> deleteTasksForChatSession(
     WorkspaceAttachment workspace, {
@@ -42,9 +55,10 @@ abstract interface class TaskSessionPort {
     required Set<String> retainedChatSessionIds,
   });
 
-  Future<Task> updateTaskChatSessionId({
+  Future<void> updateTaskChatSessionId({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required String taskId,
+    required String sourceChatSessionId,
     required String chatSessionId,
   });
 }

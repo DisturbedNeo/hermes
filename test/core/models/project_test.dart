@@ -1,8 +1,53 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
 import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
+import 'package:hermes/features/task/domain/task.dart' as task_domain;
 
 void main() {
+  test('aggregate collections are detached and immutable', () {
+    final now = DateTime(2026, 1, 1);
+    final constraints = <String>['Keep the change small.'];
+    final task = task_domain.TaskAggregate(
+      id: 'task_1',
+      title: 'Task',
+      objective: 'Do one thing',
+      constraints: constraints,
+      createdAt: now,
+      updatedAt: now,
+    );
+    final criterion = ProjectCriterion(
+      id: 'criterion_1',
+      statement: 'It works',
+      createdAt: now,
+      updatedAt: now,
+    );
+    final criteria = <ProjectCriterion>[criterion];
+    final project = ProjectAggregate(
+      id: 'project_1',
+      title: 'Project',
+      originalGoal: 'Build it',
+      refinedGoal: 'Build it safely',
+      criteria: criteria,
+      constraints: constraints,
+      status: ProjectStatus.active,
+      activeTaskId: null,
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    constraints.add('Original input remains independently mutable.');
+    criteria.clear();
+
+    expect(task.constraints, ['Keep the change small.']);
+    expect(project.criteria, hasLength(1));
+    expect(() => task.constraints.add('No mutation.'), throwsUnsupportedError);
+    expect(() => project.criteria.add(criterion), throwsUnsupportedError);
+    expect(
+      () => project.constraints.add('No mutation.'),
+      throwsUnsupportedError,
+    );
+  });
+
   test(
     'ProjectAggregate exposes one task collection and derives revisions',
     () {

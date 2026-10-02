@@ -5,8 +5,10 @@ import 'package:hermes/features/chat/infrastructure/chat_library_repository.dart
 import 'package:hermes/features/chat/infrastructure/system_prompt_library_repository.dart';
 import 'package:hermes/features/chat/infrastructure/chat_panel_protocol_adapter.dart';
 import 'package:hermes/features/project/application/project_application/project_application.dart';
+import 'package:hermes/features/project/application/project_application/project_workflow_port.dart';
 import 'package:hermes/features/settings/infrastructure/preferences_service.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
+import 'package:hermes/features/task/application/task_application/task_workflow_port.dart';
 import 'package:hermes/features/chat/runtime/chat_application/chat_tool_execution_service.dart';
 import 'package:hermes/app/modules/model_module.dart';
 import 'package:hermes/app/modules/workspace_tools_module.dart';
@@ -25,6 +27,8 @@ class ChatModule {
     required WorkspaceToolsModule workspace,
     required TaskController task,
     required ProjectApplication project,
+    required TaskWorkflowPort taskWorkflow,
+    required ProjectWorkflowPort projectWorkflow,
   }) {
     final chatLibrary = ChatLibraryService(
       repository: ChatLibraryRepository(preferencesService: preferences),
@@ -45,15 +49,15 @@ class ChatModule {
       taskSessions: task,
       taskPresentation: task,
       panelProtocol: const ChatPanelProtocolAdapter(),
-      taskPlanning: task,
-      taskExecution: task,
-      taskRecovery: task,
+      taskPlanning: taskWorkflow,
+      taskExecution: taskWorkflow,
+      taskRecovery: taskWorkflow,
       projectQueries: project,
       projectSessions: project,
-      projectPlanning: project,
-      projectCommands: project,
-      projectExecution: project,
-      projectRecovery: project,
+      projectPlanning: projectWorkflow,
+      projectCommands: projectWorkflow,
+      projectExecution: projectWorkflow,
+      projectRecovery: projectWorkflow,
       workspaceService: workspace.workspace,
       preferencesService: preferences,
     );

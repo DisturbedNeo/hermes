@@ -16,7 +16,7 @@ import 'package:hermes/features/task/runtime/task_step_execution_runtime.dart';
 
 class TaskRuntimeController
     implements
-        TaskQueryPort,
+        TaskWorkflowQueryPort,
         TaskSessionPort,
         TaskPresentationPort,
         TaskPlanningPort,
@@ -84,13 +84,15 @@ class TaskRuntimeController
   );
 
   @override
-  Future<Task> updateTaskChatSessionId({
+  Future<void> updateTaskChatSessionId({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required String taskId,
+    required String sourceChatSessionId,
     required String chatSessionId,
   }) => _delegate.updateTaskChatSessionId(
     workspace: workspace,
-    snapshot: snapshot,
+    taskId: taskId,
+    sourceChatSessionId: sourceChatSessionId,
     chatSessionId: chatSessionId,
   );
 

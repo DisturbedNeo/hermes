@@ -29,8 +29,8 @@ class ChatWorkspaceLifecycleCoordinator {
     required WorkspacePort workspaceService,
     required TaskSessionPort taskSessions,
     required ProjectSessionPort projectSessions,
-    required TaskQueryPort taskQueries,
-    required ProjectQueryPort projectQueries,
+    required TaskWorkflowQueryPort taskQueries,
+    required ProjectWorkflowQueryPort projectQueries,
     required Future<ProjectCommandResult?> Function(
       WorkspaceAttachment workspace,
       ProjectAggregate? snapshot,
@@ -58,8 +58,8 @@ class ChatWorkspaceLifecycleCoordinator {
   final WorkspacePort _workspaceService;
   final TaskSessionPort _taskSessions;
   final ProjectSessionPort _projectSessions;
-  final TaskQueryPort _taskQueries;
-  final ProjectQueryPort _projectQueries;
+  final TaskWorkflowQueryPort _taskQueries;
+  final ProjectWorkflowQueryPort _projectQueries;
   final Future<ProjectCommandResult?> Function(
     WorkspaceAttachment workspace,
     ProjectAggregate? snapshot,

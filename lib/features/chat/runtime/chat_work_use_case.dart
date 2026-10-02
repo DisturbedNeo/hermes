@@ -7,9 +7,9 @@ part of 'chat_session_orchestrator.dart';
 class ChatWorkUseCase {
   ChatWorkUseCase(this._host);
 
-  final ChatUseCaseContext _host;
+  final ChatWorkCapabilities _host;
 
-  ModelServerPort get serverManager => _host.serverManager;
+  ActiveModelSessionPort get activeModelSession => _host.activeModelSession;
   MessageStore get messageStore => _host.messageStore;
   ChatStream<ChatToken> get chatStream => _host.chatStream;
   WorkspaceAttachment? get workspace => _host.workspace;
@@ -30,13 +30,14 @@ class ChatWorkUseCase {
       _host._presentationMessages;
   ChatPanelProtocolAdapter get _panelProtocol => _host._panelProtocol;
   ChatSessionManager get _session => _host._session;
-  TaskQueryPort get _taskQueries => _host._taskQueries;
-  TaskPlanningPort get _taskPlanning => _host._taskPlanning;
-  TaskExecutionPort get _taskExecution => _host._taskExecution;
-  TaskRecoveryPort get _taskRecovery => _host._taskRecovery;
-  ProjectQueryPort get _projectQueries => _host._projectQueries;
-  ProjectPlanningPort get _projectPlanning => _host._projectPlanning;
-  ProjectExecutionPort get _projectExecution => _host._projectExecution;
+  TaskWorkflowQueryPort get _taskQueries => _host._taskQueries;
+  TaskWorkflowPort get _taskPlanning => _host._taskPlanning;
+  TaskWorkflowPort get _taskExecution => _host._taskExecution;
+  TaskWorkflowPort get _taskRecovery => _host._taskRecovery;
+  ProjectWorkflowQueryPort get _projectQueries => _host._projectQueries;
+  ProjectWorkflowPort get _projectPlanning => _host._projectPlanning;
+  ProjectWorkflowPort get _projectExecution => _host._projectExecution;
+  ProjectWorkflowPort get _projectRecovery => _host._projectRecovery;
   ChatRuntimePreferencesPort get _preferencesService =>
       _host._preferencesService;
 
@@ -370,12 +371,10 @@ class ChatWorkUseCase {
         _host.taskBusy) {
       return;
     }
-    _host.dispatchActiveTask(
-      await _host._taskCommandCoordinator.execute(
-        command: const RetryTaskPhaseCommand(),
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-      ),
+    await _host._taskCommandCoordinator.execute(
+      command: const RetryTaskPhaseCommand(),
+      workspace: currentWorkspace,
+      taskId: snapshot.id,
     );
     await _host._clearProjectTaskBlocker();
     await reloadTasks();
@@ -390,12 +389,10 @@ class ChatWorkUseCase {
         _host.taskBusy) {
       return;
     }
-    _host.dispatchActiveTask(
-      await _host._taskCommandCoordinator.execute(
-        command: const SkipTaskPhaseCommand(),
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-      ),
+    await _host._taskCommandCoordinator.execute(
+      command: const SkipTaskPhaseCommand(),
+      workspace: currentWorkspace,
+      taskId: snapshot.id,
     );
     await _host._clearProjectTaskBlocker();
     await reloadTasks();
@@ -413,12 +410,10 @@ class ChatWorkUseCase {
       await cancelTaskRun();
       return;
     }
-    _host.dispatchActiveTask(
-      await _host._taskCommandCoordinator.execute(
-        command: const StopTaskCommand(),
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-      ),
+    await _host._taskCommandCoordinator.execute(
+      command: const StopTaskCommand(),
+      workspace: currentWorkspace,
+      taskId: snapshot.id,
     );
     await reloadTasks();
   }
@@ -432,12 +427,10 @@ class ChatWorkUseCase {
         _host.taskBusy) {
       return;
     }
-    _host.dispatchActiveTask(
-      await _host._taskCommandCoordinator.execute(
-        command: AnswerTaskQuestionCommand(answer),
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-      ),
+    await _host._taskCommandCoordinator.execute(
+      command: AnswerTaskQuestionCommand(answer),
+      workspace: currentWorkspace,
+      taskId: snapshot.id,
     );
     await _host._clearProjectTaskBlocker();
     await reloadTasks();
@@ -452,12 +445,10 @@ class ChatWorkUseCase {
         _host.taskBusy) {
       return;
     }
-    _host.dispatchActiveTask(
-      await _host._taskCommandCoordinator.execute(
-        command: const ApproveTaskStepCommand(),
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-      ),
+    await _host._taskCommandCoordinator.execute(
+      command: const ApproveTaskStepCommand(),
+      workspace: currentWorkspace,
+      taskId: snapshot.id,
     );
     await _host._clearProjectTaskBlocker();
     await reloadTasks();
@@ -472,12 +463,10 @@ class ChatWorkUseCase {
         _host.taskBusy) {
       return;
     }
-    _host.dispatchActiveProject(
-      await _host._projectCommandCoordinator.execute(
-        command: AnswerProjectQuestionCommand(answer),
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-      ),
+    await _host._projectCommandCoordinator.execute(
+      command: AnswerProjectQuestionCommand(answer),
+      workspace: currentWorkspace,
+      projectId: snapshot.id,
     );
     await reloadTasks();
   }
@@ -494,12 +483,10 @@ class ChatWorkUseCase {
       await cancelTaskRun();
       return;
     }
-    _host.dispatchActiveProject(
-      await _host._projectCommandCoordinator.execute(
-        command: const StopProjectCommand(),
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-      ),
+    await _host._projectCommandCoordinator.execute(
+      command: const StopProjectCommand(),
+      workspace: currentWorkspace,
+      projectId: snapshot.id,
     );
     _host.dispatchActiveTask(null);
     await reloadTasks();
@@ -514,12 +501,10 @@ class ChatWorkUseCase {
         _host.taskBusy) {
       return;
     }
-    _host.dispatchActiveProject(
-      await _host._projectCommandCoordinator.execute(
-        command: const PauseProjectCommand(),
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-      ),
+    await _host._projectCommandCoordinator.execute(
+      command: const PauseProjectCommand(),
+      workspace: currentWorkspace,
+      projectId: snapshot.id,
     );
     await reloadTasks();
   }
@@ -533,12 +518,10 @@ class ChatWorkUseCase {
         _host.taskBusy) {
       return;
     }
-    _host.dispatchActiveProject(
-      await _host._projectCommandCoordinator.execute(
-        command: RetryProjectRecoveryCommand(incidentId),
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-      ),
+    await _host._projectCommandCoordinator.execute(
+      command: RetryProjectRecoveryCommand(incidentId),
+      workspace: currentWorkspace,
+      projectId: snapshot.id,
     );
     await reloadTasks();
   }
@@ -553,12 +536,10 @@ class ChatWorkUseCase {
         snapshot.pendingPlanApproval == null) {
       return;
     }
-    _host.dispatchActiveProject(
-      await _host._projectCommandCoordinator.execute(
-        command: const ApproveProjectPlanCommand(),
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-      ),
+    await _host._projectCommandCoordinator.execute(
+      command: const ApproveProjectPlanCommand(),
+      workspace: currentWorkspace,
+      projectId: snapshot.id,
     );
     await reloadTasks();
   }
@@ -573,12 +554,10 @@ class ChatWorkUseCase {
         snapshot.pendingPlanApproval == null) {
       return;
     }
-    _host.dispatchActiveProject(
-      await _host._projectCommandCoordinator.execute(
-        command: const RejectProjectPlanCommand(),
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-      ),
+    await _host._projectCommandCoordinator.execute(
+      command: const RejectProjectPlanCommand(),
+      workspace: currentWorkspace,
+      projectId: snapshot.id,
     );
     await reloadTasks();
   }
@@ -594,12 +573,10 @@ class ChatWorkUseCase {
         _host.taskBusy) {
       return;
     }
-    _host.dispatchActiveProject(
-      await _host._projectCommandCoordinator.execute(
-        command: RequestProjectReplanCommand(reason),
-        workspace: currentWorkspace,
-        snapshot: snapshot,
-      ),
+    await _host._projectCommandCoordinator.execute(
+      command: RequestProjectReplanCommand(reason),
+      workspace: currentWorkspace,
+      projectId: snapshot.id,
     );
     await reloadTasks();
     await _host._runProjectInternal();

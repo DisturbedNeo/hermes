@@ -8,16 +8,21 @@ truth.
 
 - Overall status: `COMPLETE`
 - Active item: none
-- Last verified: 2026-10-02 (STRICT-003 complete)
+- Last verified: 2026-10-02 (full verifier passed after the final architecture audit)
 - Pre-existing user change: `README.md` was modified before migration setup;
   preserve it unless the migration explicitly updates the same documentation.
 - The historical ARCH-001 through ARCH-016 migration rows remain complete. The
   stricter facade follow-up below is also complete after the repository-wide
   audit was resolved with focused runtime contexts, use-case-owned workflow
   cores, and explicit architecture checks.
-- Final verification after the strict follow-up passed: mapper generation,
-  formatting (458 files), analysis, the 27-test architecture suite, all 614
-  Flutter tests, and generated-file-aware diff whitespace checks.
+- Final verification after the architecture-review follow-up passed: mapper
+  generation, formatting (480 files), analysis, the 37-test architecture
+  suite, all 626 Flutter tests, and generated-file-aware diff whitespace
+  checks.
+
+The architecture-review follow-up below is now the active implementation
+ledger. The original ARCH-001 through ARCH-016 and STRICT-001 through
+STRICT-003 scopes remain complete.
 
 ## Baseline evidence before migration setup
 
@@ -315,3 +320,41 @@ the earlier closeout claim and is now closed.
   generation, formatting (458 files), analysis, 27 architecture tests, 614
   Flutter tests, and diff-whitespace validation. No required migration or
   strict follow-up item remains open.
+
+## Architecture review follow-up ledger
+
+| ID | Status | Evidence / notes |
+|---|---|---|
+| RECOMMEND-001 | `DONE` | Added `ChatPanelProjection`; chat panel read models now contain detached fields, focused schedule/workspace read models, and no project/task domain imports or aggregate fields. Focused chat/UI tests and the architecture suite (28 tests) pass. |
+| RECOMMEND-002 | `DONE` | Added `ModelServerLifecyclePort`, retained `ActiveModelSessionPort`, and migrated chat use-case paths to the focused lifecycle/session capabilities. The architecture suite enforces the split; analysis and all 29 architecture tests pass. |
+| RECOMMEND-003 | `DONE` | Session moves now cross feature boundaries by identity. Summary-only `ProjectQueryPort`/`TaskQueryPort` surfaces are separated from explicit owner-bound `ProjectWorkflowQueryPort`/`TaskWorkflowQueryPort` hydration seams. New `ProjectWorkflowPort`/`TaskWorkflowPort` contracts exchange IDs, commands, and detached summaries; owner-bound adapters perform hydration and legacy aggregate ports remain confined to owning-feature compatibility/runtime seams. Architecture tests enforce summary, session, and resolved aggregate-free workflow boundaries. |
+| RECOMMEND-004 | `DONE` | Mapper-backed project/task sources, generated mappers, and JSON hooks now live under persistence; application paths remain compatibility exports. Build generation, analysis, serialization, and persistence tests pass. |
+| RECOMMEND-005 | `DONE` | Project/task planning, execution, command, persistence, and all chat lifecycle, work, state, plan, replan, and exit use cases now depend on named capability contexts. The architecture suite rejects broad `ChatUseCaseContext` use in use-case services. |
+| RECOMMEND-006 | `DONE` | Split project-plan command, materialization/support, workspace-graph, planning-registry, and project-specific task-panel responsibilities into focused source units. Architecture budgets now enforce the resulting responsibility-sized units; builder, planning, and chat-panel tests pass. |
+| RECOMMEND-007 | `DONE` | Planning registries and all domain handlers receive `PlanningArguments` directly; registries no longer convert typed arguments back into wire maps. JSON decoding/encoding remains in `PlanningProtocolAdapter`; malformed-input envelopes remain covered by planning and architecture tests. |
+| RECOMMEND-008 | `DONE` | Added analyzer-resolved declaration checks for focused session-port parameter types and aggregate-free workflow method parameters/returns, with SDK discovery derived from the active Flutter/Dart runtime. The architecture suite passes. |
+| RECOMMEND-009 | `DONE` | Root providers expose the typed chat workspace presentation port, and presentation widgets consume detached chat-tab/workspace, message-store, and stream capabilities plus existing library/model/workspace ports. Concrete chat controllers remain composition/compatibility implementations; the architecture suite rejects concrete controller imports from presentation. |
+| RECOMMEND-010 | `DONE` | Aggregate list inputs are detached and unmodifiable; `ModelJsonCodecRegistry` rejects accidental replacement and supports explicit idempotent composition-root registration. Model, aggregate, and persistence tests pass. |
+
+### Architecture review closeout (2026-10-02)
+
+- The follow-up recommendations are complete. Summary query contracts are
+  separated from owner-bound workflow hydration, chat session moves use
+  identities rather than aggregate snapshots, and chat workflow calls now
+  exchange IDs and detached results through explicit feature-facing ports.
+- Persistence DTOs, generated mappers, and JSON hooks are owned by the
+  persistence infrastructure; legacy application import paths are explicit
+  compatibility exports.
+- Chat, project, and task use cases use focused capability contexts. Project
+  workspace planning, project-plan commands/materialization, task gate
+  validation, project planning commands, and chat presentation responsibilities
+  have separate source units with enforced line budgets.
+- Presentation wiring consumes `ChatWorkspacePresentationPort` and
+  `ChatTabPresentationPort`; compatibility constructors adapt pre-migration
+  aggregate services only at owning feature/application boundaries.
+- Analyzer-resolved declaration checks, typed planning dispatch contracts,
+  presentation service-port checks, immutable aggregate collection tests, and
+  codec replacement tests are now part of the architecture/compatibility gate.
+- `bash tool/verify.sh` passed end to end: mapper generation, formatting (480
+  files), analysis, 37 architecture checks, 626 Flutter tests, and whitespace
+  validation.

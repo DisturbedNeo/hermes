@@ -1,8 +1,8 @@
 import 'package:hermes/core/model_json.dart';
-import 'package:hermes/features/project/application/contracts/project_state_models.dart'
+import 'package:hermes/features/persistence/infrastructure/dto/project_state_models.dart'
     as project_snapshot;
 import 'package:hermes/features/project/domain/project.dart';
-import 'package:hermes/features/task/application/contracts/task_state_models.dart'
+import 'package:hermes/features/persistence/infrastructure/dto/task_state_models.dart'
     as task_snapshot;
 import 'package:hermes/features/task/domain/task.dart';
 
@@ -12,11 +12,11 @@ import 'package:hermes/features/task/domain/task.dart';
 /// detail here. They never cross back into the domain library, and the domain
 /// aggregates do not carry mapper annotations or JSON methods.
 void registerAggregateSnapshotCodecs() {
-  ModelJson.register<ProjectAggregate>(
+  ModelJson.registerIfAbsent<ProjectAggregate>(
     encode: ProjectSnapshotCodec.encode,
     decode: ProjectSnapshotCodec.decode,
   );
-  ModelJson.register<TaskAggregate>(
+  ModelJson.registerIfAbsent<TaskAggregate>(
     encode: TaskSnapshotCodec.encode,
     decode: TaskSnapshotCodec.decode,
   );

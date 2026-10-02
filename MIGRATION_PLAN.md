@@ -333,3 +333,100 @@ bash tool/verify.sh
 git diff --check
 flutter test
 ```
+
+## Architecture review follow-up
+
+The original migration checklist is complete, but the repository-wide review
+identified a second set of improvements. These items are mandatory for the
+follow-up implementation goal and use the same verification and status-ledger
+rules as the migration above.
+
+### RECOMMEND-001 — Remove aggregate retention from chat projections
+
+Acceptance criteria:
+
+- chat panel read models contain detached fields and projection results only;
+- aggregate copying and domain-derived schedule/workspace selection live in an
+  application projection adapter;
+- architecture tests reject aggregate types and domain imports in the read
+  model module.
+
+### RECOMMEND-002 — Split model server lifecycle from active sessions
+
+Acceptance criteria:
+
+- lifecycle and active-session capabilities have separate application ports;
+- chat use cases consume the focused capability they need;
+- the combined server port remains only as a composition implementation.
+
+### RECOMMEND-003 — Replace aggregate-shaped cross-feature ports
+
+Acceptance criteria:
+
+- chat/project/task feature-facing summary ports exchange IDs and summaries;
+- owner-bound workflow query ports make aggregate hydration explicit and keep
+  it inside runtime orchestration rather than the summary/presentation seam;
+- session moves exchange identities and commands, while aggregate mutation
+  remains behind the owning feature boundary;
+- persistence and execution behavior remains unchanged.
+
+### RECOMMEND-004 — Move persistence representations behind explicit DTOs
+
+Acceptance criteria:
+
+- generated persistence mappers and schema hooks are owned by persistence or
+  protocol adapters rather than application contract directories;
+- aggregate codecs map explicit persistence DTOs and preserve compatibility;
+- mapper generation and round-trip/migration tests remain green.
+
+### RECOMMEND-005 — Replace mega-contexts with use-case capability contexts
+
+Acceptance criteria:
+
+- chat, project, and task use cases receive focused state, persistence,
+  model, workspace, and command capabilities;
+- no use-case context exposes unrelated mutable host internals;
+- architecture tests enforce focused context surfaces.
+
+### RECOMMEND-006 — Continue splitting oversized orchestration units
+
+Acceptance criteria:
+
+- remaining planning, execution, protocol, and UI coordination units are
+  decomposed by responsibility;
+- source-size budgets are reduced to responsibility-sized limits;
+- public compatibility facades remain stable.
+
+### RECOMMEND-007 — Keep dynamic tool-wire maps at protocol adapters
+
+Acceptance criteria:
+
+- runtime planning registries receive typed command objects;
+- JSON/map conversion is confined to protocol adapters;
+- malformed wire input still produces the existing typed error envelopes.
+
+### RECOMMEND-008 — Strengthen architecture enforcement with resolved types
+
+Acceptance criteria:
+
+- architecture tests use resolved analyzer declarations for ports, aggregate
+  leakage, generated mapper placement, and facade surfaces;
+- regex checks remain only for narrow textual policies;
+- failures identify the offending file and declaration.
+
+### RECOMMEND-009 — Remove concrete application services from presentation wiring
+
+Acceptance criteria:
+
+- root providers and presentation constructors expose application ports or
+  projections instead of concrete services where a focused port is sufficient;
+- composition code remains the only place that knows concrete implementations.
+
+### RECOMMEND-010 — Harden aggregate collection and codec ownership
+
+Acceptance criteria:
+
+- aggregate constructors defensively own mutable collection inputs;
+- JSON codec registration is explicit, scoped, and cannot be silently
+  replaced by unrelated callers;
+- safety, persistence, and compatibility tests remain green.

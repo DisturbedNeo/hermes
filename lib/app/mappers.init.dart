@@ -9,21 +9,22 @@ import '../features/chat/application/protocol/context_summary_prompt.dart'
     as p1;
 import '../features/model/application/model_configuration.dart' as p2;
 import '../features/model/application/model_load_configuration.dart' as p3;
-import '../features/project/application/contracts/project_state_models.dart'
+import '../features/persistence/infrastructure/dto/project_state_models.dart'
     as p4;
-import '../features/project/application/contracts/project_task_models.dart'
+import '../features/persistence/infrastructure/dto/task_state_models.dart'
     as p5;
-import '../features/project/application/contracts/project_workspace_graph.dart'
+import '../features/project/application/contracts/project_task_models.dart'
     as p6;
-import '../features/task/application/contracts/planning_metrics.dart' as p7;
+import '../features/project/application/contracts/project_workspace_graph.dart'
+    as p7;
+import '../features/task/application/contracts/planning_metrics.dart' as p8;
 import '../features/task/application/contracts/question_policy_service.dart'
-    as p8;
-import '../features/task/application/contracts/task_execution_contracts.dart'
     as p9;
-import '../features/task/application/contracts/task_planning_models.dart'
+import '../features/task/application/contracts/task_execution_contracts.dart'
     as p10;
-import '../features/task/application/contracts/task_planning_types.dart' as p11;
-import '../features/task/application/contracts/task_state_models.dart' as p12;
+import '../features/task/application/contracts/task_planning_models.dart'
+    as p11;
+import '../features/task/application/contracts/task_planning_types.dart' as p12;
 import '../features/task/application/contracts/task_tool_contracts.dart' as p13;
 import '../features/workspace/application/workspace_discovery_profile.dart'
     as p14;
@@ -70,45 +71,45 @@ void initializeMappers() {
   p4.ProjectDecisionTypeMapper.ensureInitialized();
   p4.ProjectControlOutcomeMapper.ensureInitialized();
   p4.ProjectRecoveryIncidentStatusMapper.ensureInitialized();
-  p5.ProjectTaskNodeMapper.ensureInitialized();
-  p6.ProjectWorkspaceNodeMapper.ensureInitialized();
-  p6.ProjectWorkspaceEdgeMapper.ensureInitialized();
-  p6.ProjectWorkspaceGraphMapper.ensureInitialized();
-  p6.ProjectWorkspaceSourceTypeMapper.ensureInitialized();
-  p6.ProjectWorkspaceConfidenceMapper.ensureInitialized();
-  p7.PlanningMetricsMapper.ensureInitialized();
-  p8.AgentQuestionMapper.ensureInitialized();
-  p8.QuestionKindMapper.ensureInitialized();
-  p9.TaskGateMapper.ensureInitialized();
-  p9.TaskEvidenceExpectationMapper.ensureInitialized();
-  p9.TaskArtifactMapper.ensureInitialized();
-  p9.TaskGateResultMapper.ensureInitialized();
-  p9.TaskFailureMapper.ensureInitialized();
-  p9.TaskEvidenceClaimMapper.ensureInitialized();
-  p9.TaskGateStatusMapper.ensureInitialized();
-  p9.TaskGateFailureDispositionMapper.ensureInitialized();
-  p9.TaskEvidenceClaimTypeMapper.ensureInitialized();
-  p9.TaskEvidenceClaimStrengthMapper.ensureInitialized();
-  p10.TaskPlanningContextMapper.ensureInitialized();
-  p10.WorkspaceMetadataMapper.ensureInitialized();
-  p11.TaskStatusMapper.ensureInitialized();
-  p11.TaskPriorityMapper.ensureInitialized();
-  p11.TaskRiskMapper.ensureInitialized();
-  p11.ProjectRiskReductionMapper.ensureInitialized();
-  p11.TaskEffortMapper.ensureInitialized();
-  p11.ProjectEvidenceTypeMapper.ensureInitialized();
-  p12.TaskProjectCriterionMapper.ensureInitialized();
-  p12.TaskProjectEvidenceExpectationMapper.ensureInitialized();
-  p12.RefinedTaskBriefMapper.ensureInitialized();
-  p12.TaskSnapshotAggregateMapper.ensureInitialized();
-  p12.TaskStepMapper.ensureInitialized();
-  p12.TaskRunMapper.ensureInitialized();
-  p12.TaskToolCallRecordMapper.ensureInitialized();
-  p12.PendingTaskApprovalMapper.ensureInitialized();
-  p12.PendingTaskQuestionMapper.ensureInitialized();
-  p12.TaskStepStatusMapper.ensureInitialized();
-  p12.TaskRunStatusMapper.ensureInitialized();
-  p12.TaskToolCallOutcomeMapper.ensureInitialized();
+  p5.TaskProjectCriterionMapper.ensureInitialized();
+  p5.TaskProjectEvidenceExpectationMapper.ensureInitialized();
+  p5.RefinedTaskBriefMapper.ensureInitialized();
+  p5.TaskSnapshotAggregateMapper.ensureInitialized();
+  p5.TaskStepMapper.ensureInitialized();
+  p5.TaskRunMapper.ensureInitialized();
+  p5.TaskToolCallRecordMapper.ensureInitialized();
+  p5.PendingTaskApprovalMapper.ensureInitialized();
+  p5.PendingTaskQuestionMapper.ensureInitialized();
+  p5.TaskStepStatusMapper.ensureInitialized();
+  p5.TaskRunStatusMapper.ensureInitialized();
+  p5.TaskToolCallOutcomeMapper.ensureInitialized();
+  p6.ProjectTaskNodeMapper.ensureInitialized();
+  p7.ProjectWorkspaceNodeMapper.ensureInitialized();
+  p7.ProjectWorkspaceEdgeMapper.ensureInitialized();
+  p7.ProjectWorkspaceGraphMapper.ensureInitialized();
+  p7.ProjectWorkspaceSourceTypeMapper.ensureInitialized();
+  p7.ProjectWorkspaceConfidenceMapper.ensureInitialized();
+  p8.PlanningMetricsMapper.ensureInitialized();
+  p9.AgentQuestionMapper.ensureInitialized();
+  p9.QuestionKindMapper.ensureInitialized();
+  p10.TaskGateMapper.ensureInitialized();
+  p10.TaskEvidenceExpectationMapper.ensureInitialized();
+  p10.TaskArtifactMapper.ensureInitialized();
+  p10.TaskGateResultMapper.ensureInitialized();
+  p10.TaskFailureMapper.ensureInitialized();
+  p10.TaskEvidenceClaimMapper.ensureInitialized();
+  p10.TaskGateStatusMapper.ensureInitialized();
+  p10.TaskGateFailureDispositionMapper.ensureInitialized();
+  p10.TaskEvidenceClaimTypeMapper.ensureInitialized();
+  p10.TaskEvidenceClaimStrengthMapper.ensureInitialized();
+  p11.TaskPlanningContextMapper.ensureInitialized();
+  p11.WorkspaceMetadataMapper.ensureInitialized();
+  p12.TaskStatusMapper.ensureInitialized();
+  p12.TaskPriorityMapper.ensureInitialized();
+  p12.TaskRiskMapper.ensureInitialized();
+  p12.ProjectRiskReductionMapper.ensureInitialized();
+  p12.TaskEffortMapper.ensureInitialized();
+  p12.ProjectEvidenceTypeMapper.ensureInitialized();
   p13.TaskToolErrorMapper.ensureInitialized();
   p13.TaskToolErrorDispositionMapper.ensureInitialized();
   p14.WorkspaceDiscoveryProfileMapper.ensureInitialized();

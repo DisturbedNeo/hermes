@@ -500,13 +500,15 @@ class TaskExecutionCoordinator {
     retainedChatSessionIds: retainedChatSessionIds,
   );
 
-  Future<Task> updateTaskChatSessionId({
+  Future<void> updateTaskChatSessionId({
     required WorkspaceAttachment workspace,
-    required Task snapshot,
+    required String taskId,
+    required String sourceChatSessionId,
     required String chatSessionId,
   }) => _persistenceUseCase.updateTaskChatSessionId(
     workspace: workspace,
-    snapshot: snapshot,
+    taskId: taskId,
+    sourceChatSessionId: sourceChatSessionId,
     chatSessionId: chatSessionId,
   );
 

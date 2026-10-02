@@ -19,14 +19,14 @@ import 'package:hermes/features/project/runtime/project_execution_runtime.dart';
 
 class ProjectRuntimeApplication
     implements
-        ProjectQueryPort,
+        ProjectWorkflowQueryPort,
         ProjectSessionPort,
         ProjectPlanningPort,
         ProjectCommandPort,
         ProjectRecoveryCommandsPort,
         ProjectExecutionPort {
   ProjectRuntimeApplication({
-    required TaskQueryPort taskQueries,
+    required TaskWorkflowQueryPort taskQueries,
     required TaskPlanningPort taskPlanning,
     required TaskProjectPlanningPort taskProjectPlanning,
     required TaskExecutionPort taskExecution,
@@ -119,13 +119,15 @@ class ProjectRuntimeApplication
   );
 
   @override
-  Future<ProjectAggregate> updateProjectChatSessionId({
+  Future<void> updateProjectChatSessionId({
     required WorkspaceAttachment workspace,
-    required ProjectAggregate snapshot,
+    required String projectId,
+    required String sourceChatSessionId,
     required String chatSessionId,
   }) => _delegate.updateProjectChatSessionId(
     workspace: workspace,
-    snapshot: snapshot,
+    projectId: projectId,
+    sourceChatSessionId: sourceChatSessionId,
     chatSessionId: chatSessionId,
   );
 

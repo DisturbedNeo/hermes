@@ -7,12 +7,17 @@ import 'package:hermes/core/contracts/execution_settings.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/project/application/contracts/project_commands.dart';
 
-abstract interface class ProjectQueryPort {
+/// Stable cross-feature projection query. It returns detached summaries only.
+abstract interface class ProjectSummaryQueryPort {
   Future<List<ProjectSummary>> listProjects(
     WorkspaceAttachment workspace, {
     String? chatSessionId,
   });
+}
 
+/// Owning-feature aggregate hydration seam. Runtime workflows use this
+/// explicitly; presentation and saved-chat lists should use summaries.
+abstract interface class ProjectAggregateQueryPort {
   Future<ProjectAggregate?> loadLatestProject(
     WorkspaceAttachment workspace, {
     String? chatSessionId,
@@ -25,6 +30,14 @@ abstract interface class ProjectQueryPort {
   });
 }
 
+/// Summary-only query surface for feature-facing callers.
+abstract interface class ProjectQueryPort implements ProjectSummaryQueryPort {}
+
+/// Internal workflow query surface that composes summary and owner-bound
+/// aggregate hydration for runtime orchestration.
+abstract interface class ProjectWorkflowQueryPort
+    implements ProjectSummaryQueryPort, ProjectAggregateQueryPort {}
+
 abstract interface class ProjectSessionPort {
   Future<int> deleteProjectsForChatSession(
     WorkspaceAttachment workspace, {
@@ -36,9 +49,10 @@ abstract interface class ProjectSessionPort {
     required Set<String> retainedChatSessionIds,
   });
 
-  Future<ProjectAggregate> updateProjectChatSessionId({
+  Future<void> updateProjectChatSessionId({
     required WorkspaceAttachment workspace,
-    required ProjectAggregate snapshot,
+    required String projectId,
+    required String sourceChatSessionId,
     required String chatSessionId,
   });
 }

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
 import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
-import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
+import 'package:hermes/features/chat/application/chat_panel_projection.dart';
 import 'package:hermes/features/chat/presentation/chat/project_panel_sections.dart';
 
 void main() {
@@ -40,7 +40,7 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: ProjectRoadmapSection(
-            project: ProjectPanelReadModel.fromAggregate(project),
+            project: ChatPanelProjection.project(project),
           ),
         ),
       ),
@@ -85,7 +85,7 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: ProjectRoadmapSection(
-            project: ProjectPanelReadModel.fromAggregate(project),
+            project: ChatPanelProjection.project(project),
           ),
         ),
       ),

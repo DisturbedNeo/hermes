@@ -116,7 +116,7 @@ class ProjectRuntimeDependencies {
 
 class ProjectExecutionStateMachine {
   ProjectExecutionStateMachine({
-    required TaskQueryPort taskQueries,
+    required TaskWorkflowQueryPort taskQueries,
     required TaskPlanningPort taskPlanning,
     required TaskProjectPlanningPort taskProjectPlanning,
     required TaskExecutionPort taskExecution,
@@ -405,13 +405,15 @@ class ProjectExecutionStateMachine {
     retainedChatSessionIds: retainedChatSessionIds,
   );
 
-  Future<ProjectAggregate> updateProjectChatSessionId({
+  Future<void> updateProjectChatSessionId({
     required WorkspaceAttachment workspace,
-    required ProjectAggregate snapshot,
+    required String projectId,
+    required String sourceChatSessionId,
     required String chatSessionId,
   }) => _persistenceCoordinator.updateProjectChatSessionId(
     workspace: workspace,
-    snapshot: snapshot,
+    projectId: projectId,
+    sourceChatSessionId: sourceChatSessionId,
     chatSessionId: chatSessionId,
   );
 

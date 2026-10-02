@@ -5,6 +5,7 @@ import 'package:hermes/features/chat/application/contracts/message_role.dart';
 import 'package:hermes/features/chat/application/contracts/bubble.dart';
 import 'package:hermes/features/chat/application/contracts/chat_token.dart';
 import 'package:hermes/features/chat/application/contracts/chat_persistence.dart';
+import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
 import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
 import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
 import 'package:hermes/core/contracts/execution_settings.dart';
@@ -34,12 +35,13 @@ import 'package:hermes/features/tools/application/tool_protocol_adapter.dart';
 import 'package:hermes/features/workspace/application/workspace_ports.dart';
 
 import 'package:hermes/core/disposable.dart';
+import 'package:hermes/features/chat/runtime/chat_workflow_compatibility.dart';
 
 import 'package:hermes/features/chat/runtime/chat_session_runtime.dart';
 import 'package:hermes/features/chat/infrastructure/chat_panel_protocol_adapter.dart';
 
 class ChatRuntimeController extends ChangeNotifier
-    implements Disposable, ChatSessionHost {
+    implements Disposable, ChatSessionHost, ChatTabPresentationPort {
   static const String defaultSystemPromptName =
       ChatSessionRuntime.defaultSystemPromptName;
   static const String defaultSystemPromptText =
@@ -51,19 +53,19 @@ class ChatRuntimeController extends ChangeNotifier
     required ToolRegistryPort toolService,
     required ToolProtocolAdapter toolProtocol,
     required ChatToolExecutionPort toolExecution,
-    required TaskQueryPort taskQueries,
+    required TaskWorkflowQueryPort taskQueries,
     required TaskSessionPort taskSessions,
     required TaskPresentationPort taskPresentation,
     required ChatPanelProtocolAdapter panelProtocol,
-    required TaskPlanningPort taskPlanning,
-    required TaskExecutionPort taskExecution,
-    required TaskRecoveryPort taskRecovery,
-    required ProjectQueryPort projectQueries,
+    required Object taskPlanning,
+    required Object taskExecution,
+    required Object taskRecovery,
+    required ProjectWorkflowQueryPort projectQueries,
     required ProjectSessionPort projectSessions,
-    required ProjectPlanningPort projectPlanning,
-    required ProjectCommandPort projectCommands,
-    required ProjectExecutionPort projectExecution,
-    required ProjectRecoveryCommandsPort projectRecovery,
+    required Object projectPlanning,
+    required Object projectCommands,
+    required Object projectExecution,
+    required Object projectRecovery,
     required ChatLibraryService chatLibrary,
     required WorkspacePort workspaceService,
     required ChatRuntimePreferencesPort preferencesService,
@@ -79,15 +81,47 @@ class ChatRuntimeController extends ChangeNotifier
          taskSessions: taskSessions,
          taskPresentation: taskPresentation,
          panelProtocol: panelProtocol,
-         taskPlanning: taskPlanning,
-         taskExecution: taskExecution,
-         taskRecovery: taskRecovery,
+         taskPlanning: resolveTaskWorkflowPort(
+           taskPlanning,
+           taskExecution,
+           taskRecovery,
+         ),
+         taskExecution: resolveTaskWorkflowPort(
+           taskPlanning,
+           taskExecution,
+           taskRecovery,
+         ),
+         taskRecovery: resolveTaskWorkflowPort(
+           taskPlanning,
+           taskExecution,
+           taskRecovery,
+         ),
          projectQueries: projectQueries,
          projectSessions: projectSessions,
-         projectPlanning: projectPlanning,
-         projectCommands: projectCommands,
-         projectExecution: projectExecution,
-         projectRecovery: projectRecovery,
+         projectPlanning: resolveProjectWorkflowPort(
+           projectPlanning,
+           projectCommands,
+           projectExecution,
+           projectRecovery,
+         ),
+         projectCommands: resolveProjectWorkflowPort(
+           projectPlanning,
+           projectCommands,
+           projectExecution,
+           projectRecovery,
+         ),
+         projectExecution: resolveProjectWorkflowPort(
+           projectPlanning,
+           projectCommands,
+           projectExecution,
+           projectRecovery,
+         ),
+         projectRecovery: resolveProjectWorkflowPort(
+           projectPlanning,
+           projectCommands,
+           projectExecution,
+           projectRecovery,
+         ),
          chatLibrary: chatLibrary,
          workspaceService: workspaceService,
          preferencesService: preferencesService,
@@ -103,6 +137,10 @@ class ChatRuntimeController extends ChangeNotifier
 
   String get tabId => _delegate.tabId;
   ModelServerPort get serverManager => _delegate.serverManager;
+  @override
+  ActiveModelSessionPort get activeModelSession => _delegate.activeModelSession;
+  @override
+  ModelServerLifecyclePort get serverLifecycle => _delegate.serverLifecycle;
   MessageStore get messageStore => _delegate.messageStore;
   ChatStream<ChatToken> get chatStream => _delegate.chatStream;
   Bubble get systemPrompt => _delegate.systemPrompt;

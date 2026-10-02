@@ -2,15 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
-import 'package:hermes/features/chat/application/chat_workspace_controller.dart';
-import 'package:hermes/features/chat/application/system_prompt_library_service.dart';
+import 'package:hermes/features/chat/presentation/chat_workspace_port.dart';
+import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
 import 'package:hermes/features/chat/presentation/common/state_display.dart';
 import 'system_prompt_library_dialogs.dart';
 
 class SystemPromptLibraryPanel extends StatefulWidget {
   final VoidCallback? onPromptLoaded;
   final ChatWorkspaceController tabs;
-  final SystemPromptLibraryService library;
+  final SystemPromptLibraryPresentationPort library;
 
   const SystemPromptLibraryPanel({
     super.key,
@@ -33,7 +33,7 @@ class _SystemPromptLibraryPanelState extends State<SystemPromptLibraryPanel> {
   final _moduleSearchController = TextEditingController();
 
   late final ChatWorkspaceController _tabs;
-  late final SystemPromptLibraryService _library;
+  late final SystemPromptLibraryPresentationPort _library;
 
   List<PromptPreset> _presets = const [];
   List<PromptModule> _modules = const [];
@@ -189,7 +189,7 @@ class _SystemPromptLibraryPanelState extends State<SystemPromptLibraryPanel> {
           .toList();
       if (optionalModules.isNotEmpty) {
         if (!mounted) return;
-        final activeChat = _tabs.activeChat;
+        final activeChat = _tabs.presentationActiveChat;
         final targetWorkspace =
             activeChat != null && !activeChat.isSystemPromptLocked
             ? activeChat.workspace
@@ -220,7 +220,7 @@ class _SystemPromptLibraryPanelState extends State<SystemPromptLibraryPanel> {
     try {
       final result = await _library.assemblePreset(
         preset,
-        workspace: _tabs.activeChat?.workspace,
+        workspace: _tabs.presentationActiveChat?.workspace,
       );
       if (!mounted) return;
       await PromptLibraryPreviewDialog.show(

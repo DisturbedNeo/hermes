@@ -49,8 +49,8 @@ void main() {
     // Persistence-facing state contracts own generated wire mappers. The
     // aggregate DTOs themselves are explicit infrastructure codecs.
     for (final path in [
-      'lib/features/task/application/contracts/task_state_models.mapper.dart',
-      'lib/features/project/application/contracts/project_state_models.mapper.dart',
+      'lib/features/persistence/infrastructure/dto/task_state_models.mapper.dart',
+      'lib/features/persistence/infrastructure/dto/project_state_models.mapper.dart',
       'lib/features/chat/application/contracts/system_prompt.mapper.dart',
       'lib/features/model/application/model_configuration.mapper.dart',
       'lib/features/model/application/model_load_configuration.mapper.dart',

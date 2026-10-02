@@ -4,6 +4,7 @@ import 'package:hermes/core/uuid.dart';
 import 'package:hermes/features/chat/application/contracts/bubble.dart';
 import 'package:hermes/features/chat/domain/chat_state.dart';
 import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
+import 'package:hermes/features/chat/application/chat_panel_projection.dart';
 import 'package:hermes/features/project/application/contracts/project_snapshot_models.dart';
 import 'package:hermes/features/task/application/contracts/task_snapshot_models.dart';
 
@@ -55,7 +56,7 @@ void main() {
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
-    final taskPanel = TaskPanelReadModel.fromAggregate(task);
+    final taskPanel = ChatPanelProjection.task(task);
 
     taskSteps.add(
       const TaskStep(
@@ -94,7 +95,7 @@ void main() {
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
-    final projectPanel = ProjectPanelReadModel.fromAggregate(project);
+    final projectPanel = ChatPanelProjection.project(project);
 
     criteria.clear();
 

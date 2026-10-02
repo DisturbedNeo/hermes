@@ -1,13 +1,306 @@
 part of 'chat_session_orchestrator.dart';
 
+/// Focused capability surface for user-requested task replanning.
+abstract interface class ChatTaskReplanCapabilities implements ChatSessionHost {
+  ActiveModelSessionPort get activeModelSession;
+  WorkspaceAttachment? get workspace;
+  Task? get activeTask;
+  bool get taskBusy;
+  void dispatchActiveTask(Task? value);
+  void dispatchTaskBusy(bool value);
+  void dispatchTaskError(Object? value);
+  void dispatchTaskStatusMessage(String? value);
+  void emitChange();
+  CancellationToken beginTaskCancellationScope({bool reuseExisting = false});
+  void _endTaskCancellationScope(CancellationToken token);
+  void _beginTaskModelOutput(String title);
+  void _finishTaskModelOutput();
+  void _handleTaskModelOutput(TaskModelOutputEvent event);
+  void _insertTaskAssistantMessage(String text);
+  String _buildTaskSystemPrompt(Task snapshot);
+  Future<void> reloadTasks();
+  TaskWorkflowPort get _taskPlanning;
+}
+
+/// Focused capability surface for chat-originated task/project plan edits.
+abstract interface class ChatTaskPlanCapabilities implements ChatSessionHost {
+  WorkspaceAttachment? get workspace;
+  Task? get activeTask;
+  ProjectAggregate? get activeProject;
+  bool get taskBusy;
+  void dispatchActiveTask(Task? value);
+  void dispatchActiveProject(ProjectAggregate? value);
+  void dispatchTaskBusy(bool value);
+  void dispatchTaskError(Object? value);
+  void dispatchTaskStatusMessage(String? value);
+  void emitChange();
+  Future<void> reloadTasks();
+  void _insertTaskAssistantMessage(String text);
+  TaskWorkflowPort get _taskPlanning;
+  ProjectWorkflowPort get _projectCommands;
+  TaskPresentationPort get _taskPresentation;
+}
+
+/// Capabilities used by saved-chat and model-restore lifecycle operations.
+abstract interface class ChatSessionLifecycleCapabilities {
+  MessageStore get messageStore;
+  ChatStream<ChatToken> get chatStream;
+  Bubble get systemPrompt;
+  WorkspaceAttachment? get workspace;
+  String? get currentChatId;
+  SavedChat? get currentSavedChat;
+  ModelConfigurationSnapshot? get currentModelSnapshot;
+  ModelConfigurationSnapshot? get pendingModelRestore;
+  ProjectAggregate? get activeProject;
+  Task? get activeTask;
+  bool get loadingSnapshot;
+  set loadingSnapshot(bool value);
+  ModelConfigurationSnapshot? get _activeServerSnapshot;
+  bool get _hasPendingPersistence;
+  int get _historyRevision;
+  set _historyRevision(int value);
+  String get chatSessionScopeId;
+  set chatSessionScopeId(String value);
+  ChatLibraryService get _chatLibrary;
+  TaskWorkflowQueryPort get _taskQueries;
+  ProjectWorkflowQueryPort get _projectQueries;
+  ChatAutosaveCoordinator get _autosave;
+  ModelServerLifecyclePort get serverLifecycle;
+
+  void emitChange();
+  void dispatchCurrentChatId(String? value);
+  void dispatchCurrentSavedChat(SavedChat? value);
+  void dispatchCurrentModelSnapshot(ModelConfigurationSnapshot? value);
+  void dispatchPendingModelRestore(ModelConfigurationSnapshot? value);
+  void dispatchPendingModelRestoreIssue(String? value);
+  void dispatchWorkspace(WorkspaceAttachment? value);
+  void dispatchCurrentSystemPromptSnapshot(SystemPromptSnapshot? value);
+  void dispatchActiveProject(ProjectAggregate? value);
+  void dispatchAvailableProjects(List<ProjectSummary> value);
+  void dispatchActiveTask(Task? value);
+  void dispatchAvailableTasks(List<TaskSummary> value);
+  void dispatchTaskError(Object? value);
+  void dispatchTaskStatusMessage(String? value);
+  Future<void> flushCurrentChat();
+  Future<void> refreshModelRestorePrompt();
+  void updateCurrentModelSnapshot(ModelConfigurationSnapshot snapshot);
+  Future<Task?> _recoverTaskSnapshot(
+    WorkspaceAttachment current,
+    Task? snapshot,
+  );
+  Future<ProjectCommandResult?> _recoverProject(
+    WorkspaceAttachment current,
+    ProjectAggregate? snapshot,
+  );
+  Future<Task?> _taskForActiveProject(
+    WorkspaceAttachment current,
+    ProjectAggregate? project,
+  );
+  Future<void> _deleteTransientTasksForCurrentScope();
+  Future<void> _deleteTransientProjectsForCurrentScope();
+  List<WorkspaceAttachment> _workspacesForSavedChatDeletion(
+    String chatId,
+    WorkspaceAttachment? savedWorkspace,
+  );
+  Future<void> _deleteTasksForChatSessionInWorkspaces(
+    String chatSessionId,
+    Iterable<WorkspaceAttachment> workspaces,
+  );
+  Future<void> _deleteProjectsForChatSessionInWorkspaces(
+    String chatSessionId,
+    Iterable<WorkspaceAttachment> workspaces,
+  );
+  void _clearSavedState();
+  void _clearTaskModelOutput({bool notify = true});
+  void _resetPersistenceRevisions();
+  Future<SavedChat> _queueSave({String? title, bool force = false});
+  Future<void> _prepareModelRestorePrompt(ModelConfigurationSnapshot? snapshot);
+  Future<WorkspaceAttachment?> _restoreWorkspace(WorkspaceAttachment? saved);
+  String buildSystemPromptInternal({
+    required String? currentUserRequest,
+    List<String> additionalModuleIds = const [],
+  });
+  List<Bubble> _withCurrentSystemPrompt(
+    List<Bubble> messages, {
+    required String? currentUserRequest,
+  });
+}
+
+/// Capabilities used by state-only chat mutations.
+abstract interface class ChatStateMutationCapabilities {
+  ChatStream<ChatToken> get chatStream;
+  MessageStore get messageStore;
+  WorkspaceAttachment? get workspace;
+  ModelConfigurationSnapshot? get pendingModelRestore;
+  ExecutionMode get executionMode;
+  bool get taskBusy;
+  bool get isSystemPromptLocked;
+
+  void emitChange();
+  void dispatchCurrentModelSnapshot(ModelConfigurationSnapshot snapshot);
+  void dispatchPendingModelRestore(ModelConfigurationSnapshot? value);
+  void dispatchPendingModelRestoreIssue(String? value);
+  void dispatchCurrentSystemPromptSnapshot(SystemPromptSnapshot value);
+  void dispatchWorkspace(WorkspaceAttachment? value);
+  void dispatchExecutionMode(ExecutionMode value);
+  void updateCurrentModelSnapshot(ModelConfigurationSnapshot snapshot);
+  void _requestContextEstimateUpdate({bool immediate = false});
+  void _markPersistableChange();
+  void _markWorkspaceChanged();
+  void _syncSystemPrompt();
+  void _adoptActiveModelIfRestoreDismissed();
+  String buildSystemPromptInternal({
+    required String? currentUserRequest,
+    List<String> additionalModuleIds = const [],
+  });
+}
+
+/// Capabilities used while quiescing and disposing a chat tab.
+abstract interface class ChatExitCapabilities {
+  String get tabId;
+  ChatStream<ChatToken> get chatStream;
+  MessageStore get messageStore;
+  bool get taskBusy;
+  ChatAutosaveCoordinator get _autosave;
+  ThrottledScheduler get _contextEstimateScheduler;
+  ThrottledScheduler get _taskModelOutputNotifier;
+  ChatSessionManager get _session;
+  ChatRuntimePreferencesPort get _preferencesService;
+  bool get _disposed;
+  set _disposed(bool value);
+  Future<void>? get _disposeFuture;
+  set _disposeFuture(Future<void>? value);
+  void Function() get _handleMessagesChanged;
+  void Function() get _handlePreferencesChanged;
+
+  void addListener(VoidCallback listener);
+  void removeListener(VoidCallback listener);
+  Future<void> cancelGeneration();
+  Future<void> cancelTaskRun();
+  Future<void> flushCurrentChat();
+  Future<void> _deleteTransientTasksForCurrentScope();
+  Future<void> _deleteTransientProjectsForCurrentScope();
+  void _disposeChangeNotifier();
+}
+
+/// Capabilities used by the active workspace and task/project work flows.
+abstract interface class ChatWorkCapabilities
+    implements ChatTaskPlanCapabilities, ChatTaskReplanCapabilities {
+  ActiveModelSessionPort get activeModelSession;
+  MessageStore get messageStore;
+  ChatStream<ChatToken> get chatStream;
+  WorkspaceAttachment? get workspace;
+  ProjectAggregate? get activeProject;
+  Task? get activeTask;
+  TaskSystemSettings get taskSystemSettings;
+  bool get taskBusy;
+  ExecutionMode get executionMode;
+  String? get currentChatId;
+  SavedChat? get currentSavedChat;
+  ModelConfigurationSnapshot? get currentModelSnapshot;
+  int? get sessionDiagnosticsContextLimit;
+  int get _currentPersistenceRevision;
+  int get _persistedRevision;
+  String get _taskScopeId;
+  String get _chatSessionScopeId;
+  ChatPresentationMessageBuilder get _presentationMessages;
+  ChatPanelProtocolAdapter get _panelProtocol;
+  ChatSessionManager get _session;
+  TaskWorkflowQueryPort get _taskQueries;
+  TaskWorkflowPort get _taskPlanning;
+  TaskWorkflowPort get _taskExecution;
+  TaskWorkflowPort get _taskRecovery;
+  ProjectWorkflowQueryPort get _projectQueries;
+  ProjectWorkflowPort get _projectPlanning;
+  ProjectWorkflowPort get _projectRecovery;
+  ProjectWorkflowPort get _projectExecution;
+  ChatRuntimePreferencesPort get _preferencesService;
+  ChatCommandCoordinator get _commandCoordinator;
+  ChatCommandDispatcher get _commandDispatcher;
+  ChatTaskCommandCoordinator get _taskCommandCoordinator;
+  ChatProjectCommandCoordinator get _projectCommandCoordinator;
+  ChatWorkspaceLifecycleCoordinator get _workspaceLifecycle;
+
+  void emitChange();
+  void dispatchTaskBusy(bool value);
+  void dispatchTaskCancellationRequested(bool value);
+  void dispatchTaskError(Object? value);
+  void dispatchTaskStatusMessage(String? value);
+  void dispatchWorkspace(WorkspaceAttachment? value);
+  void dispatchActiveTask(Task? value);
+  void dispatchActiveProject(ProjectAggregate? value);
+  void dispatchActiveProjectPersistenceDiagnostics(
+    ProjectPersistenceDiagnostics? value,
+  );
+  void dispatchAvailableTasks(List<TaskSummary> value);
+  void dispatchAvailableProjects(List<ProjectSummary> value);
+  Future<bool> _taskSystemEnabled();
+  Future<String> _ensureTaskScopeId();
+  Future<TaskSystemSettings> _refreshTaskSystemSettings();
+  CancellationToken beginTaskCancellationScope({bool reuseExisting = false});
+  void _endTaskCancellationScope(CancellationToken token);
+  void _beginTaskModelOutput(String title);
+  void _finishTaskModelOutput();
+  void _handleTaskModelOutput(TaskModelOutputEvent event);
+  void _insertTaskAssistantMessage(String text);
+  void _insertTaskErrorBubble(String text);
+  void _syncSystemPrompt();
+  void _markWorkspaceChanged();
+  void _adoptActiveModelIfRestoreDismissed();
+  String buildSystemPromptInternal({
+    required String? currentUserRequest,
+    List<String> additionalModuleIds = const [],
+  });
+  String _buildTaskSystemPrompt(Task snapshot);
+  String _buildProjectSystemPrompt(ProjectAggregate snapshot);
+  Future<void> _clearProjectTaskBlocker();
+  Future<Task?> _recoverTaskSnapshot(
+    WorkspaceAttachment current,
+    Task? snapshot,
+  );
+  Future<ProjectCommandResult?> _recoverProject(
+    WorkspaceAttachment current,
+    ProjectAggregate? snapshot,
+  );
+  Future<Task?> _taskForActiveProject(
+    WorkspaceAttachment current,
+    ProjectAggregate? project,
+  );
+  Future<void> _deleteTransientTasksForCurrentScope();
+  Future<void> _deleteTransientProjectsForCurrentScope();
+  Future<void> _refinePromptFromCommand(ChatSlashCommand command);
+  Future<void> _continueTaskFromCommand(String rawCommand);
+  Future<void> _continueProjectFromCommand(String rawCommand);
+  Future<void> _startProjectFromPrompt(
+    String prompt, {
+    required bool runAfterCreation,
+  });
+  Future<void> _startTaskFromPrompt(
+    String prompt, {
+    required bool runFirstPhase,
+  });
+  Future<void> _runProjectInternal({int? maxNewTasks});
+  Future<void> runTaskInternal({bool keepBusy = false});
+  Future<void> runNextTaskStepInternal({bool keepBusy = false});
+}
+
 /// Narrow runtime context used by chat application use cases.
 ///
 /// The context is assembled by the stable notifier facade. Use cases depend
 /// on this capability surface, not on the concrete facade, so they can be
 /// tested and composed without inheriting the facade's mutable state object.
-abstract interface class ChatUseCaseContext implements ChatSessionHost {
+abstract interface class ChatUseCaseContext
+    implements
+        ChatSessionHost,
+        ChatTaskReplanCapabilities,
+        ChatTaskPlanCapabilities,
+        ChatSessionLifecycleCapabilities,
+        ChatStateMutationCapabilities,
+        ChatExitCapabilities,
+        ChatWorkCapabilities {
   String get tabId;
-  ModelServerPort get serverManager;
+  ActiveModelSessionPort get activeModelSession;
+  ModelServerLifecyclePort get serverLifecycle;
   MessageStore get messageStore;
   ChatStream<ChatToken> get chatStream;
   Bubble get systemPrompt;
@@ -16,6 +309,8 @@ abstract interface class ChatUseCaseContext implements ChatSessionHost {
   void removeListener(VoidCallback listener);
 
   String? get currentChatId;
+  String get chatSessionScopeId;
+  set chatSessionScopeId(String value);
   void dispatchCurrentChatId(String? value);
   SavedChat? get currentSavedChat;
   void dispatchCurrentSavedChat(SavedChat? value);
@@ -59,15 +354,16 @@ abstract interface class ChatUseCaseContext implements ChatSessionHost {
   Future<void> refreshModelRestorePrompt();
 
   ChatLibraryService get _chatLibrary;
-  TaskQueryPort get _taskQueries;
+  TaskWorkflowQueryPort get _taskQueries;
   TaskPresentationPort get _taskPresentation;
-  TaskPlanningPort get _taskPlanning;
-  TaskExecutionPort get _taskExecution;
-  TaskRecoveryPort get _taskRecovery;
-  ProjectQueryPort get _projectQueries;
-  ProjectPlanningPort get _projectPlanning;
-  ProjectCommandPort get _projectCommands;
-  ProjectExecutionPort get _projectExecution;
+  TaskWorkflowPort get _taskPlanning;
+  TaskWorkflowPort get _taskExecution;
+  TaskWorkflowPort get _taskRecovery;
+  ProjectWorkflowQueryPort get _projectQueries;
+  ProjectWorkflowPort get _projectPlanning;
+  ProjectWorkflowPort get _projectCommands;
+  ProjectWorkflowPort get _projectExecution;
+  ProjectWorkflowPort get _projectRecovery;
   ChatRuntimePreferencesPort get _preferencesService;
   ChatCommandCoordinator get _commandCoordinator;
   ChatAutosaveCoordinator get _autosave;
@@ -88,7 +384,6 @@ abstract interface class ChatUseCaseContext implements ChatSessionHost {
   Future<void>? get _disposeFuture;
   set _disposeFuture(Future<void>? value);
   String get _chatSessionScopeId;
-  set _chatSessionScopeId(String value);
   int get _historyRevision;
   set _historyRevision(int value);
   bool get isSystemPromptLocked;
@@ -188,7 +483,9 @@ final class _ChatUseCaseContextAdapter implements ChatUseCaseContext {
   @override
   String get tabId => _host.tabId;
   @override
-  ModelServerPort get serverManager => _host.serverManager;
+  ActiveModelSessionPort get activeModelSession => _host.serverManager;
+  @override
+  ModelServerLifecyclePort get serverLifecycle => _host.serverManager;
   @override
   MessageStore get messageStore => _host.messageStore;
   @override
@@ -255,24 +552,26 @@ final class _ChatUseCaseContextAdapter implements ChatUseCaseContext {
   @override
   ChatLibraryService get _chatLibrary => _host._chatLibrary;
   @override
-  TaskQueryPort get _taskQueries => _host._taskQueries;
+  TaskWorkflowQueryPort get _taskQueries => _host._taskQueries;
   @override
   @override
   TaskPresentationPort get _taskPresentation => _host._taskPresentation;
   @override
-  TaskPlanningPort get _taskPlanning => _host._taskPlanning;
+  TaskWorkflowPort get _taskPlanning => _host._taskPlanning;
   @override
-  TaskExecutionPort get _taskExecution => _host._taskExecution;
+  TaskWorkflowPort get _taskExecution => _host._taskExecution;
   @override
-  TaskRecoveryPort get _taskRecovery => _host._taskRecovery;
+  TaskWorkflowPort get _taskRecovery => _host._taskRecovery;
   @override
-  ProjectQueryPort get _projectQueries => _host._projectQueries;
+  ProjectWorkflowQueryPort get _projectQueries => _host._projectQueries;
   @override
-  ProjectPlanningPort get _projectPlanning => _host._projectPlanning;
+  ProjectWorkflowPort get _projectPlanning => _host._projectPlanning;
   @override
-  ProjectCommandPort get _projectCommands => _host._projectCommands;
+  ProjectWorkflowPort get _projectCommands => _host._projectCommands;
   @override
-  ProjectExecutionPort get _projectExecution => _host._projectExecution;
+  ProjectWorkflowPort get _projectExecution => _host._projectExecution;
+  @override
+  ProjectWorkflowPort get _projectRecovery => _host._projectRecovery;
   @override
   ChatRuntimePreferencesPort get _preferencesService =>
       _host._preferencesService;
@@ -320,7 +619,9 @@ final class _ChatUseCaseContextAdapter implements ChatUseCaseContext {
   @override
   String get _chatSessionScopeId => _host._chatSessionScopeId;
   @override
-  set _chatSessionScopeId(String value) => _host._chatSessionScopeId = value;
+  String get chatSessionScopeId => _host._chatSessionScopeId;
+  @override
+  set chatSessionScopeId(String value) => _host._chatSessionScopeId = value;
   @override
   int get _historyRevision => _host._historyRevision;
   @override

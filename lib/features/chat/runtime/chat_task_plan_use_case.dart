@@ -4,9 +4,9 @@ part of 'chat_session_orchestrator.dart';
 /// presentation state around the focused task/project application ports; the
 /// session facade only exposes the stable entry points.
 class ChatTaskPlanUseCase {
-  ChatTaskPlanUseCase(this._host);
+  ChatTaskPlanUseCase(ChatTaskPlanCapabilities host) : _host = host;
 
-  final ChatUseCaseContext _host;
+  final ChatTaskPlanCapabilities _host;
 
   Future<void> updateTaskTaskBrief(TaskPlanUpdateCommand command) async {
     await updateTaskPlan(command);
@@ -31,12 +31,10 @@ class ChatTaskPlanUseCase {
     _host.dispatchTaskStatusMessage('Updating task plan...');
     _host.emitChange();
     try {
-      _host.dispatchActiveTask(
-        await _host._taskPlanning.updateTaskPlan(
-          workspace: currentWorkspace,
-          snapshot: snapshot,
-          command: command,
-        ),
+      await _host._taskPlanning.updateTaskPlan(
+        workspace: currentWorkspace,
+        taskId: snapshot.id,
+        command: command,
       );
       await _host.reloadTasks();
       _host._insertTaskAssistantMessage(
@@ -67,12 +65,10 @@ class ChatTaskPlanUseCase {
     _host.dispatchTaskStatusMessage('Updating project...');
     _host.emitChange();
     try {
-      _host.dispatchActiveProject(
-        await _host._projectCommands.updateProject(
-          workspace: currentWorkspace,
-          snapshot: snapshot,
-          command: command,
-        ),
+      await _host._projectCommands.updateProject(
+        workspace: currentWorkspace,
+        projectId: snapshot.id,
+        command: command,
       );
       await _host.reloadTasks();
       _host._insertTaskAssistantMessage(

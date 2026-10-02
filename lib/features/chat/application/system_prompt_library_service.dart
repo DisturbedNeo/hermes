@@ -8,6 +8,7 @@ import 'package:hermes/features/chat/application/contracts/prompt_assembler.dart
 
 import 'package:hermes/core/disposable.dart';
 import 'package:hermes/features/chat/application/contracts/prompt_library_port.dart';
+import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
 
 /// Business-logic orchestrator for the system prompt library.
 ///
@@ -15,7 +16,8 @@ import 'package:hermes/features/chat/application/contracts/prompt_library_port.d
 /// interactions to [SystemPromptLibraryRepository].  This class owns
 /// state management (via [ChangeNotifier]), input validation, module
 /// selection rules, and high-level convenience methods used by UI layers.
-class SystemPromptLibraryService extends ChangeNotifier implements Disposable {
+class SystemPromptLibraryService extends ChangeNotifier
+    implements Disposable, SystemPromptLibraryPresentationPort {
   static const String coreDefaultModuleId = BuiltInPromptIds.coreDefaultModule;
   static const String workspaceRulesModuleId =
       BuiltInPromptIds.workspaceRulesModule;

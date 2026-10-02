@@ -3,9 +3,10 @@ part of 'project_execution_state_machine.dart';
 /// Owns project creation and initial-plan application at the project
 /// application boundary.
 class ProjectPlanningUseCase {
-  ProjectPlanningUseCase(this._context);
+  ProjectPlanningUseCase(ProjectPlanningCapabilities context)
+    : _context = context;
 
-  final ProjectUseCaseContext _context;
+  final ProjectPlanningCapabilities _context;
 
   Future<ProjectAggregate> createProject({
     required WorkspaceAttachment workspace,

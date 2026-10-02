@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hermes/features/chat/presentation/a11y.dart';
 import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
-import 'package:hermes/features/chat/application/chat_controller.dart';
+import 'package:hermes/features/chat/presentation/chat_controller_port.dart';
 import 'package:hermes/features/project/application/project_command_protocol_adapter.dart';
 import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
 import 'package:hermes/features/chat/presentation/chat/task_panel_dialogs.dart';
@@ -482,7 +482,7 @@ class _MilestoneTile extends StatelessWidget {
 class _TaskGroup extends StatelessWidget {
   final String title;
   final List<ProjectTaskNode> tasks;
-  final ProjectScheduleResult schedule;
+  final ProjectScheduleReadModel schedule;
   final String empty;
 
   const _TaskGroup({
@@ -511,7 +511,7 @@ class _TaskGroup extends StatelessWidget {
 class _RoadmapTaskTile extends StatelessWidget {
   final ProjectTaskNode task;
   final bool showRationale;
-  final ProjectScheduleResult schedule;
+  final ProjectScheduleReadModel schedule;
 
   const _RoadmapTaskTile({
     required this.task,

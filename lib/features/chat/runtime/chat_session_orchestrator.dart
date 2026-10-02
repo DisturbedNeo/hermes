@@ -34,15 +34,18 @@ import 'package:hermes/features/chat/runtime/chat_application/chat_command_coord
 import 'package:hermes/features/chat/application/chat_view_state.dart';
 import 'package:hermes/features/chat/domain/chat_state.dart';
 import 'package:hermes/features/chat/domain/chat_panel_read_models.dart';
+import 'package:hermes/features/chat/application/chat_panel_projection.dart';
 import 'package:hermes/features/chat/runtime/chat_application/chat_tool_execution_service.dart';
 import 'package:hermes/features/chat/runtime/chat_application/chat_stream.dart';
 import 'package:hermes/features/chat/runtime/chat_application/message_store.dart';
 import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/project/application/project_application/project_ports.dart';
+import 'package:hermes/features/project/application/project_application/project_workflow_port.dart';
 import 'package:hermes/features/project/application/project_application/project_execution_port.dart';
 import 'package:hermes/features/persistence/application/persistence_contracts.dart';
 import 'package:hermes/features/model/application/model_output.dart';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
+import 'package:hermes/features/task/application/task_application/task_workflow_port.dart';
 import 'package:hermes/features/task/application/contracts/task_summary.dart';
 import 'package:hermes/features/task/application/contracts/task_commands.dart';
 import 'package:hermes/features/project/application/contracts/project_commands.dart';
@@ -113,23 +116,25 @@ class ChatSessionOrchestrator extends ChangeNotifier
 
   final String tabId;
   final ModelServerPort serverManager;
+  ActiveModelSessionPort get activeModelSession => serverManager;
+  ModelServerLifecyclePort get serverLifecycle => serverManager;
   final MessageStore messageStore = MessageStore();
   final ChatStream<ChatToken> chatStream = ChatStream<ChatToken>();
 
   final ToolRegistryPort _toolService;
-  final TaskQueryPort _taskQueries;
+  final TaskWorkflowQueryPort _taskQueries;
   final TaskSessionPort _taskSessions;
   final TaskPresentationPort _taskPresentation;
   final ChatPanelProtocolAdapter _panelProtocol;
-  final TaskPlanningPort _taskPlanning;
-  final TaskExecutionPort _taskExecution;
-  final TaskRecoveryPort _taskRecovery;
-  final ProjectQueryPort _projectQueries;
+  final TaskWorkflowPort _taskPlanning;
+  final TaskWorkflowPort _taskExecution;
+  final TaskWorkflowPort _taskRecovery;
+  final ProjectWorkflowQueryPort _projectQueries;
   final ProjectSessionPort _projectSessions;
-  final ProjectPlanningPort _projectPlanning;
-  final ProjectCommandPort _projectCommands;
-  final ProjectExecutionPort _projectExecution;
-  final ProjectRecoveryCommandsPort _projectRecovery;
+  final ProjectWorkflowPort _projectPlanning;
+  final ProjectWorkflowPort _projectCommands;
+  final ProjectWorkflowPort _projectExecution;
+  final ProjectWorkflowPort _projectRecovery;
   final ChatLibraryService _chatLibrary;
   final WorkspacePort _workspaceService;
   final ChatRuntimePreferencesPort _preferencesService;
@@ -220,7 +225,7 @@ class ChatSessionOrchestrator extends ChangeNotifier
     _executionContext.project = value;
     _dispatchChatState(
       ChatProjectChanged(
-        value == null ? null : ProjectPanelReadModel.fromAggregate(value),
+        value == null ? null : ChatPanelProjection.project(value),
       ),
     );
   }
@@ -241,9 +246,7 @@ class ChatSessionOrchestrator extends ChangeNotifier
   void dispatchActiveTask(Task? value) {
     _executionContext.task = value;
     _dispatchChatState(
-      ChatTaskChanged(
-        value == null ? null : TaskPanelReadModel.fromAggregate(value),
-      ),
+      ChatTaskChanged(value == null ? null : ChatPanelProjection.task(value)),
     );
   }
 
@@ -590,19 +593,19 @@ class ChatSessionOrchestrator extends ChangeNotifier
     required ToolRegistryPort toolService,
     required ToolProtocolAdapter toolProtocol,
     required ChatToolExecutionPort toolExecution,
-    required TaskQueryPort taskQueries,
+    required TaskWorkflowQueryPort taskQueries,
     required TaskSessionPort taskSessions,
     required TaskPresentationPort taskPresentation,
     required ChatPanelProtocolAdapter panelProtocol,
-    required TaskPlanningPort taskPlanning,
-    required TaskExecutionPort taskExecution,
-    required TaskRecoveryPort taskRecovery,
-    required ProjectQueryPort projectQueries,
+    required TaskWorkflowPort taskPlanning,
+    required TaskWorkflowPort taskExecution,
+    required TaskWorkflowPort taskRecovery,
+    required ProjectWorkflowQueryPort projectQueries,
     required ProjectSessionPort projectSessions,
-    required ProjectPlanningPort projectPlanning,
-    required ProjectCommandPort projectCommands,
-    required ProjectExecutionPort projectExecution,
-    required ProjectRecoveryCommandsPort projectRecovery,
+    required ProjectWorkflowPort projectPlanning,
+    required ProjectWorkflowPort projectCommands,
+    required ProjectWorkflowPort projectExecution,
+    required ProjectWorkflowPort projectRecovery,
     required ChatLibraryService chatLibrary,
     required WorkspacePort workspaceService,
     required ChatRuntimePreferencesPort preferencesService,

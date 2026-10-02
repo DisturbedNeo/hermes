@@ -5,7 +5,7 @@ part of 'chat_session_orchestrator.dart';
 class ChatExitUseCase {
   ChatExitUseCase(this._host);
 
-  final ChatUseCaseContext _host;
+  final ChatExitCapabilities _host;
 
   Future<void> quiesceForExit({
     Duration timeout = const Duration(seconds: 5),
