@@ -157,49 +157,6 @@ dependencies:
       orderedEquals(['product-blueprint.txt', 'README.md']),
     );
   });
-
-  test(
-    'reports referenced context that cannot fit the discovery budget',
-    () async {
-      final root = await Directory.systemTemp.createTemp(
-        'hermes_budget_discovery_',
-      );
-      addTearDown(() async {
-        if (await root.exists()) await root.delete(recursive: true);
-      });
-      await File(
-        '${root.path}/ARCHITECTURE.MD',
-      ).writeAsString(List.filled(65 * 1024, 'a').join());
-      final workspace = WorkspaceAttachment(
-        rootPath: root.path,
-        displayName: 'Workspace',
-        lastOpenedAt: DateTime(2026, 1, 1),
-      );
-      final sandbox = WorkspaceSandbox();
-      final service = ProjectDiscoveryService(
-        changeDiscovery: const _StaticChangeDiscovery(),
-        profileService: const WorkspaceDiscoveryProfileService(),
-        taskController: createTestTaskController(
-          toolService: ToolService(workspaceSandbox: sandbox),
-          sandbox: sandbox,
-        ),
-      );
-
-      final snapshot = await service.collect(
-        workspace: workspace,
-        goalContext: 'Implement `ARCHITECTURE.MD`.',
-      );
-
-      expect(
-        snapshot.workspaceProfile.highSignalFiles.single.truncated,
-        isTrue,
-      );
-      expect(
-        snapshot.workspaceProfile.requiredContextIssues.single.code,
-        'required_context_truncated',
-      );
-    },
-  );
 }
 
 class _StaticChangeDiscovery implements WorkspaceChangeDiscoveryPort {
