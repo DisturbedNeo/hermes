@@ -61,20 +61,6 @@ The main state and ownership boundaries are:
 The generated mapper files are build artifacts and must be regenerated rather
 than edited manually.
 
-## Development
-
-Run the complete local verification workflow with:
-
-```sh
-bash tool/verify.sh
-```
-
-The workflow regenerates mappers, checks formatting, analyzes Dart, runs the
-authoritative analyzer-backed architecture suite in
-`test/architecture/architecture_test.dart` and the full Flutter test suite,
-checks generated output and the final diff. For an individual change, use the narrowest
-relevant command, then run the complete workflow before handoff.
-
 ## Persistence and compatibility
 
 Project, task, chat, prompt-library, and settings data retain compatibility
