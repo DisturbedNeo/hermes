@@ -51,9 +51,7 @@ The main state and ownership boundaries are:
 - Project and task persistence expose application repository ports, retain
   optimistic revisions, and use atomic snapshot writes with backup recovery.
 - `WorkspacePersistenceCoordinator` combines a cross-process lock file with
-  process-local serialization and revision checks. Lock ownership, timeout,
-  stale-lock recovery, and diagnostics are described in
-  [`docs/architecture.md`](docs/architecture.md).
+  process-local serialization and revision checks.
 - `ApplicationLifecycle` owns startup, quiescing, flushing, cancellation, and
   reverse-order idempotent disposal.
 - Workspace path policy, workspace-confined file operations, and host command
