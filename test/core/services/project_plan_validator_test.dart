@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/runtime/project_plan_validator.dart';
+import 'package:hermes/features/project/runtime/project_planning_policy.dart';
 
 void main() {
   const validator = ProjectPlanValidator(planningHorizon: 2);
@@ -32,6 +33,27 @@ void main() {
     expect(
       validation.errors.map((issue) => issue.code),
       isNot(contains('duplicate_id')),
+    );
+  });
+
+  test('rejects a proposal that bypasses the three-task revision budget', () {
+    final project = _project();
+    final validation = validator.validate(
+      project: project,
+      proposal: _desired(project, [
+        _task('one'),
+        _task('two'),
+        _task('three'),
+        _task('four'),
+      ]),
+      workspaceRoot: '/workspace',
+      planningLimits: ProjectPlanningLimits.maintenance,
+    );
+
+    expect(validation.valid, isFalse);
+    expect(
+      validation.errors.map((issue) => issue.code),
+      contains('new_task_limit_exceeded'),
     );
   });
 

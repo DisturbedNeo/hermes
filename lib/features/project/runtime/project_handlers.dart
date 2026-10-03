@@ -1,18 +1,12 @@
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/features/workspace/application/workspace.dart';
-import 'package:hermes/core/cancellation.dart';
-import 'package:hermes/features/model/application/model_completion_port.dart';
 import 'package:hermes/features/project/runtime/project_aggregate_store.dart';
 import 'package:hermes/features/project/domain/project_control_state_service.dart';
 import 'package:hermes/features/project/runtime/project_plan_revision_service.dart';
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
-import 'package:hermes/features/project/runtime/project_planning_coordinator.dart';
-import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
 import 'package:hermes/features/project/runtime/project_recovery_service.dart';
 import 'package:hermes/features/project/domain/project_scheduler.dart';
 import 'package:hermes/features/project/application/contracts/project_checkpoint.dart';
-import 'package:hermes/features/model/application/model_output.dart';
 
 /// Planning use cases exposed to the workflow runtime.
 ///
@@ -21,35 +15,10 @@ import 'package:hermes/features/model/application/model_output.dart';
 /// UI, or task-run history.
 class ProjectPlanningHandler {
   const ProjectPlanningHandler({
-    required ProjectPlanningCoordinator coordinator,
     required ProjectPlanRevisionService revisionService,
-  }) : _coordinator = coordinator,
-       _revisionService = revisionService;
+  }) : _revisionService = revisionService;
 
-  final ProjectPlanningCoordinator _coordinator;
   final ProjectPlanRevisionService _revisionService;
-
-  Future<ProjectPlanningResult> initialise({
-    required WorkspaceAttachment workspace,
-    required String userPrompt,
-    required ModelConversationPort? client,
-    required String baseSystemPrompt,
-    required ProjectInitialPlanResult Function() fallback,
-    required ProjectInitialPlanValidator validate,
-    required ProjectContextIssuePolicy blocksContextIssue,
-    ModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) => _coordinator.initialise(
-    workspace: workspace,
-    userPrompt: userPrompt,
-    client: client,
-    baseSystemPrompt: baseSystemPrompt,
-    fallback: fallback,
-    validate: validate,
-    blocksContextIssue: blocksContextIssue,
-    onModelOutput: onModelOutput,
-    cancellationToken: cancellationToken,
-  );
 
   Future<ProjectPlanRevisionResult> prepareAndApplyPatch({
     required ProjectAggregate project,

@@ -133,6 +133,7 @@ class ProjectExecutionRequest {
   final int maxNewTasks;
   final int? maxIterations;
   final bool requirePhaseApproval;
+  final bool planOnly;
   final CompactionSettings? compactionSettings;
   final int? contextLimitTokens;
   final ProjectCompactionStatusSink? onCompactionStatus;
@@ -150,6 +151,7 @@ class ProjectExecutionRequest {
     required this.maxNewTasks,
     this.maxIterations,
     this.requirePhaseApproval = false,
+    this.planOnly = false,
     this.compactionSettings,
     this.contextLimitTokens,
     this.onCompactionStatus,
@@ -163,6 +165,7 @@ class ProjectExecutionRequest {
   ProjectExecutionRequest copyWith({
     ProjectAggregate? snapshot,
     String? baseSystemPrompt,
+    bool? planOnly,
   }) => ProjectExecutionRequest(
     client: client,
     workspace: workspace,
@@ -171,6 +174,7 @@ class ProjectExecutionRequest {
     maxNewTasks: maxNewTasks,
     maxIterations: maxIterations,
     requirePhaseApproval: requirePhaseApproval,
+    planOnly: planOnly ?? this.planOnly,
     compactionSettings: compactionSettings,
     contextLimitTokens: contextLimitTokens,
     onCompactionStatus: onCompactionStatus,

@@ -6,6 +6,7 @@ import 'package:hermes/features/project/runtime/project_memory_service.dart';
 import 'package:hermes/features/project/runtime/project_lifecycle_service.dart';
 import 'package:hermes/features/project/runtime/project_plan_validator.dart';
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
+import 'package:hermes/features/project/runtime/project_planning_policy.dart';
 
 typedef ProjectPlanRepair =
     Future<ProjectDesiredPlan?> Function(
@@ -49,11 +50,13 @@ class ProjectPlanRevisionService {
     required ProjectAggregate project,
     required ProjectDesiredPlan proposal,
     required String workspaceRoot,
+    ProjectPlanningLimits planningLimits = ProjectPlanningLimits.maintenance,
   }) {
     return _validator.validate(
       project: project,
       proposal: proposal,
       workspaceRoot: workspaceRoot,
+      planningLimits: planningLimits,
     );
   }
 
@@ -66,6 +69,7 @@ class ProjectPlanRevisionService {
     ProjectPlanApprovalPolicy approvalPolicy =
         ProjectPlanApprovalPolicy.highRiskOnly,
     ProjectPlanRepair? repair,
+    ProjectPlanningLimits planningLimits = ProjectPlanningLimits.maintenance,
   }) => prepareAndApply(
     project: patch.source == ProjectPlanPatchSource.initialization
         ? project.copyWith(
@@ -78,6 +82,7 @@ class ProjectPlanRevisionService {
     workspaceRoot: workspaceRoot,
     approvalPolicy: approvalPolicy,
     repair: repair,
+    planningLimits: planningLimits,
     splitTaskIds: patch.plan.splitTaskIds,
   );
 
@@ -89,12 +94,14 @@ class ProjectPlanRevisionService {
         ProjectPlanApprovalPolicy.highRiskOnly,
     ProjectPlanRepair? repair,
     Iterable<String> splitTaskIds = const [],
+    ProjectPlanningLimits planningLimits = ProjectPlanningLimits.maintenance,
   }) async {
     var candidate = proposal;
     var validation = _validator.validate(
       project: project,
       proposal: candidate,
       workspaceRoot: workspaceRoot,
+      planningLimits: planningLimits,
     );
     var repairAttempted = false;
     var repairAttempts = 0;
@@ -110,6 +117,7 @@ class ProjectPlanRevisionService {
           project: project,
           proposal: candidate,
           workspaceRoot: workspaceRoot,
+          planningLimits: planningLimits,
         );
       }
     }
@@ -282,10 +290,17 @@ class ProjectPlanRevisionService {
         awaitingApproval: false,
       );
     }
+    final planningLimits =
+        project.tasks.isEmpty &&
+            project.criteria.isEmpty &&
+            project.milestones.isEmpty
+        ? ProjectPlanningLimits.bootstrap
+        : ProjectPlanningLimits.maintenance;
     final validation = _validator.validate(
       project: project,
       proposal: proposal,
       workspaceRoot: workspaceRoot,
+      planningLimits: planningLimits,
     );
     if (!validation.valid) {
       final blocked = project.copyWith(

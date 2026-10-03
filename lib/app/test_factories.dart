@@ -13,7 +13,6 @@ import 'package:hermes/features/project/runtime/project_workflow_adapter.dart';
 import 'package:hermes/features/project/runtime/project_execution_state_machine.dart';
 import 'package:hermes/features/project/runtime/project_model_calls.dart';
 import 'package:hermes/features/project/runtime/project_discovery_service.dart';
-import 'package:hermes/features/project/runtime/project_planning_coordinator.dart';
 import 'package:hermes/features/project/runtime/project_plan_revision_service.dart';
 import 'package:hermes/features/project/runtime/project_handlers.dart';
 import 'package:hermes/features/project/runtime/project_aggregate_store.dart';
@@ -232,10 +231,6 @@ ProjectApplication createTestProjectApplication({
     profileService: const WorkspaceDiscoveryProfileService(),
   );
   final resolvedPlanningHandler = ProjectPlanningHandler(
-    coordinator: ProjectPlanningCoordinator(
-      discovery: resolvedDiscovery,
-      planner: resolvedPlanner,
-    ),
     revisionService: const ProjectPlanRevisionService(),
   );
   final resolvedCompletion =

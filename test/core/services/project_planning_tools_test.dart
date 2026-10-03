@@ -7,10 +7,51 @@ import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/runtime/project_planning_tools.dart';
 import 'package:hermes/features/project/runtime/project_planning_workspace_reader.dart';
 import 'package:hermes/features/project/runtime/project_view_service.dart';
+import 'package:hermes/features/project/runtime/project_planning_policy.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
 
 void main() {
+  test('planning profiles expose only their intended tool surface', () {
+    final bootstrap = ProjectPlanningToolRegistry(
+      context: ProjectPlanningContext(
+        project: _project(),
+        workspaceRoot: '/workspace',
+        planningPass: ProjectPlanningPass.bootstrap,
+        planningLimits: ProjectPlanningLimits.bootstrap,
+      ),
+      profile: ProjectPlanningToolProfile.bootstrap,
+      includeProjectDetails: true,
+    );
+    expect(bootstrap.toolDefinitions.map((tool) => tool.id).toSet(), {
+      'project_view',
+      'plan_add_criteria',
+      'plan_add_milestones',
+      'plan_add_tasks',
+      'plan_add_check',
+      'plan_add_note',
+      'plan_request_user_decision',
+      'plan_preview',
+      'plan_commit',
+    });
+
+    final split = ProjectPlanningToolRegistry(
+      context: ProjectPlanningContext(
+        project: _project(),
+        workspaceRoot: '/workspace',
+        planningPass: ProjectPlanningPass.split,
+        planningLimits: ProjectPlanningLimits.split,
+      ),
+      profile: ProjectPlanningToolProfile.split,
+    );
+    expect(split.toolDefinitions.map((tool) => tool.id).toSet(), {
+      'project_view',
+      'plan_split_task',
+      'plan_preview',
+      'plan_commit',
+    });
+  });
+
   test('planning schemas expose commands without persistence fields', () {
     final registry = ProjectPlanningToolRegistry(
       context: ProjectPlanningContext(

@@ -18,6 +18,7 @@ extension ProjectExecutionCore on ProjectExecutionUseCase {
     QuestionAutonomy questionAutonomy = QuestionAutonomy.balanced,
     ProjectPlanApprovalPolicy planApprovalPolicy =
         ProjectPlanApprovalPolicy.highRiskOnly,
+    bool planOnly = false,
   }) async {
     cancellationToken?.throwIfCancelled();
     final recovered = await _recoverProjectCore(
@@ -32,26 +33,36 @@ extension ProjectExecutionCore on ProjectExecutionUseCase {
     var activeTask = recovered.activeTask;
     // A paused, empty shell is the persisted shape used while a project is
     // waiting for its first plan. Continuing that project is an explicit
-    // resume command, so reduce it to an active planning boundary and request
-    // one no-ready-task revision before ordinary scheduling begins.
-    if (project.status == ProjectStatus.paused &&
+    // resume command, so reduce it to an active bootstrap planning boundary.
+    if ((project.status == ProjectStatus.paused ||
+            project.status == ProjectStatus.initializing ||
+            project.status == ProjectStatus.active ||
+            project.boundary?.outcome ==
+                ProjectControlOutcome.degradedPlanning) &&
         project.activeTaskId == null &&
         project.tasks.isEmpty &&
         project.criteria.isEmpty &&
+        project.milestones.isEmpty &&
         project.blocker == null &&
         project.openQuestions.isEmpty &&
         project.pendingPlanApproval == null) {
       project = _transitionProject(
         snapshot: project.copyWith(
+          // Older snapshots may have received the domain constructor's
+          // synthetic revision even though no real plan was ever committed.
+          // Treat that metadata as part of the recoverable shell so bootstrap
+          // remains revision 1.
+          planHistory: const [],
           pendingReplanTriggers: _appendTrigger(
             project.pendingReplanTriggers,
-            ProjectPlanRevisionTrigger.noReadyTask,
+            ProjectPlanRevisionTrigger.initialization,
           ),
           pendingReplanReason: 'The project has no initial bounded plan.',
+          boundary: null,
         ),
         to: ProjectStatus.active,
         trigger: ProjectLifecycleTrigger.recovery,
-        reason: 'Resuming the project to create its initial bounded plan.',
+        reason: 'Resuming the project to create its first bounded slice.',
       );
     }
     final initialAggregate = await _aggregateRepository.loadProject(
@@ -380,17 +391,54 @@ extension ProjectExecutionCore on ProjectExecutionUseCase {
       }
 
       if (decision.action == ProjectExecutionAction.revisePlan) {
-        project = await _revisePlan(
-          client: client,
-          workspace: workspace,
-          project: project,
-          triggers: replanTriggers,
-          baseSystemPrompt: baseSystemPrompt,
-          approvalPolicy: planApprovalPolicy,
-          questionAutonomy: questionAutonomy,
-          onModelOutput: onModelOutput,
-          cancellationToken: cancellationToken,
-        );
+        try {
+          project = await _revisePlan(
+            client: client,
+            workspace: workspace,
+            project: project,
+            triggers: replanTriggers,
+            baseSystemPrompt: baseSystemPrompt,
+            approvalPolicy: _isBootstrapShell(project)
+                ? ProjectPlanApprovalPolicy.never
+                : planApprovalPolicy,
+            planningPass: _isBootstrapShell(project)
+                ? ProjectPlanningPass.bootstrap
+                : ProjectPlanningPass.maintenance,
+            planningLimits: _isBootstrapShell(project)
+                ? ProjectPlanningLimits.bootstrap
+                : ProjectPlanningLimits.maintenance,
+            questionAutonomy: questionAutonomy,
+            onModelOutput: onModelOutput,
+            cancellationToken: cancellationToken,
+          );
+        } on OperationCancelledException {
+          // The shell must remain a durable, retryable boundary even when the
+          // user cancels while discovery or the model is still working.
+          project = _controlStateService.withOutcome(
+            _clearBatch(project),
+            outcome: ProjectControlOutcome.degradedPlanning,
+            message: 'First-slice planning was cancelled before it committed.',
+            action: 'retry_planning',
+            reasonCode: 'planning_cancelled',
+            now: DateTime.now(),
+          );
+          await _persistProject(
+            workspace.rootPath,
+            project,
+            persistenceContext: persistenceContext,
+            checkpoint: ProjectPersistenceCheckpoint.planRevision,
+          );
+          rethrow;
+        } catch (error) {
+          project = _controlStateService.withOutcome(
+            _clearBatch(project),
+            outcome: ProjectControlOutcome.degradedPlanning,
+            message: 'Project planning failed: $error',
+            action: 'retry_planning',
+            reasonCode: 'planning_failed',
+            now: DateTime.now(),
+          );
+        }
         project = await _persistProject(
           workspace.rootPath,
           project,
@@ -399,7 +447,15 @@ extension ProjectExecutionCore on ProjectExecutionUseCase {
         );
         if (project.pendingPlanApproval != null ||
             project.status == ProjectStatus.blocked ||
-            project.status == ProjectStatus.waitingForUser) {
+            project.status == ProjectStatus.waitingForUser ||
+            project.boundary?.outcome ==
+                ProjectControlOutcome.degradedPlanning) {
+          return ProjectCommandResult.fromSnapshot(
+            project: project,
+            activeTask: activeTask,
+          );
+        }
+        if (planOnly) {
           return ProjectCommandResult.fromSnapshot(
             project: project,
             activeTask: activeTask,

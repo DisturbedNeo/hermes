@@ -5,6 +5,7 @@ import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/runtime/project_plan_revision_service.dart';
 import 'package:hermes/features/project/runtime/project_plan_validator.dart';
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
+import 'package:hermes/features/project/runtime/project_planning_policy.dart';
 
 /// A structured error returned by a draft command before commit.
 part 'project_plan_builder_workspace.dart';
@@ -77,6 +78,7 @@ class ProjectPlanBuilder {
     String rationale = 'Keep the project plan bounded and actionable.',
     bool requiresApproval = false,
     String approvalReason = '',
+    this.planningLimits = ProjectPlanningLimits.maintenance,
     ProjectPlanRevisionService revisionService =
         const ProjectPlanRevisionService(),
   }) : _project = project,
@@ -141,6 +143,8 @@ class ProjectPlanBuilder {
   String _rationale;
   final bool _requiresApproval;
   final String _approvalReason;
+  final ProjectPlanningLimits planningLimits;
+  final Set<String> _newTaskIds = {};
 
   String get summary => _summary;
   String get rationale => _rationale;
@@ -158,6 +162,7 @@ class ProjectPlanBuilder {
       patch: ProjectPlanPatch.incremental(proposal),
       workspaceRoot: workspaceRoot,
       approvalPolicy: approvalPolicy,
+      planningLimits: planningLimits,
     );
     return ProjectPlanBuilderCommit(proposal: proposal, result: result);
   }
@@ -170,6 +175,7 @@ class ProjectPlanBuilder {
       project: _planningProject,
       proposal: proposal,
       workspaceRoot: workspaceRoot,
+      planningLimits: planningLimits,
     );
     return ProjectPlanBuilderPreview(
       proposal: proposal,

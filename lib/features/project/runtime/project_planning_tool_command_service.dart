@@ -3,6 +3,7 @@ part of 'project_planning_tools.dart';
 class ProjectPlanningToolCommandService {
   ProjectPlanningToolCommandService({
     required this.context,
+    this.profile = ProjectPlanningToolProfile.maintenance,
     this.includeProjectDetails = false,
   }) {
     _workspaceCommands = ProjectWorkspacePlanningCommandService(context);
@@ -10,6 +11,7 @@ class ProjectPlanningToolCommandService {
   }
 
   final ProjectPlanningContext context;
+  final ProjectPlanningToolProfile profile;
   final bool includeProjectDetails;
   late final ProjectWorkspacePlanningCommandService _workspaceCommands;
   late final ProjectPlanEditingCommandService _planCommands;
@@ -21,28 +23,31 @@ class ProjectPlanningToolCommandService {
   String get closedMessage => 'This planning draft has already been committed.';
 
   List<ToolDefinition> get toolDefinitions => [
-    if (includeProjectDetails) _projectDetailsDefinition,
-    if (context.workspaceReader != null) _planningReadFileDefinition,
-    _projectViewDefinition,
-    _addCriteriaDefinition,
-    _addMilestonesDefinition,
-    _addTasksDefinition,
-    _updateTaskDefinition,
-    _setDependencyDefinition,
-    _setDispositionDefinition,
-    _splitTaskDefinition,
-    _retryTaskDefinition,
-    _addCheckDefinition,
-    _addNoteDefinition,
-    _setWorkspaceOrientationDefinition,
-    _addWorkspaceNodesDefinition,
-    _updateWorkspaceNodeDefinition,
-    _addWorkspaceEdgesDefinition,
-    _updateWorkspaceEdgeDefinition,
-    _removeWorkspaceItemDefinition,
-    _requestDecisionDefinition,
-    _previewDefinition,
-    _commitDefinition,
+    if (includeProjectDetails && _allows('plan_set_project_details'))
+      _projectDetailsDefinition,
+    if (context.workspaceReader != null && _allows('planning_read_file'))
+      _planningReadFileDefinition,
+    if (_allows('project_view')) _projectViewDefinition,
+    if (_allows('plan_add_criteria')) _addCriteriaDefinition,
+    if (_allows('plan_add_milestones')) _addMilestonesDefinition,
+    if (_allows('plan_add_tasks')) _addTasksDefinition,
+    if (_allows('plan_update_task')) _updateTaskDefinition,
+    if (_allows('plan_set_dependency')) _setDependencyDefinition,
+    if (_allows('plan_set_disposition')) _setDispositionDefinition,
+    if (_allows('plan_split_task')) _splitTaskDefinition,
+    if (_allows('plan_retry_task')) _retryTaskDefinition,
+    if (_allows('plan_add_check')) _addCheckDefinition,
+    if (_allows('plan_add_note')) _addNoteDefinition,
+    if (_allows('plan_set_workspace_orientation'))
+      _setWorkspaceOrientationDefinition,
+    if (_allows('plan_add_workspace_nodes')) _addWorkspaceNodesDefinition,
+    if (_allows('plan_update_workspace_node')) _updateWorkspaceNodeDefinition,
+    if (_allows('plan_add_workspace_edges')) _addWorkspaceEdgesDefinition,
+    if (_allows('plan_update_workspace_edge')) _updateWorkspaceEdgeDefinition,
+    if (_allows('plan_remove_workspace_item')) _removeWorkspaceItemDefinition,
+    if (_allows('plan_request_user_decision')) _requestDecisionDefinition,
+    if (_allows('plan_preview')) _previewDefinition,
+    if (_allows('plan_commit')) _commitDefinition,
   ];
 
   /// The planning registry has no route to workspace mutation.
@@ -53,11 +58,19 @@ class ProjectPlanningToolCommandService {
     PlanningArguments arguments, {
     String? commandId,
   }) async {
+    if (!_allows(toolId) ||
+        (toolId == 'plan_set_project_details' && !includeProjectDetails) ||
+        (toolId == 'planning_read_file' && context.workspaceReader == null)) {
+      throw _argument(
+        'tool_unavailable',
+        'tool',
+        'Project planning tool $toolId is not available in the '
+            '${profile.name} planning profile.',
+      );
+    }
     final result = switch (toolId) {
-      'plan_set_project_details' when includeProjectDetails =>
-        _setProjectDetails(arguments),
-      'planning_read_file' when context.workspaceReader != null =>
-        await _planningReadFile(arguments),
+      'plan_set_project_details' => _setProjectDetails(arguments),
+      'planning_read_file' => await _planningReadFile(arguments),
       'project_view' => _view(arguments),
       'plan_add_criteria' => _planCommands.addCriteria(arguments, commandId),
       'plan_add_milestones' => _planCommands.addMilestones(
@@ -113,6 +126,57 @@ class ProjectPlanningToolCommandService {
       ),
     };
     return PlanningResponse.fromWire({'ok': true, ...result});
+  }
+
+  bool _allows(String toolId) {
+    if (includeProjectDetails &&
+        toolId == 'plan_set_project_details' &&
+        profile == ProjectPlanningToolProfile.maintenance) {
+      return true;
+    }
+    return switch (profile) {
+      ProjectPlanningToolProfile.bootstrap => const {
+        'project_view',
+        'planning_read_file',
+        'plan_add_criteria',
+        'plan_add_milestones',
+        'plan_add_tasks',
+        'plan_add_check',
+        'plan_add_note',
+        'plan_request_user_decision',
+        'plan_preview',
+        'plan_commit',
+      }.contains(toolId),
+      ProjectPlanningToolProfile.maintenance => const {
+        'project_view',
+        'planning_read_file',
+        'plan_add_criteria',
+        'plan_add_milestones',
+        'plan_add_tasks',
+        'plan_update_task',
+        'plan_set_dependency',
+        'plan_set_disposition',
+        'plan_split_task',
+        'plan_retry_task',
+        'plan_add_check',
+        'plan_add_note',
+        'plan_set_workspace_orientation',
+        'plan_add_workspace_nodes',
+        'plan_update_workspace_node',
+        'plan_add_workspace_edges',
+        'plan_update_workspace_edge',
+        'plan_remove_workspace_item',
+        'plan_request_user_decision',
+        'plan_preview',
+        'plan_commit',
+      }.contains(toolId),
+      ProjectPlanningToolProfile.split => const {
+        'project_view',
+        'plan_split_task',
+        'plan_preview',
+        'plan_commit',
+      }.contains(toolId),
+    };
   }
 
   Map<String, dynamic> domainError(Object error) {

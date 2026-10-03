@@ -26,6 +26,7 @@ import 'package:hermes/features/project/application/contracts/project_checkpoint
 import 'package:hermes/features/project/application/contracts/project_commands.dart';
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
 import 'package:hermes/features/project/runtime/project_plan_validator.dart';
+import 'package:hermes/features/project/runtime/project_planning_policy.dart';
 import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
 import 'package:hermes/features/project/runtime/project_state_models.dart';
 import 'package:hermes/features/project/runtime/project_progress_monitor.dart';
@@ -186,48 +187,22 @@ class ProjectExecutionStateMachine {
       recoveryPolicy: _recoveryPolicy,
       scheduler: _scheduler,
       lifecycleService: lifecycleService,
-      fallbackInitialPlan: (goal) =>
-          _executionUseCase._fallbackInitialPlan(goal),
-      validateInitialPlan:
-          ({required initialPlan, required workspaceProfile}) =>
-              _executionUseCase._validateInitialPlan(
-                initialPlan: initialPlan,
-                workspaceProfile: workspaceProfile,
-              ),
-      blocksInitialPlanningForContextIssue: (issue) =>
-          _executionUseCase._blocksInitialPlanningForContextIssue(issue),
-      filterProjectQuestions: (questions, {required autonomy}) =>
-          _executionUseCase._filterProjectQuestions(
-            questions,
-            autonomy: autonomy,
-          ),
-      normaliseInitialBacklog: (tasks, criterionIds) =>
-          _executionUseCase._normaliseInitialBacklog(tasks, criterionIds),
-      initialMilestones:
-          ({
-            required milestones,
-            required refinedGoal,
-            required criteria,
-            required now,
-          }) => _executionUseCase._initialMilestones(
-            milestones: milestones,
-            refinedGoal: refinedGoal,
-            criteria: criteria,
-            now: now,
-          ),
-      initialMemory:
-          ({required memory, required policyAssumptions, required now}) =>
-              _executionUseCase._initialMemory(
-                memory: memory,
-                policyAssumptions: policyAssumptions,
-                now: now,
-              ),
       titleFromPrompt: (prompt) => _executionUseCase._titleFromPrompt(prompt),
       newProjectId: (prompt) => _executionUseCase._newProjectId(prompt),
       normaliseOptionalLimit: (value, {fallback = 0}) =>
           _executionUseCase._normaliseOptionalLimit(value, fallback: fallback),
-      initialPlanningBlockerMessage: (issues) =>
-          _executionUseCase._initialPlanningBlockerMessage(issues),
+      persistProject:
+          (
+            workspaceRoot,
+            project, {
+            persistenceContext,
+            checkpoint = ProjectPersistenceCheckpoint.runtime,
+          }) => _executionUseCase._persistProject(
+            workspaceRoot,
+            project,
+            persistenceContext: persistenceContext,
+            checkpoint: checkpoint,
+          ),
       transitionProject:
           ({
             required snapshot,
@@ -243,18 +218,6 @@ class ProjectExecutionStateMachine {
             reason: reason,
             blocker: blocker,
             now: now,
-          ),
-      persistProject:
-          (
-            workspaceRoot,
-            project, {
-            persistenceContext,
-            checkpoint = ProjectPersistenceCheckpoint.runtime,
-          }) => _executionUseCase._persistProject(
-            workspaceRoot,
-            project,
-            persistenceContext: persistenceContext,
-            checkpoint: checkpoint,
           ),
       appendTrigger: (current, trigger) =>
           _executionUseCase._appendTrigger(current, trigger),
@@ -310,6 +273,7 @@ class ProjectExecutionStateMachine {
   late final ProjectExecutionUseCase _executionUseCase;
 
   static const Set<ProjectPlanRevisionTrigger> _runtimeReplanTriggers = {
+    ProjectPlanRevisionTrigger.initialization,
     ProjectPlanRevisionTrigger.noReadyTask,
     ProjectPlanRevisionTrigger.taskFailed,
     ProjectPlanRevisionTrigger.evidenceRejected,

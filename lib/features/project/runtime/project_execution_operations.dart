@@ -1,6 +1,11 @@
 part of 'project_execution_state_machine.dart';
 
 extension ProjectExecutionOperations on ProjectExecutionUseCase {
+  bool _isBootstrapShell(ProjectAggregate project) =>
+      project.tasks.isEmpty &&
+      project.criteria.isEmpty &&
+      project.milestones.isEmpty;
+
   ProjectTaskNode? _activeProjectTask(ProjectAggregate project) {
     final id = project.activeTaskId;
     return id == null ? null : project.taskById(id);
@@ -162,6 +167,8 @@ extension ProjectExecutionOperations on ProjectExecutionUseCase {
     required List<ProjectPlanRevisionTrigger> triggers,
     required String baseSystemPrompt,
     required ProjectPlanApprovalPolicy approvalPolicy,
+    ProjectPlanningPass planningPass = ProjectPlanningPass.maintenance,
+    ProjectPlanningLimits planningLimits = ProjectPlanningLimits.maintenance,
     required QuestionAutonomy questionAutonomy,
     ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
@@ -174,22 +181,35 @@ extension ProjectExecutionOperations on ProjectExecutionUseCase {
         triggers: triggers,
         baseSystemPrompt: baseSystemPrompt,
         approvalPolicy: approvalPolicy,
+        planningPass: planningPass,
+        planningLimits: planningLimits,
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
       ),
     );
     if (revision.hasContextIssues) {
+      final message = _planningContextBlockerMessage([
+        for (final issue in revision.contextIssues)
+          ProjectPlanValidationIssue(
+            code: issue.code,
+            path: issue.path,
+            message: issue.message,
+          ),
+      ]);
+      if (planningPass == ProjectPlanningPass.bootstrap) {
+        return _controlStateService.withOutcome(
+          _clearBatch(project),
+          outcome: ProjectControlOutcome.degradedPlanning,
+          message: message,
+          action: 'retry_planning',
+          reasonCode: 'planning_context_unavailable',
+          now: DateTime.now(),
+        );
+      }
       return _blockProject(
         _clearBatch(project),
         ProjectBlockerType.validation,
-        _initialPlanningBlockerMessage([
-          for (final issue in revision.contextIssues)
-            ProjectPlanValidationIssue(
-              code: issue.code,
-              path: issue.path,
-              message: issue.message,
-            ),
-        ]),
+        message,
         DateTime.now(),
       );
     }
@@ -202,6 +222,7 @@ extension ProjectExecutionOperations on ProjectExecutionUseCase {
       invalidPlan: !incremental.committed,
       awaitingApproval: incremental.awaitingApproval,
       planningError: incremental.error,
+      planningPass: planningPass,
     );
     return revised.copyWith(
       id: project.id,
@@ -219,6 +240,7 @@ extension ProjectExecutionOperations on ProjectExecutionUseCase {
     required bool awaitingApproval,
     PlanningMetrics planningMetrics = const PlanningMetrics(),
     String? planningError,
+    ProjectPlanningPass planningPass = ProjectPlanningPass.maintenance,
   }) {
     revised = revised.copyWith(
       currentBatchTaskIds: const [],
@@ -241,11 +263,28 @@ extension ProjectExecutionOperations on ProjectExecutionUseCase {
       ),
     );
     if (planningError != null && planningError.trim().isNotEmpty) {
-      return _blockProject(
+      return _controlStateService.withOutcome(
         revised,
-        ProjectBlockerType.validation,
-        'Incremental plan revision did not commit: ${planningError.trim()}',
-        DateTime.now(),
+        outcome: ProjectControlOutcome.degradedPlanning,
+        message:
+            'Incremental plan revision did not commit: ${planningError.trim()}',
+        action: 'retry_planning',
+        reasonCode: 'planning_failed',
+        now: DateTime.now(),
+      );
+    }
+    if (planningPass == ProjectPlanningPass.bootstrap && invalidPlan) {
+      return _controlStateService.withOutcome(
+        revised.copyWith(
+          status: ProjectStatus.active,
+          blocker: null,
+          pendingPlanApproval: null,
+        ),
+        outcome: ProjectControlOutcome.degradedPlanning,
+        message: 'The first project slice did not pass plan validation.',
+        action: 'retry_planning',
+        reasonCode: 'bootstrap_plan_invalid',
+        now: DateTime.now(),
       );
     }
     if (revised.openQuestions.isNotEmpty) {
@@ -414,6 +453,8 @@ extension ProjectExecutionOperations on ProjectExecutionUseCase {
       oversizedTask: task,
       violations: violations,
       approvalPolicy: approvalPolicy,
+      planningPass: ProjectPlanningPass.split,
+      planningLimits: ProjectPlanningLimits.split,
       onModelOutput: onModelOutput,
       cancellationToken: cancellationToken,
     );

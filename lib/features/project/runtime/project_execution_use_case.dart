@@ -62,6 +62,7 @@ class ProjectExecutionUseCase {
     cancellationToken: request.cancellationToken,
     questionAutonomy: request.questionAutonomy,
     planApprovalPolicy: request.planApprovalPolicy,
+    planOnly: request.planOnly,
   );
 
   Future<ProjectCommandResult> recoverProjectForCommand(

@@ -5,9 +5,9 @@ import 'package:hermes/features/workspace/application/workspace_discovery_profil
 import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/model/application/model_completion_port.dart';
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
-import 'package:hermes/features/project/runtime/project_plan_validator.dart';
 import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
 import 'package:hermes/features/model/application/model_output.dart';
+import 'package:hermes/features/project/runtime/project_planning_policy.dart';
 
 export 'package:hermes/features/project/runtime/project_plan_validator.dart'
     show ProjectPlanValidationIssue, ProjectPlanValidationSeverity;
@@ -179,30 +179,9 @@ class ProjectIncrementalPlanResult {
 }
 
 /// Boundary between deterministic project orchestration and model-backed
-/// project planning decisions. All planning modes return the same typed patch
-/// protocol; there is one current initial-plan branch.
+/// project planning decisions. Incremental revision is the normal planning
+/// protocol; legacy initial-plan DTOs remain above only for wire compatibility.
 abstract interface class ProjectPlanner {
-  Future<ProjectInitialPlanResult> initializePlan({
-    required ModelConversationPort client,
-    required String baseSystemPrompt,
-    required WorkspaceAttachment workspace,
-    required String originalGoal,
-    required ProjectPlanningWorkspaceMetadata workspaceMetadata,
-    ModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  });
-
-  Future<ProjectInitialPlanResult?> repairInitialPlan({
-    required ModelConversationPort client,
-    required String baseSystemPrompt,
-    required WorkspaceAttachment workspace,
-    required String originalGoal,
-    required ProjectPlanningWorkspaceMetadata workspaceMetadata,
-    required ProjectInitialPlanResult initialPlan,
-    required List<ProjectPlanValidationIssue> validationIssues,
-    ModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  });
   Future<ProjectIncrementalPlanResult> revisePlanWithCommands({
     required ModelConversationPort client,
     required String baseSystemPrompt,
@@ -211,6 +190,8 @@ abstract interface class ProjectPlanner {
     required ProjectEvidenceSnapshot evidenceSnapshot,
     required List<ProjectPlanRevisionTrigger> triggers,
     required ProjectPlanApprovalPolicy approvalPolicy,
+    ProjectPlanningPass planningPass = ProjectPlanningPass.maintenance,
+    ProjectPlanningLimits planningLimits = ProjectPlanningLimits.maintenance,
     ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });
@@ -223,6 +204,8 @@ abstract interface class ProjectPlanner {
     required ProjectTaskNode oversizedTask,
     required List<String> violations,
     required ProjectPlanApprovalPolicy approvalPolicy,
+    ProjectPlanningPass planningPass = ProjectPlanningPass.split,
+    ProjectPlanningLimits planningLimits = ProjectPlanningLimits.split,
     ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   });

@@ -14,7 +14,6 @@ import 'package:hermes/features/project/runtime/project_lifecycle_service.dart';
 import 'package:hermes/features/project/runtime/project_memory_service.dart';
 import 'package:hermes/features/project/runtime/project_model_calls.dart';
 import 'package:hermes/features/project/runtime/project_plan_revision_service.dart';
-import 'package:hermes/features/project/runtime/project_planning_coordinator.dart';
 import 'package:hermes/features/project/runtime/project_progress_monitor.dart';
 import 'package:hermes/features/project/runtime/project_recovery_service.dart';
 import 'package:hermes/features/project/application/project_application/project_workflow_port.dart';
@@ -78,10 +77,6 @@ class ProjectModule {
       memoryService: memory,
     );
     final planningHandler = ProjectPlanningHandler(
-      coordinator: ProjectPlanningCoordinator(
-        discovery: discovery,
-        planner: modelCalls,
-      ),
       revisionService: const ProjectPlanRevisionService(),
     );
     final dependencies = ProjectRuntimeDependencies(

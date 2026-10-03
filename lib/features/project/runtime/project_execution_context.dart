@@ -30,53 +30,9 @@ abstract interface class ProjectExecutionCapabilities {
 
 /// Planning-only capability surface for project planning use cases.
 abstract interface class ProjectPlanningCapabilities {
-  ProjectControlStateService get controlStateService;
-  ProjectInitialPlanResult Function(String originalGoal)
-  get fallbackInitialPlan;
-  List<ProjectPlanValidationIssue> Function({
-    required ProjectInitialPlanResult initialPlan,
-    required WorkspaceDiscoveryProfile workspaceProfile,
-  })
-  get validateInitialPlan;
-  bool Function(WorkspaceRequiredContextIssue issue)
-  get blocksInitialPlanningForContextIssue;
-  ProjectFilteredQuestions Function(
-    List<PendingProjectQuestion> questions, {
-    required QuestionAutonomy autonomy,
-  })
-  get filterProjectQuestions;
-  List<ProjectTaskNode> Function(
-    List<ProjectTaskNode> tasks,
-    List<String> criterionIds,
-  )
-  get normaliseInitialBacklog;
-  List<ProjectMilestone> Function({
-    required List<ProjectMilestone> milestones,
-    required String refinedGoal,
-    required List<ProjectCriterion>? criteria,
-    required DateTime now,
-  })
-  get initialMilestones;
-  List<ProjectMemoryEntry> Function({
-    required List<ProjectMemoryEntry> memory,
-    required List<String> policyAssumptions,
-    required DateTime now,
-  })
-  get initialMemory;
   String Function(String prompt) get titleFromPrompt;
   String Function(String prompt) get newProjectId;
   int Function(int? value, {required int fallback}) get normaliseOptionalLimit;
-  String Function(List<ProjectPlanValidationIssue> issues)
-  get initialPlanningBlockerMessage;
-  ProjectAggregate Function({
-    required ProjectAggregate snapshot,
-    required ProjectStatus to,
-    required ProjectLifecycleTrigger trigger,
-    required String reason,
-    ProjectBlocker? blocker,
-    required DateTime now,
-  })
-  get transitionProject;
   Future<ProjectAggregate> Function(
     String workspaceRoot,
     ProjectAggregate project, {
@@ -163,19 +119,11 @@ class ProjectUseCaseContext
     required this.recoveryPolicy,
     required this.scheduler,
     required this.lifecycleService,
-    required this.fallbackInitialPlan,
-    required this.validateInitialPlan,
-    required this.blocksInitialPlanningForContextIssue,
-    required this.filterProjectQuestions,
-    required this.normaliseInitialBacklog,
-    required this.initialMilestones,
-    required this.initialMemory,
     required this.titleFromPrompt,
     required this.newProjectId,
     required this.normaliseOptionalLimit,
-    required this.initialPlanningBlockerMessage,
-    required this.transitionProject,
     required this.persistProject,
+    required this.transitionProject,
     required this.appendTrigger,
     required this.appendUnique,
     required this.decision,
@@ -209,44 +157,16 @@ class ProjectUseCaseContext
   final ProjectScheduler scheduler;
   final ProjectLifecycleService lifecycleService;
 
-  final ProjectInitialPlanResult Function(String originalGoal)
-  fallbackInitialPlan;
-  final List<ProjectPlanValidationIssue> Function({
-    required ProjectInitialPlanResult initialPlan,
-    required WorkspaceDiscoveryProfile workspaceProfile,
-  })
-  validateInitialPlan;
-  final bool Function(WorkspaceRequiredContextIssue issue)
-  blocksInitialPlanningForContextIssue;
-  final ProjectFilteredQuestions Function(
-    List<PendingProjectQuestion> questions, {
-    required QuestionAutonomy autonomy,
-  })
-  filterProjectQuestions;
-  final List<ProjectTaskNode> Function(
-    List<ProjectTaskNode> tasks,
-    List<String> criterionIds,
-  )
-  normaliseInitialBacklog;
-  final List<ProjectMilestone> Function({
-    required List<ProjectMilestone> milestones,
-    required String refinedGoal,
-    required List<ProjectCriterion>? criteria,
-    required DateTime now,
-  })
-  initialMilestones;
-  final List<ProjectMemoryEntry> Function({
-    required List<ProjectMemoryEntry> memory,
-    required List<String> policyAssumptions,
-    required DateTime now,
-  })
-  initialMemory;
   final String Function(String prompt) titleFromPrompt;
   final String Function(String prompt) newProjectId;
   final int Function(int? value, {int fallback}) normaliseOptionalLimit;
-  final String Function(List<ProjectPlanValidationIssue> issues)
-  initialPlanningBlockerMessage;
-
+  final Future<ProjectAggregate> Function(
+    String workspaceRoot,
+    ProjectAggregate project, {
+    ProjectPersistenceContext? persistenceContext,
+    ProjectPersistenceCheckpoint checkpoint,
+  })
+  persistProject;
   final ProjectAggregate Function({
     required ProjectAggregate snapshot,
     required ProjectStatus to,
@@ -256,13 +176,6 @@ class ProjectUseCaseContext
     required DateTime now,
   })
   transitionProject;
-  final Future<ProjectAggregate> Function(
-    String workspaceRoot,
-    ProjectAggregate project, {
-    ProjectPersistenceContext? persistenceContext,
-    ProjectPersistenceCheckpoint checkpoint,
-  })
-  persistProject;
   final List<ProjectPlanRevisionTrigger> Function(
     List<ProjectPlanRevisionTrigger> current,
     ProjectPlanRevisionTrigger trigger,

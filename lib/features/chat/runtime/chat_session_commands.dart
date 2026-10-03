@@ -275,8 +275,8 @@ extension ChatSessionCommands on ChatWorkUseCase {
     dispatchTaskError(null);
     dispatchTaskStatusMessage(
       runAfterCreation
-          ? 'Creating project and preparing first task...'
-          : 'Creating project...',
+          ? 'Creating project shell and preparing the first slice...'
+          : 'Creating project shell and planning the first slice...',
     );
     _beginTaskModelOutput('Project Creation Model Output');
     emitChange();
@@ -312,9 +312,13 @@ extension ChatSessionCommands on ChatWorkUseCase {
 
       if (runAfterCreation) {
         await _runProjectInternal(keepBusy: true);
+      } else {
+        await _runProjectInternal(keepBusy: true, planOnly: true);
       }
     } on OperationCancelledException {
-      _insertTaskAssistantMessage('Project creation cancelled.');
+      _insertTaskAssistantMessage(
+        'Project shell saved, but first-slice planning was cancelled. Resume the project to continue.',
+      );
     } catch (e) {
       dispatchTaskError(e);
       _insertTaskErrorBubble('Failed to create project: $e');
@@ -330,6 +334,7 @@ extension ChatSessionCommands on ChatWorkUseCase {
   Future<void> _runProjectInternal({
     bool keepBusy = false,
     int? maxNewTasks,
+    bool planOnly = false,
   }) async {
     final currentWorkspace = workspace;
     final client = activeModelSession.completionProvider;
@@ -351,7 +356,9 @@ extension ChatSessionCommands on ChatWorkUseCase {
       emitChange();
     }
     final settings = await _refreshTaskSystemSettings();
-    dispatchTaskStatusMessage('Running project...');
+    dispatchTaskStatusMessage(
+      planOnly ? 'Planning the first project slice...' : 'Running project...',
+    );
     emitChange();
 
     try {
@@ -366,6 +373,7 @@ extension ChatSessionCommands on ChatWorkUseCase {
           maxNewTasks: maxNewTasks ?? settings.maxProjectTasksPerRun,
           maxIterations: settings.maxProjectIterations,
           requirePhaseApproval: settings.requireApprovalBeforeFileEdits,
+          planOnly: planOnly,
           questionAutonomy: settings.questionAutonomy,
           planApprovalPolicy: settings.planApprovalPolicy,
           compactionSettings: compactionSettings,
@@ -374,7 +382,24 @@ extension ChatSessionCommands on ChatWorkUseCase {
             dispatchTaskStatusMessage(status);
             emitChange();
           },
-          onModelOutput: _handleTaskModelOutput,
+          onModelOutput: (event) {
+            if (event.type == TaskModelOutputEventType.start) {
+              final label = event.label.toLowerCase();
+              final status = label.contains('project plan')
+                  ? (snapshot.tasks.isEmpty
+                        ? 'Planning the first project slice...'
+                        : 'Revising the project plan...')
+                  : label.contains('completion')
+                  ? 'Evaluating project evidence...'
+                  : label.contains('project task split')
+                  ? 'Revising the project plan...'
+                  : label.contains('step executor')
+                  ? 'Executing project task...'
+                  : null;
+              if (status != null) dispatchTaskStatusMessage(status);
+            }
+            _handleTaskModelOutput(event);
+          },
           onTaskUpdated: (task) {
             if (task == null) return;
             unawaited(
@@ -407,7 +432,11 @@ extension ChatSessionCommands on ChatWorkUseCase {
         ),
       );
     } on OperationCancelledException {
-      _insertTaskAssistantMessage('Project run cancelled.');
+      _insertTaskAssistantMessage(
+        planOnly
+            ? 'Project shell saved, but first-slice planning was cancelled. Resume the project to continue.'
+            : 'Project run cancelled.',
+      );
     } catch (e) {
       dispatchTaskError(e);
       _insertTaskErrorBubble('Failed to run project: $e');

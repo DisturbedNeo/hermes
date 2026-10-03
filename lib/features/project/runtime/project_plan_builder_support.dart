@@ -36,6 +36,14 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
     if (specs.isEmpty) {
       throw _error('missing_tasks', 'tasks', 'At least one task is required.');
     }
+    if (_newTaskIds.length + specs.length > planningLimits.maxNewTasks) {
+      throw _error(
+        'new_task_limit_exceeded',
+        'tasks',
+        'This planning pass may add at most ${planningLimits.maxNewTasks} '
+            'new task${planningLimits.maxNewTasks == 1 ? '' : 's'}.',
+      );
+    }
     final references = <String, String>{};
     final ids = <String>[];
     for (var index = 0; index < specs.length; index++) {
@@ -158,6 +166,7 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
       final task = created[index];
       _tasks[task.id] = task;
       _taskCatalog[task.id] = task;
+      _newTaskIds.add(task.id);
       final reference = references.keys.elementAt(index);
       _taskRefs[reference] = task.id;
       _taskRefs[task.id] = task.id;
@@ -486,6 +495,7 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
     final deferred = {..._deferredTaskIds};
     final obsolete = {..._obsoleteTaskIds};
     final split = {..._splitTaskIds};
+    final newTaskIds = {..._newTaskIds};
     final memories = [..._memoryAdditions];
     final questions = [..._openQuestions];
     final workspaceOrientation = _workspaceOrientation;
@@ -535,6 +545,9 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
       _splitTaskIds
         ..clear()
         ..addAll(split);
+      _newTaskIds
+        ..clear()
+        ..addAll(newTaskIds);
       _memoryAdditions
         ..clear()
         ..addAll(memories);

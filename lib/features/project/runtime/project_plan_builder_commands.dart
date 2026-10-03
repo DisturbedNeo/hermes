@@ -122,7 +122,13 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
               ? [milestoneObjective]
               : conditions,
           order: order ?? _nextMilestoneOrder(),
-          status: ProjectMilestoneStatus.planned,
+          status:
+              planningLimits.requireActiveMilestone &&
+                  !_milestones.values.any(
+                    (item) => item.status == ProjectMilestoneStatus.active,
+                  )
+              ? ProjectMilestoneStatus.active
+              : ProjectMilestoneStatus.planned,
           createdAt: _now,
           updatedAt: _now,
         );
@@ -621,6 +627,13 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
           'missing_split_children',
           'children',
           'A split needs at least one child task.',
+        );
+      }
+      if (items.length < 2 || items.length > 3) {
+        throw _error(
+          'invalid_split_children',
+          'children',
+          'A task split must produce two or three bounded child tasks.',
         );
       }
       return _atomic(() {

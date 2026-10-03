@@ -12,6 +12,7 @@ import 'package:hermes/features/chat/application/contracts/chat_message.dart';
 import 'package:hermes/features/chat/application/contracts/chat_token.dart';
 import 'package:hermes/features/chat/application/contracts/bubble.dart';
 import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/core/contracts/execution_settings.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/model/application/model_configuration.dart';
 import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
@@ -371,24 +372,40 @@ void main() {
       serverManager.setCompletionProviderForTesting(
         _QueueCompletionClient([
           _commandPlanProjectResponse({
+            'criteria': [
+              {'id': 'criterion_1', 'statement': 'Finish'},
+            ],
+            'milestones': [
+              {
+                'id': 'milestone_1',
+                'title': 'First slice',
+                'objective': 'Finish the first bounded slice.',
+                'criterionIds': ['criterion_1'],
+              },
+            ],
             'tasks': [
-              _projectTaskJson(relevantSuccessCriteria: const ['Finish']),
+              {
+                'ref': 'build',
+                ..._projectTaskJson(relevantSuccessCriteria: const ['Finish']),
+                'criterionIds': ['criterion_1'],
+                'milestoneId': 'milestone_1',
+              },
             ],
             'openQuestions': [],
           }),
           ModelCompletion(
             content: jsonEncode({
-              'task': _projectTaskJson(
-                relevantSuccessCriteria: const ['Finish'],
-              ),
-            }),
-          ),
-          _commandPlanTaskResponse(_projectPlanJson(title: 'Project task')),
-          ModelCompletion(
-            content: jsonEncode({
               'status': 'completed',
               'summary': 'Project task complete.',
               'memoryUpdate': 'Screen built.',
+              'evidenceClaims': [
+                {
+                  'criterionId': 'criterion_1',
+                  'claim': 'The bounded project task was completed.',
+                  'evidenceType': 'task_claim',
+                  'sourceRef': 'task_execution',
+                },
+              ],
             }),
           ),
           ModelCompletion(
@@ -396,12 +413,20 @@ void main() {
               'complete': true,
               'finalSummary': 'All done.',
               'remainingCriteria': [],
+              'supportedCriterionIds': ['criterion_1'],
               'openQuestions': [],
             }),
           ),
         ]),
       );
       await chat.attachWorkspace(tempDir.path);
+      await preferences.setTaskSystemSettings(
+        TaskSystemSettings(
+          requireApprovalBeforeExecution: false,
+          requireApprovalBeforeFileEdits: false,
+          planApprovalPolicy: ProjectPlanApprovalPolicy.never,
+        ),
+      );
       final seedProject = _projectDocument();
       final seedProjectRepository = ProjectRepository(
         coordinator: WorkspacePersistenceCoordinator(),
@@ -415,7 +440,7 @@ void main() {
 
       await chat.send('/continue-project');
 
-      expect(chat.activeProject?.status, ProjectStatus.completed);
+      expect(chat.activeProject?.status, ProjectStatus.active);
       expect(
         chat.messageStore.messages.firstWhere(
           (m) => m.text == '/continue-project',
@@ -1004,24 +1029,6 @@ Map<String, dynamic> _planJson({required String title}) {
   };
 }
 
-Map<String, dynamic> _projectPlanJson({required String title}) {
-  return {
-    'title': title,
-    'goal': 'Build the reporting screen slice',
-    'constraints': ['Stay inside the workspace.'],
-    'successCriteria': ['The reporting screen slice is complete.'],
-    'steps': [
-      {
-        'id': 'build',
-        'title': 'Build screen slice',
-        'objective': 'Build the reporting screen slice.',
-        'instructions': ['Implement only the bounded screen slice.'],
-        'mayEditFiles': false,
-      },
-    ],
-  };
-}
-
 Map<String, dynamic> _projectTaskJson({
   List<String> relevantSuccessCriteria = const ['Screen is built.'],
 }) {
@@ -1029,6 +1036,7 @@ Map<String, dynamic> _projectTaskJson({
     'title': 'Build screen slice',
     'objective': 'Build the reporting screen slice',
     'relevantSuccessCriteria': relevantSuccessCriteria,
+    'criterionIds': ['criterion_1'],
     'doneCriteria': ['The reporting screen slice is complete.'],
     'outOfScope': ['Do not perform unrelated project work.'],
     'context': ['Use the attached workspace.'],
@@ -1149,7 +1157,7 @@ ModelCompletion _commandPlanProjectResponse(
                 'ref': raw['id'] ?? raw['ref'] ?? '',
                 'statement': raw['statement'] ?? '',
                 'required': raw['required'] ?? true,
-                'verification_mode': 'deterministic',
+                'verification_mode': 'mixed',
               },
         ],
       }),
@@ -1191,15 +1199,6 @@ ModelCompletion _commandPlanProjectResponse(
               },
         ],
       }),
-    for (final raw in (arguments['tasks'] as List? ?? const []))
-      if (raw is Map)
-        _toolCall('plan_add_check', {
-          'task': raw['id'] ?? raw['ref'] ?? '',
-          'kind': 'command',
-          'command': 'true',
-          'criterion_refs': raw['criterionIds'] ?? const [],
-          'required': true,
-        }),
     _toolCall('plan_commit', {
       'summary': arguments['summary'] ?? 'Apply the project plan.',
       'rationale': arguments['rationale'] ?? 'Commit the bounded project plan.',

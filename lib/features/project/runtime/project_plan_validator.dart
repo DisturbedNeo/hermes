@@ -1,5 +1,6 @@
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
+import 'package:hermes/features/project/runtime/project_planning_policy.dart';
 import 'package:path/path.dart' as path;
 
 enum ProjectPlanValidationSeverity { warning, error }
@@ -53,6 +54,7 @@ class ProjectPlanValidator {
     required ProjectAggregate project,
     required ProjectDesiredPlan proposal,
     required String workspaceRoot,
+    ProjectPlanningLimits planningLimits = ProjectPlanningLimits.maintenance,
   }) {
     final issues = <ProjectPlanValidationIssue>[];
 
@@ -80,6 +82,60 @@ class ProjectPlanValidator {
         'plan',
         'The planner response did not provide complete criteria, milestone, and task collections.',
       );
+    }
+
+    final existingTaskIds = project.tasks.map((task) => task.id).toSet();
+    final newTasks = proposal.tasks.where(
+      (task) => !existingTaskIds.contains(task.id),
+    );
+    if (newTasks.length > planningLimits.maxNewTasks) {
+      issue(
+        'new_task_limit_exceeded',
+        'tasks',
+        'This planning pass may add at most ${planningLimits.maxNewTasks} '
+            'new task${planningLimits.maxNewTasks == 1 ? '' : 's'}; '
+            '${newTasks.length} were proposed.',
+      );
+    }
+    if (newTasks.length < planningLimits.minNewTasks) {
+      issue(
+        'new_task_minimum_not_met',
+        'tasks',
+        'This planning pass requires at least ${planningLimits.minNewTasks} '
+            'new bounded tasks; ${newTasks.length} were proposed.',
+      );
+    }
+    if (planningLimits.requireActiveMilestone &&
+        !proposal.milestones.any(
+          (milestone) => milestone.status == ProjectMilestoneStatus.active,
+        )) {
+      issue(
+        'missing_active_milestone',
+        'milestones',
+        'The bootstrap plan must define one active milestone for the next slice.',
+      );
+    }
+    if (planningLimits.requireExecutableSlice) {
+      final hasQueuedTask = proposal.tasks.any(
+        (task) =>
+            task.status == TaskStatus.queued &&
+            !proposal.deferredTaskIds.contains(task.id) &&
+            !proposal.obsoleteTaskIds.contains(task.id),
+      );
+      if (proposal.criteria.isEmpty && proposal.openQuestions.isEmpty) {
+        issue(
+          'missing_criteria',
+          'criteria',
+          'A bootstrap plan must define at least one success criterion.',
+        );
+      }
+      if (!hasQueuedTask && proposal.openQuestions.isEmpty) {
+        issue(
+          'missing_executable_tasks',
+          'tasks',
+          'The bootstrap plan must contain bounded executable work or a blocking question.',
+        );
+      }
     }
 
     _validateUniqueIds(

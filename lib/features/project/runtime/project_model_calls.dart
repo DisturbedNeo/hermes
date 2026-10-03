@@ -14,6 +14,7 @@ import 'package:hermes/features/task/application/protocol/planning_structured_ou
 import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
 import 'package:hermes/features/project/runtime/project_planning_tools.dart';
+import 'package:hermes/features/project/runtime/project_planning_policy.dart';
 import 'package:hermes/features/project/runtime/project_planning_workspace_reader.dart';
 import 'package:hermes/features/project/runtime/project_view_service.dart';
 import 'package:hermes/features/task/application/protocol/question_protocol_adapter.dart';
@@ -67,7 +68,10 @@ class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
     ),
   )).toMap();
 
-  @override
+  /// Legacy compatibility entry point for callers that still understand the
+  /// old initialization patch format. Normal project creation never invokes
+  /// this method; it persists a shell and uses [revisePlanWithCommands].
+  @Deprecated('Use revisePlanWithCommands for project planning.')
   Future<ProjectInitialPlanResult> initializePlan({
     required ModelConversationPort client,
     required String baseSystemPrompt,
@@ -99,7 +103,9 @@ class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
     }
   }
 
-  @override
+  /// Legacy compatibility entry point. Normal project planning does not use
+  /// full-plan repair.
+  @Deprecated('Use revisePlanWithCommands for project planning.')
   Future<ProjectInitialPlanResult?> repairInitialPlan({
     required ModelConversationPort client,
     required String baseSystemPrompt,
@@ -152,9 +158,19 @@ ${_encoder.convert(_initialPlanToMap(initialPlan))}
     required ProjectEvidenceSnapshot evidenceSnapshot,
     required List<ProjectPlanRevisionTrigger> triggers,
     required ProjectPlanApprovalPolicy approvalPolicy,
+    ProjectPlanningPass planningPass = ProjectPlanningPass.maintenance,
+    ProjectPlanningLimits planningLimits = ProjectPlanningLimits.maintenance,
     ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
+    final workspaceReader = planningPass == ProjectPlanningPass.bootstrap
+        ? ProjectPlanningWorkspaceReader(
+            workspace: workspace,
+            sandbox: _sandbox,
+            allowedPaths: evidenceSnapshot.workspaceProfile.treePaths,
+            cancellationToken: cancellationToken,
+          )
+        : null;
     final context = ProjectPlanningContext(
       project: project,
       workspaceRoot: workspace.rootPath,
@@ -163,8 +179,29 @@ ${_encoder.convert(_initialPlanToMap(initialPlan))}
       rationale:
           'Keep completed history intact and change only what is needed.',
       approvalPolicy: approvalPolicy,
+      planningPass: planningPass,
+      planningLimits: planningLimits,
+      workspaceReader: workspaceReader,
     );
-    final registry = ProjectPlanningToolRegistry(context: context);
+    final registry = ProjectPlanningToolRegistry(
+      context: context,
+      profile: planningPass == ProjectPlanningPass.bootstrap
+          ? ProjectPlanningToolProfile.bootstrap
+          : ProjectPlanningToolProfile.maintenance,
+    );
+    final planningInstructions = planningPass == ProjectPlanningPass.bootstrap
+        ? '''
+You are bootstrapping a new project frontier. Establish durable success
+criteria, exactly one active milestone, and only the next one to three bounded
+tasks that are credible from the supplied evidence. Do not inventory
+speculative future work or build a complete roadmap. Use the bounded workspace
+reader only for authoritative files that are needed to define this slice.
+'''
+        : '''
+You are maintaining an existing project frontier. Inspect current evidence and
+the supplied triggers, make the smallest safe change, add no more than three
+new tasks, and avoid recreating completed work or speculative future work.
+''';
     try {
       final result = await _runPlanning(
         client: client,
@@ -178,6 +215,8 @@ You are the project plan revision agent. Use the project planning tools to
 make a small, explicit update to the existing plan and finish by calling
 plan_commit. Do not return a plan as JSON text and do not invent persistent
 IDs, statuses, timestamps, evidence, gates, or runtime state.
+
+$planningInstructions
 
 Begin with project_view when you need context. The view is bounded; request a
 specific task, criterion, or memory detail when needed. Use
@@ -238,6 +277,8 @@ ${_encoder.convert(_projectViewService.query(project))}
     required ProjectTaskNode oversizedTask,
     required List<String> violations,
     required ProjectPlanApprovalPolicy approvalPolicy,
+    ProjectPlanningPass planningPass = ProjectPlanningPass.split,
+    ProjectPlanningLimits planningLimits = ProjectPlanningLimits.split,
     ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
@@ -249,8 +290,13 @@ ${_encoder.convert(_projectViewService.query(project))}
       rationale:
           'Replace one unsafe task with smaller independently executable tasks.',
       approvalPolicy: approvalPolicy,
+      planningPass: planningPass,
+      planningLimits: planningLimits,
     );
-    final registry = ProjectPlanningToolRegistry(context: context);
+    final registry = ProjectPlanningToolRegistry(
+      context: context,
+      profile: ProjectPlanningToolProfile.split,
+    );
     try {
       final result = await _runPlanning(
         client: client,
@@ -261,7 +307,7 @@ ${_encoder.convert(_projectViewService.query(project))}
 $baseSystemPrompt
 
 You are the project task-splitting agent. Inspect the supplied task with
-project_view and call plan_split_task exactly once with 2 to 5 bounded child
+project_view and call plan_split_task exactly once with 2 or 3 bounded child
 tasks, then call plan_commit. Do not return JSON text. Do not reuse the
 parent's ID or supply IDs, statuses, timestamps, evidence, gates, or runtime
 fields. The builder creates fresh child IDs, preserves the invalid parent as

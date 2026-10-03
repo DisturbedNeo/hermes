@@ -14,6 +14,7 @@ import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/features/model/application/model_completion_port.dart';
 import 'package:hermes/features/project/application/project_application/project_execution_port.dart';
 import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
+import 'package:hermes/features/project/runtime/project_planning_policy.dart';
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
 import 'package:hermes/features/project/domain/project_scheduler.dart';
 import 'package:hermes/features/project/application/project_application/project_application.dart';
@@ -38,6 +39,7 @@ extension _ProjectApplicationTestCommands on ProjectApplication {
     required int maxNewTasks,
     int? maxIterations,
     bool requirePhaseApproval = false,
+    bool planOnly = false,
     CompactionSettings? compactionSettings,
     int? contextLimitTokens,
     ProjectCompactionStatusSink? onCompactionStatus,
@@ -56,6 +58,7 @@ extension _ProjectApplicationTestCommands on ProjectApplication {
       maxNewTasks: maxNewTasks,
       maxIterations: maxIterations,
       requirePhaseApproval: requirePhaseApproval,
+      planOnly: planOnly,
       compactionSettings: compactionSettings,
       contextLimitTokens: contextLimitTokens,
       onCompactionStatus: onCompactionStatus,
@@ -111,8 +114,11 @@ void main() {
 
     expect(project.originalGoal, 'Build the reporting screen');
     expect(project.tasks, isEmpty);
-    expect(project.planHistory.single.revision, 1);
-    expect(project.nextRevision, 2);
+    expect(project.milestones, isEmpty);
+    expect(project.criteria, isEmpty);
+    expect(project.planHistory, isEmpty);
+    expect(project.status, ProjectStatus.paused);
+    expect(project.nextRevision, 1);
   });
 
   test('persists task IDs and hydrates canonical task records', () async {
@@ -147,7 +153,7 @@ void main() {
   });
 
   test(
-    'blocks initial plans with invalid dependencies and verification contracts',
+    'persists a shell without invoking the legacy initial planner',
     () async {
       final gateway = _InitialisationGateway(_invalidInitialisation());
       final planningService = createTestProjectApplication(
@@ -162,20 +168,14 @@ void main() {
         client: _QueueChatClient(const ['unused']),
       );
 
-      expect(project.status, ProjectStatus.blocked);
-      expect(
-        gateway.validationIssues!.map((issue) => issue.code),
-        containsAll([
-          'cyclic_dependencies',
-          'impossible_deterministic_verification',
-          'missing_write_paths',
-        ]),
-      );
+      expect(project.status, ProjectStatus.paused);
+      expect(project.tasks, isEmpty);
+      expect(gateway.repairCalls, 0);
     },
   );
 
   test(
-    'automatically retries an invalid initial plan before blocking',
+    'does not perform waterfall initial-plan repairs during creation',
     () async {
       final gateway = _InitialisationGateway(
         _invalidInitialisation(),
@@ -193,9 +193,9 @@ void main() {
         client: _QueueChatClient(const ['unused']),
       );
 
-      expect(project.status, ProjectStatus.active);
-      expect(project.tasks, hasLength(1));
-      expect(gateway.repairCalls, 2);
+      expect(project.status, ProjectStatus.paused);
+      expect(project.tasks, isEmpty);
+      expect(gateway.repairCalls, 0);
     },
   );
 
@@ -916,7 +916,6 @@ class _InitialisationGateway
   var repairCalls = 0;
   var revisePlanCalls = 0;
 
-  @override
   Future<ProjectInitialPlanResult> initializePlan({
     required ModelConversationPort client,
     required String baseSystemPrompt,
@@ -927,7 +926,6 @@ class _InitialisationGateway
     CancellationToken? cancellationToken,
   }) async => initialPlan;
 
-  @override
   Future<ProjectInitialPlanResult?> repairInitialPlan({
     required ModelConversationPort client,
     required String baseSystemPrompt,
@@ -956,6 +954,8 @@ class _InitialisationGateway
     required ProjectEvidenceSnapshot evidenceSnapshot,
     required List<ProjectPlanRevisionTrigger> triggers,
     required ProjectPlanApprovalPolicy approvalPolicy,
+    ProjectPlanningPass planningPass = ProjectPlanningPass.maintenance,
+    ProjectPlanningLimits planningLimits = ProjectPlanningLimits.maintenance,
     ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
@@ -980,6 +980,8 @@ class _InitialisationGateway
     required ProjectTaskNode oversizedTask,
     required List<String> violations,
     required ProjectPlanApprovalPolicy approvalPolicy,
+    ProjectPlanningPass planningPass = ProjectPlanningPass.split,
+    ProjectPlanningLimits planningLimits = ProjectPlanningLimits.split,
     ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async => ProjectIncrementalPlanResult(

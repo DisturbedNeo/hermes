@@ -47,6 +47,7 @@ class ProjectWorkflowExecution {
     required this.maxNewTasks,
     this.maxIterations,
     this.requirePhaseApproval = false,
+    this.planOnly = false,
     this.compactionSettings,
     this.contextLimitTokens,
     this.onCompactionStatus,
@@ -64,6 +65,7 @@ class ProjectWorkflowExecution {
   final int maxNewTasks;
   final int? maxIterations;
   final bool requirePhaseApproval;
+  final bool planOnly;
   final CompactionSettings? compactionSettings;
   final int? contextLimitTokens;
   final void Function(String status)? onCompactionStatus;

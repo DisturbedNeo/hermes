@@ -243,6 +243,7 @@ class ProjectWorkflowAdapter implements ProjectWorkflowPort {
         maxNewTasks: request.maxNewTasks,
         maxIterations: request.maxIterations,
         requirePhaseApproval: request.requirePhaseApproval,
+        planOnly: request.planOnly,
         compactionSettings: request.compactionSettings,
         contextLimitTokens: request.contextLimitTokens,
         onCompactionStatus: request.onCompactionStatus,

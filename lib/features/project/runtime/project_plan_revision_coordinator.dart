@@ -6,6 +6,7 @@ import 'package:hermes/features/project/runtime/project_discovery_service.dart';
 import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/workspace/application/workspace_discovery_profile.dart';
+import 'package:hermes/features/project/runtime/project_planning_policy.dart';
 
 /// Typed input for one incremental project-plan revision.
 class ProjectPlanRevisionRequest {
@@ -16,6 +17,8 @@ class ProjectPlanRevisionRequest {
     required this.triggers,
     required this.baseSystemPrompt,
     required this.approvalPolicy,
+    this.planningPass = ProjectPlanningPass.maintenance,
+    this.planningLimits = ProjectPlanningLimits.maintenance,
     this.onModelOutput,
     this.cancellationToken,
   });
@@ -26,6 +29,8 @@ class ProjectPlanRevisionRequest {
   final List<ProjectPlanRevisionTrigger> triggers;
   final String baseSystemPrompt;
   final ProjectPlanApprovalPolicy approvalPolicy;
+  final ProjectPlanningPass planningPass;
+  final ProjectPlanningLimits planningLimits;
   final ModelOutputSink? onModelOutput;
   final CancellationToken? cancellationToken;
 }
@@ -78,6 +83,8 @@ class ProjectPlanRevisionCoordinator {
         evidenceSnapshot: snapshot,
         triggers: request.triggers.toSet().toList(),
         approvalPolicy: request.approvalPolicy,
+        planningPass: request.planningPass,
+        planningLimits: request.planningLimits,
         onModelOutput: request.onModelOutput,
         cancellationToken: request.cancellationToken,
       ),

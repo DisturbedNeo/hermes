@@ -568,8 +568,11 @@ class ChatSessionOrchestrator extends ChangeNotifier
     prompt,
     runAfterCreation: runAfterCreation,
   );
-  Future<void> _runProjectInternal({int? maxNewTasks}) =>
-      _workUseCase._runProjectInternal(maxNewTasks: maxNewTasks);
+  Future<void> _runProjectInternal({int? maxNewTasks, bool planOnly = false}) =>
+      _workUseCase._runProjectInternal(
+        maxNewTasks: maxNewTasks,
+        planOnly: planOnly,
+      );
   Future<void> _runNextTaskStepInternal({bool keepBusy = false}) =>
       _workUseCase._runNextTaskStepInternal(keepBusy: keepBusy);
   Future<void> _startTaskFromPrompt(

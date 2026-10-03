@@ -279,7 +279,10 @@ abstract interface class ChatWorkCapabilities
     String prompt, {
     required bool runFirstPhase,
   });
-  Future<void> _runProjectInternal({int? maxNewTasks});
+  // The concrete facade exposes this option to the project-creation flow;
+  // capability consumers normally use the regular run entry point.
+  // ignore: unused_element_parameter
+  Future<void> _runProjectInternal({int? maxNewTasks, bool planOnly = false});
   Future<void> runTaskInternal({bool keepBusy = false});
   Future<void> runNextTaskStepInternal({bool keepBusy = false});
 }
@@ -420,7 +423,10 @@ abstract interface class ChatUseCaseContext
     String prompt, {
     required bool runAfterCreation,
   });
-  Future<void> _runProjectInternal({int? maxNewTasks});
+  // The concrete facade exposes this option to the project-creation flow;
+  // capability consumers normally use the regular run entry point.
+  // ignore: unused_element_parameter
+  Future<void> _runProjectInternal({int? maxNewTasks, bool planOnly = false});
   Future<void> runNextTaskStepInternal({bool keepBusy = false});
   Future<void> _startTaskFromPrompt(
     String prompt, {
@@ -685,8 +691,8 @@ final class _ChatUseCaseContextAdapter implements ChatUseCaseContext {
   }) =>
       _host._startProjectFromPrompt(prompt, runAfterCreation: runAfterCreation);
   @override
-  Future<void> _runProjectInternal({int? maxNewTasks}) =>
-      _host._runProjectInternal(maxNewTasks: maxNewTasks);
+  Future<void> _runProjectInternal({int? maxNewTasks, bool planOnly = false}) =>
+      _host._runProjectInternal(maxNewTasks: maxNewTasks, planOnly: planOnly);
   @override
   Future<void> runNextTaskStepInternal({bool keepBusy = false}) =>
       _host._runNextTaskStepInternal(keepBusy: keepBusy);

@@ -8,6 +8,7 @@ import 'package:hermes/features/project/runtime/project_plan_revision_service.da
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
 import 'package:hermes/features/project/runtime/project_planning_workspace_reader.dart';
 import 'package:hermes/features/project/runtime/project_view_service.dart';
+import 'package:hermes/features/project/runtime/project_planning_policy.dart';
 
 part 'project_planning_tool_command_service.dart';
 part 'project_planning_workspace_command_service.dart';
@@ -30,6 +31,8 @@ class ProjectPlanningContext {
     String approvalReason = '',
     this.approvalPolicy = ProjectPlanApprovalPolicy.highRiskOnly,
     this.deferRevision = false,
+    this.planningPass = ProjectPlanningPass.maintenance,
+    this.planningLimits = ProjectPlanningLimits.maintenance,
     ProjectPlanRevisionService revisionService =
         const ProjectPlanRevisionService(),
     this.viewService = const ProjectViewService(),
@@ -42,6 +45,7 @@ class ProjectPlanningContext {
          rationale: rationale,
          requiresApproval: requiresApproval,
          approvalReason: approvalReason,
+         planningLimits: planningLimits,
          revisionService: revisionService,
        ),
        baseRevision = project.nextRevision - 1,
@@ -54,6 +58,8 @@ class ProjectPlanningContext {
   final int baseRevision;
   final ProjectPlanApprovalPolicy approvalPolicy;
   final bool deferRevision;
+  final ProjectPlanningPass planningPass;
+  final ProjectPlanningLimits planningLimits;
   final ProjectPlanBuilder builder;
   final ProjectViewService viewService;
   final ProjectPlanningWorkspaceReader? workspaceReader;
@@ -103,9 +109,11 @@ class ProjectPlanningContext {
 class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
   ProjectPlanningToolRegistry({
     required ProjectPlanningContext context,
+    ProjectPlanningToolProfile profile = ProjectPlanningToolProfile.maintenance,
     bool includeProjectDetails = false,
   }) : _commands = ProjectPlanningToolCommandService(
          context: context,
+         profile: profile,
          includeProjectDetails: includeProjectDetails,
        );
 

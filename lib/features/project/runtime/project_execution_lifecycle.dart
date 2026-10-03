@@ -1,9 +1,6 @@
 part of 'project_execution_state_machine.dart';
 
 extension ProjectExecutionLifecycle on ProjectExecutionUseCase {
-  bool _blocksInitialPlanningForContextIssue(
-    WorkspaceRequiredContextIssue issue,
-  ) => issue.code == 'required_context_unreadable';
   // Project helper operations
 
   List<String> _appendUnique(List<String> current, String value) {
@@ -326,51 +323,6 @@ extension ProjectExecutionLifecycle on ProjectExecutionUseCase {
     };
   }
 
-  List<ProjectTaskNode> _normaliseBacklog(List<ProjectTaskNode> tasks) {
-    final seen = <String>{};
-    return [
-      for (final task in tasks)
-        if (task.objective.trim().isNotEmpty && seen.add(task.fingerprint))
-          task.copyWith(
-            status: task.status == TaskStatus.running
-                ? TaskStatus.queued
-                : task.status,
-            updatedAt: DateTime.now(),
-          ),
-    ];
-  }
-
-  List<ProjectTaskNode> _normaliseInitialBacklog(
-    List<ProjectTaskNode> tasks,
-    List<String> criterionIds,
-  ) {
-    final knownCriterionIds = criterionIds.toSet();
-    return [
-      for (final task in _normaliseBacklog(tasks))
-        if (task.criterionIds.isNotEmpty &&
-            task.criterionIds.every(knownCriterionIds.contains))
-          task.copyWith(
-            expectedEvidence: [
-              for (final expectation in task.expectedEvidence)
-                TaskEvidenceExpectation(
-                  id: expectation.id,
-                  type: expectation.type,
-                  criterionIds: expectation.criterionIds.isEmpty
-                      ? task.criterionIds
-                      : expectation.criterionIds
-                            .where(task.criterionIds.contains)
-                            .toSet()
-                            .toList(),
-                  description: expectation.description,
-                  required: expectation.required,
-                  sourceRef: expectation.sourceRef,
-                  details: expectation.details,
-                ),
-            ],
-          ),
-    ];
-  }
-
   ProjectAggregate _recordTransitionReplanTriggers({
     required ProjectAggregate project,
     required ProjectEvaluation evaluation,
@@ -659,6 +611,9 @@ Ask the user only for destructive or irreversible actions, credentials/secrets/a
 
   // Project planning and recovery operations
   /// Owns the runtime graph used by the project use cases.
+  // Legacy validation helper retained for compatibility with old callers;
+  // normal planning uses ProjectPlanValidator through incremental revision.
+  // ignore: unused_element
   List<ProjectPlanValidationIssue> _validateInitialPlan({
     required ProjectInitialPlanResult initialPlan,
     required WorkspaceDiscoveryProfile workspaceProfile,
@@ -935,7 +890,7 @@ Ask the user only for destructive or irreversible actions, credentials/secrets/a
     return issues;
   }
 
-  String _initialPlanningBlockerMessage(
+  String _planningContextBlockerMessage(
     List<ProjectPlanValidationIssue> issues,
   ) {
     final details = issues
@@ -944,7 +899,7 @@ Ask the user only for destructive or irreversible actions, credentials/secrets/a
           return '${issue.code}${path.isEmpty ? '' : ' ($path)'}: ${issue.message}';
         })
         .join(' ');
-    return 'Initial planning was blocked because required context or plan structure was invalid. $details';
+    return 'Project planning was blocked because required context or plan structure was invalid. $details';
   }
 
   String _normaliseWorkspacePath(String value) => path
@@ -984,6 +939,7 @@ Ask the user only for destructive or irreversible actions, credentials/secrets/a
     return false;
   }
 
+  // ignore: unused_element
   List<ProjectMilestone> _initialMilestones({
     required List<ProjectMilestone> milestones,
     required String refinedGoal,
@@ -1027,6 +983,7 @@ Ask the user only for destructive or irreversible actions, credentials/secrets/a
     ];
   }
 
+  // ignore: unused_element
   List<ProjectMemoryEntry> _initialMemory({
     required List<ProjectMemoryEntry> memory,
     required List<String> policyAssumptions,
@@ -1092,6 +1049,9 @@ Ask the user only for destructive or irreversible actions, credentials/secrets/a
     return entries;
   }
 
+  // Legacy fallback retained for old serialized initialization callers. The
+  // live creation path persists an empty shell and never invokes it.
+  // ignore: unused_element
   ProjectInitialPlanResult _fallbackInitialPlan(String originalGoal) {
     final now = DateTime.now();
     return ProjectInitialPlanResult(

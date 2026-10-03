@@ -281,23 +281,40 @@ void main() {
   test('keeps generated task IDs unique across repeated command sequences', () {
     final builder = ProjectPlanBuilder(project: _project());
     final ids = <String>{};
-    for (var sequence = 0; sequence < 5; sequence++) {
-      for (var index = 0; index < 50; index++) {
-        ids.add(
-          builder.addTask(
-            ProjectTaskSpec(
-              ref: 'sequence_${sequence}_$index',
-              title: 'Generated task $sequence-$index',
-              objective: 'Implement generated slice $sequence-$index.',
-              criterionRefs: const ['criterion_001'],
-              doneCriteria: const ['The generated slice is checked.'],
-              outOfScope: const ['Unrelated work.'],
-            ),
+    for (var index = 0; index < 3; index++) {
+      ids.add(
+        builder.addTask(
+          ProjectTaskSpec(
+            ref: 'sequence_$index',
+            title: 'Generated task $index',
+            objective: 'Implement generated slice $index.',
+            criterionRefs: const ['criterion_001'],
+            doneCriteria: const ['The generated slice is checked.'],
+            outOfScope: const ['Unrelated work.'],
           ),
-        );
-      }
+        ),
+      );
     }
-    expect(ids, hasLength(250));
+    expect(ids, hasLength(3));
+    expect(
+      () => builder.addTask(
+        const ProjectTaskSpec(
+          ref: 'too_many',
+          title: 'Too many tasks',
+          objective: 'Exceed the bounded planning slice.',
+          criterionRefs: ['criterion_001'],
+          doneCriteria: ['The slice is checked.'],
+          outOfScope: ['Unrelated work.'],
+        ),
+      ),
+      throwsA(
+        isA<ProjectPlanBuilderException>().having(
+          (error) => error.code,
+          'code',
+          'new_task_limit_exceeded',
+        ),
+      ),
+    );
   });
 
   test('rejects a dead dependency before changing the draft', () {
@@ -442,6 +459,11 @@ void main() {
             title: 'Bounded child',
             objective: 'Implement the bounded child slice.',
           ),
+          ProjectTaskSpec(
+            ref: 'verify',
+            title: 'Verify bounded child',
+            objective: 'Verify the bounded child slice.',
+          ),
         ],
       );
 
@@ -457,7 +479,7 @@ void main() {
         workspaceRoot: '/workspace',
       );
       expect(approved.project.taskById('parent')?.status, TaskStatus.split);
-      expect(approved.project.tasks, hasLength(2));
+      expect(approved.project.tasks, hasLength(3));
       expect(
         approved.project.tasks.any((task) => task.title == 'Bounded child'),
         isTrue,
