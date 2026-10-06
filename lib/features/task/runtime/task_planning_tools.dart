@@ -221,8 +221,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     });
     final ref = _optionalString(arguments['ref'], 'ref') ?? '';
     final title = _optionalString(arguments['title'], 'title') ?? '';
-    final objective =
-        _optionalString(arguments['objective'], 'objective') ?? '';
+    final objective = _requiredString(arguments['objective'], 'objective');
     final instructions = _stringList(arguments['instructions'], 'instructions');
     final artifacts = _artifacts(arguments['artifacts'], 'artifacts');
     final mayEditFiles =
@@ -572,7 +571,7 @@ const ToolDefinition _addStepDefinition = ToolDefinition(
         },
       },
     },
-    'required': ['title', 'objective', 'instructions'],
+    'required': ['objective'],
   }),
 );
 

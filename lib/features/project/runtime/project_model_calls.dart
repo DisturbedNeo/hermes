@@ -220,11 +220,12 @@ $planningInstructions
 
 Begin with project_view when you need context. The view is bounded; request a
 specific task, criterion, or memory detail when needed. Use
-plan_update_task for an existing mutable task. Use plan_add_tasks for new
-work; the builder generates fresh IDs. Completed, failed, split, rejected,
+plan_update_task for an existing mutable task. Use plan_add_task for one new
+task and plan_add_tasks only when adding a deliberate batch; the builder
+generates fresh IDs. Submit every new task as a complete object. Completed, failed, split, rejected,
 cancelled, and running task history is immutable. Use plan_retry_task only for
 failed or rejected work, use plan_split_task only for a mutable oversized task,
-and use plan_add_tasks for focused work around terminal history. Use
+and use plan_add_task for focused work around terminal history. Use
 plan_set_dependency to make ordering changes and plan_set_disposition only
 when deferral or obsolescence is justified. Add focused checks, notes, or a
 blocking user decision only when they are needed.
@@ -523,6 +524,8 @@ ${_encoder.convert(ModelJson.encode(project))}
       summary: 'Create the initial project roadmap.',
       rationale:
           'Create a bounded, executable plan from the supplied goal and workspace profile.',
+      planningPass: ProjectPlanningPass.bootstrap,
+      planningLimits: ProjectPlanningLimits.bootstrap,
       workspaceReader: ProjectPlanningWorkspaceReader(
         workspace: workspace,
         sandbox: _sandbox,
@@ -532,6 +535,7 @@ ${_encoder.convert(ModelJson.encode(project))}
     );
     final registry = ProjectPlanningToolRegistry(
       context: context,
+      profile: ProjectPlanningToolProfile.bootstrap,
       includeProjectDetails: true,
     );
     final result = await _runPlanning(
@@ -558,10 +562,10 @@ finite byte budget. If a result has has_more=true, continue at its next_start_li
 Do not use it to inspect unrelated files; use the tree and the goal to choose
 only the smallest set of files needed for the initial plan.
 Use plan_set_project_details first to set a concise title, a useful refined goal, and the constraints that must remain true. Add one or more success criteria with plan_add_criteria. Milestones are optional; add one or more with plan_add_milestones when they clarify delivery, otherwise Hermes will create a default milestone for executable work.
-Use plan_add_tasks for a small batch of bounded near-term tasks, normally no more than seven queued tasks. Each task needs an objective or title, at least one criterion reference, done criteria, and an explicit out-of-scope boundary. Use temporary refs such as scaffold and verify to link tasks and dependencies; Hermes generates canonical IDs.
+Use plan_add_task once for each bounded near-term task, with no more than three queued tasks. Each call must contain the complete objective, criterion references, done criteria, and explicit out-of-scope boundary; arguments from separate calls are not merged. Use temporary refs such as scaffold and verify to link tasks and dependencies; Hermes generates canonical IDs. Hermes creates a default active milestone when executable tasks exist, so add a custom milestone only when it clarifies delivery.
 Add command checks with plan_add_check when a task needs verification. Add notes with plan_add_note for sourced facts, assumptions, risks, or decisions. Ask a user decision only for genuinely irreversible, high-risk, credential, scope, or otherwise unsafe-to-assume ambiguity.
 When a note is based on a workspace file, set source_id to workspace:<relative-path>.
-Use project_view when you need a bounded summary or detail. Use plan_preview to inspect the compact diff, then call plan_commit when the plan is complete. Do not supply IDs, statuses, timestamps, revisions, gates, evidence IDs, or runtime execution fields.
+Use project_view when you need a bounded summary or detail, then call plan_commit when the plan is complete. Do not supply IDs, statuses, timestamps, revisions, gates, evidence IDs, or runtime execution fields.
 
 Build a durable workspace context graph when the goal reveals stable project
 structure. The graph is domain-neutral and is not merely a code repository map.
@@ -626,40 +630,15 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
     required String originalGoal,
     PlanningMetrics planningMetrics = const PlanningMetrics(),
   }) {
-    var milestones = proposal.milestones;
-    if (proposal.tasks.isNotEmpty && milestones.isEmpty) {
-      final now = DateTime.now();
-      milestones = [
-        ProjectMilestone(
-          id: 'milestone_${uuid.v7()}',
-          title: 'Deliver the project outcome',
-          objective: context.draftRefinedGoal,
-          criterionIds: proposal.criteria.map((item) => item.id).toList(),
-          status: ProjectMilestoneStatus.active,
-          exitConditions: proposal.criteria
-              .map((item) => item.statement)
-              .toList(),
-          order: 1,
-          createdAt: now,
-          updatedAt: now,
-        ),
-      ];
-    }
-    final defaultMilestoneId = milestones.firstOrNull?.id;
-    final tasks = [
-      for (final task in proposal.tasks)
-        task.copyWith(milestoneId: task.milestoneId ?? defaultMilestoneId),
-    ];
     final title = context.draftTitle.trim().isEmpty
         ? _titleFromGoal(originalGoal)
         : context.draftTitle;
     final refinedGoal = context.draftRefinedGoal.trim().isEmpty
         ? originalGoal
         : context.draftRefinedGoal;
-    final plan = proposal.copyWith(tasks: tasks, milestones: milestones);
     return ProjectInitialPlanResult(
       patch: ProjectPlanPatch.initial(
-        plan,
+        proposal,
         title: title,
         refinedGoal: refinedGoal,
         constraints: context.draftConstraints,

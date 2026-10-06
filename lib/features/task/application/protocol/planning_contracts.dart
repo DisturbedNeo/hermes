@@ -48,8 +48,14 @@ class PlanningToolArgumentException implements Exception {
   final String code;
   final String path;
   final String message;
+  final Map<String, dynamic> details;
 
-  const PlanningToolArgumentException(this.code, this.path, this.message);
+  const PlanningToolArgumentException(
+    this.code,
+    this.path,
+    this.message, {
+    this.details = const {},
+  });
 
   @override
   String toString() => '$code ($path): $message';

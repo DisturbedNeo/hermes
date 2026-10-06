@@ -30,7 +30,8 @@ class ProjectPlanningToolCommandService {
     if (_allows('project_view')) _projectViewDefinition,
     if (_allows('plan_add_criteria')) _addCriteriaDefinition,
     if (_allows('plan_add_milestones')) _addMilestonesDefinition,
-    if (_allows('plan_add_tasks')) _addTasksDefinition,
+    if (_visible('plan_add_task')) _addTaskDefinition,
+    if (_visible('plan_add_tasks')) _addTasksDefinition,
     if (_allows('plan_update_task')) _updateTaskDefinition,
     if (_allows('plan_set_dependency')) _setDependencyDefinition,
     if (_allows('plan_set_disposition')) _setDispositionDefinition,
@@ -46,7 +47,7 @@ class ProjectPlanningToolCommandService {
     if (_allows('plan_update_workspace_edge')) _updateWorkspaceEdgeDefinition,
     if (_allows('plan_remove_workspace_item')) _removeWorkspaceItemDefinition,
     if (_allows('plan_request_user_decision')) _requestDecisionDefinition,
-    if (_allows('plan_preview')) _previewDefinition,
+    if (_visible('plan_preview')) _previewDefinition,
     if (_allows('plan_commit')) _commitDefinition,
   ];
 
@@ -77,6 +78,7 @@ class ProjectPlanningToolCommandService {
         arguments,
         commandId,
       ),
+      'plan_add_task' => _planCommands.addTask(arguments, commandId),
       'plan_add_tasks' => _planCommands.addTasks(arguments, commandId),
       'plan_update_task' => _planCommands.updateTask(arguments, commandId),
       'plan_set_dependency' => _planCommands.setDependency(
@@ -129,9 +131,7 @@ class ProjectPlanningToolCommandService {
   }
 
   bool _allows(String toolId) {
-    if (includeProjectDetails &&
-        toolId == 'plan_set_project_details' &&
-        profile == ProjectPlanningToolProfile.maintenance) {
+    if (includeProjectDetails && toolId == 'plan_set_project_details') {
       return true;
     }
     return switch (profile) {
@@ -140,6 +140,7 @@ class ProjectPlanningToolCommandService {
         'planning_read_file',
         'plan_add_criteria',
         'plan_add_milestones',
+        'plan_add_task',
         'plan_add_tasks',
         'plan_add_check',
         'plan_add_note',
@@ -152,6 +153,7 @@ class ProjectPlanningToolCommandService {
         'planning_read_file',
         'plan_add_criteria',
         'plan_add_milestones',
+        'plan_add_task',
         'plan_add_tasks',
         'plan_update_task',
         'plan_set_dependency',
@@ -179,9 +181,21 @@ class ProjectPlanningToolCommandService {
     };
   }
 
+  bool _visible(String toolId) {
+    if (profile == ProjectPlanningToolProfile.bootstrap &&
+        const {'plan_add_tasks', 'plan_preview'}.contains(toolId)) {
+      return false;
+    }
+    return _allows(toolId);
+  }
+
   Map<String, dynamic> domainError(Object error) {
     if (error is ProjectPlanBuilderException) {
-      return _error(code: error.code, path: error.path, message: error.message);
+      return _error(
+        code: error.code,
+        path: _wirePath(error.path),
+        message: error.message,
+      );
     }
     if (error is ProjectViewException) {
       return _error(code: error.code, path: error.path, message: error.message);
@@ -411,7 +425,11 @@ class ProjectPlanningToolCommandService {
     return response;
   }
 
-  static ProjectTaskSpec _taskSpec(Map<String, dynamic> value, String path) {
+  static ProjectTaskSpec _taskSpec(
+    Map<String, dynamic> value,
+    String path, {
+    bool requireObjective = false,
+  }) {
     _rejectPersistentFields(value, path);
     _keys(value, const {
       'ref',
@@ -433,14 +451,52 @@ class ProjectPlanningToolCommandService {
       'context',
       'expected_artifacts',
     });
+    final ref = _optionalString(value['ref'], '$path.ref') ?? '';
+    final title = _optionalString(value['title'], '$path.title') ?? '';
+    final objective =
+        _optionalString(value['objective'], '$path.objective') ?? '';
+    final criterionRefs = _stringList(
+      value['criterion_refs'],
+      '$path.criterion_refs',
+    );
+    final doneCriteria = _stringList(
+      value['done_criteria'],
+      '$path.done_criteria',
+    );
+    final outOfScope = _stringList(value['out_of_scope'], '$path.out_of_scope');
+    final missingFields = <String>[];
+    if (requireObjective
+        ? objective.isEmpty
+        : title.isEmpty && objective.isEmpty) {
+      missingFields.add(requireObjective ? 'objective' : 'objective_or_title');
+    }
+    if (criterionRefs.where((item) => item.isNotEmpty).isEmpty) {
+      missingFields.add('criterion_refs');
+    }
+    if (doneCriteria.where((item) => item.isNotEmpty).isEmpty) {
+      missingFields.add('done_criteria');
+    }
+    if (outOfScope.where((item) => item.isNotEmpty).isEmpty) {
+      missingFields.add('out_of_scope');
+    }
+    if (missingFields.isNotEmpty) {
+      throw _argument(
+        'invalid_task_spec',
+        path,
+        'Submit the complete task object in one call. Arguments from previous '
+            'calls are not merged.',
+        details: {
+          'missing_fields': missingFields,
+          'instruction':
+              'Resubmit the complete task object; do not send only the missing fields.',
+        },
+      );
+    }
     return ProjectTaskSpec(
-      ref: _optionalString(value['ref'], '$path.ref') ?? '',
-      title: _optionalString(value['title'], '$path.title') ?? '',
-      objective: _optionalString(value['objective'], '$path.objective') ?? '',
-      criterionRefs: _stringList(
-        value['criterion_refs'],
-        '$path.criterion_refs',
-      ),
+      ref: ref,
+      title: title,
+      objective: objective,
+      criterionRefs: criterionRefs,
       dependencyRefs: _stringList(
         value['dependency_refs'],
         '$path.dependency_refs',
@@ -478,8 +534,8 @@ class ProjectPlanningToolCommandService {
       constraints: _stringList(value['constraints'], '$path.constraints'),
       readPaths: _stringList(value['read_paths'], '$path.read_paths'),
       writePaths: _stringList(value['write_paths'], '$path.write_paths'),
-      doneCriteria: _stringList(value['done_criteria'], '$path.done_criteria'),
-      outOfScope: _stringList(value['out_of_scope'], '$path.out_of_scope'),
+      doneCriteria: doneCriteria,
+      outOfScope: outOfScope,
       context: _stringList(value['context'], '$path.context'),
       expectedArtifacts: _artifacts(
         value['expected_artifacts'],
@@ -820,8 +876,19 @@ class ProjectPlanningToolCommandService {
   static _PlanningArgumentException _argument(
     String code,
     String path,
-    String message,
-  ) => _PlanningArgumentException(code, path, message);
+    String message, {
+    Map<String, dynamic> details = const {},
+  }) => _PlanningArgumentException(code, path, message, details: details);
+
+  static String _wirePath(String path) => path
+      .replaceAll('criterionRefs', 'criterion_refs')
+      .replaceAll('dependencyRefs', 'dependency_refs')
+      .replaceAll('milestoneRef', 'milestone_ref')
+      .replaceAll('doneCriteria', 'done_criteria')
+      .replaceAll('outOfScope', 'out_of_scope')
+      .replaceAll('readPaths', 'read_paths')
+      .replaceAll('writePaths', 'write_paths')
+      .replaceAll('expectedArtifacts', 'expected_artifacts');
 
   static Map<String, dynamic> _error({
     required String code,

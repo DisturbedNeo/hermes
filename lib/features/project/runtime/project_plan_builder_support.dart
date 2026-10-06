@@ -1,33 +1,66 @@
 part of 'project_plan_builder.dart';
 
 extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
-  ProjectDesiredPlan _materialize() => ProjectDesiredPlan(
-    revision: _project.nextRevision,
-    triggers: [..._triggers],
-    summary: _summary,
-    rationale: _rationale,
-    hasCompleteCollections: true,
-    criteria: _criteria.values.toList(),
-    milestones: _milestones.values.toList(),
-    tasks: [
-      for (final task in _tasks.values)
-        if (!_splitTaskIds.contains(task.id)) task,
-    ],
-    splitTaskIds: _splitTaskIds.toList(),
-    deferredTaskIds: _deferredTaskIds.toList(),
-    obsoleteTaskIds: _obsoleteTaskIds.toList(),
-    memoryAdditions: [..._memoryAdditions],
-    workspaceGraph: ProjectWorkspaceGraph(
-      orientation: _workspaceOrientation,
-      nodes: _workspaceNodes.values.toList(),
-      edges: _workspaceEdges.values.toList(),
+  ProjectDesiredPlan _materialize() {
+    _ensureBootstrapMilestone();
+    return ProjectDesiredPlan(
+      revision: _project.nextRevision,
+      triggers: [..._triggers],
+      summary: _summary,
+      rationale: _rationale,
+      hasCompleteCollections: true,
+      criteria: _criteria.values.toList(),
+      milestones: _milestones.values.toList(),
+      tasks: [
+        for (final task in _tasks.values)
+          if (!_splitTaskIds.contains(task.id)) task,
+      ],
+      splitTaskIds: _splitTaskIds.toList(),
+      deferredTaskIds: _deferredTaskIds.toList(),
+      obsoleteTaskIds: _obsoleteTaskIds.toList(),
+      memoryAdditions: [..._memoryAdditions],
+      workspaceGraph: ProjectWorkspaceGraph(
+        orientation: _workspaceOrientation,
+        nodes: _workspaceNodes.values.toList(),
+        edges: _workspaceEdges.values.toList(),
+        updatedAt: _now,
+      ),
+      openQuestions: [..._project.openQuestions, ..._openQuestions],
+      requiresApproval: _requiresApproval,
+      approvalReason: _approvalReason,
+      createdAt: _now,
+    );
+  }
+
+  void _ensureBootstrapMilestone() {
+    if (!planningLimits.requireActiveMilestone ||
+        _tasks.isEmpty ||
+        _milestones.isNotEmpty) {
+      return;
+    }
+    final objective = _validationRefinedGoal.trim().isEmpty
+        ? _project.originalGoal.trim()
+        : _validationRefinedGoal.trim();
+    final id = _newId('milestone', _milestones.keys);
+    final milestone = ProjectMilestone(
+      id: id,
+      title: 'Deliver the project outcome',
+      objective: objective,
+      criterionIds: _criteria.values.map((item) => item.id).toList(),
+      status: ProjectMilestoneStatus.active,
+      exitConditions: _criteria.values.map((item) => item.statement).toList(),
+      order: 1,
+      createdAt: _now,
       updatedAt: _now,
-    ),
-    openQuestions: [..._project.openQuestions, ..._openQuestions],
-    requiresApproval: _requiresApproval,
-    approvalReason: _approvalReason,
-    createdAt: _now,
-  );
+    );
+    _milestones[id] = milestone;
+    _milestoneRefs[id] = id;
+    for (final entry in _tasks.entries.toList()) {
+      if (entry.value.milestoneId == null) {
+        _tasks[entry.key] = entry.value.copyWith(milestoneId: id);
+      }
+    }
+  }
 
   ProjectAggregate get _planningProject =>
       _project.copyWith(refinedGoal: _validationRefinedGoal);

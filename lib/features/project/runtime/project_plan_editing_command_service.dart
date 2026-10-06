@@ -179,6 +179,29 @@ class ProjectPlanEditingCommandService {
     };
   }
 
+  Map<String, dynamic> addTask(PlanningArguments arguments, String? commandId) {
+    _ensureOpen();
+    ProjectPlanningToolCommandService._keys(arguments, const {
+      'ref',
+      'title',
+      'objective',
+      'criterion_refs',
+      'dependency_refs',
+      'milestone_ref',
+      'done_criteria',
+      'out_of_scope',
+    });
+    final spec = ProjectPlanningToolCommandService._taskSpec(
+      Map<String, dynamic>.from(arguments.toWire()),
+      'task',
+      requireObjective: true,
+    );
+    final id = context.builder.addTasks([spec], commandId: commandId).single;
+    return {
+      'task': {'id': id, 'ref': spec.ref.trim().isEmpty ? id : spec.ref.trim()},
+    };
+  }
+
   Map<String, dynamic> updateTask(
     PlanningArguments arguments,
     String? commandId,

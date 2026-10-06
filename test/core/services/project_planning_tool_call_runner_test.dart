@@ -107,44 +107,41 @@ void main() {
     expect(names, isNot(contains('write_file')));
   });
 
-  test(
-    'continues past the old tool-call limit until the draft is committed',
-    () async {
-      final context = ProjectPlanningContext(
-        project: _project(),
-        workspaceRoot: '/workspace',
-        now: DateTime(2026, 1, 1),
-        approvalPolicy: ProjectPlanApprovalPolicy.never,
-      );
-      final client = _Client([
-        for (var index = 0; index < 32; index++)
-          _call('project_view', {'max_items': 1}, id: 'view_$index'),
-        _call('plan_commit', const {}, id: 'commit'),
-      ]);
-      final result = await _complete(
-        client: client,
-        registry: ProjectPlanningToolRegistry(
-          context: context,
-          includeProjectDetails: true,
-        ),
-        label: 'Test Unbounded Planning',
-        system: 'Use planning tools.',
-        user: 'Keep working until the draft is committed.',
-      );
+  test('commits at the reduced default tool-call limit', () async {
+    final context = ProjectPlanningContext(
+      project: _project(),
+      workspaceRoot: '/workspace',
+      now: DateTime(2026, 1, 1),
+      approvalPolicy: ProjectPlanApprovalPolicy.never,
+    );
+    final client = _Client([
+      for (var index = 0; index < 31; index++)
+        _call('project_view', {'max_items': 1}, id: 'view_$index'),
+      _call('plan_commit', const {}, id: 'commit'),
+    ]);
+    final result = await _complete(
+      client: client,
+      registry: ProjectPlanningToolRegistry(
+        context: context,
+        includeProjectDetails: true,
+      ),
+      label: 'Test Unbounded Planning',
+      system: 'Use planning tools.',
+      user: 'Keep working until the draft is committed.',
+    );
 
-      expect(result['ok'], isTrue);
-      final metrics = result['planning_metrics'] as Map<String, dynamic>;
-      expect(metrics['planningCommandCount'], 33);
-      expect(
-        client.messagesByCall.any(
-          (messages) => messages.any(
-            (message) => message.content.contains('planning_history_compacted'),
-          ),
+    expect(result['ok'], isTrue);
+    final metrics = result['planning_metrics'] as Map<String, dynamic>;
+    expect(metrics['planningCommandCount'], 32);
+    expect(
+      client.messagesByCall.any(
+        (messages) => messages.any(
+          (message) => message.content.contains('planning_history_compacted'),
         ),
-        isTrue,
-      );
-    },
-  );
+      ),
+      isTrue,
+    );
+  });
 
   test('stops a non-terminating planning loop at the safety ceiling', () async {
     final context = ProjectPlanningContext(
@@ -169,6 +166,44 @@ void main() {
     expect(result['ok'], isFalse);
     expect(result['code'], 'planning_safety_limit');
   });
+
+  test(
+    'bounds alternating incomplete task repairs at the reduced ceiling',
+    () async {
+      final context = ProjectPlanningContext(
+        project: _project(),
+        workspaceRoot: '/workspace',
+        now: DateTime(2026, 1, 1),
+        approvalPolicy: ProjectPlanApprovalPolicy.never,
+      );
+      final client = _Client([
+        for (var index = 0; index < 33; index++)
+          _call(
+            'plan_add_task',
+            index.isEven
+                ? {'objective': 'Implement the bounded outcome.'}
+                : {
+                    'criterion_refs': ['criterion_001'],
+                    'done_criteria': ['The outcome is verified.'],
+                    'out_of_scope': ['Unrelated work.'],
+                  },
+            id: 'invalid_$index',
+          ),
+      ]);
+
+      final result = await _complete(
+        client: client,
+        registry: ProjectPlanningToolRegistry(context: context),
+        label: 'Test Incomplete Task Repair Ceiling',
+        system: 'Use planning tools.',
+        user: 'Create the project plan.',
+      );
+
+      expect(result['ok'], isFalse);
+      expect(result['code'], 'planning_safety_limit');
+      expect(client.messagesByCall, hasLength(33));
+    },
+  );
 
   test(
     'records invalid planning commands without retaining model payloads',

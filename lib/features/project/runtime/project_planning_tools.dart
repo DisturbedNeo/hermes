@@ -147,23 +147,34 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
 }
 
 class _PlanningArgumentException extends PlanningToolArgumentException {
-  const _PlanningArgumentException(super.code, super.path, super.message);
+  const _PlanningArgumentException(
+    super.code,
+    super.path,
+    super.message, {
+    super.details,
+  });
 }
 
 ToolSchema _schema({
   required Map<String, dynamic> properties,
   List<String> required = const [],
+  List<Map<String, dynamic>> anyOf = const [],
 }) => ToolSchema({
   'type': 'object',
   'properties': properties,
   'required': required,
+  if (anyOf.isNotEmpty) 'anyOf': anyOf,
   'additionalProperties': false,
 });
 
-Map<String, dynamic> _stringArraySchema() => {
-  'type': 'array',
-  'items': {'type': 'string'},
-};
+Map<String, dynamic> _stringArraySchema({int? minItems}) {
+  final schema = <String, dynamic>{
+    'type': 'array',
+    'items': {'type': 'string'},
+  };
+  if (minItems != null) schema['minItems'] = minItems;
+  return schema;
+}
 
 Map<String, dynamic> _workspaceStringArraySchema() => {
   'type': 'array',
@@ -181,7 +192,7 @@ final _taskSpecSchema = _schema(
     'ref': {'type': 'string', 'description': 'Optional temporary reference.'},
     'title': {'type': 'string'},
     'objective': {'type': 'string'},
-    'criterion_refs': _stringArraySchema(),
+    'criterion_refs': _stringArraySchema(minItems: 1),
     'dependency_refs': _stringArraySchema(),
     'milestone_ref': {'type': 'string'},
     'priority': _enumSchema(TaskPriority.values.map((item) => item.name)),
@@ -194,8 +205,8 @@ final _taskSpecSchema = _schema(
     'constraints': _stringArraySchema(),
     'read_paths': _stringArraySchema(),
     'write_paths': _stringArraySchema(),
-    'done_criteria': _stringArraySchema(),
-    'out_of_scope': _stringArraySchema(),
+    'done_criteria': _stringArraySchema(minItems: 1),
+    'out_of_scope': _stringArraySchema(minItems: 1),
     'context': _stringArraySchema(),
     'expected_artifacts': {
       'type': 'array',
@@ -209,6 +220,40 @@ final _taskSpecSchema = _schema(
       ),
     },
   },
+  required: const ['criterion_refs', 'done_criteria', 'out_of_scope'],
+  anyOf: const [
+    {
+      'required': ['title'],
+    },
+    {
+      'required': ['objective'],
+    },
+  ],
+);
+
+final _addTaskDefinition = ToolDefinition(
+  id: 'plan_add_task',
+  name: 'Add project task',
+  description:
+      'Create one bounded project task. Submit the complete task in this call; arguments from previous calls are not merged.',
+  schema: _schema(
+    properties: {
+      'ref': {'type': 'string', 'description': 'Optional temporary reference.'},
+      'title': {'type': 'string'},
+      'objective': {'type': 'string'},
+      'criterion_refs': _stringArraySchema(minItems: 1),
+      'dependency_refs': _stringArraySchema(),
+      'milestone_ref': {'type': 'string'},
+      'done_criteria': _stringArraySchema(minItems: 1),
+      'out_of_scope': _stringArraySchema(minItems: 1),
+    },
+    required: const [
+      'objective',
+      'criterion_refs',
+      'done_criteria',
+      'out_of_scope',
+    ],
+  ),
 );
 
 final _projectDetailsDefinition = ToolDefinition(
@@ -333,7 +378,7 @@ final _addTasksDefinition = ToolDefinition(
       'tasks': {
         'type': 'array',
         'minItems': 1,
-        'maxItems': 20,
+        'maxItems': 3,
         'items': _taskSpecSchema,
       },
     },

@@ -7,6 +7,29 @@ import 'package:hermes/features/task/runtime/task_plan_builder.dart';
 import 'package:hermes/features/task/runtime/task_planning_tools.dart';
 
 void main() {
+  test(
+    'task step schema requires an objective and derives an optional title',
+    () async {
+      final context = TaskPlanningToolContext(
+        task: _task(),
+        workspaceRoot: '/workspace',
+        maxSteps: 2,
+      );
+      final registry = TaskPlanningToolRegistry(context: context);
+      final schema = registry.toolDefinitions
+          .singleWhere((item) => item.id == 'task_add_step')
+          .schema
+          .toWire();
+      expect(schema['required'], ['objective']);
+
+      final added = await invokePlanning(registry, 'task_add_step', {
+        'objective': 'Complete the bounded step.',
+      });
+      expect(added['ok'], isTrue);
+      expect(context.builder.steps.single.title, 'Complete the bounded step.');
+    },
+  );
+
   test('builder generates step and check identity and validates the draft', () {
     final builder = TaskPlanBuilder(task: _task(), maxSteps: 2);
 

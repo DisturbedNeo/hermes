@@ -53,6 +53,49 @@ void main() {
     expect(await dialogWidthFor(2000), 760);
   });
 
+  testWidgets('uses concise responsive actions at narrow widths', (
+    tester,
+  ) async {
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(520, 900);
+    await tester.pumpWidget(configurationApp(hasSavedConfiguration: true));
+
+    expect(find.byTooltip('Close'), findsOneWidget);
+    expect(find.text('Reset'), findsOneWidget);
+    expect(find.text('Cancel'), findsNothing);
+    expect(find.text('Load Model'), findsOneWidget);
+
+    final saveConfig = tester.widget<Checkbox>(
+      find.descendant(
+        of: find.byKey(const ValueKey('save-config')),
+        matching: find.byType(Checkbox),
+      ),
+    );
+    expect(saveConfig.value, isFalse);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('save-config')),
+        matching: find.text('Save Config'),
+      ),
+      findsOneWidget,
+    );
+
+    final resetRect = tester.getRect(find.text('Reset'));
+    final loadRect = tester.getRect(find.text('Load Model'));
+    expect(resetRect.overlaps(loadRect), isFalse);
+    expect(
+      tester
+          .getRect(find.byKey(const ValueKey('save-config')))
+          .overlaps(loadRect),
+      isFalse,
+    );
+  });
+
   testWidgets('shows default status and expands only core settings', (
     tester,
   ) async {
@@ -157,8 +200,8 @@ void main() {
       ),
     );
 
-    await tester.ensureVisible(find.text('Load model'));
-    await tester.tap(find.text('Load model'));
+    await tester.ensureVisible(find.text('Load Model'));
+    await tester.tap(find.text('Load Model'));
     await tester.pumpAndSettle();
 
     expect(saveRequested, isFalse);
@@ -178,7 +221,7 @@ void main() {
     expect(submitted?.kvCacheTypeV, ModelLoadConfiguration.defaultKvCacheType);
   });
 
-  testWidgets('prefills saved values and save and load requests persistence', (
+  testWidgets('prefills saved values and Save Config requests persistence', (
     tester,
   ) async {
     ModelLoadConfiguration? submitted;
@@ -210,8 +253,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('/models/mtp.gguf'), findsOneWidget);
 
-    await tester.ensureVisible(find.text('Save & load'));
-    await tester.tap(find.text('Save & load'));
+    await tester.ensureVisible(find.byKey(const ValueKey('save-config')));
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('save-config')),
+        matching: find.byType(Checkbox),
+      ),
+    );
+    await tester.ensureVisible(find.text('Load Model'));
+    await tester.tap(find.text('Load Model'));
     await tester.pumpAndSettle();
 
     expect(saveRequested, isTrue);
@@ -242,8 +292,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Off').last);
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Load model'));
-    await tester.tap(find.text('Load model'));
+    await tester.ensureVisible(find.text('Load Model'));
+    await tester.tap(find.text('Load Model'));
     await tester.pumpAndSettle();
 
     expect(submitted?.thinking, isFalse);
@@ -273,15 +323,15 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('Reset to defaults'));
+    await tester.tap(find.text('Reset'));
     await tester.pumpAndSettle();
 
     expect(resetCalls, 1);
     expect(find.text('Using default configuration for model'), findsOneWidget);
-    expect(find.text('Reset to defaults'), findsNothing);
+    expect(find.text('Reset'), findsNothing);
 
-    await tester.ensureVisible(find.text('Load model'));
-    await tester.tap(find.text('Load model'));
+    await tester.ensureVisible(find.text('Load Model'));
+    await tester.tap(find.text('Load Model'));
     await tester.pumpAndSettle();
     expect(submitted?.thinking, ModelLoadConfiguration.defaultThinking);
     expect(
@@ -302,11 +352,11 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('Reset to defaults'));
+    await tester.tap(find.text('Reset'));
     await tester.pumpAndSettle();
 
     expect(find.text('Saved configuration loaded for model'), findsOneWidget);
-    expect(find.text('Reset to defaults'), findsOneWidget);
+    expect(find.text('Reset'), findsOneWidget);
     expect(find.text('Failed to reset saved configuration'), findsOneWidget);
     expect(find.text('High'), findsOneWidget);
   });
@@ -324,8 +374,8 @@ void main() {
       ),
     );
 
-    await tester.ensureVisible(find.text('Save & load'));
-    await tester.tap(find.text('Save & load'));
+    await tester.ensureVisible(find.text('Load Model'));
+    await tester.tap(find.text('Load Model'));
     await tester.pump();
     await tester.tap(find.byType(FilledButton));
     await tester.pump();

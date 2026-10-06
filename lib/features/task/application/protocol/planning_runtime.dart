@@ -79,7 +79,12 @@ abstract class PlanningToolRegistryBase implements PlanningToolRegistry {
       return response;
     } on PlanningToolArgumentException catch (error) {
       return PlanningResponse.fromWire(
-        this.error(code: error.code, path: error.path, message: error.message),
+        this.error(
+          code: error.code,
+          path: error.path,
+          message: error.message,
+          extra: error.details.isEmpty ? const {} : {'details': error.details},
+        ),
       );
     } catch (error) {
       return PlanningResponse.fromWire(domainError(error));
@@ -205,7 +210,7 @@ class PlanningToolCallRunner {
 
   static const _chatMessageAdapter = ChatMessageWireAdapter();
 
-  static const int defaultMaxToolCalls = 128;
+  static const int defaultMaxToolCalls = 32;
 
   Future<PlanningRunResult> complete(PlanningRunRequest request) async {
     var messages = <ChatMessage>[

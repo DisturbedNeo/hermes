@@ -24,14 +24,14 @@ void main() {
       includeProjectDetails: true,
     );
     expect(bootstrap.toolDefinitions.map((tool) => tool.id).toSet(), {
+      'plan_set_project_details',
       'project_view',
       'plan_add_criteria',
       'plan_add_milestones',
-      'plan_add_tasks',
+      'plan_add_task',
       'plan_add_check',
       'plan_add_note',
       'plan_request_user_decision',
-      'plan_preview',
       'plan_commit',
     });
 
@@ -65,6 +65,7 @@ void main() {
       ids,
       containsAll([
         'project_view',
+        'plan_add_task',
         'plan_add_tasks',
         'plan_update_task',
         'plan_split_task',
@@ -85,6 +86,19 @@ void main() {
     final taskProperties =
         ((schema['properties'] as Map)['tasks'] as Map)['items'] as Map;
     final properties = taskProperties['properties'] as Map;
+    expect(taskProperties['required'], [
+      'criterion_refs',
+      'done_criteria',
+      'out_of_scope',
+    ]);
+    expect(taskProperties['anyOf'], [
+      {
+        'required': ['title'],
+      },
+      {
+        'required': ['objective'],
+      },
+    ]);
     expect(properties.keys, isNot(contains('id')));
     expect(properties.keys, isNot(contains('status')));
     expect(properties.keys, isNot(contains('runs')));
@@ -93,6 +107,68 @@ void main() {
       registry.toolDefinitions.map((item) => item.schema.toString()).join(),
       isNot(contains('ProjectAggregate')),
     );
+  });
+
+  test(
+    'singular task creation is complete and reports all missing fields',
+    () async {
+      final context = ProjectPlanningContext(
+        project: _project(),
+        workspaceRoot: '/workspace',
+        approvalPolicy: ProjectPlanApprovalPolicy.never,
+      );
+      final registry = ProjectPlanningToolRegistry(context: context);
+
+      final invalid = await invokePlanning(registry, 'plan_add_task', {
+        'objective': 'Implement the bounded outcome.',
+      });
+      expect(invalid['ok'], isFalse);
+      expect(invalid['code'], 'invalid_task_spec');
+      expect(invalid['path'], 'task');
+      final details = invalid['details'] as Map;
+      expect(details['missing_fields'], [
+        'criterion_refs',
+        'done_criteria',
+        'out_of_scope',
+      ]);
+      expect(details['instruction'], contains('complete task object'));
+
+      final previewAfterFailure = await invokePlanning(
+        registry,
+        'plan_preview',
+        const {},
+      );
+      expect(previewAfterFailure['ok'], isTrue);
+      expect(
+        ((previewAfterFailure['preview'] as Map)['diff'] as Map)['added_tasks'],
+        isEmpty,
+      );
+
+      final added = await invokePlanning(registry, 'plan_add_task', {
+        'ref': 'implement',
+        'objective': 'Implement the bounded outcome.',
+        'criterion_refs': ['criterion_001'],
+        'done_criteria': ['The bounded outcome is verified.'],
+        'out_of_scope': ['Unrelated project work.'],
+      });
+      expect(added['ok'], isTrue);
+      expect((added['task'] as Map)['ref'], 'implement');
+    },
+  );
+
+  test('legacy batch creation still accepts a title-only task', () async {
+    final added = await invokePlanning(_registry(), 'plan_add_tasks', {
+      'tasks': [
+        {
+          'title': 'Verify the bounded outcome.',
+          'criterion_refs': ['criterion_001'],
+          'done_criteria': ['The bounded outcome is verified.'],
+          'out_of_scope': ['Unrelated project work.'],
+        },
+      ],
+    });
+
+    expect(added['ok'], isTrue);
   });
 
   test('initial planning exposes only the bounded context reader', () async {

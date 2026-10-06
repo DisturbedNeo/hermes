@@ -83,6 +83,7 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
   late String _kvCacheTypeK;
   late String _kvCacheTypeV;
   late bool _hasSavedConfiguration;
+  bool _saveConfig = false;
   bool _submitting = false;
   bool _resetting = false;
 
@@ -261,9 +262,20 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
 
     return AlertDialog(
       constraints: BoxConstraints.tightFor(width: dialogWidth),
-      title: const Text(
-        'Configure Model',
-        style: TextStyle(color: Colors.black),
+      title: Row(
+        children: [
+          const Expanded(
+            child: Text(
+              'Configure Model',
+              style: TextStyle(color: Colors.black),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Close',
+            onPressed: _resetting ? null : _cancel,
+            icon: const Icon(Icons.close),
+          ),
+        ],
       ),
       backgroundColor: Theme.of(context).colorScheme.surface,
       content: SingleChildScrollView(
@@ -271,12 +283,35 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              _hasSavedConfiguration
-                  ? 'Saved configuration loaded for ${widget.modelName}'
-                  : 'Using default configuration for ${widget.modelName}',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
+            if (_hasSavedConfiguration)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Saved configuration loaded for ${widget.modelName}',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                  TextButton(
+                    key: const ValueKey('reset-saved-configuration'),
+                    onPressed: _submitting || _resetting
+                        ? null
+                        : _resetToDefaults,
+                    child: _resetting
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Reset'),
+                  ),
+                ],
+              )
+            else
+              Text(
+                'Using default configuration for ${widget.modelName}',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
             const SizedBox(height: 12),
             _ConfigurationSection(
               title: 'Core',
@@ -556,36 +591,44 @@ class _ModelConfigurationState extends State<ModelConfiguration> {
         ),
       ),
       actions: [
-        if (_hasSavedConfiguration)
-          TextButton(
-            onPressed: _submitting || _resetting ? null : _resetToDefaults,
-            child: _resetting
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Reset to defaults'),
+        SizedBox(
+          width: double.infinity,
+          child: Wrap(
+            key: const ValueKey('model-configuration-actions'),
+            alignment: WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              Row(
+                key: const ValueKey('save-config'),
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Checkbox(
+                    value: _saveConfig,
+                    onChanged: _submitting || _resetting
+                        ? null
+                        : (value) {
+                            if (value == null) return;
+                            setState(() => _saveConfig = value);
+                          },
+                  ),
+                  const Text('Save Config'),
+                ],
+              ),
+              FilledButton(
+                onPressed: _submitting || _resetting
+                    ? null
+                    : () => _confirm(saveAsDefault: _saveConfig),
+                child: _submitting
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Load Model'),
+              ),
+            ],
           ),
-        TextButton(
-          onPressed: _submitting || _resetting ? null : _cancel,
-          child: const Text('Cancel'),
-        ),
-        OutlinedButton(
-          onPressed: _submitting || _resetting
-              ? null
-              : () => _confirm(saveAsDefault: false),
-          child: const Text('Load model'),
-        ),
-        FilledButton(
-          onPressed: _submitting || _resetting
-              ? null
-              : () => _confirm(saveAsDefault: true),
-          child: _submitting
-              ? const SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Save & load'),
         ),
       ],
     );
