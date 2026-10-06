@@ -315,6 +315,12 @@ class PlanningToolCallRunner {
 
         final result = _decodeMap(resultJson);
         metrics = _recordToolResult(metrics, resultJson, result);
+        final details = result?['details'];
+        if (result?['ok'] == false &&
+            details is Map &&
+            details['repairable'] == false) {
+          return _result(payload: result!, metrics: metrics, modelCalls: turn);
+        }
         if (call.name == request.registry.terminalToolId &&
             result?['ok'] == true) {
           for (

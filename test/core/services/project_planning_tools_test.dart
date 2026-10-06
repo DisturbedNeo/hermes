@@ -29,7 +29,6 @@ void main() {
       'plan_add_criteria',
       'plan_add_milestones',
       'plan_add_task',
-      'plan_add_check',
       'plan_add_note',
       'plan_request_user_decision',
       'plan_commit',
@@ -80,18 +79,41 @@ void main() {
     expect(registry.allowsWorkspaceMutation, isFalse);
 
     final schema = registry.toolDefinitions
+        .singleWhere((item) => item.id == 'plan_add_task')
+        .schema
+        .toWire();
+    final taskProperties = schema['properties'] as Map;
+    expect(taskProperties.keys, contains('checks'));
+    final checkProperties =
+        ((taskProperties['checks'] as Map)['items'] as Map)['properties']
+            as Map;
+    expect(
+      checkProperties.keys,
+      containsAll([
+        'command',
+        'working_directory',
+        'criterion_refs',
+        'required',
+        'description',
+      ]),
+    );
+    expect(((taskProperties['checks'] as Map)['items'] as Map)['required'], [
+      'command',
+    ]);
+
+    final batchSchema = registry.toolDefinitions
         .singleWhere((item) => item.id == 'plan_add_tasks')
         .schema
         .toWire();
-    final taskProperties =
-        ((schema['properties'] as Map)['tasks'] as Map)['items'] as Map;
-    final properties = taskProperties['properties'] as Map;
-    expect(taskProperties['required'], [
+    final batchTaskProperties =
+        ((batchSchema['properties'] as Map)['tasks'] as Map)['items'] as Map;
+    final properties = batchTaskProperties['properties'] as Map;
+    expect(batchTaskProperties['required'], [
       'criterion_refs',
       'done_criteria',
       'out_of_scope',
     ]);
-    expect(taskProperties['anyOf'], [
+    expect(batchTaskProperties['anyOf'], [
       {
         'required': ['title'],
       },
@@ -155,6 +177,123 @@ void main() {
       expect((added['task'] as Map)['ref'], 'implement');
     },
   );
+
+  test('singular task creates inline checks atomically', () async {
+    final registry = ProjectPlanningToolRegistry(
+      context: ProjectPlanningContext(
+        project: _deterministicProject(),
+        workspaceRoot: '/workspace',
+        approvalPolicy: ProjectPlanApprovalPolicy.never,
+      ),
+    );
+    final added = await invokePlanning(registry, 'plan_add_task', {
+      'ref': 'checked',
+      'objective': 'Implement the deterministic slice.',
+      'criterion_refs': ['criterion_001'],
+      'done_criteria': ['The deterministic slice is verified.'],
+      'out_of_scope': ['Unrelated project work.'],
+      'checks': [
+        {
+          'command': 'dart test test/feature_test.dart',
+          'criterion_refs': ['criterion_001'],
+          'required': true,
+        },
+      ],
+    });
+
+    expect(added['ok'], isTrue);
+    final detail = await invokePlanning(registry, 'project_view', {
+      'task_ref': 'checked',
+    });
+    expect(detail['ok'], isTrue);
+    final task = detail['task_detail'] as Map;
+    expect(task['checks'], hasLength(1));
+    expect(task['evidence_intents'], hasLength(2));
+  });
+
+  test('invalid inline checks roll back the complete task', () async {
+    final base = _project();
+    final project = base.copyWith(
+      criteria: [
+        base.criteria.single,
+        base.criteria.single.copyWith(
+          id: 'criterion_002',
+          statement: 'The second outcome is verified.',
+        ),
+      ],
+    );
+    final registry = ProjectPlanningToolRegistry(
+      context: ProjectPlanningContext(
+        project: project,
+        workspaceRoot: '/workspace',
+        approvalPolicy: ProjectPlanApprovalPolicy.never,
+      ),
+    );
+    final result = await invokePlanning(registry, 'plan_add_task', {
+      'ref': 'invalid',
+      'objective': 'Implement the first outcome.',
+      'criterion_refs': ['criterion_001'],
+      'done_criteria': ['The first outcome is verified.'],
+      'out_of_scope': ['Unrelated project work.'],
+      'checks': [
+        {
+          'command': 'dart test test/feature_test.dart',
+          'criterion_refs': ['criterion_002'],
+        },
+      ],
+    });
+
+    expect(result['ok'], isFalse);
+    expect(result['code'], 'unlinked_criterion');
+    final preview = await invokePlanning(registry, 'plan_preview', {});
+    expect(
+      ((preview['preview'] as Map)['diff'] as Map)['added_tasks'],
+      isEmpty,
+    );
+  });
+
+  test('missing inline checks list every deterministic criterion', () async {
+    final base = _project();
+    final project = base.copyWith(
+      criteria: [
+        base.criteria.single.copyWith(
+          verificationMode: ProjectVerificationMode.deterministic,
+        ),
+        ProjectCriterion(
+          id: 'criterion_002',
+          statement: 'The second deterministic outcome is verified.',
+          verificationMode: ProjectVerificationMode.deterministic,
+          createdAt: DateTime(2026, 1, 1),
+          updatedAt: DateTime(2026, 1, 1),
+        ),
+      ],
+    );
+    final registry = ProjectPlanningToolRegistry(
+      context: ProjectPlanningContext(
+        project: project,
+        workspaceRoot: '/workspace',
+        approvalPolicy: ProjectPlanApprovalPolicy.never,
+      ),
+    );
+    final result = await invokePlanning(registry, 'plan_add_task', {
+      'objective': 'Implement both deterministic outcomes.',
+      'criterion_refs': ['criterion_001', 'criterion_002'],
+      'done_criteria': ['Both outcomes are verified.'],
+      'out_of_scope': ['Unrelated project work.'],
+    });
+
+    expect(result['ok'], isFalse);
+    expect(result['code'], 'missing_deterministic_task_check');
+    expect(
+      ((result['details'] as Map)['missing_criterion_refs'] as List),
+      containsAll(['criterion_001', 'criterion_002']),
+    );
+    final preview = await invokePlanning(registry, 'plan_preview', {});
+    expect(
+      ((preview['preview'] as Map)['diff'] as Map)['added_tasks'],
+      isEmpty,
+    );
+  });
 
   test('legacy batch creation still accepts a title-only task', () async {
     final added = await invokePlanning(_registry(), 'plan_add_tasks', {
@@ -441,6 +580,84 @@ void main() {
     expect((detail['failure'] as Map)['gate_ref'], 'command_passes');
     expect((detail['failure'] as Map)['error_codes'], ['exit_1']);
   });
+
+  test(
+    'bootstrap commit diagnostics list blockers and repairability',
+    () async {
+      final registry = ProjectPlanningToolRegistry(
+        context: ProjectPlanningContext(
+          project: _deterministicProject(tasks: [_task('existing')]),
+          workspaceRoot: '/workspace',
+          planningPass: ProjectPlanningPass.bootstrap,
+          planningLimits: ProjectPlanningLimits.bootstrap,
+          approvalPolicy: ProjectPlanApprovalPolicy.never,
+        ),
+        profile: ProjectPlanningToolProfile.bootstrap,
+      );
+      final result = await invokePlanning(registry, 'plan_commit', {});
+
+      expect(result['ok'], isFalse);
+      expect(result['code'], 'impossible_deterministic_verification');
+      final details = result['details'] as Map;
+      expect(details['repairable'], isFalse);
+      expect(details['blockers'], isNotEmpty);
+      expect(details['suggested_actions'], isEmpty);
+    },
+  );
+
+  test(
+    'bootstrap commits three tasks with deterministic backlog criteria',
+    () async {
+      final base = _project();
+      final project = base.copyWith(
+        criteria: [
+          base.criteria.single,
+          ProjectCriterion(
+            id: 'criterion_future',
+            statement: 'The future deterministic outcome is verified.',
+            verificationMode: ProjectVerificationMode.deterministic,
+            createdAt: DateTime(2026, 1, 1),
+            updatedAt: DateTime(2026, 1, 1),
+          ),
+        ],
+      );
+      final registry = ProjectPlanningToolRegistry(
+        context: ProjectPlanningContext(
+          project: project,
+          workspaceRoot: '/workspace',
+          planningPass: ProjectPlanningPass.bootstrap,
+          planningLimits: ProjectPlanningLimits.bootstrap,
+          approvalPolicy: ProjectPlanApprovalPolicy.never,
+        ),
+        profile: ProjectPlanningToolProfile.bootstrap,
+      );
+
+      for (var index = 1; index <= 3; index++) {
+        final added = await invokePlanning(registry, 'plan_add_task', {
+          'ref': 'slice_$index',
+          'objective': 'Implement bounded slice $index.',
+          'criterion_refs': ['criterion_001'],
+          'done_criteria': ['Bounded slice $index is verified.'],
+          'out_of_scope': ['Unrelated project work.'],
+        });
+        expect(added['ok'], isTrue);
+      }
+
+      final committed = await invokePlanning(registry, 'plan_commit', {});
+      expect(committed['ok'], isTrue);
+      expect(
+        (committed['validation'] as List).any(
+          (issue) =>
+              (issue as Map)['code'] == 'unassigned_deterministic_criterion',
+        ),
+        isTrue,
+      );
+      expect(
+        ((committed['diff'] as Map)['added_milestones'] as List),
+        hasLength(1),
+      );
+    },
+  );
 }
 
 ProjectPlanningToolRegistry _registry() => ProjectPlanningToolRegistry(
@@ -473,6 +690,17 @@ ProjectAggregate _project({List<TaskAggregate> tasks = const []}) {
     activeTaskId: null,
     createdAt: now,
     updatedAt: now,
+  );
+}
+
+ProjectAggregate _deterministicProject({List<TaskAggregate> tasks = const []}) {
+  final project = _project(tasks: tasks);
+  return project.copyWith(
+    criteria: [
+      project.criteria.single.copyWith(
+        verificationMode: ProjectVerificationMode.deterministic,
+      ),
+    ],
   );
 }
 

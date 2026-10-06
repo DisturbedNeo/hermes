@@ -100,6 +100,26 @@ class ProjectTaskSpec {
   });
 }
 
+/// A planning-only command verification declaration for a new project task.
+///
+/// The project builder materializes this into a task gate and command evidence
+/// expectation. It is intentionally not part of the persisted task model.
+class ProjectTaskCheckSpec {
+  final String command;
+  final String workingDirectory;
+  final List<String> criterionRefs;
+  final bool required;
+  final String? description;
+
+  const ProjectTaskCheckSpec({
+    required this.command,
+    this.workingDirectory = '.',
+    this.criterionRefs = const [],
+    this.required = true,
+    this.description,
+  });
+}
+
 /// The project-owned identity of a task document.
 ///
 /// Task content and execution history remain in the task system. Projects

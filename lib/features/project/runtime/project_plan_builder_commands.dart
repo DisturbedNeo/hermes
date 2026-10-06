@@ -144,6 +144,72 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
     return addTasks([spec], commandId: commandId).single;
   }
 
+  /// Adds one task and all of its declared command checks atomically.
+  String addTaskWithChecks(
+    ProjectTaskSpec spec, {
+    Iterable<ProjectTaskCheckSpec> checks = const [],
+    String? commandId,
+  }) {
+    final checkSpecs = [...checks];
+    final fingerprint = _encode({
+      'op': 'add_task_with_checks',
+      'task': _specMap(spec),
+      'checks': [
+        for (final check in checkSpecs)
+          {
+            'command': check.command,
+            'workingDirectory': check.workingDirectory,
+            'criterionRefs': check.criterionRefs,
+            'required': check.required,
+            'description': check.description,
+          },
+      ],
+    });
+    return _idempotent(commandId, fingerprint, () {
+      return _atomic(() {
+        final taskId = _addTasksInternal([spec]).single;
+        for (final check in checkSpecs) {
+          _addCommandCheckInternal(
+            taskReference: taskId,
+            command: check.command,
+            workingDirectory: check.workingDirectory,
+            criterionRefs: check.criterionRefs.isEmpty
+                ? null
+                : check.criterionRefs,
+            required: check.required,
+            description: check.description,
+          );
+        }
+        final task = _tasks[taskId]!;
+        final missingDeterministicCriteria = [
+          for (final criterionId in task.criterionIds)
+            if (_criteria[criterionId]?.verificationMode ==
+                    ProjectVerificationMode.deterministic &&
+                !task.expectedEvidence.any(
+                  (expectation) =>
+                      expectation.required &&
+                      expectation.type == ProjectEvidenceType.command &&
+                      expectation.criterionIds.contains(criterionId),
+                ))
+              criterionId,
+        ];
+        if (missingDeterministicCriteria.isNotEmpty) {
+          throw _error(
+            'missing_deterministic_task_check',
+            'checks',
+            'Every deterministic criterion owned by this task needs a required command check in the same call.',
+            details: {
+              'missing_criterion_refs': missingDeterministicCriteria,
+              'instruction':
+                  'Resubmit the complete task with required checks covering every listed criterion.',
+            },
+          );
+        }
+        return taskId;
+      });
+    });
+  }
+
   List<String> addTasks(Iterable<ProjectTaskSpec> specs, {String? commandId}) {
     final items = [...specs];
     final fingerprint = _encode({
@@ -429,100 +495,123 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
         );
       }
       return _atomic(() {
-        final taskId = _resolveTask(taskReference);
-        final task = _editableTask(taskId);
-        final criterionIds = criterionRefs == null
-            ? task.criterionIds
-            : _resolveReferences(
-                criterionRefs,
-                _resolveCriterion,
-                'criterionRefs',
-              );
-        if (criterionIds.isEmpty ||
-            criterionIds.any((id) => !task.criterionIds.contains(id))) {
-          throw _error(
-            'unlinked_criterion',
-            'criterionRefs',
-            'A check must link to criteria already owned by the task.',
-          );
-        }
-
-        final gateIndex = task.gates.indexWhere(
-          (gate) =>
-              gate.id == 'command_passes' &&
-              gate.params['command']?.toString() == commandText &&
-              _workingDirectory(gate.params) == directory,
+        return _addCommandCheckInternal(
+          taskReference: taskReference,
+          command: commandText,
+          workingDirectory: directory,
+          criterionRefs: criterionRefs,
+          required: required,
+          description: description,
         );
-        final gates = [...task.gates];
-        if (gateIndex < 0) {
-          gates.add(
-            TaskGate(
-              id: 'command_passes',
-              required: required,
-              scope: 'task',
-              params: {'command': commandText, 'working_directory': directory},
-              description: description?.trim().isNotEmpty == true
-                  ? description!.trim()
-                  : 'The verification command passes.',
-            ),
-          );
-        } else if (required && !gates[gateIndex].required) {
-          final previous = gates[gateIndex];
-          gates[gateIndex] = TaskGate(
-            id: previous.id,
-            required: true,
-            scope: previous.scope,
-            params: previous.params,
-            description: previous.description,
-          );
-        }
-
-        final existingExpectation = task.expectedEvidence.where((expectation) {
-          return expectation.type == ProjectEvidenceType.command &&
-              expectation.sourceRef == commandText &&
-              _sameStrings(expectation.criterionIds, criterionIds) &&
-              _workingDirectory(expectation.details) == directory;
-        }).firstOrNull;
-        final expectedEvidence = [...task.expectedEvidence];
-        final expectationId = existingExpectation?.id ?? _newExpectationId();
-        if (existingExpectation == null) {
-          expectedEvidence.add(
-            TaskEvidenceExpectation(
-              id: expectationId,
-              type: ProjectEvidenceType.command,
-              criterionIds: criterionIds,
-              description: description?.trim().isNotEmpty == true
-                  ? description!.trim()
-                  : 'The verification command passes.',
-              required: required,
-              sourceRef: commandText,
-              details: {'working_directory': directory},
-            ),
-          );
-        } else if (required && !existingExpectation.required) {
-          final expectationIndex = expectedEvidence.indexOf(
-            existingExpectation,
-          );
-          expectedEvidence[expectationIndex] = TaskEvidenceExpectation(
-            id: existingExpectation.id,
-            type: existingExpectation.type,
-            criterionIds: existingExpectation.criterionIds,
-            description: existingExpectation.description,
-            required: true,
-            sourceRef: existingExpectation.sourceRef,
-            details: existingExpectation.details,
-          );
-        }
-        final updated = task.copyWith(
-          gates: gates,
-          expectedEvidence: expectedEvidence,
-          updatedAt: _now,
-        );
-        _tasks[taskId] = updated;
-        _taskCatalog[taskId] = updated;
-        return expectationId;
       });
     });
+  }
+
+  String _addCommandCheckInternal({
+    required String taskReference,
+    required String command,
+    required String workingDirectory,
+    required Iterable<String>? criterionRefs,
+    required bool required,
+    required String? description,
+  }) {
+    final commandText = command.trim();
+    final directory = workingDirectory.trim().isEmpty
+        ? '.'
+        : workingDirectory.trim();
+    if (commandText.isEmpty) {
+      throw _error(
+        'missing_command',
+        'command',
+        'A command check needs a command.',
+      );
+    }
+    final taskId = _resolveTask(taskReference);
+    final task = _editableTask(taskId);
+    final criterionIds = criterionRefs == null
+        ? task.criterionIds
+        : _resolveReferences(criterionRefs, _resolveCriterion, 'criterionRefs');
+    if (criterionIds.isEmpty ||
+        criterionIds.any((id) => !task.criterionIds.contains(id))) {
+      throw _error(
+        'unlinked_criterion',
+        'criterionRefs',
+        'A check must link to criteria already owned by the task.',
+      );
+    }
+
+    final gateIndex = task.gates.indexWhere(
+      (gate) =>
+          gate.id == 'command_passes' &&
+          gate.params['command']?.toString() == commandText &&
+          _workingDirectory(gate.params) == directory,
+    );
+    final gates = [...task.gates];
+    if (gateIndex < 0) {
+      gates.add(
+        TaskGate(
+          id: 'command_passes',
+          required: required,
+          scope: 'task',
+          params: {'command': commandText, 'working_directory': directory},
+          description: description?.trim().isNotEmpty == true
+              ? description!.trim()
+              : 'The verification command passes.',
+        ),
+      );
+    } else if (required && !gates[gateIndex].required) {
+      final previous = gates[gateIndex];
+      gates[gateIndex] = TaskGate(
+        id: previous.id,
+        required: true,
+        scope: previous.scope,
+        params: previous.params,
+        description: previous.description,
+      );
+    }
+
+    final existingExpectation = task.expectedEvidence.where((expectation) {
+      return expectation.type == ProjectEvidenceType.command &&
+          expectation.sourceRef == commandText &&
+          _sameStrings(expectation.criterionIds, criterionIds) &&
+          _workingDirectory(expectation.details) == directory;
+    }).firstOrNull;
+    final expectedEvidence = [...task.expectedEvidence];
+    final expectationId = existingExpectation?.id ?? _newExpectationId();
+    if (existingExpectation == null) {
+      expectedEvidence.add(
+        TaskEvidenceExpectation(
+          id: expectationId,
+          type: ProjectEvidenceType.command,
+          criterionIds: criterionIds,
+          description: description?.trim().isNotEmpty == true
+              ? description!.trim()
+              : 'The verification command passes.',
+          required: required,
+          sourceRef: commandText,
+          details: {'working_directory': directory},
+        ),
+      );
+    } else if (required && !existingExpectation.required) {
+      final expectationIndex = expectedEvidence.indexOf(existingExpectation);
+      expectedEvidence[expectationIndex] = TaskEvidenceExpectation(
+        id: existingExpectation.id,
+        type: existingExpectation.type,
+        criterionIds: existingExpectation.criterionIds,
+        description: existingExpectation.description,
+        required: true,
+        sourceRef: existingExpectation.sourceRef,
+        details: existingExpectation.details,
+      );
+    }
+    final updated = task.copyWith(
+      gates: gates,
+      expectedEvidence: expectedEvidence,
+      updatedAt: _now,
+    );
+    _tasks[taskId] = updated;
+    _taskCatalog[taskId] = updated;
+    return expectationId;
   }
 
   String addNote({

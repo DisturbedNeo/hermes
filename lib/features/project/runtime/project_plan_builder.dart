@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:hermes/core/uuid.dart';
+import 'package:hermes/features/project/application/contracts/project_task_models.dart'
+    show ProjectTaskCheckSpec;
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/runtime/project_plan_revision_service.dart';
 import 'package:hermes/features/project/runtime/project_plan_validator.dart';
@@ -16,11 +18,13 @@ class ProjectPlanBuilderException implements Exception {
   final String code;
   final String path;
   final String message;
+  final Map<String, dynamic> details;
 
   const ProjectPlanBuilderException({
     required this.code,
     required this.path,
     required this.message,
+    this.details = const {},
   });
 
   @override

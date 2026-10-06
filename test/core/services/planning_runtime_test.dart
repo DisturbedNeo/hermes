@@ -68,6 +68,39 @@ void main() {
     },
   );
 
+  test(
+    'shared runner stops immediately on a non-repairable tool result',
+    () async {
+      final registry = _Registry(failNonRepairableCommit: true);
+      final client = _QueueClient([
+        ModelCompletion(
+          content: '',
+          toolCalls: [_tool('commit', '{}', id: 'commit-1')],
+        ),
+        ModelCompletion(
+          content: '',
+          toolCalls: [_tool('commit', '{}', id: 'commit-2')],
+        ),
+      ]);
+
+      final result = await const PlanningToolCallRunner().complete(
+        PlanningRunRequest(
+          client: client,
+          registry: registry,
+          label: 'Blocked planner',
+          system: 'system',
+          user: 'plan',
+        ),
+      );
+
+      expect(result.ok, isFalse);
+      expect(result.response['details'], {'repairable': false});
+      expect(result.modelCalls, 1);
+      expect(client.calls, 1);
+      expect(registry.commitAttempts, 1);
+    },
+  );
+
   test('shared runner enforces the configured safety ceiling', () async {
     final registry = _Registry();
     final client = _QueueClient([
@@ -141,9 +174,13 @@ ModelToolCall _tool(String name, String arguments, {required String id}) =>
     ModelToolCall(id: id, name: name, arguments: arguments);
 
 class _Registry extends PlanningToolRegistryBase {
-  _Registry({this.failFirstCommit = false});
+  _Registry({
+    this.failFirstCommit = false,
+    this.failNonRepairableCommit = false,
+  });
 
   final bool failFirstCommit;
+  final bool failNonRepairableCommit;
   var commitAttempts = 0;
 
   @override
@@ -182,6 +219,18 @@ class _Registry extends PlanningToolRegistryBase {
     }
     if (toolId == 'commit') {
       commitAttempts++;
+      if (failNonRepairableCommit && commitAttempts == 1) {
+        return PlanningResponse.fromWire(
+          error(
+            code: 'invalid_plan',
+            path: 'plan',
+            message: 'The draft cannot be repaired by this profile.',
+            extra: const {
+              'details': {'repairable': false},
+            },
+          ),
+        );
+      }
       if (failFirstCommit && commitAttempts == 1) {
         return PlanningResponse.fromWire(
           error(

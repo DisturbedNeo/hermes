@@ -190,13 +190,24 @@ class ProjectPlanEditingCommandService {
       'milestone_ref',
       'done_criteria',
       'out_of_scope',
+      'checks',
     });
+    final taskArguments = Map<String, dynamic>.from(arguments.toWire())
+      ..remove('checks');
     final spec = ProjectPlanningToolCommandService._taskSpec(
-      Map<String, dynamic>.from(arguments.toWire()),
+      taskArguments,
       'task',
       requireObjective: true,
     );
-    final id = context.builder.addTasks([spec], commandId: commandId).single;
+    final checks = ProjectPlanningToolCommandService._checkSpecs(
+      arguments['checks'],
+      'checks',
+    );
+    final id = context.builder.addTaskWithChecks(
+      spec,
+      checks: checks,
+      commandId: commandId,
+    );
     return {
       'task': {'id': id, 'ref': spec.ref.trim().isEmpty ? id : spec.ref.trim()},
     };

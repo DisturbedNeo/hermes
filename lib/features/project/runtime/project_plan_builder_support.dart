@@ -57,7 +57,9 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
     _milestoneRefs[id] = id;
     for (final entry in _tasks.entries.toList()) {
       if (entry.value.milestoneId == null) {
-        _tasks[entry.key] = entry.value.copyWith(milestoneId: id);
+        final assigned = entry.value.copyWith(milestoneId: id);
+        _tasks[entry.key] = assigned;
+        _taskCatalog[entry.key] = assigned;
       }
     }
   }
@@ -698,8 +700,14 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
   ProjectPlanBuilderException _error(
     String code,
     String path,
-    String message,
-  ) => ProjectPlanBuilderException(code: code, path: path, message: message);
+    String message, {
+    Map<String, dynamic> details = const {},
+  }) => ProjectPlanBuilderException(
+    code: code,
+    path: path,
+    message: message,
+    details: details,
+  );
 
   Map<String, dynamic> _specMap(ProjectTaskSpec spec) => {
     'ref': spec.ref,

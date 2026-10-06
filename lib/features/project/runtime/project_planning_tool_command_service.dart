@@ -37,7 +37,7 @@ class ProjectPlanningToolCommandService {
     if (_allows('plan_set_disposition')) _setDispositionDefinition,
     if (_allows('plan_split_task')) _splitTaskDefinition,
     if (_allows('plan_retry_task')) _retryTaskDefinition,
-    if (_allows('plan_add_check')) _addCheckDefinition,
+    if (_visible('plan_add_check')) _addCheckDefinition,
     if (_allows('plan_add_note')) _addNoteDefinition,
     if (_allows('plan_set_workspace_orientation'))
       _setWorkspaceOrientationDefinition,
@@ -183,10 +183,58 @@ class ProjectPlanningToolCommandService {
 
   bool _visible(String toolId) {
     if (profile == ProjectPlanningToolProfile.bootstrap &&
-        const {'plan_add_tasks', 'plan_preview'}.contains(toolId)) {
+        const {
+          'plan_add_tasks',
+          'plan_add_check',
+          'plan_preview',
+        }.contains(toolId)) {
       return false;
     }
     return _allows(toolId);
+  }
+
+  bool _validationRepairable(List<ProjectPlanValidationIssue> issues) {
+    // Bootstrap can repair only omissions that its visible additive tools can
+    // still supply. Existing task ownership, evidence, dependency, and
+    // structural errors require mutation operations outside that profile.
+    const bootstrapRepairable = {
+      'missing_criteria',
+      'missing_active_milestone',
+      'missing_executable_tasks',
+      'new_task_minimum_not_met',
+    };
+    if (profile == ProjectPlanningToolProfile.bootstrap) {
+      return issues.every((issue) => bootstrapRepairable.contains(issue.code));
+    }
+    if (profile == ProjectPlanningToolProfile.split) {
+      return false;
+    }
+    const nonRepairableByProfile = {
+      ProjectPlanningToolProfile.maintenance: {'path_outside_workspace'},
+    };
+    final nonRepairable = nonRepairableByProfile[profile]!;
+    return issues.every((issue) => !nonRepairable.contains(issue.code));
+  }
+
+  List<String> _suggestedActions(List<ProjectPlanValidationIssue> issues) {
+    if (!_validationRepairable(issues)) return const [];
+    final actions = <String>{};
+    for (final issue in issues) {
+      final action = switch (issue.code) {
+        'missing_criteria' => 'plan_add_criteria',
+        'missing_executable_tasks' ||
+        'new_task_minimum_not_met' => 'plan_add_task',
+        'missing_active_milestone' => 'plan_add_milestones',
+        'impossible_deterministic_verification' ||
+        'missing_command_passes_gate' =>
+          profile == ProjectPlanningToolProfile.bootstrap
+              ? 'plan_add_task'
+              : 'plan_add_check',
+        _ => null,
+      };
+      if (action != null && _visible(action)) actions.add(action);
+    }
+    return actions.toList()..sort();
   }
 
   Map<String, dynamic> domainError(Object error) {
@@ -195,6 +243,7 @@ class ProjectPlanningToolCommandService {
         code: error.code,
         path: _wirePath(error.path),
         message: error.message,
+        extra: error.details.isEmpty ? const {} : {'details': error.details},
       );
     }
     if (error is ProjectViewException) {
@@ -378,14 +427,28 @@ class ProjectPlanningToolCommandService {
           code: issue.code,
           path: issue.path,
           message: issue.message,
-          extra: response,
+          extra: {
+            ...response,
+            'details': {
+              'repairable': _validationRepairable(validation.errors),
+              'blockers': [for (final item in validation.errors) item.toMap()],
+              'suggested_actions': _suggestedActions(validation.errors),
+            },
+          },
         );
       }
       return _error(
         code: 'invalid_plan',
         path: 'plan',
         message: 'The plan did not pass validation.',
-        extra: response,
+        extra: {
+          ...response,
+          'details': {
+            'repairable': false,
+            'blockers': const [],
+            'suggested_actions': const [],
+          },
+        },
       );
     }
     if (context.deferRevision) {
@@ -542,6 +605,45 @@ class ProjectPlanningToolCommandService {
         '$path.expected_artifacts',
       ),
     );
+  }
+
+  static List<ProjectTaskCheckSpec> _checkSpecs(Object? value, String path) {
+    if (value == null) return const [];
+    final maps = _maps(value, path);
+    return [
+      for (var index = 0; index < maps.length; index++)
+        () {
+          final item = maps[index];
+          _rejectPersistentFields(item, '$path[$index]');
+          _keys(item, const {
+            'command',
+            'working_directory',
+            'criterion_refs',
+            'required',
+            'description',
+          });
+          return ProjectTaskCheckSpec(
+            command: _requiredString(item['command'], '$path[$index].command'),
+            workingDirectory:
+                _optionalString(
+                  item['working_directory'],
+                  '$path[$index].working_directory',
+                ) ??
+                '.',
+            criterionRefs: _stringList(
+              item['criterion_refs'],
+              '$path[$index].criterion_refs',
+            ),
+            required:
+                _optionalBool(item['required'], '$path[$index].required') ??
+                true,
+            description: _optionalString(
+              item['description'],
+              '$path[$index].description',
+            ),
+          );
+        }(),
+    ];
   }
 
   static void _rejectPersistentFields(Map<String, dynamic> value, String path) {

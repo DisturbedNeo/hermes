@@ -379,6 +379,73 @@ void main() {
     );
   });
 
+  test('allows an unassigned deterministic bootstrap criterion as backlog', () {
+    final base = _project();
+    final project = base.copyWith(
+      criteria: [
+        base.criteria.single,
+        ProjectCriterion(
+          id: 'criterion_002',
+          statement: 'The future outcome is verified.',
+          verificationMode: ProjectVerificationMode.deterministic,
+          createdAt: DateTime(2026, 1, 1),
+          updatedAt: DateTime(2026, 1, 1),
+        ),
+      ],
+    );
+    final milestone = ProjectMilestone(
+      id: 'milestone_001',
+      title: 'Current slice',
+      objective: 'Deliver the current slice.',
+      status: ProjectMilestoneStatus.active,
+      order: 1,
+      createdAt: DateTime(2026, 1, 1),
+      updatedAt: DateTime(2026, 1, 1),
+    );
+    final validation = validator.validate(
+      project: project,
+      proposal: _desired(project, [
+        _task('current'),
+      ]).copyWith(milestones: [milestone]),
+      workspaceRoot: '/workspace',
+      planningLimits: ProjectPlanningLimits.bootstrap,
+    );
+
+    expect(validation.valid, isTrue);
+    final warning = validation.warnings.singleWhere(
+      (issue) => issue.code == 'unassigned_deterministic_criterion',
+    );
+    expect(warning.path, 'criteria[1]');
+    expect(warning.message, contains('future backlog'));
+  });
+
+  test('keeps an unassigned deterministic criterion strict in maintenance', () {
+    final base = _project();
+    final project = base.copyWith(
+      criteria: [
+        base.criteria.single,
+        ProjectCriterion(
+          id: 'criterion_002',
+          statement: 'The future outcome is verified.',
+          verificationMode: ProjectVerificationMode.deterministic,
+          createdAt: DateTime(2026, 1, 1),
+          updatedAt: DateTime(2026, 1, 1),
+        ),
+      ],
+    );
+    final validation = validator.validate(
+      project: project,
+      proposal: _desired(project, [_task('current')]),
+      workspaceRoot: '/workspace',
+    );
+
+    expect(validation.valid, isFalse);
+    expect(
+      validation.errors.map((issue) => issue.code),
+      contains('impossible_deterministic_verification'),
+    );
+  });
+
   test(
     'requires a matching command_passes gate for required command evidence',
     () {

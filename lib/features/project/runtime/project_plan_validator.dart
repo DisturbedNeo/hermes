@@ -58,12 +58,19 @@ class ProjectPlanValidator {
   }) {
     final issues = <ProjectPlanValidationIssue>[];
 
-    void issue(String code, String fieldPath, String message) {
+    void issue(
+      String code,
+      String fieldPath,
+      String message, {
+      ProjectPlanValidationSeverity severity =
+          ProjectPlanValidationSeverity.error,
+    }) {
       issues.add(
         ProjectPlanValidationIssue(
           code: code,
           path: fieldPath,
           message: message,
+          severity: severity,
         ),
       );
     }
@@ -605,10 +612,28 @@ class ProjectPlanValidator {
       }
     }
 
+    final frontierCriterionIds = {
+      for (final task in proposal.tasks)
+        if (task.status != TaskStatus.deferred &&
+            task.status != TaskStatus.obsolete &&
+            !proposal.deferredTaskIds.contains(task.id) &&
+            !proposal.obsoleteTaskIds.contains(task.id))
+          ...task.criterionIds,
+    };
     for (var index = 0; index < proposal.criteria.length; index++) {
       final criterion = proposal.criteria[index];
       if (criterion.status == ProjectCriterionStatus.satisfied ||
           criterion.verificationMode != ProjectVerificationMode.deterministic) {
+        continue;
+      }
+      if (planningLimits.requireExecutableSlice &&
+          !frontierCriterionIds.contains(criterion.id)) {
+        issue(
+          'unassigned_deterministic_criterion',
+          'criteria[$index]',
+          'Deterministic criterion ${criterion.id} remains future backlog and will require a required gate or command evidence expectation when assigned to an active task.',
+          severity: ProjectPlanValidationSeverity.warning,
+        );
         continue;
       }
       final hasConclusiveExpectation = proposal.tasks.any(
