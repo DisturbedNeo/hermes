@@ -48,11 +48,13 @@ class TaskPlanningContext with TaskPlanningContextMappable {
 
 /// Transient project evidence used while executing one task document.
 class TaskExecutionRequest {
+  final TaskPlanningContext? planningContext;
   final List<String> criterionIds;
   final List<TaskProjectCriterion> criteria;
   final List<TaskProjectEvidenceExpectation> expectedEvidence;
 
   const TaskExecutionRequest({
+    this.planningContext,
     this.criterionIds = const [],
     this.criteria = const [],
     this.expectedEvidence = const [],
@@ -61,6 +63,7 @@ class TaskExecutionRequest {
   factory TaskExecutionRequest.fromPlanningContext(
     TaskPlanningContext context,
   ) => TaskExecutionRequest(
+    planningContext: context,
     criterionIds: context.criterionIds,
     criteria: context.criteria,
     expectedEvidence: context.expectedEvidence,

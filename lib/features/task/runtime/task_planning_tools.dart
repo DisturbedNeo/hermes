@@ -137,8 +137,10 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
   }
 
   Map<String, dynamic> _view(PlanningArguments arguments) {
-    _keys(arguments, const {'step_ref', 'max_items'});
+    _keys(arguments, const {'step_ref', 'max_items', 'section', 'cursor'});
     final stepRef = _optionalString(arguments['step_ref'], 'step_ref');
+    final section = _optionalString(arguments['section'], 'section');
+    final cursor = _optionalString(arguments['cursor'], 'cursor');
     final preview = context.builder.preview();
     final draftStepId = stepRef == null
         ? null
@@ -161,6 +163,8 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
       requiredArtifacts: context.requiredArtifacts,
       requiredGates: context.requiredGates,
       requiredEvidence: context.requiredEvidence,
+      section: section,
+      cursor: cursor,
     );
     return {
       ...view,
@@ -610,6 +614,17 @@ const ToolDefinition _taskViewDefinition = ToolDefinition(
       'step_ref': {
         'type': 'string',
         'description': 'A step ref returned by task_add_step or task_view.',
+      },
+      'section': {
+        'type': 'string',
+        'enum': TaskViewService.viewSections,
+        'description':
+            'Optional collection to page. Use the next_cursor returned in navigation.pages.',
+      },
+      'cursor': {
+        'type': 'string',
+        'description':
+            'Cursor returned in navigation.pages for the selected section.',
       },
       'max_items': {
         'type': 'integer',

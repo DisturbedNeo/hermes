@@ -24,16 +24,12 @@ void main() {
           {'ref': 'quality', 'statement': 'The bounded outcome is verified.'},
         ],
       }),
-      _call('plan_add_tasks', {
-        'tasks': [
-          {
-            'ref': 'implement',
-            'objective': 'Implement the bounded outcome.',
-            'criterion_refs': ['quality'],
-            'done_criteria': ['The outcome is verified.'],
-            'out_of_scope': ['Unrelated project work.'],
-          },
-        ],
+      _call('plan_add_task', {
+        'ref': 'implement',
+        'objective': 'Implement the bounded outcome.',
+        'criterion_refs': ['quality'],
+        'done_criteria': ['The outcome is verified.'],
+        'out_of_scope': ['Unrelated project work.'],
       }),
       _call('plan_add_check', {
         'task': 'implement',
@@ -109,16 +105,12 @@ void main() {
             },
           ],
         }),
-        _call('plan_add_tasks', {
-          'tasks': [
-            {
-              'ref': 'implement',
-              'objective': 'Implement the accessible report workflow.',
-              'criterion_refs': ['accessibility'],
-              'done_criteria': ['The report remains keyboard accessible.'],
-              'out_of_scope': ['Unrelated visual redesign.'],
-            },
-          ],
+        _call('plan_add_task', {
+          'ref': 'implement',
+          'objective': 'Implement the accessible report workflow.',
+          'criterion_refs': ['accessibility'],
+          'done_criteria': ['The report remains keyboard accessible.'],
+          'out_of_scope': ['Unrelated visual redesign.'],
         }),
         _call('plan_commit', const {}),
       ]);

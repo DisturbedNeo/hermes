@@ -2,6 +2,7 @@ import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/domain/project_control_state_service.dart';
 import 'package:hermes/features/project/domain/project_scheduler.dart';
 import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
+import 'package:hermes/core/view_pagination.dart';
 
 /// A bounded read model for project planning.
 ///
@@ -9,6 +10,19 @@ import 'package:hermes/features/project/domain/project_workspace_context_service
 /// execution data such as runs, logs, gate results, and full evidence stays
 /// behind the task and execution services.
 class ProjectViewService {
+  static const viewSections = [
+    'constraints',
+    'criteria',
+    'milestones',
+    'tasks',
+    'ready_tasks',
+    'blocked_tasks',
+    'pending_questions',
+    'recent_failures',
+    'memory',
+    'workspace',
+  ];
+
   const ProjectViewService({
     this.defaultMaxItems = 20,
     this.maxTextLength = 600,
@@ -30,10 +44,54 @@ class ProjectViewService {
     String? memoryQuery,
     String? workspaceQuery,
     int? maxItems,
+    String? section,
+    String? cursor,
   }) {
     final limit = _limit(maxItems ?? defaultMaxItems);
+    final navigation = _navigation(section: section, cursor: cursor);
+    final selectedSection = navigation.selectedSection;
     final schedule = _scheduler.refreshReadiness(project);
-    final tasks = _boundedTasks(project, limit);
+    final tasks = _plannerTasks(project);
+    final criteria = _page('criteria', project.criteria, limit, navigation);
+    final milestones = _page(
+      'milestones',
+      (project.milestones.toList()..sort((a, b) => a.order.compareTo(b.order))),
+      limit,
+      navigation,
+    );
+    final constraints = _page(
+      'constraints',
+      project.constraints,
+      limit,
+      navigation,
+    );
+    final taskPage = _page('tasks', tasks, limit, navigation);
+    final readyTasks = _scheduler.orderedReadyTasks(project).toList();
+    final readyTaskPage = _page('ready_tasks', readyTasks, limit, navigation);
+    final blockedTasks = [
+      for (final task in project.tasks)
+        if (schedule.readinessFor(task.id) != TaskReadiness.ready &&
+            _isPlannerRelevant(task))
+          task,
+    ];
+    final blockedTaskPage = _page(
+      'blocked_tasks',
+      blockedTasks,
+      limit,
+      navigation,
+    );
+    final pendingQuestions = _page(
+      'pending_questions',
+      project.openQuestions,
+      limit,
+      navigation,
+    );
+    final recentFailures = _page(
+      'recent_failures',
+      _recentFailures(project, limit),
+      limit,
+      navigation,
+    );
     final workspace = _workspaceContextService.selectContext(
       project: project,
       maxCharacters: 6000,
@@ -53,18 +111,12 @@ class ProjectViewService {
         'original': _text(project.originalGoal),
         'refined': _text(project.refinedGoal),
       },
-      'constraints': [
-        for (final item in project.constraints.take(limit)) _text(item),
-      ],
+      'constraints': [for (final item in constraints.items) _text(item)],
       'criteria': [
-        for (final criterion in project.criteria.take(limit))
-          _criterionSummary(criterion),
+        for (final criterion in criteria.items) _criterionSummary(criterion),
       ],
       'milestones': [
-        for (final milestone
-            in (project.milestones.toList()
-                  ..sort((a, b) => a.order.compareTo(b.order)))
-                .take(limit))
+        for (final milestone in milestones.items)
           _milestoneSummary(milestone, limit),
       ],
       'workspaceGraph': {
@@ -72,37 +124,65 @@ class ProjectViewService {
         'node_count': project.workspaceGraph.nodes.length,
         'edge_count': project.workspaceGraph.edges.length,
       },
-      'tasks': [for (final task in tasks) _taskSummary(task, schedule, limit)],
+      'tasks': [
+        for (final task in taskPage.items) _taskSummary(task, schedule, limit),
+      ],
       'ready_tasks': [
-        for (final task in _scheduler.orderedReadyTasks(project).take(limit))
+        for (final task in readyTaskPage.items)
           _taskSummary(task, schedule, limit),
       ],
       'blocked_tasks': [
-        for (final task in project.tasks)
-          if (schedule.readinessFor(task.id) != TaskReadiness.ready &&
-              _isPlannerRelevant(task))
-            {
-              'ref': task.id,
-              'title': _text(task.title),
-              'readiness': _readinessWire(schedule.readinessFor(task.id)),
-              'reasons': [
-                for (final reason in schedule.reasonsFor(task.id).take(4))
-                  _text(reason),
-              ],
-            },
-      ].take(limit).toList(),
+        for (final task in blockedTaskPage.items)
+          {
+            'ref': task.id,
+            'title': _text(task.title),
+            'readiness': _readinessWire(schedule.readinessFor(task.id)),
+            'reasons': [
+              for (final reason in schedule.reasonsFor(task.id).take(4))
+                _text(reason),
+            ],
+          },
+      ].toList(),
       'current_blocker': _blockerSummary(project),
       'pending_questions': [
-        for (final question in project.openQuestions.take(limit))
+        for (final question in pendingQuestions.items)
           {'id': question.id, 'question': _text(question.question)},
       ],
-      'recent_failures': _recentFailures(project, limit),
+      'recent_failures': recentFailures.items,
       'truncated': {
-        'criteria': project.criteria.length > limit,
-        'milestones': project.milestones.length > limit,
-        'tasks':
-            _boundedTasks(project, limit).length <
-            _plannerRelevantTasks(project).length,
+        'constraints': constraints.hasMore,
+        'criteria': criteria.hasMore,
+        'milestones': milestones.hasMore,
+        'tasks': taskPage.hasMore,
+        'ready_tasks': readyTaskPage.hasMore,
+        'blocked_tasks': blockedTaskPage.hasMore,
+        'pending_questions': pendingQuestions.hasMore,
+        'recent_failures': recentFailures.hasMore,
+      },
+      'navigation': {
+        'requested_section': selectedSection,
+        'pages': {
+          'constraints': constraints.toMap(
+            cursor: navigation.cursorFor('constraints'),
+          ),
+          'criteria': criteria.toMap(cursor: navigation.cursorFor('criteria')),
+          'milestones': milestones.toMap(
+            cursor: navigation.cursorFor('milestones'),
+          ),
+          'tasks': taskPage.toMap(cursor: navigation.cursorFor('tasks')),
+          'ready_tasks': readyTaskPage.toMap(
+            cursor: navigation.cursorFor('ready_tasks'),
+          ),
+          'blocked_tasks': blockedTaskPage.toMap(
+            cursor: navigation.cursorFor('blocked_tasks'),
+          ),
+          'pending_questions': pendingQuestions.toMap(
+            cursor: navigation.cursorFor('pending_questions'),
+          ),
+          'recent_failures': recentFailures.toMap(
+            cursor: navigation.cursorFor('recent_failures'),
+          ),
+        },
       },
     };
 
@@ -134,20 +214,40 @@ class ProjectViewService {
       result['criterion_detail'] = _criterionDetail(project, criterion, limit);
     }
 
-    final memorySearch = memoryQuery?.trim();
+    final memorySearch =
+        memoryQuery?.trim() ??
+        (navigation.selectedSection == 'memory'
+            ? navigation.cursorScope
+            : null);
     if (memorySearch != null && memorySearch.isNotEmpty) {
       final normalised = memorySearch.toLowerCase();
-      result['memory_detail'] = [
+      final matches = [
         for (final entry in project.memory)
           if (entry.active &&
               '${entry.content} ${entry.kind.name} ${entry.sourceId ?? ''}'
                   .toLowerCase()
                   .contains(normalised))
             _memorySummary(entry),
-      ].take(limit).toList();
+      ];
+      final page = _page(
+        'memory',
+        matches,
+        limit,
+        navigation,
+        scope: normalised,
+      );
+      result['memory_detail'] = page.items;
+      (result['navigation']! as Map)['pages']['memory'] = page.toMap(
+        cursor: navigation.cursorFor('memory'),
+      );
+      (result['truncated']! as Map)['memory'] = page.hasMore;
     }
 
-    final workspaceSearch = workspaceQuery?.trim();
+    final workspaceSearch =
+        workspaceQuery?.trim() ??
+        (navigation.selectedSection == 'workspace'
+            ? navigation.cursorScope
+            : null);
     if (workspaceSearch != null && workspaceSearch.isNotEmpty) {
       final query = workspaceSearch.toLowerCase();
       final matchingNodes = [
@@ -159,19 +259,25 @@ class ProjectViewService {
               .contains(query))
             node,
       ]..sort((a, b) => a.id.compareTo(b.id));
-      result['workspace_detail'] = [
-        for (final node in matchingNodes.take(limit))
+      final matches = [
+        for (final node in matchingNodes)
           {
             ..._workspaceNodeSummary(node, limit),
             'relationships': _workspaceRelationships(project, node.id, limit),
           },
       ];
+      final page = _page('workspace', matches, limit, navigation, scope: query);
+      result['workspace_detail'] = page.items;
+      (result['navigation']! as Map)['pages']['workspace'] = page.toMap(
+        cursor: navigation.cursorFor('workspace'),
+      );
+      (result['truncated']! as Map)['workspace'] = page.hasMore;
     }
 
     return result;
   }
 
-  List<ProjectTaskNode> _boundedTasks(ProjectAggregate project, int limit) {
+  List<ProjectTaskNode> _plannerTasks(ProjectAggregate project) {
     final relevant = _plannerRelevantTasks(project);
     final active = relevant.where((task) => !_isTerminal(task)).toList();
     final recent = relevant.toList()
@@ -183,9 +289,79 @@ class ProjectViewService {
     for (final task in [...active, ...recent]) {
       if (selected.any((item) => item.id == task.id)) continue;
       selected.add(task);
-      if (selected.length == limit) break;
     }
     return selected;
+  }
+
+  _ProjectViewNavigation _navigation({String? section, String? cursor}) {
+    final requested = section?.trim();
+    final parsed = cursor == null || cursor.trim().isEmpty
+        ? null
+        : _decodeCursor(cursor);
+    final selected = requested == null || requested.isEmpty
+        ? parsed?.collection
+        : requested;
+    if (selected != null && !viewSections.contains(selected)) {
+      throw ProjectViewException(
+        code: 'unknown_section',
+        path: 'section',
+        message: 'Unknown project view section $selected.',
+      );
+    }
+    if (parsed != null && selected != parsed.collection) {
+      throw ProjectViewException(
+        code: 'cursor_section_mismatch',
+        path: 'cursor',
+        message:
+            'Cursor section ${parsed.collection} does not match $selected.',
+      );
+    }
+    return _ProjectViewNavigation(
+      section: selected,
+      cursor: cursor,
+      cursorScope: parsed?.scope,
+    );
+  }
+
+  ViewCursor? _decodeCursor(String cursor) {
+    try {
+      final decoded = ViewCursor.decode(cursor);
+      if (!viewSections.contains(decoded.collection)) {
+        throw const FormatException('Unknown project view cursor collection.');
+      }
+      return decoded;
+    } on FormatException catch (error) {
+      throw ProjectViewException(
+        code: 'invalid_cursor',
+        path: 'cursor',
+        message: error.message,
+      );
+    }
+  }
+
+  ViewPage<T> _page<T>(
+    String collection,
+    Iterable<T> values,
+    int limit,
+    _ProjectViewNavigation navigation, {
+    String? scope,
+  }) {
+    final cursor = navigation.cursorFor(collection);
+    try {
+      return paginateView(
+        collection: collection,
+        values: values,
+        limit: limit,
+        cursor: cursor,
+        scope: scope,
+      );
+    } on FormatException catch (error) {
+      throw ProjectViewException(
+        code: 'invalid_cursor',
+        path: 'cursor',
+        message: error.message,
+      );
+    }
   }
 
   List<ProjectTaskNode> _plannerRelevantTasks(ProjectAggregate project) => [
@@ -414,7 +590,7 @@ class ProjectViewService {
           ? updated
           : a.value.toString().compareTo(b.value.toString());
     });
-    return [for (final item in failures.take(limit)) item.value];
+    return [for (final item in failures) item.value];
   }
 
   Map<String, dynamic>? _blockerSummary(ProjectAggregate project) {
@@ -516,6 +692,18 @@ class ProjectViewException implements Exception {
 
   @override
   String toString() => '$code ($path): $message';
+}
+
+class _ProjectViewNavigation {
+  const _ProjectViewNavigation({this.section, this.cursor, this.cursorScope});
+
+  final String? section;
+  final String? cursor;
+  final String? cursorScope;
+
+  String? get selectedSection => section;
+
+  String? cursorFor(String collection) => section == collection ? cursor : null;
 }
 
 class _FailureSummary {

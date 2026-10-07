@@ -65,7 +65,6 @@ void main() {
       containsAll([
         'project_view',
         'plan_add_task',
-        'plan_add_tasks',
         'plan_update_task',
         'plan_split_task',
         'plan_retry_task',
@@ -101,30 +100,7 @@ void main() {
       'command',
     ]);
 
-    final batchSchema = registry.toolDefinitions
-        .singleWhere((item) => item.id == 'plan_add_tasks')
-        .schema
-        .toWire();
-    final batchTaskProperties =
-        ((batchSchema['properties'] as Map)['tasks'] as Map)['items'] as Map;
-    final properties = batchTaskProperties['properties'] as Map;
-    expect(batchTaskProperties['required'], [
-      'criterion_refs',
-      'done_criteria',
-      'out_of_scope',
-    ]);
-    expect(batchTaskProperties['anyOf'], [
-      {
-        'required': ['title'],
-      },
-      {
-        'required': ['objective'],
-      },
-    ]);
-    expect(properties.keys, isNot(contains('id')));
-    expect(properties.keys, isNot(contains('status')));
-    expect(properties.keys, isNot(contains('runs')));
-    expect(properties.keys, isNot(contains('gates')));
+    expect(ids, isNot(contains('plan_add_tasks')));
     expect(
       registry.toolDefinitions.map((item) => item.schema.toString()).join(),
       isNot(contains('ProjectAggregate')),
@@ -217,6 +193,85 @@ void main() {
       ['high_risk_task'],
     );
     expect((control['open_questions'] as List).single['id'], 'question_1');
+  });
+
+  test('project view exposes cursors for navigating bounded collections', () {
+    final project = _project(
+      tasks: [for (var index = 1; index <= 3; index++) _task('task_$index')],
+    );
+    final first = const ProjectViewService().query(project, maxItems: 1);
+    final firstPage =
+        ((first['navigation'] as Map)['pages'] as Map)['tasks'] as Map;
+
+    expect(firstPage['total'], 3);
+    expect(firstPage['offset'], 0);
+    expect(firstPage['has_more'], isTrue);
+    expect(firstPage['next_cursor'], 'tasks:1');
+    expect((first['tasks'] as List), hasLength(1));
+
+    final second = const ProjectViewService().query(
+      project,
+      maxItems: 1,
+      section: 'tasks',
+      cursor: firstPage['next_cursor'] as String,
+    );
+    final secondPage =
+        ((second['navigation'] as Map)['pages'] as Map)['tasks'] as Map;
+
+    expect(secondPage['offset'], 1);
+    expect(secondPage['next_cursor'], 'tasks:2');
+    expect((second['tasks'] as List).single['ref'], 'task_2');
+  });
+
+  test('project view rejects malformed navigation cursors', () {
+    expect(
+      () => const ProjectViewService().query(
+        _project(),
+        section: 'tasks',
+        cursor: 'tasks:not-a-number',
+      ),
+      throwsA(
+        isA<ProjectViewException>().having(
+          (error) => error.code,
+          'code',
+          'invalid_cursor',
+        ),
+      ),
+    );
+  });
+
+  test('project search cursors retain their search scope', () {
+    final now = DateTime(2026, 1, 1);
+    final project = _project().copyWith(
+      memory: [
+        for (var index = 1; index <= 3; index++)
+          ProjectMemoryEntry(
+            id: 'memory_$index',
+            kind: ProjectMemoryKind.fact,
+            content: 'needle memory $index',
+            sourceType: ProjectMemorySourceType.system,
+            confidence: ProjectMemoryConfidence.confirmed,
+            createdAt: now,
+            updatedAt: now,
+          ),
+      ],
+    );
+    final first = const ProjectViewService().query(
+      project,
+      memoryQuery: 'needle',
+      maxItems: 1,
+    );
+    final firstPage =
+        ((first['navigation'] as Map)['pages'] as Map)['memory'] as Map;
+
+    final second = const ProjectViewService().query(
+      project,
+      maxItems: 1,
+      section: 'memory',
+      cursor: firstPage['next_cursor'] as String,
+    );
+
+    expect((second['memory_detail'] as List).single['id'], 'memory_2');
   });
 
   test('singular task creates inline checks atomically', () async {
@@ -336,19 +391,16 @@ void main() {
     );
   });
 
-  test('legacy batch creation still accepts a title-only task', () async {
-    final added = await invokePlanning(_registry(), 'plan_add_tasks', {
-      'tasks': [
-        {
-          'title': 'Verify the bounded outcome.',
-          'criterion_refs': ['criterion_001'],
-          'done_criteria': ['The bounded outcome is verified.'],
-          'out_of_scope': ['Unrelated project work.'],
-        },
-      ],
+  test('single task creation requires an objective', () async {
+    final added = await invokePlanning(_registry(), 'plan_add_task', {
+      'title': 'Verify the bounded outcome.',
+      'criterion_refs': ['criterion_001'],
+      'done_criteria': ['The bounded outcome is verified.'],
+      'out_of_scope': ['Unrelated project work.'],
     });
 
-    expect(added['ok'], isTrue);
+    expect(added['ok'], isFalse);
+    expect(added['code'], 'invalid_task_spec');
   });
 
   test('initial planning exposes only the bounded context reader', () async {
@@ -432,40 +484,29 @@ void main() {
     'draft commands use generated IDs and keep create separate from update',
     () async {
       final registry = _registry();
-      final added = await invokePlanning(registry, 'plan_add_tasks', {
-        'tasks': [
-          {
-            'ref': 'scaffold',
-            'title': 'Scaffold the bounded slice',
-            'objective': 'Create the bounded project slice.',
-            'criterion_refs': ['criterion_001'],
-            'done_criteria': ['The bounded slice is implemented.'],
-            'out_of_scope': ['Unrelated project work.'],
-          },
-        ],
+      final added = await invokePlanning(registry, 'plan_add_task', {
+        'ref': 'scaffold',
+        'title': 'Scaffold the bounded slice',
+        'objective': 'Create the bounded project slice.',
+        'criterion_refs': ['criterion_001'],
+        'done_criteria': ['The bounded slice is implemented.'],
+        'out_of_scope': ['Unrelated project work.'],
       }, commandId: 'add-1');
 
       expect(added['ok'], isTrue);
-      final taskId = (((added['tasks'] as List).single as Map)['id']) as String;
+      final taskId = ((added['task'] as Map)['id']) as String;
       expect(taskId, startsWith('task_'));
 
-      final repeated = await invokePlanning(registry, 'plan_add_tasks', {
-        'tasks': [
-          {
-            'ref': 'scaffold',
-            'title': 'Scaffold the bounded slice',
-            'objective': 'Create the bounded project slice.',
-            'criterion_refs': ['criterion_001'],
-            'done_criteria': ['The bounded slice is implemented.'],
-            'out_of_scope': ['Unrelated project work.'],
-          },
-        ],
+      final repeated = await invokePlanning(registry, 'plan_add_task', {
+        'ref': 'scaffold',
+        'title': 'Scaffold the bounded slice',
+        'objective': 'Create the bounded project slice.',
+        'criterion_refs': ['criterion_001'],
+        'done_criteria': ['The bounded slice is implemented.'],
+        'out_of_scope': ['Unrelated project work.'],
       }, commandId: 'add-1');
       expect(repeated['ok'], isTrue);
-      expect(
-        (((repeated['tasks'] as List).single as Map)['id']) as String,
-        taskId,
-      );
+      expect(((repeated['task'] as Map)['id']) as String, taskId);
 
       final updated = await invokePlanning(registry, 'plan_update_task', {
         'task': 'scaffold',
@@ -476,22 +517,19 @@ void main() {
 
       final attemptedCreateWithId = await invokePlanning(
         registry,
-        'plan_add_tasks',
+        'plan_add_task',
         {
-          'tasks': [
-            {
-              'id': 'pretend_replace',
-              'title': 'Invalid replacement',
-              'criterion_refs': ['criterion_001'],
-              'done_criteria': ['It is checked.'],
-              'out_of_scope': ['Unrelated work.'],
-            },
-          ],
+          'id': 'pretend_replace',
+          'title': 'Invalid replacement',
+          'objective': 'Invalid replacement.',
+          'criterion_refs': ['criterion_001'],
+          'done_criteria': ['It is checked.'],
+          'out_of_scope': ['Unrelated work.'],
         },
       );
       expect(attemptedCreateWithId['ok'], isFalse);
       expect(attemptedCreateWithId['code'], 'invalid_argument');
-      expect(attemptedCreateWithId['path'], 'tasks[0].id');
+      expect(attemptedCreateWithId['path'], 'id');
 
       final view = await invokePlanning(registry, 'project_view', {});
       expect(view['ok'], isTrue);
@@ -520,16 +558,12 @@ void main() {
     'preview and commit return compact validation and diff results',
     () async {
       final registry = _registry();
-      final added = await invokePlanning(registry, 'plan_add_tasks', {
-        'tasks': [
-          {
-            'ref': 'checked',
-            'objective': 'Implement and verify the bounded slice.',
-            'criterion_refs': ['criterion_001'],
-            'done_criteria': ['The bounded slice is verified.'],
-            'out_of_scope': ['Unrelated project work.'],
-          },
-        ],
+      final added = await invokePlanning(registry, 'plan_add_task', {
+        'ref': 'checked',
+        'objective': 'Implement and verify the bounded slice.',
+        'criterion_refs': ['criterion_001'],
+        'done_criteria': ['The bounded slice is verified.'],
+        'out_of_scope': ['Unrelated project work.'],
       });
       expect(added['ok'], isTrue);
 
@@ -559,7 +593,7 @@ void main() {
   );
 
   test(
-    'a failed batch command does not leave an earlier item in the draft',
+    'a failed batch criteria command does not leave an earlier item in the draft',
     () async {
       final registry = _registry();
       final result = await invokePlanning(registry, 'plan_add_criteria', {
@@ -572,16 +606,12 @@ void main() {
       expect(result['ok'], isFalse);
       expect(result['path'], 'criteria[1].statement');
 
-      final dependent = await invokePlanning(registry, 'plan_add_tasks', {
-        'tasks': [
-          {
-            'ref': 'dependent',
-            'objective': 'Use a criterion that should not exist.',
-            'criterion_refs': ['temporary'],
-            'done_criteria': ['The task is checked.'],
-            'out_of_scope': ['Unrelated work.'],
-          },
-        ],
+      final dependent = await invokePlanning(registry, 'plan_add_task', {
+        'ref': 'dependent',
+        'objective': 'Use a criterion that should not exist.',
+        'criterion_refs': ['temporary'],
+        'done_criteria': ['The task is checked.'],
+        'out_of_scope': ['Unrelated work.'],
       });
       expect(dependent['ok'], isFalse);
       expect(dependent['code'], 'unknown_reference');

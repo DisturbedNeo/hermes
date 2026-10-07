@@ -218,11 +218,12 @@ IDs, statuses, timestamps, evidence, gates, or runtime state.
 
 $planningInstructions
 
-Begin with project_view when you need context. The view is bounded; request a
-specific task, criterion, or memory detail when needed. Use
+Begin with project_view when you need context. The view is bounded; use the
+navigation.pages metadata and call project_view again with section and
+next_cursor when a collection has more items. Search cursors retain their
+search scope. Request a specific task, criterion, or memory detail when needed. Use
 plan_update_task for an existing mutable task. Use plan_add_task for one new
-task and plan_add_tasks only when adding a deliberate batch; the builder
-generates fresh IDs. Submit every new task as a complete object. Completed, failed, split, rejected,
+task; the builder generates fresh IDs. Submit every new task as a complete object. Completed, failed, split, rejected,
 cancelled, and running task history is immutable. Use plan_retry_task only for
 failed or rejected work, use plan_split_task only for a mutable oversized task,
 and use plan_add_task for focused work around terminal history. Use

@@ -1066,6 +1066,37 @@ void main() {
         workspace: workspace,
         snapshot: task,
         baseSystemPrompt: 'system',
+        executionRequest: TaskExecutionRequest.fromPlanningContext(
+          const TaskPlanningContext(
+            projectGoal: 'Ship the verified reporting workflow.',
+            projectTaskTitle: 'Repair the report task',
+            projectTaskObjective: 'Repair the stale report implementation.',
+            knownFacts: ['The report uses Flutter widgets.'],
+            workspaceOrientation: 'The workspace contains the report package.',
+            workspaceContext: ['The report package has widget tests.'],
+            doneCriteria: ['The report verification step passes.'],
+            outOfScope: ['Do not redesign unrelated screens.'],
+            criterionIds: ['criterion_report'],
+            criteria: [
+              TaskProjectCriterion(
+                id: 'criterion_report',
+                statement: 'The report workflow is verified.',
+                verificationMode: 'deterministic',
+              ),
+            ],
+            expectedEvidence: [
+              TaskProjectEvidenceExpectation(
+                id: 'report_check',
+                type: 'command',
+                criterionIds: ['criterion_report'],
+                description: 'The report verification command passes.',
+              ),
+            ],
+            readPaths: ['lib/report'],
+            writePaths: ['lib/report'],
+            maxSteps: 3,
+          ),
+        ),
       );
 
       expect(updated.steps.map((step) => step.id), [
@@ -1078,6 +1109,11 @@ void main() {
         TaskRunStatus.replanned,
       ]);
       expect(updated.memorySummary, contains('Add a verification step.'));
+      final replanPrompt = client.seenMessages.last.last.content;
+      expect(replanPrompt, contains('Ship the verified reporting workflow.'));
+      expect(replanPrompt, contains('The report workflow is verified.'));
+      expect(replanPrompt, contains('report_check'));
+      expect(replanPrompt, contains('Do not redesign unrelated screens.'));
     });
 
     test('read-only steps reject writes outside the task folder', () async {

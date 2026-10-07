@@ -147,38 +147,6 @@ class ProjectPlanEditingCommandService {
     return {'milestones': added};
   }
 
-  Map<String, dynamic> addTasks(
-    PlanningArguments arguments,
-    String? commandId,
-  ) {
-    _ensureOpen();
-    ProjectPlanningToolCommandService._keys(arguments, const {'tasks'});
-    final values = ProjectPlanningToolCommandService._maps(
-      arguments['tasks'],
-      'tasks',
-      required: true,
-    );
-    final specs = [
-      for (var index = 0; index < values.length; index++)
-        ProjectPlanningToolCommandService._taskSpec(
-          values[index],
-          'tasks[$index]',
-        ),
-    ];
-    final ids = context.builder.addTasks(specs, commandId: commandId);
-    return {
-      'tasks': [
-        for (var index = 0; index < ids.length; index++)
-          {
-            'id': ids[index],
-            'ref': specs[index].ref.trim().isEmpty
-                ? ids[index]
-                : specs[index].ref.trim(),
-          },
-      ],
-    };
-  }
-
   Map<String, dynamic> addTask(PlanningArguments arguments, String? commandId) {
     _ensureOpen();
     ProjectPlanningToolCommandService._keys(arguments, const {

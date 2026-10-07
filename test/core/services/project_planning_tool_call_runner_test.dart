@@ -42,17 +42,13 @@ void main() {
             },
           ],
         }, id: 'call_milestone'),
-        _call('plan_add_tasks', {
-          'tasks': [
-            {
-              'ref': 'implement',
-              'objective': 'Implement the bounded outcome.',
-              'criterion_refs': ['quality'],
-              'milestone_ref': 'delivery',
-              'done_criteria': ['The outcome is verified.'],
-              'out_of_scope': ['Unrelated project work.'],
-            },
-          ],
+        _call('plan_add_task', {
+          'ref': 'implement',
+          'objective': 'Implement the bounded outcome.',
+          'criterion_refs': ['quality'],
+          'milestone_ref': 'delivery',
+          'done_criteria': ['The outcome is verified.'],
+          'out_of_scope': ['Unrelated project work.'],
         }, id: 'call_tasks'),
         _call('plan_add_check', {
           'task': 'implement',
@@ -216,30 +212,22 @@ void main() {
       );
       final result = await _complete(
         client: _Client([
-          _call('plan_add_tasks', {
-            'tasks': [
-              {
-                'ref': 'invalid',
-                'objective': 'Missing criterion reference.',
-                'criterion_refs': ['missing'],
-              },
-            ],
+          _call('plan_add_task', {
+            'ref': 'invalid',
+            'objective': 'Missing criterion reference.',
+            'criterion_refs': ['missing'],
           }, id: 'invalid-task'),
           _call('plan_add_criteria', {
             'criteria': [
               {'ref': 'quality', 'statement': 'The outcome is verified.'},
             ],
           }, id: 'criteria'),
-          _call('plan_add_tasks', {
-            'tasks': [
-              {
-                'ref': 'valid',
-                'objective': 'Verify the outcome.',
-                'criterion_refs': ['quality'],
-                'done_criteria': ['The outcome is verified.'],
-                'out_of_scope': ['Unrelated work.'],
-              },
-            ],
+          _call('plan_add_task', {
+            'ref': 'valid',
+            'objective': 'Verify the outcome.',
+            'criterion_refs': ['quality'],
+            'done_criteria': ['The outcome is verified.'],
+            'out_of_scope': ['Unrelated work.'],
           }, id: 'valid-task'),
           _call('plan_commit', const {}, id: 'commit'),
         ]),

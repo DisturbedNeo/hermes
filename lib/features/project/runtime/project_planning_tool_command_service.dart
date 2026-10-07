@@ -31,7 +31,6 @@ class ProjectPlanningToolCommandService {
     if (_allows('plan_add_criteria')) _addCriteriaDefinition,
     if (_allows('plan_add_milestones')) _addMilestonesDefinition,
     if (_visible('plan_add_task')) _addTaskDefinition,
-    if (_visible('plan_add_tasks')) _addTasksDefinition,
     if (_allows('plan_update_task')) _updateTaskDefinition,
     if (_allows('plan_set_dependency')) _setDependencyDefinition,
     if (_allows('plan_set_disposition')) _setDispositionDefinition,
@@ -79,7 +78,6 @@ class ProjectPlanningToolCommandService {
         commandId,
       ),
       'plan_add_task' => _planCommands.addTask(arguments, commandId),
-      'plan_add_tasks' => _planCommands.addTasks(arguments, commandId),
       'plan_update_task' => _planCommands.updateTask(arguments, commandId),
       'plan_set_dependency' => _planCommands.setDependency(
         arguments,
@@ -139,7 +137,6 @@ class ProjectPlanningToolCommandService {
     'plan_add_criteria',
     'plan_add_milestones',
     'plan_add_task',
-    'plan_add_tasks',
     'plan_update_task',
     'plan_set_dependency',
     'plan_set_disposition',
@@ -167,7 +164,6 @@ class ProjectPlanningToolCommandService {
         'plan_add_criteria',
         'plan_add_milestones',
         'plan_add_task',
-        'plan_add_tasks',
         'plan_add_check',
         'plan_add_note',
         'plan_request_user_decision',
@@ -180,7 +176,6 @@ class ProjectPlanningToolCommandService {
         'plan_add_criteria',
         'plan_add_milestones',
         'plan_add_task',
-        'plan_add_tasks',
         'plan_update_task',
         'plan_set_dependency',
         'plan_set_disposition',
@@ -209,11 +204,7 @@ class ProjectPlanningToolCommandService {
 
   bool _visible(String toolId) {
     if (profile == ProjectPlanningToolProfile.bootstrap &&
-        const {
-          'plan_add_tasks',
-          'plan_add_check',
-          'plan_preview',
-        }.contains(toolId)) {
+        const {'plan_add_check', 'plan_preview'}.contains(toolId)) {
       return false;
     }
     return _allows(toolId);
@@ -289,6 +280,8 @@ class ProjectPlanningToolCommandService {
       'memory_query',
       'workspace_query',
       'max_items',
+      'section',
+      'cursor',
     });
     final preview = context.builder.preview(
       workspaceRoot: context.workspaceRoot,
@@ -306,6 +299,8 @@ class ProjectPlanningToolCommandService {
       arguments['workspace_query'],
       'workspace_query',
     );
+    final section = _optionalString(arguments['section'], 'section');
+    final cursor = _optionalString(arguments['cursor'], 'cursor');
     final view = context.viewService.query(
       _projectForDetail(preview),
       taskRef: _draftTaskReference(
@@ -319,6 +314,8 @@ class ProjectPlanningToolCommandService {
       memoryQuery: memoryQuery,
       workspaceQuery: workspaceQuery,
       maxItems: _optionalInt(arguments['max_items'], 'max_items'),
+      section: section,
+      cursor: cursor,
     );
     return {...view, 'draft': _draftSummary(preview)};
   }

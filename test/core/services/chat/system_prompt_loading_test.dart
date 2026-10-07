@@ -1220,28 +1220,18 @@ ModelCompletion _commandPlanProjectResponse(
               },
         ],
       }),
-    if (arguments['tasks'] is List && (arguments['tasks'] as List).isNotEmpty)
-      _toolCall('plan_add_tasks', {
-        'tasks': [
-          for (final raw in arguments['tasks'] as List)
-            if (raw is Map)
-              {
-                'ref': raw['id'] ?? raw['ref'] ?? '',
-                'title': raw['title'] ?? '',
-                'objective': raw['objective'] ?? '',
-                'criterion_refs': raw['criterionIds'] ?? const [],
-                'dependency_refs': raw['dependsOnTaskIds'] ?? const [],
-                'milestone_ref': raw['milestoneId'],
-                'constraints': raw['constraints'] ?? const [],
-                'read_paths': raw['readPaths'] ?? const [],
-                'write_paths': raw['writePaths'] ?? const [],
-                'done_criteria': raw['doneCriteria'] ?? const [],
-                'out_of_scope': raw['outOfScope'] ?? const [],
-                'context': raw['context'] ?? const [],
-                'expected_artifacts': raw['expectedArtifacts'] ?? const [],
-              },
-        ],
-      }),
+    for (final raw in (arguments['tasks'] as List? ?? const []))
+      if (raw is Map)
+        _toolCall('plan_add_task', {
+          'ref': raw['id'] ?? raw['ref'] ?? '',
+          'title': raw['title'] ?? '',
+          'objective': raw['objective'] ?? '',
+          'criterion_refs': raw['criterionIds'] ?? const [],
+          'dependency_refs': raw['dependsOnTaskIds'] ?? const [],
+          'milestone_ref': raw['milestoneId'],
+          'done_criteria': raw['doneCriteria'] ?? const [],
+          'out_of_scope': raw['outOfScope'] ?? const [],
+        }),
     _toolCall('plan_commit', {
       'summary': arguments['summary'] ?? 'Apply the project plan.',
       'rationale': arguments['rationale'] ?? 'Commit the bounded project plan.',

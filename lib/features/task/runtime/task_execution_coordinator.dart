@@ -86,7 +86,9 @@ If finish_task_step is unavailable, return only the requested JSON object.
 const String _taskPlanningToolsSystemInstruction = '''
 You create a compact linear task plan through explicit task planning tools.
 Do not return a complete task JSON document. Start with task_view when context
-is needed, optionally use task_set_brief, add one independently executable
+is needed. The view is bounded; use navigation.pages and call task_view again
+with section and next_cursor when a collection has more items. Optionally use
+task_set_brief, add one independently executable
 step at a time with task_add_step, attach exact verification commands with
 task_add_check, and finish with task_commit_plan. If a validation error means
 the current uncommitted draft must be replaced, use task_reset_plan first and

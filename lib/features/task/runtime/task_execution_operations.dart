@@ -152,6 +152,7 @@ extension TaskExecutionOperations on TaskExecutionUseCase {
             workspace: workspace,
             snapshot: working,
             baseSystemPrompt: baseSystemPrompt,
+            executionRequest: executionRequest,
             reason: execution.replanRequest?.trim().isNotEmpty == true
                 ? execution.replanRequest!.trim()
                 : execution.summary,
@@ -648,23 +649,40 @@ extension TaskExecutionOperations on TaskExecutionUseCase {
     required WorkspaceAttachment workspace,
     required TaskAggregate snapshot,
     required String baseSystemPrompt,
+    TaskExecutionRequest executionRequest = const TaskExecutionRequest(),
     required String reason,
     ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
+    final projectContext = executionRequest.planningContext;
     final context = TaskPlanningToolContext(
       task: snapshot,
       workspaceRoot: workspace.rootPath,
       maxSteps: _taskPlanningStepLimit(snapshot),
-      projectGoal: '',
-      doneCriteria: snapshot.doneCriteria.isNotEmpty
+      projectGoal: projectContext?.projectGoal ?? '',
+      doneCriteria: projectContext?.doneCriteria.isNotEmpty == true
+          ? projectContext!.doneCriteria
+          : snapshot.doneCriteria.isNotEmpty
           ? snapshot.doneCriteria
           : snapshot.successCriteria,
-      outOfScope: snapshot.outOfScope,
-      readPaths: snapshot.readPaths,
-      writePaths: snapshot.writePaths,
-      requiredArtifacts: snapshot.expectedArtifacts,
-      requiredGates: snapshot.gates,
+      outOfScope: projectContext?.outOfScope.isNotEmpty == true
+          ? projectContext!.outOfScope
+          : snapshot.outOfScope,
+      readPaths: projectContext?.readPaths.isNotEmpty == true
+          ? projectContext!.readPaths
+          : snapshot.readPaths,
+      writePaths: projectContext?.writePaths.isNotEmpty == true
+          ? projectContext!.writePaths
+          : snapshot.writePaths,
+      requiredArtifacts: projectContext?.expectedArtifacts.isNotEmpty == true
+          ? projectContext!.expectedArtifacts
+          : snapshot.expectedArtifacts,
+      requiredGates: projectContext?.requiredGates.isNotEmpty == true
+          ? projectContext!.requiredGates
+          : snapshot.gates,
+      requiredEvidence: projectContext?.expectedEvidence.isNotEmpty == true
+          ? projectContext!.expectedEvidence
+          : executionRequest.expectedEvidence,
       preserveCompletedStepsOnly: true,
     );
     final planningResult = await _planningCoordinator.replan(
@@ -685,6 +703,9 @@ then call task_commit_plan. Do not recreate, rename, or edit preserved steps.
           '''
 Reason for replan:
 $reason
+
+Project context that remains authoritative:
+${projectContext == null ? 'None supplied.' : _encoder.convert(ModelJson.encode(projectContext))}
 
 Current bounded task view:
 ${_encoder.convert(_taskViewService.query(snapshot, maxSteps: _taskPlanningStepLimit(snapshot), doneCriteria: context.doneCriteria, outOfScope: context.outOfScope, readPaths: context.readPaths, writePaths: context.writePaths, requiredGates: context.requiredGates))}

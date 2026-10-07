@@ -67,6 +67,62 @@ void main() {
     );
   });
 
+  test('task view exposes cursors for navigating bounded collections', () {
+    final task = _task(
+      steps: [
+        for (var index = 1; index <= 3; index++)
+          TaskStep(
+            id: 'step_$index',
+            title: 'Step $index',
+            objective: 'Complete step $index.',
+            instructions: const [],
+            mayEditFiles: false,
+            artifacts: const [],
+            status: TaskStepStatus.pending,
+          ),
+      ],
+    );
+    final first = const TaskViewService().query(task, maxItems: 1);
+    final firstPage =
+        ((first['navigation'] as Map)['pages'] as Map)['steps'] as Map;
+
+    expect(firstPage['total'], 3);
+    expect(firstPage['offset'], 0);
+    expect(firstPage['has_more'], isTrue);
+    expect(firstPage['next_cursor'], 'steps:1');
+    expect((first['steps'] as List), hasLength(1));
+
+    final second = const TaskViewService().query(
+      task,
+      maxItems: 1,
+      section: 'steps',
+      cursor: firstPage['next_cursor'] as String,
+    );
+    final secondPage =
+        ((second['navigation'] as Map)['pages'] as Map)['steps'] as Map;
+
+    expect(secondPage['offset'], 1);
+    expect(secondPage['next_cursor'], 'steps:2');
+    expect((second['steps'] as List).single['ref'], 'step_2');
+  });
+
+  test('task view rejects malformed navigation cursors', () {
+    expect(
+      () => const TaskViewService().query(
+        _task(),
+        section: 'steps',
+        cursor: 'steps:not-a-number',
+      ),
+      throwsA(
+        isA<TaskViewException>().having(
+          (error) => error.code,
+          'code',
+          'invalid_cursor',
+        ),
+      ),
+    );
+  });
+
   test('task view resolves temporary step references from the draft', () async {
     final context = TaskPlanningToolContext(
       task: _task(),
