@@ -199,6 +199,7 @@ or an explicit user command. Task memories remain separate from that graph.
       for (final item in context.expectedEvidence)
         {
           'type': item.type,
+          'criterion_refs': item.criterionIds,
           'description': item.description,
           'required': item.required,
           'source_ref': item.sourceRef,
@@ -235,18 +236,18 @@ or an explicit user command. Task memories remain separate from that graph.
       }
     }
     return {
-      'workspaceName': raw['workspaceName'],
-      'commandExecutionApproved': raw['commandExecutionApproved'],
-      'rootFiles': strings(raw['rootFiles']),
-      'gitAvailable': raw['gitAvailable'] == true,
-      'treePaths': strings(profileMap['treePaths'], limit: 160),
-      'highSignalFiles': highSignalFiles,
-      'packageName': profileMap['packageName'],
+      'workspace_name': raw['workspaceName'],
+      'command_execution_approved': raw['commandExecutionApproved'],
+      'root_files': strings(raw['rootFiles']),
+      'git_available': raw['gitAvailable'] == true,
+      'tree_paths': strings(profileMap['treePaths'], limit: 160),
+      'high_signal_files': highSignalFiles,
+      'package_name': profileMap['packageName'],
       'scripts': profileMap['scripts'],
       'dependencies': strings(profileMap['dependencies']),
       'languages': strings(profileMap['languages']),
       'frameworks': strings(profileMap['frameworks']),
-      'treeTruncated': profileMap['treeTruncated'] == true,
+      'tree_truncated': profileMap['treeTruncated'] == true,
     };
   }
 

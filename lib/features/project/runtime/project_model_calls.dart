@@ -663,21 +663,21 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
       limit: 400,
     ).where((item) => !item.endsWith('/')).toList();
     return {
-      'workspaceName': metadata['workspaceName'],
-      'commandExecutionApproved': metadata['commandExecutionApproved'],
-      'rootEntries': strings(metadata['rootEntries']),
-      'gitAvailable': metadata['gitAvailable'] == true,
-      'changedFiles': strings(metadata['changedFiles']),
-      'treePaths': strings(profileMap['treePaths'], limit: 200),
-      'readableFiles': readableFiles,
-      'packageName': profileMap['packageName'],
+      'workspace_name': metadata['workspaceName'],
+      'command_execution_approved': metadata['commandExecutionApproved'],
+      'root_entries': strings(metadata['rootEntries']),
+      'git_available': metadata['gitAvailable'] == true,
+      'changed_files': strings(metadata['changedFiles']),
+      'tree_paths': strings(profileMap['treePaths'], limit: 200),
+      'readable_files': readableFiles,
+      'package_name': profileMap['packageName'],
       'scripts': profileMap['scripts'],
       'dependencies': strings(profileMap['dependencies']),
       'languages': strings(profileMap['languages']),
       'frameworks': strings(profileMap['frameworks']),
-      'treeTruncated': profileMap['treeTruncated'] == true,
-      'omittedPathCount': profileMap['omittedPathCount'],
-      'contextWarnings': strings(
+      'tree_truncated': profileMap['treeTruncated'] == true,
+      'omitted_path_count': profileMap['omittedPathCount'],
+      'context_warnings': strings(
         (profileMap['requiredContextIssues'] is List)
             ? (profileMap['requiredContextIssues'] as List)
                   .whereType<Map>()

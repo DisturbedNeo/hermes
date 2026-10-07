@@ -152,6 +152,19 @@ class TaskPlanBuilder {
   List<TaskStep> get steps => List.unmodifiable(_steps);
   List<TaskGate> get taskGates => List.unmodifiable(_taskGates);
 
+  /// Resolves a model-facing temporary step reference to the generated
+  /// persistent step ID in the current draft.
+  ///
+  /// A null result means the reference is not part of this draft. Commands
+  /// that require a step continue to use [_stepFor] so they retain their
+  /// structured unknown-reference error.
+  String? stepIdFor(String reference) {
+    final key = reference.trim();
+    if (key.isEmpty) return null;
+    return _stepRefs[key] ??
+        _steps.where((step) => step.id == key).firstOrNull?.id;
+  }
+
   void setBrief({
     String? title,
     String? objective,
@@ -826,9 +839,7 @@ class TaskPlanBuilder {
 
   TaskStep _stepFor(String reference) {
     final key = reference.trim();
-    final id =
-        _stepRefs[key] ??
-        _steps.where((step) => step.id == key).firstOrNull?.id;
+    final id = stepIdFor(key);
     if (id == null) {
       throw _error(
         'unknown_reference',

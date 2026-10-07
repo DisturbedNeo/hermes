@@ -198,12 +198,22 @@ final _taskSpecSchema = _schema(
     'criterion_refs': _stringArraySchema(minItems: 1),
     'dependency_refs': _stringArraySchema(),
     'milestone_ref': {'type': 'string'},
-    'priority': _enumSchema(TaskPriority.values.map((item) => item.name)),
-    'risk': _enumSchema(TaskRisk.values.map((item) => item.name)),
-    'risk_reduction': _enumSchema(
-      ProjectRiskReduction.values.map((item) => item.name),
-    ),
-    'effort': _enumSchema(TaskEffort.values.map((item) => item.name)),
+    'priority': {
+      ..._enumSchema(TaskPriority.values.map((item) => item.name)),
+      'default': TaskPriority.normal.name,
+    },
+    'risk': {
+      ..._enumSchema(TaskRisk.values.map((item) => item.name)),
+      'default': TaskRisk.unknown.name,
+    },
+    'risk_reduction': {
+      ..._enumSchema(ProjectRiskReduction.values.map((item) => item.name)),
+      'default': ProjectRiskReduction.none.name,
+    },
+    'effort': {
+      ..._enumSchema(TaskEffort.values.map((item) => item.name)),
+      'default': TaskEffort.small.name,
+    },
     'selection_rationale': {'type': 'string'},
     'constraints': _stringArraySchema(),
     'read_paths': _stringArraySchema(),
@@ -237,9 +247,9 @@ final _taskSpecSchema = _schema(
 final _taskCheckSpecSchema = _schema(
   properties: {
     'command': {'type': 'string'},
-    'working_directory': {'type': 'string'},
+    'working_directory': {'type': 'string', 'default': '.'},
     'criterion_refs': _stringArraySchema(),
-    'required': {'type': 'boolean'},
+    'required': {'type': 'boolean', 'default': true},
     'description': {'type': 'string'},
   },
   required: const ['command'],

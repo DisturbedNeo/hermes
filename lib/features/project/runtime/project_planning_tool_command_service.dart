@@ -127,8 +127,34 @@ class ProjectPlanningToolCommandService {
         'Unknown project planning tool $toolId.',
       ),
     };
-    return PlanningResponse.fromWire({'ok': true, ...result});
+    final response = <String, dynamic>{'ok': true, ...result};
+    if (_mutationToolIds.contains(toolId)) {
+      response['state'] = _draftState();
+    }
+    return PlanningResponse.fromWire(response);
   }
+
+  static const _mutationToolIds = {
+    'plan_set_project_details',
+    'plan_add_criteria',
+    'plan_add_milestones',
+    'plan_add_task',
+    'plan_add_tasks',
+    'plan_update_task',
+    'plan_set_dependency',
+    'plan_set_disposition',
+    'plan_split_task',
+    'plan_retry_task',
+    'plan_add_check',
+    'plan_add_note',
+    'plan_set_workspace_orientation',
+    'plan_add_workspace_nodes',
+    'plan_update_workspace_node',
+    'plan_add_workspace_edges',
+    'plan_update_workspace_edge',
+    'plan_remove_workspace_item',
+    'plan_request_user_decision',
+  };
 
   bool _allows(String toolId) {
     if (includeProjectDetails && toolId == 'plan_set_project_details') {
@@ -416,6 +442,7 @@ class ProjectPlanningToolCommandService {
       'revision': preview.proposal.revision,
       'changed': true,
       'awaiting_approval': false,
+      'control': context.viewService.controlState(context.project),
       'validation': [for (final issue in validation.issues) issue.toMap()],
       'diff': _draftDiff(preview.proposal),
     };
@@ -483,10 +510,130 @@ class ProjectPlanningToolCommandService {
       );
       response['changed'] = committed.result.changed;
       response['awaiting_approval'] = committed.result.awaitingApproval;
+      response['control'] = context.viewService.controlState(committed.project);
+    }
+    if (context.deferRevision) {
+      response['control'] = context.viewService.controlState(
+        context.committedProject!,
+      );
     }
     context.closed = true;
     return response;
   }
+
+  Map<String, dynamic> _draftState() {
+    final preview = context.builder.preview(
+      workspaceRoot: context.workspaceRoot,
+    );
+    final diff = _draftDiff(preview.proposal);
+    final changedCriterionIds = {
+      for (final id in (diff['added_criteria'] as List).cast<String>()) id,
+    };
+    final changedMilestoneIds = {
+      for (final id in (diff['added_milestones'] as List).cast<String>()) id,
+    };
+    final changedTaskIds = {
+      for (final id in (diff['added_tasks'] as List).cast<String>()) id,
+      for (final id in (diff['updated_tasks'] as List).cast<String>()) id,
+      for (final id in (diff['deferred_tasks'] as List).cast<String>()) id,
+      for (final id in (diff['obsolete_tasks'] as List).cast<String>()) id,
+      for (final id in (diff['split_tasks'] as List).cast<String>()) id,
+    };
+    return {
+      'revision': preview.proposal.revision,
+      'valid': preview.validation.valid,
+      'validation': [
+        for (final issue in preview.validation.issues) issue.toMap(),
+      ],
+      'diff': diff,
+      'changed_resources': {
+        'criteria': [
+          for (final criterion in preview.proposal.criteria)
+            if (changedCriterionIds.contains(criterion.id))
+              _criterionState(criterion),
+        ],
+        'milestones': [
+          for (final milestone in preview.proposal.milestones)
+            if (changedMilestoneIds.contains(milestone.id))
+              _milestoneState(milestone),
+        ],
+        'tasks': [
+          for (final task in preview.proposal.tasks)
+            if (changedTaskIds.contains(task.id)) _taskState(task),
+        ],
+      },
+      'control': context.viewService.controlState(_projectForDetail(preview)),
+    };
+  }
+
+  Map<String, dynamic> _criterionState(ProjectCriterion criterion) => {
+    'id': criterion.id,
+    'statement': criterion.statement,
+    'required': criterion.required,
+    'verification_mode': criterion.verificationMode.name,
+  };
+
+  Map<String, dynamic> _milestoneState(ProjectMilestone milestone) => {
+    'id': milestone.id,
+    'title': milestone.title,
+    'objective': milestone.objective,
+    'criterion_refs': milestone.criterionIds,
+    'exit_conditions': milestone.exitConditions,
+    'order': milestone.order,
+    'status': milestone.status.name,
+  };
+
+  Map<String, dynamic> _taskState(ProjectTaskNode task) => {
+    'id': task.id,
+    'title': task.title,
+    'objective': task.objective,
+    'status': task.status.wire,
+    'criterion_refs': task.criterionIds,
+    'dependency_refs': task.dependsOnTaskIds,
+    'milestone_ref': task.milestoneId,
+    'priority': task.priority.name,
+    'risk': task.risk.name,
+    'risk_reduction': task.riskReduction.name,
+    'effort': task.effort.name,
+    'selection_rationale': task.selectionRationale,
+    'constraints': task.constraints,
+    'read_paths': task.readPaths,
+    'write_paths': task.writePaths,
+    'done_criteria': task.doneCriteria,
+    'out_of_scope': task.outOfScope,
+    'context': task.context,
+    'expected_artifacts': [
+      for (final artifact in task.expectedArtifacts)
+        {
+          'path': artifact.path,
+          'description': artifact.description,
+          'kind': artifact.kind,
+        },
+    ],
+    'checks': [
+      for (final gate in task.gates)
+        {
+          'kind': gate.id,
+          'required': gate.required,
+          'scope': gate.scope,
+          'command': gate.params['command'],
+          'working_directory':
+              gate.params['working_directory'] ??
+              gate.params['workingDirectory'],
+          'description': gate.description,
+        },
+    ],
+    'evidence_intents': [
+      for (final expectation in task.expectedEvidence)
+        {
+          'kind': expectation.type.name,
+          'criterion_refs': expectation.criterionIds,
+          'description': expectation.description,
+          'required': expectation.required,
+          'source_ref': expectation.sourceRef,
+        },
+    ],
+  };
 
   static ProjectTaskSpec _taskSpec(
     Map<String, dynamic> value,

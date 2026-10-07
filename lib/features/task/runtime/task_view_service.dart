@@ -36,6 +36,7 @@ class TaskViewService {
         'step_count': task.steps.length,
         'max_steps': maxSteps,
       },
+      'control': _controlState(task),
       'constraints': [
         for (final item in task.constraints.take(limit)) _text(item),
       ],
@@ -89,6 +90,7 @@ class TaskViewService {
         for (final item in requiredEvidence.take(limit))
           {
             'type': item.type,
+            'criterion_refs': item.criterionIds.take(limit).toList(),
             'description': _text(item.description),
             'required': item.required,
             'source_ref': item.sourceRef,
@@ -142,6 +144,51 @@ class TaskViewService {
       for (final artifact in step.artifacts) _text(artifact.path),
     ],
     'check_kinds': [for (final gate in step.gates) gate.id],
+  };
+
+  Map<String, dynamic> _controlState(TaskAggregate task) => {
+    'outcome': task.pendingApproval != null
+        ? 'awaiting_approval'
+        : task.pendingQuestion != null
+        ? 'awaiting_user_input'
+        : task.status.wire,
+    'action': task.pendingApproval != null
+        ? 'approve_or_reject_step'
+        : task.pendingQuestion != null
+        ? 'answer_question'
+        : null,
+    'pending_approval': task.pendingApproval == null
+        ? null
+        : {
+            'step_ref': task.pendingApproval!.stepId,
+            'reason': _text(task.pendingApproval!.reason),
+            'created_at': task.pendingApproval!.createdAt
+                .toUtc()
+                .toIso8601String(),
+          },
+    'pending_question': task.pendingQuestion == null
+        ? null
+        : {
+            'id': task.pendingQuestion!.id,
+            'step_ref': task.pendingQuestion!.stepId,
+            'question': _text(task.pendingQuestion!.question),
+            'created_at': task.pendingQuestion!.createdAt
+                .toUtc()
+                .toIso8601String(),
+          },
+    'open_questions': task.pendingQuestion == null
+        ? const []
+        : [
+            {
+              'id': task.pendingQuestion!.id,
+              'step_ref': task.pendingQuestion!.stepId,
+              'question': _text(task.pendingQuestion!.question),
+            },
+          ],
+    'current_step_ref': task.currentStepId,
+    'planning_error': task.planningError == null
+        ? null
+        : _text(task.planningError!),
   };
 
   Map<String, dynamic> _gateSummary(TaskGate gate) => {

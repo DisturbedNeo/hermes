@@ -1,4 +1,5 @@
 import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/project/domain/project_control_state_service.dart';
 import 'package:hermes/features/project/domain/project_scheduler.dart';
 import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
 
@@ -47,6 +48,7 @@ class ProjectViewService {
         'base_revision': project.nextRevision - 1,
         'active_task_ref': project.activeTaskId,
       },
+      'control': controlState(project, maxItems: limit),
       'goal': {
         'original': _text(project.originalGoal),
         'refined': _text(project.refinedGoal),
@@ -422,6 +424,45 @@ class ProjectViewService {
       'type': blocker.type.wire,
       'message': _text(blocker.message),
       'task_ref': blocker.taskId,
+    };
+  }
+
+  /// Returns the bounded, model-facing control state without exposing the
+  /// complete project aggregate or the pending desired plan.
+  Map<String, dynamic> controlState(ProjectAggregate project, {int? maxItems}) {
+    final boundary = const ProjectControlStateMachine().read(project);
+    final approval = project.pendingPlanApproval;
+    final limit = _limit(maxItems ?? defaultMaxItems);
+    return {
+      'outcome': boundary.outcome.wire,
+      'action': boundary.action,
+      'reason_code': boundary.reasonCode,
+      'message': _text(boundary.message),
+      'task_ref': boundary.taskId,
+      'blocker': _blockerSummary(project),
+      'pending_plan_approval': approval == null
+          ? null
+          : {
+              'revision': approval.revision,
+              'reason': _text(approval.reason),
+              'summary': _text(approval.summary),
+              'high_risk_changes': [
+                for (final item in approval.highRiskChanges.take(limit))
+                  _text(item),
+              ],
+              'high_risk_reason_codes': approval.highRiskReasonCodes
+                  .take(limit)
+                  .toList(),
+              'created_at': approval.createdAt.toUtc().toIso8601String(),
+            },
+      'open_questions': [
+        for (final question in project.openQuestions.take(limit))
+          {
+            'id': question.id,
+            'question': _text(question.question),
+            'created_at': question.createdAt.toUtc().toIso8601String(),
+          },
+      ],
     };
   }
 

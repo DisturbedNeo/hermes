@@ -109,8 +109,21 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
         'Unknown task planning tool $toolId.',
       ),
     };
-    return PlanningResponse.fromWire({'ok': true, ...result});
+    final response = <String, dynamic>{'ok': true, ...result};
+    if (_mutationToolIds.contains(toolId)) {
+      response['state'] = _draftState();
+    }
+    return PlanningResponse.fromWire(response);
   }
+
+  static const _mutationToolIds = {
+    'task_set_brief',
+    'task_reset_plan',
+    'task_add_step',
+    'task_add_check',
+    'task_request_replan',
+    'task_request_user_decision',
+  };
 
   @override
   Map<String, dynamic> domainError(Object error) {
@@ -127,9 +140,17 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     _keys(arguments, const {'step_ref', 'max_items'});
     final stepRef = _optionalString(arguments['step_ref'], 'step_ref');
     final preview = context.builder.preview();
+    final draftStepId = stepRef == null
+        ? null
+        : context.builder.stepIdFor(stepRef);
+    final viewTask = draftStepId != null
+        ? preview.task
+        : context.preserveCompletedStepsOnly
+        ? context.task
+        : preview.task;
     final view = context.viewService.query(
-      context.preserveCompletedStepsOnly ? context.task : preview.task,
-      stepRef: stepRef,
+      viewTask,
+      stepRef: draftStepId ?? stepRef,
       maxItems: _optionalInt(arguments['max_items'], 'max_items'),
       maxSteps: context.maxSteps,
       projectGoal: context.projectGoal,
@@ -237,8 +258,10 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
       ),
       commandId: commandId,
     );
+    final step = context.builder.preview().task.stepById(id)!;
     return {
-      'step': {'id': id, 'ref': ref.trim().isEmpty ? id : ref.trim()},
+      'changed': true,
+      'step': _stepDetail(step, ref.trim().isEmpty ? id : ref.trim()),
     };
   }
 
@@ -268,8 +291,24 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
       description: _optionalString(arguments['description'], 'description'),
       commandId: commandId,
     );
+    final preview = context.builder.preview();
+    final stepId = stepRef == null ? null : context.builder.stepIdFor(stepRef);
+    final step = stepId == null ? null : preview.task.stepById(stepId);
     return {
-      'check': {'expectation_id': id, 'step_ref': stepRef},
+      'changed': true,
+      'check': {
+        'expectation_id': id,
+        'step_ref': stepRef,
+        'command': _requiredString(arguments['command'], 'command'),
+        'working_directory':
+            _optionalString(
+              arguments['working_directory'],
+              'working_directory',
+            ) ??
+            '.',
+        'required': _optionalBool(arguments['required'], 'required') ?? true,
+        if (step != null) 'step': _stepDetail(step, stepRef ?? step.id),
+      },
     };
   }
 
@@ -289,6 +328,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     final committed = context.builder.commit();
     final response = {
       'plan': _planSummary(committed.task),
+      'control': _controlState(committed.task),
       'issues': [for (final issue in committed.issues) issue.toMap()],
     };
     if (!committed.valid) {
@@ -327,9 +367,69 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
       commandId: commandId,
     );
     return {
+      'changed': true,
       'question': {'id': id, 'step_ref': stepRef},
     };
   }
+
+  Map<String, dynamic> _draftState() {
+    final preview = context.builder.preview();
+    return {
+      'plan': _planSummary(preview.task),
+      'steps': [
+        for (final step in preview.task.steps) _stepDetail(step, step.id),
+      ],
+      'required_checks': [
+        for (final gate in preview.task.gates) _gateSummary(gate),
+      ],
+      'issues': [for (final issue in preview.issues) issue.toMap()],
+      'control': _controlState(preview.task),
+    };
+  }
+
+  Map<String, dynamic> _stepDetail(TaskStep step, String ref) => {
+    'id': step.id,
+    'ref': ref,
+    'title': step.title,
+    'objective': step.objective,
+    'status': step.status.wire,
+    'may_edit_files': step.mayEditFiles,
+    'instructions': step.instructions,
+    'artifacts': [
+      for (final artifact in step.artifacts)
+        {
+          'path': artifact.path,
+          'description': artifact.description,
+          'kind': artifact.kind,
+        },
+    ],
+    'checks': [for (final gate in step.gates) _gateSummary(gate)],
+  };
+
+  Map<String, dynamic> _gateSummary(TaskGate gate) => {
+    'kind': gate.id,
+    'scope': gate.scope,
+    'required': gate.required,
+    if (gate.params['command'] != null)
+      'command': gate.params['command'].toString(),
+    if (gate.params['working_directory'] != null)
+      'working_directory': gate.params['working_directory'].toString(),
+    'description': gate.description,
+  };
+
+  Map<String, dynamic> _controlState(TaskAggregate task) => {
+    'outcome': task.pendingQuestion != null
+        ? 'awaiting_user_input'
+        : task.status.wire,
+    'action': task.pendingQuestion == null ? null : 'answer_question',
+    'pending_question': task.pendingQuestion == null
+        ? null
+        : {
+            'id': task.pendingQuestion!.id,
+            'step_ref': task.pendingQuestion!.stepId,
+            'question': task.pendingQuestion!.question,
+          },
+  };
 
   Map<String, dynamic> _planSummary(TaskAggregate task) => {
     'task_id': task.id,
@@ -507,8 +607,16 @@ const ToolDefinition _taskViewDefinition = ToolDefinition(
     'type': 'object',
     'additionalProperties': false,
     'properties': {
-      'step_ref': {'type': 'string'},
-      'max_items': {'type': 'integer', 'minimum': 1},
+      'step_ref': {
+        'type': 'string',
+        'description': 'A step ref returned by task_add_step or task_view.',
+      },
+      'max_items': {
+        'type': 'integer',
+        'minimum': 1,
+        'maximum': 48,
+        'default': 12,
+      },
     },
   }),
 );
@@ -552,7 +660,12 @@ const ToolDefinition _addStepDefinition = ToolDefinition(
         'type': 'array',
         'items': {'type': 'string'},
       },
-      'may_edit_files': {'type': 'boolean'},
+      'may_edit_files': {
+        'type': 'boolean',
+        'default': false,
+        'description':
+            'Whether this step may edit source files. Defaults to read-only.',
+      },
       'artifacts': {
         'type': 'array',
         'items': {
@@ -563,6 +676,8 @@ const ToolDefinition _addStepDefinition = ToolDefinition(
             'description': {'type': 'string'},
             'kind': {
               'type': 'string',
+              'enum': ['file', 'directory'],
+              'default': 'file',
               'description':
                   'Use directory for a directory output; file is the default.',
             },
@@ -598,8 +713,8 @@ const ToolDefinition _addCheckDefinition = ToolDefinition(
     'properties': {
       'step_ref': {'type': 'string'},
       'command': {'type': 'string'},
-      'working_directory': {'type': 'string'},
-      'required': {'type': 'boolean'},
+      'working_directory': {'type': 'string', 'default': '.'},
+      'required': {'type': 'boolean', 'default': true},
       'description': {'type': 'string'},
     },
     'required': ['command'],

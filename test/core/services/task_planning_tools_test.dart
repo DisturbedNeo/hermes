@@ -5,6 +5,7 @@ import '../helpers/planning_test_helpers.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/runtime/task_plan_builder.dart';
 import 'package:hermes/features/task/runtime/task_planning_tools.dart';
+import 'package:hermes/features/task/runtime/task_view_service.dart';
 
 void main() {
   test(
@@ -26,7 +27,93 @@ void main() {
         'objective': 'Complete the bounded step.',
       });
       expect(added['ok'], isTrue);
+      expect((added['step'] as Map)['objective'], 'Complete the bounded step.');
+      expect((added['state'] as Map)['plan'], isA<Map>());
       expect(context.builder.steps.single.title, 'Complete the bounded step.');
+    },
+  );
+
+  test('task view exposes evidence links and pending control state', () {
+    final now = DateTime(2026, 1, 1);
+    final view = const TaskViewService().query(
+      _task().copyWith(
+        pendingApproval: PendingTaskApproval(
+          stepId: 'step_1',
+          reason: 'The step edits source files.',
+          createdAt: now,
+        ),
+      ),
+      requiredEvidence: const [
+        TaskProjectEvidenceExpectation(
+          id: 'expect_1',
+          criterionIds: ['criterion_1'],
+          description: 'The criterion is checked.',
+        ),
+      ],
+    );
+
+    expect((view['required_project_evidence'] as List).single, {
+      'type': 'task_claim',
+      'criterion_refs': ['criterion_1'],
+      'description': 'The criterion is checked.',
+      'required': true,
+      'source_ref': null,
+      'details': {},
+    });
+    expect((view['control'] as Map)['outcome'], 'awaiting_approval');
+    expect(
+      ((view['control'] as Map)['pending_approval'] as Map)['step_ref'],
+      'step_1',
+    );
+  });
+
+  test('task view resolves temporary step references from the draft', () async {
+    final context = TaskPlanningToolContext(
+      task: _task(),
+      workspaceRoot: '/workspace',
+      maxSteps: 2,
+    );
+    final registry = TaskPlanningToolRegistry(context: context);
+
+    final added = await invokePlanning(registry, 'task_add_step', {
+      'ref': 'inspect',
+      'objective': 'Inspect the relevant workspace files.',
+      'instructions': ['Read the relevant files.'],
+    });
+    final step = added['step'] as Map;
+
+    final viewed = await invokePlanning(registry, 'task_view', {
+      'step_ref': 'inspect',
+    });
+
+    expect(viewed['ok'], isTrue);
+    expect((viewed['step_detail'] as Map)['ref'], step['id']);
+    expect((viewed['step_detail'] as Map)['objective'], contains('Inspect'));
+  });
+
+  test(
+    'task checks can use the same temporary step references as task_view',
+    () async {
+      final context = TaskPlanningToolContext(
+        task: _task(),
+        workspaceRoot: '/workspace',
+        maxSteps: 2,
+      );
+      final registry = TaskPlanningToolRegistry(context: context);
+
+      await invokePlanning(registry, 'task_add_step', {
+        'ref': 'verify',
+        'objective': 'Verify the bounded outcome.',
+        'instructions': ['Run the verification.'],
+      });
+      final checked = await invokePlanning(registry, 'task_add_check', {
+        'step_ref': 'verify',
+        'command': 'dart test test/example_test.dart',
+      });
+
+      expect(checked['ok'], isTrue);
+      expect((checked['check'] as Map)['step_ref'], 'verify');
+      expect(((checked['check'] as Map)['step'] as Map)['ref'], 'verify');
     },
   );
 
@@ -180,6 +267,15 @@ void main() {
       }, commandId: 'replacement');
 
       expect(added['ok'], isTrue);
+      final viewed = await invokePlanning(registry, 'task_view', {
+        'step_ref': 'replacement',
+      }, commandId: 'view-replacement');
+      expect(viewed['ok'], isTrue);
+      expect(
+        (viewed['step_detail'] as Map)['objective'],
+        'Complete the replacement work.',
+      );
+
       final committed = context.builder.commit();
       expect(committed.valid, isTrue);
       expect(committed.task.steps.map((step) => step.id), [

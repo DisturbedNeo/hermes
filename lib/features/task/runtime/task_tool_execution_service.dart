@@ -80,8 +80,8 @@ class TaskToolExecutionService implements TaskToolExecutionPort {
         disposition: TaskToolErrorDisposition.advisory,
         details: {
           'tool': call.name,
-          'mayEditFiles': step.mayEditFiles,
-          'availableTools': allowedToolIds.toList()..sort(),
+          'may_edit_files': step.mayEditFiles,
+          'available_tools': allowedToolIds.toList()..sort(),
           'reason': step.mayEditFiles
               ? 'The tool was not exposed to the task runner.'
               : 'This read-only step can read files and create new task-owned artifact files, but cannot edit source files, overwrite files, run terminal commands, rename paths, or delete paths.',
@@ -159,7 +159,7 @@ class TaskToolExecutionService implements TaskToolExecutionPort {
       details: {
         'command': command,
         'working_directory': workingDirectory,
-        'allowedCommands': [
+        'allowed_commands': [
           for (final item in allowedCommands)
             {
               'command': item.command,
@@ -214,7 +214,7 @@ class TaskToolExecutionService implements TaskToolExecutionPort {
           disposition: TaskToolErrorDisposition.advisory,
           details: {
             'path': resolved.relativePath,
-            'allowedPrefix': path.join('.agent', 'tasks', task.id),
+            'allowed_prefix': path.join('.agent', 'tasks', task.id),
           },
         );
       }
@@ -227,7 +227,7 @@ class TaskToolExecutionService implements TaskToolExecutionPort {
           disposition: TaskToolErrorDisposition.advisory,
           details: {
             'path': resolved.relativePath,
-            'allowedArtifactPaths': allowedPaths.toList()..sort(),
+            'allowed_artifact_paths': allowedPaths.toList()..sort(),
           },
         );
       }
@@ -298,7 +298,7 @@ class TaskToolExecutionService implements TaskToolExecutionPort {
         disposition: TaskToolErrorDisposition.advisory,
         details: {
           'path': resolved.relativePath,
-          'allowedArtifactPaths': allowedPaths.toList()..sort(),
+          'allowed_artifact_paths': allowedPaths.toList()..sort(),
         },
       );
     } on WorkspaceSandboxException catch (error) {

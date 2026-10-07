@@ -175,8 +175,49 @@ void main() {
       });
       expect(added['ok'], isTrue);
       expect((added['task'] as Map)['ref'], 'implement');
+      expect(
+        ((added['state'] as Map)['diff'] as Map)['added_tasks'],
+        isNotEmpty,
+      );
     },
   );
+
+  test('project view exposes approval and user-input control state', () {
+    final now = DateTime(2026, 1, 1);
+    final project = _project().copyWith(
+      status: ProjectStatus.paused,
+      pendingPlanApproval: PendingProjectPlanApproval(
+        revision: 2,
+        reason: 'The revision changes a high-risk task.',
+        summary: 'Review the high-risk revision.',
+        highRiskChanges: const ['A task now edits source files.'],
+        highRiskReasonCodes: const ['high_risk_task'],
+        createdAt: now,
+      ),
+      blocker: ProjectBlocker(
+        type: ProjectBlockerType.planApproval,
+        message: 'The revision needs approval.',
+        createdAt: now,
+      ),
+      openQuestions: [
+        PendingProjectQuestion(
+          id: 'question_1',
+          question: 'Should the high-risk revision proceed?',
+          createdAt: now,
+        ),
+      ],
+    );
+
+    final view = const ProjectViewService().query(project);
+    final control = view['control'] as Map;
+    expect(control['outcome'], 'awaiting_plan_approval');
+    expect(control['action'], 'approve_or_reject_plan');
+    expect(
+      (control['pending_plan_approval'] as Map)['high_risk_reason_codes'],
+      ['high_risk_task'],
+    );
+    expect((control['open_questions'] as List).single['id'], 'question_1');
+  });
 
   test('singular task creates inline checks atomically', () async {
     final registry = ProjectPlanningToolRegistry(

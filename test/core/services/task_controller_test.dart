@@ -151,7 +151,7 @@ void main() {
       );
 
       final plannerRequest = client.seenMessages.first.last.content;
-      expect(plannerRequest, contains('"commandExecutionApproved": true'));
+      expect(plannerRequest, contains('"command_execution_approved": true'));
     });
 
     test(
