@@ -9,7 +9,6 @@ import 'package:hermes/core/uuid.dart';
 import 'package:hermes/features/chat/application/contracts/bubble.dart';
 import 'package:hermes/features/model/application/model_configuration.dart';
 import 'package:hermes/features/chat/application/contracts/saved_chat.dart';
-import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/core/model_json.dart';
 import 'package:hermes/features/chat/infrastructure/managed_lazy_database.dart';
@@ -133,7 +132,6 @@ class ChatLibraryRepository implements ChatLibraryPort {
     required DateTime now,
     required ModelConfigurationSnapshot? modelSnapshot,
     required WorkspaceAttachment? workspace,
-    required SystemPromptSnapshot? systemPromptSnapshot,
     required List<Bubble> messages,
   }) async {
     final messageIds = <String>{};
@@ -188,9 +186,6 @@ class ChatLibraryRepository implements ChatLibraryPort {
         'workspace_display_name': workspace?.displayName,
         'workspace_last_opened_at':
             workspace?.lastOpenedAt.millisecondsSinceEpoch,
-        'system_prompt_snapshot_json': systemPromptSnapshot == null
-            ? null
-            : ModelJson.encodeString(systemPromptSnapshot),
       };
       if (existing.isEmpty) {
         await txn.insert('saved_chats', chatValues);
@@ -295,7 +290,6 @@ class ChatLibraryRepository implements ChatLibraryPort {
         lastOpenedAt: lastOpenedAt,
         modelSnapshot: modelSnapshot,
         workspace: workspace,
-        systemPromptSnapshot: systemPromptSnapshot,
       );
     });
 
@@ -393,8 +387,7 @@ class ChatLibraryRepository implements ChatLibraryPort {
         model_snapshot_json TEXT,
         workspace_root_path TEXT,
         workspace_display_name TEXT,
-        workspace_last_opened_at INTEGER,
-        system_prompt_snapshot_json TEXT
+        workspace_last_opened_at INTEGER
       )
     ''');
 
@@ -406,13 +399,6 @@ class ChatLibraryRepository implements ChatLibraryPort {
       'workspace_last_opened_at',
       'INTEGER',
     );
-    await _ensureColumn(
-      db,
-      'saved_chats',
-      'system_prompt_snapshot_json',
-      'TEXT',
-    );
-
     await db.execute('''
       CREATE TABLE IF NOT EXISTS saved_chat_messages (
         chat_id TEXT NOT NULL,
@@ -580,18 +566,7 @@ class ChatLibraryRepository implements ChatLibraryPort {
                   DateTime.fromMillisecondsSinceEpoch(0),
               commandExecutionApproved: false,
             ),
-      systemPromptSnapshot: _systemPromptFromRow(row),
     );
-  }
-
-  SystemPromptSnapshot? _systemPromptFromRow(Map<String, Object?> row) {
-    final snapshotJson = row['system_prompt_snapshot_json'] as String?;
-    if (snapshotJson == null || snapshotJson.isEmpty) return null;
-    try {
-      return ModelJson.decodeString<SystemPromptSnapshot>(snapshotJson);
-    } catch (_) {
-      return null;
-    }
   }
 
   Bubble _bubbleFromRow(Map<String, Object?> row) {

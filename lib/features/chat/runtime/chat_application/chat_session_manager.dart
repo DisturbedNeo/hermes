@@ -188,10 +188,7 @@ class ChatSessionManager implements Disposable {
         _messageStore.setCurrentId(targetAssistantId);
       }
 
-      final currentUserRequest = _currentUserRequestFor(contextIndex);
-      final payloadMessages = _payloadMessages(
-        currentUserRequest: currentUserRequest,
-      );
+      final payloadMessages = _payloadMessages();
 
       final payload = includeToolResults
           ? PayloadBuilder.buildPayloadWithTools(
@@ -598,59 +595,11 @@ class ChatSessionManager implements Disposable {
 
   // ── Message helpers ─────────────────────────────────────────────────────
 
-  List<Bubble> _payloadMessages({String? currentUserRequest}) {
-    return _withCurrentSystemPrompt(
-      _messageStore.messages,
-      currentUserRequest: currentUserRequest,
-    );
-  }
-
-  String? _currentUserRequestFor(int contextIndex) {
-    final end = contextIndex.clamp(0, _messageStore.messages.length - 1);
-    for (var i = end; i >= 0; i--) {
-      final message = _messageStore.messages[i];
-      if (message.role == MessageRole.user && message.text.trim().isNotEmpty) {
-        return message.text.trim();
-      }
-    }
-    return null;
-  }
-
-  List<Bubble> _withCurrentSystemPrompt(
-    List<Bubble> messages, {
-    String? currentUserRequest,
-  }) {
-    final promptText = _host.buildSystemPrompt(
-      currentUserRequest: currentUserRequest,
-    );
-    if (messages.isEmpty) {
-      return [
-        Bubble(
-          id: uuid.v7(),
-          role: MessageRole.system,
-          text: promptText,
-          reasoning: '',
-          createdAt: DateTime.now(),
-        ),
-      ];
-    }
-
-    final copy = List<Bubble>.of(messages);
-    if (copy.first.role == MessageRole.system) {
-      copy[0] = copy.first.copyWith(text: promptText);
-    } else {
-      copy.insert(
-        0,
-        Bubble(
-          id: uuid.v7(),
-          role: MessageRole.system,
-          text: promptText,
-          reasoning: '',
-          createdAt: DateTime.now(),
-        ),
-      );
-    }
-    return copy;
+  List<Bubble> _payloadMessages() {
+    // The message store is the canonical transcript. In particular, do not
+    // rebuild the system message from prompt-library state here: doing so
+    // would discard edits made directly in the chat before the next request.
+    return List<Bubble>.of(_messageStore.messages);
   }
 
   // ── Task model output helpers ───────────────────────────────────────────

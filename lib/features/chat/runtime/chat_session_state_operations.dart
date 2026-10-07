@@ -4,6 +4,20 @@ extension ChatSessionStateOperations on ChatSessionOrchestrator {
   // ── Session state management ────────────────────────────────────────────
 
   void _handleMessagesChanged() {
+    final currentSystemPrompt = messageStore.messages
+        .where((message) => message.role == MessageRole.system)
+        .firstOrNull;
+    if (_managedSystemPromptText != null &&
+        currentSystemPrompt != null &&
+        currentSystemPrompt.text != _managedSystemPromptText) {
+      // A direct edit makes the transcript user-authored. Future workspace
+      // changes must not silently regenerate it.
+      _managedSystemPromptText = null;
+      if (currentSystemPromptSnapshot != null) {
+        _dispatchChatState(const ChatSystemPromptChanged(null), notify: false);
+      }
+    }
+
     _dispatchChatState(
       ChatMessagesChanged(messageStore.messages),
       notify: false,
@@ -384,7 +398,6 @@ extension ChatSessionStateOperations on ChatSessionOrchestrator {
       final capturedMessages = messageStore.messages.toList(growable: false);
       final capturedModelSnapshot = currentModelSnapshot;
       final capturedWorkspace = workspace;
-      final capturedSystemPromptSnapshot = currentSystemPromptSnapshot;
       final capturedActiveTaskId = activeTask?.id;
       final capturedActiveProjectId = activeProject?.id;
       final saved = await _persistenceRuntime.save(
@@ -394,7 +407,6 @@ extension ChatSessionStateOperations on ChatSessionOrchestrator {
           messages: capturedMessages,
           modelSnapshot: capturedModelSnapshot,
           workspace: capturedWorkspace,
-          systemPromptSnapshot: capturedSystemPromptSnapshot,
         ),
       );
 
@@ -598,6 +610,16 @@ extension ChatSessionStateOperations on ChatSessionOrchestrator {
     String? currentUserRequest,
     List<String> additionalModuleIds = const [],
   }) {
+    final transcriptSystemPrompt = messageStore.messages
+        .where((message) => message.role == MessageRole.system)
+        .firstOrNull;
+    if (transcriptSystemPrompt != null) {
+      // Every model call uses the same system message visible in the
+      // transcript. Prompt-library composition only happens when a prompt is
+      // explicitly selected or when a new transcript is initialized.
+      return transcriptSystemPrompt.text;
+    }
+
     return _promptConstruction.build(
       snapshot: currentSystemPromptSnapshot,
       workspace: workspace,
@@ -618,29 +640,49 @@ extension ChatSessionStateOperations on ChatSessionOrchestrator {
     List<Bubble> messages, {
     String? currentUserRequest,
   }) {
-    final promptText = _buildSystemPrompt(
-      currentUserRequest: currentUserRequest,
-    );
-    if (messages.isEmpty) return [systemPrompt.copyWith(text: promptText)];
-
-    final copy = List<Bubble>.of(messages);
-    if (copy.first.role == MessageRole.system) {
-      copy[0] = copy.first.copyWith(text: promptText);
-    } else {
-      copy.insert(0, systemPrompt.copyWith(text: promptText));
+    // Loading and payload construction must preserve the transcript exactly.
+    // The only exception is a legacy/invalid snapshot with no system message;
+    // repair that once at the boundary rather than replacing an existing one.
+    if (messages.any((message) => message.role == MessageRole.system)) {
+      return List<Bubble>.of(messages);
     }
-    return copy;
-  }
 
-  void _syncSystemPrompt() {
-    messageStore.setMessages(_withCurrentSystemPrompt(messageStore.messages));
-  }
-
-  List<Bubble> _payloadMessages({String? currentUserRequest}) {
-    return _withCurrentSystemPrompt(
-      messageStore.messages,
+    final promptText = _promptConstruction.build(
+      snapshot: currentSystemPromptSnapshot,
+      workspace: workspace,
       currentUserRequest: currentUserRequest,
     );
+    return [systemPrompt.copyWith(text: promptText)];
+  }
+
+  void _syncSystemPrompt({bool force = false}) {
+    final current = messageStore.messages
+        .where((message) => message.role == MessageRole.system)
+        .firstOrNull;
+    if (current == null) return;
+
+    if (!force &&
+        (_managedSystemPromptText == null ||
+            current.text != _managedSystemPromptText)) {
+      return;
+    }
+
+    final promptText = _promptConstruction.build(
+      snapshot: currentSystemPromptSnapshot,
+      workspace: workspace,
+      currentUserRequest: null,
+    );
+    if (current.text == promptText) {
+      _managedSystemPromptText = promptText;
+      return;
+    }
+
+    _managedSystemPromptText = promptText;
+    messageStore.upsert(current.copyWith(text: promptText));
+  }
+
+  List<Bubble> _payloadMessages() {
+    return List<Bubble>.of(messageStore.messages);
   }
 
   void _markWorkspaceChanged() {

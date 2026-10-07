@@ -8,7 +8,6 @@ import 'package:hermes/features/chat/application/contracts/bubble.dart';
 import 'package:hermes/features/chat/application/contracts/chat_persistence.dart';
 import 'package:hermes/features/model/application/model_configuration.dart';
 import 'package:hermes/features/chat/application/contracts/saved_chat.dart';
-import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/application/chat_controller.dart';
@@ -370,7 +369,6 @@ class _FailingChatLibraryService extends ChatLibraryService {
     required List<Bubble> messages,
     required ModelConfigurationSnapshot? modelSnapshot,
     required WorkspaceAttachment? workspace,
-    required SystemPromptSnapshot? systemPromptSnapshot,
     String? chatId,
     String? title,
   }) {
@@ -383,7 +381,6 @@ class _FailingChatLibraryService extends ChatLibraryService {
       messages: messages,
       modelSnapshot: modelSnapshot,
       workspace: workspace,
-      systemPromptSnapshot: systemPromptSnapshot,
       chatId: chatId,
       title: title,
     );
@@ -413,7 +410,6 @@ class _DelayedChatLibraryService extends ChatLibraryService {
     required List<Bubble> messages,
     required ModelConfigurationSnapshot? modelSnapshot,
     required WorkspaceAttachment? workspace,
-    required SystemPromptSnapshot? systemPromptSnapshot,
     String? chatId,
     String? title,
   }) async {
@@ -431,7 +427,6 @@ class _DelayedChatLibraryService extends ChatLibraryService {
       messages: messages,
       modelSnapshot: modelSnapshot,
       workspace: workspace,
-      systemPromptSnapshot: systemPromptSnapshot,
       chatId: chatId,
       title: title,
     );

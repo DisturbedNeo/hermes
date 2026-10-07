@@ -127,6 +127,49 @@ void main() {
       expect(systemText, contains(tempDir.path));
     });
 
+    test('sends a directly edited system message unchanged', () async {
+      final client = _RecordingStreamClient();
+      serverManager.setCompletionProviderForTesting(client);
+      const editedPrompt = 'Only answer with the exact requested format.';
+      chat.messageStore.upsert(
+        chat.messageStore.first.copyWith(text: editedPrompt),
+      );
+
+      await chat.send('Reply now.');
+
+      expect(client.lastMessages, isNotNull);
+      expect(client.lastMessages!.first.role, MessageRole.system.wire);
+      expect(client.lastMessages!.first.content, editedPrompt);
+      expect(chat.messageStore.first.text, editedPrompt);
+    });
+
+    test(
+      'workspace changes do not overwrite a directly edited prompt',
+      () async {
+        const editedPrompt = 'Keep this instruction exactly as written.';
+        chat.messageStore.upsert(
+          chat.messageStore.first.copyWith(text: editedPrompt),
+        );
+
+        await chat.attachWorkspace(tempDir.path);
+
+        expect(chat.messageStore.first.text, editedPrompt);
+      },
+    );
+
+    test('saving and reopening preserves the edited system message', () async {
+      const editedPrompt = 'Persist this exact system instruction.';
+      chat.messageStore.upsert(
+        chat.messageStore.first.copyWith(text: editedPrompt),
+      );
+
+      final saved = await chat.saveCurrentChat(title: 'Edited prompt');
+      await chat.newChat();
+      await chat.openChat(saved.id);
+
+      expect(chat.messageStore.first.text, editedPrompt);
+    });
+
     test('uses workspace tools attached after chat construction', () async {
       final client = _RecordingStreamClient();
       serverManager.setCompletionProviderForTesting(client);
@@ -218,7 +261,7 @@ void main() {
       );
     });
 
-    test('assembles current user request for prompt payloads', () {
+    test('uses the transcript system message for task prompt construction', () {
       final now = DateTime(2026);
       final module = PromptModule(
         id: 'request-aware',
@@ -258,7 +301,7 @@ void main() {
         chat.buildSystemPromptForTesting(
           currentUserRequest: 'Review this diff',
         ),
-        contains('Current task is Review this diff'),
+        chat.messageStore.first.text,
       );
     });
 
@@ -1266,13 +1309,17 @@ class _RecordingStreamClient extends ChatClient {
   _RecordingStreamClient() : super(baseUrl: 'http://localhost', model: 'test');
 
   final Completer<ModelRequestOptions> extraParams = Completer();
+  List<ChatMessage>? lastMessages;
 
   @override
   Future<int> countInputTokens({
     required List<ChatMessage> messages,
     ModelRequestOptions? extraParams,
     CancellationToken? cancellationToken,
-  }) async => 0;
+  }) async {
+    lastMessages = List<ChatMessage>.of(messages);
+    return 0;
+  }
 
   @override
   Stream<ChatToken> streamMessage({
@@ -1283,6 +1330,7 @@ class _RecordingStreamClient extends ChatClient {
     int? contextLimitTokens,
     int? inputTokensHint,
   }) async* {
+    lastMessages = List<ChatMessage>.of(messages);
     if (!this.extraParams.isCompleted) {
       this.extraParams.complete(
         extraParams ?? const ModelRequestOptions.empty(),

@@ -153,7 +153,17 @@ class ChatSessionOrchestrator extends ChangeNotifier
   late final ChatWorkUseCase _workUseCase;
   late final ChatStateMutationUseCase _stateMutationUseCase;
 
-  late final Bubble systemPrompt;
+  late final Bubble _fallbackSystemPrompt;
+  // The transcript is authoritative. This value only records the last
+  // prompt text generated automatically for a new/managed chat so workspace
+  // changes can refresh an untouched prompt without overwriting an edit.
+  String? _managedSystemPromptText;
+
+  Bubble get systemPrompt =>
+      messageStore.messages
+          .where((message) => message.role == MessageRole.system)
+          .firstOrNull ??
+      _fallbackSystemPrompt;
 
   bool _disposed = false;
   bool _loadingSnapshot = false;
@@ -213,6 +223,10 @@ class ChatSessionOrchestrator extends ChangeNotifier
   SystemPromptSnapshot? get currentSystemPromptSnapshot => _state.systemPrompt;
   void dispatchCurrentSystemPromptSnapshot(SystemPromptSnapshot? value) =>
       _dispatchChatState(ChatSystemPromptChanged(value));
+
+  void _setManagedSystemPromptText(String? value) {
+    _managedSystemPromptText = value;
+  }
 
   ExecutionMode get executionMode => _state.executionMode;
   void dispatchExecutionMode(ExecutionMode value) =>
@@ -664,14 +678,16 @@ class ChatSessionOrchestrator extends ChangeNotifier
       historyRevision: _historyRevision,
       systemPrompt: initialSystemPromptSnapshot,
     );
-    systemPrompt = Bubble(
+    final initialSystemPromptText = _buildSystemPrompt();
+    _fallbackSystemPrompt = Bubble(
       id: uuid.v7(),
       role: MessageRole.system,
-      text: _buildSystemPrompt(),
+      text: initialSystemPromptText,
       reasoning: '',
       createdAt: DateTime.now(),
     );
-    messageStore.setMessages([systemPrompt]);
+    _managedSystemPromptText = initialSystemPromptText;
+    messageStore.setMessages([_fallbackSystemPrompt]);
     _dispatchChatState(ChatMessagesChanged(messageStore.messages));
 
     _contextEstimateScheduler = ThrottledScheduler(

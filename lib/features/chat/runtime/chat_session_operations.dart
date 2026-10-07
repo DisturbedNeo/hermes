@@ -17,6 +17,9 @@ extension ChatSessionOperations on ChatWorkUseCase {
 
   bool get isUnsavedNonEmpty => currentChatId == null && hasMeaningfulContent;
 
+  /// Prevents selecting a new prompt-library preset after a chat has started.
+  /// It does not lock the transcript's system message, which remains directly
+  /// editable like every other message.
   bool get isSystemPromptLocked =>
       chatStream.isStreaming || hasMeaningfulContent || currentChatId != null;
 

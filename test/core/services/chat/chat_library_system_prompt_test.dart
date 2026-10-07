@@ -50,54 +50,54 @@ void main() {
     }
   });
 
-  test('saved chats keep a snapshot of the selected system prompt', () async {
-    final module = await promptLibrary.createModule(
-      name: 'Reviewer rules',
-      category: 'Task',
-      content: 'Review code carefully.',
-      priority: 10,
-    );
-    final prompt = await promptLibrary.createPreset(
-      name: 'Reviewer',
-      baseModuleIds: [module.id],
-    );
-    final snapshot = await promptLibrary.snapshotForPreset(prompt);
+  test(
+    'saved chats persist the system prompt as a transcript message',
+    () async {
+      final module = await promptLibrary.createModule(
+        name: 'Reviewer rules',
+        category: 'Task',
+        content: 'Review code carefully.',
+        priority: 10,
+      );
+      final prompt = await promptLibrary.createPreset(
+        name: 'Reviewer',
+        baseModuleIds: [module.id],
+      );
+      final snapshot = await promptLibrary.snapshotForPreset(prompt);
 
-    final saved = await chatLibrary.saveChatSnapshot(
-      title: 'Prompted chat',
-      messages: [
-        Bubble(
-          id: 'system',
-          role: MessageRole.system,
-          text: snapshot.text,
-          reasoning: '',
-        ),
-        const Bubble(
-          id: 'user',
-          role: MessageRole.user,
-          text: 'Check this diff',
-          reasoning: '',
-        ),
-      ],
-      modelSnapshot: null,
-      workspace: null,
-      systemPromptSnapshot: snapshot,
-    );
+      final saved = await chatLibrary.saveChatSnapshot(
+        title: 'Prompted chat',
+        messages: [
+          Bubble(
+            id: 'system',
+            role: MessageRole.system,
+            text: snapshot.text,
+            reasoning: '',
+          ),
+          const Bubble(
+            id: 'user',
+            role: MessageRole.user,
+            text: 'Check this diff',
+            reasoning: '',
+          ),
+        ],
+        modelSnapshot: null,
+        workspace: null,
+      );
 
-    await promptLibrary.updatePreset(
-      id: prompt.id,
-      name: 'Reviewer',
-      baseModuleIds: [module.id],
-      optionalModuleIds: const [],
-      customInstructions: 'A later prompt edit.',
-    );
-    await promptLibrary.deletePreset(prompt.id);
+      await promptLibrary.updatePreset(
+        id: prompt.id,
+        name: 'Reviewer',
+        baseModuleIds: [module.id],
+        optionalModuleIds: const [],
+        customInstructions: 'A later prompt edit.',
+      );
+      await promptLibrary.deletePreset(prompt.id);
 
-    final restored = await chatLibrary.getChat(saved.id);
-    expect(restored?.chat.systemPromptSnapshot?.id, prompt.id);
-    expect(restored?.chat.systemPromptSnapshot?.name, 'Reviewer');
-    expect(restored?.chat.systemPromptSnapshot?.text, 'Review code carefully.');
-  });
+      final restored = await chatLibrary.getChat(saved.id);
+      expect(restored?.messages.first.text, 'Review code carefully.');
+    },
+  );
 
   test(
     'creates only canonical saved-chat prompt and session columns',
@@ -107,7 +107,6 @@ void main() {
         messages: const [],
         modelSnapshot: null,
         workspace: null,
-        systemPromptSnapshot: null,
       );
       final db = await databaseFactoryFfi.openDatabase(
         databasePath,
@@ -117,7 +116,6 @@ void main() {
       await db.close();
 
       final names = columns.map((row) => row['name']).toSet();
-      expect(names, contains('system_prompt_snapshot_json'));
       expect(names, isNot(contains('system_prompt_id')));
       expect(names, isNot(contains('system_prompt_name')));
       expect(names, isNot(contains('system_prompt_text')));
@@ -143,7 +141,6 @@ void main() {
         ],
         modelSnapshot: null,
         workspace: null,
-        systemPromptSnapshot: null,
       );
 
       final restored = await chatLibrary.getChat(saved.id);
@@ -173,7 +170,6 @@ void main() {
       messages: [first, second],
       modelSnapshot: null,
       workspace: null,
-      systemPromptSnapshot: null,
     );
     final db = await databaseFactoryFfi.openDatabase(
       databasePath,
@@ -193,7 +189,6 @@ void main() {
       messages: [first, second],
       modelSnapshot: null,
       workspace: null,
-      systemPromptSnapshot: null,
     );
     final unchanged = await db.query(
       'saved_chat_messages',
@@ -227,7 +222,6 @@ void main() {
       ],
       modelSnapshot: null,
       workspace: null,
-      systemPromptSnapshot: null,
     );
 
     final restored = await chatLibrary.getChat(saved.id);
@@ -268,7 +262,6 @@ void main() {
         ],
         modelSnapshot: null,
         workspace: null,
-        systemPromptSnapshot: null,
       ),
       throwsArgumentError,
     );

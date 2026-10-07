@@ -1,7 +1,6 @@
 import 'package:hermes/features/chat/application/chat_library_service.dart';
 import 'package:hermes/features/chat/application/contracts/bubble.dart';
 import 'package:hermes/features/chat/application/contracts/saved_chat.dart';
-import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
 import 'package:hermes/features/model/application/model_configuration.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 
@@ -21,7 +20,6 @@ class ChatPersistenceRuntime {
         messages: request.messages,
         modelSnapshot: request.modelSnapshot,
         workspace: request.workspace,
-        systemPromptSnapshot: request.systemPromptSnapshot,
       );
 }
 
@@ -30,7 +28,6 @@ class ChatPersistenceRequest {
     required this.messages,
     required this.modelSnapshot,
     required this.workspace,
-    required this.systemPromptSnapshot,
     this.chatId,
     this.title,
   });
@@ -40,5 +37,4 @@ class ChatPersistenceRequest {
   final List<Bubble> messages;
   final ModelConfigurationSnapshot? modelSnapshot;
   final WorkspaceAttachment? workspace;
-  final SystemPromptSnapshot? systemPromptSnapshot;
 }

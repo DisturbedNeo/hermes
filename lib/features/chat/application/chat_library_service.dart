@@ -5,7 +5,6 @@ import 'package:hermes/features/chat/application/contracts/message_role.dart';
 import 'package:hermes/features/chat/application/contracts/bubble.dart';
 import 'package:hermes/features/model/application/model_configuration.dart';
 import 'package:hermes/features/chat/application/contracts/saved_chat.dart';
-import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/chat/application/contracts/chat_library_port.dart';
 import 'package:hermes/features/chat/application/contracts/chat_presentation_ports.dart';
@@ -42,7 +41,6 @@ class ChatLibraryService extends ChangeNotifier
     required List<Bubble> messages,
     required ModelConfigurationSnapshot? modelSnapshot,
     required WorkspaceAttachment? workspace,
-    required SystemPromptSnapshot? systemPromptSnapshot,
     String? chatId,
     String? title,
   }) async {
@@ -63,7 +61,6 @@ class ChatLibraryService extends ChangeNotifier
       now: now,
       modelSnapshot: modelSnapshot,
       workspace: workspace,
-      systemPromptSnapshot: systemPromptSnapshot,
       messages: messages,
     );
 

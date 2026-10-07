@@ -111,6 +111,7 @@ abstract interface class ChatSessionLifecycleCapabilities {
     Iterable<WorkspaceAttachment> workspaces,
   );
   void _clearSavedState();
+  void _setManagedSystemPromptText(String? value);
   void _clearTaskModelOutput({bool notify = true});
   void _resetPersistenceRevisions();
   Future<SavedChat> _queueSave({String? title, bool force = false});
@@ -147,7 +148,7 @@ abstract interface class ChatStateMutationCapabilities {
   void _requestContextEstimateUpdate({bool immediate = false});
   void _markPersistableChange();
   void _markWorkspaceChanged();
-  void _syncSystemPrompt();
+  void _syncSystemPrompt({bool force = false});
   void _adoptActiveModelIfRestoreDismissed();
   String buildSystemPromptInternal({
     required String? currentUserRequest,
@@ -474,7 +475,7 @@ abstract interface class ChatUseCaseContext
     List<Bubble> messages, {
     required String? currentUserRequest,
   });
-  void _syncSystemPrompt();
+  void _syncSystemPrompt({bool force = false});
   void _markWorkspaceChanged();
   void _adoptActiveModelIfRestoreDismissed();
 }
@@ -771,6 +772,9 @@ final class _ChatUseCaseContextAdapter implements ChatUseCaseContext {
   @override
   void _clearSavedState() => _host._clearSavedState();
   @override
+  void _setManagedSystemPromptText(String? value) =>
+      _host._setManagedSystemPromptText(value);
+  @override
   Future<WorkspaceAttachment?> _restoreWorkspace(WorkspaceAttachment? saved) =>
       _host._restoreWorkspace(saved);
   @override
@@ -796,7 +800,8 @@ final class _ChatUseCaseContextAdapter implements ChatUseCaseContext {
     currentUserRequest: currentUserRequest,
   );
   @override
-  void _syncSystemPrompt() => _host._syncSystemPrompt();
+  void _syncSystemPrompt({bool force = false}) =>
+      _host._syncSystemPrompt(force: force);
   @override
   void _markWorkspaceChanged() => _host._markWorkspaceChanged();
   @override

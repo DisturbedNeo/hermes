@@ -27,11 +27,14 @@ class ChatSessionLifecycleUseCase {
     _host._clearTaskModelOutput(notify: false);
     _host.dispatchCurrentModelSnapshot(_host._activeServerSnapshot);
     _host._historyRevision++;
-    _host.messageStore.setMessages([
-      _host.systemPrompt.copyWith(
-        text: _host.buildSystemPromptInternal(currentUserRequest: null),
-      ),
-    ]);
+    final initialMessages = _host._withCurrentSystemPrompt(
+      const [],
+      currentUserRequest: null,
+    );
+    if (initialMessages.isNotEmpty) {
+      _host._setManagedSystemPromptText(initialMessages.first.text);
+    }
+    _host.messageStore.setMessages(initialMessages);
     _host._resetPersistenceRevisions();
   }
 
@@ -102,9 +105,7 @@ class ChatSessionLifecycleUseCase {
         _host.dispatchAvailableTasks(const []);
         _host.dispatchActiveTask(null);
       }
-      _host.dispatchCurrentSystemPromptSnapshot(
-        snapshot.chat.systemPromptSnapshot,
-      );
+      _host.dispatchCurrentSystemPromptSnapshot(null);
       _host._historyRevision++;
       _host.messageStore.setMessages(
         _host._withCurrentSystemPrompt(
@@ -112,6 +113,9 @@ class ChatSessionLifecycleUseCase {
           currentUserRequest: null,
         ),
       );
+      // A loaded transcript is user-authored history. Do not let later
+      // workspace changes regenerate its system message implicitly.
+      _host._setManagedSystemPromptText(null);
       _host._resetPersistenceRevisions();
       await _host._chatLibrary.markOpened(snapshot.chat.id);
       await _host.refreshModelRestorePrompt();

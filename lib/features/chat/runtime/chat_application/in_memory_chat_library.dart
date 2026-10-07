@@ -1,7 +1,6 @@
 import 'package:hermes/features/chat/application/contracts/bubble.dart';
 import 'package:hermes/features/model/application/model_configuration.dart';
 import 'package:hermes/features/chat/application/contracts/saved_chat.dart';
-import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
 import 'package:hermes/features/chat/application/contracts/chat_library_port.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 
@@ -43,7 +42,6 @@ class InMemoryChatLibrary implements ChatLibraryPort {
     required DateTime now,
     required ModelConfigurationSnapshot? modelSnapshot,
     required WorkspaceAttachment? workspace,
-    required SystemPromptSnapshot? systemPromptSnapshot,
     required List<Bubble> messages,
   }) async {
     final id = chatId ?? 'chat_${_chats.length + 1}';
@@ -56,7 +54,6 @@ class InMemoryChatLibrary implements ChatLibraryPort {
       lastOpenedAt: existing?.lastOpenedAt,
       modelSnapshot: modelSnapshot,
       workspace: workspace,
-      systemPromptSnapshot: systemPromptSnapshot,
     );
     _chats[id] = chat;
     _messages[id] = List.of(messages);
@@ -75,7 +72,6 @@ class InMemoryChatLibrary implements ChatLibraryPort {
       lastOpenedAt: chat.lastOpenedAt,
       modelSnapshot: chat.modelSnapshot,
       workspace: chat.workspace,
-      systemPromptSnapshot: chat.systemPromptSnapshot,
     );
   }
 
@@ -97,7 +93,6 @@ class InMemoryChatLibrary implements ChatLibraryPort {
       lastOpenedAt: DateTime.now(),
       modelSnapshot: chat.modelSnapshot,
       workspace: chat.workspace,
-      systemPromptSnapshot: chat.systemPromptSnapshot,
     );
   }
 

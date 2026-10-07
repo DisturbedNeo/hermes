@@ -29,7 +29,9 @@ class ChatStateMutationUseCase {
       throw StateError('System prompt is locked for this chat');
     }
     _host.dispatchCurrentSystemPromptSnapshot(snapshot);
-    _host._syncSystemPrompt();
+    // Selecting a prompt preset is an explicit replacement operation. Direct
+    // edits made in the transcript are otherwise never regenerated.
+    _host._syncSystemPrompt(force: true);
     _host.emitChange();
   }
 

@@ -1,6 +1,5 @@
 import 'package:hermes/features/chat/application/contracts/bubble.dart';
 import 'package:hermes/features/model/application/model_configuration.dart';
-import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 
 class SavedChat {
@@ -11,7 +10,6 @@ class SavedChat {
   final DateTime? lastOpenedAt;
   final ModelConfigurationSnapshot? modelSnapshot;
   final WorkspaceAttachment? workspace;
-  final SystemPromptSnapshot? systemPromptSnapshot;
 
   const SavedChat({
     required this.id,
@@ -21,7 +19,6 @@ class SavedChat {
     this.lastOpenedAt,
     this.modelSnapshot,
     this.workspace,
-    this.systemPromptSnapshot,
   });
 }
 
