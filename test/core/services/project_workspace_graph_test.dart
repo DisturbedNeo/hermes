@@ -4,9 +4,13 @@ import 'package:hermes/core/model_json.dart';
 import 'package:hermes/features/project/runtime/project_plan_builder.dart';
 import 'package:hermes/features/project/runtime/project_plan_revision_service.dart';
 import 'package:hermes/features/project/runtime/project_plan_validator.dart';
+import 'package:hermes/features/project/runtime/project_planning_policy.dart';
 import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
 import 'package:hermes/features/project/runtime/project_workspace_graph_service.dart';
+import 'package:hermes/features/project/runtime/project_workspace_graph_reconciler.dart';
 import 'package:hermes/features/project/runtime/project_view_service.dart';
+import 'package:hermes/features/workspace/application/workspace_change_discovery.dart';
+import 'package:hermes/features/workspace/application/workspace_discovery_profile.dart';
 
 void main() {
   final now = DateTime(2026, 1, 1);
@@ -59,6 +63,346 @@ void main() {
     expect(decoded.workspaceGraph.nodes.first.title, 'The archive');
     expect(decoded.workspaceGraph.nodes.first.protected, isTrue);
     expect(decoded.workspaceGraph.edges.single.label, 'reveals evidence for');
+  });
+
+  test('round trips managed keys and the discovery fingerprint', () {
+    final project = _project(
+      includeTask: false,
+      workspaceGraph: ProjectWorkspaceGraph(
+        discoveryFingerprint: 'fingerprint-1',
+        nodes: [
+          _node(
+            'workspace',
+            'workspace',
+            'Workspace',
+            'Discovered workspace',
+          ).copyWith(managedKey: 'system:workspace'),
+        ],
+        edges: [
+          ProjectWorkspaceEdge(
+            id: 'managed-edge',
+            sourceNodeId: 'workspace',
+            targetNodeId: 'workspace-2',
+            label: 'contains',
+            managedKey: 'system:edge:workspace:package:demo',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        ],
+      ),
+    );
+
+    final decoded = ModelJson.decode<ProjectAggregate>(
+      ModelJson.encode(project),
+    );
+
+    expect(decoded.workspaceGraph.discoveryFingerprint, 'fingerprint-1');
+    expect(decoded.workspaceGraph.nodes.single.managedKey, 'system:workspace');
+    expect(
+      decoded.workspaceGraph.edges.single.managedKey,
+      'system:edge:workspace:package:demo',
+    );
+  });
+
+  test(
+    'reconciles bounded structural facts idempotently and removes stale facts',
+    () {
+      final timestamp = DateTime(2026, 1, 2);
+      const profile = WorkspaceDiscoveryProfile(
+        workspaceName: 'Hermes',
+        packageName: 'hermes',
+        treePaths: ['pubspec.yaml', 'lib/', 'lib/main.dart'],
+        dependencies: ['flutter'],
+        languages: ['Dart'],
+        frameworks: ['Flutter'],
+        highSignalFiles: [
+          WorkspaceFileExcerpt(path: 'pubspec.yaml', content: 'name: hermes'),
+        ],
+      );
+      final project = _project(includeTask: false);
+      const changes = WorkspaceChangeSet(
+        isRepository: true,
+        changedFiles: ['lib/main.dart'],
+      );
+      const reconciler = ProjectWorkspaceGraphReconciler();
+
+      final first = reconciler.reconcile(
+        project: project,
+        workspaceProfile: profile,
+        changeSet: changes,
+        timestamp: timestamp,
+      );
+      final managedKeys = first.graph.nodes
+          .map((node) => node.managedKey)
+          .whereType<String>()
+          .toSet();
+      expect(
+        managedKeys,
+        containsAll([
+          'system:workspace',
+          'system:package:hermes',
+          'system:file:lib/main.dart',
+          'system:dependency:flutter',
+        ]),
+      );
+      expect(
+        first.graph.edges.map((edge) => edge.label),
+        containsAll(['contains', 'uses', 'depends_on', 'declares']),
+      );
+      expect(first.plannerMaintenanceRecommended, isTrue);
+
+      final second = reconciler.reconcile(
+        project: project.copyWith(workspaceGraph: first.graph),
+        workspaceProfile: profile,
+        changeSet: changes,
+        timestamp: timestamp.add(const Duration(days: 1)),
+      );
+      expect(second.addedManagedKeys, isEmpty);
+      expect(second.updatedManagedKeys, isEmpty);
+      expect(second.removedManagedKeys, isEmpty);
+      expect(
+        second.graph.nodes
+            .singleWhere((node) => node.managedKey == 'system:workspace')
+            .createdAt,
+        timestamp,
+      );
+      expect(
+        second.graph.nodes
+            .singleWhere((node) => node.managedKey == 'system:workspace')
+            .updatedAt,
+        timestamp,
+      );
+
+      final stale = reconciler.reconcile(
+        project: project.copyWith(workspaceGraph: first.graph),
+        workspaceProfile: const WorkspaceDiscoveryProfile(
+          workspaceName: 'Hermes',
+          treePaths: ['pubspec.yaml'],
+        ),
+        changeSet: changes,
+        timestamp: timestamp,
+      );
+      expect(stale.removedManagedKeys, contains('system:file:lib/main.dart'));
+      expect(
+        stale.graph.nodes.any(
+          (node) => node.managedKey == 'system:file:lib/main.dart',
+        ),
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'reconciliation preserves authored entries while planner cannot mutate managed entries',
+    () {
+      final authored = ProjectWorkspaceNode(
+        id: 'authored',
+        type: 'requirement',
+        title: 'Keep this',
+        description: '',
+        sourceType: ProjectWorkspaceSourceType.planner,
+        createdAt: now,
+        updatedAt: now,
+      );
+      final project = _project(
+        includeTask: false,
+        workspaceGraph: ProjectWorkspaceGraph(nodes: [authored]),
+      );
+      final reconciled = const ProjectWorkspaceGraphReconciler().reconcile(
+        project: project,
+        workspaceProfile: const WorkspaceDiscoveryProfile(
+          workspaceName: 'Workspace',
+        ),
+        changeSet: const WorkspaceChangeSet(isRepository: false),
+        timestamp: now,
+      );
+      expect(
+        reconciled.graph.nodes.map((node) => node.id),
+        contains('authored'),
+      );
+
+      final managed = reconciled.graph.nodes.singleWhere(
+        (node) => node.managedKey == 'system:workspace',
+      );
+      final builder = ProjectPlanBuilder(
+        project: reconciled.graph == project.workspaceGraph
+            ? project
+            : project.copyWith(workspaceGraph: reconciled.graph),
+      );
+      expect(
+        () => builder.updateWorkspaceNode(managed.id, title: 'Changed'),
+        throwsA(isA<ProjectPlanBuilderException>()),
+      );
+      expect(
+        () => builder.removeWorkspaceNode(managed.id),
+        throwsA(isA<ProjectPlanBuilderException>()),
+      );
+    },
+  );
+
+  test(
+    'graph-only planner commits preserve managed facts and create history',
+    () async {
+      final project = _project(
+        includeTask: false,
+        workspaceGraph: ProjectWorkspaceGraph(
+          discoveryFingerprint: 'fingerprint-1',
+          nodes: [
+            _node(
+              'managed',
+              'workspace',
+              'Workspace',
+              'Derived',
+            ).copyWith(managedKey: 'system:workspace'),
+          ],
+        ),
+      );
+      final builder = ProjectPlanBuilder(
+        project: project,
+        triggers: const [ProjectPlanRevisionTrigger.workspaceGraphMaintenance],
+        planningLimits: ProjectPlanningLimits.graphMaintenance,
+      );
+      builder.addWorkspaceNodes(const [
+        ProjectWorkspaceNodeSpec(
+          ref: 'concept',
+          type: 'concept',
+          title: 'Durable concept',
+          references: ['workspace:README.md'],
+        ),
+      ]);
+
+      final committed = await builder.commit(
+        workspaceRoot: '/workspace',
+        approvalPolicy: ProjectPlanApprovalPolicy.never,
+      );
+
+      expect(
+        committed.result.changed,
+        isTrue,
+        reason: committed.validation.issues
+            .map((issue) => issue.toMap())
+            .toList()
+            .toString(),
+      );
+      expect(committed.project.tasks, hasLength(project.tasks.length));
+      expect(
+        committed.project.planHistory,
+        hasLength(project.planHistory.length + 1),
+      );
+      expect(
+        committed.project.workspaceGraph.nodes
+            .singleWhere((node) => node.managedKey == 'system:workspace')
+            .title,
+        'Workspace',
+      );
+      final preservedManaged = committed.project.workspaceGraph.nodes
+          .singleWhere((node) => node.managedKey == 'system:workspace');
+      expect(preservedManaged.createdAt, now);
+      expect(preservedManaged.updatedAt, now);
+      expect(
+        committed.project.workspaceGraph.nodes
+            .singleWhere((node) => node.title == 'Durable concept')
+            .sourceType,
+        ProjectWorkspaceSourceType.planner,
+      );
+    },
+  );
+
+  test(
+    'graph-only commits preserve lifecycle state and non-graph triggers',
+    () async {
+      final graphTrigger = ProjectPlanRevisionTrigger.workspaceGraphMaintenance;
+      final project = _project(includeTask: false).copyWith(
+        status: ProjectStatus.blocked,
+        blocker: ProjectBlocker(
+          type: ProjectBlockerType.taskFailed,
+          message: 'Keep this blocker.',
+          createdAt: now,
+        ),
+        pendingReplanTriggers: [
+          graphTrigger,
+          ProjectPlanRevisionTrigger.taskFailed,
+        ],
+      );
+      final builder = ProjectPlanBuilder(
+        project: project,
+        triggers: [graphTrigger],
+        planningLimits: ProjectPlanningLimits.graphMaintenance,
+      );
+      builder.addWorkspaceNodes(const [
+        ProjectWorkspaceNodeSpec(
+          ref: 'concept',
+          type: 'concept',
+          title: 'Durable concept',
+        ),
+      ]);
+
+      final committed = await builder.commit(
+        workspaceRoot: '/workspace',
+        approvalPolicy: ProjectPlanApprovalPolicy.never,
+      );
+
+      expect(committed.project.status, ProjectStatus.blocked);
+      expect(committed.project.blocker?.message, 'Keep this blocker.');
+      expect(
+        committed.project.pendingReplanTriggers,
+        contains(ProjectPlanRevisionTrigger.taskFailed),
+      );
+      expect(
+        committed.project.pendingReplanTriggers,
+        isNot(contains(graphTrigger)),
+      );
+    },
+  );
+
+  test(
+    'invalid revisions retain a pending graph-maintenance retry trigger',
+    () async {
+      final graphTrigger = ProjectPlanRevisionTrigger.workspaceGraphMaintenance;
+      final project = _project(
+        includeTask: false,
+      ).copyWith(pendingReplanTriggers: [graphTrigger]);
+      final result = await const ProjectPlanRevisionService().prepareAndApply(
+        project: project,
+        proposal: ProjectDesiredPlan(
+          revision: 999,
+          summary: 'Invalid revision',
+          rationale: 'Exercise retry preservation.',
+          createdAt: now,
+        ),
+        workspaceRoot: '/workspace',
+      );
+
+      expect(result.validation.valid, isFalse);
+      expect(result.project.pendingReplanTriggers, contains(graphTrigger));
+    },
+  );
+
+  test('projects declared and durable task outputs into produces edges', () {
+    final task = _project().tasks.single.copyWith(
+      writePaths: const ['dist/report.md'],
+      expectedArtifacts: const [
+        TaskArtifact(path: 'dist/report.md', description: 'Report output'),
+      ],
+    );
+    final project = _project().copyWith(tasks: [task]);
+    final result = const ProjectWorkspaceGraphReconciler().reconcile(
+      project: project,
+      workspaceProfile: const WorkspaceDiscoveryProfile(
+        workspaceName: 'Workspace',
+      ),
+      changeSet: const WorkspaceChangeSet(isRepository: false),
+      timestamp: now,
+    );
+
+    expect(
+      result.graph.nodes.map((node) => node.managedKey),
+      contains('task:artifact:task_1:dist/report.md'),
+    );
+    expect(
+      result.graph.edges.where((edge) => edge.label == 'produces'),
+      hasLength(1),
+    );
   });
 
   test('selects relevant graph context within a deterministic budget', () {

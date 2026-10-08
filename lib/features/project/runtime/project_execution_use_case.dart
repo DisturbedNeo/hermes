@@ -30,6 +30,8 @@ class ProjectExecutionUseCase {
       _context.criterionEvaluator;
   ProjectPlanRevisionCoordinator get _planRevisionCoordinator =>
       _context.planRevisionCoordinator;
+  ProjectWorkspaceGraphMaintenanceCoordinator
+  get _graphMaintenanceCoordinator => _context.graphMaintenanceCoordinator;
   ProjectDecisionEngine get _decisionEngine => _context.decisionEngine;
   QuestionPolicyService get _questionPolicy => _context.questionPolicy;
   ProjectRecoveryHandler get recoveryHandler => _context.recoveryHandler;

@@ -726,6 +726,34 @@ class ProjectPlanValidator {
     }
   }
 
+  static void _validateUniqueManagedKeys(
+    Iterable<String?> keys,
+    String fieldPath,
+    List<ProjectPlanValidationIssue> issues,
+  ) {
+    final firstPaths = <String, String>{};
+    var index = 0;
+    for (final key in keys) {
+      if (key != null && key.trim().isNotEmpty) {
+        final currentPath = '$fieldPath[$index].managedKey';
+        final firstPath = firstPaths[key];
+        if (firstPath != null) {
+          issues.add(
+            ProjectPlanValidationIssue(
+              code: 'duplicate_managed_key',
+              path: currentPath,
+              message:
+                  'Managed key "$key" appears more than once in $fieldPath (first at $firstPath).',
+            ),
+          );
+        } else {
+          firstPaths[key] = currentPath;
+        }
+      }
+      index++;
+    }
+  }
+
   static void _validateWorkspaceGraph(
     ProjectWorkspaceGraph existing,
     ProjectWorkspaceGraph desired,
@@ -769,6 +797,16 @@ class ProjectPlanValidator {
     );
     _validateUniqueIds(
       desired.edges.map((edge) => edge.id),
+      'workspaceGraph.edges',
+      issues,
+    );
+    _validateUniqueManagedKeys(
+      desired.nodes.map((node) => node.managedKey),
+      'workspaceGraph.nodes',
+      issues,
+    );
+    _validateUniqueManagedKeys(
+      desired.edges.map((edge) => edge.managedKey),
       'workspaceGraph.edges',
       issues,
     );
@@ -822,6 +860,31 @@ class ProjectPlanValidator {
           '$fieldPath.sourceId',
           'Workspace node source IDs must be at most 200 characters.',
         );
+      }
+      if (node.managedKey != null) {
+        if (node.managedKey!.trim().isEmpty || node.managedKey!.length > 200) {
+          issue(
+            'workspace_node_managed_key_invalid',
+            '$fieldPath.managedKey',
+            'Managed workspace node keys are required and limited to 200 characters.',
+          );
+        }
+        if (node.sourceType != ProjectWorkspaceSourceType.system &&
+            node.sourceType != ProjectWorkspaceSourceType.task) {
+          issue(
+            'workspace_node_managed_owner_invalid',
+            '$fieldPath.sourceType',
+            'Managed workspace nodes must be owned by system or task discovery.',
+          );
+        }
+        if (node.confidence == ProjectWorkspaceConfidence.confirmed ||
+            node.protected) {
+          issue(
+            'workspace_node_managed_protection_invalid',
+            fieldPath,
+            'Managed workspace nodes must remain inferred or uncertain and unprotected.',
+          );
+        }
       }
       for (final values in <(String, List<String>)>[
         ('aliases', node.aliases),
@@ -884,10 +947,57 @@ class ProjectPlanValidator {
           'Workspace edge source IDs must be at most 200 characters.',
         );
       }
+      if (edge.managedKey != null) {
+        if (edge.managedKey!.trim().isEmpty || edge.managedKey!.length > 200) {
+          issue(
+            'workspace_edge_managed_key_invalid',
+            '$fieldPath.managedKey',
+            'Managed workspace edge keys are required and limited to 200 characters.',
+          );
+        }
+        if (edge.sourceType != ProjectWorkspaceSourceType.system &&
+            edge.sourceType != ProjectWorkspaceSourceType.task) {
+          issue(
+            'workspace_edge_managed_owner_invalid',
+            '$fieldPath.sourceType',
+            'Managed workspace edges must be owned by system or task discovery.',
+          );
+        }
+        if (edge.confidence == ProjectWorkspaceConfidence.confirmed ||
+            edge.protected) {
+          issue(
+            'workspace_edge_managed_protection_invalid',
+            fieldPath,
+            'Managed workspace edges must remain inferred or uncertain and unprotected.',
+          );
+        }
+      }
     }
 
     final existingNodes = {for (final node in existing.nodes) node.id: node};
     final desiredNodes = {for (final node in desired.nodes) node.id: node};
+    final desiredNodesByManagedKey = {
+      for (final node in desired.nodes)
+        if (node.managedKey != null) node.managedKey!: node,
+    };
+    for (final node in existing.nodes.where(
+      (node) => node.managedKey != null,
+    )) {
+      final replacement = desiredNodesByManagedKey[node.managedKey!];
+      if (replacement == null) {
+        issue(
+          'managed_workspace_node_removed',
+          'workspaceGraph.nodes',
+          'Managed workspace node ${node.managedKey} cannot be removed by the planner.',
+        );
+      } else if (!_sameWorkspaceNodeContent(node, replacement)) {
+        issue(
+          'managed_workspace_node_changed',
+          'workspaceGraph.nodes',
+          'Managed workspace node ${node.managedKey} cannot be changed by the planner.',
+        );
+      }
+    }
     for (final node in existing.nodes.where((node) => node.protected)) {
       final replacement = desiredNodes[node.id];
       if (replacement == null) {
@@ -906,6 +1016,28 @@ class ProjectPlanValidator {
     }
     final existingEdges = {for (final edge in existing.edges) edge.id: edge};
     final desiredEdges = {for (final edge in desired.edges) edge.id: edge};
+    final desiredEdgesByManagedKey = {
+      for (final edge in desired.edges)
+        if (edge.managedKey != null) edge.managedKey!: edge,
+    };
+    for (final edge in existing.edges.where(
+      (edge) => edge.managedKey != null,
+    )) {
+      final replacement = desiredEdgesByManagedKey[edge.managedKey!];
+      if (replacement == null) {
+        issue(
+          'managed_workspace_edge_removed',
+          'workspaceGraph.edges',
+          'Managed workspace edge ${edge.managedKey} cannot be removed by the planner.',
+        );
+      } else if (!_sameWorkspaceEdgeContent(edge, replacement)) {
+        issue(
+          'managed_workspace_edge_changed',
+          'workspaceGraph.edges',
+          'Managed workspace edge ${edge.managedKey} cannot be changed by the planner.',
+        );
+      }
+    }
     for (final edge in existing.edges.where((edge) => edge.protected)) {
       final replacement = desiredEdges[edge.id];
       if (replacement == null) {
@@ -924,6 +1056,14 @@ class ProjectPlanValidator {
     }
     for (final node in desired.nodes) {
       final previous = existingNodes[node.id];
+      if (node.managedKey != null &&
+          (previous == null || previous.managedKey != node.managedKey)) {
+        issue(
+          'planner_managed_workspace_node',
+          'workspaceGraph.nodes',
+          'Planner proposals cannot assign managed keys to workspace nodes.',
+        );
+      }
       if (previous == null && node.protected) {
         issue(
           'planner_protected_workspace_node',
@@ -940,6 +1080,14 @@ class ProjectPlanValidator {
     }
     for (final edge in desired.edges) {
       final previous = existingEdges[edge.id];
+      if (edge.managedKey != null &&
+          (previous == null || previous.managedKey != edge.managedKey)) {
+        issue(
+          'planner_managed_workspace_edge',
+          'workspaceGraph.edges',
+          'Planner proposals cannot assign managed keys to workspace edges.',
+        );
+      }
       if (previous == null && edge.protected) {
         issue(
           'planner_protected_workspace_edge',
@@ -969,6 +1117,7 @@ class ProjectPlanValidator {
       _sameStringLists(first.references, second.references) &&
       first.sourceType == second.sourceType &&
       first.sourceId == second.sourceId &&
+      first.managedKey == second.managedKey &&
       first.confidence == second.confidence &&
       first.protected == second.protected;
 
@@ -983,6 +1132,7 @@ class ProjectPlanValidator {
       first.description == second.description &&
       first.sourceType == second.sourceType &&
       first.sourceId == second.sourceId &&
+      first.managedKey == second.managedKey &&
       first.confidence == second.confidence &&
       first.protected == second.protected;
 

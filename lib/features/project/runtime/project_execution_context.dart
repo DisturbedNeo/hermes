@@ -16,6 +16,7 @@ abstract interface class ProjectExecutionCapabilities {
   ProjectProgressMonitor get progressMonitor;
   ProjectCriterionEvaluator get criterionEvaluator;
   ProjectPlanRevisionCoordinator get planRevisionCoordinator;
+  ProjectWorkspaceGraphMaintenanceCoordinator get graphMaintenanceCoordinator;
   ProjectDecisionEngine get decisionEngine;
   QuestionPolicyService get questionPolicy;
   ProjectRecoveryHandler get recoveryHandler;
@@ -109,6 +110,7 @@ class ProjectUseCaseContext
     required this.evidenceService,
     required this.criterionEvaluator,
     required this.planRevisionCoordinator,
+    required this.graphMaintenanceCoordinator,
     required this.decisionEngine,
     required this.questionPolicy,
     required this.recoveryHandler,
@@ -145,6 +147,7 @@ class ProjectUseCaseContext
   final ProjectEvidenceService evidenceService;
   final ProjectCriterionEvaluator criterionEvaluator;
   final ProjectPlanRevisionCoordinator planRevisionCoordinator;
+  final ProjectWorkspaceGraphMaintenanceCoordinator graphMaintenanceCoordinator;
   final ProjectDecisionEngine decisionEngine;
   final QuestionPolicyService questionPolicy;
   final ProjectRecoveryHandler recoveryHandler;

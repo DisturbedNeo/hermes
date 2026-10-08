@@ -26,6 +26,7 @@ class ProjectWorkspaceNode with ProjectWorkspaceNodeMappable {
     this.references = const [],
     this.sourceType = ProjectWorkspaceSourceType.system,
     this.sourceId,
+    this.managedKey,
     this.confidence = ProjectWorkspaceConfidence.inferred,
     this.protected = false,
     required this.createdAt,
@@ -41,6 +42,12 @@ class ProjectWorkspaceNode with ProjectWorkspaceNodeMappable {
   final List<String> references;
   final ProjectWorkspaceSourceType sourceType;
   final String? sourceId;
+  /// Stable identity used by automatic workspace discovery.
+  ///
+  /// Planner- and user-authored entries leave this null. A non-null value
+  /// means the entry is owned by the automatic reconciler and cannot be
+  /// changed by a planner revision.
+  final String? managedKey;
   final ProjectWorkspaceConfidence confidence;
   final bool protected;
   final DateTime createdAt;
@@ -56,6 +63,7 @@ class ProjectWorkspaceNode with ProjectWorkspaceNodeMappable {
     List<String>? references,
     ProjectWorkspaceSourceType? sourceType,
     Object? sourceId = kSentinel,
+    Object? managedKey = kSentinel,
     ProjectWorkspaceConfidence? confidence,
     bool? protected,
     DateTime? createdAt,
@@ -70,6 +78,7 @@ class ProjectWorkspaceNode with ProjectWorkspaceNodeMappable {
     references: references ?? this.references,
     sourceType: sourceType ?? this.sourceType,
     sourceId: resolve(sourceId, this.sourceId),
+    managedKey: resolve(managedKey, this.managedKey),
     confidence: confidence ?? this.confidence,
     protected: protected ?? this.protected,
     createdAt: createdAt ?? this.createdAt,
@@ -88,6 +97,7 @@ class ProjectWorkspaceEdge with ProjectWorkspaceEdgeMappable {
     this.description = '',
     this.sourceType = ProjectWorkspaceSourceType.system,
     this.sourceId,
+    this.managedKey,
     this.confidence = ProjectWorkspaceConfidence.inferred,
     this.protected = false,
     required this.createdAt,
@@ -101,6 +111,8 @@ class ProjectWorkspaceEdge with ProjectWorkspaceEdgeMappable {
   final String description;
   final ProjectWorkspaceSourceType sourceType;
   final String? sourceId;
+  /// Stable identity used by automatic workspace discovery.
+  final String? managedKey;
   final ProjectWorkspaceConfidence confidence;
   final bool protected;
   final DateTime createdAt;
@@ -114,6 +126,7 @@ class ProjectWorkspaceEdge with ProjectWorkspaceEdgeMappable {
     String? description,
     ProjectWorkspaceSourceType? sourceType,
     Object? sourceId = kSentinel,
+    Object? managedKey = kSentinel,
     ProjectWorkspaceConfidence? confidence,
     bool? protected,
     DateTime? createdAt,
@@ -126,6 +139,7 @@ class ProjectWorkspaceEdge with ProjectWorkspaceEdgeMappable {
     description: description ?? this.description,
     sourceType: sourceType ?? this.sourceType,
     sourceId: resolve(sourceId, this.sourceId),
+    managedKey: resolve(managedKey, this.managedKey),
     confidence: confidence ?? this.confidence,
     protected: protected ?? this.protected,
     createdAt: createdAt ?? this.createdAt,
@@ -141,6 +155,7 @@ class ProjectWorkspaceGraph with ProjectWorkspaceGraphMappable {
     List<ProjectWorkspaceNode>? nodes,
     List<ProjectWorkspaceEdge>? edges,
     this.updatedAt,
+    this.discoveryFingerprint,
   }) : nodes = List.unmodifiable(nodes ?? const []),
        edges = List.unmodifiable(edges ?? const []);
 
@@ -148,23 +163,32 @@ class ProjectWorkspaceGraph with ProjectWorkspaceGraphMappable {
   final List<ProjectWorkspaceNode> nodes;
   final List<ProjectWorkspaceEdge> edges;
   final DateTime? updatedAt;
+  /// Fingerprint of the bounded workspace facts used for the last automatic
+  /// reconciliation.
+  final String? discoveryFingerprint;
 
   const ProjectWorkspaceGraph.empty()
     : orientation = '',
       nodes = const [],
       edges = const [],
-      updatedAt = null;
+      updatedAt = null,
+      discoveryFingerprint = null;
 
   ProjectWorkspaceGraph copyWith({
     String? orientation,
     List<ProjectWorkspaceNode>? nodes,
     List<ProjectWorkspaceEdge>? edges,
     Object? updatedAt = kSentinel,
+    Object? discoveryFingerprint = kSentinel,
   }) => ProjectWorkspaceGraph(
     orientation: orientation ?? this.orientation,
     nodes: nodes ?? this.nodes,
     edges: edges ?? this.edges,
     updatedAt: resolve(updatedAt, this.updatedAt),
+    discoveryFingerprint: resolve(
+      discoveryFingerprint,
+      this.discoveryFingerprint,
+    ),
   );
 }
 

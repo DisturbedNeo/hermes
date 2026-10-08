@@ -108,6 +108,8 @@ enum ProjectPlanRevisionTrigger {
   manual,
   @MappableValue('workspace_changed')
   workspaceChanged,
+  @MappableValue('workspace_graph_maintenance')
+  workspaceGraphMaintenance,
   @MappableValue('evidence_rejected')
   evidenceRejected,
   @MappableValue('task_replan_requested')
@@ -251,6 +253,9 @@ class ProjectDiagnostics with ProjectDiagnosticsMappable {
   final int userApprovals;
   final int userQuestions;
   final int consecutiveNoProgressBatches;
+  final int workspaceGraphMaintenanceAttempts;
+  final int workspaceGraphMaintenanceFailures;
+  final int workspaceGraphDerivedUpdates;
   final PlanningMetrics planningMetrics;
   @MappableField(hook: JsonStringListHook())
   final List<String> recentNoProgressBatchIds;
@@ -267,6 +272,9 @@ class ProjectDiagnostics with ProjectDiagnosticsMappable {
     this.userApprovals = 0,
     this.userQuestions = 0,
     this.consecutiveNoProgressBatches = 0,
+    this.workspaceGraphMaintenanceAttempts = 0,
+    this.workspaceGraphMaintenanceFailures = 0,
+    this.workspaceGraphDerivedUpdates = 0,
     this.planningMetrics = const PlanningMetrics(),
     this.recentNoProgressBatchIds = const [],
   });
@@ -287,6 +295,9 @@ class ProjectDiagnostics with ProjectDiagnosticsMappable {
     int? userApprovals,
     int? userQuestions,
     int? consecutiveNoProgressBatches,
+    int? workspaceGraphMaintenanceAttempts,
+    int? workspaceGraphMaintenanceFailures,
+    int? workspaceGraphDerivedUpdates,
     List<String>? recentNoProgressBatchIds,
     PlanningMetrics? planningMetrics,
   }) {
@@ -306,6 +317,14 @@ class ProjectDiagnostics with ProjectDiagnosticsMappable {
       userQuestions: userQuestions ?? this.userQuestions,
       consecutiveNoProgressBatches:
           consecutiveNoProgressBatches ?? this.consecutiveNoProgressBatches,
+      workspaceGraphMaintenanceAttempts:
+          workspaceGraphMaintenanceAttempts ??
+          this.workspaceGraphMaintenanceAttempts,
+      workspaceGraphMaintenanceFailures:
+          workspaceGraphMaintenanceFailures ??
+          this.workspaceGraphMaintenanceFailures,
+      workspaceGraphDerivedUpdates:
+          workspaceGraphDerivedUpdates ?? this.workspaceGraphDerivedUpdates,
       recentNoProgressBatchIds:
           recentNoProgressBatchIds ?? this.recentNoProgressBatchIds,
       planningMetrics: planningMetrics ?? this.planningMetrics,

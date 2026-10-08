@@ -27,6 +27,11 @@ class ProjectWorkspaceGraphService {
     final existing = graph.nodes
         .where((node) => node.id == resolvedId)
         .firstOrNull;
+    if (existing?.managedKey != null) {
+      throw ArgumentError(
+        'Managed workspace node $resolvedId cannot be replaced by a user upsert.',
+      );
+    }
     if (existing == null &&
         graph.nodes.length >= ProjectWorkspaceContextService.maxNodes) {
       throw ArgumentError(
@@ -96,6 +101,11 @@ class ProjectWorkspaceGraphService {
     final existing = graph.edges
         .where((edge) => edge.id == resolvedId)
         .firstOrNull;
+    if (existing?.managedKey != null) {
+      throw ArgumentError(
+        'Managed workspace edge $resolvedId cannot be replaced by a user upsert.',
+      );
+    }
     if (existing == null &&
         graph.edges.length >= ProjectWorkspaceContextService.maxEdges) {
       throw ArgumentError(

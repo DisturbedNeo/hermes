@@ -91,6 +91,13 @@ extension ProjectPlanBuilderWorkspaceCommands on ProjectPlanBuilder {
   }) {
     final id = _resolveWorkspaceNode(reference);
     final existing = _workspaceNodes[id]!;
+    if (existing.managedKey != null) {
+      throw _error(
+        'managed_workspace_node',
+        'node',
+        'Managed workspace node $id cannot be changed by the planner.',
+      );
+    }
     if (existing.protected) {
       throw _error(
         'protected_workspace_node',
@@ -216,6 +223,13 @@ extension ProjectPlanBuilderWorkspaceCommands on ProjectPlanBuilder {
   }) {
     final id = _resolveWorkspaceEdge(reference);
     final existing = _workspaceEdges[id]!;
+    if (existing.managedKey != null) {
+      throw _error(
+        'managed_workspace_edge',
+        'edge',
+        'Managed workspace edge $id cannot be changed by the planner.',
+      );
+    }
     if (existing.protected) {
       throw _error(
         'protected_workspace_edge',
@@ -273,6 +287,13 @@ extension ProjectPlanBuilderWorkspaceCommands on ProjectPlanBuilder {
     _idempotent(commandId, fingerprint, () {
       final id = _resolveWorkspaceNode(reference);
       final node = _workspaceNodes[id]!;
+      if (node.managedKey != null) {
+        throw _error(
+          'managed_workspace_node',
+          'node',
+          'Managed workspace node $id cannot be removed by the planner.',
+        );
+      }
       if (node.protected) {
         throw _error(
           'protected_workspace_node',
@@ -307,6 +328,13 @@ extension ProjectPlanBuilderWorkspaceCommands on ProjectPlanBuilder {
     _idempotent(commandId, fingerprint, () {
       final id = _resolveWorkspaceEdge(reference);
       final edge = _workspaceEdges[id]!;
+      if (edge.managedKey != null) {
+        throw _error(
+          'managed_workspace_edge',
+          'edge',
+          'Managed workspace edge $id cannot be removed by the planner.',
+        );
+      }
       if (edge.protected) {
         throw _error(
           'protected_workspace_edge',

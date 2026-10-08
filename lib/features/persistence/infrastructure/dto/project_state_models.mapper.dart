@@ -678,6 +678,8 @@ class ProjectPlanRevisionTriggerMapper
         return ProjectPlanRevisionTrigger.manual;
       case 'workspace_changed':
         return ProjectPlanRevisionTrigger.workspaceChanged;
+      case 'workspace_graph_maintenance':
+        return ProjectPlanRevisionTrigger.workspaceGraphMaintenance;
       case 'evidence_rejected':
         return ProjectPlanRevisionTrigger.evidenceRejected;
       case 'task_replan_requested':
@@ -712,6 +714,8 @@ class ProjectPlanRevisionTriggerMapper
         return r'manual';
       case ProjectPlanRevisionTrigger.workspaceChanged:
         return 'workspace_changed';
+      case ProjectPlanRevisionTrigger.workspaceGraphMaintenance:
+        return 'workspace_graph_maintenance';
       case ProjectPlanRevisionTrigger.evidenceRejected:
         return 'evidence_rejected';
       case ProjectPlanRevisionTrigger.taskReplanRequested:
@@ -1280,6 +1284,33 @@ class ProjectDiagnosticsMapper extends ClassMapperBase<ProjectDiagnostics> {
         opt: true,
         def: 0,
       );
+  static int _$workspaceGraphMaintenanceAttempts(ProjectDiagnostics v) =>
+      v.workspaceGraphMaintenanceAttempts;
+  static const Field<ProjectDiagnostics, int>
+  _f$workspaceGraphMaintenanceAttempts = Field(
+    'workspaceGraphMaintenanceAttempts',
+    _$workspaceGraphMaintenanceAttempts,
+    opt: true,
+    def: 0,
+  );
+  static int _$workspaceGraphMaintenanceFailures(ProjectDiagnostics v) =>
+      v.workspaceGraphMaintenanceFailures;
+  static const Field<ProjectDiagnostics, int>
+  _f$workspaceGraphMaintenanceFailures = Field(
+    'workspaceGraphMaintenanceFailures',
+    _$workspaceGraphMaintenanceFailures,
+    opt: true,
+    def: 0,
+  );
+  static int _$workspaceGraphDerivedUpdates(ProjectDiagnostics v) =>
+      v.workspaceGraphDerivedUpdates;
+  static const Field<ProjectDiagnostics, int> _f$workspaceGraphDerivedUpdates =
+      Field(
+        'workspaceGraphDerivedUpdates',
+        _$workspaceGraphDerivedUpdates,
+        opt: true,
+        def: 0,
+      );
   static PlanningMetrics _$planningMetrics(ProjectDiagnostics v) =>
       v.planningMetrics;
   static const Field<ProjectDiagnostics, PlanningMetrics> _f$planningMetrics =
@@ -1314,6 +1345,9 @@ class ProjectDiagnosticsMapper extends ClassMapperBase<ProjectDiagnostics> {
     #userApprovals: _f$userApprovals,
     #userQuestions: _f$userQuestions,
     #consecutiveNoProgressBatches: _f$consecutiveNoProgressBatches,
+    #workspaceGraphMaintenanceAttempts: _f$workspaceGraphMaintenanceAttempts,
+    #workspaceGraphMaintenanceFailures: _f$workspaceGraphMaintenanceFailures,
+    #workspaceGraphDerivedUpdates: _f$workspaceGraphDerivedUpdates,
     #planningMetrics: _f$planningMetrics,
     #recentNoProgressBatchIds: _f$recentNoProgressBatchIds,
   };
@@ -1335,6 +1369,13 @@ class ProjectDiagnosticsMapper extends ClassMapperBase<ProjectDiagnostics> {
       userApprovals: data.dec(_f$userApprovals),
       userQuestions: data.dec(_f$userQuestions),
       consecutiveNoProgressBatches: data.dec(_f$consecutiveNoProgressBatches),
+      workspaceGraphMaintenanceAttempts: data.dec(
+        _f$workspaceGraphMaintenanceAttempts,
+      ),
+      workspaceGraphMaintenanceFailures: data.dec(
+        _f$workspaceGraphMaintenanceFailures,
+      ),
+      workspaceGraphDerivedUpdates: data.dec(_f$workspaceGraphDerivedUpdates),
       planningMetrics: data.dec(_f$planningMetrics),
       recentNoProgressBatchIds: data.dec(_f$recentNoProgressBatchIds),
     );

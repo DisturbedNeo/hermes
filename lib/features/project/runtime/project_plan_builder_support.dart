@@ -24,6 +24,7 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
         nodes: _workspaceNodes.values.toList(),
         edges: _workspaceEdges.values.toList(),
         updatedAt: _now,
+        discoveryFingerprint: _project.workspaceGraph.discoveryFingerprint,
       ),
       openQuestions: [..._project.openQuestions, ..._openQuestions],
       requiresApproval: _requiresApproval,

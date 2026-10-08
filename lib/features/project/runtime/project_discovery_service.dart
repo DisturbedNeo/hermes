@@ -3,6 +3,7 @@ import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/project/runtime/project_memory_service.dart';
 import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
+import 'package:hermes/features/project/runtime/project_workspace_graph_reconciler.dart';
 import 'package:hermes/features/project/domain/project_scheduler.dart';
 import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
 import 'package:hermes/features/task/application/task_application/task_ports.dart';
@@ -18,11 +19,14 @@ class ProjectDiscoveryService {
     required WorkspaceDiscoveryPort profileService,
     ProjectWorkspaceContextService workspaceContextService =
         const ProjectWorkspaceContextService(),
+    ProjectWorkspaceGraphReconciler graphReconciler =
+        const ProjectWorkspaceGraphReconciler(),
   }) : _taskQueries = taskController,
        _changeDiscovery = changeDiscovery,
        _memoryService = memoryService,
        _profileService = profileService,
-       _workspaceContextService = workspaceContextService;
+       _workspaceContextService = workspaceContextService,
+       _graphReconciler = graphReconciler;
 
   static const int _maxRootEntries = 80;
   static const int _maxRecentItems = 12;
@@ -32,6 +36,7 @@ class ProjectDiscoveryService {
   final ProjectMemoryService _memoryService;
   final WorkspaceDiscoveryPort _profileService;
   final ProjectWorkspaceContextService _workspaceContextService;
+  final ProjectWorkspaceGraphReconciler _graphReconciler;
   static const ProjectScheduler _scheduler = ProjectScheduler();
 
   Future<ProjectEvidenceSnapshot> collect({
@@ -64,6 +69,19 @@ class ProjectDiscoveryService {
     cancellationToken?.throwIfCancelled();
     taskSummaries.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
+    final reconciliation = project == null
+        ? null
+        : _graphReconciler.reconcile(
+            project: project,
+            workspaceProfile: workspaceProfile,
+            changeSet: changeSet,
+          );
+    final discoveredGraph =
+        reconciliation?.graph ??
+        project?.workspaceGraph ??
+        ProjectWorkspaceGraph.empty();
+    final graphProject = project?.copyWith(workspaceGraph: discoveredGraph);
+
     final evidence = project?.evidence ?? const <ProjectEvidence>[];
     final verificationCommands = <String>{};
     for (final item in evidence) {
@@ -88,7 +106,7 @@ class ProjectDiscoveryService {
             usedCharacters: 0,
             truncated: false,
           )
-        : _workspaceContextService.selectContext(project: project);
+        : _workspaceContextService.selectContext(project: graphProject!);
     return ProjectEvidenceSnapshot(
       workspaceName: workspace.displayName,
       workspaceProfile: workspaceProfile,
@@ -164,7 +182,8 @@ class ProjectDiscoveryService {
           '${task.id}: ${task.title}',
       ],
       verificationCommands: verificationCommands.toList()..sort(),
-      workspaceGraph: project?.workspaceGraph ?? ProjectWorkspaceGraph.empty(),
+      workspaceGraph: discoveredGraph,
+      workspaceGraphReconciliation: reconciliation,
       workspaceContext: workspaceContext,
       collectedAt: DateTime.now(),
     );

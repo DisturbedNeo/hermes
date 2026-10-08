@@ -59,14 +59,24 @@ class ProjectPlanRevisionCoordinator {
   final ProjectDiscoveryService _discovery;
   final ProjectPlanner _planner;
 
+  Future<ProjectEvidenceSnapshot> discover({
+    required WorkspaceAttachment workspace,
+    required ProjectAggregate project,
+    CancellationToken? cancellationToken,
+  }) => _discovery.collect(
+    workspace: workspace,
+    project: project,
+    goalContext:
+        'Original goal:\n${project.originalGoal}\n\nRefined goal:\n${project.refinedGoal}',
+    cancellationToken: cancellationToken,
+  );
+
   Future<ProjectPlanRevisionResult> revise(
     ProjectPlanRevisionRequest request,
   ) async {
-    final snapshot = await _discovery.collect(
+    final snapshot = await discover(
       workspace: request.workspace,
       project: request.project,
-      goalContext:
-          'Original goal:\n${request.project.originalGoal}\n\nRefined goal:\n${request.project.refinedGoal}',
       cancellationToken: request.cancellationToken,
     );
     final issues = snapshot.workspaceProfile.requiredContextIssues;

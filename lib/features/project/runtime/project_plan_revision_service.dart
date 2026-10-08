@@ -128,7 +128,10 @@ class ProjectPlanRevisionService {
     if (!validation.valid) {
       final details = _validationDetails(validation);
       final blocked = project.copyWith(
-        pendingReplanTriggers: const [],
+        pendingReplanTriggers: _preserveGraphMaintenanceTrigger(
+          project: project,
+          proposal: candidate,
+        ),
         blocker: ProjectBlocker(
           type: ProjectBlockerType.validation,
           message:
@@ -169,6 +172,9 @@ class ProjectPlanRevisionService {
         repairAttempted: repairAttempted,
         revision: candidate.revision,
         error: error,
+        graphMaintenanceRequested: candidate.triggers.contains(
+          ProjectPlanRevisionTrigger.workspaceGraphMaintenance,
+        ),
       );
     } on StateError catch (error) {
       return _reconciliationFailure(
@@ -177,12 +183,19 @@ class ProjectPlanRevisionService {
         repairAttempted: repairAttempted,
         revision: candidate.revision,
         error: error,
+        graphMaintenanceRequested: candidate.triggers.contains(
+          ProjectPlanRevisionTrigger.workspaceGraphMaintenance,
+        ),
       );
     }
     if (!_planChanged(project, preview)) {
       return ProjectPlanRevisionResult(
         project: project.copyWith(
-          pendingReplanTriggers: const [],
+          pendingReplanTriggers: _preserveGraphMaintenanceTrigger(
+            project: project,
+            proposal: candidate,
+            clearRequested: true,
+          ),
           updatedAt: DateTime.now(),
         ),
         validation: validation,
@@ -220,7 +233,10 @@ class ProjectPlanRevisionService {
           createdAt: candidate.createdAt,
           desiredPlan: candidate,
         ),
-        pendingReplanTriggers: const [],
+        pendingReplanTriggers: _preserveGraphMaintenanceTrigger(
+          project: project,
+          proposal: candidate,
+        ),
         blocker: ProjectBlocker(
           type: ProjectBlockerType.planApproval,
           message: reason,
@@ -251,6 +267,11 @@ class ProjectPlanRevisionService {
           validation: validation,
           approver: ProjectPlanRevisionApprover.automatic,
           splitTaskIds: splitIds,
+          preserveLifecycleState: _isGraphMaintenanceOnly(
+            project,
+            candidate,
+            preview,
+          ),
         ),
         validation: validation,
         repairAttempted: repairAttempted,
@@ -264,6 +285,9 @@ class ProjectPlanRevisionService {
         repairAttempted: repairAttempted,
         revision: candidate.revision,
         error: error,
+        graphMaintenanceRequested: candidate.triggers.contains(
+          ProjectPlanRevisionTrigger.workspaceGraphMaintenance,
+        ),
       );
     } on StateError catch (error) {
       return _reconciliationFailure(
@@ -272,6 +296,9 @@ class ProjectPlanRevisionService {
         repairAttempted: repairAttempted,
         revision: candidate.revision,
         error: error,
+        graphMaintenanceRequested: candidate.triggers.contains(
+          ProjectPlanRevisionTrigger.workspaceGraphMaintenance,
+        ),
       );
     }
   }
@@ -368,6 +395,7 @@ class ProjectPlanRevisionService {
     required ProjectPlanRevisionApprover approver,
     Set<String> splitTaskIds = const {},
     bool recordRevision = true,
+    bool preserveLifecycleState = false,
   }) {
     final now = DateTime.now();
     final existingCriteria = {
@@ -648,6 +676,20 @@ class ProjectPlanRevisionService {
       proposal.workspaceGraph,
       now,
     );
+    final graphMaintenanceRequested = proposal.triggers.contains(
+      ProjectPlanRevisionTrigger.workspaceGraphMaintenance,
+    );
+    final nonGraphPendingTriggers = project.pendingReplanTriggers
+        .where(
+          (trigger) =>
+              trigger != ProjectPlanRevisionTrigger.workspaceGraphMaintenance,
+        )
+        .toList();
+    final preserveGraphMaintenanceTrigger =
+        project.pendingReplanTriggers.contains(
+          ProjectPlanRevisionTrigger.workspaceGraphMaintenance,
+        ) &&
+        !graphMaintenanceRequested;
     final revised = project.copyWith(
       criteria: desiredCriteria.values.toList(),
       milestones: normalizedMilestones,
@@ -660,8 +702,14 @@ class ProjectPlanRevisionService {
           ? [...project.planHistory, revision]
           : project.planHistory,
       pendingPlanApproval: null,
-      pendingReplanTriggers: const [],
-      blocker: questions.isEmpty
+      pendingReplanTriggers: graphMaintenanceRequested
+          ? nonGraphPendingTriggers
+          : preserveGraphMaintenanceTrigger
+          ? const [ProjectPlanRevisionTrigger.workspaceGraphMaintenance]
+          : const [],
+      blocker: preserveLifecycleState
+          ? project.blocker
+          : questions.isEmpty
           ? null
           : ProjectBlocker(
               type: ProjectBlockerType.question,
@@ -686,7 +734,9 @@ class ProjectPlanRevisionService {
     );
     return _transition(
       snapshot: revised,
-      to: questions.isEmpty
+      to: preserveLifecycleState
+          ? project.status
+          : questions.isEmpty
           ? ProjectStatus.active
           : ProjectStatus.waitingForUser,
       trigger: ProjectLifecycleTrigger.planRevision,
@@ -703,25 +753,112 @@ class ProjectPlanRevisionService {
     DateTime now,
   ) {
     final existingNodes = {for (final node in existing.nodes) node.id: node};
+    final existingNodesByManagedKey = {
+      for (final node in existing.nodes)
+        if (node.managedKey != null) node.managedKey!: node,
+    };
     final existingEdges = {for (final edge in existing.edges) edge.id: edge};
+    final existingEdgesByManagedKey = {
+      for (final edge in existing.edges)
+        if (edge.managedKey != null) edge.managedKey!: edge,
+    };
     return ProjectWorkspaceGraph(
       orientation: desired.orientation,
       nodes: [
         for (final node in desired.nodes)
-          node.copyWith(
-            createdAt: existingNodes[node.id]?.createdAt ?? now,
-            updatedAt: now,
+          _mergeWorkspaceNode(
+            existingNodes[node.id] ??
+                (node.managedKey == null
+                    ? null
+                    : existingNodesByManagedKey[node.managedKey]),
+            node,
+            now,
           ),
       ],
       edges: [
         for (final edge in desired.edges)
-          edge.copyWith(
-            createdAt: existingEdges[edge.id]?.createdAt ?? now,
-            updatedAt: now,
+          _mergeWorkspaceEdge(
+            existingEdges[edge.id] ??
+                (edge.managedKey == null
+                    ? null
+                    : existingEdgesByManagedKey[edge.managedKey]),
+            edge,
+            now,
           ),
       ],
-      updatedAt: now,
+      updatedAt: _sameGraphMetadata(existing, desired)
+          ? existing.updatedAt
+          : now,
+      discoveryFingerprint:
+          desired.discoveryFingerprint ?? existing.discoveryFingerprint,
     );
+  }
+
+  static ProjectWorkspaceNode _mergeWorkspaceNode(
+    ProjectWorkspaceNode? existing,
+    ProjectWorkspaceNode desired,
+    DateTime now,
+  ) {
+    final merged = desired.copyWith(createdAt: existing?.createdAt ?? now);
+    return existing != null && _sameWorkspaceNodeContent(existing, merged)
+        ? existing
+        : merged.copyWith(updatedAt: now);
+  }
+
+  static ProjectWorkspaceEdge _mergeWorkspaceEdge(
+    ProjectWorkspaceEdge? existing,
+    ProjectWorkspaceEdge desired,
+    DateTime now,
+  ) {
+    final merged = desired.copyWith(createdAt: existing?.createdAt ?? now);
+    return existing != null && _sameWorkspaceEdgeContent(existing, merged)
+        ? existing
+        : merged.copyWith(updatedAt: now);
+  }
+
+  static bool _sameGraphMetadata(
+    ProjectWorkspaceGraph first,
+    ProjectWorkspaceGraph second,
+  ) =>
+      first.orientation == second.orientation &&
+      first.discoveryFingerprint == second.discoveryFingerprint;
+
+  static bool _sameWorkspaceNodeContent(
+    ProjectWorkspaceNode first,
+    ProjectWorkspaceNode second,
+  ) =>
+      first.id == second.id &&
+      first.type == second.type &&
+      first.title == second.title &&
+      first.description == second.description &&
+      _sameStrings(first.aliases, second.aliases) &&
+      _sameStrings(first.tags, second.tags) &&
+      _sameStrings(first.references, second.references) &&
+      first.sourceType == second.sourceType &&
+      first.sourceId == second.sourceId &&
+      first.managedKey == second.managedKey &&
+      first.confidence == second.confidence &&
+      first.protected == second.protected;
+
+  static bool _sameWorkspaceEdgeContent(
+    ProjectWorkspaceEdge first,
+    ProjectWorkspaceEdge second,
+  ) =>
+      first.id == second.id &&
+      first.sourceNodeId == second.sourceNodeId &&
+      first.targetNodeId == second.targetNodeId &&
+      first.label == second.label &&
+      first.description == second.description &&
+      first.sourceType == second.sourceType &&
+      first.sourceId == second.sourceId &&
+      first.managedKey == second.managedKey &&
+      first.confidence == second.confidence &&
+      first.protected == second.protected;
+
+  static bool _sameStrings(Iterable<String> first, Iterable<String> second) {
+    final left = first.toSet();
+    final right = second.toSet();
+    return left.length == right.length && left.containsAll(right);
   }
 
   static TaskStatus _desiredTaskStatus(
@@ -1053,12 +1190,52 @@ class ProjectPlanRevisionService {
     ];
   }
 
+  static bool _isGraphMaintenanceOnly(
+    ProjectAggregate project,
+    ProjectDesiredPlan proposal,
+    ProjectAggregate preview,
+  ) {
+    if (!proposal.triggers.contains(
+      ProjectPlanRevisionTrigger.workspaceGraphMaintenance,
+    )) {
+      return false;
+    }
+    return _criterionSignature(project.criteria) ==
+            _criterionSignature(preview.criteria) &&
+        _milestoneSignature(project.milestones) ==
+            _milestoneSignature(preview.milestones) &&
+        _taskSignature(project.tasks) == _taskSignature(preview.tasks) &&
+        _memorySignature(project.memory) == _memorySignature(preview.memory) &&
+        _questionSignature(project.openQuestions) ==
+            _questionSignature(preview.openQuestions);
+  }
+
+  static List<ProjectPlanRevisionTrigger> _preserveGraphMaintenanceTrigger({
+    required ProjectAggregate project,
+    ProjectDesiredPlan? proposal,
+    bool retainRequested = false,
+    bool clearRequested = false,
+  }) {
+    final graphTrigger = ProjectPlanRevisionTrigger.workspaceGraphMaintenance;
+    final requested =
+        retainRequested || (proposal?.triggers.contains(graphTrigger) ?? false);
+    final clear = clearRequested && requested;
+    final pending = project.pendingReplanTriggers.contains(graphTrigger);
+    final retain = !clear && (pending || requested);
+    return [
+      for (final trigger in project.pendingReplanTriggers)
+        if (trigger != graphTrigger) trigger,
+      if (retain) graphTrigger,
+    ];
+  }
+
   ProjectPlanRevisionResult _reconciliationFailure({
     required ProjectAggregate project,
     required ProjectPlanValidationResult validation,
     required bool repairAttempted,
     required int revision,
     required Object error,
+    bool graphMaintenanceRequested = false,
   }) {
     final issue = ProjectPlanValidationIssue(
       code: 'reconciliation_failed',
@@ -1070,6 +1247,10 @@ class ProjectPlanRevisionService {
       issue,
     ]);
     final blocked = project.copyWith(
+      pendingReplanTriggers: _preserveGraphMaintenanceTrigger(
+        project: project,
+        retainRequested: graphMaintenanceRequested,
+      ),
       blocker: ProjectBlocker(
         type: ProjectBlockerType.validation,
         message:

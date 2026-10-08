@@ -151,6 +151,83 @@ ${_encoder.convert(_initialPlanToMap(initialPlan))}
   }
 
   @override
+  Future<ProjectIncrementalPlanResult> maintainWorkspaceGraph({
+    required ModelConversationPort client,
+    required String baseSystemPrompt,
+    required WorkspaceAttachment workspace,
+    required ProjectAggregate project,
+    required ProjectEvidenceSnapshot evidenceSnapshot,
+    ModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  }) async {
+    final context = ProjectPlanningContext(
+      project: project,
+      workspaceRoot: workspace.rootPath,
+      triggers: const [ProjectPlanRevisionTrigger.workspaceGraphMaintenance],
+      summary: 'Enrich the workspace graph with supported semantic structure.',
+      rationale:
+          'Record only durable semantic concepts and relationships supported by the bounded evidence.',
+      approvalPolicy: ProjectPlanApprovalPolicy.never,
+      planningPass: ProjectPlanningPass.graphMaintenance,
+      planningLimits: ProjectPlanningLimits.graphMaintenance,
+    );
+    final registry = ProjectPlanningToolRegistry(
+      context: context,
+      profile: ProjectPlanningToolProfile.graphMaintenance,
+    );
+    try {
+      final result = await _runPlanning(
+        client: client,
+        registry: registry,
+        label: 'Workspace Graph Maintenance',
+        system:
+            '''
+$baseSystemPrompt
+
+You are the dedicated workspace graph-maintenance planner. Enrich only the
+workspace context graph using the graph tools and finish with plan_commit.
+This pass is graph-only: do not create, update, split, defer, obsolete, or
+otherwise change tasks, criteria, milestones, dependencies, memory, project
+details, user questions, or workspace files.
+
+Semantic nodes and relationships must be supported by the supplied bounded
+evidence. Add references to relevant workspace paths, URLs, chapters, or
+documents whenever the evidence provides them. Do not modify, remove, or
+protect managed or protected entries. Do not duplicate graph knowledge into
+project memory. Omit concepts and relationships that remain ambiguous.
+Workspace orientation is planner-owned and may be refined when the evidence
+supports a durable orientation. Use project_view for the current graph and
+the supplied maintenance evidence, then use plan_preview if useful and finish
+with plan_commit. A successful plan_commit is the only completion signal.
+''',
+        user:
+            '''
+Current bounded project view:
+${_encoder.convert(_projectViewService.query(project))}
+
+Deterministic graph reconciliation:
+${_encoder.convert(evidenceSnapshot.workspaceGraphReconciliation?.toMap() ?? const {})}
+
+Bounded workspace evidence:
+${_encoder.convert(evidenceSnapshot.toMap())}
+''',
+        onModelOutput: onModelOutput,
+        cancellationToken: cancellationToken,
+      );
+      return _incrementalPlanResult(context, result);
+    } on OperationCancelledException {
+      rethrow;
+    } on ChatTransportException {
+      rethrow;
+    } catch (error) {
+      return _incrementalFailure(
+        project,
+        'Workspace graph maintenance failed: $error',
+      );
+    }
+  }
+
+  @override
   Future<ProjectIncrementalPlanResult> revisePlanWithCommands({
     required ModelConversationPort client,
     required String baseSystemPrompt,

@@ -30,7 +30,34 @@ void main() {
       'plan_add_milestones',
       'plan_add_task',
       'plan_add_note',
+      'plan_set_workspace_orientation',
+      'plan_add_workspace_nodes',
+      'plan_update_workspace_node',
+      'plan_add_workspace_edges',
+      'plan_update_workspace_edge',
+      'plan_remove_workspace_item',
       'plan_request_user_decision',
+      'plan_commit',
+    });
+
+    final graphMaintenance = ProjectPlanningToolRegistry(
+      context: ProjectPlanningContext(
+        project: _project(),
+        workspaceRoot: '/workspace',
+        planningPass: ProjectPlanningPass.graphMaintenance,
+        planningLimits: ProjectPlanningLimits.graphMaintenance,
+      ),
+      profile: ProjectPlanningToolProfile.graphMaintenance,
+    );
+    expect(graphMaintenance.toolDefinitions.map((tool) => tool.id).toSet(), {
+      'project_view',
+      'plan_set_workspace_orientation',
+      'plan_add_workspace_nodes',
+      'plan_update_workspace_node',
+      'plan_add_workspace_edges',
+      'plan_update_workspace_edge',
+      'plan_remove_workspace_item',
+      'plan_preview',
       'plan_commit',
     });
 

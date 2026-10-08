@@ -384,6 +384,9 @@ extension ProjectExecutionLifecycle on ProjectExecutionUseCase {
     }
 
     var triggers = _eligibleReplanTriggers(project.pendingReplanTriggers);
+    final graphMaintenancePending = project.pendingReplanTriggers.contains(
+      ProjectPlanRevisionTrigger.workspaceGraphMaintenance,
+    );
     final activeMilestone = milestones
         .where((item) => item.status == ProjectMilestoneStatus.active)
         .firstOrNull;
@@ -431,12 +434,25 @@ extension ProjectExecutionLifecycle on ProjectExecutionUseCase {
         ProjectPlanRevisionTrigger.evidenceRejected,
       );
     }
-    final pendingReplanReason = project.isTerminal || triggers.isEmpty
+    final persistedTriggers = project.isTerminal
+        ? [
+            if (graphMaintenancePending)
+              ProjectPlanRevisionTrigger.workspaceGraphMaintenance,
+          ]
+        : [
+            ...triggers,
+            if (graphMaintenancePending)
+              ProjectPlanRevisionTrigger.workspaceGraphMaintenance,
+          ];
+    final pendingReplanReason = persistedTriggers.isEmpty
         ? null
-        : project.pendingReplanReason ?? _replanReasonForTriggers(triggers);
+        : project.pendingReplanReason ??
+              (triggers.isEmpty
+                  ? 'Workspace graph semantic maintenance is pending.'
+                  : _replanReasonForTriggers(triggers));
     return project.copyWith(
       milestones: milestones,
-      pendingReplanTriggers: project.isTerminal ? const [] : triggers,
+      pendingReplanTriggers: persistedTriggers,
       pendingReplanReason: pendingReplanReason,
       updatedAt: now,
     );

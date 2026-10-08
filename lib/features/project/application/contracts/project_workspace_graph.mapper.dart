@@ -59,7 +59,6 @@ class ProjectWorkspaceSourceTypeMapper
     }
   }
 }
-
 /// @nodoc
 
 extension ProjectWorkspaceSourceTypeMapperExtension
@@ -200,6 +199,12 @@ class ProjectWorkspaceNodeMapper extends ClassMapperBase<ProjectWorkspaceNode> {
     _$sourceId,
     opt: true,
   );
+  static String? _$managedKey(ProjectWorkspaceNode v) => v.managedKey;
+  static const Field<ProjectWorkspaceNode, String> _f$managedKey = Field(
+    'managedKey',
+    _$managedKey,
+    opt: true,
+  );
   static ProjectWorkspaceConfidence _$confidence(ProjectWorkspaceNode v) =>
       v.confidence;
   static const Field<ProjectWorkspaceNode, ProjectWorkspaceConfidence>
@@ -238,6 +243,7 @@ class ProjectWorkspaceNodeMapper extends ClassMapperBase<ProjectWorkspaceNode> {
     #references: _f$references,
     #sourceType: _f$sourceType,
     #sourceId: _f$sourceId,
+    #managedKey: _f$managedKey,
     #confidence: _f$confidence,
     #protected: _f$protected,
     #createdAt: _f$createdAt,
@@ -257,6 +263,7 @@ class ProjectWorkspaceNodeMapper extends ClassMapperBase<ProjectWorkspaceNode> {
       references: data.dec(_f$references),
       sourceType: data.dec(_f$sourceType),
       sourceId: data.dec(_f$sourceId),
+      managedKey: data.dec(_f$managedKey),
       confidence: data.dec(_f$confidence),
       protected: data.dec(_f$protected),
       createdAt: data.dec(_f$createdAt),
@@ -345,6 +352,12 @@ class ProjectWorkspaceEdgeMapper extends ClassMapperBase<ProjectWorkspaceEdge> {
     _$sourceId,
     opt: true,
   );
+  static String? _$managedKey(ProjectWorkspaceEdge v) => v.managedKey;
+  static const Field<ProjectWorkspaceEdge, String> _f$managedKey = Field(
+    'managedKey',
+    _$managedKey,
+    opt: true,
+  );
   static ProjectWorkspaceConfidence _$confidence(ProjectWorkspaceEdge v) =>
       v.confidence;
   static const Field<ProjectWorkspaceEdge, ProjectWorkspaceConfidence>
@@ -381,6 +394,7 @@ class ProjectWorkspaceEdgeMapper extends ClassMapperBase<ProjectWorkspaceEdge> {
     #description: _f$description,
     #sourceType: _f$sourceType,
     #sourceId: _f$sourceId,
+    #managedKey: _f$managedKey,
     #confidence: _f$confidence,
     #protected: _f$protected,
     #createdAt: _f$createdAt,
@@ -398,6 +412,7 @@ class ProjectWorkspaceEdgeMapper extends ClassMapperBase<ProjectWorkspaceEdge> {
       description: data.dec(_f$description),
       sourceType: data.dec(_f$sourceType),
       sourceId: data.dec(_f$sourceId),
+      managedKey: data.dec(_f$managedKey),
       confidence: data.dec(_f$confidence),
       protected: data.dec(_f$protected),
       createdAt: data.dec(_f$createdAt),
@@ -467,6 +482,10 @@ class ProjectWorkspaceGraphMapper
     _$updatedAt,
     opt: true,
   );
+  static String? _$discoveryFingerprint(ProjectWorkspaceGraph v) =>
+      v.discoveryFingerprint;
+  static const Field<ProjectWorkspaceGraph, String> _f$discoveryFingerprint =
+      Field('discoveryFingerprint', _$discoveryFingerprint, opt: true);
 
   @override
   final MappableFields<ProjectWorkspaceGraph> fields = const {
@@ -474,6 +493,7 @@ class ProjectWorkspaceGraphMapper
     #nodes: _f$nodes,
     #edges: _f$edges,
     #updatedAt: _f$updatedAt,
+    #discoveryFingerprint: _f$discoveryFingerprint,
   };
   @override
   final bool ignoreNull = true;
@@ -484,6 +504,7 @@ class ProjectWorkspaceGraphMapper
       nodes: data.dec(_f$nodes),
       edges: data.dec(_f$edges),
       updatedAt: data.dec(_f$updatedAt),
+      discoveryFingerprint: data.dec(_f$discoveryFingerprint),
     );
   }
 

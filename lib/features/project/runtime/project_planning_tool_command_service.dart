@@ -167,6 +167,12 @@ class ProjectPlanningToolCommandService {
         'plan_add_check',
         'plan_add_note',
         'plan_request_user_decision',
+        'plan_set_workspace_orientation',
+        'plan_add_workspace_nodes',
+        'plan_update_workspace_node',
+        'plan_add_workspace_edges',
+        'plan_update_workspace_edge',
+        'plan_remove_workspace_item',
         'plan_preview',
         'plan_commit',
       }.contains(toolId),
@@ -190,6 +196,17 @@ class ProjectPlanningToolCommandService {
         'plan_update_workspace_edge',
         'plan_remove_workspace_item',
         'plan_request_user_decision',
+        'plan_preview',
+        'plan_commit',
+      }.contains(toolId),
+      ProjectPlanningToolProfile.graphMaintenance => const {
+        'project_view',
+        'plan_set_workspace_orientation',
+        'plan_add_workspace_nodes',
+        'plan_update_workspace_node',
+        'plan_add_workspace_edges',
+        'plan_update_workspace_edge',
+        'plan_remove_workspace_item',
         'plan_preview',
         'plan_commit',
       }.contains(toolId),
@@ -224,6 +241,9 @@ class ProjectPlanningToolCommandService {
       return issues.every((issue) => bootstrapRepairable.contains(issue.code));
     }
     if (profile == ProjectPlanningToolProfile.split) {
+      return false;
+    }
+    if (profile == ProjectPlanningToolProfile.graphMaintenance) {
       return false;
     }
     const nonRepairableByProfile = {

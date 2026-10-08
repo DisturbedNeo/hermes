@@ -7,6 +7,7 @@ enum ProjectPersistenceCheckpoint {
   planRevision,
   userBoundary,
   recovery,
+  workspaceGraphMaintenance,
   runtime,
 }
 
@@ -19,6 +20,8 @@ extension ProjectPersistenceCheckpointWire on ProjectPersistenceCheckpoint {
     ProjectPersistenceCheckpoint.taskReview => 'task_review',
     ProjectPersistenceCheckpoint.planRevision => 'plan_revision',
     ProjectPersistenceCheckpoint.userBoundary => 'user_boundary',
+    ProjectPersistenceCheckpoint.workspaceGraphMaintenance =>
+      'workspace_graph_maintenance',
     _ => name,
   };
 }

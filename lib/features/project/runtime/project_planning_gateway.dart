@@ -8,6 +8,7 @@ import 'package:hermes/features/project/runtime/project_plan_patch.dart';
 import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
 import 'package:hermes/features/model/application/model_output.dart';
 import 'package:hermes/features/project/runtime/project_planning_policy.dart';
+import 'package:hermes/features/project/runtime/project_workspace_graph_reconciler.dart';
 import 'package:hermes/core/wire_case.dart';
 
 export 'package:hermes/features/project/runtime/project_plan_validator.dart'
@@ -50,6 +51,7 @@ class ProjectEvidenceSnapshot {
   final List<String> recentlyCompletedTasks;
   final List<String> verificationCommands;
   final ProjectWorkspaceGraph workspaceGraph;
+  final ProjectWorkspaceGraphReconciliation? workspaceGraphReconciliation;
   final ProjectWorkspaceContextSelection workspaceContext;
   final DateTime collectedAt;
 
@@ -72,6 +74,7 @@ class ProjectEvidenceSnapshot {
     this.recentlyCompletedTasks = const [],
     this.verificationCommands = const [],
     ProjectWorkspaceGraph? workspaceGraph,
+    this.workspaceGraphReconciliation,
     ProjectWorkspaceContextSelection? workspaceContext,
     required this.collectedAt,
   }) : workspaceProfile =
@@ -108,6 +111,7 @@ class ProjectEvidenceSnapshot {
     'recentlyCompletedTasks': recentlyCompletedTasks,
     'verificationCommands': verificationCommands,
     'workspaceGraph': workspaceGraph.toMap(),
+    'workspaceGraphReconciliation': workspaceGraphReconciliation?.toMap(),
     'workspaceContext': workspaceContext.toMap(),
     'collectedAt': collectedAt.toIso8601String(),
   });
@@ -186,6 +190,16 @@ class ProjectIncrementalPlanResult {
 /// project planning decisions. Incremental revision is the normal planning
 /// protocol; legacy initial-plan DTOs remain above only for wire compatibility.
 abstract interface class ProjectPlanner {
+  Future<ProjectIncrementalPlanResult> maintainWorkspaceGraph({
+    required ModelConversationPort client,
+    required String baseSystemPrompt,
+    required WorkspaceAttachment workspace,
+    required ProjectAggregate project,
+    required ProjectEvidenceSnapshot evidenceSnapshot,
+    ModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  });
+
   Future<ProjectIncrementalPlanResult> revisePlanWithCommands({
     required ModelConversationPort client,
     required String baseSystemPrompt,

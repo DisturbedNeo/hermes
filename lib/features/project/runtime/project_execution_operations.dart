@@ -242,13 +242,25 @@ extension ProjectExecutionOperations on ProjectExecutionUseCase {
     String? planningError,
     ProjectPlanningPass planningPass = ProjectPlanningPass.maintenance,
   }) {
+    final graphMaintenancePending = revised.pendingReplanTriggers.contains(
+      ProjectPlanRevisionTrigger.workspaceGraphMaintenance,
+    );
     revised = revised.copyWith(
       currentBatchTaskIds: const [],
       currentBatchIndex: 0,
       currentBatchPlanRevision: 0,
       currentBatchProgressObserved: false,
-      pendingReplanReason: null,
-      pendingReplanTriggers: const [],
+      pendingReplanReason: graphMaintenancePending
+          ? revised.pendingReplanReason ??
+                'Workspace graph semantic maintenance is pending.'
+          : null,
+      pendingReplanTriggers: [
+        for (final trigger in revised.pendingReplanTriggers)
+          if (trigger != ProjectPlanRevisionTrigger.workspaceGraphMaintenance)
+            trigger,
+        if (graphMaintenancePending)
+          ProjectPlanRevisionTrigger.workspaceGraphMaintenance,
+      ],
       boundary: planningError == null && !awaitingApproval
           ? null
           : revised.boundary,

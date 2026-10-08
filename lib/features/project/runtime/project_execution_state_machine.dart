@@ -38,6 +38,7 @@ import 'package:hermes/features/project/runtime/project_persistence_runtime.dart
 import 'package:hermes/features/project/runtime/project_persistence_coordinator.dart';
 import 'package:hermes/features/project/runtime/project_plan_revision_coordinator.dart';
 import 'package:hermes/features/project/runtime/project_discovery_service.dart';
+import 'package:hermes/features/project/runtime/project_workspace_graph_maintenance_coordinator.dart';
 import 'package:hermes/features/project/runtime/project_evaluation_coordinator.dart';
 import 'package:hermes/features/project/runtime/project_command_service.dart';
 import 'package:hermes/features/project/domain/project_scheduler.dart';
@@ -158,6 +159,11 @@ class ProjectExecutionStateMachine {
          discovery: dependencies.discoveryService,
          planner: dependencies.planner,
        ),
+       _graphMaintenanceCoordinator =
+           ProjectWorkspaceGraphMaintenanceCoordinator(
+             discovery: dependencies.discoveryService,
+             planner: dependencies.planner,
+           ),
        _planningHandler = dependencies.planningHandler,
        _decisionEngine = dependencies.decisionEngine,
        _controlStateService = dependencies.controlStateService {
@@ -177,6 +183,7 @@ class ProjectExecutionStateMachine {
       evidenceService: _evidenceService,
       criterionEvaluator: _criterionEvaluator,
       planRevisionCoordinator: _planRevisionCoordinator,
+      graphMaintenanceCoordinator: _graphMaintenanceCoordinator,
       decisionEngine: _decisionEngine,
       questionPolicy: _questionPolicy,
       recoveryHandler: recoveryHandler,
@@ -263,6 +270,8 @@ class ProjectExecutionStateMachine {
   final ProjectEvidenceService _evidenceService;
   final ProjectCriterionEvaluator _criterionEvaluator;
   final ProjectPlanRevisionCoordinator _planRevisionCoordinator;
+  final ProjectWorkspaceGraphMaintenanceCoordinator
+  _graphMaintenanceCoordinator;
   final ProjectPlanningHandler _planningHandler;
   final ProjectDecisionEngine _decisionEngine;
   final ProjectControlStateService _controlStateService;

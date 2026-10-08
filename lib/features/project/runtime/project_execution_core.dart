@@ -114,6 +114,22 @@ extension ProjectExecutionCore on ProjectExecutionUseCase {
         activeTask: activeTask,
       );
     }
+    final graphMaintenance = await _graphMaintenanceCoordinator.maintain(
+      workspace: workspace,
+      project: project,
+      baseSystemPrompt: baseSystemPrompt,
+      client: client,
+      onModelOutput: onModelOutput,
+      cancellationToken: cancellationToken,
+      reload: () => _reloadProjectSnapshot(workspace, project),
+      persist: (nextProject, checkpoint) => _persistProject(
+        workspace.rootPath,
+        nextProject,
+        persistenceContext: persistenceContext,
+        checkpoint: checkpoint,
+      ),
+    );
+    project = graphMaintenance.project;
     final canAutomaticallyReplanValidationBlocker =
         project.blocker?.type == ProjectBlockerType.validation &&
         project.activeTaskId == null;
@@ -284,12 +300,29 @@ extension ProjectExecutionCore on ProjectExecutionUseCase {
       var replanTriggers = _eligibleReplanTriggers(
         project.pendingReplanTriggers,
       );
+      replanTriggers = replanTriggers
+          .where(
+            (trigger) =>
+                trigger != ProjectPlanRevisionTrigger.workspaceGraphMaintenance,
+          )
+          .toList();
+      final graphMaintenancePending = project.pendingReplanTriggers.contains(
+        ProjectPlanRevisionTrigger.workspaceGraphMaintenance,
+      );
       if (replanTriggers.length != project.pendingReplanTriggers.length ||
-          (replanTriggers.isNotEmpty && project.pendingReplanReason == null)) {
+          (replanTriggers.isNotEmpty && project.pendingReplanReason == null) ||
+          (graphMaintenancePending &&
+              !replanTriggers.contains(
+                ProjectPlanRevisionTrigger.workspaceGraphMaintenance,
+              ))) {
         project = project.copyWith(
-          pendingReplanTriggers: replanTriggers,
+          pendingReplanTriggers: [
+            ...replanTriggers,
+            if (graphMaintenancePending)
+              ProjectPlanRevisionTrigger.workspaceGraphMaintenance,
+          ],
           pendingReplanReason: replanTriggers.isEmpty
-              ? null
+              ? project.pendingReplanReason
               : _replanReasonForTriggers(replanTriggers),
         );
       }
@@ -610,7 +643,6 @@ extension ProjectExecutionCore on ProjectExecutionUseCase {
         persistenceContext: persistenceContext,
         checkpoint: ProjectPersistenceCheckpoint.taskReview,
       );
-
       final evaluatedProjectTask = _activeProjectTask(project) ?? candidate;
       final criterionStatusesBefore = {
         for (final criterion in project.criteria)
@@ -654,6 +686,29 @@ extension ProjectExecutionCore on ProjectExecutionUseCase {
         invalidEvidenceIdsBefore: invalidEvidenceIds,
         now: now,
       );
+      project = await _persistProject(
+        workspace.rootPath,
+        project,
+        persistenceContext: persistenceContext,
+        checkpoint: ProjectPersistenceCheckpoint.taskReview,
+      );
+      final postReviewGraphMaintenance = await _graphMaintenanceCoordinator
+          .maintain(
+            workspace: workspace,
+            project: project,
+            baseSystemPrompt: baseSystemPrompt,
+            client: client,
+            onModelOutput: onModelOutput,
+            cancellationToken: cancellationToken,
+            reload: () => _reloadProjectSnapshot(workspace, project),
+            persist: (nextProject, checkpoint) => _persistProject(
+              workspace.rootPath,
+              nextProject,
+              persistenceContext: persistenceContext,
+              checkpoint: checkpoint,
+            ),
+          );
+      project = postReviewGraphMaintenance.project;
       final endedMilestoneId =
           activeMilestoneIdBefore != null &&
               project.milestones.any(
@@ -996,6 +1051,23 @@ extension ProjectExecutionCore on ProjectExecutionUseCase {
       project: syncedProject,
       activeTask: activeTask,
       result: result,
+    );
+  }
+
+  Future<ProjectAggregate?> _reloadProjectSnapshot(
+    WorkspaceAttachment workspace,
+    ProjectAggregate project,
+  ) async {
+    final loaded = await _aggregateRepository.loadProject(
+      workspace.rootPath,
+      project.id,
+      chatSessionId: project.chatSessionId,
+      includeHistory: false,
+    );
+    final latest = loaded.project;
+    if (latest == null) return null;
+    return latest.copyWith(
+      tasks: loaded.canonicalTasks.map(ProjectTaskNode.fromTask).toList(),
     );
   }
 

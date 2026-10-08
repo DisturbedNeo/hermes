@@ -916,6 +916,24 @@ class _InitialisationGateway
   var repairCalls = 0;
   var revisePlanCalls = 0;
 
+  @override
+  Future<ProjectIncrementalPlanResult> maintainWorkspaceGraph({
+    required ModelConversationPort client,
+    required String baseSystemPrompt,
+    required WorkspaceAttachment workspace,
+    required ProjectAggregate project,
+    required ProjectEvidenceSnapshot evidenceSnapshot,
+    ModelOutputSink? onModelOutput,
+    CancellationToken? cancellationToken,
+  }) async => ProjectIncrementalPlanResult(
+    project: project,
+    committed: false,
+    changed: false,
+    awaitingApproval: false,
+    modelCalls: 1,
+    error: 'test gateway does not maintain workspace graphs',
+  );
+
   Future<ProjectInitialPlanResult> initializePlan({
     required ModelConversationPort client,
     required String baseSystemPrompt,

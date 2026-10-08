@@ -1,8 +1,13 @@
 /// The kind of bounded project-planning pass being performed.
-enum ProjectPlanningPass { bootstrap, maintenance, split }
+enum ProjectPlanningPass { bootstrap, maintenance, graphMaintenance, split }
 
 /// The model-facing tool surface for one planning pass.
-enum ProjectPlanningToolProfile { bootstrap, maintenance, split }
+enum ProjectPlanningToolProfile {
+  bootstrap,
+  maintenance,
+  graphMaintenance,
+  split,
+}
 
 /// Runtime limits applied to one project-planning transaction.
 ///
@@ -16,7 +21,7 @@ class ProjectPlanningLimits {
     this.minNewTasks = 0,
     this.requireExecutableSlice = false,
     this.requireActiveMilestone = false,
-  }) : assert(maxNewTasks > 0),
+  }) : assert(maxNewTasks >= 0),
        assert(minNewTasks >= 0),
        assert(minNewTasks <= maxNewTasks);
 
@@ -27,6 +32,8 @@ class ProjectPlanningLimits {
   );
 
   static const maintenance = ProjectPlanningLimits(maxNewTasks: 3);
+
+  static const graphMaintenance = ProjectPlanningLimits(maxNewTasks: 0);
 
   static const split = ProjectPlanningLimits(maxNewTasks: 3, minNewTasks: 2);
 
