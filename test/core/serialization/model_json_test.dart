@@ -309,7 +309,7 @@ void main() {
       final question = ModelJson.decode<AgentQuestion>({
         'question': 'Choose?',
         'reason': 'Required',
-        'defaultIfUnanswered': 'Desktop',
+        'default_if_unanswered': 'Desktop',
         'kind': 'preference',
       });
       expect(question.kind, QuestionKind.preference);

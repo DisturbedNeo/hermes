@@ -40,6 +40,7 @@ import 'package:hermes/features/task/runtime/task_execution_policy.dart';
 import 'package:hermes/features/workspace/application/workspace_ports.dart';
 import 'package:hermes/features/workspace/application/workspace_discovery.dart';
 import 'package:hermes/core/model_json.dart';
+import 'package:hermes/core/wire_case.dart';
 import 'package:hermes/features/tools/application/protocol/tool_error.dart';
 import 'package:path/path.dart' as path;
 import 'package:hermes/features/task/runtime/task_execution_models.dart';
@@ -151,11 +152,11 @@ const ToolDefinition _requestTaskUserDecisionToolDefinition = ToolDefinition(
         'type': 'string',
         'description': 'Why the task cannot safely continue without an answer.',
       },
-      'defaultIfUnanswered': {
+      'default_if_unanswered': {
         'type': 'string',
         'description': 'Safe default, if one exists.',
       },
-      'riskOfAssuming': {
+      'risk_of_assuming': {
         'type': 'string',
         'description': 'Risk of choosing the default without the user.',
       },

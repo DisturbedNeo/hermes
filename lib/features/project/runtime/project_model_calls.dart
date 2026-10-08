@@ -20,6 +20,7 @@ import 'package:hermes/features/project/runtime/project_view_service.dart';
 import 'package:hermes/features/task/application/protocol/question_protocol_adapter.dart';
 import 'package:hermes/features/model/application/model_output.dart';
 import 'package:hermes/features/workspace/application/workspace_ports.dart';
+import 'package:hermes/core/wire_case.dart';
 
 export 'package:hermes/features/project/runtime/project_planning_gateway.dart'
     show
@@ -418,27 +419,27 @@ ${_encoder.convert(_projectViewService.query(project, taskRef: oversizedTask.id)
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
         expectedShape:
-            '{"complete":false,"finalSummary":"...","remainingCriteria":["..."],"supportedCriterionIds":["criterion_001"],"openQuestions":[{"question":"..."}]}',
+            '{"complete":false,"final_summary":"...","remaining_criteria":["..."],"supported_criterion_ids":["criterion_001"],"open_questions":[{"question":"..."}]}',
         user:
             '''
 Perform one bounded semantic review of the unresolved Project criteria and their persisted evidence.
-Task completion alone is not evidence that a criterion is satisfied. Treat proposed task claims as advisory. List every criterion that still lacks adequate evidence in remainingCriteria, and list criterion IDs with credible partial support in supportedCriterionIds.
-Only include a criterion in supportedCriterionIds when persisted proposed or accepted evidence provides meaningful support beyond merely reporting that work was attempted. Do not include deterministic criteria unless their deterministic evidence is present; do not include evidence that is only advisory.
+Task completion alone is not evidence that a criterion is satisfied. Treat proposed task claims as advisory. List every criterion that still lacks adequate evidence in remaining_criteria, and list criterion IDs with credible partial support in supported_criterion_ids.
+Only include a criterion in supported_criterion_ids when persisted proposed or accepted evidence provides meaningful support beyond merely reporting that work was attempted. Do not include deterministic criteria unless their deterministic evidence is present; do not include evidence that is only advisory.
 Set complete only when every required criterion is adequately supported. Your decision will be persisted as an evidence-review rationale.
-Do not add openQuestions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences.
-Add openQuestions only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
+Do not add open_questions for prioritization, naming, implementation order, minor layout/design choices, or other reversible preferences.
+Add open_questions only for destructive or irreversible actions, credentials/secrets/accounts/API keys, legal/business/product requirement decisions, scope expansion, constraint conflicts, or high-cost ambiguity with no reasonable default.
 
 Return only JSON:
 {
   "complete": false,
-  "finalSummary": "...",
-  "remainingCriteria": ["..."],
-  "supportedCriterionIds": ["criterion_001"],
-  "openQuestions": [{"question": "..."}]
+  "final_summary": "...",
+  "remaining_criteria": ["..."],
+  "supported_criterion_ids": ["criterion_001"],
+  "open_questions": [{"question": "..."}]
 }
 
 Project state:
-${_encoder.convert(ModelJson.encode(project))}
+${_encoder.convert(snakeCaseWire(ModelJson.encode(project)))}
 ''',
       );
       final rawRemainingCriteria =
@@ -651,8 +652,9 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
   Map<String, dynamic> _compactWorkspaceMetadata(
     Map<String, dynamic> metadata,
   ) {
-    final profile = metadata['workspaceProfile'];
-    if (profile is! Map) return metadata;
+    final normalized = snakeCaseMap(metadata);
+    final profile = normalized['workspace_profile'];
+    if (profile is! Map) return normalized;
     final profileMap = Map<String, dynamic>.from(profile);
     List<String> strings(Object? value, {int limit = 80}) => [
       if (value is List)
@@ -660,27 +662,27 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
           if (item is String) item,
     ].take(limit).toList();
     final readableFiles = strings(
-      profileMap['treePaths'],
+      profileMap['tree_paths'],
       limit: 400,
     ).where((item) => !item.endsWith('/')).toList();
     return {
-      'workspace_name': metadata['workspaceName'],
-      'command_execution_approved': metadata['commandExecutionApproved'],
-      'root_entries': strings(metadata['rootEntries']),
-      'git_available': metadata['gitAvailable'] == true,
-      'changed_files': strings(metadata['changedFiles']),
-      'tree_paths': strings(profileMap['treePaths'], limit: 200),
+      'workspace_name': normalized['workspace_name'],
+      'command_execution_approved': normalized['command_execution_approved'],
+      'root_entries': strings(normalized['root_entries']),
+      'git_available': normalized['git_available'] == true,
+      'changed_files': strings(normalized['changed_files']),
+      'tree_paths': strings(profileMap['tree_paths'], limit: 200),
       'readable_files': readableFiles,
-      'package_name': profileMap['packageName'],
+      'package_name': profileMap['package_name'],
       'scripts': profileMap['scripts'],
       'dependencies': strings(profileMap['dependencies']),
       'languages': strings(profileMap['languages']),
       'frameworks': strings(profileMap['frameworks']),
-      'tree_truncated': profileMap['treeTruncated'] == true,
-      'omitted_path_count': profileMap['omittedPathCount'],
+      'tree_truncated': profileMap['tree_truncated'] == true,
+      'omitted_path_count': profileMap['omitted_path_count'],
       'context_warnings': strings(
-        (profileMap['requiredContextIssues'] is List)
-            ? (profileMap['requiredContextIssues'] as List)
+        (profileMap['required_context_issues'] is List)
+            ? (profileMap['required_context_issues'] as List)
                   .whereType<Map>()
                   .map(
                     (item) => '${item['path'] ?? ''}: ${item['message'] ?? ''}',
@@ -693,9 +695,9 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
   }
 
   List<String> _workspaceFilesFromMetadata(Map<String, dynamic> metadata) {
-    final profile = metadata['workspaceProfile'];
+    final profile = snakeCaseMap(metadata)['workspace_profile'];
     if (profile is! Map) return const [];
-    final treePaths = profile['treePaths'];
+    final treePaths = profile['tree_paths'];
     if (treePaths is! List) return const [];
     return [
       for (final item in treePaths)
@@ -705,10 +707,10 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
 
   Map<String, dynamic> _initialPlanToMap(ProjectInitialPlanResult value) => {
     'title': value.patch.title,
-    'refinedGoal': value.patch.refinedGoal,
+    'refined_goal': value.patch.refinedGoal,
     'constraints': value.patch.constraints,
-    'plan': ModelJson.encode(value.patch.plan),
-    if (value.planningError != null) 'planningError': value.planningError,
+    'plan': snakeCaseWire(ModelJson.encode(value.patch.plan)),
+    if (value.planningError != null) 'planning_error': value.planningError,
   };
 
   ProjectInitialPlanResult _fallbackInitialPlan(

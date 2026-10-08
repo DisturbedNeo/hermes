@@ -4,6 +4,7 @@ import 'package:hermes/core/json_parsing.dart';
 import 'package:hermes/core/contracts/model_conversation.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/model_json.dart';
+import 'package:hermes/core/wire_case.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/model/application/model_capabilities.dart';
 import 'package:hermes/features/model/application/model_errors.dart';
@@ -575,7 +576,7 @@ Task objective:
 ${task.objective}
 
 Step:
-${jsonEncode(ModelJson.encode(step))}
+${jsonEncode(snakeCaseWire(ModelJson.encode(step)))}
 
 Review instruction:
 $prompt

@@ -705,7 +705,7 @@ Reason for replan:
 $reason
 
 Project context that remains authoritative:
-${projectContext == null ? 'None supplied.' : _encoder.convert(ModelJson.encode(projectContext))}
+${projectContext == null ? 'None supplied.' : _encoder.convert(snakeCaseWire(ModelJson.encode(projectContext)))}
 
 Current bounded task view:
 ${_encoder.convert(_taskViewService.query(snapshot, maxSteps: _taskPlanningStepLimit(snapshot), doneCriteria: context.doneCriteria, outOfScope: context.outOfScope, readPaths: context.readPaths, writePaths: context.writePaths, requiredGates: context.requiredGates))}

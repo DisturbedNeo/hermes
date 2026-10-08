@@ -162,6 +162,8 @@ void main() {
           .expand((messages) => messages)
           .map((message) => message.content)
           .join('\n');
+      expect(prompt, contains('workspace_name'));
+      expect(prompt, isNot(contains('workspaceName')));
       expect(prompt, contains('domain-neutral'));
       expect(
         prompt,

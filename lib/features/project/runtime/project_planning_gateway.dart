@@ -8,6 +8,7 @@ import 'package:hermes/features/project/runtime/project_plan_patch.dart';
 import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
 import 'package:hermes/features/model/application/model_output.dart';
 import 'package:hermes/features/project/runtime/project_planning_policy.dart';
+import 'package:hermes/core/wire_case.dart';
 
 export 'package:hermes/features/project/runtime/project_plan_validator.dart'
     show ProjectPlanValidationIssue, ProjectPlanValidationSeverity;
@@ -88,7 +89,7 @@ class ProjectEvidenceSnapshot {
              truncated: false,
            );
 
-  Map<String, dynamic> toMap() => {
+  Map<String, dynamic> toMap() => snakeCaseMap({
     'workspaceName': workspaceName,
     'workspaceProfile': workspaceProfile.toMap(),
     'rootEntries': rootEntries,
@@ -109,7 +110,7 @@ class ProjectEvidenceSnapshot {
     'workspaceGraph': workspaceGraph.toMap(),
     'workspaceContext': workspaceContext.toMap(),
     'collectedAt': collectedAt.toIso8601String(),
-  };
+  });
 }
 
 /// Typed planning metadata passed from discovery to a model planner.
@@ -122,19 +123,22 @@ class ProjectPlanningWorkspaceMetadata {
 
   ProjectPlanningWorkspaceMetadata.fromWire(Map<String, Object?> wire)
     : evidence = null,
-      commandExecutionApproved = wire['commandExecutionApproved'] == true,
+      commandExecutionApproved =
+          wire['command_execution_approved'] == true ||
+          wire['commandExecutionApproved'] == true,
       _wireOverride = Map.unmodifiable(wire);
 
   final ProjectEvidenceSnapshot? evidence;
   final bool commandExecutionApproved;
   final Map<String, Object?>? _wireOverride;
 
-  Map<String, Object?> toWire() =>
-      _wireOverride ??
-      <String, Object?>{
-        ...evidence!.toMap(),
-        'commandExecutionApproved': commandExecutionApproved,
-      };
+  Map<String, Object?> toWire() => snakeCaseMap(
+    _wireOverride ??
+        <String, Object?>{
+          ...evidence!.toMap(),
+          'commandExecutionApproved': commandExecutionApproved,
+        },
+  );
 }
 
 /// Pure result of evaluating whether the persisted project state is complete.

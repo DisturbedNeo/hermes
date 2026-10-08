@@ -209,8 +209,8 @@ or an explicit user command. Task memories remain separate from that graph.
   };
 
   Map<String, dynamic> _compactTaskMetadata(WorkspaceMetadata metadata) {
-    final raw = ModelJson.encode(metadata);
-    final profile = raw['workspaceProfile'];
+    final raw = snakeCaseMap(ModelJson.encode(metadata));
+    final profile = raw['workspace_profile'];
     final profileMap = profile is Map
         ? Map<String, dynamic>.from(profile)
         : const <String, dynamic>{};
@@ -220,7 +220,7 @@ or an explicit user command. Task memories remain separate from that graph.
           if (item is String) item,
     ].take(limit).toList();
     final highSignalFiles = <Map<String, dynamic>>[];
-    final rawHighSignalFiles = profileMap['highSignalFiles'];
+    final rawHighSignalFiles = profileMap['high_signal_files'];
     if (rawHighSignalFiles is List) {
       for (final rawFile in rawHighSignalFiles.take(6)) {
         if (rawFile is! Map) continue;
@@ -236,18 +236,18 @@ or an explicit user command. Task memories remain separate from that graph.
       }
     }
     return {
-      'workspace_name': raw['workspaceName'],
-      'command_execution_approved': raw['commandExecutionApproved'],
-      'root_files': strings(raw['rootFiles']),
-      'git_available': raw['gitAvailable'] == true,
-      'tree_paths': strings(profileMap['treePaths'], limit: 160),
+      'workspace_name': raw['workspace_name'],
+      'command_execution_approved': raw['command_execution_approved'],
+      'root_files': strings(raw['root_files']),
+      'git_available': raw['git_available'] == true,
+      'tree_paths': strings(profileMap['tree_paths'], limit: 160),
       'high_signal_files': highSignalFiles,
-      'package_name': profileMap['packageName'],
+      'package_name': profileMap['package_name'],
       'scripts': profileMap['scripts'],
       'dependencies': strings(profileMap['dependencies']),
       'languages': strings(profileMap['languages']),
       'frameworks': strings(profileMap['frameworks']),
-      'tree_truncated': profileMap['treeTruncated'] == true,
+      'tree_truncated': profileMap['tree_truncated'] == true,
     };
   }
 
@@ -562,19 +562,19 @@ Success criteria:
 ${task.successCriteria.map((item) => '- $item').join('\n')}
 
 Linked Project criteria:
-${executionRequest.criteria.isEmpty ? _encoder.convert(executionRequest.criterionIds) : _encoder.convert(executionRequest.criteria.map(ModelJson.encode).toList())}
+${executionRequest.criteria.isEmpty ? _encoder.convert(executionRequest.criterionIds) : _encoder.convert(executionRequest.criteria.map((item) => snakeCaseWire(ModelJson.encode(item))).toList())}
 
 Expected Project evidence:
-${executionRequest.expectedEvidence.isEmpty ? 'None specified.' : _encoder.convert(executionRequest.expectedEvidence.map(ModelJson.encode).toList())}
+${executionRequest.expectedEvidence.isEmpty ? 'None specified.' : _encoder.convert(executionRequest.expectedEvidence.map((item) => snakeCaseWire(ModelJson.encode(item))).toList())}
 
 Current memory:
 ${task.memorySummary.trim().isEmpty ? 'None yet.' : task.memorySummary}
 
 Full plan:
-${_encoder.convert(task.steps.map(ModelJson.encode).toList())}
+${_encoder.convert(task.steps.map((item) => snakeCaseWire(ModelJson.encode(item))).toList())}
 
 Current step:
-${_encoder.convert(ModelJson.encode(step))}
+${_encoder.convert(snakeCaseWire(ModelJson.encode(step)))}
 
 Available artifact inputs:
 $availableArtifacts

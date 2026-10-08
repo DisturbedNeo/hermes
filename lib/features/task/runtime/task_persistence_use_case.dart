@@ -153,7 +153,7 @@ class TaskPersistenceUseCase {
         client: client,
         system: _refinerSystemInstruction,
         expectedShape:
-            '{"title":"...","goal":"...","constraints":[],"successCriteria":[],"assumptions":[],"questions":[]}',
+            '{"title":"...","goal":"...","constraints":[],"success_criteria":[],"assumptions":[],"questions":[]}',
         label: 'Prompt Refiner',
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
@@ -166,14 +166,14 @@ Return only JSON:
   "title": "...",
   "goal": "...",
   "constraints": ["..."],
-  "successCriteria": ["..."],
+  "success_criteria": ["..."],
   "assumptions": ["..."],
   "questions": ["..."]
 }
 
 Selected mode: ${selectedMode.wire}
 Workspace metadata:
-${_encoder.convert(ModelJson.encode(metadata))}
+${_encoder.convert(snakeCaseWire(ModelJson.encode(metadata)))}
 
 Request:
 $userPrompt

@@ -568,7 +568,7 @@ void main() {
               arguments: jsonEncode({
                 'question': 'Which production account should be used?',
                 'reason': 'Credentials and account selection require the user.',
-                'riskOfAssuming':
+                'risk_of_assuming':
                     'The wrong account could receive the deployment.',
               }),
             ),
@@ -977,9 +977,9 @@ void main() {
               'userQuestion': {
                 'question': 'Which UI component should I prioritise?',
                 'reason': 'This only affects implementation order.',
-                'defaultIfUnanswered':
+                'default_if_unanswered':
                     'prioritize the first reasonable component, then continue with the rest.',
-                'riskOfAssuming': 'Low; the choice is reversible.',
+                'risk_of_assuming': 'Low; the choice is reversible.',
                 'kind': 'preference',
               },
             }),
