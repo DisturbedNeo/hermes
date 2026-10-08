@@ -207,6 +207,21 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
       _taskRefs[reference] = task.id;
       _taskRefs[task.id] = task.id;
     }
+    for (var index = 0; index < specs.length; index++) {
+      final taskId = ids[index];
+      for (final check in specs[index].checks) {
+        _addCommandCheckInternal(
+          taskReference: taskId,
+          command: check.command,
+          workingDirectory: check.workingDirectory,
+          criterionRefs: check.criterionRefs.isEmpty
+              ? null
+              : check.criterionRefs,
+          required: check.required,
+          description: check.description,
+        );
+      }
+    }
     _ensureNoCycles();
     return ids;
   }
@@ -728,6 +743,16 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
     'doneCriteria': spec.doneCriteria,
     'outOfScope': spec.outOfScope,
     'context': spec.context,
+    'checks': [
+      for (final check in spec.checks)
+        {
+          'command': check.command,
+          'workingDirectory': check.workingDirectory,
+          'criterionRefs': check.criterionRefs,
+          'required': check.required,
+          'description': check.description,
+        },
+    ],
     'expectedArtifacts': [
       for (final artifact in spec.expectedArtifacts)
         {

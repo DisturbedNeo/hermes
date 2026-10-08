@@ -77,6 +77,7 @@ class ProjectTaskSpec {
   final List<String> outOfScope;
   final List<String> context;
   final List<TaskArtifact> expectedArtifacts;
+  final List<ProjectTaskCheckSpec> checks;
 
   const ProjectTaskSpec({
     this.ref = '',
@@ -97,6 +98,7 @@ class ProjectTaskSpec {
     this.outOfScope = const [],
     this.context = const [],
     this.expectedArtifacts = const [],
+    this.checks = const [],
   });
 }
 

@@ -756,6 +756,7 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
             ),
         ];
         final ids = _addTasksInternal(childSpecs);
+        _validateSplitChildren(source: source, childIds: ids);
         // A dependent task that waited for the oversized task must now wait
         // for every child. Leaving the old dependency in place would turn a
         // successful split into a permanently dead dependency at commit.
@@ -788,6 +789,65 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
         return ids;
       });
     });
+  }
+
+  void _validateSplitChildren({
+    required ProjectTaskNode source,
+    required List<String> childIds,
+  }) {
+    final children = [for (final id in childIds) _tasks[id]!];
+    final childCriterionIds = {
+      for (final child in children) ...child.criterionIds,
+    };
+    final missingCoverage = source.criterionIds
+        .where((criterionId) => !childCriterionIds.contains(criterionId))
+        .toList();
+    if (missingCoverage.isNotEmpty) {
+      throw _error(
+        'split_criterion_coverage',
+        'children',
+        'A split must keep every criterion owned by the parent on at least one child.',
+        details: {
+          'missing_criterion_refs': missingCoverage,
+          'instruction':
+              'Assign every parent criterion to one or more child tasks.',
+        },
+      );
+    }
+
+    final missingDeterministic = <String>[];
+    for (final criterionId in childCriterionIds) {
+      final criterion = _criteria[criterionId];
+      if (criterion == null ||
+          criterion.status == ProjectCriterionStatus.satisfied ||
+          criterion.verificationMode != ProjectVerificationMode.deterministic) {
+        continue;
+      }
+      final hasConclusiveExpectation = children.any(
+        (child) =>
+            child.criterionIds.contains(criterionId) &&
+            child.expectedEvidence.any(
+              (expectation) =>
+                  expectation.required &&
+                  expectation.criterionIds.contains(criterionId) &&
+                  (expectation.type == ProjectEvidenceType.gate ||
+                      expectation.type == ProjectEvidenceType.command),
+            ),
+      );
+      if (!hasConclusiveExpectation) missingDeterministic.add(criterionId);
+    }
+    if (missingDeterministic.isNotEmpty) {
+      throw _error(
+        'missing_split_deterministic_check',
+        'children',
+        'Every deterministic criterion on a split child needs a required command check.',
+        details: {
+          'missing_criterion_refs': missingDeterministic,
+          'instruction':
+              'Resubmit the split with a required checks entry on a child covering every listed criterion.',
+        },
+      );
+    }
   }
 
   ProjectTaskSpec _splitChildSpec({
@@ -843,6 +903,7 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
           ? inheritedOutOfScope
           : child.outOfScope,
       context: [...sourceContext, ...child.context],
+      checks: child.checks,
       expectedArtifacts: child.expectedArtifacts.isEmpty
           ? inheritedArtifacts
           : child.expectedArtifacts,

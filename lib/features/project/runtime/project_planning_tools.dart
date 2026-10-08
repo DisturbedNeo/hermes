@@ -190,6 +190,17 @@ Map<String, dynamic> _enumSchema(Iterable<String> values) => {
   'enum': values.toList(),
 };
 
+final _taskCheckSpecSchema = _schema(
+  properties: {
+    'command': {'type': 'string'},
+    'working_directory': {'type': 'string', 'default': '.'},
+    'criterion_refs': _stringArraySchema(),
+    'required': {'type': 'boolean', 'default': true},
+    'description': {'type': 'string'},
+  },
+  required: const ['command'],
+);
+
 final _taskSpecSchema = _schema(
   properties: {
     'ref': {'type': 'string', 'description': 'Optional temporary reference.'},
@@ -221,6 +232,7 @@ final _taskSpecSchema = _schema(
     'done_criteria': _stringArraySchema(minItems: 1),
     'out_of_scope': _stringArraySchema(minItems: 1),
     'context': _stringArraySchema(),
+    'checks': {'type': 'array', 'items': _taskCheckSpecSchema},
     'expected_artifacts': {
       'type': 'array',
       'items': _schema(
@@ -242,17 +254,6 @@ final _taskSpecSchema = _schema(
       'required': ['objective'],
     },
   ],
-);
-
-final _taskCheckSpecSchema = _schema(
-  properties: {
-    'command': {'type': 'string'},
-    'working_directory': {'type': 'string', 'default': '.'},
-    'criterion_refs': _stringArraySchema(),
-    'required': {'type': 'boolean', 'default': true},
-    'description': {'type': 'string'},
-  },
-  required: const ['command'],
 );
 
 final _addTaskDefinition = ToolDefinition(

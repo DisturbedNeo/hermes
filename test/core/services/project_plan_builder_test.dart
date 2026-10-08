@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hermes/features/project/application/contracts/project_task_models.dart'
+    show ProjectTaskCheckSpec;
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/runtime/project_plan_builder.dart';
@@ -414,6 +416,106 @@ void main() {
       );
     },
   );
+
+  test('splitting a deterministic task requires atomic child checks', () async {
+    final base = _project();
+    final project = base.copyWith(
+      criteria: [
+        base.criteria.single.copyWith(
+          verificationMode: ProjectVerificationMode.deterministic,
+        ),
+      ],
+    );
+    final parent = _task('parent').copyWith(
+      gates: [
+        const TaskGate(
+          id: 'command_passes',
+          required: true,
+          scope: 'task',
+          params: {'command': 'dart test', 'working_directory': '.'},
+        ),
+      ],
+      expectedEvidence: [
+        ..._task('parent').expectedEvidence,
+        const TaskEvidenceExpectation(
+          id: 'parent_command',
+          type: ProjectEvidenceType.command,
+          criterionIds: ['criterion_001'],
+          description: 'The deterministic slice is checked.',
+          required: true,
+          sourceRef: 'dart test',
+          details: {'working_directory': '.'},
+        ),
+      ],
+    );
+    final builder = ProjectPlanBuilder(
+      project: project.copyWith(tasks: [ProjectTaskNode.fromTask(parent)]),
+    );
+
+    expect(
+      () => builder.splitTask(
+        taskReference: 'parent',
+        children: const [
+          ProjectTaskSpec(
+            ref: 'child_one',
+            title: 'First child',
+            objective: 'Implement the first child slice.',
+          ),
+          ProjectTaskSpec(
+            ref: 'child_two',
+            title: 'Second child',
+            objective: 'Implement the second child slice.',
+          ),
+        ],
+      ),
+      throwsA(
+        isA<ProjectPlanBuilderException>().having(
+          (error) => error.code,
+          'code',
+          'missing_split_deterministic_check',
+        ),
+      ),
+    );
+    expect(builder.splitTaskIds, isEmpty);
+
+    final childIds = builder.splitTask(
+      taskReference: 'parent',
+      children: const [
+        ProjectTaskSpec(
+          ref: 'child_one',
+          title: 'First child',
+          objective: 'Implement the first child slice.',
+          checks: [
+            ProjectTaskCheckSpec(
+              command: 'dart test',
+              criterionRefs: ['criterion_001'],
+            ),
+          ],
+        ),
+        ProjectTaskSpec(
+          ref: 'child_two',
+          title: 'Second child',
+          objective: 'Implement the second child slice.',
+        ),
+      ],
+    );
+    final committed = await builder.commit(
+      workspaceRoot: '/workspace',
+      approvalPolicy: ProjectPlanApprovalPolicy.never,
+    );
+
+    expect(committed.validation.valid, isTrue);
+    expect(committed.project.taskById('parent')?.status, TaskStatus.split);
+    final checkedChild = committed.project.taskById(childIds.first)!;
+    expect(checkedChild.gates.single.required, isTrue);
+    expect(checkedChild.gates.single.params['command'], 'dart test');
+    expect(
+      checkedChild.expectedEvidence.any(
+        (item) => item.type == ProjectEvidenceType.command && item.required,
+      ),
+      isTrue,
+    );
+  });
 
   test('rewires dependents to wait for every split child', () async {
     final parent = _task('parent');

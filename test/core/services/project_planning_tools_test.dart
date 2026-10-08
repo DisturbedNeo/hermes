@@ -127,6 +127,16 @@ void main() {
       'command',
     ]);
 
+    final splitSchema = registry.toolDefinitions
+        .singleWhere((tool) => tool.id == 'plan_split_task')
+        .schema
+        .toWire();
+    final childProperties =
+        ((((splitSchema['properties'] as Map)['children'] as Map)['items']
+                as Map)['properties']
+            as Map);
+    expect(childProperties.keys, contains('checks'));
+
     expect(ids, isNot(contains('plan_add_tasks')));
     expect(
       registry.toolDefinitions.map((item) => item.schema.toString()).join(),

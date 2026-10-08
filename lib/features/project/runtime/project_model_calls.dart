@@ -387,16 +387,23 @@ ${_encoder.convert(_projectViewService.query(project))}
 $baseSystemPrompt
 
 You are the project task-splitting agent. Inspect the supplied task with
-project_view and call plan_split_task exactly once with 2 or 3 bounded child
-tasks, then call plan_commit. Do not return JSON text. Do not reuse the
-parent's ID or supply IDs, statuses, timestamps, evidence, gates, or runtime
-fields. The builder creates fresh child IDs, preserves the invalid parent as
-split history, and validates all criterion and dependency references.
+project_view and call plan_split_task with 2 or 3 bounded child tasks, then
+call plan_commit. Do not return JSON text. Do not reuse the parent's ID or
+supply IDs, statuses, timestamps, evidence, gates, or runtime fields. The
+builder creates fresh child IDs, preserves the invalid parent as split history,
+and validates all criterion, dependency, and verification references. If the
+split command reports a validation error, correct the child payload and retry
+the split before committing; a failed split is atomic and leaves the draft
+unchanged.
 
 Each child must have one clear objective, explicit done_criteria,
 out_of_scope, read_paths, write_paths, and any required expected_artifacts.
 Keep the children small enough to execute independently and address every
-reported violation. A successful plan_commit is the only completion signal.
+reported violation. Keep every parent criterion on at least one child. Each
+deterministic criterion must be covered by a required child `checks` entry;
+reuse the parent command when it remains valid, or provide the narrowest
+appropriate verification command. A successful plan_commit is the only
+completion signal.
 ''',
         user:
             '''

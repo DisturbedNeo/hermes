@@ -676,6 +676,7 @@ class ProjectPlanningToolCommandService {
       'done_criteria',
       'out_of_scope',
       'context',
+      'checks',
       'expected_artifacts',
     });
     final ref = _optionalString(value['ref'], '$path.ref') ?? '';
@@ -764,6 +765,7 @@ class ProjectPlanningToolCommandService {
       doneCriteria: doneCriteria,
       outOfScope: outOfScope,
       context: _stringList(value['context'], '$path.context'),
+      checks: _checkSpecs(value['checks'], '$path.checks'),
       expectedArtifacts: _artifacts(
         value['expected_artifacts'],
         '$path.expected_artifacts',

@@ -69,6 +69,13 @@ void main() {
               'criterion_refs': ['criterion_1'],
               'done_criteria': ['The boundary is documented.'],
               'out_of_scope': ['Changing the implementation.'],
+              'checks': [
+                {
+                  'command': 'dart test',
+                  'criterion_refs': ['criterion_1'],
+                  'required': true,
+                },
+              ],
             },
             {
               'ref': 'repair',
@@ -105,6 +112,15 @@ void main() {
       expect(children.every((task) => task.id != 'task_existing'), isTrue);
       expect(
         children.every((task) => task.status == TaskStatus.queued),
+        isTrue,
+      );
+      expect(
+        children.first.expectedEvidence.any(
+          (expectation) =>
+              expectation.type == ProjectEvidenceType.command &&
+              expectation.required &&
+              expectation.sourceRef == 'dart test',
+        ),
         isTrue,
       );
     },
