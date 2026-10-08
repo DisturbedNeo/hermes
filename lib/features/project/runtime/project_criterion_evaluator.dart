@@ -234,10 +234,12 @@ class ProjectCriterionEvaluator {
           task.status == TaskStatus.cancelled) {
         continue;
       }
-      for (final expectation in task.expectedEvidence) {
-        if (expectation.required &&
-            expectation.criterionIds.contains(criterion.id)) {
-          required[expectation.id] = task.id;
+      for (final item in task.acceptance) {
+        if (!item.criterionIds.contains(criterion.id)) continue;
+        for (var index = 0; index < item.verifiers.length; index++) {
+          if (item.verifiers[index].required) {
+            required['acceptance_${item.ref}_$index'] = task.id;
+          }
         }
       }
     }

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:path/path.dart' as path;
 
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
 import 'package:hermes/features/workspace/application/workspace_change_discovery.dart';
@@ -358,7 +359,7 @@ class ProjectWorkspaceGraphReconciler {
     }
 
     for (final task in project.tasks) {
-      for (final expectedArtifact in task.expectedArtifacts) {
+      for (final expectedArtifact in _acceptanceArtifacts(task)) {
         addDeclaredTaskOutput(
           task,
           expectedArtifact.path,
@@ -525,6 +526,18 @@ class ProjectWorkspaceGraphReconciler {
     );
   }
 
+  List<TaskArtifact> _acceptanceArtifacts(ProjectTaskNode task) => [
+    for (final item in task.acceptance)
+      for (final verifier in item.verifiers)
+        if (verifier.kind == AcceptanceVerifierKind.artifact &&
+            verifier.path?.trim().isNotEmpty == true)
+          TaskArtifact(
+            path: verifier.path!,
+            description: verifier.description ?? item.statement,
+            kind: verifier.artifactKind,
+          ),
+  ];
+
   bool _hasSemanticEvidence(
     WorkspaceDiscoveryProfile profile,
     ProjectAggregate project,
@@ -536,7 +549,7 @@ class ProjectWorkspaceGraphReconciler {
       project.artifacts.isNotEmpty ||
       project.tasks.any(
         (task) =>
-            task.writePaths.isNotEmpty || task.expectedArtifacts.isNotEmpty,
+            task.writePaths.isNotEmpty || _acceptanceArtifacts(task).isNotEmpty,
       );
 
   List<ProjectWorkspaceNode> _selectNodes(
@@ -627,7 +640,7 @@ class ProjectWorkspaceGraphReconciler {
       ),
       ...project.tasks.map(
         (task) =>
-            '${task.id}|${task.title}|${task.objective}|${task.writePaths.join(',')}|${task.expectedArtifacts.map((artifact) => '${_normalisePath(artifact.path)}|${artifact.description}').join(',')}',
+            '${task.id}|${task.title}|${task.objective}|${task.writePaths.join(',')}|${_acceptanceArtifacts(task).map((artifact) => '${_normalisePath(artifact.path)}|${artifact.description}').join(',')}',
       ),
     ]..sort();
     return _token(values.join('\n'));

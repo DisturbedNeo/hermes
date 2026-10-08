@@ -113,8 +113,6 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
     }
 
     final created = <ProjectTaskNode>[];
-    final reservedExpectationIds = <String>{};
-    final reservedArtifactIds = <String>{};
     for (var index = 0; index < specs.length; index++) {
       final spec = specs[index];
       final id = ids[index];
@@ -129,8 +127,18 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
         );
       }
       final title = spec.title.trim().isEmpty ? objective : spec.title.trim();
+      if (spec.acceptance.isEmpty) {
+        throw _error(
+          'missing_acceptance',
+          'tasks[$index].acceptance',
+          'A task needs at least one acceptance item.',
+        );
+      }
+      final criterionRefs = [
+        for (final item in spec.acceptance) ...item.criterionIds,
+      ];
       final criterionIds = _resolveReferences(
-        spec.criterionRefs,
+        criterionRefs,
         _resolveCriterion,
         'tasks[$index].criterionRefs',
       );
@@ -141,6 +149,35 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
           'A task must link to at least one criterion.',
         );
       }
+      final sourceAcceptance = spec.acceptance;
+      final acceptance = [
+        for (
+          var acceptanceIndex = 0;
+          acceptanceIndex < sourceAcceptance.length;
+          acceptanceIndex++
+        )
+          () {
+            final item = sourceAcceptance[acceptanceIndex];
+            final itemCriterionIds = _resolveReferences(
+              item.criterionIds,
+              _resolveCriterion,
+              'tasks[$index].acceptance[$acceptanceIndex].criterionIds',
+            );
+            if (itemCriterionIds.isEmpty) {
+              throw _error(
+                'missing_acceptance_criterion',
+                'tasks[$index].acceptance[$acceptanceIndex].criterionIds',
+                'Project acceptance must link to at least one project criterion.',
+              );
+            }
+            return AcceptanceItem(
+              ref: item.ref.trim(),
+              statement: item.statement.trim(),
+              criterionIds: itemCriterionIds,
+              verifiers: item.verifiers,
+            );
+          }(),
+      ];
       final dependencies = _resolveReferences(
         spec.dependencyRefs,
         (reference) => references[reference.trim()] ?? _resolveTask(reference),
@@ -158,28 +195,16 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
           spec.milestoneRef == null || spec.milestoneRef!.trim().isEmpty
           ? null
           : _resolveMilestone(spec.milestoneRef!);
-      final doneCriteria = _requiredList(
-        spec.doneCriteria,
-        'tasks[$index].doneCriteria',
-      );
       final outOfScope = _requiredList(
         spec.outOfScope,
         'tasks[$index].outOfScope',
       );
-      final expectedEvidence = TaskEvidenceExpectation(
-        id: _newExpectationId(additional: reservedExpectationIds),
-        type: ProjectEvidenceType.taskClaim,
-        criterionIds: criterionIds,
-        description: doneCriteria.join(' '),
-      );
-      reservedExpectationIds.add(expectedEvidence.id);
-      final expectedArtifacts = _normaliseArtifacts(
-        spec.expectedArtifacts,
-        id,
-        additionalIds: reservedArtifactIds,
-      );
-      reservedArtifactIds.addAll(
-        expectedArtifacts.map((artifact) => artifact.id),
+      const AcceptanceCompiler().compile(
+        acceptance,
+        requireProjectCriteria: true,
+        path: 'tasks[$index].acceptance',
+        commandSafetyValidator:
+            TerminalCommandClassifier.blockedReasonForCommand,
       );
       final task = ProjectTaskNode(
         id: id,
@@ -187,7 +212,6 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
         objective: objective,
         constraints: _cleanStrings(spec.constraints),
         status: TaskStatus.queued,
-        criterionIds: criterionIds,
         milestoneId: milestoneId,
         dependsOnTaskIds: dependencies,
         priority: spec.priority,
@@ -195,14 +219,16 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
         riskReduction: spec.riskReduction,
         effort: spec.effort,
         selectionRationale: spec.selectionRationale.trim(),
-        expectedEvidence: [expectedEvidence],
         readPaths: _cleanStrings(spec.readPaths),
         writePaths: _cleanStrings(spec.writePaths),
-        doneCriteria: doneCriteria,
         outOfScope: outOfScope,
         context: _cleanStrings(spec.context),
-        expectedArtifacts: expectedArtifacts,
-        fingerprint: projectTaskFingerprint(objective, criterionIds),
+        acceptance: acceptance,
+        fingerprint: projectTaskFingerprint(
+          objective,
+          criterionIds,
+          acceptance,
+        ),
         createdAt: _now,
         updatedAt: _now,
       );
@@ -220,21 +246,6 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
       _taskAgentNumbers[task.id] = agentNumber;
       _taskRefs['$agentNumber'] = task.id;
       _taskRefs['Task $agentNumber'] = task.id;
-    }
-    for (var index = 0; index < specs.length; index++) {
-      final taskId = ids[index];
-      for (final check in specs[index].checks) {
-        _addCommandCheckInternal(
-          taskReference: taskId,
-          command: check.command,
-          workingDirectory: check.workingDirectory,
-          criterionRefs: check.criterionRefs.isEmpty
-              ? null
-              : check.criterionRefs,
-          required: check.required,
-          description: check.description,
-        );
-      }
     }
     _ensureNoCycles();
     return ids;
@@ -457,43 +468,6 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
       }) +
       1;
 
-  String _newExpectationId({Iterable<String> additional = const []}) {
-    final used = {
-      for (final task in _taskCatalog.values)
-        for (final expectation in task.expectedEvidence) expectation.id,
-      for (final task in _tasks.values)
-        for (final expectation in task.expectedEvidence) expectation.id,
-      ...additional,
-    };
-    return _newId('expect', used);
-  }
-
-  List<TaskArtifact> _normaliseArtifacts(
-    Iterable<TaskArtifact> artifacts,
-    String taskId, {
-    Iterable<String> additionalIds = const [],
-  }) {
-    final used = {
-      for (final task in _taskCatalog.values)
-        for (final artifact in task.expectedArtifacts)
-          if (artifact.id.trim().isNotEmpty) artifact.id,
-      ...additionalIds,
-    };
-    final normalized = <TaskArtifact>[];
-    for (final artifact in artifacts) {
-      final id = _newId('artifact', used);
-      used.add(id);
-      normalized.add(
-        artifact.copyWith(
-          id: id,
-          taskId: taskId,
-          createdAt: artifact.createdAt ?? _now,
-        ),
-      );
-    }
-    return normalized;
-  }
-
   void _ensureNoCycles() {
     final graph = {
       for (final task in _tasks.values) task.id: task.dependsOnTaskIds,
@@ -667,12 +641,6 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
       if (value.trim().isNotEmpty) value.trim(),
   ];
 
-  bool _sameStrings(Iterable<String> first, Iterable<String> second) {
-    final left = first.toSet();
-    final right = second.toSet();
-    return left.length == right.length && left.containsAll(right);
-  }
-
   String _normalise(String value) =>
       value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
@@ -761,7 +729,26 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
     'ref': spec.ref,
     'title': spec.title,
     'objective': spec.objective,
-    'criterionRefs': spec.criterionRefs,
+    'acceptance': [
+      for (final item in spec.acceptance)
+        {
+          'ref': item.ref,
+          'statement': item.statement,
+          'criterion_refs': item.criterionIds,
+          'verifiers': [
+            for (final verifier in item.verifiers)
+              {
+                'kind': verifier.kind.name,
+                'required': verifier.required,
+                'command': verifier.command,
+                'workingDirectory': verifier.workingDirectory,
+                'path': verifier.path,
+                'artifactKind': verifier.artifactKind,
+                'description': verifier.description,
+              },
+          ],
+        },
+    ],
     'dependencyRefs': spec.dependencyRefs,
     'milestoneRef': spec.milestoneRef,
     'priority': spec.priority.name,
@@ -772,28 +759,8 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
     'constraints': spec.constraints,
     'readPaths': spec.readPaths,
     'writePaths': spec.writePaths,
-    'doneCriteria': spec.doneCriteria,
     'outOfScope': spec.outOfScope,
     'context': spec.context,
-    'checks': [
-      for (final check in spec.checks)
-        {
-          'command': check.command,
-          'workingDirectory': check.workingDirectory,
-          'criterionRefs': check.criterionRefs,
-          'required': check.required,
-          'description': check.description,
-        },
-    ],
-    'expectedArtifacts': [
-      for (final artifact in spec.expectedArtifacts)
-        {
-          'id': artifact.id,
-          'path': artifact.path,
-          'description': artifact.description,
-          'kind': artifact.kind,
-        },
-    ],
   };
 
   Map<String, dynamic> _workspaceNodeSpecMap(ProjectWorkspaceNodeSpec spec) => {
@@ -814,9 +781,4 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
     'description': spec.description,
   };
 
-  String _workingDirectory(Map<String, dynamic> values) {
-    final value = values['working_directory'] ?? values['workingDirectory'];
-    final directory = value?.toString().trim();
-    return directory == null || directory.isEmpty ? '.' : directory;
-  }
 }

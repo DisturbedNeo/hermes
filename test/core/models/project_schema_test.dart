@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/model_json.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 
 void main() {
   test('persists ordered task IDs without embedding task records', () {
@@ -10,11 +11,18 @@ void main() {
       id: 'task_1',
       title: 'Bounded task',
       objective: 'Do one bounded thing',
-      criterionIds: const ['criterion_1'],
-      doneCriteria: const ['The thing is done.'],
+      acceptance: const [
+        AcceptanceItem(
+          ref: 'works',
+          statement: 'The thing is done.',
+          criterionIds: ['criterion_1'],
+          verifiers: [
+            AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+          ],
+        ),
+      ],
       outOfScope: const ['The rest of the project.'],
       context: const [],
-      expectedArtifacts: const [],
       status: TaskStatus.queued,
       fingerprint: 'task_1',
       rejectionReason: null,

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/core/model_json.dart';
 import 'package:hermes/features/project/runtime/project_memory_service.dart';
@@ -357,13 +358,18 @@ ProjectTaskNode _task(String id, {List<String> dependencies = const []}) =>
       id: id,
       title: 'Reporting task',
       objective: 'Implement reporting.',
-      criterionIds: const ['criterion_1'],
+      acceptance: const [
+        AcceptanceItem(
+          ref: 'reporting-verified',
+          statement: 'Reporting is verified.',
+          criterionIds: ['criterion_1'],
+          verifiers: [AcceptanceVerifier(kind: AcceptanceVerifierKind.review)],
+        ),
+      ],
       milestoneId: 'milestone_1',
       dependsOnTaskIds: dependencies,
-      doneCriteria: const ['Reporting is verified.'],
       outOfScope: const ['Unrelated work.'],
       context: const [],
-      expectedArtifacts: const [],
       status: TaskStatus.queued,
       fingerprint: 'fingerprint_$id',
       rejectionReason: null,

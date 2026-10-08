@@ -125,8 +125,6 @@ abstract class PlanningToolRegistryBase implements PlanningToolRegistry {
       'runs',
       'failure',
       'gates',
-      'expected_evidence',
-      'expectedEvidence',
       'completed_at',
       'completedAt',
     };

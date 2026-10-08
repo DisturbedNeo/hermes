@@ -1,4 +1,5 @@
 import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/core/view_pagination.dart';
 
 /// A bounded read model used by the task-planning agent.
@@ -9,16 +10,12 @@ import 'package:hermes/core/view_pagination.dart';
 class TaskViewService {
   static const viewSections = [
     'constraints',
-    'success_criteria',
-    'done_criteria',
     'out_of_scope',
     'read_paths',
     'write_paths',
-    'expected_artifacts',
     'steps',
     'history',
-    'required_checks',
-    'required_project_evidence',
+    'acceptance',
   ];
 
   const TaskViewService({this.defaultMaxItems = 12, this.maxTextLength = 600});
@@ -32,13 +29,9 @@ class TaskViewService {
     int? maxItems,
     int? maxSteps,
     String? projectGoal,
-    List<String> doneCriteria = const [],
     List<String> outOfScope = const [],
     List<String> readPaths = const [],
     List<String> writePaths = const [],
-    List<TaskArtifact> requiredArtifacts = const [],
-    List<TaskGate> requiredGates = const [],
-    List<TaskProjectEvidenceExpectation> requiredEvidence = const [],
     String? section,
     String? cursor,
   }) {
@@ -50,38 +43,14 @@ class TaskViewService {
       limit,
       navigation,
     );
-    final successCriteria = _page(
-      'success_criteria',
-      task.successCriteria,
-      limit,
-      navigation,
-    );
-    final doneCriteriaPage = _page(
-      'done_criteria',
-      doneCriteria,
-      limit,
-      navigation,
-    );
     final outOfScopePage = _page('out_of_scope', outOfScope, limit, navigation);
     final readPathsPage = _page('read_paths', readPaths, limit, navigation);
     final writePathsPage = _page('write_paths', writePaths, limit, navigation);
-    final expectedArtifactsPage = _page(
-      'expected_artifacts',
-      requiredArtifacts,
-      limit,
-      navigation,
-    );
     final steps = _page('steps', task.steps, limit, navigation);
     final history = _page('history', task.runs.reversed, limit, navigation);
-    final requiredChecks = _page(
-      'required_checks',
-      requiredGates,
-      limit,
-      navigation,
-    );
-    final requiredEvidencePage = _page(
-      'required_project_evidence',
-      requiredEvidence,
+    final acceptancePage = _page(
+      'acceptance',
+      task.acceptance,
       limit,
       navigation,
     );
@@ -97,8 +66,8 @@ class TaskViewService {
       },
       'control': _controlState(task),
       'constraints': [for (final item in constraints.items) _text(item)],
-      'success_criteria': [
-        for (final item in successCriteria.items) _text(item),
+      'acceptance': [
+        for (final item in acceptancePage.items) _acceptanceSummary(item, task),
       ],
       'steps': [for (final step in steps.items) _stepSummary(step)],
       'history': [
@@ -113,7 +82,6 @@ class TaskViewService {
       'failure': task.failure == null
           ? null
           : {
-              'gate_ref': task.failure!.gateId,
               'disposition': task.failure!.disposition.name,
               'summary': _text(task.failure!.summary),
               'error_codes': task.failure!.errorCodes.take(limit).toList(),
@@ -121,49 +89,25 @@ class TaskViewService {
             },
       'boundaries': {
         'project_goal': projectGoal == null ? null : _text(projectGoal),
-        'done_criteria': [
-          for (final item in doneCriteriaPage.items) _text(item),
-        ],
         'out_of_scope': [for (final item in outOfScopePage.items) _text(item)],
         'read_paths': [for (final item in readPathsPage.items) _text(item)],
         'write_paths': [for (final item in writePathsPage.items) _text(item)],
-        'expected_artifacts': [
-          for (final artifact in expectedArtifactsPage.items)
-            _artifactSummary(artifact),
-        ],
       },
-      'required_checks': [
-        for (final gate in requiredChecks.items) _gateSummary(gate),
-      ],
-      'required_project_evidence': [
-        for (final item in requiredEvidencePage.items)
-          _evidenceSummary(item, limit),
-      ],
       'truncated': task.steps.length > limit || task.runs.length > limit,
       'truncated_sections': {
         'constraints': constraints.hasMore,
-        'success_criteria': successCriteria.hasMore,
-        'done_criteria': doneCriteriaPage.hasMore,
         'out_of_scope': outOfScopePage.hasMore,
         'read_paths': readPathsPage.hasMore,
         'write_paths': writePathsPage.hasMore,
-        'expected_artifacts': expectedArtifactsPage.hasMore,
         'steps': steps.hasMore,
         'history': history.hasMore,
-        'required_checks': requiredChecks.hasMore,
-        'required_project_evidence': requiredEvidencePage.hasMore,
+        'acceptance': acceptancePage.hasMore,
       },
       'navigation': {
         'requested_section': navigation.selectedSection,
         'pages': {
           'constraints': constraints.toMap(
             cursor: navigation.cursorFor('constraints'),
-          ),
-          'success_criteria': successCriteria.toMap(
-            cursor: navigation.cursorFor('success_criteria'),
-          ),
-          'done_criteria': doneCriteriaPage.toMap(
-            cursor: navigation.cursorFor('done_criteria'),
           ),
           'out_of_scope': outOfScopePage.toMap(
             cursor: navigation.cursorFor('out_of_scope'),
@@ -174,16 +118,10 @@ class TaskViewService {
           'write_paths': writePathsPage.toMap(
             cursor: navigation.cursorFor('write_paths'),
           ),
-          'expected_artifacts': expectedArtifactsPage.toMap(
-            cursor: navigation.cursorFor('expected_artifacts'),
-          ),
           'steps': steps.toMap(cursor: navigation.cursorFor('steps')),
           'history': history.toMap(cursor: navigation.cursorFor('history')),
-          'required_checks': requiredChecks.toMap(
-            cursor: navigation.cursorFor('required_checks'),
-          ),
-          'required_project_evidence': requiredEvidencePage.toMap(
-            cursor: navigation.cursorFor('required_project_evidence'),
+          'acceptance': acceptancePage.toMap(
+            cursor: navigation.cursorFor('acceptance'),
           ),
         },
       },
@@ -209,8 +147,10 @@ class TaskViewService {
           for (final artifact in step.artifacts.take(limit))
             _artifactSummary(artifact),
         ],
-        'checks': [
-          for (final gate in step.gates.take(limit)) _gateSummary(gate),
+        'acceptance': [
+          for (final item in task.acceptance)
+            if (step.acceptanceRefs.contains(item.ref))
+              _acceptanceSummary(item, task),
         ],
       };
     }
@@ -226,8 +166,62 @@ class TaskViewService {
     'artifact_paths': [
       for (final artifact in step.artifacts) _text(artifact.path),
     ],
-    'check_kinds': [for (final gate in step.gates) gate.id],
+    'acceptance_refs': step.acceptanceRefs,
   };
+
+  Map<String, dynamic> _acceptanceSummary(
+    AcceptanceItem item,
+    TaskAggregate task,
+  ) => {
+    'ref': item.ref,
+    'statement': _text(item.statement),
+    'criterion_refs': item.criterionIds,
+    'verifiers': [
+      for (var index = 0; index < item.verifiers.length; index++)
+        _verifierSummary(item, task, index),
+    ],
+  };
+
+  Map<String, dynamic> _verifierSummary(
+    AcceptanceItem item,
+    TaskAggregate task,
+    int index,
+  ) {
+    final verifier = item.verifiers[index];
+    final result = _verifierResult(task, item.ref, index);
+    return {
+      'kind': verifier.kind.name,
+      'required': verifier.required,
+      'status': result?.status.wire ?? 'pending',
+      if (verifier.required &&
+          (result == null ||
+              result.status == TaskGateStatus.failed ||
+              result.status == TaskGateStatus.pending))
+        'blocking_explanation': _text(
+          result?.summary ?? 'This required verifier has not passed.',
+        ),
+      if (verifier.command != null) 'command': _text(verifier.command!),
+      if (verifier.path != null) 'path': _text(verifier.path!),
+      if (verifier.description != null)
+        'description': _text(verifier.description!),
+    };
+  }
+
+  TaskGateResult? _verifierResult(
+    TaskAggregate task,
+    String acceptanceRef,
+    int index,
+  ) {
+    for (final run in task.runs.reversed) {
+      for (final result in run.gateResults.reversed) {
+        if (result.details['acceptance_ref']?.toString() == acceptanceRef &&
+            result.details['verifier_index'] == index) {
+          return result;
+        }
+      }
+    }
+    return null;
+  }
 
   Map<String, dynamic> _artifactSummary(TaskArtifact artifact) => {
     'path': _text(artifact.path),
@@ -235,18 +229,6 @@ class TaskViewService {
         ? null
         : _text(artifact.description!),
     'kind': artifact.kind,
-  };
-
-  Map<String, dynamic> _evidenceSummary(
-    TaskProjectEvidenceExpectation item,
-    int limit,
-  ) => {
-    'type': item.type,
-    'criterion_refs': item.criterionIds.take(limit).toList(),
-    'description': _text(item.description),
-    'required': item.required,
-    'source_ref': item.sourceRef,
-    'details': item.details,
   };
 
   Map<String, dynamic> _controlState(TaskAggregate task) => {
@@ -292,17 +274,6 @@ class TaskViewService {
     'planning_error': task.planningError == null
         ? null
         : _text(task.planningError!),
-  };
-
-  Map<String, dynamic> _gateSummary(TaskGate gate) => {
-    'kind': gate.id,
-    'scope': gate.scope,
-    'required': gate.required,
-    if (gate.params['command'] != null)
-      'command': _text(gate.params['command'].toString()),
-    if (gate.params['working_directory'] != null)
-      'working_directory': _text(gate.params['working_directory'].toString()),
-    'description': gate.description == null ? null : _text(gate.description!),
   };
 
   _TaskViewNavigation _navigation({String? section, String? cursor}) {

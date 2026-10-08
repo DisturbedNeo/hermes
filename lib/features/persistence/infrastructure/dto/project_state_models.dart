@@ -609,9 +609,7 @@ class ProjectDesiredPlan with ProjectDesiredPlanMappable {
   final List<ProjectCriterion> criteria;
   final List<ProjectMilestone> milestones;
 
-  /// Durable agent-facing references staged with a plan revision. These are
-  /// nullable for backward compatibility with pending plans serialized before
-  /// numeric references were introduced.
+  /// Optional durable agent-facing references staged with a plan revision.
   final Map<String, int>? criterionAgentNumbers;
   final Map<String, int>? milestoneAgentNumbers;
   final Map<String, int>? taskAgentNumbers;
@@ -1107,7 +1105,9 @@ class ProjectSnapshotAggregate with ProjectSnapshotAggregateMappable {
   }
 
   List<String> criterionStatementsFor(ProjectTaskNode task) => [
-    for (final criterionId in task.criterionIds)
+    for (final criterionId in {
+      for (final item in task.acceptance) ...item.criterionIds,
+    })
       criterionStatement(criterionId),
   ];
 
@@ -1505,10 +1505,16 @@ class ProjectSummary {
   });
 }
 
-String projectTaskFingerprint(String objective, List<String> criteria) {
+String projectTaskFingerprint(
+  String objective,
+  List<String> criteria, [
+  Iterable<AcceptanceItem> acceptance = const [],
+]) {
   final parts = [
     objective,
     ...criteria,
+    for (final item in acceptance)
+      '${item.ref}:${item.statement}:${item.criterionIds.join(',')}:${item.verifiers.map((verifier) => '${verifier.kind.name}:${verifier.required}:${verifier.command ?? ''}:${verifier.workingDirectory}:${verifier.path ?? ''}:${verifier.artifactKind}:${verifier.description ?? ''}').join(',')}',
   ].map(_normaliseFingerprintPart).where((item) => item.isNotEmpty).toList();
   return parts.join('|').ifEmpty(_normaliseFingerprintPart(objective));
 }

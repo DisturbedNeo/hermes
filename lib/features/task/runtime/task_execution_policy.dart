@@ -1,4 +1,5 @@
 import 'package:hermes/core/json_parsing.dart';
+import 'package:hermes/core/contracts/acceptance_compiler.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/runtime/task_tool_execution_service.dart';
 import 'package:hermes/features/workspace/application/terminal_command_parser.dart';
@@ -37,7 +38,88 @@ class TaskExecutionPolicy {
           candidate.status == TaskStepStatus.blocked ||
           candidate.status == TaskStepStatus.failed;
     });
-    return [...step.gates, if (!hasRemainingSteps) ...task.gates];
+    final compilation = const AcceptanceCompiler().compile(task.acceptance);
+    final attached = {
+      for (final ref in step.acceptanceRefs) ref,
+    };
+    final gates = [
+      for (final item in compilation.verifiers)
+        if (attached.contains(item.acceptanceRef))
+          for (final kind in item.gateKinds) _acceptanceGate(item, 'step', kind),
+      if (!hasRemainingSteps)
+        for (final item in compilation.verifiers)
+          if (!attached.contains(item.acceptanceRef))
+            for (final kind in item.gateKinds)
+              _acceptanceGate(item, 'task', kind),
+      ..._internalSafetyGates(task, step),
+    ];
+    final seen = <String>{};
+    return [
+      for (final gate in gates)
+        if (seen.add(
+          _isEngineSafetyGate(gate)
+              ? gate.id
+              : '${gate.id}|${gate.scope}|${gate.params}',
+        ))
+          gate,
+    ];
+  }
+
+  TaskGate _acceptanceGate(
+    CompiledAcceptanceVerifier verifier,
+    String scope,
+    String kind,
+  ) => TaskGate(
+    id: kind,
+    required: verifier.required,
+    scope: scope,
+    params: verifier.params,
+    description: verifier.statement,
+  );
+
+  bool _isEngineSafetyGate(TaskGate gate) =>
+      gate.id == 'no_tool_errors' || gate.id == 'no_failed_commands';
+
+  /// Safety checks are engine-owned runtime policy, not planner-authored
+  /// acceptance. They must still be present after a fresh-schema snapshot
+  /// reload, where compiled gate definitions are intentionally not persisted.
+  List<TaskGate> _internalSafetyGates(TaskAggregate task, TaskStep step) {
+    if (!step.mayEditFiles && !_looksLikeCodingTask(task.objective)) {
+      return const [];
+    }
+    return const [
+      TaskGate(
+        id: 'no_tool_errors',
+        required: true,
+        scope: 'task',
+        description: 'No unresolved fatal workspace tool errors.',
+      ),
+      TaskGate(
+        id: 'no_failed_commands',
+        required: true,
+        scope: 'task',
+        description: 'No failed terminal commands after workspace mutation.',
+      ),
+    ];
+  }
+
+  bool _looksLikeCodingTask(String value) {
+    final normalized = value.toLowerCase();
+    return const [
+      'code',
+      'test',
+      'build',
+      'bug',
+      'fix',
+      'implement',
+      'refactor',
+      'compile',
+      'flutter',
+      'dart',
+      'dotnet',
+      'npm',
+      'api',
+    ].any(normalized.contains);
   }
 
   Set<String> allowedToolIds(

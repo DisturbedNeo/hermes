@@ -1,4 +1,5 @@
 import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/task/application/protocol/planning_runtime.dart';
 import 'package:hermes/features/task/runtime/task_plan_builder.dart';
@@ -15,13 +16,10 @@ class TaskPlanningToolContext {
     required this.workspaceRoot,
     required this.maxSteps,
     this.projectGoal = '',
-    this.doneCriteria = const [],
+    this.acceptance = const [],
     this.outOfScope = const [],
     this.readPaths = const [],
     this.writePaths = const [],
-    this.requiredArtifacts = const [],
-    this.requiredGates = const [],
-    this.requiredEvidence = const [],
     this.requireDeclaredWriteBoundary = false,
     this.preserveCompletedStepsOnly = false,
     this.viewService = const TaskViewService(),
@@ -30,13 +28,10 @@ class TaskPlanningToolContext {
          task: task,
          maxSteps: maxSteps,
          projectGoal: projectGoal,
-         doneCriteria: doneCriteria,
          outOfScope: outOfScope,
          readPaths: readPaths,
          writePaths: writePaths,
-         requiredArtifacts: requiredArtifacts,
-         requiredGates: requiredGates,
-         requiredEvidence: requiredEvidence,
+         acceptance: acceptance,
          requireDeclaredWriteBoundary: requireDeclaredWriteBoundary,
          preserveCompletedStepsOnly: preserveCompletedStepsOnly,
          now: now,
@@ -46,13 +41,10 @@ class TaskPlanningToolContext {
   final String workspaceRoot;
   final int maxSteps;
   final String projectGoal;
-  final List<String> doneCriteria;
+  final List<AcceptanceItem> acceptance;
   final List<String> outOfScope;
   final List<String> readPaths;
   final List<String> writePaths;
-  final List<TaskArtifact> requiredArtifacts;
-  final List<TaskGate> requiredGates;
-  final List<TaskProjectEvidenceExpectation> requiredEvidence;
   final bool requireDeclaredWriteBoundary;
   final bool preserveCompletedStepsOnly;
   final TaskViewService viewService;
@@ -77,7 +69,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     _setBriefDefinition,
     _resetPlanDefinition,
     _addStepDefinition,
-    _addCheckDefinition,
+    _addAcceptanceDefinition,
     _previewDefinition,
     _commitDefinition,
     _requestReplanDefinition,
@@ -98,7 +90,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
       'task_set_brief' => _setBrief(arguments),
       'task_reset_plan' => _resetPlan(arguments, commandId),
       'task_add_step' => _addStep(arguments, commandId),
-      'task_add_check' => _addCheck(arguments, commandId),
+      'task_add_acceptance' => _addAcceptance(arguments, commandId),
       'task_preview_plan' => _preview(arguments),
       'task_commit_plan' => _commit(arguments),
       'task_request_replan' => _requestReplan(arguments),
@@ -120,7 +112,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     'task_set_brief',
     'task_reset_plan',
     'task_add_step',
-    'task_add_check',
+    'task_add_acceptance',
     'task_request_replan',
     'task_request_user_decision',
   };
@@ -156,13 +148,9 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
       maxItems: _optionalInt(arguments['max_items'], 'max_items'),
       maxSteps: context.maxSteps,
       projectGoal: context.projectGoal,
-      doneCriteria: context.doneCriteria,
       outOfScope: context.outOfScope,
       readPaths: context.readPaths,
       writePaths: context.writePaths,
-      requiredArtifacts: context.requiredArtifacts,
-      requiredGates: context.requiredGates,
-      requiredEvidence: context.requiredEvidence,
       section: section,
       cursor: cursor,
     );
@@ -180,24 +168,13 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
 
   Map<String, dynamic> _setBrief(PlanningArguments arguments) {
     _ensureOpen();
-    _keys(arguments, const {
-      'title',
-      'objective',
-      'constraints',
-      'success_criteria',
-    });
+    _keys(arguments, const {'title', 'objective', 'constraints'});
     final title = _optionalString(arguments['title'], 'title');
     final objective = _optionalString(arguments['objective'], 'objective');
     final constraints = arguments.containsKey('constraints')
         ? _stringList(arguments['constraints'], 'constraints')
         : null;
-    final successCriteria = arguments.containsKey('success_criteria')
-        ? _stringList(arguments['success_criteria'], 'success_criteria')
-        : null;
-    if (title == null &&
-        objective == null &&
-        constraints == null &&
-        successCriteria == null) {
+    if (title == null && objective == null && constraints == null) {
       throw _argument(
         'missing_argument',
         'brief',
@@ -208,12 +185,14 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
       title: title,
       objective: objective,
       constraints: constraints,
-      successCriteria: successCriteria,
     );
     return {
       'title': context.builder.preview().task.title,
       'objective': context.builder.preview().task.objective,
-      'success_criteria': context.builder.preview().task.successCriteria,
+      'acceptance': [
+        for (final item in context.builder.preview().task.acceptance)
+          _acceptanceWire(item),
+      ],
     };
   }
 
@@ -243,6 +222,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
       'instructions',
       'may_edit_files',
       'artifacts',
+      'acceptance_refs',
     });
     final ref = _optionalString(arguments['ref'], 'ref') ?? '';
     final title = _optionalString(arguments['title'], 'title') ?? '';
@@ -251,6 +231,10 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     final artifacts = _artifacts(arguments['artifacts'], 'artifacts');
     final mayEditFiles =
         _optionalBool(arguments['may_edit_files'], 'may_edit_files') ?? false;
+    final acceptanceRefs = _stringList(
+      arguments['acceptance_refs'],
+      'acceptance_refs',
+    );
     final id = context.builder.addStep(
       TaskPlanStepSpec(
         ref: ref,
@@ -259,6 +243,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
         instructions: instructions,
         mayEditFiles: mayEditFiles,
         artifacts: artifacts,
+        acceptanceRefs: acceptanceRefs,
       ),
       commandId: commandId,
     );
@@ -269,51 +254,19 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     };
   }
 
-  Map<String, dynamic> _addCheck(
+  Map<String, dynamic> _addAcceptance(
     PlanningArguments arguments,
     String? commandId,
   ) {
     _ensureOpen();
-    _keys(arguments, const {
-      'step_ref',
-      'command',
-      'working_directory',
-      'required',
-      'description',
-    });
-    final stepRef = _optionalString(arguments['step_ref'], 'step_ref');
-    final id = context.builder.addCheck(
-      stepReference: stepRef,
-      command: _requiredString(arguments['command'], 'command'),
-      workingDirectory:
-          _optionalString(
-            arguments['working_directory'],
-            'working_directory',
-          ) ??
-          '.',
-      required: _optionalBool(arguments['required'], 'required') ?? true,
-      description: _optionalString(arguments['description'], 'description'),
-      commandId: commandId,
+    _keys(arguments, const {'ref', 'statement', 'criterion_refs', 'verifiers'});
+    final item = _parseAcceptance(
+      arguments.toWire(),
+      'acceptance',
+      allowEmptyCriteria: true,
     );
-    final preview = context.builder.preview();
-    final stepId = stepRef == null ? null : context.builder.stepIdFor(stepRef);
-    final step = stepId == null ? null : preview.task.stepById(stepId);
-    return {
-      'changed': true,
-      'check': {
-        'expectation_id': id,
-        'step_ref': stepRef,
-        'command': _requiredString(arguments['command'], 'command'),
-        'working_directory':
-            _optionalString(
-              arguments['working_directory'],
-              'working_directory',
-            ) ??
-            '.',
-        'required': _optionalBool(arguments['required'], 'required') ?? true,
-        if (step != null) 'step': _stepDetail(step, stepRef ?? step.id),
-      },
-    };
+    context.builder.addAcceptance(item: item, commandId: commandId);
+    return {'changed': true, 'acceptance': _acceptanceWire(item)};
   }
 
   Map<String, dynamic> _preview(PlanningArguments arguments) {
@@ -383,8 +336,8 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
       'steps': [
         for (final step in preview.task.steps) _stepDetail(step, step.id),
       ],
-      'required_checks': [
-        for (final gate in preview.task.gates) _gateSummary(gate),
+      'acceptance': [
+        for (final item in preview.task.acceptance) _acceptanceSummary(item),
       ],
       'issues': [for (final issue in preview.issues) issue.toMap()],
       'control': _controlState(preview.task),
@@ -407,18 +360,24 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
           'kind': artifact.kind,
         },
     ],
-    'checks': [for (final gate in step.gates) _gateSummary(gate)],
+    'acceptance_refs': step.acceptanceRefs,
   };
 
-  Map<String, dynamic> _gateSummary(TaskGate gate) => {
-    'kind': gate.id,
-    'scope': gate.scope,
-    'required': gate.required,
-    if (gate.params['command'] != null)
-      'command': gate.params['command'].toString(),
-    if (gate.params['working_directory'] != null)
-      'working_directory': gate.params['working_directory'].toString(),
-    'description': gate.description,
+  Map<String, dynamic> _acceptanceSummary(AcceptanceItem item) => {
+    'ref': item.ref,
+    'statement': item.statement,
+    'criterion_refs': item.criterionIds,
+    'verifiers': [
+      for (final verifier in item.verifiers)
+        {
+          'kind': verifier.kind.wire,
+          'required': verifier.required,
+          'status': 'pending',
+          if (verifier.command != null) 'command': verifier.command,
+          if (verifier.path != null) 'path': verifier.path,
+          if (verifier.description != null) 'description': verifier.description,
+        },
+    ],
   };
 
   Map<String, dynamic> _controlState(TaskAggregate task) => {
@@ -442,9 +401,8 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     'step_count': task.steps.length,
     'next_step_ref': task.currentStepId,
     'status': task.status.wire,
-    'checks': [
-      for (final gate in task.gates)
-        {'kind': gate.id, 'scope': gate.scope, 'required': gate.required},
+    'acceptance': [
+      for (final item in task.acceptance) _acceptanceSummary(item),
     ],
   };
 
@@ -508,6 +466,145 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
       kind: _optionalString(value['kind'], '$fieldPath.kind') ?? 'file',
     );
   }
+
+  AcceptanceItem _parseAcceptance(
+    Map<String, dynamic> value,
+    String fieldPath, {
+    required bool allowEmptyCriteria,
+  }) {
+    _keys(value, const {
+      'ref',
+      'statement',
+      'criterion_refs',
+      'verifiers',
+    }, fieldPath: fieldPath);
+    final criterionIds = _stringList(
+      value['criterion_refs'],
+      '$fieldPath.criterion_refs',
+    );
+    if (!allowEmptyCriteria && criterionIds.isEmpty) {
+      throw _argument(
+        'missing_argument',
+        '$fieldPath.criterion_refs',
+        'Project-linked acceptance needs at least one criterion reference.',
+      );
+    }
+    final rawVerifiers = value['verifiers'];
+    if (rawVerifiers is! List || rawVerifiers.isEmpty) {
+      throw _argument(
+        'missing_argument',
+        '$fieldPath.verifiers',
+        'At least one verifier is required.',
+      );
+    }
+    final verifiers = <AcceptanceVerifier>[];
+    for (var index = 0; index < rawVerifiers.length; index++) {
+      final raw = rawVerifiers[index];
+      if (raw is! Map) {
+        throw _argument(
+          'invalid_argument',
+          '$fieldPath.verifiers[$index]',
+          'A verifier must be an object.',
+        );
+      }
+      final verifier = Map<String, dynamic>.from(raw);
+      _keys(verifier, const {
+        'kind',
+        'required',
+        'command',
+        'working_directory',
+        'path',
+        'artifact_kind',
+        'description',
+      }, fieldPath: '$fieldPath.verifiers[$index]');
+      final kindName = _requiredString(
+        verifier['kind'],
+        '$fieldPath.verifiers[$index].kind',
+      );
+      final kind = AcceptanceVerifierKind.values.firstWhere(
+        (item) => item.name == kindName,
+        orElse: () => throw _argument(
+          'invalid_argument',
+          '$fieldPath.verifiers[$index].kind',
+          'Unsupported verifier kind $kindName.',
+        ),
+      );
+      final parsed = AcceptanceVerifier(
+        kind: kind,
+        required:
+            _optionalBool(
+              verifier['required'],
+              '$fieldPath.verifiers[$index].required',
+            ) ??
+            true,
+        command: _optionalString(
+          verifier['command'],
+          '$fieldPath.verifiers[$index].command',
+        ),
+        workingDirectory:
+            _optionalString(
+              verifier['working_directory'],
+              '$fieldPath.verifiers[$index].working_directory',
+            ) ??
+            '.',
+        path: _optionalString(
+          verifier['path'],
+          '$fieldPath.verifiers[$index].path',
+        ),
+        artifactKind:
+            _optionalString(
+              verifier['artifact_kind'],
+              '$fieldPath.verifiers[$index].artifact_kind',
+            ) ??
+            'file',
+        description: _optionalString(
+          verifier['description'],
+          '$fieldPath.verifiers[$index].description',
+        ),
+      );
+      if (!parsed.hasConfiguration) {
+        throw _argument(
+          'invalid_argument',
+          '$fieldPath.verifiers[$index]',
+          'Verifier configuration does not match its kind.',
+        );
+      }
+      verifiers.add(parsed);
+    }
+    if (!verifiers.any((item) => item.required)) {
+      throw _argument(
+        'missing_required_verifier',
+        '$fieldPath.verifiers',
+        'At least one verifier must be required.',
+      );
+    }
+    return AcceptanceItem(
+      ref: _requiredString(value['ref'], '$fieldPath.ref'),
+      statement: _requiredString(value['statement'], '$fieldPath.statement'),
+      criterionIds: criterionIds,
+      verifiers: verifiers,
+    );
+  }
+
+  Map<String, dynamic> _acceptanceWire(AcceptanceItem item) => {
+    'ref': item.ref,
+    'statement': item.statement,
+    'criterion_refs': item.criterionIds,
+    'verifiers': [
+      for (final verifier in item.verifiers)
+        {
+          'kind': verifier.kind.wire,
+          'required': verifier.required,
+          if (verifier.command != null) 'command': verifier.command,
+          if (verifier.workingDirectory != '.')
+            'working_directory': verifier.workingDirectory,
+          if (verifier.path != null) 'path': verifier.path,
+          if (verifier.artifactKind != 'file')
+            'artifact_kind': verifier.artifactKind,
+          if (verifier.description != null) 'description': verifier.description,
+        },
+    ],
+  };
 
   void _keys(
     Object value,
@@ -606,7 +703,7 @@ const ToolDefinition _taskViewDefinition = ToolDefinition(
   id: 'task_view',
   name: 'View task plan',
   description:
-      'Inspect a bounded task summary, its step statuses, boundaries, and required checks.',
+      'Inspect a bounded task summary, its step statuses, acceptance, and boundaries.',
   schema: ToolSchema({
     'type': 'object',
     'additionalProperties': false,
@@ -640,7 +737,7 @@ const ToolDefinition _setBriefDefinition = ToolDefinition(
   id: 'task_set_brief',
   name: 'Set task brief',
   description:
-      'Refine the task title, objective, constraints, or success criteria.',
+      'Refine the task title, objective, or constraints. Acceptance is managed separately.',
   schema: ToolSchema({
     'type': 'object',
     'additionalProperties': false,
@@ -648,10 +745,6 @@ const ToolDefinition _setBriefDefinition = ToolDefinition(
       'title': {'type': 'string'},
       'objective': {'type': 'string'},
       'constraints': {
-        'type': 'array',
-        'items': {'type': 'string'},
-      },
-      'success_criteria': {
         'type': 'array',
         'items': {'type': 'string'},
       },
@@ -700,6 +793,11 @@ const ToolDefinition _addStepDefinition = ToolDefinition(
           'required': ['path'],
         },
       },
+      'acceptance_refs': {
+        'type': 'array',
+        'items': {'type': 'string'},
+        'description': 'Acceptance refs verified by this step.',
+      },
     },
     'required': ['objective'],
   }),
@@ -717,22 +815,45 @@ const ToolDefinition _resetPlanDefinition = ToolDefinition(
   }),
 );
 
-const ToolDefinition _addCheckDefinition = ToolDefinition(
-  id: 'task_add_check',
-  name: 'Add task check',
+const ToolDefinition _addAcceptanceDefinition = ToolDefinition(
+  id: 'task_add_acceptance',
+  name: 'Add task acceptance',
   description:
-      'Add an exact verification command to the task or one step. Hermes creates the gate and evidence ID.',
+      'Add one explicit local acceptance item. Hermes creates all gate and evidence identifiers.',
   schema: ToolSchema({
     'type': 'object',
     'additionalProperties': false,
     'properties': {
-      'step_ref': {'type': 'string'},
-      'command': {'type': 'string'},
-      'working_directory': {'type': 'string', 'default': '.'},
-      'required': {'type': 'boolean', 'default': true},
-      'description': {'type': 'string'},
+      'ref': {'type': 'string'},
+      'statement': {'type': 'string'},
+      'criterion_refs': {
+        'type': 'array',
+        'items': {'type': 'string'},
+        'description': 'Leave empty for task-local acceptance.',
+      },
+      'verifiers': {
+        'type': 'array',
+        'minItems': 1,
+        'items': {
+          'type': 'object',
+          'additionalProperties': false,
+          'properties': {
+            'kind': {
+              'type': 'string',
+              'enum': ['command', 'artifact', 'review', 'approval'],
+            },
+            'required': {'type': 'boolean', 'default': true},
+            'command': {'type': 'string'},
+            'working_directory': {'type': 'string', 'default': '.'},
+            'path': {'type': 'string'},
+            'artifact_kind': {'type': 'string', 'default': 'file'},
+            'description': {'type': 'string'},
+          },
+          'required': ['kind'],
+        },
+      },
     },
-    'required': ['command'],
+    'required': ['ref', 'statement', 'verifiers'],
   }),
 );
 

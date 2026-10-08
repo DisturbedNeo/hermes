@@ -7,16 +7,26 @@
   ],
   "workspaceOrientation": "",
   "workspaceContext": [],
-  "doneCriteria": [
-    "Every report-dialog action is keyboard reachable."
+  "acceptance": [
+    {
+      "ref": "keyboard-accessible",
+      "statement": "The keyboard widget tests pass.",
+      "criterionIds": [
+        "criterion_accessibility"
+      ],
+      "verifiers": [
+        {
+          "kind": "command",
+          "required": true,
+          "command": "flutter test test/ui/report_dialog_test.dart",
+          "workingDirectory": ".",
+          "artifactKind": "file"
+        }
+      ]
+    }
   ],
   "outOfScope": [
     "Do not redesign report visuals."
-  ],
-  "expectedArtifacts": [],
-  "requiredGates": [],
-  "criterionIds": [
-    "criterion_accessibility"
   ],
   "criteria": [
     {
@@ -24,19 +34,6 @@
       "statement": "The reporting workflow is keyboard accessible.",
       "required": true,
       "verificationMode": "deterministic"
-    }
-  ],
-  "expectedEvidence": [
-    {
-      "id": "keyboard_tests",
-      "type": "command",
-      "criterionIds": [
-        "criterion_accessibility"
-      ],
-      "description": "The keyboard widget tests pass.",
-      "required": true,
-      "sourceRef": "flutter test test/ui/report_dialog_test.dart",
-      "details": {}
     }
   ],
   "readPaths": [],

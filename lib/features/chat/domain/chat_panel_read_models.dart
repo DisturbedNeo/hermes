@@ -1,4 +1,5 @@
 import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
 import 'package:hermes/features/task/domain/task.dart';
 
@@ -136,7 +137,7 @@ class TaskPanelReadModel {
     required this.pendingQuestion,
     required this.planningMetrics,
     required this.memorySummary,
-    required this.doneCriteria,
+    required this.acceptance,
     required this.outOfScope,
     required this.currentStepId,
     required this.projectId,
@@ -154,7 +155,7 @@ class TaskPanelReadModel {
   final PendingTaskQuestion? pendingQuestion;
   final PlanningMetrics planningMetrics;
   final String memorySummary;
-  final List<String> doneCriteria;
+  final List<AcceptanceItem> acceptance;
   final List<String> outOfScope;
   final String? currentStepId;
   final String? projectId;

@@ -7,6 +7,7 @@ import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/features/project/runtime/project_model_calls.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
 
 void main() {
@@ -63,22 +64,36 @@ void main() {
             {
               'ref': 'inspect',
               'objective': 'Inspect the bounded implementation boundary.',
-              'criterion_refs': ['criterion_1'],
-              'done_criteria': ['The boundary is documented.'],
-              'out_of_scope': ['Changing the implementation.'],
-              'checks': [
+              'acceptance': [
                 {
-                  'command': 'dart test',
+                  'ref': 'boundary-documented',
+                  'statement': 'The boundary is documented.',
                   'criterion_refs': ['criterion_1'],
-                  'required': true,
+                  'verifiers': [
+                    {
+                      'kind': 'command',
+                      'command': 'dart test',
+                      'working_directory': '.',
+                      'required': true,
+                    },
+                  ],
                 },
               ],
+              'out_of_scope': ['Changing the implementation.'],
             },
             {
               'ref': 'repair',
               'objective': 'Repair the bounded implementation boundary.',
-              'criterion_refs': ['criterion_1'],
-              'done_criteria': ['The boundary repair is verified.'],
+              'acceptance': [
+                {
+                  'ref': 'boundary-repaired',
+                  'statement': 'The boundary repair is verified.',
+                  'criterion_refs': ['criterion_1'],
+                  'verifiers': [
+                    {'kind': 'review', 'required': true},
+                  ],
+                },
+              ],
               'out_of_scope': ['Unrelated project work.'],
             },
           ],
@@ -112,11 +127,11 @@ void main() {
         isTrue,
       );
       expect(
-        children.first.expectedEvidence.any(
-          (expectation) =>
-              expectation.type == ProjectEvidenceType.command &&
-              expectation.required &&
-              expectation.sourceRef == 'dart test',
+        children.first.acceptance.expand((item) => item.verifiers).any(
+          (verifier) =>
+              verifier.kind == AcceptanceVerifierKind.command &&
+              verifier.required &&
+              verifier.command == 'dart test',
         ),
         isTrue,
       );
@@ -176,16 +191,14 @@ TaskAggregate _task(String id) {
     id: id,
     title: 'Bounded implementation',
     objective: 'Implement the bounded outcome.',
-    criterionIds: const ['criterion_1'],
-    expectedEvidence: const [
-      TaskEvidenceExpectation(
-        id: 'expectation_1',
-        type: ProjectEvidenceType.taskClaim,
+    acceptance: const [
+      AcceptanceItem(
+        ref: 'bounded-outcome-verified',
+        statement: 'The bounded outcome is verified.',
         criterionIds: ['criterion_1'],
-        description: 'The bounded outcome is verified.',
+        verifiers: [AcceptanceVerifier(kind: AcceptanceVerifierKind.review)],
       ),
     ],
-    doneCriteria: const ['The bounded outcome is verified.'],
     outOfScope: const ['Unrelated project work.'],
     status: TaskStatus.queued,
     fingerprint: 'bounded-implementation',

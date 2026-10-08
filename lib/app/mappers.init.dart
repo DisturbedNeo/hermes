@@ -4,117 +4,119 @@
 // ignore_for_file: type=lint
 // ignore_for_file: unused_element
 
-import '../features/chat/application/contracts/system_prompt.dart' as p0;
+import '../core/contracts/acceptance.dart' as p0;
+import '../features/chat/application/contracts/system_prompt.dart' as p1;
 import '../features/chat/application/protocol/context_summary_prompt.dart'
-    as p1;
-import '../features/model/application/model_configuration.dart' as p2;
-import '../features/model/application/model_load_configuration.dart' as p3;
+    as p2;
+import '../features/model/application/model_configuration.dart' as p3;
+import '../features/model/application/model_load_configuration.dart' as p4;
 import '../features/persistence/infrastructure/dto/project_state_models.dart'
-    as p4;
-import '../features/persistence/infrastructure/dto/task_state_models.dart'
     as p5;
-import '../features/project/application/contracts/project_task_models.dart'
+import '../features/persistence/infrastructure/dto/task_state_models.dart'
     as p6;
-import '../features/project/application/contracts/project_workspace_graph.dart'
+import '../features/project/application/contracts/project_task_models.dart'
     as p7;
-import '../features/task/application/contracts/planning_metrics.dart' as p8;
+import '../features/project/application/contracts/project_workspace_graph.dart'
+    as p8;
+import '../features/task/application/contracts/planning_metrics.dart' as p9;
 import '../features/task/application/contracts/question_policy_service.dart'
-    as p9;
-import '../features/task/application/contracts/task_execution_contracts.dart'
     as p10;
-import '../features/task/application/contracts/task_planning_models.dart'
+import '../features/task/application/contracts/task_execution_contracts.dart'
     as p11;
-import '../features/task/application/contracts/task_planning_types.dart' as p12;
-import '../features/task/application/contracts/task_tool_contracts.dart' as p13;
+import '../features/task/application/contracts/task_planning_models.dart'
+    as p12;
+import '../features/task/application/contracts/task_planning_types.dart' as p13;
+import '../features/task/application/contracts/task_tool_contracts.dart' as p14;
 import '../features/workspace/application/workspace_discovery_profile.dart'
-    as p14;
-import '../platform/tools/calculator_tool.dart' as p15;
+    as p15;
+import '../platform/tools/calculator_tool.dart' as p16;
 
 /// @nodoc
 void initializeMappers() {
-  p0.PromptModuleMapper.ensureInitialized();
-  p0.PromptPresetMapper.ensureInitialized();
-  p0.SystemPromptSnapshotMapper.ensureInitialized();
-  p1.ContextSummaryMapper.ensureInitialized();
-  p2.ModelConfigurationSnapshotMapper.ensureInitialized();
-  p3.ModelLoadConfigurationMapper.ensureInitialized();
-  p4.ProjectDiagnosticsMapper.ensureInitialized();
-  p4.ProjectCriterionMapper.ensureInitialized();
-  p4.ProjectEvidenceMapper.ensureInitialized();
-  p4.ProjectMilestoneMapper.ensureInitialized();
-  p4.ProjectMemoryEntryMapper.ensureInitialized();
-  p4.ProjectMemorySupersessionMapper.ensureInitialized();
-  p4.ProjectDesiredPlanMapper.ensureInitialized();
-  p4.ProjectPlanRevisionMapper.ensureInitialized();
-  p4.PendingProjectPlanApprovalMapper.ensureInitialized();
-  p4.ProjectCompletionReviewCheckpointMapper.ensureInitialized();
-  p4.ProjectBoundaryMapper.ensureInitialized();
-  p4.ProjectSnapshotAggregateMapper.ensureInitialized();
-  p4.ProjectRecoveryIncidentMapper.ensureInitialized();
-  p4.ProjectDecisionRecordMapper.ensureInitialized();
-  p4.ProjectBlockerMapper.ensureInitialized();
-  p4.PendingProjectQuestionMapper.ensureInitialized();
-  p4.ProjectStatusMapper.ensureInitialized();
-  p4.ProjectCriterionStatusMapper.ensureInitialized();
-  p4.ProjectVerificationModeMapper.ensureInitialized();
-  p4.ProjectEvidenceStatusMapper.ensureInitialized();
-  p4.ProjectEvidenceStrengthMapper.ensureInitialized();
-  p4.ProjectMilestoneStatusMapper.ensureInitialized();
-  p4.TaskReadinessMapper.ensureInitialized();
-  p4.ProjectMemoryKindMapper.ensureInitialized();
-  p4.ProjectMemorySourceTypeMapper.ensureInitialized();
-  p4.ProjectMemoryConfidenceMapper.ensureInitialized();
-  p4.ProjectPlanRevisionTriggerMapper.ensureInitialized();
-  p4.ProjectCompletionReviewReasonMapper.ensureInitialized();
-  p4.ProjectPlanRevisionApproverMapper.ensureInitialized();
-  p4.ProjectBlockerTypeMapper.ensureInitialized();
-  p4.ProjectDecisionTypeMapper.ensureInitialized();
-  p4.ProjectControlOutcomeMapper.ensureInitialized();
-  p4.ProjectRecoveryIncidentStatusMapper.ensureInitialized();
-  p5.TaskProjectCriterionMapper.ensureInitialized();
-  p5.TaskProjectEvidenceExpectationMapper.ensureInitialized();
-  p5.RefinedTaskBriefMapper.ensureInitialized();
-  p5.TaskSnapshotAggregateMapper.ensureInitialized();
-  p5.TaskStepMapper.ensureInitialized();
-  p5.TaskRunMapper.ensureInitialized();
-  p5.TaskToolCallRecordMapper.ensureInitialized();
-  p5.PendingTaskApprovalMapper.ensureInitialized();
-  p5.PendingTaskQuestionMapper.ensureInitialized();
-  p5.TaskStepStatusMapper.ensureInitialized();
-  p5.TaskRunStatusMapper.ensureInitialized();
-  p5.TaskToolCallOutcomeMapper.ensureInitialized();
-  p6.ProjectTaskNodeMapper.ensureInitialized();
-  p7.ProjectWorkspaceNodeMapper.ensureInitialized();
-  p7.ProjectWorkspaceEdgeMapper.ensureInitialized();
-  p7.ProjectWorkspaceGraphMapper.ensureInitialized();
-  p7.ProjectWorkspaceSourceTypeMapper.ensureInitialized();
-  p7.ProjectWorkspaceConfidenceMapper.ensureInitialized();
-  p8.PlanningMetricsMapper.ensureInitialized();
-  p9.AgentQuestionMapper.ensureInitialized();
-  p9.QuestionKindMapper.ensureInitialized();
-  p10.TaskGateMapper.ensureInitialized();
-  p10.TaskEvidenceExpectationMapper.ensureInitialized();
-  p10.TaskArtifactMapper.ensureInitialized();
-  p10.TaskGateResultMapper.ensureInitialized();
-  p10.TaskFailureMapper.ensureInitialized();
-  p10.TaskEvidenceClaimMapper.ensureInitialized();
-  p10.TaskGateStatusMapper.ensureInitialized();
-  p10.TaskGateFailureDispositionMapper.ensureInitialized();
-  p10.TaskEvidenceClaimTypeMapper.ensureInitialized();
-  p10.TaskEvidenceClaimStrengthMapper.ensureInitialized();
-  p11.TaskPlanningContextMapper.ensureInitialized();
-  p11.WorkspaceMetadataMapper.ensureInitialized();
-  p12.TaskStatusMapper.ensureInitialized();
-  p12.TaskPriorityMapper.ensureInitialized();
-  p12.TaskRiskMapper.ensureInitialized();
-  p12.ProjectRiskReductionMapper.ensureInitialized();
-  p12.TaskEffortMapper.ensureInitialized();
-  p12.ProjectEvidenceTypeMapper.ensureInitialized();
-  p13.TaskToolErrorMapper.ensureInitialized();
-  p13.TaskToolErrorDispositionMapper.ensureInitialized();
-  p14.WorkspaceDiscoveryProfileMapper.ensureInitialized();
-  p14.WorkspaceRequiredContextIssueMapper.ensureInitialized();
-  p14.WorkspaceFileExcerptMapper.ensureInitialized();
-  p15.CalculatorOperationMapper.ensureInitialized();
+  p0.AcceptanceVerifierMapper.ensureInitialized();
+  p0.AcceptanceItemMapper.ensureInitialized();
+  p0.AcceptanceVerifierKindMapper.ensureInitialized();
+  p1.PromptModuleMapper.ensureInitialized();
+  p1.PromptPresetMapper.ensureInitialized();
+  p1.SystemPromptSnapshotMapper.ensureInitialized();
+  p2.ContextSummaryMapper.ensureInitialized();
+  p3.ModelConfigurationSnapshotMapper.ensureInitialized();
+  p4.ModelLoadConfigurationMapper.ensureInitialized();
+  p5.ProjectDiagnosticsMapper.ensureInitialized();
+  p5.ProjectCriterionMapper.ensureInitialized();
+  p5.ProjectEvidenceMapper.ensureInitialized();
+  p5.ProjectMilestoneMapper.ensureInitialized();
+  p5.ProjectMemoryEntryMapper.ensureInitialized();
+  p5.ProjectMemorySupersessionMapper.ensureInitialized();
+  p5.ProjectDesiredPlanMapper.ensureInitialized();
+  p5.ProjectPlanRevisionMapper.ensureInitialized();
+  p5.PendingProjectPlanApprovalMapper.ensureInitialized();
+  p5.ProjectCompletionReviewCheckpointMapper.ensureInitialized();
+  p5.ProjectBoundaryMapper.ensureInitialized();
+  p5.ProjectSnapshotAggregateMapper.ensureInitialized();
+  p5.ProjectRecoveryIncidentMapper.ensureInitialized();
+  p5.ProjectDecisionRecordMapper.ensureInitialized();
+  p5.ProjectBlockerMapper.ensureInitialized();
+  p5.PendingProjectQuestionMapper.ensureInitialized();
+  p5.ProjectStatusMapper.ensureInitialized();
+  p5.ProjectCriterionStatusMapper.ensureInitialized();
+  p5.ProjectVerificationModeMapper.ensureInitialized();
+  p5.ProjectEvidenceStatusMapper.ensureInitialized();
+  p5.ProjectEvidenceStrengthMapper.ensureInitialized();
+  p5.ProjectMilestoneStatusMapper.ensureInitialized();
+  p5.TaskReadinessMapper.ensureInitialized();
+  p5.ProjectMemoryKindMapper.ensureInitialized();
+  p5.ProjectMemorySourceTypeMapper.ensureInitialized();
+  p5.ProjectMemoryConfidenceMapper.ensureInitialized();
+  p5.ProjectPlanRevisionTriggerMapper.ensureInitialized();
+  p5.ProjectCompletionReviewReasonMapper.ensureInitialized();
+  p5.ProjectPlanRevisionApproverMapper.ensureInitialized();
+  p5.ProjectBlockerTypeMapper.ensureInitialized();
+  p5.ProjectDecisionTypeMapper.ensureInitialized();
+  p5.ProjectControlOutcomeMapper.ensureInitialized();
+  p5.ProjectRecoveryIncidentStatusMapper.ensureInitialized();
+  p6.TaskProjectCriterionMapper.ensureInitialized();
+  p6.RefinedTaskBriefMapper.ensureInitialized();
+  p6.TaskSnapshotAggregateMapper.ensureInitialized();
+  p6.TaskStepMapper.ensureInitialized();
+  p6.TaskRunMapper.ensureInitialized();
+  p6.TaskToolCallRecordMapper.ensureInitialized();
+  p6.PendingTaskApprovalMapper.ensureInitialized();
+  p6.PendingTaskQuestionMapper.ensureInitialized();
+  p6.TaskStepStatusMapper.ensureInitialized();
+  p6.TaskRunStatusMapper.ensureInitialized();
+  p6.TaskToolCallOutcomeMapper.ensureInitialized();
+  p7.ProjectTaskNodeMapper.ensureInitialized();
+  p8.ProjectWorkspaceNodeMapper.ensureInitialized();
+  p8.ProjectWorkspaceEdgeMapper.ensureInitialized();
+  p8.ProjectWorkspaceGraphMapper.ensureInitialized();
+  p8.ProjectWorkspaceSourceTypeMapper.ensureInitialized();
+  p8.ProjectWorkspaceConfidenceMapper.ensureInitialized();
+  p9.PlanningMetricsMapper.ensureInitialized();
+  p10.AgentQuestionMapper.ensureInitialized();
+  p10.QuestionKindMapper.ensureInitialized();
+  p11.TaskGateMapper.ensureInitialized();
+  p11.TaskArtifactMapper.ensureInitialized();
+  p11.TaskGateResultMapper.ensureInitialized();
+  p11.TaskFailureMapper.ensureInitialized();
+  p11.TaskEvidenceClaimMapper.ensureInitialized();
+  p11.TaskGateStatusMapper.ensureInitialized();
+  p11.TaskGateFailureDispositionMapper.ensureInitialized();
+  p11.TaskEvidenceClaimTypeMapper.ensureInitialized();
+  p11.TaskEvidenceClaimStrengthMapper.ensureInitialized();
+  p12.TaskPlanningContextMapper.ensureInitialized();
+  p12.WorkspaceMetadataMapper.ensureInitialized();
+  p13.TaskStatusMapper.ensureInitialized();
+  p13.TaskPriorityMapper.ensureInitialized();
+  p13.TaskRiskMapper.ensureInitialized();
+  p13.ProjectRiskReductionMapper.ensureInitialized();
+  p13.TaskEffortMapper.ensureInitialized();
+  p13.ProjectEvidenceTypeMapper.ensureInitialized();
+  p14.TaskToolErrorMapper.ensureInitialized();
+  p14.TaskToolErrorDispositionMapper.ensureInitialized();
+  p15.WorkspaceDiscoveryProfileMapper.ensureInitialized();
+  p15.WorkspaceRequiredContextIssueMapper.ensureInitialized();
+  p15.WorkspaceFileExcerptMapper.ensureInitialized();
+  p16.CalculatorOperationMapper.ensureInitialized();
 }
 

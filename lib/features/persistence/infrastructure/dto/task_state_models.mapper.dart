@@ -300,133 +300,6 @@ mixin TaskProjectCriterionMappable {
 }
 
 /// @nodoc
-class TaskProjectEvidenceExpectationMapper
-    extends ClassMapperBase<TaskProjectEvidenceExpectation> {
-  TaskProjectEvidenceExpectationMapper._();
-
-  static TaskProjectEvidenceExpectationMapper? _instance;
-  static TaskProjectEvidenceExpectationMapper ensureInitialized() {
-    if (_instance == null) {
-      MapperContainer.globals.use(
-        _instance = TaskProjectEvidenceExpectationMapper._(),
-      );
-    }
-    return _instance!;
-  }
-
-  @override
-  final String id = 'TaskProjectEvidenceExpectation';
-
-  static String _$id(TaskProjectEvidenceExpectation v) => v.id;
-  static const Field<TaskProjectEvidenceExpectation, String> _f$id = Field(
-    'id',
-    _$id,
-    hook: JsonStringHook(),
-  );
-  static String _$type(TaskProjectEvidenceExpectation v) => v.type;
-  static const Field<TaskProjectEvidenceExpectation, String> _f$type = Field(
-    'type',
-    _$type,
-    opt: true,
-    def: 'task_claim',
-    hook: JsonStringHook(fallback: 'task_claim'),
-  );
-  static List<String> _$criterionIds(TaskProjectEvidenceExpectation v) =>
-      v.criterionIds;
-  static const Field<TaskProjectEvidenceExpectation, List<String>>
-  _f$criterionIds = Field(
-    'criterionIds',
-    _$criterionIds,
-    opt: true,
-    def: const [],
-    hook: JsonStringListHook(),
-  );
-  static String _$description(TaskProjectEvidenceExpectation v) =>
-      v.description;
-  static const Field<TaskProjectEvidenceExpectation, String> _f$description =
-      Field('description', _$description, hook: JsonStringHook());
-  static bool _$required(TaskProjectEvidenceExpectation v) => v.required;
-  static const Field<TaskProjectEvidenceExpectation, bool> _f$required = Field(
-    'required',
-    _$required,
-    opt: true,
-    def: true,
-    hook: JsonBoolHook(fallback: true),
-  );
-  static String? _$sourceRef(TaskProjectEvidenceExpectation v) => v.sourceRef;
-  static const Field<TaskProjectEvidenceExpectation, String> _f$sourceRef =
-      Field(
-        'sourceRef',
-        _$sourceRef,
-        opt: true,
-        hook: JsonNullableStringHook(),
-      );
-  static Map<String, dynamic> _$details(TaskProjectEvidenceExpectation v) =>
-      v.details;
-  static const Field<TaskProjectEvidenceExpectation, Map<String, dynamic>>
-  _f$details = Field(
-    'details',
-    _$details,
-    opt: true,
-    def: const {},
-    hook: JsonMapValueHook(),
-  );
-
-  @override
-  final MappableFields<TaskProjectEvidenceExpectation> fields = const {
-    #id: _f$id,
-    #type: _f$type,
-    #criterionIds: _f$criterionIds,
-    #description: _f$description,
-    #required: _f$required,
-    #sourceRef: _f$sourceRef,
-    #details: _f$details,
-  };
-  @override
-  final bool ignoreNull = true;
-
-  static TaskProjectEvidenceExpectation _instantiate(DecodingData data) {
-    return TaskProjectEvidenceExpectation(
-      id: data.dec(_f$id),
-      type: data.dec(_f$type),
-      criterionIds: data.dec(_f$criterionIds),
-      description: data.dec(_f$description),
-      required: data.dec(_f$required),
-      sourceRef: data.dec(_f$sourceRef),
-      details: data.dec(_f$details),
-    );
-  }
-
-  @override
-  final Function instantiate = _instantiate;
-
-  static TaskProjectEvidenceExpectation fromMap(Map<String, dynamic> map) {
-    return ensureInitialized().decodeMap<TaskProjectEvidenceExpectation>(map);
-  }
-
-  static TaskProjectEvidenceExpectation fromJson(String json) {
-    return ensureInitialized().decodeJson<TaskProjectEvidenceExpectation>(json);
-  }
-}
-
-/// @nodoc
-mixin TaskProjectEvidenceExpectationMappable {
-  String toJson() {
-    return TaskProjectEvidenceExpectationMapper.ensureInitialized()
-        .encodeJson<TaskProjectEvidenceExpectation>(
-          this as TaskProjectEvidenceExpectation,
-        );
-  }
-
-  Map<String, dynamic> toMap() {
-    return TaskProjectEvidenceExpectationMapper.ensureInitialized()
-        .encodeMap<TaskProjectEvidenceExpectation>(
-          this as TaskProjectEvidenceExpectation,
-        );
-  }
-}
-
-/// @nodoc
 class RefinedTaskBriefMapper extends ClassMapperBase<RefinedTaskBrief> {
   RefinedTaskBriefMapper._();
 
@@ -461,15 +334,6 @@ class RefinedTaskBriefMapper extends ClassMapperBase<RefinedTaskBrief> {
     def: const [],
     hook: JsonStringListHook(),
   );
-  static List<String> _$successCriteria(RefinedTaskBrief v) =>
-      v.successCriteria;
-  static const Field<RefinedTaskBrief, List<String>> _f$successCriteria = Field(
-    'successCriteria',
-    _$successCriteria,
-    opt: true,
-    def: const [],
-    hook: JsonStringListHook(),
-  );
   static List<String> _$assumptions(RefinedTaskBrief v) => v.assumptions;
   static const Field<RefinedTaskBrief, List<String>> _f$assumptions = Field(
     'assumptions',
@@ -492,7 +356,6 @@ class RefinedTaskBriefMapper extends ClassMapperBase<RefinedTaskBrief> {
     #title: _f$title,
     #goal: _f$goal,
     #constraints: _f$constraints,
-    #successCriteria: _f$successCriteria,
     #assumptions: _f$assumptions,
     #questions: _f$questions,
   };
@@ -504,7 +367,6 @@ class RefinedTaskBriefMapper extends ClassMapperBase<RefinedTaskBrief> {
       title: data.dec(_f$title),
       goal: data.dec(_f$goal),
       constraints: data.dec(_f$constraints),
-      successCriteria: data.dec(_f$successCriteria),
       assumptions: data.dec(_f$assumptions),
       questions: data.dec(_f$questions),
     );
@@ -544,15 +406,13 @@ class TaskSnapshotAggregateMapper
   static TaskSnapshotAggregateMapper ensureInitialized() {
     if (_instance == null) {
       MapperContainer.globals.use(_instance = TaskSnapshotAggregateMapper._());
-      TaskGateMapper.ensureInitialized();
       TaskStepMapper.ensureInitialized();
       TaskStatusMapper.ensureInitialized();
+      AcceptanceItemMapper.ensureInitialized();
       TaskPriorityMapper.ensureInitialized();
       TaskRiskMapper.ensureInitialized();
       ProjectRiskReductionMapper.ensureInitialized();
       TaskEffortMapper.ensureInitialized();
-      TaskEvidenceExpectationMapper.ensureInitialized();
-      TaskArtifactMapper.ensureInitialized();
       TaskFailureMapper.ensureInitialized();
       TaskRunMapper.ensureInitialized();
       PendingTaskApprovalMapper.ensureInitialized();
@@ -609,24 +469,6 @@ class TaskSnapshotAggregateMapper
         def: const [],
         hook: JsonStringListHook(),
       );
-  static List<String> _$successCriteria(TaskSnapshotAggregate v) =>
-      v.successCriteria;
-  static const Field<TaskSnapshotAggregate, List<String>> _f$successCriteria =
-      Field(
-        'successCriteria',
-        _$successCriteria,
-        opt: true,
-        def: const [],
-        hook: JsonStringListHook(),
-      );
-  static List<TaskGate> _$gates(TaskSnapshotAggregate v) => v.gates;
-  static const Field<TaskSnapshotAggregate, List<TaskGate>> _f$gates = Field(
-    'gates',
-    _$gates,
-    opt: true,
-    def: const [],
-    hook: JsonObjectListHook(),
-  );
   static List<TaskStep> _$steps(TaskSnapshotAggregate v) => v.steps;
   static const Field<TaskSnapshotAggregate, List<TaskStep>> _f$steps = Field(
     'steps',
@@ -642,15 +484,16 @@ class TaskSnapshotAggregateMapper
     opt: true,
     def: TaskStatus.paused,
   );
-  static List<String> _$criterionIds(TaskSnapshotAggregate v) => v.criterionIds;
-  static const Field<TaskSnapshotAggregate, List<String>> _f$criterionIds =
-      Field(
-        'criterionIds',
-        _$criterionIds,
-        opt: true,
-        def: const [],
-        hook: JsonStringListHook(),
-      );
+  static List<AcceptanceItem> _$acceptance(TaskSnapshotAggregate v) =>
+      v.acceptance;
+  static const Field<TaskSnapshotAggregate, List<AcceptanceItem>>
+  _f$acceptance = Field(
+    'acceptance',
+    _$acceptance,
+    opt: true,
+    def: const [],
+    hook: JsonObjectListHook(),
+  );
   static String? _$milestoneId(TaskSnapshotAggregate v) => v.milestoneId;
   static const Field<TaskSnapshotAggregate, String> _f$milestoneId = Field(
     'milestoneId',
@@ -725,17 +568,6 @@ class TaskSnapshotAggregateMapper
     def: 1,
     hook: JsonIntHook(fallback: 1, min: 1),
   );
-  static List<TaskEvidenceExpectation> _$expectedEvidence(
-    TaskSnapshotAggregate v,
-  ) => v.expectedEvidence;
-  static const Field<TaskSnapshotAggregate, List<TaskEvidenceExpectation>>
-  _f$expectedEvidence = Field(
-    'expectedEvidence',
-    _$expectedEvidence,
-    opt: true,
-    def: const [],
-    hook: JsonObjectListHook(),
-  );
   static List<String> _$readPaths(TaskSnapshotAggregate v) => v.readPaths;
   static const Field<TaskSnapshotAggregate, List<String>> _f$readPaths = Field(
     'readPaths',
@@ -752,15 +584,6 @@ class TaskSnapshotAggregateMapper
     def: const [],
     hook: JsonStringListHook(),
   );
-  static List<String> _$doneCriteria(TaskSnapshotAggregate v) => v.doneCriteria;
-  static const Field<TaskSnapshotAggregate, List<String>> _f$doneCriteria =
-      Field(
-        'doneCriteria',
-        _$doneCriteria,
-        opt: true,
-        def: const [],
-        hook: JsonStringListHook(),
-      );
   static List<String> _$outOfScope(TaskSnapshotAggregate v) => v.outOfScope;
   static const Field<TaskSnapshotAggregate, List<String>> _f$outOfScope = Field(
     'outOfScope',
@@ -776,16 +599,6 @@ class TaskSnapshotAggregateMapper
     opt: true,
     def: const [],
     hook: JsonStringListHook(),
-  );
-  static List<TaskArtifact> _$expectedArtifacts(TaskSnapshotAggregate v) =>
-      v.expectedArtifacts;
-  static const Field<TaskSnapshotAggregate, List<TaskArtifact>>
-  _f$expectedArtifacts = Field(
-    'expectedArtifacts',
-    _$expectedArtifacts,
-    opt: true,
-    def: const [],
-    hook: JsonObjectListHook(),
   );
   static String? _$recoveryIncidentId(TaskSnapshotAggregate v) =>
       v.recoveryIncidentId;
@@ -907,11 +720,9 @@ class TaskSnapshotAggregateMapper
     #originalPrompt: _f$originalPrompt,
     #objective: _f$objective,
     #constraints: _f$constraints,
-    #successCriteria: _f$successCriteria,
-    #gates: _f$gates,
     #steps: _f$steps,
     #status: _f$status,
-    #criterionIds: _f$criterionIds,
+    #acceptance: _f$acceptance,
     #milestoneId: _f$milestoneId,
     #dependsOnTaskIds: _f$dependsOnTaskIds,
     #priority: _f$priority,
@@ -921,13 +732,10 @@ class TaskSnapshotAggregateMapper
     #selectionRationale: _f$selectionRationale,
     #revisionIntroduced: _f$revisionIntroduced,
     #revisionUpdated: _f$revisionUpdated,
-    #expectedEvidence: _f$expectedEvidence,
     #readPaths: _f$readPaths,
     #writePaths: _f$writePaths,
-    #doneCriteria: _f$doneCriteria,
     #outOfScope: _f$outOfScope,
     #context: _f$context,
-    #expectedArtifacts: _f$expectedArtifacts,
     #recoveryIncidentId: _f$recoveryIncidentId,
     #fingerprint: _f$fingerprint,
     #rejectionReason: _f$rejectionReason,
@@ -958,11 +766,9 @@ class TaskSnapshotAggregateMapper
       originalPrompt: data.dec(_f$originalPrompt),
       objective: data.dec(_f$objective),
       constraints: data.dec(_f$constraints),
-      successCriteria: data.dec(_f$successCriteria),
-      gates: data.dec(_f$gates),
       steps: data.dec(_f$steps),
       status: data.dec(_f$status),
-      criterionIds: data.dec(_f$criterionIds),
+      acceptance: data.dec(_f$acceptance),
       milestoneId: data.dec(_f$milestoneId),
       dependsOnTaskIds: data.dec(_f$dependsOnTaskIds),
       priority: data.dec(_f$priority),
@@ -972,13 +778,10 @@ class TaskSnapshotAggregateMapper
       selectionRationale: data.dec(_f$selectionRationale),
       revisionIntroduced: data.dec(_f$revisionIntroduced),
       revisionUpdated: data.dec(_f$revisionUpdated),
-      expectedEvidence: data.dec(_f$expectedEvidence),
       readPaths: data.dec(_f$readPaths),
       writePaths: data.dec(_f$writePaths),
-      doneCriteria: data.dec(_f$doneCriteria),
       outOfScope: data.dec(_f$outOfScope),
       context: data.dec(_f$context),
-      expectedArtifacts: data.dec(_f$expectedArtifacts),
       recoveryIncidentId: data.dec(_f$recoveryIncidentId),
       fingerprint: data.dec(_f$fingerprint),
       rejectionReason: data.dec(_f$rejectionReason),
@@ -1032,7 +835,6 @@ class TaskStepMapper extends ClassMapperBase<TaskStep> {
     if (_instance == null) {
       MapperContainer.globals.use(_instance = TaskStepMapper._());
       TaskArtifactMapper.ensureInitialized();
-      TaskGateMapper.ensureInitialized();
       TaskStepStatusMapper.ensureInitialized();
     }
     return _instance!;
@@ -1077,13 +879,13 @@ class TaskStepMapper extends ClassMapperBase<TaskStep> {
     _$artifacts,
     hook: JsonObjectListHook(),
   );
-  static List<TaskGate> _$gates(TaskStep v) => v.gates;
-  static const Field<TaskStep, List<TaskGate>> _f$gates = Field(
-    'gates',
-    _$gates,
+  static List<String> _$acceptanceRefs(TaskStep v) => v.acceptanceRefs;
+  static const Field<TaskStep, List<String>> _f$acceptanceRefs = Field(
+    'acceptanceRefs',
+    _$acceptanceRefs,
     opt: true,
     def: const [],
-    hook: JsonObjectListHook(),
+    hook: JsonStringListHook(),
   );
   static TaskStepStatus _$status(TaskStep v) => v.status;
   static const Field<TaskStep, TaskStepStatus> _f$status = Field(
@@ -1099,14 +901,12 @@ class TaskStepMapper extends ClassMapperBase<TaskStep> {
     #instructions: _f$instructions,
     #mayEditFiles: _f$mayEditFiles,
     #artifacts: _f$artifacts,
-    #gates: _f$gates,
+    #acceptanceRefs: _f$acceptanceRefs,
     #status: _f$status,
   };
   @override
   final bool ignoreNull = true;
 
-  @override
-  final MappingHook hook = const JsonModelHook(omitEmpty: {'gates'});
   static TaskStep _instantiate(DecodingData data) {
     return TaskStep(
       id: data.dec(_f$id),
@@ -1115,7 +915,7 @@ class TaskStepMapper extends ClassMapperBase<TaskStep> {
       instructions: data.dec(_f$instructions),
       mayEditFiles: data.dec(_f$mayEditFiles),
       artifacts: data.dec(_f$artifacts),
-      gates: data.dec(_f$gates),
+      acceptanceRefs: data.dec(_f$acceptanceRefs),
       status: data.dec(_f$status),
     );
   }

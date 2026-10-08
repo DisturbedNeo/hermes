@@ -12,10 +12,8 @@ class TaskPlanMaterializer implements TaskMaterializerPort {
     originalPrompt: node.objective,
     objective: node.objective,
     status: node.status,
-    gates: node.gates,
     constraints: node.constraints,
-    successCriteria: node.successCriteria,
-    criterionIds: node.criterionIds,
+    acceptance: node.acceptance,
     milestoneId: node.milestoneId,
     dependsOnTaskIds: node.dependsOnTaskIds,
     priority: node.priority,
@@ -25,16 +23,16 @@ class TaskPlanMaterializer implements TaskMaterializerPort {
     selectionRationale: node.selectionRationale,
     revisionIntroduced: node.revisionIntroduced,
     revisionUpdated: node.revisionUpdated,
-    expectedEvidence: node.expectedEvidence,
     readPaths: node.readPaths,
     writePaths: node.writePaths,
-    doneCriteria: node.doneCriteria,
     outOfScope: node.outOfScope,
     context: node.context,
-    expectedArtifacts: node.expectedArtifacts,
     recoveryIncidentId: node.recoveryIncidentId,
     fingerprint: node.fingerprint.isEmpty
-        ? [node.objective.trim().toLowerCase(), ...node.criterionIds].join('|')
+        ? [
+            node.objective.trim().toLowerCase(),
+            for (final item in node.acceptance) item.ref,
+          ].join('|')
         : node.fingerprint,
     rejectionReason: node.rejectionReason,
     createdAt: node.createdAt,
@@ -62,9 +60,7 @@ class TaskPlanMaterializer implements TaskMaterializerPort {
     originalPrompt: node.objective,
     objective: node.objective,
     constraints: node.constraints,
-    successCriteria: node.successCriteria,
-    gates: node.gates,
-    criterionIds: node.criterionIds,
+    acceptance: node.acceptance,
     milestoneId: node.milestoneId,
     dependsOnTaskIds: node.dependsOnTaskIds,
     priority: node.priority,
@@ -74,13 +70,10 @@ class TaskPlanMaterializer implements TaskMaterializerPort {
     selectionRationale: node.selectionRationale,
     revisionIntroduced: node.revisionIntroduced,
     revisionUpdated: node.revisionUpdated,
-    expectedEvidence: node.expectedEvidence,
     readPaths: node.readPaths,
     writePaths: node.writePaths,
-    doneCriteria: node.doneCriteria,
     outOfScope: node.outOfScope,
     context: node.context,
-    expectedArtifacts: node.expectedArtifacts,
     status: node.status,
     recoveryIncidentId: node.recoveryIncidentId,
     fingerprint: node.fingerprint,
@@ -95,9 +88,7 @@ class TaskPlanMaterializer implements TaskMaterializerPort {
       node.title == task.title &&
       node.objective == task.objective &&
       node.constraints.equals(task.constraints) &&
-      node.successCriteria.equals(task.successCriteria) &&
-      node.gates.equals(task.gates) &&
-      node.criterionIds.equals(task.criterionIds) &&
+      node.acceptance.equals(task.acceptance) &&
       node.milestoneId == task.milestoneId &&
       node.dependsOnTaskIds.equals(task.dependsOnTaskIds) &&
       node.priority == task.priority &&
@@ -107,13 +98,10 @@ class TaskPlanMaterializer implements TaskMaterializerPort {
       node.selectionRationale == task.selectionRationale &&
       node.revisionIntroduced == task.revisionIntroduced &&
       node.revisionUpdated == task.revisionUpdated &&
-      node.expectedEvidence.equals(task.expectedEvidence) &&
       node.readPaths.equals(task.readPaths) &&
       node.writePaths.equals(task.writePaths) &&
-      node.doneCriteria.equals(task.doneCriteria) &&
       node.outOfScope.equals(task.outOfScope) &&
       node.context.equals(task.context) &&
-      node.expectedArtifacts.equals(task.expectedArtifacts) &&
       node.status == task.status &&
       node.recoveryIncidentId == task.recoveryIncidentId &&
       node.fingerprint == task.fingerprint &&

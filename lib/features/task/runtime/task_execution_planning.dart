@@ -34,27 +34,19 @@ extension TaskExecutionPlanning on TaskPlanningUseCase {
       projectId: projectId,
       now: now,
     );
-    final requiredArtifacts = [
-      for (final artifact in planningContext?.expectedArtifacts ?? const [])
-        TaskArtifact(
-          path: artifact.path.replaceAll('{{task_id}}', taskId),
-          description: artifact.description,
-          kind: artifact.kind,
-        ),
-    ];
     final maxSteps = planningContext?.maxSteps.clamp(1, 6).toInt() ?? 3;
     final context = TaskPlanningToolContext(
       task: task,
       workspaceRoot: workspace.rootPath,
       maxSteps: maxSteps,
       projectGoal: planningContext?.projectGoal ?? '',
-      doneCriteria: planningContext?.doneCriteria ?? const [],
+      // _taskPlanningSeed already places the effective acceptance on the
+      // source task. Passing it again would duplicate refs in the builder's
+      // draft; the context still exposes it through the source task.
+      acceptance: const [],
       outOfScope: planningContext?.outOfScope ?? const [],
       readPaths: planningContext?.readPaths ?? const [],
       writePaths: planningContext?.writePaths ?? const [],
-      requiredArtifacts: requiredArtifacts,
-      requiredGates: planningContext?.requiredGates ?? const [],
-      requiredEvidence: planningContext?.expectedEvidence ?? const [],
       requireDeclaredWriteBoundary: planningContext != null,
     );
     final planningResult = await _planningCoordinator.plan(
@@ -107,6 +99,7 @@ or an explicit user command. Task memories remain separate from that graph.
     required String? projectId,
     required DateTime now,
   }) {
+    final acceptance = _effectiveAcceptance(planningContext);
     final objective =
         planningContext?.projectTaskObjective.trim().isNotEmpty == true
         ? planningContext!.projectTaskObjective.trim()
@@ -129,14 +122,9 @@ or an explicit user command. Task memories remain separate from that graph.
       originalPrompt: userPrompt,
       objective: objective,
       constraints: constraints,
-      successCriteria: planningContext?.doneCriteria.isNotEmpty == true
-          ? [...planningContext!.doneCriteria]
-          : ['Complete the requested task.'],
-      gates: planningContext?.requiredGates ?? const [],
-      criterionIds: planningContext?.criterionIds ?? const [],
+      acceptance: acceptance,
       readPaths: planningContext?.readPaths ?? const [],
       writePaths: planningContext?.writePaths ?? const [],
-      doneCriteria: planningContext?.doneCriteria ?? const [],
       outOfScope: planningContext?.outOfScope ?? const [],
       context: planningContext?.knownFacts ?? const [],
       status: TaskStatus.paused,
@@ -145,6 +133,13 @@ or an explicit user command. Task memories remain separate from that graph.
       createdAt: now,
       updatedAt: now,
     );
+  }
+
+  List<AcceptanceItem> _effectiveAcceptance(
+    TaskPlanningContext? planningContext,
+  ) {
+    final supplied = planningContext?.acceptance ?? const <AcceptanceItem>[];
+    return supplied;
   }
 
   Map<String, dynamic> _taskPlanningContextMap(
@@ -157,9 +152,35 @@ or an explicit user command. Task memories remain separate from that graph.
     'known_facts': context.knownFacts,
     'workspace_orientation': context.workspaceOrientation,
     'workspace_context': context.workspaceContext,
-    'done_criteria': context.doneCriteria,
+    'acceptance': [
+      for (final item
+          in context.acceptance.isNotEmpty
+              ? context.acceptance
+              : _effectiveAcceptance(context))
+        {
+          'ref': item.ref,
+          'statement': item.statement,
+          'criterion_refs': item.criterionIds,
+          'verifiers': [
+            for (final verifier in item.verifiers)
+              {
+                'kind': verifier.kind.name,
+                'required': verifier.required,
+                if (verifier.command != null) 'command': verifier.command,
+                if (verifier.workingDirectory != '.')
+                  'working_directory': verifier.workingDirectory,
+                if (verifier.path != null)
+                  'path': verifier.path!.replaceAll(
+                    '{{task_id}}',
+                    taskId ?? '{{task_id}}',
+                  ),
+                if (verifier.description != null)
+                  'description': verifier.description,
+              },
+          ],
+        },
+    ],
     'out_of_scope': context.outOfScope,
-    'criterion_ids': context.criterionIds,
     'criteria': [
       for (final criterion in context.criteria)
         {
@@ -171,41 +192,7 @@ or an explicit user command. Task memories remain separate from that graph.
     ],
     'read_paths': context.readPaths,
     'write_paths': context.writePaths,
-    'expected_artifacts': [
-      for (final artifact in context.expectedArtifacts)
-        {
-          'path': artifact.path.replaceAll(
-            '{{task_id}}',
-            taskId ?? '{{task_id}}',
-          ),
-          'description': artifact.description,
-          'kind': artifact.kind,
-        },
-    ],
     'max_steps': context.maxSteps.clamp(1, 6),
-    'required_checks': [
-      for (final gate in context.requiredGates)
-        {
-          'kind': gate.id,
-          'required': gate.required,
-          'scope': gate.scope,
-          'command': gate.params['command'],
-          'working_directory':
-              gate.params['working_directory'] ??
-              gate.params['workingDirectory'],
-        },
-    ],
-    'expected_evidence': [
-      for (final item in context.expectedEvidence)
-        {
-          'type': item.type,
-          'criterion_refs': item.criterionIds,
-          'description': item.description,
-          'required': item.required,
-          'source_ref': item.sourceRef,
-          'details': item.details,
-        },
-    ],
   };
 
   Map<String, dynamic> _compactTaskMetadata(WorkspaceMetadata metadata) {
@@ -276,7 +263,11 @@ or an explicit user command. Task memories remain separate from that graph.
         updatedAt: now,
       );
     }
-    var replacement = _fallbackExecutionStep(snapshot.id, snapshot.objective);
+    var replacement = _fallbackExecutionStep(
+      snapshot.id,
+      snapshot.objective,
+      snapshot.acceptance,
+    );
     if (!existingIds.add(replacement.id)) {
       replacement = replacement.copyWith(id: 'step_${uuid.v7()}');
     }
@@ -379,8 +370,9 @@ or an explicit user command. Task memories remain separate from that graph.
       artifacts: artifacts,
       evidenceClaims: _evidenceClaimsFromJson(
         json['evidenceClaims'] ?? json['evidence_claims'],
-        executionRequest.criterionIds,
-        expectedEvidence: executionRequest.expectedEvidence,
+        acceptance: executionRequest.acceptance.isNotEmpty
+            ? executionRequest.acceptance
+            : task.acceptance,
       ),
       userQuestion: agentQuestion?.displayText,
       agentQuestion: agentQuestion,
@@ -533,6 +525,9 @@ or an explicit user command. Task memories remain separate from that graph.
     WorkspaceAttachment workspace,
     TaskExecutionRequest executionRequest,
   ) {
+    final acceptance = executionRequest.acceptance.isNotEmpty
+        ? executionRequest.acceptance
+        : task.acceptance;
     final previousRuns = task.runs
         .where((run) => run.status != TaskRunStatus.running)
         .map((run) => '- ${run.stepId}: ${_unverifiedModelReport(run.summary)}')
@@ -558,14 +553,15 @@ ${task.originalPrompt}
 Constraints:
 ${task.constraints.map((item) => '- $item').join('\n')}
 
-Success criteria:
-${task.successCriteria.map((item) => '- $item').join('\n')}
+Acceptance:
+${_encoder.convert(acceptance.map((item) => snakeCaseWire(ModelJson.encode(item))).toList())}
 
 Linked Project criteria:
-${executionRequest.criteria.isEmpty ? _encoder.convert(executionRequest.criterionIds) : _encoder.convert(executionRequest.criteria.map((item) => snakeCaseWire(ModelJson.encode(item))).toList())}
+${executionRequest.criteria.isEmpty ? _encoder.convert({for (final item in acceptance) ...item.criterionIds}.toList()) : _encoder.convert(executionRequest.criteria.map((item) => snakeCaseWire(ModelJson.encode(item))).toList())}
 
-Expected Project evidence:
-${executionRequest.expectedEvidence.isEmpty ? 'None specified.' : _encoder.convert(executionRequest.expectedEvidence.map((item) => snakeCaseWire(ModelJson.encode(item))).toList())}
+Verifier status is derived by Hermes from the acceptance items. Do not invent
+gate or evidence identifiers and do not claim a verifier passed without its
+observed result.
 
 Current memory:
 ${task.memorySummary.trim().isEmpty ? 'None yet.' : task.memorySummary}
@@ -586,7 +582,7 @@ Previous run summaries:
 ${previousRuns.trim().isEmpty ? 'None yet.' : previousRuns}
 
 This ${isFinalPlannedStep ? 'is' : 'is not'} the final planned task step.
-${executionRequest.criterionIds.isNotEmpty ? 'Project evidence is derived from successful workspace calls and evaluated gates. Your summary is advisory; do not claim that a command passed unless its gate result confirms it.' : 'Do not claim work that has not been verified.'}
+${acceptance.any((item) => item.criterionIds.isNotEmpty) ? 'Project evidence is derived from successful workspace calls and evaluated acceptance verifiers. Your summary is advisory; do not claim that a verifier passed unless its result confirms it.' : 'Do not claim work that has not been verified.'}
 
 When finished, call finish_task_step with only this result object. If finish_task_step is unavailable, return only JSON:
 {
@@ -685,7 +681,6 @@ $whitelist
       objective: candidate.objective.trim().isEmpty
           ? original.objective
           : candidate.objective,
-      gates: _dedupeGates(candidate.gates),
       steps: steps,
       status: currentStepId == null ? TaskStatus.completed : TaskStatus.paused,
       currentStepId: currentStepId,
@@ -695,34 +690,30 @@ $whitelist
   }
 
   List<TaskEvidenceClaim> _evidenceClaimsFromJson(
-    Object? value,
-    List<String> allowedCriterionIds, {
-    List<TaskProjectEvidenceExpectation> expectedEvidence = const [],
+    Object? value, {
+    List<AcceptanceItem> acceptance = const [],
   }) {
-    if (value is! List || allowedCriterionIds.isEmpty) return const [];
-    final allowed = allowedCriterionIds.toSet();
-    final allowedExpectationIds = {
-      for (final expectation in expectedEvidence)
-        if (allowed.containsAll(expectation.criterionIds)) expectation.id,
-    };
+    if (value is! List || acceptance.isEmpty) {
+      return const [];
+    }
+    final acceptanceByRef = {for (final item in acceptance) item.ref: item};
     final seen = <String>{};
     final claims = <TaskEvidenceClaim>[];
     for (final raw in value.whereType<Map>()) {
       final map = Map<String, dynamic>.from(raw);
-      final criterionId = jsonString(map['criterionId'] ?? map['criterion_id']);
-      final rawExpectationId = jsonNullableString(
-        map['expectationId'] ?? map['expectation_id'],
+      final acceptanceRef = jsonNullableString(
+        map['acceptanceRef'] ?? map['acceptance_ref'],
       );
-      final expectationId =
-          rawExpectationId != null &&
-              allowedExpectationIds.contains(rawExpectationId)
-          ? rawExpectationId
-          : null;
+      final acceptanceItem = acceptanceRef == null
+          ? null
+          : acceptanceByRef[acceptanceRef];
+      if (acceptanceItem == null) continue;
+      // Model claims are keyed only by the canonical acceptance ref. Criteria
+      // and compiled expectation IDs are Hermes-owned and are never accepted
+      // as model-authored routing inputs.
       final claim = jsonString(map['claim']);
       final sourceRef = jsonString(map['sourceRef'] ?? map['source_ref']);
-      if (!allowed.contains(criterionId) ||
-          claim.isEmpty ||
-          sourceRef.isEmpty) {
+      if (claim.isEmpty || sourceRef.isEmpty) {
         continue;
       }
       final evidenceType = switch (jsonString(
@@ -738,98 +729,22 @@ $whitelist
       // own assertion. Conclusive/supporting evidence is created from gates
       // and actual workspace provenance at the execution boundary.
       const strength = TaskEvidenceClaimStrength.advisory;
-      final key = '$criterionId|${evidenceType.name}|$sourceRef|$claim';
-      if (!seen.add(key)) continue;
-      claims.add(
-        TaskEvidenceClaim(
-          criterionId: criterionId,
-          claim: claim,
-          evidenceType: evidenceType,
-          sourceRef: sourceRef,
-          suggestedStrength: strength,
-          expectationId: expectationId,
-        ),
-      );
+      for (final criterionId in acceptanceItem.criterionIds) {
+        final key = '$criterionId|${evidenceType.name}|$sourceRef|$claim';
+        if (!seen.add(key)) continue;
+        claims.add(
+          TaskEvidenceClaim(
+            criterionId: criterionId,
+            acceptanceRef: acceptanceItem.ref,
+            claim: claim,
+            evidenceType: evidenceType,
+            sourceRef: sourceRef,
+            suggestedStrength: strength,
+          ),
+        );
+      }
     }
     return claims;
-  }
-
-  List<TaskGate> _defaultTaskGates(List<TaskStep> steps, String prompt) {
-    final mutating = steps.any((step) => step.mayEditFiles);
-    final looksCoding = _looksLikeCodingTask(prompt);
-    if (!mutating && !looksCoding) return const [];
-    return const [
-      TaskGate(
-        id: 'no_tool_errors',
-        required: true,
-        scope: 'task',
-        description: 'No unresolved fatal workspace tool errors.',
-      ),
-      TaskGate(
-        id: 'no_failed_commands',
-        required: true,
-        scope: 'task',
-        description: 'No failed terminal commands after workspace mutation.',
-      ),
-    ];
-  }
-
-  List<TaskGate> _defaultArtifactGates(List<TaskArtifact> artifacts) {
-    final paths = artifacts
-        .map((artifact) => artifact.path)
-        .where((item) => item.trim().isNotEmpty)
-        .toList();
-    if (paths.isEmpty) return const [];
-    return [
-      TaskGate(
-        id: 'artifact_exists',
-        required: true,
-        scope: 'step',
-        params: {'paths': paths},
-        description: 'Declared artifacts must exist.',
-      ),
-      TaskGate(
-        id: 'artifact_nonempty',
-        required: true,
-        scope: 'step',
-        params: {'paths': paths},
-        description:
-            'Declared file artifacts must be non-empty; directories must exist.',
-      ),
-    ];
-  }
-
-  List<TaskGate> _dedupeGates(List<TaskGate> gates) {
-    final seen = <String>{};
-    final deduped = <TaskGate>[];
-    for (final gate in gates) {
-      final key = _encoder.convert({
-        'id': gate.id,
-        'scope': gate.scope,
-        'params': gate.params,
-      });
-      if (seen.add(key)) deduped.add(gate);
-    }
-    return deduped;
-  }
-
-  bool _looksLikeCodingTask(String value) {
-    final normalised = value.toLowerCase();
-    return const [
-      'code',
-      'test',
-      'build',
-      'bug',
-      'fix',
-      'implement',
-      'refactor',
-      'compile',
-      'flutter',
-      'dart',
-      'dotnet',
-      'npm',
-      'api',
-    ].any(normalised.contains);
   }
 
   TaskStep _normaliseStep(TaskStep step) {
@@ -838,7 +753,6 @@ $whitelist
       title: step.title.trim().isEmpty ? step.id : step.title,
       objective: step.objective.trim().isEmpty ? step.title : step.objective,
       instructions: step.instructions,
-      gates: _dedupeGates(step.gates),
       status: switch (step.status) {
         TaskStepStatus.running => TaskStepStatus.pending,
         _ => step.status,
@@ -882,7 +796,6 @@ $whitelist
           : brief.title,
       goal: brief.goal.trim().isEmpty ? prompt : brief.goal,
       constraints: brief.constraints,
-      successCriteria: brief.successCriteria,
       assumptions: brief.assumptions,
       questions: brief.questions.take(3).toList(),
     );
@@ -892,7 +805,6 @@ $whitelist
     return RefinedTaskBrief(
       title: _titleFromPrompt(prompt),
       goal: prompt,
-      successCriteria: const ['Complete the requested task.'],
       assumptions: const ['Use the attached workspace as the source of truth.'],
     );
   }
@@ -904,15 +816,21 @@ $whitelist
     required String? projectId,
     required DateTime now,
   }) {
-    final step = _fallbackExecutionStep(taskId, userPrompt);
+    const acceptance = [
+      AcceptanceItem(
+        ref: 'task-complete',
+        statement: 'Complete the requested task.',
+        verifiers: [AcceptanceVerifier(kind: AcceptanceVerifierKind.review)],
+      ),
+    ];
+    final step = _fallbackExecutionStep(taskId, userPrompt, acceptance);
     return TaskAggregate(
       id: taskId,
       title: _titleFromPrompt(userPrompt),
       originalPrompt: userPrompt,
       objective: userPrompt,
       constraints: const ['Stay within the attached workspace.'],
-      successCriteria: const ['Complete the requested task.'],
-      gates: _defaultTaskGates([step], userPrompt),
+      acceptance: acceptance,
       steps: [step],
       status: TaskStatus.paused,
       currentStepId: step.id,
@@ -933,29 +851,19 @@ $whitelist
     required TaskPlanningContext planningContext,
     required DateTime now,
   }) {
-    final artifactPaths = planningContext.expectedArtifacts.isEmpty
-        ? planningContext.requiredGates.isNotEmpty
-              ? const <TaskArtifact>[]
-              : [
-                  TaskArtifact(
-                    path: '.agent/tasks/$taskId/task-output.md',
-                    description: 'Bounded task output',
-                    stepId: 'execute_project_task',
-                  ),
-                ]
-        : planningContext.expectedArtifacts
-              .map(
-                (artifact) => TaskArtifact(
-                  path: artifact.path.replaceAll('{{task_id}}', taskId),
-                  description: artifact.description,
-                  kind: artifact.kind,
-                  stepId: 'execute_project_task',
-                ),
-              )
-              .toList();
-    final successCriteria = planningContext.doneCriteria.isEmpty
-        ? ['Complete the selected bounded Project task.']
-        : planningContext.doneCriteria;
+    final acceptance = _effectiveAcceptance(planningContext);
+    final artifactPaths = [
+      for (final item in acceptance)
+        for (final verifier in item.verifiers)
+          if (verifier.kind == AcceptanceVerifierKind.artifact &&
+              verifier.path?.trim().isNotEmpty == true)
+            TaskArtifact(
+              path: verifier.path!.replaceAll('{{task_id}}', taskId),
+              description: verifier.description ?? item.statement,
+              kind: verifier.artifactKind,
+              stepId: 'execute_project_task',
+            ),
+    ];
     final mayEditFiles = planningContext.writePaths.isNotEmpty;
     final step = TaskStep(
       id: 'execute_project_task',
@@ -977,9 +885,7 @@ $whitelist
       ],
       mayEditFiles: mayEditFiles,
       artifacts: artifactPaths,
-      gates: planningContext.expectedArtifacts.isEmpty
-          ? const []
-          : _defaultArtifactGates(artifactPaths),
+      acceptanceRefs: [for (final item in acceptance) item.ref],
       status: TaskStepStatus.pending,
     );
     return TaskAggregate(
@@ -997,11 +903,7 @@ $whitelist
           'Write paths: ${planningContext.writePaths.join(', ')}',
         ...planningContext.outOfScope.map((item) => 'Out of scope: $item'),
       ],
-      successCriteria: successCriteria,
-      gates: _dedupeGates([
-        ...planningContext.requiredGates,
-        ..._defaultTaskGates([step], planningContext.projectTaskObjective),
-      ]),
+      acceptance: acceptance,
       steps: [step],
       status: TaskStatus.paused,
       currentStepId: step.id,
@@ -1014,14 +916,12 @@ $whitelist
     );
   }
 
-  TaskStep _fallbackExecutionStep(String taskId, String objective) {
-    final artifacts = [
-      TaskArtifact(
-        path: '.agent/tasks/$taskId/task-output.md',
-        description: 'Final task output',
-        stepId: 'execute_task',
-      ),
-    ];
+  TaskStep _fallbackExecutionStep(
+    String taskId,
+    String objective,
+    Iterable<AcceptanceItem> acceptance,
+  ) {
+    final artifacts = <TaskArtifact>[];
     return TaskStep(
       id: 'execute_task',
       title: 'Execute task',
@@ -1033,7 +933,7 @@ $whitelist
       ],
       mayEditFiles: true,
       artifacts: artifacts,
-      gates: _defaultArtifactGates(artifacts),
+      acceptanceRefs: [for (final item in acceptance) item.ref],
       status: TaskStepStatus.pending,
     );
   }

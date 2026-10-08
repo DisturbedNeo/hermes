@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/planning_test_helpers.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/persistence/infrastructure/dto/aggregate_snapshot_codecs.dart';
@@ -98,23 +99,19 @@ void main() {
         .schema
         .toWire();
     final taskProperties = schema['properties'] as Map;
-    expect(taskProperties.keys, contains('checks'));
-    final checkProperties =
-        ((taskProperties['checks'] as Map)['items'] as Map)['properties']
+    expect(taskProperties.keys, contains('acceptance'));
+    final acceptanceProperties =
+        ((taskProperties['acceptance'] as Map)['items'] as Map)['properties']
             as Map;
     expect(
-      checkProperties.keys,
-      containsAll([
-        'command',
-        'working_directory',
-        'criterion_ids',
-        'required',
-        'description',
-      ]),
+      acceptanceProperties.keys,
+      containsAll(['ref', 'statement', 'criterion_refs', 'verifiers']),
     );
-    expect(((taskProperties['checks'] as Map)['items'] as Map)['required'], [
-      'command',
-    ]);
+    final verifierProperties =
+        (((acceptanceProperties['verifiers'] as Map)['items']
+                as Map)['properties'])
+            as Map;
+    expect(verifierProperties.keys, containsAll(['kind', 'required']));
 
     expect(ids, isNot(contains('plan_add_tasks')));
     expect(
@@ -140,11 +137,7 @@ void main() {
       expect(invalid['code'], 'invalid_task_spec');
       expect(invalid['path'], 'task');
       final details = invalid['details'] as Map;
-      expect(details['missing_fields'], [
-        'criterion_refs',
-        'done_criteria',
-        'out_of_scope',
-      ]);
+      expect(details['missing_fields'], ['acceptance', 'out_of_scope']);
       expect(details['instruction'], contains('complete task object'));
 
       final previewAfterFailure = await invokePlanning(
@@ -161,8 +154,16 @@ void main() {
       final added = await invokePlanning(registry, 'plan_add_task', {
         'ref': 'implement',
         'objective': 'Implement the bounded outcome.',
-        'criterion_refs': ['criterion_001'],
-        'done_criteria': ['The bounded outcome is verified.'],
+        'acceptance': [
+          {
+            'ref': 'outcome-verified',
+            'statement': 'The bounded outcome is verified.',
+            'criterion_refs': ['criterion_001'],
+            'verifiers': [
+              {'kind': 'review', 'required': true},
+            ],
+          },
+        ],
         'out_of_scope': ['Unrelated project work.'],
       });
       expect(added['ok'], isTrue);
@@ -290,7 +291,7 @@ void main() {
     expect((second['memory_detail'] as List).single['id'], 'memory_2');
   });
 
-  test('singular task creates inline checks atomically', () async {
+  test('singular task creates acceptance atomically', () async {
     final registry = ProjectPlanningToolRegistry(
       context: ProjectPlanningContext(
         project: _deterministicProject(),
@@ -301,16 +302,22 @@ void main() {
     final added = await invokePlanning(registry, 'plan_add_task', {
       'ref': 'checked',
       'objective': 'Implement the deterministic slice.',
-      'criterion_refs': ['criterion_001'],
-      'done_criteria': ['The deterministic slice is verified.'],
-      'out_of_scope': ['Unrelated project work.'],
-      'checks': [
+      'acceptance': [
         {
-          'command': 'dart test test/feature_test.dart',
+          'ref': 'deterministic-slice',
+          'statement': 'The deterministic slice is verified.',
           'criterion_refs': ['criterion_001'],
-          'required': true,
+          'verifiers': [
+            {
+              'kind': 'command',
+              'command': 'dart test test/feature_test.dart',
+              'working_directory': '.',
+              'required': true,
+            },
+          ],
         },
       ],
+      'out_of_scope': ['Unrelated project work.'],
     });
 
     expect(added['ok'], isTrue);
@@ -319,11 +326,11 @@ void main() {
     });
     expect(detail['ok'], isTrue);
     final task = detail['task_detail'] as Map;
-    expect(task['checks'], hasLength(1));
-    expect(task['evidence_intents'], hasLength(2));
+    expect(task['acceptance'], hasLength(1));
+    expect((task['acceptance'] as List).single['verifiers'], hasLength(1));
   });
 
-  test('invalid inline checks roll back the complete task', () async {
+  test('invalid acceptance rolls back the complete task', () async {
     final base = _project();
     final project = base.copyWith(
       criteria: [
@@ -344,74 +351,75 @@ void main() {
     final result = await invokePlanning(registry, 'plan_add_task', {
       'ref': 'invalid',
       'objective': 'Implement the first outcome.',
-      'criterion_refs': ['criterion_001'],
-      'done_criteria': ['The first outcome is verified.'],
-      'out_of_scope': ['Unrelated project work.'],
-      'checks': [
+      'acceptance': [
         {
-          'command': 'dart test test/feature_test.dart',
-          'criterion_refs': ['criterion_002'],
+          'ref': 'invalid-link',
+          'statement': 'The first outcome is verified.',
+          'criterion_refs': ['criterion_missing'],
+          'verifiers': [
+            {'kind': 'review', 'required': true},
+          ],
         },
       ],
-    });
-
-    expect(result['ok'], isFalse);
-    expect(result['code'], 'unlinked_criterion');
-    final preview = await invokePlanning(registry, 'plan_preview', {});
-    expect(
-      ((preview['preview'] as Map)['diff'] as Map)['added_tasks'],
-      isEmpty,
-    );
-  });
-
-  test('missing inline checks list every deterministic criterion', () async {
-    final base = _project();
-    final project = base.copyWith(
-      criteria: [
-        base.criteria.single.copyWith(
-          verificationMode: ProjectVerificationMode.deterministic,
-        ),
-        ProjectCriterion(
-          id: 'criterion_002',
-          statement: 'The second deterministic outcome is verified.',
-          verificationMode: ProjectVerificationMode.deterministic,
-          createdAt: DateTime(2026, 1, 1),
-          updatedAt: DateTime(2026, 1, 1),
-        ),
-      ],
-    );
-    final registry = ProjectPlanningToolRegistry(
-      context: ProjectPlanningContext(
-        project: project,
-        workspaceRoot: '/workspace',
-        approvalPolicy: ProjectPlanApprovalPolicy.never,
-      ),
-    );
-    final result = await invokePlanning(registry, 'plan_add_task', {
-      'objective': 'Implement both deterministic outcomes.',
-      'criterion_refs': ['criterion_001', 'criterion_002'],
-      'done_criteria': ['Both outcomes are verified.'],
       'out_of_scope': ['Unrelated project work.'],
     });
 
     expect(result['ok'], isFalse);
-    expect(result['code'], 'missing_deterministic_task_check');
-    expect(
-      ((result['details'] as Map)['missing_criterion_refs'] as List),
-      containsAll(['criterion_001', 'criterion_002']),
-    );
+    expect(result['code'], 'unknown_reference');
     final preview = await invokePlanning(registry, 'plan_preview', {});
     expect(
       ((preview['preview'] as Map)['diff'] as Map)['added_tasks'],
       isEmpty,
     );
   });
+
+  test(
+    'missing acceptance is reported before deterministic verification',
+    () async {
+      final base = _project();
+      final project = base.copyWith(
+        criteria: [
+          base.criteria.single.copyWith(
+            verificationMode: ProjectVerificationMode.deterministic,
+          ),
+          ProjectCriterion(
+            id: 'criterion_002',
+            statement: 'The second deterministic outcome is verified.',
+            verificationMode: ProjectVerificationMode.deterministic,
+            createdAt: DateTime(2026, 1, 1),
+            updatedAt: DateTime(2026, 1, 1),
+          ),
+        ],
+      );
+      final registry = ProjectPlanningToolRegistry(
+        context: ProjectPlanningContext(
+          project: project,
+          workspaceRoot: '/workspace',
+          approvalPolicy: ProjectPlanApprovalPolicy.never,
+        ),
+      );
+      final result = await invokePlanning(registry, 'plan_add_task', {
+        'objective': 'Implement both deterministic outcomes.',
+        'out_of_scope': ['Unrelated project work.'],
+      });
+
+      expect(result['ok'], isFalse);
+      expect(result['code'], 'invalid_task_spec');
+      expect(
+        ((result['details'] as Map)['missing_fields'] as List),
+        contains('acceptance'),
+      );
+      final preview = await invokePlanning(registry, 'plan_preview', {});
+      expect(
+        ((preview['preview'] as Map)['diff'] as Map)['added_tasks'],
+        isEmpty,
+      );
+    },
+  );
 
   test('single task creation requires an objective', () async {
     final added = await invokePlanning(_registry(), 'plan_add_task', {
       'title': 'Verify the bounded outcome.',
-      'criterion_refs': ['criterion_001'],
-      'done_criteria': ['The bounded outcome is verified.'],
       'out_of_scope': ['Unrelated project work.'],
     });
 
@@ -502,8 +510,9 @@ void main() {
         'ref': 'scaffold',
         'title': 'Scaffold the bounded slice',
         'objective': 'Create the bounded project slice.',
-        'criterion_refs': ['criterion_001'],
-        'done_criteria': ['The bounded slice is implemented.'],
+        'acceptance': [
+          _acceptance('slice', 'The bounded slice is implemented.'),
+        ],
         'out_of_scope': ['Unrelated project work.'],
       }, commandId: 'add-1');
 
@@ -515,8 +524,9 @@ void main() {
         'ref': 'scaffold',
         'title': 'Scaffold the bounded slice',
         'objective': 'Create the bounded project slice.',
-        'criterion_refs': ['criterion_001'],
-        'done_criteria': ['The bounded slice is implemented.'],
+        'acceptance': [
+          _acceptance('slice', 'The bounded slice is implemented.'),
+        ],
         'out_of_scope': ['Unrelated project work.'],
       }, commandId: 'add-1');
       expect(repeated['ok'], isTrue);
@@ -536,8 +546,7 @@ void main() {
           'id': 'pretend_replace',
           'title': 'Invalid replacement',
           'objective': 'Invalid replacement.',
-          'criterion_refs': ['criterion_001'],
-          'done_criteria': ['It is checked.'],
+          'acceptance': [_acceptance('checked', 'It is checked.')],
           'out_of_scope': ['Unrelated work.'],
         },
       );
@@ -575,8 +584,7 @@ void main() {
       final added = await invokePlanning(registry, 'plan_add_task', {
         'ref': 'checked',
         'objective': 'Implement and verify the bounded slice.',
-        'criterion_refs': ['criterion_001'],
-        'done_criteria': ['The bounded slice is verified.'],
+        'acceptance': [_acceptance('slice', 'The bounded slice is verified.')],
         'out_of_scope': ['Unrelated project work.'],
       });
       expect(added['ok'], isTrue);
@@ -623,8 +631,13 @@ void main() {
       final dependent = await invokePlanning(registry, 'plan_add_task', {
         'ref': 'dependent',
         'objective': 'Use a criterion that should not exist.',
-        'criterion_refs': ['temporary'],
-        'done_criteria': ['The task is checked.'],
+        'acceptance': [
+          _acceptance(
+            'temporary',
+            'The task is checked.',
+            criterion: 'temporary',
+          ),
+        ],
         'out_of_scope': ['Unrelated work.'],
       });
       expect(dependent['ok'], isFalse);
@@ -662,7 +675,7 @@ void main() {
       (detail['context'] as List).single.toString().length,
       lessThanOrEqualTo(40),
     );
-    expect((detail['failure'] as Map)['gate_ref'], 'command_passes');
+    expect((detail['failure'] as Map)['key'], 'command_passes|exit_1');
     expect((detail['failure'] as Map)['error_codes'], ['exit_1']);
   });
 
@@ -718,11 +731,11 @@ void main() {
       );
 
       for (var index = 1; index <= 3; index++) {
-        final added = await invokePlanning(registry, 'plan_add_task', {
-          'ref': 'slice_$index',
+        final added = await invokePlanning(registry, 'task_upsert', {
           'objective': 'Implement bounded slice $index.',
-          'criterion_refs': ['criterion_001'],
-          'done_criteria': ['Bounded slice $index is verified.'],
+          'acceptance': [
+            _acceptance('slice_$index', 'Bounded slice $index is verified.'),
+          ],
           'out_of_scope': ['Unrelated project work.'],
         });
         expect(added['ok'], isTrue);
@@ -776,22 +789,27 @@ void main() {
         'tasks': [
           {
             'objective': 'Implement the first slice.',
-            'criterion_ids': [1],
-            'done_criteria': ['The first slice is implemented.'],
+            'acceptance': [
+              _acceptance(
+                'implementation-verified',
+                'The first slice is implemented.',
+                criterion: '1',
+                command: 'dart test',
+              ),
+            ],
             'out_of_scope': ['Unrelated work.'],
             'milestone_id': 1,
-            'checks': [
-              {'command': 'dart test', 'working_directory': '.'},
-            ],
           },
           {
             'objective': 'Verify the first slice.',
-            'criteria': [
-              {'statement': 'The verification report is available.'},
+            'acceptance': [
+              _acceptance(
+                'report-verified',
+                'The verification report is available.',
+                criterion: '1',
+              ),
             ],
-            'criterion_ids': [1],
             'dependency_task_ids': [1],
-            'done_criteria': ['The verification report is available.'],
             'out_of_scope': ['Changing the implementation.'],
           },
         ],
@@ -809,7 +827,7 @@ void main() {
         (draftProject['criteria'] as List).map(
           (item) => (item as Map)['criterion_id'],
         ),
-        [1, 2],
+        [1],
       );
 
       final committed = await invokePlanning(registry, 'plan_commit', {});
@@ -848,16 +866,21 @@ void main() {
         ],
         'tasks': [
           {
-            'objective': 'Forget the required check.',
-            'criterion_ids': [1],
-            'done_criteria': ['It is done.'],
+            'objective': 'Forget the required acceptance.',
+            'acceptance': [
+              _acceptance(
+                'invalid-link',
+                'It is done.',
+                criterion: 'missing-criterion',
+              ),
+            ],
             'out_of_scope': ['Everything else.'],
           },
         ],
       });
 
       expect(invalid['ok'], isFalse);
-      expect(invalid['path'], contains('criteria'));
+      expect(invalid['path'], contains('criterion'));
       final view = await invokePlanning(registry, 'project_view', {});
       expect((view['criteria'] as List), isEmpty);
       expect((view['tasks'] as List), isEmpty);
@@ -865,7 +888,7 @@ void main() {
   );
 
   test(
-    'project update and task upsert support independent metadata and checks',
+    'project update and task upsert support independent metadata and acceptance',
     () async {
       final registry = _registry();
       final projectUpdate = await invokePlanning(registry, 'project_update', {
@@ -885,9 +908,13 @@ void main() {
 
       final created = await invokePlanning(registry, 'task_upsert', {
         'objective': 'Implement the updated outcome.',
-        'criterion_ids': [1],
+        'acceptance': [
+          _acceptance(
+            'updated-outcome',
+            'The updated outcome is implemented.',
+          ),
+        ],
         'milestone_id': 1,
-        'done_criteria': ['The updated outcome is implemented.'],
         'out_of_scope': ['Unrelated work.'],
       });
       expect(created['ok'], isTrue);
@@ -896,11 +923,12 @@ void main() {
       final updated = await invokePlanning(registry, 'task_upsert', {
         'task_id': 1,
         'objective': 'Implement and verify the updated outcome.',
-        'checks': [
-          {
-            'command': 'dart test',
-            'criterion_ids': [1],
-          },
+        'acceptance': [
+          _acceptance(
+            'updated-outcome',
+            'The updated outcome is implemented and verified.',
+            command: 'dart test',
+          ),
         ],
       });
       expect(updated['ok'], isTrue);
@@ -911,7 +939,10 @@ void main() {
       });
       expect(view['ok'], isTrue);
       expect((view['task_detail'] as Map)['objective'], contains('verify'));
-      expect((view['task_detail'] as Map)['checks'], hasLength(1));
+      final acceptance =
+          (view['task_detail'] as Map)['acceptance'] as List<dynamic>;
+      expect(acceptance, hasLength(1));
+      expect((acceptance.single as Map)['ref'], 'updated-outcome');
     },
   );
 
@@ -937,8 +968,13 @@ void main() {
       'tasks': [
         {
           'objective': 'Persist the reference table.',
-          'criterion_ids': [1],
-          'done_criteria': ['The table is persisted.'],
+          'acceptance': [
+            _acceptance(
+              'reference-table',
+              'The table is persisted.',
+              criterion: '1',
+            ),
+          ],
           'out_of_scope': ['Changing execution.'],
         },
       ],
@@ -1030,19 +1066,26 @@ ProjectAggregate _deterministicProject({List<TaskAggregate> tasks = const []}) {
 TaskAggregate _task(String id) {
   final now = DateTime(2026, 1, 1);
   final objective = 'Implement bounded slice $id.';
+  final artifactPath = 'artifacts/$id.txt';
   return TaskAggregate(
     id: id,
     title: 'Bounded slice $id',
     objective: objective,
-    criterionIds: const ['criterion_001'],
-    expectedEvidence: [
-      TaskEvidenceExpectation(
-        id: 'expect_$id',
+    writePaths: [artifactPath],
+    acceptance: [
+      AcceptanceItem(
+        ref: 'slice-check',
+        statement: 'The bounded slice is independently checked.',
         criterionIds: const ['criterion_001'],
-        description: 'The bounded slice is independently checked.',
+        verifiers: [
+          AcceptanceVerifier(
+            kind: AcceptanceVerifierKind.artifact,
+            path: artifactPath,
+            description: 'The bounded slice is independently checked.',
+          ),
+        ],
       ),
     ],
-    doneCriteria: const ['The bounded slice is implemented and checked.'],
     outOfScope: const ['Unrelated project work.'],
     status: TaskStatus.queued,
     fingerprint: projectTaskFingerprint(objective, const ['criterion_001']),
@@ -1050,6 +1093,25 @@ TaskAggregate _task(String id) {
     updatedAt: now,
   );
 }
+
+Map<String, dynamic> _acceptance(
+  String ref,
+  String statement, {
+  String criterion = 'criterion_001',
+  String? command,
+}) => {
+  'ref': ref,
+  'statement': statement,
+  'criterion_refs': [criterion],
+  'verifiers': [
+    {
+      'kind': command == null ? 'review' : 'command',
+      'required': true,
+      if (command case final value?) 'command': value,
+      if (command != null) 'working_directory': '.',
+    },
+  ],
+};
 
 bool _containsKey(Object? value, String key) {
   if (value is Map) {

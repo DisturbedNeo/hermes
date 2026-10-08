@@ -1,6 +1,5 @@
-import 'dart:convert';
-
 import 'package:hermes/core/uuid.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/runtime/project_memory_service.dart';
 import 'package:hermes/features/project/runtime/project_lifecycle_service.dart';
@@ -401,6 +400,14 @@ class ProjectPlanRevisionService {
     final existingCriteria = {
       for (final item in project.criteria) item.id: item,
     };
+    final existingTasks = {for (final item in project.tasks) item.id: item};
+    final acceptanceChangedTaskIds = {
+      for (final desired in proposal.tasks)
+        if (existingTasks[desired.id] != null &&
+            _acceptanceSignature(existingTasks[desired.id]!.acceptance) !=
+                _acceptanceSignature(desired.acceptance))
+          desired.id,
+    };
     final desiredCriteria = <String, ProjectCriterion>{};
     final contractChangedCriterionIds = <String>{};
     for (final desired in proposal.criteria) {
@@ -655,14 +662,19 @@ class ProjectPlanRevisionService {
       final linkedToChangedCriterion = item.criterionIds.any(
         contractChangedCriterionIds.contains,
       );
-      if (linkedToChangedCriterion &&
+      final linkedToChangedAcceptance = acceptanceChangedTaskIds.contains(
+        item.taskId,
+      );
+      if ((linkedToChangedCriterion || linkedToChangedAcceptance) &&
           (item.status == ProjectEvidenceStatus.accepted ||
               item.status == ProjectEvidenceStatus.proposed)) {
         return item.copyWith(
           status: ProjectEvidenceStatus.stale,
           details: {
             ...item.details,
-            'staleReason': 'criterion_contract_changed',
+            'staleReason': linkedToChangedCriterion
+                ? 'criterion_contract_changed'
+                : 'acceptance_contract_changed',
             'staleRevision': proposal.revision,
           },
           evaluatedAt: now,
@@ -959,10 +971,7 @@ class ProjectPlanRevisionService {
       title: desired.title,
       objective: desired.objective,
       constraints: desired.constraints,
-      successCriteria: desired.successCriteria.isEmpty
-          ? existing.successCriteria
-          : desired.successCriteria,
-      criterionIds: desired.criterionIds,
+      acceptance: desired.acceptance,
       milestoneId: desired.milestoneId,
       dependsOnTaskIds: desired.dependsOnTaskIds,
       priority: desired.priority,
@@ -971,14 +980,10 @@ class ProjectPlanRevisionService {
       effort: desired.effort,
       selectionRationale: desired.selectionRationale,
       revisionUpdated: revision,
-      gates: desired.gates.isEmpty ? existing.gates : desired.gates,
-      expectedEvidence: desired.expectedEvidence,
       readPaths: desired.readPaths,
       writePaths: desired.writePaths,
-      doneCriteria: desired.doneCriteria,
       outOfScope: desired.outOfScope,
       context: desired.context,
-      expectedArtifacts: desired.expectedArtifacts,
       fingerprint: desired.fingerprint,
       updatedAt: now,
     );
@@ -1019,46 +1024,19 @@ class ProjectPlanRevisionService {
   ) => ([...items]..sort((a, b) => a.id.compareTo(b.id)))
       .map(
         (item) =>
-            '${item.id}|${item.title}|${item.objective}|${item.constraints.join(',')}|${item.successCriteria.join(',')}|${item.criterionIds.join(',')}|${item.milestoneId}|${item.dependsOnTaskIds.join(',')}|${item.priority.name}|${item.risk.name}|${item.riskReduction.name}|${item.effort.name}|${item.selectionRationale}|${item.status.name}|${_gateSignature(item.gates)}|${_evidenceSignature(item.expectedEvidence)}|${item.readPaths.join(',')}|${item.writePaths.join(',')}|${item.doneCriteria.join(',')}|${item.outOfScope.join(',')}|${item.context.join(',')}|${_artifactSignature(item.expectedArtifacts)}|${item.recoveryIncidentId}|${item.fingerprint}',
+            '${item.id}|${item.title}|${item.objective}|${item.constraints.join(',')}|${_acceptanceSignature(item.acceptance)}|${item.milestoneId}|${item.dependsOnTaskIds.join(',')}|${item.priority.name}|${item.risk.name}|${item.riskReduction.name}|${item.effort.name}|${item.selectionRationale}|${item.status.name}|${item.readPaths.join(',')}|${item.writePaths.join(',')}|${item.outOfScope.join(',')}|${item.context.join(',')}|${item.recoveryIncidentId}|${item.fingerprint}',
       )
       .join('||');
 
-  static String _gateSignature(Iterable<dynamic> items) => items
+  static String _acceptanceSignature(Iterable<AcceptanceItem> items) => items
       .map(
         (item) =>
-            '${item.id}|${item.required}|${item.scope}|${item.description}|${_stableJson(item.params)}',
+            '${item.ref}|${item.statement}|${item.criterionIds.join(',')}|${item.verifiers.map((verifier) => '${verifier.kind.name}:${verifier.required}:${verifier.command ?? ''}:${verifier.workingDirectory}:${verifier.path ?? ''}:${verifier.artifactKind}:${verifier.description ?? ''}').join(';')}',
       )
-      .join(';;');
-
-  static String _evidenceSignature(List<TaskEvidenceExpectation> items) => items
-      .map(
-        (item) =>
-            '${item.id}|${item.type.name}|${item.criterionIds.join(',')}|${item.description}|${item.required}|${item.sourceRef}|${_stableJson(item.details)}',
-      )
-      .join(';;');
-
-  static String _artifactSignature(List<TaskArtifact> items) => items
-      .map(
-        (item) =>
-            '${item.id}|${item.taskId}|${item.runId}|${item.path}|${item.description}|${item.kind}',
-      )
-      .join(';;');
+      .join('||');
 
   static String _questionSignature(List<PendingProjectQuestion> items) =>
       items.map((item) => '${item.id}|${item.question}').join('||');
-
-  static String _stableJson(Object? value) {
-    Object? normalise(Object? current) {
-      if (current is Map) {
-        final keys = current.keys.map((key) => key.toString()).toList()..sort();
-        return {for (final key in keys) key: normalise(current[key])};
-      }
-      if (current is Iterable) return current.map(normalise).toList();
-      return current;
-    }
-
-    return jsonEncode(normalise(value));
-  }
 
   static String _memorySignature(
     List<ProjectMemoryEntry> items,

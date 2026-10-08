@@ -123,6 +123,7 @@ extension TaskExecutionOperations on TaskExecutionUseCase {
           for (final claim in execution.evidenceClaims)
             TaskEvidenceClaim(
               criterionId: claim.criterionId,
+              acceptanceRef: claim.acceptanceRef,
               claim: claim.claim,
               evidenceType: claim.evidenceType,
               sourceRef: claim.sourceRef,
@@ -635,8 +636,9 @@ extension TaskExecutionOperations on TaskExecutionUseCase {
         ),
         evidenceClaims: _evidenceClaimsFromJson(
           json['evidenceClaims'] ?? json['evidence_claims'],
-          executionRequest.criterionIds,
-          expectedEvidence: executionRequest.expectedEvidence,
+          acceptance: executionRequest.acceptance.isNotEmpty
+              ? executionRequest.acceptance
+              : task.acceptance,
         ),
         toolCalls: existingToolCalls,
         error: jsonNullableString(json['error']),
@@ -660,11 +662,9 @@ extension TaskExecutionOperations on TaskExecutionUseCase {
       workspaceRoot: workspace.rootPath,
       maxSteps: _taskPlanningStepLimit(snapshot),
       projectGoal: projectContext?.projectGoal ?? '',
-      doneCriteria: projectContext?.doneCriteria.isNotEmpty == true
-          ? projectContext!.doneCriteria
-          : snapshot.doneCriteria.isNotEmpty
-          ? snapshot.doneCriteria
-          : snapshot.successCriteria,
+      acceptance: projectContext?.acceptance.isNotEmpty == true
+          ? projectContext!.acceptance
+          : snapshot.acceptance,
       outOfScope: projectContext?.outOfScope.isNotEmpty == true
           ? projectContext!.outOfScope
           : snapshot.outOfScope,
@@ -674,15 +674,6 @@ extension TaskExecutionOperations on TaskExecutionUseCase {
       writePaths: projectContext?.writePaths.isNotEmpty == true
           ? projectContext!.writePaths
           : snapshot.writePaths,
-      requiredArtifacts: projectContext?.expectedArtifacts.isNotEmpty == true
-          ? projectContext!.expectedArtifacts
-          : snapshot.expectedArtifacts,
-      requiredGates: projectContext?.requiredGates.isNotEmpty == true
-          ? projectContext!.requiredGates
-          : snapshot.gates,
-      requiredEvidence: projectContext?.expectedEvidence.isNotEmpty == true
-          ? projectContext!.expectedEvidence
-          : executionRequest.expectedEvidence,
       preserveCompletedStepsOnly: true,
     );
     final planningResult = await _planningCoordinator.replan(
@@ -708,7 +699,7 @@ Project context that remains authoritative:
 ${projectContext == null ? 'None supplied.' : _encoder.convert(snakeCaseWire(ModelJson.encode(projectContext)))}
 
 Current bounded task view:
-${_encoder.convert(_taskViewService.query(snapshot, maxSteps: _taskPlanningStepLimit(snapshot), doneCriteria: context.doneCriteria, outOfScope: context.outOfScope, readPaths: context.readPaths, writePaths: context.writePaths, requiredGates: context.requiredGates))}
+${_encoder.convert(_taskViewService.query(snapshot, maxSteps: _taskPlanningStepLimit(snapshot), outOfScope: context.outOfScope, readPaths: context.readPaths, writePaths: context.writePaths))}
 ''',
       onModelOutput: onModelOutput,
       cancellationToken: cancellationToken,

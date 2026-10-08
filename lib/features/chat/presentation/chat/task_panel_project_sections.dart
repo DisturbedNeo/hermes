@@ -419,16 +419,16 @@ class _CurrentProjectTask extends StatelessWidget {
         (project?.activeTaskId == null
             ? null
             : project?.taskById(project.activeTaskId!));
-    final criterionIds = projectTask?.criterionIds ?? const <String>[];
+    final Set<String> criterionIds = {
+      for (final item in projectTask?.acceptance ?? const [])
+        ...item.criterionIds,
+    };
     final criterionStatements = [
       for (final criterionId in criterionIds)
         project?.criterionStatement(criterionId) ?? criterionId,
     ];
-    final evidenceExpectations = [
-      for (final expectation
-          in projectTask?.expectedEvidence ?? const <TaskEvidenceExpectation>[])
-        '${expectation.type.name}: ${expectation.description}',
-    ];
+    final acceptance =
+        projectTask?.acceptance ?? const <AcceptanceItem>[];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -447,14 +447,17 @@ class _CurrentProjectTask extends StatelessWidget {
           ],
         ),
         if (criterionStatements.isNotEmpty ||
-            evidenceExpectations.isNotEmpty) ...[
+            acceptance.isNotEmpty) ...[
           const SizedBox(height: 8),
           _StringList(title: 'Project criteria', items: criterionStatements),
-          if (evidenceExpectations.isNotEmpty) ...[
+          if (acceptance.isNotEmpty) ...[
             const SizedBox(height: 6),
             _StringList(
-              title: 'Expected evidence',
-              items: evidenceExpectations,
+              title: 'Acceptance',
+              items: [
+                for (final item in acceptance)
+                  '${item.ref}: ${item.statement}',
+              ],
             ),
           ],
         ],
@@ -504,8 +507,8 @@ class _ProjectTaskBoardList extends StatelessWidget {
                     [
                       task.status.wire,
                       task.objective,
-                      if (task.doneCriteria.isNotEmpty)
-                        'Done: ${task.doneCriteria.join('; ')}',
+                      if (task.acceptance.isNotEmpty)
+                        'Acceptance: ${task.acceptance.map((item) => item.statement).join('; ')}',
                       if (task.outOfScope.isNotEmpty)
                         'Out: ${task.outOfScope.join('; ')}',
                     ].join('\n'),

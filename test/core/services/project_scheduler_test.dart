@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/domain/project_scheduler.dart';
@@ -154,13 +155,18 @@ TaskAggregate _task(
     id: id,
     title: 'Task $id',
     objective: 'Complete bounded work for $id.',
-    criterionIds: const ['criterion_1'],
+    acceptance: const [
+      AcceptanceItem(
+        ref: 'verified',
+        statement: 'The work is verified.',
+        criterionIds: ['criterion_1'],
+        verifiers: [AcceptanceVerifier(kind: AcceptanceVerifierKind.review)],
+      ),
+    ],
     dependsOnTaskIds: dependencies,
     priority: priority,
-    doneCriteria: const ['The work is verified.'],
     outOfScope: const ['Unrelated work.'],
     context: const [],
-    expectedArtifacts: const [],
     status: status,
     rejectionReason: null,
     fingerprint: 'fingerprint_$id',

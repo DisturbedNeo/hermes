@@ -257,7 +257,6 @@ TaskAggregate _task({
     originalPrompt: 'Run the task',
     objective: 'Run the task',
     constraints: const ['Stay in workspace'],
-    successCriteria: const ['Finish'],
     steps: const [
       TaskStep(
         id: 'step_1',

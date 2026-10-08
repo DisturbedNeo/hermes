@@ -1,6 +1,9 @@
 import 'package:dart_mappable/dart_mappable.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/task/application/contracts/task_execution_contracts.dart';
 import 'package:hermes/features/task/application/contracts/task_planning_types.dart';
+
+export 'package:hermes/core/contracts/acceptance.dart';
 
 part 'project_task_models.mapper.dart';
 
@@ -14,10 +17,7 @@ abstract interface class TaskProjectNodeSource {
   String get title;
   String get objective;
   TaskStatus get status;
-  List<TaskGate> get gates;
   List<String> get constraints;
-  List<String> get successCriteria;
-  List<String> get criterionIds;
   String? get milestoneId;
   List<String> get dependsOnTaskIds;
   TaskPriority get priority;
@@ -27,13 +27,11 @@ abstract interface class TaskProjectNodeSource {
   String get selectionRationale;
   int get revisionIntroduced;
   int get revisionUpdated;
-  List<TaskEvidenceExpectation> get expectedEvidence;
   List<String> get readPaths;
   List<String> get writePaths;
-  List<String> get doneCriteria;
   List<String> get outOfScope;
   List<String> get context;
-  List<TaskArtifact> get expectedArtifacts;
+  List<AcceptanceItem> get acceptance;
   String? get recoveryIncidentId;
   String get fingerprint;
   String? get rejectionReason;
@@ -62,7 +60,7 @@ class ProjectTaskSpec {
   final String ref;
   final String title;
   final String objective;
-  final List<String> criterionRefs;
+  final List<AcceptanceItem> acceptance;
   final List<String> dependencyRefs;
   final String? milestoneRef;
   final TaskPriority priority;
@@ -73,17 +71,14 @@ class ProjectTaskSpec {
   final List<String> constraints;
   final List<String> readPaths;
   final List<String> writePaths;
-  final List<String> doneCriteria;
   final List<String> outOfScope;
   final List<String> context;
-  final List<TaskArtifact> expectedArtifacts;
-  final List<ProjectTaskCheckSpec> checks;
 
   const ProjectTaskSpec({
     this.ref = '',
     this.title = '',
     this.objective = '',
-    this.criterionRefs = const [],
+    this.acceptance = const [],
     this.dependencyRefs = const [],
     this.milestoneRef,
     this.priority = TaskPriority.normal,
@@ -94,31 +89,8 @@ class ProjectTaskSpec {
     this.constraints = const [],
     this.readPaths = const [],
     this.writePaths = const [],
-    this.doneCriteria = const [],
     this.outOfScope = const [],
     this.context = const [],
-    this.expectedArtifacts = const [],
-    this.checks = const [],
-  });
-}
-
-/// A planning-only command verification declaration for a new project task.
-///
-/// The project builder materializes this into a task gate and command evidence
-/// expectation. It is intentionally not part of the persisted task model.
-class ProjectTaskCheckSpec {
-  final String command;
-  final String workingDirectory;
-  final List<String> criterionRefs;
-  final bool required;
-  final String? description;
-
-  const ProjectTaskCheckSpec({
-    required this.command,
-    this.workingDirectory = '.',
-    this.criterionRefs = const [],
-    this.required = true,
-    this.description,
   });
 }
 
@@ -146,10 +118,7 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
     required this.title,
     required this.objective,
     required this.status,
-    this.gates = const [],
     this.constraints = const [],
-    this.successCriteria = const [],
-    this.criterionIds = const [],
     this.milestoneId,
     this.dependsOnTaskIds = const [],
     this.priority = TaskPriority.normal,
@@ -159,13 +128,11 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
     this.selectionRationale = '',
     this.revisionIntroduced = 1,
     this.revisionUpdated = 1,
-    this.expectedEvidence = const [],
     this.readPaths = const [],
     this.writePaths = const [],
-    this.doneCriteria = const [],
     this.outOfScope = const [],
     this.context = const [],
-    this.expectedArtifacts = const [],
+    this.acceptance = const [],
     this.recoveryIncidentId,
     this.fingerprint = '',
     this.rejectionReason,
@@ -182,10 +149,7 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
   final String title;
   final String objective;
   final TaskStatus status;
-  final List<TaskGate> gates;
   final List<String> constraints;
-  final List<String> successCriteria;
-  final List<String> criterionIds;
   final String? milestoneId;
   final List<String> dependsOnTaskIds;
   final TaskPriority priority;
@@ -195,13 +159,11 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
   final String selectionRationale;
   final int revisionIntroduced;
   final int revisionUpdated;
-  final List<TaskEvidenceExpectation> expectedEvidence;
   final List<String> readPaths;
   final List<String> writePaths;
-  final List<String> doneCriteria;
   final List<String> outOfScope;
   final List<String> context;
-  final List<TaskArtifact> expectedArtifacts;
+  final List<AcceptanceItem> acceptance;
   final String? recoveryIncidentId;
   final String fingerprint;
   final String? rejectionReason;
@@ -220,10 +182,7 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
       title: source.title,
       objective: source.objective,
       status: source.status,
-      gates: List.unmodifiable(source.gates),
       constraints: List.unmodifiable(source.constraints),
-      successCriteria: List.unmodifiable(source.successCriteria),
-      criterionIds: List.unmodifiable(source.criterionIds),
       milestoneId: source.milestoneId,
       dependsOnTaskIds: List.unmodifiable(source.dependsOnTaskIds),
       priority: source.priority,
@@ -233,13 +192,11 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
       selectionRationale: source.selectionRationale,
       revisionIntroduced: source.revisionIntroduced,
       revisionUpdated: source.revisionUpdated,
-      expectedEvidence: List.unmodifiable(source.expectedEvidence),
       readPaths: List.unmodifiable(source.readPaths),
       writePaths: List.unmodifiable(source.writePaths),
-      doneCriteria: List.unmodifiable(source.doneCriteria),
       outOfScope: List.unmodifiable(source.outOfScope),
       context: List.unmodifiable(source.context),
-      expectedArtifacts: List.unmodifiable(source.expectedArtifacts),
+      acceptance: List.unmodifiable(source.acceptance),
       recoveryIncidentId: source.recoveryIncidentId,
       fingerprint: source.fingerprint,
       rejectionReason: source.rejectionReason,
@@ -260,10 +217,7 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
     String? title,
     String? objective,
     TaskStatus? status,
-    List<TaskGate>? gates,
     List<String>? constraints,
-    List<String>? successCriteria,
-    List<String>? criterionIds,
     Object? milestoneId = _unset,
     List<String>? dependsOnTaskIds,
     TaskPriority? priority,
@@ -273,13 +227,11 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
     String? selectionRationale,
     int? revisionIntroduced,
     int? revisionUpdated,
-    List<TaskEvidenceExpectation>? expectedEvidence,
     List<String>? readPaths,
     List<String>? writePaths,
-    List<String>? doneCriteria,
     List<String>? outOfScope,
     List<String>? context,
-    List<TaskArtifact>? expectedArtifacts,
+    List<AcceptanceItem>? acceptance,
     Object? recoveryIncidentId = _unset,
     String? fingerprint,
     Object? rejectionReason = _unset,
@@ -295,10 +247,7 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
     title: title ?? this.title,
     objective: objective ?? this.objective,
     status: status ?? this.status,
-    gates: gates ?? this.gates,
     constraints: constraints ?? this.constraints,
-    successCriteria: successCriteria ?? this.successCriteria,
-    criterionIds: criterionIds ?? this.criterionIds,
     milestoneId: identical(milestoneId, _unset)
         ? this.milestoneId
         : milestoneId as String?,
@@ -310,13 +259,11 @@ class ProjectTaskNode with ProjectTaskNodeMappable {
     selectionRationale: selectionRationale ?? this.selectionRationale,
     revisionIntroduced: revisionIntroduced ?? this.revisionIntroduced,
     revisionUpdated: revisionUpdated ?? this.revisionUpdated,
-    expectedEvidence: expectedEvidence ?? this.expectedEvidence,
     readPaths: readPaths ?? this.readPaths,
     writePaths: writePaths ?? this.writePaths,
-    doneCriteria: doneCriteria ?? this.doneCriteria,
     outOfScope: outOfScope ?? this.outOfScope,
     context: context ?? this.context,
-    expectedArtifacts: expectedArtifacts ?? this.expectedArtifacts,
+    acceptance: acceptance ?? this.acceptance,
     recoveryIncidentId: identical(recoveryIncidentId, _unset)
         ? this.recoveryIncidentId
         : recoveryIncidentId as String?,

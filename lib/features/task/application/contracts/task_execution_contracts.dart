@@ -1,7 +1,6 @@
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:hermes/core/sentinel.dart' show kSentinel, resolve;
 import 'package:hermes/core/serialization/json_hooks.dart';
-import 'package:hermes/features/task/application/contracts/task_planning_types.dart';
 
 export 'package:hermes/features/task/application/contracts/task_tool_contracts.dart';
 
@@ -27,34 +26,6 @@ class TaskGate with TaskGateMappable {
     this.scope = 'step',
     this.params = const {},
     this.description,
-  });
-}
-
-/// Evidence expectation exchanged at the planning/execution boundary.
-@MappableClass(ignoreNull: true)
-class TaskEvidenceExpectation with TaskEvidenceExpectationMappable {
-  @MappableField(hook: JsonStringHook())
-  final String id;
-  final ProjectEvidenceType type;
-  @MappableField(hook: JsonStringListHook())
-  final List<String> criterionIds;
-  @MappableField(hook: JsonStringHook())
-  final String description;
-  @MappableField(hook: JsonBoolHook(fallback: true))
-  final bool required;
-  @MappableField(hook: JsonNullableStringHook())
-  final String? sourceRef;
-  @MappableField(hook: JsonMapValueHook())
-  final Map<String, dynamic> details;
-
-  const TaskEvidenceExpectation({
-    required this.id,
-    this.type = ProjectEvidenceType.taskClaim,
-    this.criterionIds = const [],
-    required this.description,
-    this.required = true,
-    this.sourceRef,
-    this.details = const {},
   });
 }
 
@@ -211,6 +182,8 @@ class TaskFailure with TaskFailureMappable {
 class TaskEvidenceClaim with TaskEvidenceClaimMappable {
   @MappableField(hook: JsonStringHook())
   final String criterionId;
+  @MappableField(hook: JsonNullableStringHook())
+  final String? acceptanceRef;
   @MappableField(hook: JsonStringHook())
   final String claim;
   final TaskEvidenceClaimType evidenceType;
@@ -223,7 +196,8 @@ class TaskEvidenceClaim with TaskEvidenceClaimMappable {
   final String? runId;
 
   const TaskEvidenceClaim({
-    required this.criterionId,
+    this.criterionId = '',
+    this.acceptanceRef,
     required this.claim,
     this.evidenceType = TaskEvidenceClaimType.taskClaim,
     required this.sourceRef,

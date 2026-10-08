@@ -31,12 +31,18 @@ class PersistedRevision {
 
 /// The persisted wrapper around a project or task document.
 class SnapshotEnvelope {
-  const SnapshotEnvelope({required this.revision, required this.document});
+  const SnapshotEnvelope({
+    required this.revision,
+    required this.document,
+  });
 
   final int revision;
   final Map<String, dynamic> document;
 
-  Map<String, dynamic> asMap() => {'revision': revision, 'document': document};
+  Map<String, dynamic> asMap() => {
+    'revision': revision,
+    'document': document,
+  };
 
   static Map<String, dynamic> encode(
     Map<String, dynamic> document,
@@ -54,7 +60,15 @@ class SnapshotEnvelope {
   static SnapshotEnvelope decode(Map<String, dynamic> raw) {
     final revision = raw['revision'];
     final document = raw['document'];
-    if (revision is! int || revision < 1 || document is! Map) {
+    if (raw.keys.any((key) => !{'revision', 'document'}.contains(key))) {
+      throw const FormatException(
+        'Snapshot envelope contains unsupported metadata; recreate the stored '
+        'snapshot using the acceptance model.',
+      );
+    }
+    if (revision is! int ||
+        revision < 1 ||
+        document is! Map) {
       throw const FormatException('Snapshot metadata is missing or invalid');
     }
     return SnapshotEnvelope(

@@ -236,7 +236,7 @@ class ProjectWorkspaceContextService {
       ...task.context,
       ...task.readPaths,
       ...task.writePaths,
-      ...task.doneCriteria,
+      ...task.acceptance.map((item) => item.statement),
     ],
   ].expand(_tokens).toSet().toList();
 

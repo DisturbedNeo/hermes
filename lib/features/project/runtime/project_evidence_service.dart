@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/project/domain/project.dart';
 
 /// Converts task output into durable, deduplicated Project evidence.
@@ -28,13 +29,24 @@ class ProjectEvidenceService {
   ) {
     final evidence = <ProjectEvidence>[];
     for (final gate in result.gateResults) {
+      if (gate.gateId == 'artifact_nonempty') continue;
       final type = _gateEvidenceType(gate);
       final sourceRef = _gateSourceRef(gate, type);
-      final matchedExpectations = _matchingExpectations(
+      final acceptanceRef = gate.details['acceptance_ref']?.toString();
+      // Engine-owned safety gates do not become project evidence.
+      if (acceptanceRef == null || acceptanceRef.trim().isEmpty) {
+        continue;
+      }
+      final matchedVerifiers = _matchingVerifiers(
         task,
         type,
         sourceRefs: [sourceRef, gate.gateId],
+        acceptanceRef: acceptanceRef,
       );
+      if (matchedVerifiers.isEmpty ||
+          matchedVerifiers.every((item) => item.item.criterionIds.isEmpty)) {
+        continue;
+      }
       evidence.add(
         ProjectEvidence(
           id: _evidenceId(
@@ -47,9 +59,9 @@ class ProjectEvidenceService {
             project,
             task,
             type,
-            matchedExpectations: matchedExpectations,
+            matchedVerifiers: matchedVerifiers,
           ),
-          expectationIds: _expectationIdsFor(matchedExpectations),
+          expectationIds: _expectationIdsFor(matchedVerifiers),
           taskId: task.id,
           runId: result.finalRunId,
           sourceRef: sourceRef,
@@ -59,7 +71,7 @@ class ProjectEvidenceService {
             'gateId': gate.gateId,
             'status': gate.status.wire,
             'summary': gate.summary,
-            'expectationIds': _expectationIdsFor(matchedExpectations),
+            'expectationIds': _expectationIdsFor(matchedVerifiers),
             'details': gate.details,
           }),
           summary: gate.summary.trim().isEmpty
@@ -103,54 +115,59 @@ class ProjectEvidenceService {
     TaskResult result,
     DateTime evaluatedAt,
   ) {
-    return [
-      for (final artifact in result.artifacts)
-        (() {
-          final matchedExpectations = _matchingExpectations(
+    final evidence = <ProjectEvidence>[];
+    for (final artifact in result.artifacts) {
+      final matchedVerifiers = _matchingVerifiers(
+        task,
+        ProjectEvidenceType.artifact,
+        sourceRefs: [artifact.path],
+      );
+      if (matchedVerifiers.isEmpty ||
+          matchedVerifiers.every((item) => item.item.criterionIds.isEmpty)) {
+        continue;
+      }
+      evidence.add(
+        ProjectEvidence(
+          id: _evidenceId(
+            '${task.id}|${result.taskId}|artifact|'
+            '${artifact.runId ?? ''}|${artifact.path}',
+          ),
+          type: ProjectEvidenceType.artifact,
+          criterionIds: _criterionIdsFor(
+            project,
             task,
             ProjectEvidenceType.artifact,
-            sourceRefs: [artifact.path],
-          );
-          return ProjectEvidence(
-            id: _evidenceId(
-              '${task.id}|${result.taskId}|artifact|'
-              '${artifact.runId ?? ''}|${artifact.path}',
-            ),
-            type: ProjectEvidenceType.artifact,
-            criterionIds: _criterionIdsFor(
-              project,
-              task,
-              ProjectEvidenceType.artifact,
-              matchedExpectations: matchedExpectations,
-            ),
-            expectationIds: _expectationIdsFor(matchedExpectations),
-            taskId: task.id,
-            runId: artifact.runId,
-            sourceRef: artifact.path,
-            sourceFingerprint: _fingerprint({
-              'taskId': task.id,
-              'runId': artifact.runId,
-              'path': artifact.path,
-              'description': artifact.description,
-              'kind': artifact.kind,
-              'expectationIds': _expectationIdsFor(matchedExpectations),
-            }),
-            summary: artifact.description?.trim().isEmpty ?? true
-                ? 'Task produced ${artifact.path}.'
-                : artifact.description!.trim(),
-            status: ProjectEvidenceStatus.accepted,
-            strength: ProjectEvidenceStrength.supporting,
-            details: {
-              'origin': 'workspace_provenance',
-              'kind': artifact.kind,
-              'artifactId': artifact.id,
-              if (artifact.runId != null) 'runId': artifact.runId,
-            },
-            createdAt: artifact.createdAt ?? evaluatedAt,
-            evaluatedAt: evaluatedAt,
-          );
-        })(),
-    ];
+            matchedVerifiers: matchedVerifiers,
+          ),
+          expectationIds: _expectationIdsFor(matchedVerifiers),
+          taskId: task.id,
+          runId: artifact.runId,
+          sourceRef: artifact.path,
+          sourceFingerprint: _fingerprint({
+            'taskId': task.id,
+            'runId': artifact.runId,
+            'path': artifact.path,
+            'description': artifact.description,
+            'kind': artifact.kind,
+            'expectationIds': _expectationIdsFor(matchedVerifiers),
+          }),
+          summary: artifact.description?.trim().isEmpty ?? true
+              ? 'Task produced ${artifact.path}.'
+              : artifact.description!.trim(),
+          status: ProjectEvidenceStatus.accepted,
+          strength: ProjectEvidenceStrength.supporting,
+          details: {
+            'origin': 'workspace_provenance',
+            'kind': artifact.kind,
+            'artifactId': artifact.id,
+            if (artifact.runId != null) 'runId': artifact.runId,
+          },
+          createdAt: artifact.createdAt ?? evaluatedAt,
+          evaluatedAt: evaluatedAt,
+        ),
+      );
+    }
+    return evidence;
   }
 
   List<ProjectEvidence> _claimEvidence(
@@ -168,7 +185,7 @@ class ProjectEvidenceService {
     return [
       for (final claim in claims)
         if (validCriterionIds.contains(claim.criterionId) &&
-            task.criterionIds.contains(claim.criterionId))
+            _linkedAcceptance(task, claim.acceptanceRef, claim.criterionId))
           (() {
             final runId = claim.runId ?? result.finalRunId;
             final expectationId = _claimExpectationId(task, claim);
@@ -202,6 +219,8 @@ class ProjectEvidenceService {
               strength: _projectStrength(claim.suggestedStrength),
               details: {
                 'origin': 'task_claim',
+                if (claim.acceptanceRef != null)
+                  'acceptanceRef': claim.acceptanceRef,
                 'claimedEvidenceType': claim.evidenceType.name,
                 'runId': ?runId,
               },
@@ -215,99 +234,78 @@ class ProjectEvidenceService {
     ProjectAggregate project,
     ProjectTaskNode task,
     ProjectEvidenceType type, {
-    required List<TaskEvidenceExpectation> matchedExpectations,
+    required List<_AcceptanceVerifierMatch> matchedVerifiers,
   }) {
-    final expected = matchedExpectations
-        .expand((item) => item.criterionIds)
+    final expected = matchedVerifiers
+        .expand((item) => item.item.criterionIds)
         .toSet()
         .toList();
-    if (expected.isNotEmpty) return expected;
-    if (task.expectedEvidence.any((item) => item.type == type)) {
-      return const [];
-    }
-    if (type == ProjectEvidenceType.artifact) return task.criterionIds;
-    final criteriaById = {
-      for (final criterion in project.criteria) criterion.id: criterion,
-    };
-    return task.criterionIds.where((id) {
-      final mode = criteriaById[id]?.verificationMode;
-      return switch (type) {
-        ProjectEvidenceType.gate || ProjectEvidenceType.command =>
-          mode == ProjectVerificationMode.deterministic,
-        ProjectEvidenceType.userApproval =>
-          mode == ProjectVerificationMode.humanApproval,
-        _ => true,
-      };
-    }).toList();
+    return expected;
   }
 
-  List<TaskEvidenceExpectation> _matchingExpectations(
+  List<_AcceptanceVerifierMatch> _matchingVerifiers(
     ProjectTaskNode task,
     ProjectEvidenceType type, {
     required List<String> sourceRefs,
+    String? acceptanceRef,
   }) {
     final normalizedSources = sourceRefs.map(_normaliseSourceRef).toSet();
-    return task.expectedEvidence
-        .where((item) => item.type == type)
-        .where(
-          (item) =>
-              item.sourceRef?.trim().isNotEmpty != true ||
-              normalizedSources.contains(_normaliseSourceRef(item.sourceRef!)),
-        )
-        .toList();
+    final matches = <_AcceptanceVerifierMatch>[];
+    for (final item in task.acceptance) {
+      for (var index = 0; index < item.verifiers.length; index++) {
+        final verifier = item.verifiers[index];
+        final verifierType = switch (verifier.kind) {
+          AcceptanceVerifierKind.command => ProjectEvidenceType.command,
+          AcceptanceVerifierKind.artifact => ProjectEvidenceType.artifact,
+          AcceptanceVerifierKind.review => ProjectEvidenceType.gate,
+          AcceptanceVerifierKind.approval => ProjectEvidenceType.userApproval,
+        };
+        if (verifierType != type) continue;
+        final source = verifier.command ?? verifier.path;
+        if (acceptanceRef != null && item.ref != acceptanceRef && source == null) {
+          continue;
+        }
+        if (source != null &&
+            source.trim().isNotEmpty &&
+            !normalizedSources.contains(_normaliseSourceRef(source))) {
+          continue;
+        }
+        matches.add((item: item, verifier: verifier, index: index));
+      }
+    }
+    return matches;
   }
 
-  List<String> _expectationIdsFor(List<TaskEvidenceExpectation> expectations) {
+  List<String> _expectationIdsFor(List<_AcceptanceVerifierMatch> verifiers) {
     final ids = <String>[];
     final seen = <String>{};
-    for (final expectation in expectations) {
-      if (seen.add(expectation.id)) ids.add(expectation.id);
+    for (final verifier in verifiers) {
+      final id = 'acceptance_${verifier.item.ref}_${verifier.index}';
+      if (seen.add(id)) ids.add(id);
     }
     return ids;
   }
 
-  String? _claimExpectationId(ProjectTaskNode task, TaskEvidenceClaim claim) {
-    const type = ProjectEvidenceType.taskClaim;
-    final explicit = claim.expectationId?.trim();
-    if (explicit != null && explicit.isNotEmpty) {
-      final matches = task.expectedEvidence.where(
-        (item) =>
-            item.id == explicit &&
-            item.type == type &&
-            item.criterionIds.contains(claim.criterionId),
-      );
-      return matches.length == 1 ? explicit : null;
-    }
-    return _uniqueClaimExpectationId(
-      task,
-      claim.criterionId,
-      TaskEvidenceClaimType.taskClaim,
-      claim.sourceRef,
-    );
-  }
+  String? _claimExpectationId(ProjectTaskNode task, TaskEvidenceClaim claim) =>
+      null;
 
-  String? _uniqueClaimExpectationId(
+  bool _linkedAcceptance(
     ProjectTaskNode task,
+    String? acceptanceRef,
     String criterionId,
-    TaskEvidenceClaimType type,
-    String sourceRef,
-  ) {
-    final projectType = _projectEvidenceType(type);
-    final normalizedSource = _normaliseSourceRef(sourceRef);
-    final matches = task.expectedEvidence.where(
-      (item) =>
-          item.type == projectType &&
-          item.criterionIds.contains(criterionId) &&
-          (item.sourceRef?.trim().isNotEmpty != true ||
-              _normaliseSourceRef(item.sourceRef!) == normalizedSource),
-    );
-    return matches.length == 1 ? matches.single.id : null;
-  }
+  ) => task.acceptance.any(
+    (item) =>
+        item.ref == acceptanceRef && item.criterionIds.contains(criterionId),
+  );
 
   ProjectEvidenceType _gateEvidenceType(TaskGateResult gate) {
     if (gate.gateId == 'command_passes' ||
         gate.details.containsKey('command')) {
       return ProjectEvidenceType.command;
+    }
+    if (gate.gateId == 'artifact_exists' ||
+        gate.gateId == 'artifact_nonempty') {
+      return ProjectEvidenceType.artifact;
     }
     if (gate.gateId == 'human_approval') {
       return ProjectEvidenceType.userApproval;
@@ -319,6 +317,10 @@ class ProjectEvidenceService {
     if (type == ProjectEvidenceType.command) {
       final command = (gate.details['command'] ?? '').toString().trim();
       if (command.isNotEmpty) return command;
+    }
+    if (type == ProjectEvidenceType.artifact) {
+      final artifactPath = (gate.details['path'] ?? '').toString().trim();
+      if (artifactPath.isNotEmpty) return artifactPath;
     }
     return gate.gateId;
   }
@@ -368,15 +370,6 @@ class ProjectEvidenceService {
     return left.length == right.length && left.toSet().containsAll(right);
   }
 
-  ProjectEvidenceType _projectEvidenceType(TaskEvidenceClaimType type) =>
-      switch (type) {
-        TaskEvidenceClaimType.gate => ProjectEvidenceType.gate,
-        TaskEvidenceClaimType.artifact => ProjectEvidenceType.artifact,
-        TaskEvidenceClaimType.command => ProjectEvidenceType.command,
-        TaskEvidenceClaimType.taskClaim => ProjectEvidenceType.taskClaim,
-        TaskEvidenceClaimType.userApproval => ProjectEvidenceType.userApproval,
-      };
-
   ProjectEvidenceStrength _projectStrength(
     TaskEvidenceClaimStrength strength,
   ) => switch (strength) {
@@ -399,3 +392,9 @@ class ProjectEvidenceService {
     return hash.toRadixString(16).padLeft(8, '0');
   }
 }
+
+typedef _AcceptanceVerifierMatch = ({
+  AcceptanceItem item,
+  AcceptanceVerifier verifier,
+  int index,
+});

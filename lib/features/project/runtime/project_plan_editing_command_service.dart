@@ -160,7 +160,6 @@ class ProjectPlanEditingCommandService {
       }
 
       final specs = <ProjectTaskSpec>[];
-      final checks = <List<ProjectTaskCheckSpec>>[];
       for (var index = 0; index < tasks.length; index++) {
         final transformed = _transformTaskInput(
           tasks[index],
@@ -178,12 +177,6 @@ class ProjectPlanEditingCommandService {
             requireObjective: true,
           ),
         );
-        checks.add(
-          ProjectPlanningToolCommandService._checkSpecs(
-            transformed['checks'],
-            'tasks[$index].checks',
-          ),
-        );
       }
       context.builder.addTasks(
         specs,
@@ -192,29 +185,6 @@ class ProjectPlanEditingCommandService {
           'tasks',
         ),
       );
-      for (var index = 0; index < checks.length; index++) {
-        for (
-          var checkIndex = 0;
-          checkIndex < checks[index].length;
-          checkIndex++
-        ) {
-          final check = checks[index][checkIndex];
-          context.builder.addCommandCheck(
-            taskReference: (index + 1).toString(),
-            command: check.command,
-            workingDirectory: check.workingDirectory,
-            criterionRefs: check.criterionRefs.isEmpty
-                ? null
-                : check.criterionRefs,
-            required: check.required,
-            description: check.description,
-            commandId: ProjectPlanningToolCommandService._scopedCommandId(
-              commandId,
-              'check:$index:$checkIndex',
-            ),
-          );
-        }
-      }
       _throwIfInvalidDraft();
       for (var index = 0; index < specs.length; index++) {
         final id = context.builder.taskIdFor((index + 1).toString());
@@ -288,11 +258,10 @@ class ProjectPlanEditingCommandService {
           value['criterion_id'],
           'criteria[$index].criterion_id',
         );
-        final statement =
-            ProjectPlanningToolCommandService._optionalString(
-              value['statement'],
-              'criteria[$index].statement',
-            );
+        final statement = ProjectPlanningToolCommandService._optionalString(
+          value['statement'],
+          'criteria[$index].statement',
+        );
         final required = ProjectPlanningToolCommandService._optionalBool(
           value['required'],
           'criteria[$index].required',
@@ -421,8 +390,7 @@ class ProjectPlanEditingCommandService {
       'task_id',
       'title',
       'objective',
-      'criterion_ids',
-      'criteria',
+      'acceptance',
       'dependency_task_ids',
       'milestone_id',
       'clear_milestone',
@@ -434,11 +402,8 @@ class ProjectPlanEditingCommandService {
       'constraints',
       'read_paths',
       'write_paths',
-      'done_criteria',
       'out_of_scope',
       'context',
-      'expected_artifacts',
-      'checks',
       'disposition',
     });
     final taskNumber = ProjectPlanningToolCommandService._optionalInt(
@@ -446,14 +411,9 @@ class ProjectPlanEditingCommandService {
       'task_id',
     );
     late Map<String, dynamic> transformed;
-    late List<ProjectTaskCheckSpec> inlineChecks;
     late String taskId;
     context.builder.transaction(() {
       transformed = _transformTaskInput(arguments.toWire(), 'task');
-      inlineChecks = ProjectPlanningToolCommandService._checkSpecs(
-        transformed['checks'],
-        'checks',
-      );
       if (taskNumber == null) {
         final taskInput = Map<String, dynamic>.from(transformed)
           ..remove('inline_criterion_refs');
@@ -462,9 +422,8 @@ class ProjectPlanEditingCommandService {
           'task',
           requireObjective: true,
         );
-        taskId = context.builder.addTaskWithChecks(
+        taskId = context.builder.addTask(
           spec,
-          checks: inlineChecks,
           commandId: ProjectPlanningToolCommandService._scopedCommandId(
             commandId,
             'task',
@@ -482,10 +441,11 @@ class ProjectPlanEditingCommandService {
             arguments['objective'],
             'objective',
           ),
-          criterionRefs:
-              arguments.containsKey('criterion_ids') ||
-                  (transformed['inline_criterion_refs'] as List).isNotEmpty
-              ? (transformed['criterion_refs'] as List).cast<String>()
+          acceptance: arguments.containsKey('acceptance')
+              ? ProjectPlanningToolCommandService._acceptance(
+                  transformed['acceptance'],
+                  'acceptance',
+                )
               : null,
           dependencyRefs: arguments.containsKey('dependency_task_ids')
               ? (transformed['dependency_refs'] as List).cast<String>()
@@ -535,10 +495,6 @@ class ProjectPlanEditingCommandService {
             arguments['write_paths'],
             'write_paths',
           ),
-          doneCriteria: ProjectPlanningToolCommandService._optionalStringList(
-            arguments['done_criteria'],
-            'done_criteria',
-          ),
           outOfScope: ProjectPlanningToolCommandService._optionalStringList(
             arguments['out_of_scope'],
             'out_of_scope',
@@ -547,38 +503,12 @@ class ProjectPlanEditingCommandService {
             arguments['context'],
             'context',
           ),
-          expectedArtifacts:
-              ProjectPlanningToolCommandService._optionalArtifacts(
-                arguments['expected_artifacts'],
-                'expected_artifacts',
-              ),
           commandId: ProjectPlanningToolCommandService._scopedCommandId(
             commandId,
             'task',
           ),
         );
         taskId = updated.id;
-        for (
-          var checkIndex = 0;
-          checkIndex < inlineChecks.length;
-          checkIndex++
-        ) {
-          final check = inlineChecks[checkIndex];
-          context.builder.addCommandCheck(
-            taskReference: taskId,
-            command: check.command,
-            workingDirectory: check.workingDirectory,
-            criterionRefs: check.criterionRefs.isEmpty
-                ? null
-                : check.criterionRefs,
-            required: check.required,
-            description: check.description,
-            commandId: ProjectPlanningToolCommandService._scopedCommandId(
-              commandId,
-              'check:$checkIndex',
-            ),
-          );
-        }
       }
       final disposition = ProjectPlanningToolCommandService._enumValue(
         ProjectPlanTaskDisposition.values,
@@ -630,8 +560,7 @@ class ProjectPlanEditingCommandService {
       'task_id',
       'title',
       'objective',
-      'criterion_ids',
-      'criteria',
+      'acceptance',
       'dependency_task_ids',
       'milestone_id',
       'clear_milestone',
@@ -643,61 +572,20 @@ class ProjectPlanEditingCommandService {
       'constraints',
       'read_paths',
       'write_paths',
-      'done_criteria',
       'out_of_scope',
       'context',
-      'expected_artifacts',
-      'checks',
       'disposition',
     };
     ProjectPlanningToolCommandService._keys(value, allowed);
-    final criterionRefs = _requestReferences(
-      ProjectPlanningToolCommandService._intList(
-        value['criterion_ids'],
-        '$path.criterion_ids',
-      ),
-      criterionRefsByPosition,
-      '$path.criterion_ids',
+    final acceptance = ProjectPlanningToolCommandService._maps(
+      value['acceptance'],
+      '$path.acceptance',
     );
-    final inlineCriterionRefs = <String>[];
-    final inlineCriteria = ProjectPlanningToolCommandService._maps(
-      value['criteria'],
-      '$path.criteria',
-    );
-    for (var index = 0; index < inlineCriteria.length; index++) {
-      final item = inlineCriteria[index];
-      ProjectPlanningToolCommandService._keys(item, const {
-        'statement',
-        'required',
-        'verification_mode',
-      });
-      final id = context.builder.addCriterion(
-        statement: ProjectPlanningToolCommandService._requiredString(
-          item['statement'],
-          '$path.criteria[$index].statement',
-        ),
-        required:
-            ProjectPlanningToolCommandService._optionalBool(
-              item['required'],
-              '$path.criteria[$index].required',
-            ) ??
-            true,
-        verificationMode:
-            ProjectPlanningToolCommandService._enumValue(
-              ProjectVerificationMode.values,
-              item['verification_mode'],
-              '$path.criteria[$index].verification_mode',
-            ) ??
-            ProjectVerificationMode.mixed,
-      );
-      inlineCriterionRefs.add(id);
-    }
-    criterionRefs.addAll(inlineCriterionRefs);
     final transformed = <String, dynamic>{
       'ref': createReference ?? '',
       'title': value['title'],
       'objective': value['objective'],
-      'criterion_refs': criterionRefs,
+      'acceptance': acceptance,
       'dependency_refs': [
         for (final id in ProjectPlanningToolCommandService._intList(
           value['dependency_task_ids'],
@@ -725,31 +613,8 @@ class ProjectPlanEditingCommandService {
       'constraints': value['constraints'],
       'read_paths': value['read_paths'],
       'write_paths': value['write_paths'],
-      'done_criteria': value['done_criteria'],
       'out_of_scope': value['out_of_scope'],
       'context': value['context'],
-      'expected_artifacts': value['expected_artifacts'],
-      'checks': [
-        for (final check in ProjectPlanningToolCommandService._maps(
-          value['checks'],
-          '$path.checks',
-        ))
-          {
-            'command': check['command'],
-            'working_directory': check['working_directory'],
-            'criterion_refs': _requestReferences(
-              ProjectPlanningToolCommandService._intList(
-                check['criterion_ids'],
-                '$path.checks.criterion_ids',
-              ),
-              criterionRefsByPosition,
-              '$path.checks.criterion_ids',
-            ),
-            'required': check['required'],
-            'description': check['description'],
-          },
-      ],
-      'inline_criterion_refs': inlineCriterionRefs,
     };
     return transformed;
   }
@@ -912,29 +777,18 @@ class ProjectPlanEditingCommandService {
       'ref',
       'title',
       'objective',
-      'criterion_refs',
+      'acceptance',
       'dependency_refs',
       'milestone_ref',
-      'done_criteria',
       'out_of_scope',
-      'checks',
     });
-    final taskArguments = Map<String, dynamic>.from(arguments.toWire())
-      ..remove('checks');
+    final taskArguments = Map<String, dynamic>.from(arguments.toWire());
     final spec = ProjectPlanningToolCommandService._taskSpec(
       taskArguments,
       'task',
       requireObjective: true,
     );
-    final checks = ProjectPlanningToolCommandService._checkSpecs(
-      arguments['checks'],
-      'checks',
-    );
-    final id = context.builder.addTaskWithChecks(
-      spec,
-      checks: checks,
-      commandId: commandId,
-    );
+    final id = context.builder.addTask(spec, commandId: commandId);
     return {
       'task': {'id': id, 'ref': spec.ref.trim().isEmpty ? id : spec.ref.trim()},
     };
@@ -949,7 +803,7 @@ class ProjectPlanEditingCommandService {
       'task',
       'title',
       'objective',
-      'criterion_refs',
+      'acceptance',
       'dependency_refs',
       'milestone_ref',
       'clear_milestone',
@@ -961,10 +815,8 @@ class ProjectPlanEditingCommandService {
       'constraints',
       'read_paths',
       'write_paths',
-      'done_criteria',
       'out_of_scope',
       'context',
-      'expected_artifacts',
     });
     final task = ProjectPlanningToolCommandService._requiredString(
       arguments['task'],
@@ -980,10 +832,12 @@ class ProjectPlanEditingCommandService {
         arguments['objective'],
         'objective',
       ),
-      criterionRefs: ProjectPlanningToolCommandService._optionalStringList(
-        arguments['criterion_refs'],
-        'criterion_refs',
-      ),
+      acceptance: arguments.containsKey('acceptance')
+          ? ProjectPlanningToolCommandService._acceptance(
+              arguments['acceptance'],
+              'acceptance',
+            )
+          : null,
       dependencyRefs: ProjectPlanningToolCommandService._optionalStringList(
         arguments['dependency_refs'],
         'dependency_refs',
@@ -1034,10 +888,6 @@ class ProjectPlanEditingCommandService {
         arguments['write_paths'],
         'write_paths',
       ),
-      doneCriteria: ProjectPlanningToolCommandService._optionalStringList(
-        arguments['done_criteria'],
-        'done_criteria',
-      ),
       outOfScope: ProjectPlanningToolCommandService._optionalStringList(
         arguments['out_of_scope'],
         'out_of_scope',
@@ -1045,10 +895,6 @@ class ProjectPlanEditingCommandService {
       context: ProjectPlanningToolCommandService._optionalStringList(
         arguments['context'],
         'context',
-      ),
-      expectedArtifacts: ProjectPlanningToolCommandService._optionalArtifacts(
-        arguments['expected_artifacts'],
-        'expected_artifacts',
       ),
       commandId: commandId,
     );
@@ -1203,70 +1049,6 @@ class ProjectPlanEditingCommandService {
     return {
       'source_task': task,
       'task': {'id': id, 'ref': ref.isEmpty ? id : ref},
-    };
-  }
-
-  Map<String, dynamic> addCheck(
-    PlanningArguments arguments,
-    String? commandId,
-  ) {
-    _ensureOpen();
-    ProjectPlanningToolCommandService._keys(arguments, const {
-      'task',
-      'kind',
-      'command',
-      'working_directory',
-      'criterion_refs',
-      'required',
-      'description',
-    });
-    final kind = ProjectPlanningToolCommandService._requiredString(
-      arguments['kind'],
-      'kind',
-    );
-    if (kind != 'command') {
-      throw ProjectPlanningToolCommandService._argument(
-        'invalid_check',
-        'kind',
-        'Only command checks are supported by the project planning tools.',
-      );
-    }
-    final task = ProjectPlanningToolCommandService._requiredString(
-      arguments['task'],
-      'task',
-    );
-    final command = ProjectPlanningToolCommandService._requiredString(
-      arguments['command'],
-      'command',
-    );
-    final id = context.builder.addCommandCheck(
-      taskReference: task,
-      command: command,
-      workingDirectory:
-          ProjectPlanningToolCommandService._optionalString(
-            arguments['working_directory'],
-            'working_directory',
-          ) ??
-          '.',
-      criterionRefs: ProjectPlanningToolCommandService._optionalStringList(
-        arguments['criterion_refs'],
-        'criterion_refs',
-      ),
-      required:
-          ProjectPlanningToolCommandService._optionalBool(
-            arguments['required'],
-            'required',
-          ) ??
-          true,
-      description: ProjectPlanningToolCommandService._optionalString(
-        arguments['description'],
-        'description',
-      ),
-      commandId: commandId,
-    );
-    return {
-      'task': task,
-      'check': {'id': 'command_passes', 'expectation_id': id},
     };
   }
 

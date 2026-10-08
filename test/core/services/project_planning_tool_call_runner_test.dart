@@ -45,17 +45,24 @@ void main() {
         _call('plan_add_task', {
           'ref': 'implement',
           'objective': 'Implement the bounded outcome.',
-          'criterion_refs': ['quality'],
+          'acceptance': [
+            {
+              'ref': 'quality-proof',
+              'statement': 'The bounded outcome is verified.',
+              'criterion_refs': ['quality'],
+              'verifiers': [
+                {
+                  'kind': 'command',
+                  'command': 'dart test',
+                  'working_directory': '.',
+                  'required': true,
+                },
+              ],
+            },
+          ],
           'milestone_ref': 'delivery',
-          'done_criteria': ['The outcome is verified.'],
           'out_of_scope': ['Unrelated project work.'],
         }, id: 'call_tasks'),
-        _call('plan_add_check', {
-          'task': 'implement',
-          'kind': 'command',
-          'command': 'dart test',
-          'criterion_refs': ['quality'],
-        }, id: 'call_check'),
         _call('plan_commit', const {}, id: 'call_commit'),
       ]),
       registry: registry,
@@ -74,8 +81,8 @@ void main() {
     expect(context.draftTitle, 'Bounded Project');
     expect(context.draftRefinedGoal, 'Deliver one verified bounded outcome.');
     final metrics = result['planning_metrics'] as Map<String, dynamic>;
-    expect(metrics['planningCalls'], 6);
-    expect(metrics['planningCommandCount'], 6);
+    expect(metrics['planningCalls'], 5);
+    expect(metrics['planningCommandCount'], 5);
     expect(metrics['invalidCommandCount'], 0);
   });
 
@@ -179,8 +186,8 @@ void main() {
             index.isEven
                 ? {'objective': 'Implement the bounded outcome.'}
                 : {
-                    'criterion_refs': ['criterion_001'],
-                    'done_criteria': ['The outcome is verified.'],
+                    'objective': 'Implement the bounded outcome.',
+                    'acceptance': [],
                     'out_of_scope': ['Unrelated work.'],
                   },
             id: 'invalid_$index',
@@ -215,7 +222,7 @@ void main() {
           _call('plan_add_task', {
             'ref': 'invalid',
             'objective': 'Missing criterion reference.',
-            'criterion_refs': ['missing'],
+            'acceptance': [],
           }, id: 'invalid-task'),
           _call('plan_add_criteria', {
             'criteria': [
@@ -225,8 +232,16 @@ void main() {
           _call('plan_add_task', {
             'ref': 'valid',
             'objective': 'Verify the outcome.',
-            'criterion_refs': ['quality'],
-            'done_criteria': ['The outcome is verified.'],
+            'acceptance': [
+              {
+                'ref': 'quality-proof',
+                'statement': 'The outcome is verified.',
+                'criterion_refs': ['quality'],
+                'verifiers': [
+                  {'kind': 'review', 'required': true},
+                ],
+              },
+            ],
             'out_of_scope': ['Unrelated work.'],
           }, id: 'valid-task'),
           _call('plan_commit', const {}, id: 'commit'),

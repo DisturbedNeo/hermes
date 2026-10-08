@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:hermes/core/json_parsing.dart';
+import 'package:hermes/core/contracts/acceptance_compiler.dart';
 import 'package:hermes/core/contracts/model_conversation.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/model_json.dart';
@@ -491,13 +492,19 @@ class TaskGateEvaluator {
     TaskStep step,
     TaskGate noFailedGate,
   ) {
-    final taskScoped = noFailedGate.scope.trim().toLowerCase() == 'task';
-    final gates = taskScoped
-        ? <TaskGate>[
-            ...task.gates,
-            for (final taskStep in task.steps) ...taskStep.gates,
-          ]
-        : step.gates;
+    final gates = [
+      for (final verifier in const AcceptanceCompiler().compile(task.acceptance).verifiers)
+        for (final kind in verifier.gateKinds)
+          TaskGate(
+            id: kind,
+            required: verifier.required,
+            scope: step.acceptanceRefs.contains(verifier.acceptanceRef)
+                ? 'step'
+                : 'task',
+            params: verifier.params,
+            description: verifier.statement,
+          ),
+    ];
     final required = <String>{};
     final advisory = <String>{};
     for (final gate in gates) {
@@ -723,6 +730,14 @@ $prompt
         'scope': gate.scope,
         if (gate.description?.trim().isNotEmpty == true)
           'description': gate.description,
+        // Preserve canonical acceptance routing on observations so project
+        // evidence and views can attribute results without exposing internal
+        // gate IDs as planner inputs.
+        if (gate.params['acceptance_ref'] != null)
+          'acceptance_ref': gate.params['acceptance_ref'],
+        if (gate.params['verifier_index'] != null)
+          'verifier_index': gate.params['verifier_index'],
+        if (gate.params['path'] != null) 'path': gate.params['path'],
         ...details,
       },
       failureDisposition:

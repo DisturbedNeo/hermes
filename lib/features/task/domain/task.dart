@@ -25,11 +25,9 @@ class TaskAggregate implements TaskProjectNodeSource, TaskExecutionSource {
   final String originalPrompt;
   final String objective;
   final List<String> constraints;
-  final List<String> successCriteria;
-  final List<TaskGate> gates;
   final List<TaskStep> steps;
   final TaskStatus status;
-  final List<String> criterionIds;
+  final List<AcceptanceItem> acceptance;
   final String? milestoneId;
   final List<String> dependsOnTaskIds;
   final TaskPriority priority;
@@ -39,13 +37,10 @@ class TaskAggregate implements TaskProjectNodeSource, TaskExecutionSource {
   final String selectionRationale;
   final int revisionIntroduced;
   final int revisionUpdated;
-  final List<TaskEvidenceExpectation> expectedEvidence;
   final List<String> readPaths;
   final List<String> writePaths;
-  final List<String> doneCriteria;
   final List<String> outOfScope;
   final List<String> context;
-  final List<TaskArtifact> expectedArtifacts;
   final String? recoveryIncidentId;
   final String fingerprint;
   final String? rejectionReason;
@@ -77,11 +72,9 @@ class TaskAggregate implements TaskProjectNodeSource, TaskExecutionSource {
     String? originalPrompt,
     String? objective,
     List<String> constraints = const [],
-    List<String> successCriteria = const [],
-    List<TaskGate> gates = const [],
     List<TaskStep> steps = const [],
     this.status = TaskStatus.paused,
-    List<String> criterionIds = const [],
+    List<AcceptanceItem> acceptance = const [],
     this.milestoneId,
     List<String> dependsOnTaskIds = const [],
     this.priority = TaskPriority.normal,
@@ -91,13 +84,10 @@ class TaskAggregate implements TaskProjectNodeSource, TaskExecutionSource {
     this.selectionRationale = '',
     this.revisionIntroduced = 1,
     this.revisionUpdated = 1,
-    List<TaskEvidenceExpectation> expectedEvidence = const [],
     List<String> readPaths = const [],
     List<String> writePaths = const [],
-    List<String> doneCriteria = const [],
     List<String> outOfScope = const [],
     List<String> context = const [],
-    List<TaskArtifact> expectedArtifacts = const [],
     this.recoveryIncidentId,
     this.fingerprint = '',
     this.rejectionReason,
@@ -118,45 +108,28 @@ class TaskAggregate implements TaskProjectNodeSource, TaskExecutionSource {
   }) : constraints = identical(collectionsOwnership, _ownedCollectionsToken)
            ? constraints
            : List.unmodifiable(constraints),
-       successCriteria = identical(collectionsOwnership, _ownedCollectionsToken)
-           ? successCriteria
-           : List.unmodifiable(successCriteria),
-       gates = identical(collectionsOwnership, _ownedCollectionsToken)
-           ? gates
-           : List.unmodifiable(gates),
        steps = identical(collectionsOwnership, _ownedCollectionsToken)
            ? steps
            : List.unmodifiable(steps),
-       criterionIds = identical(collectionsOwnership, _ownedCollectionsToken)
-           ? criterionIds
-           : List.unmodifiable(criterionIds),
+       acceptance = identical(collectionsOwnership, _ownedCollectionsToken)
+           ? acceptance
+           : List.unmodifiable(acceptance),
        dependsOnTaskIds =
            identical(collectionsOwnership, _ownedCollectionsToken)
            ? dependsOnTaskIds
            : List.unmodifiable(dependsOnTaskIds),
-       expectedEvidence =
-           identical(collectionsOwnership, _ownedCollectionsToken)
-           ? expectedEvidence
-           : List.unmodifiable(expectedEvidence),
        readPaths = identical(collectionsOwnership, _ownedCollectionsToken)
            ? readPaths
            : List.unmodifiable(readPaths),
        writePaths = identical(collectionsOwnership, _ownedCollectionsToken)
            ? writePaths
            : List.unmodifiable(writePaths),
-       doneCriteria = identical(collectionsOwnership, _ownedCollectionsToken)
-           ? doneCriteria
-           : List.unmodifiable(doneCriteria),
        outOfScope = identical(collectionsOwnership, _ownedCollectionsToken)
            ? outOfScope
            : List.unmodifiable(outOfScope),
        context = identical(collectionsOwnership, _ownedCollectionsToken)
            ? context
            : List.unmodifiable(context),
-       expectedArtifacts =
-           identical(collectionsOwnership, _ownedCollectionsToken)
-           ? expectedArtifacts
-           : List.unmodifiable(expectedArtifacts),
        runs = identical(collectionsOwnership, _ownedCollectionsToken)
            ? runs
            : List.unmodifiable(runs),
@@ -170,11 +143,9 @@ class TaskAggregate implements TaskProjectNodeSource, TaskExecutionSource {
     String? originalPrompt,
     String? objective,
     List<String>? constraints,
-    List<String>? successCriteria,
-    List<TaskGate>? gates,
     List<TaskStep>? steps,
     TaskStatus? status,
-    List<String>? criterionIds,
+    List<AcceptanceItem>? acceptance,
     Object? milestoneId = kSentinel,
     List<String>? dependsOnTaskIds,
     TaskPriority? priority,
@@ -184,13 +155,10 @@ class TaskAggregate implements TaskProjectNodeSource, TaskExecutionSource {
     String? selectionRationale,
     int? revisionIntroduced,
     int? revisionUpdated,
-    List<TaskEvidenceExpectation>? expectedEvidence,
     List<String>? readPaths,
     List<String>? writePaths,
-    List<String>? doneCriteria,
     List<String>? outOfScope,
     List<String>? context,
-    List<TaskArtifact>? expectedArtifacts,
     Object? recoveryIncidentId = kSentinel,
     String? fingerprint,
     Object? rejectionReason = kSentinel,
@@ -215,11 +183,9 @@ class TaskAggregate implements TaskProjectNodeSource, TaskExecutionSource {
       originalPrompt: originalPrompt ?? this.originalPrompt,
       objective: objective ?? this.objective,
       constraints: constraints ?? this.constraints,
-      successCriteria: successCriteria ?? this.successCriteria,
-      gates: gates ?? this.gates,
       steps: steps ?? this.steps,
       status: status ?? this.status,
-      criterionIds: criterionIds ?? this.criterionIds,
+      acceptance: acceptance ?? this.acceptance,
       milestoneId: resolve(milestoneId, this.milestoneId),
       dependsOnTaskIds: dependsOnTaskIds ?? this.dependsOnTaskIds,
       priority: priority ?? this.priority,
@@ -229,13 +195,10 @@ class TaskAggregate implements TaskProjectNodeSource, TaskExecutionSource {
       selectionRationale: selectionRationale ?? this.selectionRationale,
       revisionIntroduced: revisionIntroduced ?? this.revisionIntroduced,
       revisionUpdated: revisionUpdated ?? this.revisionUpdated,
-      expectedEvidence: expectedEvidence ?? this.expectedEvidence,
       readPaths: readPaths ?? this.readPaths,
       writePaths: writePaths ?? this.writePaths,
-      doneCriteria: doneCriteria ?? this.doneCriteria,
       outOfScope: outOfScope ?? this.outOfScope,
       context: context ?? this.context,
-      expectedArtifacts: expectedArtifacts ?? this.expectedArtifacts,
       recoveryIncidentId: resolve(recoveryIncidentId, this.recoveryIncidentId),
       fingerprint: fingerprint ?? this.fingerprint,
       rejectionReason: resolve(rejectionReason, this.rejectionReason),

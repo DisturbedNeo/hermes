@@ -3,6 +3,7 @@ import 'package:hermes/app/test_factories.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/chat/application/contracts/chat_message.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
@@ -29,7 +30,19 @@ void main() {
         _call('task_set_brief', {
           'title': 'Incremental task',
           'objective': 'Implement the bounded change.',
-          'success_criteria': ['The bounded change is complete.'],
+        }),
+        _call('task_add_acceptance', {
+          'ref': 'bounded-change',
+          'statement': 'The bounded change is complete.',
+          'criterion_refs': [],
+          'verifiers': [
+            {
+              'kind': 'command',
+              'command': 'dart test test/example_test.dart',
+              'working_directory': '.',
+              'required': true,
+            },
+          ],
         }),
         _call('task_add_step', {
           'ref': 'implement',
@@ -37,10 +50,6 @@ void main() {
           'objective': 'Implement the bounded change.',
           'instructions': ['Make the change and keep it focused.'],
           'may_edit_files': true,
-        }),
-        _call('task_add_check', {
-          'command': 'dart test test/example_test.dart',
-          'working_directory': '.',
         }),
         _call('task_commit_plan', const {}),
       ]);
@@ -60,15 +69,19 @@ void main() {
       expect(task.title, 'Incremental task');
       expect(task.steps, hasLength(1));
       expect(task.steps.single.id, startsWith('step_'));
-      expect(task.gates.map((gate) => gate.id), contains('command_passes'));
+      expect(task.acceptance, isNotEmpty);
+      expect(
+        task.acceptance.expand((item) => item.verifiers).map((verifier) => verifier.kind),
+        contains(AcceptanceVerifierKind.command),
+      );
       expect(task.planningMetrics.planningCalls, 4);
       expect(task.planningMetrics.planningCommandCount, 4);
       expect(task.planningMetrics.promptTokenEstimate, greaterThan(0));
       expect(task.planningMetrics.toolResultTokenEstimate, greaterThan(0));
       expect(client.toolNames, [
         'task_set_brief',
+        'task_add_acceptance',
         'task_add_step',
-        'task_add_check',
         'task_commit_plan',
       ]);
     },

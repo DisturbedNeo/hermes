@@ -12,7 +12,6 @@ import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/task/application/protocol/planning_runtime.dart';
 import 'package:hermes/features/task/application/protocol/planning_structured_output.dart';
 import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
-import 'package:hermes/features/project/runtime/project_plan_patch.dart';
 import 'package:hermes/features/project/runtime/project_planning_tools.dart';
 import 'package:hermes/features/project/runtime/project_planning_policy.dart';
 import 'package:hermes/features/project/runtime/project_planning_workspace_reader.dart';
@@ -26,7 +25,6 @@ export 'package:hermes/features/project/runtime/project_planning_gateway.dart'
     show
         ProjectCompletionAssessment,
         ProjectEvidenceSnapshot,
-        ProjectInitialPlanResult,
         ProjectIncrementalPlanResult,
         ProjectPlanner,
         ProjectCompletionEvaluator;
@@ -68,87 +66,6 @@ class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
       cancellationToken: cancellationToken,
     ),
   )).toMap();
-
-  /// Legacy compatibility entry point for callers that still understand the
-  /// old initialization patch format. Normal project creation never invokes
-  /// this method; it persists a shell and uses [revisePlanWithCommands].
-  @Deprecated('Use revisePlanWithCommands for project planning.')
-  Future<ProjectInitialPlanResult> initializePlan({
-    required ModelConversationPort client,
-    required String baseSystemPrompt,
-    required WorkspaceAttachment workspace,
-    required String originalGoal,
-    required ProjectPlanningWorkspaceMetadata workspaceMetadata,
-    ModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) async {
-    try {
-      return await _completeInitialPlanning(
-        client: client,
-        baseSystemPrompt: baseSystemPrompt,
-        workspace: workspace,
-        originalGoal: originalGoal,
-        workspaceMetadata: workspaceMetadata,
-        onModelOutput: onModelOutput,
-        cancellationToken: cancellationToken,
-      );
-    } on OperationCancelledException {
-      rethrow;
-    } on ChatTransportException {
-      rethrow;
-    } catch (error) {
-      return _fallbackInitialPlan(
-        originalGoal,
-        planningError: 'Initial project planning failed: $error',
-      );
-    }
-  }
-
-  /// Legacy compatibility entry point. Normal project planning does not use
-  /// full-plan repair.
-  @Deprecated('Use revisePlanWithCommands for project planning.')
-  Future<ProjectInitialPlanResult?> repairInitialPlan({
-    required ModelConversationPort client,
-    required String baseSystemPrompt,
-    required WorkspaceAttachment workspace,
-    required String originalGoal,
-    required ProjectPlanningWorkspaceMetadata workspaceMetadata,
-    required ProjectInitialPlanResult initialPlan,
-    required List<ProjectPlanValidationIssue> validationIssues,
-    ModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) async {
-    try {
-      return await _completeInitialPlanning(
-        client: client,
-        baseSystemPrompt: baseSystemPrompt,
-        workspace: workspace,
-        originalGoal: originalGoal,
-        workspaceMetadata: workspaceMetadata,
-        onModelOutput: onModelOutput,
-        cancellationToken: cancellationToken,
-        additionalInstruction:
-            '''
-Repair the previous draft by resolving every structured validation issue below.
-Preserve the user's original outcome and do not invent workspace state. Build
-the corrected draft through the planning commands and commit it with
-plan_commit.
-
-Validation issues:
-${_encoder.convert(validationIssues.map((issue) => issue.toMap()).toList())}
-
-Previous draft:
-${_encoder.convert(_initialPlanToMap(initialPlan))}
-''',
-      );
-    } on OperationCancelledException {
-      rethrow;
-    } on ChatTransportException {
-      return null;
-    } catch (_) {
-      return null;
-    }
-  }
 
   @override
   Future<ProjectIncrementalPlanResult> maintainWorkspaceGraph({
@@ -301,8 +218,8 @@ navigation.pages metadata and call project_view again with section and
 next_cursor when a collection has more items. Search cursors retain their
 search scope. Use task_upsert to create or update one bounded task, and use
 project_update for project details, criteria, and milestones. Task creation
-accepts inline criteria, dependencies, and checks; the same task_upsert
-command can add checks independently later. Numeric references from
+accepts canonical acceptance, dependencies, and verifier declarations in one
+payload. Numeric references from
 project_view are stable project-local IDs. Completed, failed, split, rejected,
 cancelled, and running task history is immutable.
 
@@ -387,12 +304,12 @@ split command reports a validation error, correct the child payload and retry
 the split before committing; a failed split is atomic and leaves the draft
 unchanged.
 
-Each child must have one clear objective, explicit done_criteria,
-out_of_scope, read_paths, write_paths, and any required expected_artifacts.
+Each child must have one clear objective, explicit acceptance, out_of_scope,
+read_paths, and write_paths.
 Keep the children small enough to execute independently and address every
 reported violation. Keep every parent criterion on at least one child. Each
-deterministic criterion must be covered by a required child `checks` entry;
-reuse the parent command when it remains valid, or provide the narrowest
+deterministic criterion must be covered by a required child acceptance
+verifier; reuse the parent command when it remains valid, or provide the narrowest
 appropriate verification command. A successful plan_commit is the only
 completion signal.
 ''',
@@ -581,239 +498,6 @@ ${_encoder.convert(snakeCaseWire(ModelJson.encode(project)))}
     return result.value;
   }
 
-  Future<ProjectInitialPlanResult> _completeInitialPlanning({
-    required ModelConversationPort client,
-    required String baseSystemPrompt,
-    required WorkspaceAttachment workspace,
-    required String originalGoal,
-    required ProjectPlanningWorkspaceMetadata workspaceMetadata,
-    ModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-    String additionalInstruction = '',
-  }) async {
-    final now = DateTime.now();
-    final context = ProjectPlanningContext(
-      project: _initialPlanDraft(originalGoal, now),
-      workspaceRoot: workspace.rootPath,
-      now: now,
-      approvalPolicy: ProjectPlanApprovalPolicy.never,
-      deferRevision: true,
-      summary: 'Create the initial project roadmap.',
-      rationale:
-          'Create a bounded, executable plan from the supplied goal and workspace profile.',
-      planningPass: ProjectPlanningPass.bootstrap,
-      planningLimits: ProjectPlanningLimits.bootstrap,
-      workspaceReader: ProjectPlanningWorkspaceReader(
-        workspace: workspace,
-        sandbox: _sandbox,
-        allowedPaths: _workspaceFilesFromMetadata(workspaceMetadata.toWire()),
-        cancellationToken: cancellationToken,
-      ),
-    );
-    final registry = ProjectPlanningToolRegistry(
-      context: context,
-      profile: ProjectPlanningToolProfile.bootstrap,
-      includeProjectDetails: true,
-    );
-    final result = await _runPlanning(
-      client: client,
-      registry: registry,
-      label: 'Project Initial Planning',
-      system:
-          '''
-$baseSystemPrompt
-
-You are planning a new project through explicit planning commands. Do not return a complete project JSON document and do not execute workspace changes. The planning registry is the only tool surface available.
-Tool arguments must follow their schemas, but the plan itself must be built through tool calls rather than returned as a large JSON document.
-Your job is to create and commit the roadmap, not to solve or implement its
-tasks during planning. Read workspace files only when they resolve a planning
-uncertainty, then express implementation and verification work as bounded
-tasks. Once there is enough context for an executable task list, stop exploring
-and commit the plan.
-The workspace profile below is a compact bootstrap map. When the goal depends
-on a file, especially a design, specification, requirements, architecture, or
-instruction document, use planning_read_file to read that existing file before
-deriving requirements.
-The reader is read-only, limited to files in the discovery tree, and has a
-finite byte budget. If a result has has_more=true, continue at its next_start_line.
-Do not use it to inspect unrelated files; use the tree and the goal to choose
-only the smallest set of files needed for the initial plan.
-Use project_submit_plan once to submit the complete bounded frontier: title,
-refined goal, constraints, criteria, optional milestones, and no more than
-three tasks. Tasks may include dependencies, task-local criteria, and required
-command checks in the same call. Use numeric references from the tool schema;
-do not invent persistent IDs or temporary alphanumeric references. The call
-creates a validated draft only. For later repairs or independent changes, use
-project_update and task_upsert. Mutation responses include validation and the
-normalized draft. Finish with the explicit plan_commit command; it is the only
-completion signal.
-Use project_view when you need a bounded summary or detail, then call plan_commit
-when the plan is complete. Do not supply IDs, statuses, timestamps, revisions,
-gates, evidence IDs, or runtime execution fields.
-'''
-              .trim(),
-      user:
-          '''
-Create the initial project plan for this user goal.
-
-Original user goal:
-$originalGoal
-
-Bounded workspace profile:
-${_encoder.convert(_compactWorkspaceMetadata(workspaceMetadata.toWire()))}
-${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
-''',
-      onModelOutput: onModelOutput,
-      cancellationToken: cancellationToken,
-    );
-    if (result['ok'] != true || context.committedProposal == null) {
-      throw FormatException(
-        'Initial planning did not commit a valid draft: ${result['message'] ?? result['code'] ?? 'unknown error'}.',
-      );
-    }
-    return _initialPlanFromPlanningContext(
-      context,
-      context.committedProposal!,
-      originalGoal: originalGoal,
-      planningMetrics: _planningMetricsFromResult(result),
-    );
-  }
-
-  ProjectAggregate _initialPlanDraft(String originalGoal, DateTime now) =>
-      ProjectAggregate(
-        id: 'initial-plan-draft',
-        title: _titleFromGoal(originalGoal),
-        originalGoal: originalGoal,
-        refinedGoal: originalGoal,
-        criteria: const [],
-        constraints: const ['Stay within the attached workspace.'],
-        tasks: const [],
-        milestones: const [],
-        memory: const [],
-        planHistory: const [],
-        status: ProjectStatus.initializing,
-        activeTaskId: null,
-        createdAt: now,
-        updatedAt: now,
-      );
-
-  ProjectInitialPlanResult _initialPlanFromPlanningContext(
-    ProjectPlanningContext context,
-    ProjectDesiredPlan proposal, {
-    required String originalGoal,
-    PlanningMetrics planningMetrics = const PlanningMetrics(),
-  }) {
-    final title = context.draftTitle.trim().isEmpty
-        ? _titleFromGoal(originalGoal)
-        : context.draftTitle;
-    final refinedGoal = context.draftRefinedGoal.trim().isEmpty
-        ? originalGoal
-        : context.draftRefinedGoal;
-    return ProjectInitialPlanResult(
-      patch: ProjectPlanPatch.initial(
-        proposal,
-        title: title,
-        refinedGoal: refinedGoal,
-        constraints: context.draftConstraints,
-      ),
-      planningMetrics: planningMetrics,
-    );
-  }
-
-  Map<String, dynamic> _compactWorkspaceMetadata(
-    Map<String, dynamic> metadata,
-  ) {
-    final normalized = snakeCaseMap(metadata);
-    final profile = normalized['workspace_profile'];
-    if (profile is! Map) return normalized;
-    final profileMap = Map<String, dynamic>.from(profile);
-    List<String> strings(Object? value, {int limit = 80}) => [
-      if (value is List)
-        for (final item in value)
-          if (item is String) item,
-    ].take(limit).toList();
-    final readableFiles = strings(
-      profileMap['tree_paths'],
-      limit: 400,
-    ).where((item) => !item.endsWith('/')).toList();
-    return {
-      'workspace_name': normalized['workspace_name'],
-      'command_execution_approved': normalized['command_execution_approved'],
-      'root_entries': strings(normalized['root_entries']),
-      'git_available': normalized['git_available'] == true,
-      'changed_files': strings(normalized['changed_files']),
-      'tree_paths': strings(profileMap['tree_paths'], limit: 200),
-      'readable_files': readableFiles,
-      'package_name': profileMap['package_name'],
-      'scripts': profileMap['scripts'],
-      'dependencies': strings(profileMap['dependencies']),
-      'languages': strings(profileMap['languages']),
-      'frameworks': strings(profileMap['frameworks']),
-      'tree_truncated': profileMap['tree_truncated'] == true,
-      'omitted_path_count': profileMap['omitted_path_count'],
-      'context_warnings': strings(
-        (profileMap['required_context_issues'] is List)
-            ? (profileMap['required_context_issues'] as List)
-                  .whereType<Map>()
-                  .map(
-                    (item) => '${item['path'] ?? ''}: ${item['message'] ?? ''}',
-                  )
-                  .toList()
-            : const [],
-        limit: 20,
-      ),
-    };
-  }
-
-  List<String> _workspaceFilesFromMetadata(Map<String, dynamic> metadata) {
-    final profile = snakeCaseMap(metadata)['workspace_profile'];
-    if (profile is! Map) return const [];
-    final treePaths = profile['tree_paths'];
-    if (treePaths is! List) return const [];
-    return [
-      for (final item in treePaths)
-        if (item is String && !item.endsWith('/')) item,
-    ];
-  }
-
-  Map<String, dynamic> _initialPlanToMap(ProjectInitialPlanResult value) => {
-    'title': value.patch.title,
-    'refined_goal': value.patch.refinedGoal,
-    'constraints': value.patch.constraints,
-    'plan': snakeCaseWire(ModelJson.encode(value.patch.plan)),
-    if (value.planningError != null) 'planning_error': value.planningError,
-  };
-
-  ProjectInitialPlanResult _fallbackInitialPlan(
-    String originalGoal, {
-    String? planningError,
-  }) {
-    final now = DateTime.now();
-    return ProjectInitialPlanResult(
-      patch: ProjectPlanPatch.initial(
-        ProjectDesiredPlan(
-          revision: 1,
-          triggers: const [ProjectPlanRevisionTrigger.initialization],
-          summary: 'Initial project roadmap.',
-          rationale: 'Created from the safe project fallback.',
-          criteria: [
-            ProjectCriterion(
-              id: 'criterion_001',
-              statement: 'Complete the stated project goal.',
-              createdAt: now,
-              updatedAt: now,
-            ),
-          ],
-          createdAt: now,
-        ),
-        title: _titleFromGoal(originalGoal),
-        refinedGoal: originalGoal,
-        constraints: const ['Stay within the attached workspace.'],
-      ),
-      planningError: planningError,
-    );
-  }
-
   List<PendingProjectQuestion> _questionsFromJson(Object? value) {
     if (value is! List) return const [];
     return value.whereType<Map>().map((raw) {
@@ -828,13 +512,6 @@ ${additionalInstruction.trim().isEmpty ? '' : '\n\n$additionalInstruction'}
     }).toList();
   }
 
-  String _titleFromGoal(String goal) {
-    final singleLine = goal.trim().replaceAll(RegExp(r'\s+'), ' ');
-    if (singleLine.isEmpty) return 'Untitled project';
-    return singleLine.length <= 60
-        ? singleLine
-        : '${singleLine.substring(0, 57)}...';
-  }
 }
 
 const String _completionEvaluationSystemInstruction = '''

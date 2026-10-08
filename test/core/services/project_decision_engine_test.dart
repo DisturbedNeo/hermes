@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/runtime/project_decision_engine.dart';
 
@@ -100,7 +101,14 @@ ProjectTaskNode _task() {
     id: 'task_1',
     title: 'Task',
     objective: 'Do the task',
-    criterionIds: const ['criterion_1'],
+    acceptance: const [
+      AcceptanceItem(
+        ref: 'works',
+        statement: 'The task works.',
+        criterionIds: ['criterion_1'],
+        verifiers: [AcceptanceVerifier(kind: AcceptanceVerifierKind.review)],
+      ),
+    ],
     status: TaskStatus.queued,
     createdAt: now,
     updatedAt: now,

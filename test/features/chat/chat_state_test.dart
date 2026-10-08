@@ -72,7 +72,7 @@ void main() {
     taskConstraints.add('mutated later');
 
     expect(taskPanel.steps, isEmpty);
-    expect(taskPanel.doneCriteria, isEmpty);
+    expect(taskPanel.acceptance, isEmpty);
     expect(() => taskPanel.steps.clear(), throwsUnsupportedError);
 
     final criteria = <ProjectCriterion>[

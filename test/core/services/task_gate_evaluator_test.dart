@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/chat/application/contracts/chat_message.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
@@ -47,7 +48,6 @@ void main() {
         originalPrompt: 'Do work',
         objective: 'Do work',
         constraints: const [],
-        successCriteria: const ['Done'],
         steps: [step],
         status: TaskStatus.paused,
         currentStepId: step.id,
@@ -387,8 +387,23 @@ void main() {
           required: false,
           params: {'command': 'dart analyze', 'working_directory': '.'},
         );
-        final advisoryStep = step.copyWith(gates: const [advisoryGate]);
-        final advisoryTask = task.copyWith(steps: [advisoryStep]);
+        final advisoryStep = step;
+        final advisoryTask = task.copyWith(
+          acceptance: const [
+            AcceptanceItem(
+              ref: 'advisory-analysis',
+              statement: 'The analyzer result is advisory.',
+              verifiers: [
+                AcceptanceVerifier(
+                  kind: AcceptanceVerifierKind.command,
+                  command: 'dart analyze',
+                  required: false,
+                ),
+                AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+              ],
+            ),
+          ],
+        );
         final evaluation = await evaluator.evaluate(
           workspace: workspace,
           task: advisoryTask,
@@ -420,13 +435,23 @@ void main() {
     );
 
     test('unrelated failed commands remain blocking', () async {
-      const advisoryGate = TaskGate(
-        id: 'command_passes',
-        required: false,
-        params: {'command': 'dart analyze', 'working_directory': '.'},
+      final advisoryStep = step;
+      final advisoryTask = task.copyWith(
+        acceptance: const [
+          AcceptanceItem(
+            ref: 'advisory-analysis',
+            statement: 'The analyzer result is advisory.',
+            verifiers: [
+              AcceptanceVerifier(
+                kind: AcceptanceVerifierKind.command,
+                command: 'dart analyze',
+                required: false,
+              ),
+              AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+            ],
+          ),
+        ],
       );
-      final advisoryStep = step.copyWith(gates: const [advisoryGate]);
-      final advisoryTask = task.copyWith(steps: [advisoryStep]);
       final evaluation = await evaluator.evaluate(
         workspace: workspace,
         task: advisoryTask,

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/planning_test_helpers.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/runtime/task_plan_builder.dart';
 import 'package:hermes/features/task/runtime/task_planning_tools.dart';
@@ -43,23 +44,9 @@ void main() {
           createdAt: now,
         ),
       ),
-      requiredEvidence: const [
-        TaskProjectEvidenceExpectation(
-          id: 'expect_1',
-          criterionIds: ['criterion_1'],
-          description: 'The criterion is checked.',
-        ),
-      ],
     );
 
-    expect((view['required_project_evidence'] as List).single, {
-      'type': 'task_claim',
-      'criterion_refs': ['criterion_1'],
-      'description': 'The criterion is checked.',
-      'required': true,
-      'source_ref': null,
-      'details': {},
-    });
+    expect((view['acceptance'] as List).single['ref'], 'task-complete');
     expect((view['control'] as Map)['outcome'], 'awaiting_approval');
     expect(
       ((view['control'] as Map)['pending_approval'] as Map)['step_ref'],
@@ -148,7 +135,7 @@ void main() {
   });
 
   test(
-    'task checks can use the same temporary step references as task_view',
+    'task acceptance can use the same temporary step references as task_view',
     () async {
       final context = TaskPlanningToolContext(
         task: _task(),
@@ -157,24 +144,42 @@ void main() {
       );
       final registry = TaskPlanningToolRegistry(context: context);
 
+      final acceptance = await invokePlanning(registry, 'task_add_acceptance', {
+        'ref': 'tests-pass',
+        'statement': 'The focused tests pass.',
+        'verifiers': [
+          {'kind': 'command', 'command': 'dart test test/example_test.dart'},
+        ],
+      });
+      expect(acceptance['ok'], isTrue);
       await invokePlanning(registry, 'task_add_step', {
         'ref': 'verify',
         'objective': 'Verify the bounded outcome.',
         'instructions': ['Run the verification.'],
+        'acceptance_refs': ['tests-pass'],
       });
-      final checked = await invokePlanning(registry, 'task_add_check', {
-        'step_ref': 'verify',
-        'command': 'dart test test/example_test.dart',
-      });
-
-      expect(checked['ok'], isTrue);
-      expect((checked['check'] as Map)['step_ref'], 'verify');
-      expect(((checked['check'] as Map)['step'] as Map)['ref'], 'verify');
+      expect(context.builder.steps.single.acceptanceRefs, ['tests-pass']);
     },
   );
 
   test('builder generates step and check identity and validates the draft', () {
-    final builder = TaskPlanBuilder(task: _task(), maxSteps: 2);
+    final baseTask = _task().copyWith(
+      acceptance: const [],
+    );
+    final builder = TaskPlanBuilder(task: baseTask, maxSteps: 2);
+
+    builder.addAcceptance(
+      item: const AcceptanceItem(
+        ref: 'tests-pass',
+        statement: 'The focused tests pass.',
+        verifiers: [
+          AcceptanceVerifier(
+            kind: AcceptanceVerifierKind.command,
+            command: 'dart test test/example_test.dart',
+          ),
+        ],
+      ),
+    );
 
     final firstId = builder.addStep(
       const TaskPlanStepSpec(
@@ -188,33 +193,31 @@ void main() {
             description: 'Inspection notes',
           ),
         ],
+        acceptanceRefs: ['tests-pass'],
       ),
       commandId: 'add-inspect',
-    );
-    final expectationId = builder.addCheck(
-      stepReference: 'inspect',
-      command: 'dart test test/example_test.dart',
-      commandId: 'check-tests',
     );
     final committed = builder.commit();
 
     expect(firstId, startsWith('step_'));
-    expect(expectationId, startsWith('expect_'));
     expect(committed.valid, isTrue);
     expect(committed.task.steps.single.id, firstId);
-    expect(committed.task.steps.single.gates.map((gate) => gate.id), [
-      'artifact_exists',
-      'artifact_nonempty',
-      'command_passes',
-    ]);
-    expect(committed.task.expectedEvidence.single.id, expectationId);
+    expect(committed.task.acceptance.single.ref, 'tests-pass');
 
-    final taskLevelBuilder = TaskPlanBuilder(task: _task(), maxSteps: 2);
-    taskLevelBuilder.addCheck(command: 'dart analyze');
-    expect(
-      taskLevelBuilder.commit().task.gates.map((gate) => gate.id),
-      contains('command_passes'),
+    final taskLevelBuilder = TaskPlanBuilder(task: baseTask, maxSteps: 2);
+    taskLevelBuilder.addAcceptance(
+      item: const AcceptanceItem(
+        ref: 'analysis',
+        statement: 'Analysis passes.',
+        verifiers: [
+          AcceptanceVerifier(
+            kind: AcceptanceVerifierKind.command,
+            command: 'dart analyze',
+          ),
+        ],
+      ),
     );
+    expect(taskLevelBuilder.commit().task.acceptance.single.ref, 'analysis');
   });
 
   test(
@@ -345,6 +348,19 @@ void main() {
 
   test('directory artifacts use the same actual-type non-empty gate', () {
     final builder = TaskPlanBuilder(task: _task(), maxSteps: 2);
+    builder.addAcceptance(
+      item: const AcceptanceItem(
+        ref: 'directory-output',
+        statement: 'The output directory exists and is usable.',
+        verifiers: [
+          AcceptanceVerifier(
+            kind: AcceptanceVerifierKind.artifact,
+            path: 'build/output',
+            artifactKind: 'directory',
+          ),
+        ],
+      ),
+    );
     builder.addStep(
       const TaskPlanStepSpec(
         ref: 'directory',
@@ -352,20 +368,19 @@ void main() {
         objective: 'Create the output directory.',
         instructions: ['Create the directory.'],
         artifacts: [TaskArtifact(path: 'build/output', kind: 'directory')],
+        acceptanceRefs: ['directory-output'],
       ),
     );
 
     final committed = builder.commit();
     expect(committed.valid, isTrue);
     expect(committed.task.steps.single.artifacts.single.kind, 'directory');
-    expect(committed.task.steps.single.gates.map((gate) => gate.id), [
-      'artifact_exists',
-      'artifact_nonempty',
-    ]);
+    expect(committed.task.acceptance.last.ref, 'directory-output');
   });
 
   test('required project command checks match canonical directory fields', () {
     final source = _task().copyWith(
+      acceptance: const [],
       steps: const [
         TaskStep(
           id: 'existing',
@@ -377,37 +392,49 @@ void main() {
           status: TaskStepStatus.pending,
         ),
       ],
-      gates: const [
-        TaskGate(
-          id: 'command_passes',
-          required: false,
-          params: {'command': 'dart test', 'working_directory': '.'},
-        ),
-      ],
     );
     final builder = TaskPlanBuilder(
       task: source,
       maxSteps: 2,
-      requiredGates: const [
-        TaskGate(
-          id: 'command_passes',
-          params: {'command': 'dart test', 'working_directory': '.'},
+      acceptance: const [
+        AcceptanceItem(
+          ref: 'project-tests',
+          statement: 'The project tests pass.',
+          verifiers: [
+            AcceptanceVerifier(
+              kind: AcceptanceVerifierKind.command,
+              command: 'dart test',
+            ),
+          ],
         ),
       ],
     );
 
     final committed = builder.commit();
     expect(committed.valid, isTrue);
-    expect(committed.task.gates, hasLength(1));
-    expect(committed.task.gates.single.required, isTrue);
+    expect(committed.task.acceptance.single.ref, 'project-tests');
   });
 
   test('rejects terminal-policy-blocked checks while adding them', () {
-    final builder = TaskPlanBuilder(task: _task(), maxSteps: 2);
+    final builder = TaskPlanBuilder(
+      task: _task().copyWith(
+        acceptance: const [],
+      ),
+      maxSteps: 2,
+    );
 
     expect(
-      () => builder.addCheck(
-        command: 'test -f output.txt && n=\$(grep -c pattern output.txt)',
+      () => builder.addAcceptance(
+        item: const AcceptanceItem(
+          ref: 'blocked',
+          statement: 'The blocked command must not be accepted.',
+          verifiers: [
+            AcceptanceVerifier(
+              kind: AcceptanceVerifierKind.command,
+              command: 'test -f output.txt && n=\$(grep -c pattern output.txt)',
+            ),
+          ],
+        ),
       ),
       throwsA(
         isA<TaskPlanBuilderException>()
@@ -419,18 +446,21 @@ void main() {
             ),
       ),
     );
-    expect(builder.taskGates, isEmpty);
+    expect(builder.acceptance, isEmpty);
   });
 
   test('reports blocked pre-existing checks during final validation', () {
     final source = _task().copyWith(
-      gates: const [
-        TaskGate(
-          id: 'command_passes',
-          params: {
-            'command': 'echo "\$(cat secrets.txt)"',
-            'working_directory': '.',
-          },
+      acceptance: const [
+        AcceptanceItem(
+          ref: 'blocked',
+          statement: 'The command must be safe.',
+          verifiers: [
+            AcceptanceVerifier(
+              kind: AcceptanceVerifierKind.command,
+              command: 'echo "\$(cat secrets.txt)"',
+            ),
+          ],
         ),
       ],
     );
@@ -458,7 +488,13 @@ TaskAggregate _task({List<TaskStep> steps = const []}) {
     id: 'task_1',
     title: 'Bounded task',
     objective: 'Complete the bounded task.',
-    successCriteria: const ['The bounded task is complete.'],
+    acceptance: const [
+      AcceptanceItem(
+        ref: 'task-complete',
+        statement: 'The bounded task is complete.',
+        verifiers: [AcceptanceVerifier(kind: AcceptanceVerifierKind.review)],
+      ),
+    ],
     steps: steps,
     status: TaskStatus.paused,
     createdAt: now,

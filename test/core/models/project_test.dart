@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/domain/task.dart' as task_domain;
+import 'package:hermes/core/contracts/acceptance.dart';
 
 void main() {
   test('aggregate collections are detached and immutable', () {
@@ -85,11 +86,16 @@ void main() {
       id: 'task_1',
       title: 'Task',
       objective: 'Do one thing',
-      criterionIds: const ['criterion_1'],
-      doneCriteria: const ['Done'],
+      acceptance: const [
+        AcceptanceItem(
+          ref: 'done',
+          statement: 'Done',
+          criterionIds: ['criterion_1'],
+          verifiers: [AcceptanceVerifier(kind: AcceptanceVerifierKind.review)],
+        ),
+      ],
       outOfScope: const ['Everything else'],
       context: const [],
-      expectedArtifacts: const [],
       status: TaskStatus.completed,
       fingerprint: 'task',
       rejectionReason: null,
@@ -105,11 +111,16 @@ void main() {
       id: 'project_task_1',
       title: 'Task',
       objective: 'Do one bounded thing',
-      criterionIds: const ['criterion_1'],
-      doneCriteria: const ['Done'],
+      acceptance: const [
+        AcceptanceItem(
+          ref: 'done',
+          statement: 'Done',
+          criterionIds: ['criterion_1'],
+          verifiers: [AcceptanceVerifier(kind: AcceptanceVerifierKind.review)],
+        ),
+      ],
       outOfScope: const ['Everything else'],
       context: const [],
-      expectedArtifacts: const [],
       status: TaskStatus.running,
       fingerprint: 'task',
       rejectionReason: null,

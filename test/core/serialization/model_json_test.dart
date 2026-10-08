@@ -9,6 +9,7 @@ import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/chat/application/contracts/system_prompt.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/model_json.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/task/application/contracts/question_policy_service.dart';
 import 'package:hermes/features/task/application/contracts/task_planning_models.dart';
 import 'package:hermes/platform/tools/calculator_tool.dart';
@@ -83,7 +84,6 @@ void main() {
       instructions: const ['Do it'],
       mayEditFiles: true,
       artifacts: [artifact],
-      gates: [gate],
       status: TaskStepStatus.pending,
     );
     final run = TaskRun(
@@ -138,10 +138,10 @@ void main() {
     final brief = ModelJson.decode<RefinedTaskBrief>({
       'title': 'Brief',
       'goal': 'Ship',
-      'successCriteria': ['Works'],
+      'assumptions': ['Use the workspace.'],
     });
     expect(brief.goal, 'Ship');
-    expect(ModelJson.encode(brief)['successCriteria'], ['Works']);
+    expect(ModelJson.encode(brief)['assumptions'], ['Use the workspace.']);
   });
 
   test('project DTOs preserve clean-slate maps and defaults', () {
@@ -157,11 +157,20 @@ void main() {
       id: 'project_task_1',
       title: 'Task',
       objective: 'Work',
-      criterionIds: const ['criterion_1'],
-      doneCriteria: const ['Done'],
+      acceptance: const [
+        AcceptanceItem(
+          ref: 'report-produced',
+          statement: 'The report is produced.',
+          verifiers: [
+            AcceptanceVerifier(
+              kind: AcceptanceVerifierKind.artifact,
+              path: 'out.md',
+            ),
+          ],
+        ),
+      ],
       outOfScope: const [],
       context: const [],
-      expectedArtifacts: [artifact],
       status: TaskStatus.queued,
       fingerprint: 'fingerprint',
       rejectionReason: null,
@@ -212,7 +221,8 @@ void main() {
       containsPair('taskId', 'project_task_1'),
     );
 
-    expect(ModelJson.encode(task)['expectedArtifacts'], hasLength(1));
+    expect(ModelJson.encode(task)['acceptance'], hasLength(1));
+    expect(ModelJson.encode(task), isNot(contains('expectedArtifacts')));
     expect(ModelJson.encode(task)['failure'], {
       'gateId': 'no_tool_errors',
       'disposition': 'repairable',
@@ -330,12 +340,23 @@ void main() {
       final planning = TaskPlanningContext(
         projectGoal: 'Build',
         projectTaskObjective: 'Implement',
-        expectedArtifacts: const [TaskArtifact(path: 'out.md')],
-        requiredGates: const [TaskGate(id: 'tests')],
+        acceptance: const [
+          AcceptanceItem(
+            ref: 'report-produced',
+            statement: 'The report is produced.',
+            verifiers: [
+              AcceptanceVerifier(
+                kind: AcceptanceVerifierKind.artifact,
+                path: 'out.md',
+              ),
+            ],
+          ),
+        ],
       );
-      expect(ModelJson.encode(planning)['expectedArtifacts'], [
-        {'path': 'out.md'},
-      ]);
+      final encodedPlanning = ModelJson.encode(planning);
+      expect(encodedPlanning['acceptance'], isNotEmpty);
+      expect(encodedPlanning, isNot(contains('expectedArtifacts')));
+      expect(encodedPlanning, isNot(contains('requiredGates')));
 
       const diagnostics = ProjectDiagnostics(
         projectModelCalls: 7,

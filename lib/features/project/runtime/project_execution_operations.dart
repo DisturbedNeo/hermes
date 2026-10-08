@@ -1028,37 +1028,22 @@ extension ProjectExecutionOperations on ProjectExecutionUseCase {
     if (task.objective.trim().isEmpty) {
       violations.add('Task objective is empty.');
     }
-    if (task.doneCriteria.isEmpty) {
-      violations.add('Task has no done criteria.');
+    if (task.acceptance.isEmpty) {
+      violations.add('Task has no acceptance contract.');
     }
     if (task.outOfScope.isEmpty) {
       violations.add('Task has no out-of-scope boundaries.');
     }
     final projectCriterionIds = project.criteria.map((item) => item.id).toSet();
-    if (task.criterionIds.isEmpty) {
+    final taskCriterionIds = {
+      for (final item in task.acceptance) ...item.criterionIds,
+    };
+    if (taskCriterionIds.isEmpty) {
       violations.add('Task has no project criterion IDs.');
     }
-    for (final criterionId in task.criterionIds) {
+    for (final criterionId in taskCriterionIds) {
       if (!projectCriterionIds.contains(criterionId)) {
         violations.add('Task references unknown criterion $criterionId.');
-      }
-    }
-    for (final expectation in task.expectedEvidence) {
-      if (expectation.criterionIds.isEmpty) {
-        violations.add(
-          'Evidence expectation ${expectation.id} has no criterion IDs.',
-        );
-      }
-      for (final criterionId in expectation.criterionIds) {
-        if (!projectCriterionIds.contains(criterionId)) {
-          violations.add(
-            'Evidence expectation ${expectation.id} references unknown criterion $criterionId.',
-          );
-        } else if (!task.criterionIds.contains(criterionId)) {
-          violations.add(
-            'Evidence expectation ${expectation.id} references criterion $criterionId outside the task.',
-          );
-        }
       }
     }
     if (task.recoveryIncidentId == null &&
@@ -1085,15 +1070,12 @@ extension ProjectExecutionOperations on ProjectExecutionUseCase {
     if (_looksOversized(task.objective)) {
       violations.add('Task objective is too broad for a project task.');
     }
-    if (task.criterionIds.length > 3) {
+    if (taskCriterionIds.length > 3) {
       violations.add('Task covers too many success criteria.');
     }
     if (project.criteria.length > 1 &&
-        task.criterionIds.length >= project.criteria.length) {
+        taskCriterionIds.length >= project.criteria.length) {
       violations.add('Task covers the entire project success criteria set.');
-    }
-    if (task.doneCriteria.length > 5) {
-      violations.add('Task has too many done criteria.');
     }
     if (task.objective.length > 700) {
       violations.add('Task objective is too long.');
@@ -1139,9 +1121,11 @@ extension ProjectExecutionOperations on ProjectExecutionUseCase {
     required List<String> violations,
     required DateTime now,
   }) {
-    final criteria = <String>{
-      ...failedTask.criterionIds,
-      ...duplicateTask.criterionIds,
+    final acceptance = duplicateTask.acceptance.isEmpty
+        ? failedTask.acceptance
+        : duplicateTask.acceptance;
+    final criteria = {
+      for (final item in acceptance) ...item.criterionIds,
     }.toList();
     final objective =
         'Retry failed project task after addressing the previous failure: ${failedTask.objective}';
@@ -1149,10 +1133,7 @@ extension ProjectExecutionOperations on ProjectExecutionUseCase {
       id: 'project_retry_${uuid.v7()}',
       title: 'Retry ${failedTask.title}',
       objective: objective,
-      criterionIds: criteria,
-      doneCriteria: duplicateTask.doneCriteria.isEmpty
-          ? failedTask.doneCriteria
-          : duplicateTask.doneCriteria,
+      acceptance: acceptance,
       outOfScope: duplicateTask.outOfScope.isEmpty
           ? failedTask.outOfScope
           : duplicateTask.outOfScope,
@@ -1164,15 +1145,6 @@ extension ProjectExecutionOperations on ProjectExecutionUseCase {
         'Duplicate proposal was converted into a retry instead of halting the project.',
         ...violations,
       ],
-      expectedEvidence: _recoveryPolicy.replacementExpectedEvidence(
-        source: failedTask.expectedEvidence,
-        additions: duplicateTask.expectedEvidence,
-        criterionIds: criteria,
-        idPrefix: 'retry_expectation',
-      ),
-      expectedArtifacts: duplicateTask.expectedArtifacts.isEmpty
-          ? failedTask.expectedArtifacts
-          : duplicateTask.expectedArtifacts,
       readPaths: duplicateTask.readPaths.isEmpty
           ? failedTask.readPaths
           : duplicateTask.readPaths,
@@ -1181,7 +1153,7 @@ extension ProjectExecutionOperations on ProjectExecutionUseCase {
           : duplicateTask.writePaths,
       status: TaskStatus.queued,
       recoveryIncidentId: null,
-      fingerprint: projectTaskFingerprint(objective, criteria),
+      fingerprint: projectTaskFingerprint(objective, criteria, acceptance),
       rejectionReason: null,
       createdAt: now,
       updatedAt: now,
@@ -1218,40 +1190,19 @@ extension ProjectExecutionOperations on ProjectExecutionUseCase {
       knownFacts: [...memoryContext.lines, ...task.context],
       workspaceOrientation: workspaceContext.orientation,
       workspaceContext: workspaceContext.lines,
-      doneCriteria: task.doneCriteria,
+      acceptance: task.acceptance,
       outOfScope: task.outOfScope,
-      expectedArtifacts: task.expectedArtifacts
-          .map(
-            (artifact) => TaskArtifact(
-              path: artifact.path,
-              description: artifact.description,
-              kind: artifact.kind,
-            ),
-          )
-          .toList(),
-      requiredGates: _recoveryPolicy.requiredGatesForTask(project, task),
-      criterionIds: task.criterionIds,
       criteria: [
         for (final criterion in plan.criteria)
-          if (task.criterionIds.contains(criterion.id))
+          if (task.acceptance.any(
+            (item) => item.criterionIds.contains(criterion.id),
+          ))
             TaskProjectCriterion(
               id: criterion.id,
               statement: criterion.statement,
               required: criterion.required,
               verificationMode: criterion.verificationMode.name,
             ),
-      ],
-      expectedEvidence: [
-        for (final expectation in task.expectedEvidence)
-          TaskProjectEvidenceExpectation(
-            id: expectation.id,
-            type: _projectEvidenceTypeWire(expectation.type),
-            criterionIds: expectation.criterionIds,
-            description: expectation.description,
-            required: expectation.required,
-            sourceRef: expectation.sourceRef,
-            details: expectation.details,
-          ),
       ],
       readPaths: task.readPaths,
       writePaths: task.writePaths,

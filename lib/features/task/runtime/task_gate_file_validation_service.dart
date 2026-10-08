@@ -461,6 +461,11 @@ class TaskGateFileValidationService {
         'scope': gate.scope,
         if (gate.description?.trim().isNotEmpty == true)
           'description': gate.description,
+        if (gate.params['acceptance_ref'] != null)
+          'acceptance_ref': gate.params['acceptance_ref'],
+        if (gate.params['verifier_index'] != null)
+          'verifier_index': gate.params['verifier_index'],
+        if (gate.params['path'] != null) 'path': gate.params['path'],
         ...details,
       },
       failureDisposition:

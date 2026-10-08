@@ -13,12 +13,7 @@ class ChatPresentationMessageBuilder {
       ..writeln('Task brief refined: **${brief.title}**')
       ..writeln()
       ..writeln('Goal:')
-      ..writeln(brief.goal)
-      ..writeln()
-      ..writeln('Success criteria:');
-    for (final item in brief.successCriteria) {
-      buffer.writeln('- $item');
-    }
+      ..writeln(brief.goal);
     if (brief.constraints.isNotEmpty) {
       buffer
         ..writeln()

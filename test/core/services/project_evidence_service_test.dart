@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/runtime/project_criterion_evaluator.dart';
@@ -47,7 +48,12 @@ void main() {
               gateId: 'command_passes',
               status: TaskGateStatus.passed,
               summary: 'All tests passed.',
-              details: const {'required': true, 'command': 'flutter test'},
+              details: const {
+                'required': true,
+                'command': 'flutter test',
+                'acceptance_ref': 'report-verification',
+                'verifier_index': 0,
+              },
               evaluatedAt: timestamp,
             ),
           ],
@@ -116,20 +122,28 @@ void main() {
         final project = _project(
           timestamp,
           verificationMode: ProjectVerificationMode.deterministic,
-          expectedEvidence: const [
-            TaskEvidenceExpectation(
-              id: 'expect_command',
-              type: ProjectEvidenceType.command,
+          acceptance: const [
+            AcceptanceItem(
+              ref: 'focused-tests',
+              statement: 'The focused tests pass.',
               criterionIds: ['criterion_001'],
-              description: 'The focused tests pass.',
-              sourceRef: 'flutter test',
+              verifiers: [
+                AcceptanceVerifier(
+                  kind: AcceptanceVerifierKind.command,
+                  command: 'flutter test',
+                ),
+              ],
             ),
-            TaskEvidenceExpectation(
-              id: 'expect_artifact',
-              type: ProjectEvidenceType.artifact,
+            AcceptanceItem(
+              ref: 'report-exists',
+              statement: 'The report exists.',
               criterionIds: ['criterion_001'],
-              description: 'The report exists.',
-              sourceRef: 'report.md',
+              verifiers: [
+                AcceptanceVerifier(
+                  kind: AcceptanceVerifierKind.artifact,
+                  path: 'report.md',
+                ),
+              ],
             ),
           ],
         );
@@ -144,7 +158,12 @@ void main() {
                 gateId: 'command_passes',
                 status: TaskGateStatus.passed,
                 summary: 'Tests passed.',
-                details: const {'required': true, 'command': 'flutter test'},
+                details: const {
+                  'required': true,
+                  'command': 'flutter test',
+                  'acceptance_ref': 'focused-tests',
+                  'verifier_index': 0,
+                },
                 evaluatedAt: timestamp,
               ),
             ],
@@ -156,7 +175,7 @@ void main() {
           evaluatedAt: timestamp,
         );
 
-        expect(commandOnly.single.expectationIds, ['expect_command']);
+        expect(commandOnly.single.expectationIds, ['acceptance_focused-tests_0']);
         expect(partial.criteria.single.status, ProjectCriterionStatus.partial);
 
         final completeEvidence = evidenceService.normalizeTaskResult(
@@ -184,7 +203,10 @@ void main() {
           evaluatedAt: timestamp,
         );
 
-        expect(completeEvidence.last.expectationIds, ['expect_artifact']);
+        expect(
+          completeEvidence.last.expectationIds,
+          ['acceptance_report-exists_0'],
+        );
         expect(
           complete.criteria.single.status,
           ProjectCriterionStatus.satisfied,
@@ -205,21 +227,28 @@ void main() {
         updatedAt: timestamp,
       );
       final task = project.tasks.single.copyWith(
-        criterionIds: const ['criterion_001', 'criterion_002'],
-        expectedEvidence: const [
-          TaskEvidenceExpectation(
-            id: 'expect_tests',
-            type: ProjectEvidenceType.command,
+        acceptance: const [
+          AcceptanceItem(
+            ref: 'tests-pass',
+            statement: 'The tests pass.',
             criterionIds: ['criterion_001'],
-            description: 'The tests pass.',
-            sourceRef: 'flutter test',
+            verifiers: [
+              AcceptanceVerifier(
+                kind: AcceptanceVerifierKind.command,
+                command: 'flutter test',
+              ),
+            ],
           ),
-          TaskEvidenceExpectation(
-            id: 'expect_format',
-            type: ProjectEvidenceType.command,
+          AcceptanceItem(
+            ref: 'format-pass',
+            statement: 'The formatter passes.',
             criterionIds: ['criterion_002'],
-            description: 'The formatter passes.',
-            sourceRef: 'flutter test',
+            verifiers: [
+              AcceptanceVerifier(
+                kind: AcceptanceVerifierKind.command,
+                command: 'flutter test',
+              ),
+            ],
           ),
         ],
       );
@@ -238,7 +267,12 @@ void main() {
               gateId: 'command_passes',
               status: TaskGateStatus.passed,
               summary: 'The shared verification command passed.',
-              details: const {'required': true, 'command': 'flutter test'},
+              details: const {
+                'required': true,
+                'command': 'flutter test',
+                'acceptance_ref': 'tests-pass',
+                'verifier_index': 0,
+              },
               evaluatedAt: timestamp,
             ),
           ],
@@ -246,7 +280,10 @@ void main() {
         evaluatedAt: timestamp,
       );
 
-      expect(evidence.single.expectationIds, ['expect_tests', 'expect_format']);
+      expect(evidence.single.expectationIds, [
+        'acceptance_tests-pass_0',
+        'acceptance_format-pass_0',
+      ]);
       expect(evidence.single.criterionIds, ['criterion_001', 'criterion_002']);
       final evaluated = criterionEvaluator.evaluateDeterministically(
         twoCriterionProject.copyWith(evidence: evidence),
@@ -264,13 +301,17 @@ void main() {
         final project = _project(
           timestamp,
           verificationMode: ProjectVerificationMode.deterministic,
-          expectedEvidence: const [
-            TaskEvidenceExpectation(
-              id: 'old_expectation',
-              type: ProjectEvidenceType.command,
+          acceptance: const [
+            AcceptanceItem(
+              ref: 'old-verification',
+              statement: 'The verification command passes.',
               criterionIds: ['criterion_001'],
-              description: 'The verification command passes.',
-              sourceRef: 'flutter test',
+              verifiers: [
+                AcceptanceVerifier(
+                  kind: AcceptanceVerifierKind.command,
+                  command: 'flutter test',
+                ),
+              ],
             ),
           ],
         );
@@ -279,13 +320,17 @@ void main() {
         );
         final replacementTask = project.tasks.single.copyWith(
           id: 'replacement_task',
-          expectedEvidence: const [
-            TaskEvidenceExpectation(
-              id: 'new_expectation',
-              type: ProjectEvidenceType.command,
+          acceptance: const [
+            AcceptanceItem(
+              ref: 'new-verification',
+              statement: 'The replacement verification command passes.',
               criterionIds: ['criterion_001'],
-              description: 'The replacement verification command passes.',
-              sourceRef: 'flutter test',
+              verifiers: [
+                AcceptanceVerifier(
+                  kind: AcceptanceVerifierKind.command,
+                  command: 'flutter test',
+                ),
+              ],
             ),
           ],
         );
@@ -303,7 +348,12 @@ void main() {
                 gateId: 'command_passes',
                 status: TaskGateStatus.passed,
                 summary: 'The replacement verification passed.',
-                details: const {'required': true, 'command': 'flutter test'},
+                details: const {
+                  'required': true,
+                  'command': 'flutter test',
+                  'acceptance_ref': 'new-verification',
+                  'verifier_index': 0,
+                },
                 evaluatedAt: timestamp,
               ),
             ],
@@ -317,7 +367,7 @@ void main() {
         );
 
         expect(evidence.single.taskId, 'replacement_task');
-        expect(evidence.single.expectationIds, ['new_expectation']);
+        expect(evidence.single.expectationIds, ['acceptance_new-verification_0']);
         expect(
           evaluated.criteria.single.status,
           ProjectCriterionStatus.satisfied,
@@ -328,12 +378,14 @@ void main() {
     test('associates an explicit claim with its evidence expectation', () {
       final project = _project(
         timestamp,
-        expectedEvidence: const [
-          TaskEvidenceExpectation(
-            id: 'expect_claim',
-            type: ProjectEvidenceType.taskClaim,
+        acceptance: const [
+          AcceptanceItem(
+            ref: 'outcome-confirmed',
+            statement: 'The task outcome is confirmed.',
             criterionIds: ['criterion_001'],
-            description: 'The task outcome is confirmed.',
+            verifiers: [
+              AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+            ],
           ),
         ],
       );
@@ -346,7 +398,7 @@ void main() {
           claims: const [
             TaskEvidenceClaim(
               criterionId: 'criterion_001',
-              expectationId: 'expect_claim',
+                acceptanceRef: 'outcome-confirmed',
               claim: 'The outcome is confirmed.',
               sourceRef: 'run_1',
             ),
@@ -355,7 +407,7 @@ void main() {
         evaluatedAt: timestamp,
       );
 
-      expect(evidence.single.expectationIds, ['expect_claim']);
+      expect(evidence.single.expectationIds, isEmpty);
     });
 
     test('model evidence labels cannot promote a task claim', () {
@@ -372,6 +424,7 @@ void main() {
           claims: const [
             TaskEvidenceClaim(
               criterionId: 'criterion_001',
+              acceptanceRef: 'report-verification',
               claim: 'The report passed.',
               evidenceType: TaskEvidenceClaimType.command,
               sourceRef: 'flutter test',
@@ -403,18 +456,22 @@ void main() {
       () {
         final project = _project(
           timestamp,
-          expectedEvidence: const [
-            TaskEvidenceExpectation(
-              id: 'expect_first',
-              type: ProjectEvidenceType.taskClaim,
+          acceptance: const [
+            AcceptanceItem(
+              ref: 'first-outcome',
+              statement: 'The first outcome is confirmed.',
               criterionIds: ['criterion_001'],
-              description: 'The first outcome is confirmed.',
+              verifiers: [
+                AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+              ],
             ),
-            TaskEvidenceExpectation(
-              id: 'expect_second',
-              type: ProjectEvidenceType.taskClaim,
+            AcceptanceItem(
+              ref: 'second-outcome',
+              statement: 'The second outcome is confirmed.',
               criterionIds: ['criterion_001'],
-              description: 'The second outcome is confirmed.',
+              verifiers: [
+                AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+              ],
             ),
           ],
         );
@@ -427,7 +484,7 @@ void main() {
             claims: const [
               TaskEvidenceClaim(
                 criterionId: 'criterion_001',
-                expectationId: 'expect_first',
+                acceptanceRef: 'first-outcome',
                 claim: 'The first outcome is confirmed.',
                 sourceRef: 'run_1',
                 suggestedStrength: TaskEvidenceClaimStrength.supporting,
@@ -466,6 +523,7 @@ void main() {
             claims: const [
               TaskEvidenceClaim(
                 criterionId: 'criterion_001',
+                acceptanceRef: 'report-verification',
                 claim: 'The final review confirms the report is usable.',
                 sourceRef: 'final review',
                 runId: 'run_final',
@@ -493,6 +551,7 @@ void main() {
           claims: [
             TaskEvidenceClaim(
               criterionId: 'criterion_001',
+              acceptanceRef: 'report-verification',
               claim: 'The report satisfies the bounded review.',
               sourceRef: 'final review',
               runId: runId,
@@ -534,21 +593,28 @@ void main() {
           updatedAt: timestamp,
         );
         final task = base.tasks.single.copyWith(
-          criterionIds: const ['criterion_001', 'criterion_002'],
-          expectedEvidence: const [
-            TaskEvidenceExpectation(
-              id: 'expect_tests',
-              type: ProjectEvidenceType.command,
+          acceptance: const [
+            AcceptanceItem(
+              ref: 'tests-pass',
+              statement: 'Tests pass.',
               criterionIds: ['criterion_001'],
-              description: 'Tests pass.',
-              sourceRef: 'flutter test',
+              verifiers: [
+                AcceptanceVerifier(
+                  kind: AcceptanceVerifierKind.command,
+                  command: 'flutter test',
+                ),
+              ],
             ),
-            TaskEvidenceExpectation(
-              id: 'expect_format',
-              type: ProjectEvidenceType.command,
+            AcceptanceItem(
+              ref: 'format-pass',
+              statement: 'Formatting passes.',
               criterionIds: ['criterion_002'],
-              description: 'Formatting passes.',
-              sourceRef: 'dart format --output=none .',
+              verifiers: [
+                AcceptanceVerifier(
+                  kind: AcceptanceVerifierKind.command,
+                  command: 'dart format --output=none .',
+                ),
+              ],
             ),
           ],
         );
@@ -569,7 +635,12 @@ void main() {
                 gateId: 'command_passes',
                 status: TaskGateStatus.passed,
                 summary: 'Tests passed.',
-                details: const {'required': true, 'command': 'flutter test'},
+                details: const {
+                  'required': true,
+                  'command': 'flutter test',
+                  'acceptance_ref': 'tests-pass',
+                  'verifier_index': 0,
+                },
                 evaluatedAt: timestamp,
               ),
             ],
@@ -598,7 +669,12 @@ void main() {
               gateId: 'command_passes',
               status: TaskGateStatus.passed,
               summary: 'Tests passed.',
-              details: const {'required': true, 'command': 'flutter test'},
+              details: const {
+                'required': true,
+                'command': 'flutter test',
+                'acceptance_ref': 'report-verification',
+                'verifier_index': 0,
+              },
               evaluatedAt: timestamp,
             ),
           ],
@@ -618,7 +694,12 @@ void main() {
               gateId: 'command_passes',
               status: TaskGateStatus.failed,
               summary: 'Analysis failed.',
-              details: const {'required': true, 'command': 'flutter analyze'},
+              details: const {
+                'required': true,
+                'command': 'flutter analyze',
+                'acceptance_ref': 'report-verification',
+                'verifier_index': 1,
+              },
               evaluatedAt: failedAt,
             ),
           ],
@@ -648,7 +729,12 @@ void main() {
             gateId: 'command_passes',
             status: TaskGateStatus.passed,
             summary: 'Passed.',
-            details: const {'required': true, 'command': 'dart test'},
+            details: const {
+              'required': true,
+              'command': 'dart test',
+              'acceptance_ref': 'report-verification',
+              'verifier_index': 3,
+            },
             evaluatedAt: timestamp,
           ),
         ],
@@ -677,7 +763,12 @@ void main() {
               gateId: 'command_passes',
               status: TaskGateStatus.failed,
               summary: 'Failed.',
-              details: const {'required': true, 'command': 'dart test'},
+              details: const {
+                'required': true,
+                'command': 'dart test',
+                'acceptance_ref': 'report-verification',
+                'verifier_index': 3,
+              },
               evaluatedAt: failedAt,
             ),
           ],
@@ -735,9 +826,10 @@ void main() {
             timestamp,
             summary: 'The report is usable.',
             claims: const [
-              TaskEvidenceClaim(
-                criterionId: 'criterion_001',
-                claim: 'The report is usable.',
+            TaskEvidenceClaim(
+              criterionId: 'criterion_001',
+              acceptanceRef: 'report-verification',
+              claim: 'The report is usable.',
                 sourceRef: 'run_1',
                 suggestedStrength: TaskEvidenceClaimStrength.supporting,
               ),
@@ -775,6 +867,7 @@ void main() {
           claims: const [
             TaskEvidenceClaim(
               criterionId: 'criterion_001',
+              acceptanceRef: 'report-verification',
               claim: 'The first bounded result is present.',
               sourceRef: 'run_1',
               suggestedStrength: TaskEvidenceClaimStrength.supporting,
@@ -812,6 +905,7 @@ void main() {
           claims: const [
             TaskEvidenceClaim(
               criterionId: 'criterion_001',
+              acceptanceRef: 'report-verification',
               claim: 'Work was attempted.',
               sourceRef: 'run_1',
             ),
@@ -849,6 +943,7 @@ void main() {
             claims: const [
               TaskEvidenceClaim(
                 criterionId: 'criterion_001',
+                acceptanceRef: 'report-verification',
                 claim: 'Work was attempted.',
                 sourceRef: 'run_1',
               ),
@@ -878,7 +973,7 @@ void main() {
 ProjectAggregate _project(
   DateTime timestamp, {
   ProjectVerificationMode verificationMode = ProjectVerificationMode.mixed,
-  List<TaskEvidenceExpectation> expectedEvidence = const [],
+  List<AcceptanceItem> acceptance = const [],
 }) {
   final criterion = ProjectCriterion(
     id: 'criterion_001',
@@ -891,12 +986,38 @@ ProjectAggregate _project(
     id: 'task_1',
     title: 'Create report',
     objective: 'Create the bounded report.',
-    criterionIds: const ['criterion_001'],
-    expectedEvidence: expectedEvidence,
-    doneCriteria: const ['Create the report.'],
+    acceptance: acceptance.isEmpty
+        ? const [
+            AcceptanceItem(
+              ref: 'report-verification',
+              statement: 'The report is verified.',
+              criterionIds: ['criterion_001'],
+              verifiers: [
+                AcceptanceVerifier(
+                  kind: AcceptanceVerifierKind.command,
+                  command: 'flutter test',
+                ),
+                AcceptanceVerifier(
+                  kind: AcceptanceVerifierKind.command,
+                  command: 'flutter analyze',
+                  required: false,
+                ),
+                AcceptanceVerifier(
+                  kind: AcceptanceVerifierKind.artifact,
+                  path: 'report.md',
+                  required: false,
+                ),
+                AcceptanceVerifier(
+                  kind: AcceptanceVerifierKind.command,
+                  command: 'dart test',
+                  required: false,
+                ),
+              ],
+            ),
+          ]
+        : acceptance,
     outOfScope: const ['Do not change unrelated files.'],
     context: const [],
-    expectedArtifacts: const [],
     status: TaskStatus.queued,
     fingerprint: 'create-report',
     rejectionReason: null,

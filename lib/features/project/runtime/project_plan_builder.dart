@@ -1,13 +1,17 @@
 import 'dart:convert';
 
 import 'package:hermes/core/uuid.dart';
+import 'package:hermes/core/contracts/acceptance_compiler.dart';
 import 'package:hermes/features/project/application/contracts/project_task_models.dart'
-    show ProjectTaskCheckSpec;
+    show
+        AcceptanceItem,
+        AcceptanceVerifierKind;
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/runtime/project_plan_revision_service.dart';
 import 'package:hermes/features/project/runtime/project_plan_validator.dart';
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
 import 'package:hermes/features/project/runtime/project_planning_policy.dart';
+import 'package:hermes/features/workspace/application/terminal_command_classifier.dart';
 
 /// A structured error returned by a draft command before commit.
 part 'project_plan_builder_workspace.dart';

@@ -1,6 +1,7 @@
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:hermes/features/workspace/application/workspace_discovery_profile.dart';
 import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 
 part 'task_planning_models.mapper.dart';
 
@@ -15,13 +16,9 @@ class TaskPlanningContext with TaskPlanningContextMappable {
   final List<String> knownFacts;
   final String workspaceOrientation;
   final List<String> workspaceContext;
-  final List<String> doneCriteria;
+  final List<AcceptanceItem> acceptance;
   final List<String> outOfScope;
-  final List<TaskArtifact> expectedArtifacts;
-  final List<TaskGate> requiredGates;
-  final List<String> criterionIds;
   final List<TaskProjectCriterion> criteria;
-  final List<TaskProjectEvidenceExpectation> expectedEvidence;
   final List<String> readPaths;
   final List<String> writePaths;
   final int maxSteps;
@@ -33,13 +30,9 @@ class TaskPlanningContext with TaskPlanningContextMappable {
     this.knownFacts = const [],
     this.workspaceOrientation = '',
     this.workspaceContext = const [],
-    this.doneCriteria = const [],
+    this.acceptance = const [],
     this.outOfScope = const [],
-    this.expectedArtifacts = const [],
-    this.requiredGates = const [],
-    this.criterionIds = const [],
     this.criteria = const [],
-    this.expectedEvidence = const [],
     this.readPaths = const [],
     this.writePaths = const [],
     this.maxSteps = 3,
@@ -49,24 +42,21 @@ class TaskPlanningContext with TaskPlanningContextMappable {
 /// Transient project evidence used while executing one task document.
 class TaskExecutionRequest {
   final TaskPlanningContext? planningContext;
-  final List<String> criterionIds;
+  final List<AcceptanceItem> acceptance;
   final List<TaskProjectCriterion> criteria;
-  final List<TaskProjectEvidenceExpectation> expectedEvidence;
 
   const TaskExecutionRequest({
     this.planningContext,
-    this.criterionIds = const [],
+    this.acceptance = const [],
     this.criteria = const [],
-    this.expectedEvidence = const [],
   });
 
   factory TaskExecutionRequest.fromPlanningContext(
     TaskPlanningContext context,
   ) => TaskExecutionRequest(
     planningContext: context,
-    criterionIds: context.criterionIds,
+    acceptance: context.acceptance,
     criteria: context.criteria,
-    expectedEvidence: context.expectedEvidence,
   );
 }
 

@@ -17,13 +17,11 @@ class ProjectTaskNodeMapper extends ClassMapperBase<ProjectTaskNode> {
     if (_instance == null) {
       MapperContainer.globals.use(_instance = ProjectTaskNodeMapper._());
       TaskStatusMapper.ensureInitialized();
-      TaskGateMapper.ensureInitialized();
       TaskPriorityMapper.ensureInitialized();
       TaskRiskMapper.ensureInitialized();
       ProjectRiskReductionMapper.ensureInitialized();
       TaskEffortMapper.ensureInitialized();
-      TaskEvidenceExpectationMapper.ensureInitialized();
-      TaskArtifactMapper.ensureInitialized();
+      AcceptanceItemMapper.ensureInitialized();
     }
     return _instance!;
   }
@@ -48,31 +46,10 @@ class ProjectTaskNodeMapper extends ClassMapperBase<ProjectTaskNode> {
     'status',
     _$status,
   );
-  static List<TaskGate> _$gates(ProjectTaskNode v) => v.gates;
-  static const Field<ProjectTaskNode, List<TaskGate>> _f$gates = Field(
-    'gates',
-    _$gates,
-    opt: true,
-    def: const [],
-  );
   static List<String> _$constraints(ProjectTaskNode v) => v.constraints;
   static const Field<ProjectTaskNode, List<String>> _f$constraints = Field(
     'constraints',
     _$constraints,
-    opt: true,
-    def: const [],
-  );
-  static List<String> _$successCriteria(ProjectTaskNode v) => v.successCriteria;
-  static const Field<ProjectTaskNode, List<String>> _f$successCriteria = Field(
-    'successCriteria',
-    _$successCriteria,
-    opt: true,
-    def: const [],
-  );
-  static List<String> _$criterionIds(ProjectTaskNode v) => v.criterionIds;
-  static const Field<ProjectTaskNode, List<String>> _f$criterionIds = Field(
-    'criterionIds',
-    _$criterionIds,
     opt: true,
     def: const [],
   );
@@ -141,15 +118,6 @@ class ProjectTaskNodeMapper extends ClassMapperBase<ProjectTaskNode> {
     opt: true,
     def: 1,
   );
-  static List<TaskEvidenceExpectation> _$expectedEvidence(ProjectTaskNode v) =>
-      v.expectedEvidence;
-  static const Field<ProjectTaskNode, List<TaskEvidenceExpectation>>
-  _f$expectedEvidence = Field(
-    'expectedEvidence',
-    _$expectedEvidence,
-    opt: true,
-    def: const [],
-  );
   static List<String> _$readPaths(ProjectTaskNode v) => v.readPaths;
   static const Field<ProjectTaskNode, List<String>> _f$readPaths = Field(
     'readPaths',
@@ -161,13 +129,6 @@ class ProjectTaskNodeMapper extends ClassMapperBase<ProjectTaskNode> {
   static const Field<ProjectTaskNode, List<String>> _f$writePaths = Field(
     'writePaths',
     _$writePaths,
-    opt: true,
-    def: const [],
-  );
-  static List<String> _$doneCriteria(ProjectTaskNode v) => v.doneCriteria;
-  static const Field<ProjectTaskNode, List<String>> _f$doneCriteria = Field(
-    'doneCriteria',
-    _$doneCriteria,
     opt: true,
     def: const [],
   );
@@ -185,10 +146,9 @@ class ProjectTaskNodeMapper extends ClassMapperBase<ProjectTaskNode> {
     opt: true,
     def: const [],
   );
-  static List<TaskArtifact> _$expectedArtifacts(ProjectTaskNode v) =>
-      v.expectedArtifacts;
-  static const Field<ProjectTaskNode, List<TaskArtifact>> _f$expectedArtifacts =
-      Field('expectedArtifacts', _$expectedArtifacts, opt: true, def: const []);
+  static List<AcceptanceItem> _$acceptance(ProjectTaskNode v) => v.acceptance;
+  static const Field<ProjectTaskNode, List<AcceptanceItem>> _f$acceptance =
+      Field('acceptance', _$acceptance, opt: true, def: const []);
   static String? _$recoveryIncidentId(ProjectTaskNode v) =>
       v.recoveryIncidentId;
   static const Field<ProjectTaskNode, String> _f$recoveryIncidentId = Field(
@@ -256,10 +216,7 @@ class ProjectTaskNodeMapper extends ClassMapperBase<ProjectTaskNode> {
     #title: _f$title,
     #objective: _f$objective,
     #status: _f$status,
-    #gates: _f$gates,
     #constraints: _f$constraints,
-    #successCriteria: _f$successCriteria,
-    #criterionIds: _f$criterionIds,
     #milestoneId: _f$milestoneId,
     #dependsOnTaskIds: _f$dependsOnTaskIds,
     #priority: _f$priority,
@@ -269,13 +226,11 @@ class ProjectTaskNodeMapper extends ClassMapperBase<ProjectTaskNode> {
     #selectionRationale: _f$selectionRationale,
     #revisionIntroduced: _f$revisionIntroduced,
     #revisionUpdated: _f$revisionUpdated,
-    #expectedEvidence: _f$expectedEvidence,
     #readPaths: _f$readPaths,
     #writePaths: _f$writePaths,
-    #doneCriteria: _f$doneCriteria,
     #outOfScope: _f$outOfScope,
     #context: _f$context,
-    #expectedArtifacts: _f$expectedArtifacts,
+    #acceptance: _f$acceptance,
     #recoveryIncidentId: _f$recoveryIncidentId,
     #fingerprint: _f$fingerprint,
     #rejectionReason: _f$rejectionReason,
@@ -296,10 +251,7 @@ class ProjectTaskNodeMapper extends ClassMapperBase<ProjectTaskNode> {
       title: data.dec(_f$title),
       objective: data.dec(_f$objective),
       status: data.dec(_f$status),
-      gates: data.dec(_f$gates),
       constraints: data.dec(_f$constraints),
-      successCriteria: data.dec(_f$successCriteria),
-      criterionIds: data.dec(_f$criterionIds),
       milestoneId: data.dec(_f$milestoneId),
       dependsOnTaskIds: data.dec(_f$dependsOnTaskIds),
       priority: data.dec(_f$priority),
@@ -309,13 +261,11 @@ class ProjectTaskNodeMapper extends ClassMapperBase<ProjectTaskNode> {
       selectionRationale: data.dec(_f$selectionRationale),
       revisionIntroduced: data.dec(_f$revisionIntroduced),
       revisionUpdated: data.dec(_f$revisionUpdated),
-      expectedEvidence: data.dec(_f$expectedEvidence),
       readPaths: data.dec(_f$readPaths),
       writePaths: data.dec(_f$writePaths),
-      doneCriteria: data.dec(_f$doneCriteria),
       outOfScope: data.dec(_f$outOfScope),
       context: data.dec(_f$context),
-      expectedArtifacts: data.dec(_f$expectedArtifacts),
+      acceptance: data.dec(_f$acceptance),
       recoveryIncidentId: data.dec(_f$recoveryIncidentId),
       fingerprint: data.dec(_f$fingerprint),
       rejectionReason: data.dec(_f$rejectionReason),
@@ -340,7 +290,6 @@ class ProjectTaskNodeMapper extends ClassMapperBase<ProjectTaskNode> {
     return ensureInitialized().decodeJson<ProjectTaskNode>(json);
   }
 }
-
 /// @nodoc
 mixin ProjectTaskNodeMappable {
   String toJson() {

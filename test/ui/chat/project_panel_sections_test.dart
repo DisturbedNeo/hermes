@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/chat/application/chat_panel_projection.dart';
@@ -106,11 +107,16 @@ TaskAggregate _task({
     id: id,
     title: title,
     objective: 'Complete the bounded task.',
-    criterionIds: const ['criterion_1'],
-    doneCriteria: const ['The bounded task is complete.'],
+    acceptance: const [
+      AcceptanceItem(
+        ref: 'complete',
+        statement: 'The bounded task is complete.',
+        criterionIds: ['criterion_1'],
+        verifiers: [AcceptanceVerifier(kind: AcceptanceVerifierKind.review)],
+      ),
+    ],
     outOfScope: const ['Unrelated work.'],
     context: const [],
-    expectedArtifacts: const [],
     status: status,
     fingerprint: id,
     rejectionReason: null,

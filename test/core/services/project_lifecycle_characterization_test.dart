@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/model_json.dart';
@@ -176,11 +177,16 @@ TaskAggregate _task(String id, TaskStatus status) {
     id: id,
     title: id,
     objective: 'Do $id',
-    criterionIds: const ['criterion_1'],
-    doneCriteria: const ['Done.'],
+    acceptance: const [
+      AcceptanceItem(
+        ref: 'done',
+        statement: 'Done.',
+        criterionIds: ['criterion_1'],
+        verifiers: [AcceptanceVerifier(kind: AcceptanceVerifierKind.review)],
+      ),
+    ],
     outOfScope: const ['Everything else.'],
     context: const [],
-    expectedArtifacts: const [],
     status: status,
     fingerprint: id,
     rejectionReason: null,

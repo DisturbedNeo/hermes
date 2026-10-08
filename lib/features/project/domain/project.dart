@@ -333,7 +333,9 @@ class ProjectAggregate {
       _idForAgentNumber(taskAgentNumbers, number);
 
   List<String> criterionStatementsFor(ProjectTaskNode task) => [
-    for (final criterionId in task.criterionIds)
+    for (final criterionId in {
+      for (final item in task.acceptance) ...item.criterionIds,
+    })
       criterionStatement(criterionId),
   ];
 

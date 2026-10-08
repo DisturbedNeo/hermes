@@ -15,13 +15,13 @@ import 'package:hermes/features/model/application/model_completion_port.dart';
 import 'package:hermes/features/project/application/project_application/project_execution_port.dart';
 import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
 import 'package:hermes/features/project/runtime/project_planning_policy.dart';
-import 'package:hermes/features/project/runtime/project_plan_patch.dart';
 import 'package:hermes/features/project/domain/project_scheduler.dart';
 import 'package:hermes/features/project/application/project_application/project_application.dart';
 import 'package:hermes/features/project/infrastructure/project_repository.dart';
 import 'package:hermes/features/project/infrastructure/project_aggregate_repository.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/features/task/application/contracts/task_planning_models.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/model/application/model_output.dart';
 import 'package:hermes/features/task/infrastructure/task_repository.dart';
 import 'package:hermes/features/task/application/task_application/task_plan_materializer.dart';
@@ -153,9 +153,9 @@ void main() {
   });
 
   test(
-    'persists a shell without invoking the legacy initial planner',
+    'persists a shell before planning is requested',
     () async {
-      final gateway = _InitialisationGateway(_invalidInitialisation());
+      final gateway = _TestProjectGateway();
       final planningService = createTestProjectApplication(
         taskController: taskController,
         planner: gateway,
@@ -170,17 +170,13 @@ void main() {
 
       expect(project.status, ProjectStatus.paused);
       expect(project.tasks, isEmpty);
-      expect(gateway.repairCalls, 0);
     },
   );
 
   test(
-    'does not perform waterfall initial-plan repairs during creation',
+    'does not perform planning repairs during creation',
     () async {
-      final gateway = _InitialisationGateway(
-        _invalidInitialisation(),
-        repairedPlans: [_invalidInitialisation(), _validInitialisation()],
-      );
+      final gateway = _TestProjectGateway();
       final planningService = createTestProjectApplication(
         taskController: taskController,
         planner: gateway,
@@ -195,7 +191,6 @@ void main() {
 
       expect(project.status, ProjectStatus.paused);
       expect(project.tasks, isEmpty);
-      expect(gateway.repairCalls, 0);
     },
   );
 
@@ -224,14 +219,6 @@ void main() {
         milestoneId: milestone.id,
         writePaths: const ['lib/project_slice.dart'],
         selectionRationale: 'The task is the smallest executable next step.',
-        expectedEvidence: const [
-          TaskEvidenceExpectation(
-            id: 'expectation_gate',
-            type: ProjectEvidenceType.gate,
-            criterionIds: ['criterion_1'],
-            description: 'The bounded implementation gate passes.',
-          ),
-        ],
       );
       final revisedProject = blocked.copyWith(
         tasks: [revisedTask],
@@ -239,10 +226,7 @@ void main() {
         status: ProjectStatus.active,
         blocker: null,
       );
-      final gateway = _InitialisationGateway(
-        _validInitialisation(),
-        revisedProject: revisedProject,
-      );
+      final gateway = _TestProjectGateway(revisedProject: revisedProject);
       final planningService = createTestProjectApplication(
         taskController: taskController,
         planner: gateway,
@@ -304,7 +288,7 @@ void main() {
     expect(result.project.tasks, hasLength(1));
     expect(result.project.tasks.single.status, TaskStatus.completed);
     expect(result.project.activeTaskId, isNull);
-    expect(result.project.status, ProjectStatus.paused);
+    expect(result.project.status, ProjectStatus.completed);
     expect(result.activeTask?.status, TaskStatus.completed);
   });
 
@@ -368,7 +352,7 @@ void main() {
   test(
     'does not replan immediately after a successful task in the same batch',
     () async {
-      final gateway = _InitialisationGateway(_validInitialisation());
+      final gateway = _TestProjectGateway();
       final planningService = createTestProjectApplication(
         taskController: taskController,
         planner: gateway,
@@ -615,7 +599,15 @@ void main() {
       planningContext: const TaskPlanningContext(
         projectGoal: 'Build the project safely.',
         projectTaskObjective: 'Complete the bounded task.',
-        doneCriteria: ['The bounded task is complete.'],
+        acceptance: [
+          AcceptanceItem(
+            ref: 'bounded-task-complete',
+            statement: 'The bounded task is complete.',
+            verifiers: [
+              AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+            ],
+          ),
+        ],
         outOfScope: ['Unrelated work.'],
       ),
     );
@@ -693,19 +685,10 @@ void main() {
     final recoveryTask = retried.tasks.firstWhere(
       (task) => task.id != source.id && task.id != previousRecovery.id,
     );
-    expect(recoveryTask.expectedEvidence, hasLength(2));
+    expect(recoveryTask.acceptance, isNotEmpty);
     expect(
-      recoveryTask.expectedEvidence.map((item) => item.id),
+      recoveryTask.acceptance.map((item) => item.ref),
       everyElement(isNot('expectation_1')),
-    );
-    expect(
-      recoveryTask.expectedEvidence,
-      contains(
-        isA<TaskEvidenceExpectation>()
-            .having((item) => item.type, 'type', ProjectEvidenceType.gate)
-            .having((item) => item.sourceRef, 'sourceRef', 'gate_1')
-            .having((item) => item.required, 'required', isTrue),
-      ),
     );
     expect(retried.recoveryIncidents.single.maxAttempts, 3);
     expect(retried.recoveryIncidents.single.recoveryTaskIds, hasLength(2));
@@ -747,8 +730,8 @@ void main() {
         (task) => task.title == 'Retry Bounded task',
       );
       expect(retry.status, TaskStatus.completed);
-      expect(retry.expectedEvidence, hasLength(1));
-      expect(retry.expectedEvidence.single.id, isNot('expectation_1'));
+      expect(retry.acceptance, isNotEmpty);
+      expect(retry.acceptance.single.ref, isNot('expectation_1'));
       expect(result.project.taskById('failed_task')?.status, TaskStatus.failed);
       expect(
         result.project.taskById('duplicate_task')?.status,
@@ -832,19 +815,21 @@ ProjectTaskNode _task() {
     id: 'task_1',
     title: 'Bounded task',
     objective: 'Complete one bounded project slice.',
-    criterionIds: const ['criterion_1'],
-    expectedEvidence: const [
-      TaskEvidenceExpectation(
-        id: 'expectation_1',
-        type: ProjectEvidenceType.taskClaim,
+    acceptance: const [
+      AcceptanceItem(
+        ref: 'bounded-slice-complete',
+        statement: 'The bounded slice is complete.',
         criterionIds: ['criterion_1'],
-        description: 'The bounded slice is complete.',
+        verifiers: [
+          AcceptanceVerifier(
+            kind: AcceptanceVerifierKind.review,
+            required: true,
+          ),
+        ],
       ),
     ],
-    doneCriteria: const ['The bounded slice is complete.'],
     outOfScope: const ['Unrelated work.'],
     context: const [],
-    expectedArtifacts: const [],
     status: TaskStatus.queued,
     fingerprint: 'task_1',
     rejectionReason: null,
@@ -869,6 +854,11 @@ class _QueueChatClient extends ChatClient {
     int? contextLimitTokens,
     int? inputTokensHint,
   }) async {
+    if (diagnosticsLabel == 'Task gate review') {
+      return const ModelCompletion(
+        content: '{"passed":true,"summary":"Acceptance review passed."}',
+      );
+    }
     final response =
         responses[index < responses.length ? index : responses.length - 1];
     index++;
@@ -879,41 +869,11 @@ class _QueueChatClient extends ChatClient {
   void dispose() {}
 }
 
-class _CountingTaskRepository extends TaskRepository {
-  _CountingTaskRepository({required super.coordinator});
-
-  final List<String> savedTaskIds = [];
-
-  @override
-  Future<PersistedSnapshot<TaskAggregate>> saveSnapshot(
-    String workspaceRoot,
-    TaskAggregate task, {
-    int? expectedRevision,
-    bool assumeLocked = false,
-  }) async {
-    savedTaskIds.add(task.id);
-    return super.saveSnapshot(
-      workspaceRoot,
-      task,
-      expectedRevision: expectedRevision,
-      assumeLocked: assumeLocked,
-    );
-  }
-}
-
-class _InitialisationGateway
+class _TestProjectGateway
     implements ProjectPlanner, ProjectCompletionEvaluator {
-  _InitialisationGateway(
-    this.initialPlan, {
-    this.repairedPlans = const [],
-    this.revisedProject,
-  });
+  _TestProjectGateway({this.revisedProject});
 
-  final ProjectInitialPlanResult initialPlan;
-  final List<ProjectInitialPlanResult> repairedPlans;
   final ProjectAggregate? revisedProject;
-  List<ProjectPlanValidationIssue>? validationIssues;
-  var repairCalls = 0;
   var revisePlanCalls = 0;
 
   @override
@@ -933,35 +893,6 @@ class _InitialisationGateway
     modelCalls: 1,
     error: 'test gateway does not maintain workspace graphs',
   );
-
-  Future<ProjectInitialPlanResult> initializePlan({
-    required ModelConversationPort client,
-    required String baseSystemPrompt,
-    required WorkspaceAttachment workspace,
-    required String originalGoal,
-    required ProjectPlanningWorkspaceMetadata workspaceMetadata,
-    ModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) async => initialPlan;
-
-  Future<ProjectInitialPlanResult?> repairInitialPlan({
-    required ModelConversationPort client,
-    required String baseSystemPrompt,
-    required WorkspaceAttachment workspace,
-    required String originalGoal,
-    required ProjectPlanningWorkspaceMetadata workspaceMetadata,
-    required ProjectInitialPlanResult initialPlan,
-    required List<ProjectPlanValidationIssue> validationIssues,
-    ModelOutputSink? onModelOutput,
-    CancellationToken? cancellationToken,
-  }) async {
-    repairCalls++;
-    this.validationIssues = validationIssues;
-    if (repairCalls <= repairedPlans.length) {
-      return repairedPlans[repairCalls - 1];
-    }
-    return null;
-  }
 
   @override
   Future<ProjectIncrementalPlanResult> revisePlanWithCommands({
@@ -1018,17 +949,15 @@ class _InitialisationGateway
     required ProjectAggregate project,
     ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
-  }) async {
-    return ProjectCompletionAssessment(
-      complete: false,
-      finalSummary: 'The project still needs review.',
-      remainingCriteria: project.criteria
-          .where((criterion) => criterion.required)
-          .map((criterion) => criterion.statement)
-          .toList(),
-      openQuestions: const [],
-    );
-  }
+  }) async => ProjectCompletionAssessment(
+    complete: false,
+    finalSummary: 'The project still needs review.',
+    remainingCriteria: project.criteria
+        .where((criterion) => criterion.required)
+        .map((criterion) => criterion.statement)
+        .toList(),
+    openQuestions: const [],
+  );
 }
 
 class _CountingScheduler extends ProjectScheduler {
@@ -1041,136 +970,24 @@ class _CountingScheduler extends ProjectScheduler {
   }
 }
 
-ProjectInitialPlanResult _invalidInitialisation() {
-  final now = DateTime(2026, 1, 1);
-  final criterion = ProjectCriterion(
-    id: 'criterion_1',
-    statement: 'The reporting screen is verified.',
-    verificationMode: ProjectVerificationMode.deterministic,
-    createdAt: now,
-    updatedAt: now,
-  );
-  final milestone = ProjectMilestone(
-    id: 'milestone_1',
-    title: 'Reporting screen',
-    objective: 'Deliver the reporting screen.',
-    criterionIds: const ['criterion_1'],
-    order: 1,
-    createdAt: now,
-    updatedAt: now,
-  );
+class _CountingTaskRepository extends TaskRepository {
+  _CountingTaskRepository({required super.coordinator});
 
-  ProjectTaskNode task(String id, String dependencyId) => ProjectTaskNode(
-    id: id,
-    title: id,
-    objective: 'Implement $id.',
-    criterionIds: const ['criterion_1'],
-    milestoneId: milestone.id,
-    dependsOnTaskIds: [dependencyId],
-    expectedEvidence: const [
-      TaskEvidenceExpectation(
-        id: 'expectation_task_claim',
-        type: ProjectEvidenceType.taskClaim,
-        criterionIds: ['criterion_1'],
-        description: 'The task result is checked.',
-      ),
-    ],
-    expectedArtifacts: [
-      TaskArtifact(
-        id: 'artifact',
-        path: 'lib/reporting.dart',
-        description: 'The reporting implementation.',
-        kind: 'file',
-        createdAt: now,
-      ),
-    ],
-    context: const [],
-    doneCriteria: const ['The task is complete.'],
-    outOfScope: const ['Unrelated work.'],
-    status: TaskStatus.queued,
-    fingerprint: id,
-    rejectionReason: null,
-    createdAt: now,
-    updatedAt: now,
-  );
+  final List<String> savedTaskIds = [];
 
-  return ProjectInitialPlanResult(
-    patch: ProjectPlanPatch.initial(
-      ProjectDesiredPlan(
-        revision: 1,
-        triggers: const [ProjectPlanRevisionTrigger.initialization],
-        summary: 'Initial plan.',
-        rationale: 'Test plan.',
-        criteria: [criterion],
-        tasks: [task('task_a', 'task_b'), task('task_b', 'task_a')],
-        milestones: [milestone],
-        createdAt: now,
-      ),
-      title: 'Reporting screen',
-      refinedGoal: 'Deliver the reporting screen.',
-      constraints: const [],
-    ),
-  );
-}
-
-ProjectInitialPlanResult _validInitialisation() {
-  final now = DateTime(2026, 1, 1);
-  final criterion = ProjectCriterion(
-    id: 'criterion_1',
-    statement: 'The reporting screen is verified.',
-    verificationMode: ProjectVerificationMode.deterministic,
-    createdAt: now,
-    updatedAt: now,
-  );
-  final milestone = ProjectMilestone(
-    id: 'milestone_1',
-    title: 'Reporting screen',
-    objective: 'Deliver the reporting screen.',
-    criterionIds: const ['criterion_1'],
-    order: 1,
-    createdAt: now,
-    updatedAt: now,
-  );
-  final task = ProjectTaskNode(
-    id: 'task_1',
-    title: 'Implement reporting screen',
-    objective: 'Implement the reporting screen.',
-    criterionIds: const ['criterion_1'],
-    milestoneId: milestone.id,
-    expectedEvidence: const [
-      TaskEvidenceExpectation(
-        id: 'expectation_gate',
-        type: ProjectEvidenceType.gate,
-        criterionIds: ['criterion_1'],
-        description: 'The reporting screen verification gate passes.',
-      ),
-    ],
-    writePaths: const ['lib/reporting.dart'],
-    doneCriteria: const ['The reporting screen is implemented.'],
-    outOfScope: const ['Unrelated screens.'],
-    context: const [],
-    expectedArtifacts: const [],
-    status: TaskStatus.queued,
-    fingerprint: 'task_1',
-    rejectionReason: null,
-    createdAt: now,
-    updatedAt: now,
-  );
-  return ProjectInitialPlanResult(
-    patch: ProjectPlanPatch.initial(
-      ProjectDesiredPlan(
-        revision: 1,
-        triggers: const [ProjectPlanRevisionTrigger.initialization],
-        summary: 'Initial plan.',
-        rationale: 'Test plan.',
-        criteria: [criterion],
-        tasks: [task],
-        milestones: [milestone],
-        createdAt: now,
-      ),
-      title: 'Reporting screen',
-      refinedGoal: 'Deliver the reporting screen.',
-      constraints: const [],
-    ),
-  );
+  @override
+  Future<PersistedSnapshot<TaskAggregate>> saveSnapshot(
+    String workspaceRoot,
+    TaskAggregate task, {
+    int? expectedRevision,
+    bool assumeLocked = false,
+  }) async {
+    savedTaskIds.add(task.id);
+    return super.saveSnapshot(
+      workspaceRoot,
+      task,
+      expectedRevision: expectedRevision,
+      assumeLocked: assumeLocked,
+    );
+  }
 }

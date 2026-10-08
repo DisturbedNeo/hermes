@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/core/model_json.dart';
 import 'package:hermes/features/project/runtime/project_plan_builder.dart';
@@ -381,8 +382,18 @@ void main() {
   test('projects declared and durable task outputs into produces edges', () {
     final task = _project().tasks.single.copyWith(
       writePaths: const ['dist/report.md'],
-      expectedArtifacts: const [
-        TaskArtifact(path: 'dist/report.md', description: 'Report output'),
+      acceptance: const [
+        AcceptanceItem(
+          ref: 'report-output',
+          statement: 'The report output exists.',
+          verifiers: [
+            AcceptanceVerifier(
+              kind: AcceptanceVerifierKind.artifact,
+              path: 'dist/report.md',
+              description: 'Report output',
+            ),
+          ],
+        ),
       ],
     );
     final project = _project().copyWith(tasks: [task]);
@@ -870,7 +881,16 @@ ProjectAggregate _project({
               id: 'task_1',
               title: 'Map report evidence',
               objective: 'Map the report evidence.',
-              criterionIds: const ['criterion_1'],
+              acceptance: const [
+                AcceptanceItem(
+                  ref: 'mapped',
+                  statement: 'The project is mapped.',
+                  criterionIds: ['criterion_1'],
+                  verifiers: [
+                    AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+                  ],
+                ),
+              ],
               status: TaskStatus.queued,
               createdAt: now,
               updatedAt: now,

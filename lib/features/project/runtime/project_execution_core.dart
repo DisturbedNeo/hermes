@@ -801,7 +801,9 @@ extension ProjectExecutionCore on ProjectExecutionUseCase {
   }) async {
     cancellationToken?.throwIfCancelled();
     final now = DateTime.now();
-    final effectiveCriterionIds = projectTask.criterionIds
+    final effectiveCriterionIds = {
+      for (final item in projectTask.acceptance) ...item.criterionIds,
+    }
         .where((id) => project.criteria.any((criterion) => criterion.id == id))
         .toSet();
     if (effectiveCriterionIds.isEmpty) {
@@ -1071,5 +1073,4 @@ extension ProjectExecutionCore on ProjectExecutionUseCase {
     );
   }
 
-  /// Owns project creation and initial-plan validation policy.
 }

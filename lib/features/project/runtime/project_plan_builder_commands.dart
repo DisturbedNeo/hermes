@@ -260,72 +260,6 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
     return addTasks([spec], commandId: commandId).single;
   }
 
-  /// Adds one task and all of its declared command checks atomically.
-  String addTaskWithChecks(
-    ProjectTaskSpec spec, {
-    Iterable<ProjectTaskCheckSpec> checks = const [],
-    String? commandId,
-  }) {
-    final checkSpecs = [...checks];
-    final fingerprint = _encode({
-      'op': 'add_task_with_checks',
-      'task': _specMap(spec),
-      'checks': [
-        for (final check in checkSpecs)
-          {
-            'command': check.command,
-            'workingDirectory': check.workingDirectory,
-            'criterionRefs': check.criterionRefs,
-            'required': check.required,
-            'description': check.description,
-          },
-      ],
-    });
-    return _idempotent(commandId, fingerprint, () {
-      return _atomic(() {
-        final taskId = _addTasksInternal([spec]).single;
-        for (final check in checkSpecs) {
-          _addCommandCheckInternal(
-            taskReference: taskId,
-            command: check.command,
-            workingDirectory: check.workingDirectory,
-            criterionRefs: check.criterionRefs.isEmpty
-                ? null
-                : check.criterionRefs,
-            required: check.required,
-            description: check.description,
-          );
-        }
-        final task = _tasks[taskId]!;
-        final missingDeterministicCriteria = [
-          for (final criterionId in task.criterionIds)
-            if (_criteria[criterionId]?.verificationMode ==
-                    ProjectVerificationMode.deterministic &&
-                !task.expectedEvidence.any(
-                  (expectation) =>
-                      expectation.required &&
-                      expectation.type == ProjectEvidenceType.command &&
-                      expectation.criterionIds.contains(criterionId),
-                ))
-              criterionId,
-        ];
-        if (missingDeterministicCriteria.isNotEmpty) {
-          throw _error(
-            'missing_deterministic_task_check',
-            'checks',
-            'Every deterministic criterion owned by this task needs a required command check in the same call.',
-            details: {
-              'missing_criterion_refs': missingDeterministicCriteria,
-              'instruction':
-                  'Resubmit the complete task with required checks covering every listed criterion.',
-            },
-          );
-        }
-        return taskId;
-      });
-    });
-  }
-
   List<String> addTasks(Iterable<ProjectTaskSpec> specs, {String? commandId}) {
     final items = [...specs];
     final fingerprint = _encode({
@@ -341,7 +275,7 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
     String taskReference, {
     String? title,
     String? objective,
-    Iterable<String>? criterionRefs,
+    Iterable<AcceptanceItem>? acceptance,
     Iterable<String>? dependencyRefs,
     String? milestoneRef,
     bool clearMilestone = false,
@@ -353,10 +287,8 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
     Iterable<String>? constraints,
     Iterable<String>? readPaths,
     Iterable<String>? writePaths,
-    Iterable<String>? doneCriteria,
     Iterable<String>? outOfScope,
     Iterable<String>? context,
-    Iterable<TaskArtifact>? expectedArtifacts,
     String? commandId,
   }) {
     final fingerprint = _encode({
@@ -364,7 +296,17 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
       'task': taskReference.trim(),
       'title': title,
       'objective': objective,
-      'criterionRefs': criterionRefs == null ? null : [...criterionRefs],
+      'acceptance': acceptance == null
+          ? null
+          : [
+              for (final item in acceptance)
+                {
+                  'ref': item.ref,
+                  'statement': item.statement,
+                  'criterionIds': item.criterionIds,
+                  'verifiers': item.verifiers,
+                },
+            ],
       'dependencyRefs': dependencyRefs == null ? null : [...dependencyRefs],
       'milestoneRef': milestoneRef,
       'clearMilestone': clearMilestone,
@@ -376,19 +318,8 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
       'constraints': constraints == null ? null : [...constraints],
       'readPaths': readPaths == null ? null : [...readPaths],
       'writePaths': writePaths == null ? null : [...writePaths],
-      'doneCriteria': doneCriteria == null ? null : [...doneCriteria],
       'outOfScope': outOfScope == null ? null : [...outOfScope],
       'context': context == null ? null : [...context],
-      'expectedArtifacts': expectedArtifacts == null
-          ? null
-          : [
-              for (final artifact in expectedArtifacts)
-                {
-                  'path': artifact.path,
-                  'description': artifact.description,
-                  'kind': artifact.kind,
-                },
-            ],
     });
     return _idempotent(commandId, fingerprint, () {
       return _atomic(() {
@@ -406,18 +337,26 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
         if (nextTitle.isEmpty) {
           throw _error('missing_title', 'title', 'A task title is required.');
         }
-        final nextCriterionIds = criterionRefs == null
-            ? existing.criterionIds
-            : _resolveReferences(
-                criterionRefs,
-                _resolveCriterion,
-                'criterionRefs',
-              );
-        if (nextCriterionIds.isEmpty) {
+        final nextAcceptance = acceptance == null
+            ? existing.acceptance
+            : [
+                for (final item in acceptance)
+                  AcceptanceItem(
+                    ref: item.ref.trim(),
+                    statement: item.statement.trim(),
+                    criterionIds: _resolveReferences(
+                      item.criterionIds,
+                      _resolveCriterion,
+                      'acceptance.${item.ref}.criterionIds',
+                    ),
+                    verifiers: item.verifiers,
+                  ),
+              ];
+        if (nextAcceptance.isEmpty) {
           throw _error(
-            'missing_criterion_reference',
-            'criterionRefs',
-            'A task must link to at least one criterion.',
+            'missing_acceptance',
+            'acceptance',
+            'A task needs at least one acceptance item.',
           );
         }
         final nextDependencyIds = dependencyRefs == null
@@ -435,16 +374,20 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
             : milestoneRef == null
             ? existing.milestoneId
             : _resolveMilestone(milestoneRef);
-        final nextDoneCriteria = doneCriteria == null
-            ? existing.doneCriteria
-            : _requiredList(doneCriteria, 'doneCriteria');
         final nextOutOfScope = outOfScope == null
             ? existing.outOfScope
             : _requiredList(outOfScope, 'outOfScope');
+        const AcceptanceCompiler().compile(
+          nextAcceptance,
+          requireProjectCriteria: true,
+          path: 'acceptance',
+          commandSafetyValidator:
+              TerminalCommandClassifier.blockedReasonForCommand,
+        );
         final next = existing.copyWith(
           title: nextTitle,
           objective: nextObjective,
-          criterionIds: nextCriterionIds,
+          acceptance: nextAcceptance,
           dependsOnTaskIds: nextDependencyIds,
           milestoneId: nextMilestoneId,
           priority: priority,
@@ -455,15 +398,16 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
           constraints: constraints == null ? null : _cleanStrings(constraints),
           readPaths: readPaths == null ? null : _cleanStrings(readPaths),
           writePaths: writePaths == null ? null : _cleanStrings(writePaths),
-          doneCriteria: nextDoneCriteria,
           outOfScope: nextOutOfScope,
           context: context == null ? null : _cleanStrings(context),
-          expectedArtifacts: expectedArtifacts == null
+          fingerprint:
+              objective == null && acceptance == null
               ? null
-              : _normaliseArtifacts(expectedArtifacts, taskId),
-          fingerprint: objective == null && criterionRefs == null
-              ? null
-              : projectTaskFingerprint(nextObjective, nextCriterionIds),
+              : projectTaskFingerprint(
+                  nextObjective,
+                  {for (final item in nextAcceptance) ...item.criterionIds}.toList(),
+                  nextAcceptance,
+                ),
           updatedAt: _now,
         );
         _tasks[taskId] = next;
@@ -577,157 +521,6 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
         return updated;
       });
     });
-  }
-
-  /// Adds a command gate and its matching evidence expectation as one unit.
-  String addCommandCheck({
-    required String taskReference,
-    required String command,
-    String workingDirectory = '.',
-    Iterable<String>? criterionRefs,
-    bool required = true,
-    String? description,
-    String? commandId,
-  }) {
-    final commandText = command.trim();
-    final directory = workingDirectory.trim().isEmpty
-        ? '.'
-        : workingDirectory.trim();
-    final fingerprint = _encode({
-      'op': 'add_command_check',
-      'task': taskReference.trim(),
-      'command': commandText,
-      'workingDirectory': directory,
-      'criterionRefs': criterionRefs == null ? null : [...criterionRefs],
-      'required': required,
-      'description': description,
-    });
-    return _idempotent(commandId, fingerprint, () {
-      if (commandText.isEmpty) {
-        throw _error(
-          'missing_command',
-          'command',
-          'A command check needs a command.',
-        );
-      }
-      return _atomic(() {
-        return _addCommandCheckInternal(
-          taskReference: taskReference,
-          command: commandText,
-          workingDirectory: directory,
-          criterionRefs: criterionRefs,
-          required: required,
-          description: description,
-        );
-      });
-    });
-  }
-
-  String _addCommandCheckInternal({
-    required String taskReference,
-    required String command,
-    required String workingDirectory,
-    required Iterable<String>? criterionRefs,
-    required bool required,
-    required String? description,
-  }) {
-    final commandText = command.trim();
-    final directory = workingDirectory.trim().isEmpty
-        ? '.'
-        : workingDirectory.trim();
-    if (commandText.isEmpty) {
-      throw _error(
-        'missing_command',
-        'command',
-        'A command check needs a command.',
-      );
-    }
-    final taskId = _resolveTask(taskReference);
-    final task = _editableTask(taskId);
-    final criterionIds = criterionRefs == null
-        ? task.criterionIds
-        : _resolveReferences(criterionRefs, _resolveCriterion, 'criterionRefs');
-    if (criterionIds.isEmpty ||
-        criterionIds.any((id) => !task.criterionIds.contains(id))) {
-      throw _error(
-        'unlinked_criterion',
-        'criterionRefs',
-        'A check must link to criteria already owned by the task.',
-      );
-    }
-
-    final gateIndex = task.gates.indexWhere(
-      (gate) =>
-          gate.id == 'command_passes' &&
-          gate.params['command']?.toString() == commandText &&
-          _workingDirectory(gate.params) == directory,
-    );
-    final gates = [...task.gates];
-    if (gateIndex < 0) {
-      gates.add(
-        TaskGate(
-          id: 'command_passes',
-          required: required,
-          scope: 'task',
-          params: {'command': commandText, 'working_directory': directory},
-          description: description?.trim().isNotEmpty == true
-              ? description!.trim()
-              : 'The verification command passes.',
-        ),
-      );
-    } else if (required && !gates[gateIndex].required) {
-      final previous = gates[gateIndex];
-      gates[gateIndex] = TaskGate(
-        id: previous.id,
-        required: true,
-        scope: previous.scope,
-        params: previous.params,
-        description: previous.description,
-      );
-    }
-
-    final existingExpectation = task.expectedEvidence.where((expectation) {
-      return expectation.type == ProjectEvidenceType.command &&
-          expectation.sourceRef == commandText &&
-          _sameStrings(expectation.criterionIds, criterionIds) &&
-          _workingDirectory(expectation.details) == directory;
-    }).firstOrNull;
-    final expectedEvidence = [...task.expectedEvidence];
-    final expectationId = existingExpectation?.id ?? _newExpectationId();
-    if (existingExpectation == null) {
-      expectedEvidence.add(
-        TaskEvidenceExpectation(
-          id: expectationId,
-          type: ProjectEvidenceType.command,
-          criterionIds: criterionIds,
-          description: description?.trim().isNotEmpty == true
-              ? description!.trim()
-              : 'The verification command passes.',
-          required: required,
-          sourceRef: commandText,
-          details: {'working_directory': directory},
-        ),
-      );
-    } else if (required && !existingExpectation.required) {
-      final expectationIndex = expectedEvidence.indexOf(existingExpectation);
-      expectedEvidence[expectationIndex] = TaskEvidenceExpectation(
-        id: existingExpectation.id,
-        type: existingExpectation.type,
-        criterionIds: existingExpectation.criterionIds,
-        description: existingExpectation.description,
-        required: true,
-        sourceRef: existingExpectation.sourceRef,
-        details: existingExpectation.details,
-      );
-    }
-    final updated = task.copyWith(
-      gates: gates,
-      expectedEvidence: expectedEvidence,
-      updatedAt: _now,
-    );
-    _tasks[taskId] = updated;
-    _taskCatalog[taskId] = updated;
-    return expectationId;
   }
 
   String addNote({
@@ -848,26 +641,22 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
           ...source.context,
           'Split from task ${source.id}: ${source.title}.',
         ];
-        final inheritedCriteria = source.criterionIds;
         final inheritedDependencies = source.dependsOnTaskIds;
-        final inheritedDoneCriteria = source.doneCriteria;
+        final inheritedAcceptance = source.acceptance;
         final inheritedOutOfScope = source.outOfScope;
         final inheritedReadPaths = source.readPaths;
         final inheritedWritePaths = source.writePaths;
-        final inheritedArtifacts = source.expectedArtifacts;
         final childSpecs = [
           for (var index = 0; index < items.length; index++)
             _splitChildSpec(
               source: source,
               child: items[index],
               sourceContext: sourceContext,
-              inheritedCriteria: inheritedCriteria,
               inheritedDependencies: inheritedDependencies,
-              inheritedDoneCriteria: inheritedDoneCriteria,
+              inheritedAcceptance: inheritedAcceptance,
               inheritedOutOfScope: inheritedOutOfScope,
               inheritedReadPaths: inheritedReadPaths,
               inheritedWritePaths: inheritedWritePaths,
-              inheritedArtifacts: inheritedArtifacts,
               fieldPath: 'children[$index]',
             ),
         ];
@@ -913,9 +702,13 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
   }) {
     final children = [for (final id in childIds) _tasks[id]!];
     final childCriterionIds = {
-      for (final child in children) ...child.criterionIds,
+      for (final child in children)
+        for (final item in child.acceptance) ...item.criterionIds,
     };
-    final missingCoverage = source.criterionIds
+    final sourceCriterionIds = {
+      for (final item in source.acceptance) ...item.criterionIds,
+    };
+    final missingCoverage = sourceCriterionIds
         .where((criterionId) => !childCriterionIds.contains(criterionId))
         .toList();
     if (missingCoverage.isNotEmpty) {
@@ -941,13 +734,14 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
       }
       final hasConclusiveExpectation = children.any(
         (child) =>
-            child.criterionIds.contains(criterionId) &&
-            child.expectedEvidence.any(
-              (expectation) =>
-                  expectation.required &&
-                  expectation.criterionIds.contains(criterionId) &&
-                  (expectation.type == ProjectEvidenceType.gate ||
-                      expectation.type == ProjectEvidenceType.command),
+            child.acceptance.any(
+              (item) =>
+                  item.criterionIds.contains(criterionId) &&
+                  item.verifiers.any(
+                    (verifier) =>
+                        verifier.required &&
+                        verifier.kind == AcceptanceVerifierKind.command,
+                  ),
             ),
       );
       if (!hasConclusiveExpectation) missingDeterministic.add(criterionId);
@@ -956,11 +750,11 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
       throw _error(
         'missing_split_deterministic_check',
         'children',
-        'Every deterministic criterion on a split child needs a required command check.',
+        'Every deterministic criterion on a split child needs a required command verifier in acceptance.',
         details: {
           'missing_criterion_refs': missingDeterministic,
           'instruction':
-              'Resubmit the split with a required checks entry on a child covering every listed criterion.',
+            'Resubmit the split with a required command verifier in acceptance on a child covering every listed criterion.',
         },
       );
     }
@@ -970,13 +764,11 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
     required ProjectTaskNode source,
     required ProjectTaskSpec child,
     required List<String> sourceContext,
-    required List<String> inheritedCriteria,
     required List<String> inheritedDependencies,
-    required List<String> inheritedDoneCriteria,
+    required List<AcceptanceItem> inheritedAcceptance,
     required List<String> inheritedOutOfScope,
     required List<String> inheritedReadPaths,
     required List<String> inheritedWritePaths,
-    required List<TaskArtifact> inheritedArtifacts,
     required String fieldPath,
   }) {
     for (var index = 0; index < child.dependencyRefs.length; index++) {
@@ -993,9 +785,9 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
       ref: child.ref,
       title: child.title,
       objective: child.objective,
-      criterionRefs: child.criterionRefs.isEmpty
-          ? inheritedCriteria
-          : child.criterionRefs,
+      acceptance: child.acceptance.isEmpty
+          ? inheritedAcceptance
+          : child.acceptance,
       dependencyRefs: child.dependencyRefs.isEmpty
           ? inheritedDependencies
           : child.dependencyRefs,
@@ -1012,17 +804,10 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
       writePaths: child.writePaths.isEmpty
           ? inheritedWritePaths
           : child.writePaths,
-      doneCriteria: child.doneCriteria.isEmpty
-          ? inheritedDoneCriteria
-          : child.doneCriteria,
       outOfScope: child.outOfScope.isEmpty
           ? inheritedOutOfScope
           : child.outOfScope,
       context: [...sourceContext, ...child.context],
-      checks: child.checks,
-      expectedArtifacts: child.expectedArtifacts.isEmpty
-          ? inheritedArtifacts
-          : child.expectedArtifacts,
     );
   }
 
@@ -1068,7 +853,7 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
               ? title!.trim()
               : 'Retry ${source.title}',
           objective: retryObjective,
-          criterionRefs: source.criterionIds,
+          acceptance: source.acceptance,
           dependencyRefs: source.dependsOnTaskIds,
           milestoneRef: source.milestoneId,
           priority: source.priority,
@@ -1079,7 +864,6 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
           constraints: source.constraints,
           readPaths: source.readPaths,
           writePaths: source.writePaths,
-          doneCriteria: source.doneCriteria,
           outOfScope: source.outOfScope,
           context: [
             ...source.context,
@@ -1089,7 +873,6 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
             if (source.rejectionReason?.trim().isNotEmpty == true)
               'Previous rejection: ${source.rejectionReason!.trim()}',
           ],
-          expectedArtifacts: source.expectedArtifacts,
         );
         return _addTasksInternal([spec]).single;
       });

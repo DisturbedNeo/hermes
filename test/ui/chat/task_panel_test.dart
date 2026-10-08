@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hermes/app/test_factories.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/chat/application/chat_library_service.dart';
@@ -239,7 +240,15 @@ TaskAggregate _taskWithArtifact() {
     originalPrompt: 'Create an artifact.',
     objective: 'Create an artifact.',
     constraints: const [],
-    successCriteria: const [],
+    acceptance: const [
+      AcceptanceItem(
+        ref: 'artifact',
+        statement: 'The artifact is produced.',
+        verifiers: [
+          AcceptanceVerifier(kind: AcceptanceVerifierKind.artifact, path: 'output.md'),
+        ],
+      ),
+    ],
     steps: const [
       TaskStep(
         id: 'write',
@@ -305,11 +314,15 @@ ProjectAggregate _projectWithTask() {
           id: 'task_test',
           title: 'Project task',
           objective: 'Do the project task.',
-          criterionIds: const [],
-          doneCriteria: const ['Finished.'],
+          acceptance: const [
+            AcceptanceItem(
+              ref: 'finished',
+              statement: 'Finished.',
+              verifiers: [AcceptanceVerifier(kind: AcceptanceVerifierKind.review)],
+            ),
+          ],
           outOfScope: const [],
           context: const [],
-          expectedArtifacts: const [],
           status: TaskStatus.completed,
           fingerprint: 'task_test',
           rejectionReason: null,
@@ -366,11 +379,16 @@ ProjectAggregate _projectWithExhaustedRecovery() {
           id: 'failed_task',
           title: 'Failed task',
           objective: 'Build the project.',
-          criterionIds: const ['criterion_1'],
-          doneCriteria: const ['Project works.'],
+          acceptance: const [
+            AcceptanceItem(
+              ref: 'works',
+              statement: 'Project works.',
+              criterionIds: ['criterion_1'],
+              verifiers: [AcceptanceVerifier(kind: AcceptanceVerifierKind.review)],
+            ),
+          ],
           outOfScope: const [],
           context: const [],
-          expectedArtifacts: const [],
           status: TaskStatus.failed,
           recoveryIncidentId: 'recovery_1',
           fingerprint: 'failed_task',
@@ -422,13 +440,18 @@ ProjectAggregate _projectWithPlanReview() {
     id: 'ready_task',
     title: 'Finish keyboard flow',
     objective: 'Complete the remaining keyboard interactions.',
-    criterionIds: const ['accessible'],
+    acceptance: const [
+      AcceptanceItem(
+        ref: 'keyboard',
+        statement: 'Keyboard tests pass.',
+        criterionIds: ['accessible'],
+        verifiers: [AcceptanceVerifier(kind: AcceptanceVerifierKind.review)],
+      ),
+    ],
     milestoneId: 'foundation',
     priority: TaskPriority.high,
-    doneCriteria: const ['Keyboard tests pass.'],
     outOfScope: const ['Visual redesign.'],
     context: const [],
-    expectedArtifacts: const [],
     status: TaskStatus.queued,
     fingerprint: 'ready',
     rejectionReason: null,
@@ -439,13 +462,18 @@ ProjectAggregate _projectWithPlanReview() {
     id: 'waiting_task',
     title: 'Polish the dialog',
     objective: 'Polish the completed keyboard dialog.',
-    criterionIds: const ['accessible'],
+    acceptance: const [
+      AcceptanceItem(
+        ref: 'polish',
+        statement: 'Dialog polish is complete.',
+        criterionIds: ['accessible'],
+        verifiers: [AcceptanceVerifier(kind: AcceptanceVerifierKind.review)],
+      ),
+    ],
     milestoneId: 'foundation',
     dependsOnTaskIds: const ['ready_task'],
-    doneCriteria: const ['Dialog polish is complete.'],
     outOfScope: const [],
     context: const [],
-    expectedArtifacts: const [],
     status: TaskStatus.queued,
     fingerprint: 'waiting',
     rejectionReason: null,

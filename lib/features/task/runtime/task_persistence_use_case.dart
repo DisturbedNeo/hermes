@@ -153,7 +153,7 @@ class TaskPersistenceUseCase {
         client: client,
         system: _refinerSystemInstruction,
         expectedShape:
-            '{"title":"...","goal":"...","constraints":[],"success_criteria":[],"assumptions":[],"questions":[]}',
+            '{"title":"...","goal":"...","constraints":[],"assumptions":[],"questions":[]}',
         label: 'Prompt Refiner',
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
@@ -166,7 +166,6 @@ Return only JSON:
   "title": "...",
   "goal": "...",
   "constraints": ["..."],
-  "success_criteria": ["..."],
   "assumptions": ["..."],
   "questions": ["..."]
 }

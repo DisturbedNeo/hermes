@@ -32,7 +32,6 @@ void main() {
         originalPrompt: 'Preserve this task',
         objective: 'Round-trip the task',
         constraints: const [],
-        successCriteria: const ['It survives'],
         createdAt: now,
         updatedAt: now,
       );

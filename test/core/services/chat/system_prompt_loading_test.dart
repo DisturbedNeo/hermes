@@ -499,7 +499,15 @@ void main() {
             'title': 'Artifact task',
             'goal': 'Analyze and report',
             'constraints': ['Stay inside the workspace.'],
-            'successCriteria': ['Report is written.'],
+            'acceptance': [
+              {
+                'ref': 'report-written',
+                'statement': 'Report is written.',
+                'verifiers': [
+                  {'kind': 'review', 'required': true},
+                ],
+              },
+            ],
             'steps': [
               {
                 'id': 'inspect',
@@ -1059,7 +1067,16 @@ Map<String, dynamic> _planJson({required String title}) {
     'title': title,
     'goal': 'Build the reporting screen',
     'constraints': ['Stay inside the workspace.'],
-    'successCriteria': ['The reporting screen is planned.'],
+    'acceptance': [
+      {
+        'ref': 'reporting-screen-planned',
+        'statement': 'The reporting screen is planned.',
+        'criterion_refs': [],
+        'verifiers': [
+          {'kind': 'review', 'required': true},
+        ],
+      },
+    ],
     'steps': [
       {
         'id': 'build',
@@ -1098,7 +1115,6 @@ TaskAggregate _taskDocument({String id = 'task_test', String? chatSessionId}) {
     originalPrompt: 'Run the task',
     objective: 'Run the task',
     constraints: const [],
-    successCriteria: const ['Finish'],
     steps: const [
       TaskStep(
         id: 'step_1',
@@ -1153,11 +1169,10 @@ ModelCompletion _commandPlanTaskResponse(
       'title': arguments['title'] ?? 'Task',
       'objective': arguments['objective'] ?? arguments['goal'] ?? '',
       'constraints': arguments['constraints'] ?? const [],
-      'success_criteria':
-          arguments['successCriteria'] ??
-          arguments['success_criteria'] ??
-          const [],
     }),
+    for (final raw in (arguments['acceptance'] as List? ?? const []))
+      if (raw is Map)
+        _toolCall('task_add_acceptance', Map<String, dynamic>.from(raw)),
     for (final raw in (arguments['steps'] as List? ?? const []))
       if (raw is Map)
         _toolCall('task_add_step', {
@@ -1226,10 +1241,9 @@ ModelCompletion _commandPlanProjectResponse(
           'ref': raw['id'] ?? raw['ref'] ?? '',
           'title': raw['title'] ?? '',
           'objective': raw['objective'] ?? '',
-          'criterion_refs': raw['criterionIds'] ?? const [],
+          'acceptance': raw['acceptance'] ?? const [],
           'dependency_refs': raw['dependsOnTaskIds'] ?? const [],
           'milestone_ref': raw['milestoneId'],
-          'done_criteria': raw['doneCriteria'] ?? const [],
           'out_of_scope': raw['outOfScope'] ?? const [],
         }),
     _toolCall('plan_commit', {
@@ -1275,6 +1289,11 @@ class _QueueChatClient extends ChatClient {
     int? contextLimitTokens,
     int? inputTokensHint,
   }) async {
+    if (diagnosticsLabel == 'Task gate review') {
+      return const ModelCompletion(
+        content: '{"passed":true,"summary":"Acceptance review passed."}',
+      );
+    }
     final index = _index >= _responses.length ? _responses.length - 1 : _index;
     _index++;
     final response = _responses[index];
@@ -1372,6 +1391,11 @@ class _QueueCompletionClient extends ChatClient {
     int? contextLimitTokens,
     int? inputTokensHint,
   }) async {
+    if (diagnosticsLabel == 'Task gate review') {
+      return const ModelCompletion(
+        content: '{"passed":true,"summary":"Acceptance review passed."}',
+      );
+    }
     final index = _index >= _responses.length ? _responses.length - 1 : _index;
     _index++;
     return _responses[index];
@@ -1429,9 +1453,14 @@ class _StuckTaskClient extends ChatClient {
               'title': _plan['title'] ?? 'Task',
               'objective': _plan['goal'] ?? '',
               'constraints': _plan['constraints'] ?? const [],
-              'success_criteria': _plan['successCriteria'] ?? const [],
             },
           ),
+          for (final raw in (_plan['acceptance'] as List? ?? const []))
+            (
+              'call_task_add_acceptance_${raw['ref']}',
+              'task_add_acceptance',
+              Map<String, dynamic>.from(raw as Map),
+            ),
           (
             'call_task_add_step',
             'task_add_step',

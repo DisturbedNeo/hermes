@@ -107,9 +107,8 @@ abstract interface class TaskExecutionCapabilities {
   int Function(TaskAggregate task) get taskPlanningStepLimit;
   TaskStepExecutionStatus? Function(String raw) get parseStepExecutionStatus;
   List<TaskEvidenceClaim> Function(
-    Object? value,
-    List<String> allowedCriterionIds, {
-    List<TaskProjectEvidenceExpectation> expectedEvidence,
+    Object? value, {
+    List<AcceptanceItem> acceptance,
   })
   get evidenceClaimsFromJson;
   String Function({
@@ -295,9 +294,8 @@ class TaskUseCaseContext
   final int Function(TaskAggregate task) taskPlanningStepLimit;
   final TaskStepExecutionStatus? Function(String raw) parseStepExecutionStatus;
   final List<TaskEvidenceClaim> Function(
-    Object? value,
-    List<String> allowedCriterionIds, {
-    List<TaskProjectEvidenceExpectation> expectedEvidence,
+    Object? value, {
+    List<AcceptanceItem> acceptance,
   })
   evidenceClaimsFromJson;
   final String Function({

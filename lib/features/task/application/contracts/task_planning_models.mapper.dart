@@ -16,10 +16,8 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
   static TaskPlanningContextMapper ensureInitialized() {
     if (_instance == null) {
       MapperContainer.globals.use(_instance = TaskPlanningContextMapper._());
-      TaskArtifactMapper.ensureInitialized();
-      TaskGateMapper.ensureInitialized();
+      AcceptanceItemMapper.ensureInitialized();
       TaskProjectCriterionMapper.ensureInitialized();
-      TaskProjectEvidenceExpectationMapper.ensureInitialized();
     }
     return _instance!;
   }
@@ -58,13 +56,10 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
       v.workspaceContext;
   static const Field<TaskPlanningContext, List<String>> _f$workspaceContext =
       Field('workspaceContext', _$workspaceContext, opt: true, def: const []);
-  static List<String> _$doneCriteria(TaskPlanningContext v) => v.doneCriteria;
-  static const Field<TaskPlanningContext, List<String>> _f$doneCriteria = Field(
-    'doneCriteria',
-    _$doneCriteria,
-    opt: true,
-    def: const [],
-  );
+  static List<AcceptanceItem> _$acceptance(TaskPlanningContext v) =>
+      v.acceptance;
+  static const Field<TaskPlanningContext, List<AcceptanceItem>> _f$acceptance =
+      Field('acceptance', _$acceptance, opt: true, def: const []);
   static List<String> _$outOfScope(TaskPlanningContext v) => v.outOfScope;
   static const Field<TaskPlanningContext, List<String>> _f$outOfScope = Field(
     'outOfScope',
@@ -72,40 +67,10 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
     opt: true,
     def: const [],
   );
-  static List<TaskArtifact> _$expectedArtifacts(TaskPlanningContext v) =>
-      v.expectedArtifacts;
-  static const Field<TaskPlanningContext, List<TaskArtifact>>
-  _f$expectedArtifacts = Field(
-    'expectedArtifacts',
-    _$expectedArtifacts,
-    opt: true,
-    def: const [],
-  );
-  static List<TaskGate> _$requiredGates(TaskPlanningContext v) =>
-      v.requiredGates;
-  static const Field<TaskPlanningContext, List<TaskGate>> _f$requiredGates =
-      Field('requiredGates', _$requiredGates, opt: true, def: const []);
-  static List<String> _$criterionIds(TaskPlanningContext v) => v.criterionIds;
-  static const Field<TaskPlanningContext, List<String>> _f$criterionIds = Field(
-    'criterionIds',
-    _$criterionIds,
-    opt: true,
-    def: const [],
-  );
   static List<TaskProjectCriterion> _$criteria(TaskPlanningContext v) =>
       v.criteria;
   static const Field<TaskPlanningContext, List<TaskProjectCriterion>>
   _f$criteria = Field('criteria', _$criteria, opt: true, def: const []);
-  static List<TaskProjectEvidenceExpectation> _$expectedEvidence(
-    TaskPlanningContext v,
-  ) => v.expectedEvidence;
-  static const Field<TaskPlanningContext, List<TaskProjectEvidenceExpectation>>
-  _f$expectedEvidence = Field(
-    'expectedEvidence',
-    _$expectedEvidence,
-    opt: true,
-    def: const [],
-  );
   static List<String> _$readPaths(TaskPlanningContext v) => v.readPaths;
   static const Field<TaskPlanningContext, List<String>> _f$readPaths = Field(
     'readPaths',
@@ -136,13 +101,9 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
     #knownFacts: _f$knownFacts,
     #workspaceOrientation: _f$workspaceOrientation,
     #workspaceContext: _f$workspaceContext,
-    #doneCriteria: _f$doneCriteria,
+    #acceptance: _f$acceptance,
     #outOfScope: _f$outOfScope,
-    #expectedArtifacts: _f$expectedArtifacts,
-    #requiredGates: _f$requiredGates,
-    #criterionIds: _f$criterionIds,
     #criteria: _f$criteria,
-    #expectedEvidence: _f$expectedEvidence,
     #readPaths: _f$readPaths,
     #writePaths: _f$writePaths,
     #maxSteps: _f$maxSteps,
@@ -156,13 +117,9 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
       knownFacts: data.dec(_f$knownFacts),
       workspaceOrientation: data.dec(_f$workspaceOrientation),
       workspaceContext: data.dec(_f$workspaceContext),
-      doneCriteria: data.dec(_f$doneCriteria),
+      acceptance: data.dec(_f$acceptance),
       outOfScope: data.dec(_f$outOfScope),
-      expectedArtifacts: data.dec(_f$expectedArtifacts),
-      requiredGates: data.dec(_f$requiredGates),
-      criterionIds: data.dec(_f$criterionIds),
       criteria: data.dec(_f$criteria),
-      expectedEvidence: data.dec(_f$expectedEvidence),
       readPaths: data.dec(_f$readPaths),
       writePaths: data.dec(_f$writePaths),
       maxSteps: data.dec(_f$maxSteps),

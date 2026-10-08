@@ -1,9 +1,9 @@
 import 'dart:convert';
 
 import 'package:hermes/core/uuid.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/workspace/application/terminal_command_classifier.dart';
-import 'package:hermes/features/workspace/application/terminal_command_parser.dart';
 
 /// A compact validation issue returned by the task planning tools.
 class TaskPlanIssue {
@@ -51,6 +51,7 @@ class TaskPlanStepSpec {
   final List<String> instructions;
   final bool mayEditFiles;
   final List<TaskArtifact> artifacts;
+  final List<String> acceptanceRefs;
 
   const TaskPlanStepSpec({
     this.ref = '',
@@ -59,6 +60,7 @@ class TaskPlanStepSpec {
     this.instructions = const [],
     this.mayEditFiles = false,
     this.artifacts = const [],
+    this.acceptanceRefs = const [],
   });
 }
 
@@ -88,13 +90,10 @@ class TaskPlanBuilder {
     required TaskAggregate task,
     required this.maxSteps,
     this.projectGoal = '',
-    this.doneCriteria = const [],
     this.outOfScope = const [],
     this.readPaths = const [],
     this.writePaths = const [],
-    this.requiredArtifacts = const [],
-    this.requiredGates = const [],
-    this.requiredEvidence = const [],
+    this.acceptance = const [],
     this.requireDeclaredWriteBoundary = false,
     this.preserveCompletedStepsOnly = false,
     DateTime? now,
@@ -103,13 +102,11 @@ class TaskPlanBuilder {
        _title = task.title,
        _objective = task.objective,
        _constraints = [...task.constraints],
-       _successCriteria = [...task.successCriteria],
        _steps = [
          for (final step in task.steps)
            if (!preserveCompletedStepsOnly || _isPreserved(step)) step,
        ],
-       _taskGates = [...task.gates, ...requiredGates],
-       _expectedEvidence = [...task.expectedEvidence] {
+       _acceptance = [...task.acceptance, ...acceptance] {
     if (maxSteps < 1) {
       throw const TaskPlanBuilderException(
         code: 'invalid_step_limit',
@@ -120,37 +117,28 @@ class TaskPlanBuilder {
     for (final step in _steps) {
       _stepRefs[step.id] = step.id;
     }
-    _dedupeTaskGates();
-    _ensureRequiredProjectChecks();
-    _dedupeTaskGates();
   }
 
   final TaskAggregate _source;
   final int maxSteps;
   final String projectGoal;
-  final List<String> doneCriteria;
   final List<String> outOfScope;
   final List<String> readPaths;
   final List<String> writePaths;
-  final List<TaskArtifact> requiredArtifacts;
-  final List<TaskGate> requiredGates;
-  final List<TaskProjectEvidenceExpectation> requiredEvidence;
+  final List<AcceptanceItem> acceptance;
   final bool requireDeclaredWriteBoundary;
   final bool preserveCompletedStepsOnly;
   final DateTime _now;
   final List<TaskStep> _steps;
-  final List<TaskGate> _taskGates;
-  final List<TaskEvidenceExpectation> _expectedEvidence;
+  final List<AcceptanceItem> _acceptance;
   String _title;
   String _objective;
   List<String> _constraints;
-  List<String> _successCriteria;
   String? _replanReason;
   PendingTaskQuestion? _pendingQuestion;
 
   TaskAggregate get source => _source;
   List<TaskStep> get steps => List.unmodifiable(_steps);
-  List<TaskGate> get taskGates => List.unmodifiable(_taskGates);
 
   /// Resolves a model-facing temporary step reference to the generated
   /// persistent step ID in the current draft.
@@ -169,14 +157,10 @@ class TaskPlanBuilder {
     String? title,
     String? objective,
     List<String>? constraints,
-    List<String>? successCriteria,
   }) {
     if (title != null) _title = title.trim();
     if (objective != null) _objective = objective.trim();
     if (constraints != null) _constraints = _cleanStrings(constraints);
-    if (successCriteria != null) {
-      _successCriteria = _cleanStrings(successCriteria);
-    }
   }
 
   /// Clears the current uncommitted draft while retaining work that must
@@ -194,16 +178,12 @@ class TaskPlanBuilder {
         ..addEntries([
           for (final step in preserved) MapEntry(step.id, step.id),
         ]);
-      _taskGates
+      _acceptance
         ..clear()
-        ..addAll([..._source.gates, ...requiredGates]);
-      _expectedEvidence
-        ..clear()
-        ..addAll(_source.expectedEvidence);
+        ..addAll(_source.acceptance);
       _title = _source.title;
       _objective = _source.objective;
       _constraints = [..._source.constraints];
-      _successCriteria = [..._source.successCriteria];
       _replanReason = null;
       _pendingQuestion = null;
       return true;
@@ -226,6 +206,7 @@ class TaskPlanBuilder {
             'kind': artifact.kind,
           },
       ],
+      'acceptanceRefs': spec.acceptanceRefs,
     });
     return _idempotent(commandId, fingerprint, () {
       if (_steps.length >= maxSteps) {
@@ -261,6 +242,31 @@ class TaskPlanBuilder {
       for (var index = 0; index < artifacts.length; index++) {
         _validateArtifactPath(artifacts[index].path, 'artifacts[$index].path');
       }
+      final acceptanceRefs = _cleanStrings(spec.acceptanceRefs);
+      if (acceptanceRefs.length != acceptanceRefs.toSet().length) {
+        throw _error(
+          'duplicate_acceptance_attachment',
+          'acceptance_refs',
+          'An acceptance ref may appear only once on a step.',
+        );
+      }
+      final attachedRefs = {for (final step in _steps) ...step.acceptanceRefs};
+      for (final acceptanceRef in acceptanceRefs) {
+        if (!_acceptance.any((item) => item.ref == acceptanceRef)) {
+          throw _error(
+            'unknown_acceptance_ref',
+            'acceptance_refs',
+            'Acceptance ref $acceptanceRef does not exist in this task.',
+          );
+        }
+        if (attachedRefs.contains(acceptanceRef)) {
+          throw _error(
+            'duplicate_acceptance_attachment',
+            'acceptance_refs',
+            'Acceptance ref $acceptanceRef is already attached to another step.',
+          );
+        }
+      }
       _steps.add(
         TaskStep(
           id: id,
@@ -269,7 +275,7 @@ class TaskPlanBuilder {
           instructions: _cleanStrings(spec.instructions),
           mayEditFiles: spec.mayEditFiles,
           artifacts: artifacts,
-          gates: _artifactGates(artifacts),
+          acceptanceRefs: acceptanceRefs,
           status: TaskStepStatus.pending,
         ),
       );
@@ -279,111 +285,42 @@ class TaskPlanBuilder {
     });
   }
 
-  String addCheck({
-    String? stepReference,
-    required String command,
-    String workingDirectory = '.',
-    bool required = true,
-    String? description,
-    String? commandId,
-  }) {
-    final commandText = command.trim();
-    final directory = workingDirectory.trim().isEmpty
-        ? '.'
-        : workingDirectory.trim();
+  String addAcceptance({required AcceptanceItem item, String? commandId}) {
+    final normalized = AcceptanceItem(
+      ref: item.ref.trim(),
+      statement: item.statement.trim(),
+      criterionIds: _cleanStrings(item.criterionIds),
+      verifiers: item.verifiers,
+    );
     final fingerprint = _encode({
-      'op': 'add_check',
-      'step': stepReference?.trim(),
-      'command': commandText,
-      'workingDirectory': directory,
-      'required': required,
-      'description': description,
+      'op': 'add_acceptance',
+      'ref': normalized.ref,
+      'statement': normalized.statement,
+      'criterionIds': normalized.criterionIds,
+      'verifiers': [
+        for (final verifier in normalized.verifiers)
+          {
+            'kind': verifier.kind.name,
+            'required': verifier.required,
+            'command': verifier.command,
+            'workingDirectory': verifier.workingDirectory,
+            'path': verifier.path,
+            'artifactKind': verifier.artifactKind,
+            'description': verifier.description,
+          },
+      ],
     });
     return _idempotent(commandId, fingerprint, () {
-      if (commandText.isEmpty) {
+      _validateAcceptance(normalized, 'acceptance');
+      if (_acceptance.any((existing) => existing.ref == normalized.ref)) {
         throw _error(
-          'missing_command',
-          'command',
-          'A verification check needs a command.',
+          'duplicate_acceptance_ref',
+          'acceptance.ref',
+          'Acceptance ref ${normalized.ref} already exists.',
         );
       }
-      _throwIfCommandBlocked(commandText);
-      final step = stepReference == null || stepReference.trim().isEmpty
-          ? null
-          : _stepFor(stepReference);
-      // Copy task-level gates before clearing/replacing the backing list below.
-      // Referencing _taskGates directly would make addCheck clear its own
-      // source list and silently drop the newly added gate.
-      final targetGates = step == null ? [..._taskGates] : [...step.gates];
-      final gateIndex = targetGates.indexWhere(
-        (gate) =>
-            gate.id == 'command_passes' &&
-            gate.params['command']?.toString() == commandText &&
-            _workingDirectory(gate) == directory,
-      );
-      if (gateIndex < 0) {
-        targetGates.add(
-          TaskGate(
-            id: 'command_passes',
-            required: required,
-            scope: step == null ? 'task' : 'step',
-            params: {'command': commandText, 'working_directory': directory},
-            description: description?.trim().isNotEmpty == true
-                ? description!.trim()
-                : 'The verification command passes.',
-          ),
-        );
-      } else if (required && !targetGates[gateIndex].required) {
-        final previous = targetGates[gateIndex];
-        targetGates[gateIndex] = TaskGate(
-          id: previous.id,
-          required: true,
-          scope: previous.scope,
-          params: previous.params,
-          description: previous.description,
-        );
-      }
-      if (step == null) {
-        _taskGates
-          ..clear()
-          ..addAll(targetGates);
-      } else {
-        final index = _steps.indexWhere((item) => item.id == step.id);
-        _steps[index] = step.copyWith(gates: _dedupeGates(targetGates));
-      }
-
-      final existing = _expectedEvidence.where((expectation) {
-        return expectation.type == ProjectEvidenceType.command &&
-            expectation.sourceRef == commandText &&
-            _workingDirectoryFromEvidence(expectation) == directory;
-      }).firstOrNull;
-      if (existing != null) {
-        if (required && !existing.required) {
-          final index = _expectedEvidence.indexOf(existing);
-          _expectedEvidence[index] = TaskEvidenceExpectation(
-            id: existing.id,
-            type: existing.type,
-            criterionIds: existing.criterionIds,
-            description: existing.description,
-            required: true,
-            sourceRef: existing.sourceRef,
-            details: existing.details,
-          );
-        }
-        return existing.id;
-      }
-      final expectation = TaskEvidenceExpectation(
-        id: _newId('expect', {for (final item in _expectedEvidence) item.id}),
-        type: ProjectEvidenceType.command,
-        description: description?.trim().isNotEmpty == true
-            ? description!.trim()
-            : 'The verification command passes.',
-        required: required,
-        sourceRef: commandText,
-        details: {'working_directory': directory},
-      );
-      _expectedEvidence.add(expectation);
-      return expectation.id;
+      _acceptance.add(normalized);
+      return normalized.ref;
     });
   }
 
@@ -459,9 +396,10 @@ class TaskPlanBuilder {
       title: _title.trim().isEmpty ? _source.title : _title.trim(),
       objective: _objective.trim().isEmpty ? _source.objective : _objective,
       constraints: _constraints,
-      successCriteria: _successCriteria,
-      gates: _dedupeGates([..._taskGates, ..._defaultTaskGates(_steps)]),
-      expectedEvidence: _dedupeEvidence(_expectedEvidence),
+      // Preserve duplicate refs so preview/commit can report the contract
+      // violation instead of silently replacing one planner item with another.
+      acceptance: [..._acceptance],
+      fingerprint: _fingerprintWithAcceptance(),
       steps: [..._steps],
       status: status,
       currentStepId: nextStep,
@@ -480,6 +418,40 @@ class TaskPlanBuilder {
 
   List<TaskPlanIssue> _validate(TaskAggregate task) {
     final issues = <TaskPlanIssue>[];
+    final acceptanceRefs = <String>{};
+    final attachedAcceptanceRefs = <String, String>{};
+    for (var index = 0; index < task.acceptance.length; index++) {
+      final item = task.acceptance[index];
+      try {
+        _validateAcceptance(item, 'acceptance[$index]');
+      } on TaskPlanBuilderException catch (error) {
+        issues.add(
+          TaskPlanIssue(
+            code: error.code,
+            path: error.path,
+            message: error.message,
+          ),
+        );
+      }
+      if (!acceptanceRefs.add(item.ref)) {
+        issues.add(
+          TaskPlanIssue(
+            code: 'duplicate_acceptance_ref',
+            path: 'acceptance[$index].ref',
+            message: 'Acceptance ref ${item.ref} is duplicated.',
+          ),
+        );
+      }
+    }
+    if (task.acceptance.isEmpty) {
+      issues.add(
+        const TaskPlanIssue(
+          code: 'missing_acceptance',
+          path: 'acceptance',
+          message: 'A task plan needs at least one acceptance item.',
+        ),
+      );
+    }
     final sourceHasUnfinishedSteps = _source.steps.any(
       (step) => !_isPreserved(step),
     );
@@ -519,15 +491,6 @@ class TaskPlanBuilder {
           code: 'project_scope_expansion',
           path: 'objective',
           message: 'The task objective must not expand to the whole project.',
-        ),
-      );
-    }
-    if (_successCriteria.isEmpty) {
-      issues.add(
-        const TaskPlanIssue(
-          code: 'missing_success_criteria',
-          path: 'success_criteria',
-          message: 'A task plan needs at least one success criterion.',
         ),
       );
     }
@@ -589,253 +552,51 @@ class TaskPlanBuilder {
           );
         }
       }
-      for (var gateIndex = 0; gateIndex < step.gates.length; gateIndex++) {
-        final gate = step.gates[gateIndex];
-        final issue = _commandGateIssue(
-          gate,
-          'steps[$index].gates[$gateIndex].params.command',
-        );
-        if (issue != null) issues.add(issue);
-      }
-    }
-    for (var gateIndex = 0; gateIndex < task.gates.length; gateIndex++) {
-      final issue = _commandGateIssue(
-        task.gates[gateIndex],
-        'gates[$gateIndex].params.command',
-      );
-      if (issue != null) issues.add(issue);
-    }
-    for (final gate in requiredGates) {
-      if (!_hasMatchingGate(task, gate)) {
-        issues.add(
-          TaskPlanIssue(
-            code: 'missing_required_check',
-            path: 'gates',
-            message: 'Required check ${gate.id} is missing from the task.',
-          ),
-        );
-      }
-    }
-    final declaredArtifacts = {
-      for (final step in task.steps)
-        for (final artifact in step.artifacts) artifact.path,
-    };
-    for (final artifact in requiredArtifacts) {
-      if (artifact.path.trim().isEmpty ||
-          declaredArtifacts.contains(artifact.path.trim())) {
-        continue;
-      }
-      issues.add(
-        TaskPlanIssue(
-          code: 'missing_expected_artifact',
-          path: 'steps',
-          message:
-              'Expected artifact ${artifact.path} must be declared on a step.',
-        ),
-      );
-    }
-    for (final expectation in requiredEvidence) {
-      if (!expectation.required || expectation.type != 'command') continue;
-      final command = expectation.sourceRef?.trim() ?? '';
-      if (command.isEmpty) continue;
-      final directory =
-          expectation.details['working_directory']?.toString() ??
-          expectation.details['workingDirectory']?.toString() ??
-          '.';
-      final hasCommand =
-          [...task.gates, for (final step in task.steps) ...step.gates].any(
-            (gate) =>
-                gate.id == 'command_passes' &&
-                gate.params['command']?.toString() == command &&
-                _workingDirectory(gate) == directory,
+      for (final ref in step.acceptanceRefs) {
+        if (!acceptanceRefs.contains(ref)) {
+          issues.add(
+            TaskPlanIssue(
+              code: 'unknown_acceptance_ref',
+              path: 'steps[$index].acceptance_refs',
+              message: 'Step ${step.id} references unknown acceptance $ref.',
+            ),
           );
-      if (!hasCommand) {
-        issues.add(
-          TaskPlanIssue(
-            code: 'missing_required_check',
-            path: 'gates',
-            message: 'Required project command check "$command" is missing.',
-          ),
-        );
+        } else {
+          final previousStep = attachedAcceptanceRefs[ref];
+          if (previousStep != null && previousStep != step.id) {
+            issues.add(
+              TaskPlanIssue(
+                code: 'duplicate_acceptance_attachment',
+                path: 'steps[$index].acceptance_refs',
+                message:
+                    'Acceptance $ref is attached to both $previousStep and ${step.id}.',
+              ),
+            );
+          } else {
+            attachedAcceptanceRefs[ref] = step.id;
+          }
+        }
       }
     }
     return issues;
   }
 
-  void _ensureRequiredProjectChecks() {
-    for (final gate in requiredGates) {
-      if (gate.id == 'command_passes') {
-        final command = gate.params['command']?.toString().trim() ?? '';
-        if (command.isEmpty) continue;
-        final directory = _workingDirectory(gate);
-        final matchingIndex = _taskGates.indexWhere(
-          (item) =>
-              item.id == 'command_passes' &&
-              item.params['command']?.toString() == command &&
-              _workingDirectory(item) == directory,
-        );
-        if (matchingIndex >= 0) {
-          final existing = _taskGates[matchingIndex];
-          if (gate.required && !existing.required) {
-            _taskGates[matchingIndex] = TaskGate(
-              id: existing.id,
-              required: true,
-              scope: existing.scope,
-              params: existing.params,
-              description: existing.description,
-            );
-          }
-          continue;
-        }
-      }
-      _taskGates.add(gate);
-    }
+  String _fingerprintWithAcceptance() {
+    final base = _source.fingerprint.trim().isEmpty
+        ? _objective.trim().toLowerCase()
+        : _source.fingerprint;
+    return '$base|acceptance:${_encode([
+      for (final item in _acceptance) {
+          'ref': item.ref,
+          'statement': item.statement,
+          'criterionIds': item.criterionIds,
+          'verifiers': [
+            for (final verifier in item.verifiers) {'kind': verifier.kind.name, 'required': verifier.required, 'command': verifier.command, 'workingDirectory': verifier.workingDirectory, 'path': verifier.path, 'artifactKind': verifier.artifactKind, 'description': verifier.description},
+          ],
+        },
+    ])}';
   }
 
-  List<TaskGate> _defaultTaskGates(Iterable<TaskStep> steps) {
-    final mutating = steps.any((step) => step.mayEditFiles);
-    final coding = _normalise('$_objective $_title')
-        .split(' ')
-        .any(
-          (word) => const {
-            'code',
-            'test',
-            'build',
-            'bug',
-            'fix',
-            'implement',
-            'refactor',
-            'compile',
-            'flutter',
-            'dart',
-            'api',
-          }.contains(word),
-        );
-    if (!mutating && !coding) return const [];
-    return const [
-      TaskGate(
-        id: 'no_tool_errors',
-        required: true,
-        scope: 'task',
-        description: 'No unresolved fatal workspace tool errors.',
-      ),
-      TaskGate(
-        id: 'no_failed_commands',
-        required: true,
-        scope: 'task',
-        description: 'No failed terminal commands after workspace mutation.',
-      ),
-    ];
-  }
-
-  List<TaskGate> _artifactGates(List<TaskArtifact> artifacts) {
-    final paths = [
-      for (final artifact in artifacts)
-        if (artifact.path.trim().isNotEmpty) artifact.path,
-    ];
-    if (paths.isEmpty) return const [];
-    return [
-      TaskGate(
-        id: 'artifact_exists',
-        required: true,
-        scope: 'step',
-        params: {'paths': paths},
-        description: 'Declared artifacts must exist.',
-      ),
-      TaskGate(
-        id: 'artifact_nonempty',
-        required: true,
-        scope: 'step',
-        params: {'paths': paths},
-        description:
-            'Declared file artifacts must be non-empty; directories must exist.',
-      ),
-    ];
-  }
-
-  bool _hasMatchingGate(TaskAggregate task, TaskGate required) {
-    return task.gates.any((gate) {
-      if (gate.id != required.id) {
-        return false;
-      }
-      if (gate.id == 'command_passes') {
-        return gate.params['command']?.toString() ==
-                required.params['command']?.toString() &&
-            _workingDirectory(gate) == _workingDirectory(required);
-      }
-      return _encode(gate.params) == _encode(required.params);
-    });
-  }
-
-  void _dedupeTaskGates() {
-    final deduped = _dedupeGates(_taskGates);
-    _taskGates
-      ..clear()
-      ..addAll(deduped);
-  }
-
-  List<TaskGate> _dedupeGates(Iterable<TaskGate> gates) {
-    final seen = <String>{};
-    final result = <TaskGate>[];
-    for (final gate in gates) {
-      final params = Map<String, dynamic>.from(gate.params);
-      if (gate.id == 'command_passes') {
-        final directory = _workingDirectory(gate);
-        params
-          ..remove('workingDirectory')
-          ..['working_directory'] = directory;
-      }
-      final key = _encode({
-        'id': gate.id,
-        'scope': gate.scope,
-        'params': params,
-      });
-      if (seen.add(key)) {
-        result.add(gate);
-      } else if (gate.required) {
-        final index = result.indexWhere(
-          (existing) =>
-              _encode({
-                'id': existing.id,
-                'scope': existing.scope,
-                'params': existing.params,
-              }) ==
-              key,
-        );
-        if (index >= 0 && !result[index].required) {
-          final existing = result[index];
-          result[index] = TaskGate(
-            id: existing.id,
-            required: true,
-            scope: existing.scope,
-            params: existing.params,
-            description: existing.description ?? gate.description,
-          );
-        }
-      }
-    }
-    return result;
-  }
-
-  List<TaskEvidenceExpectation> _dedupeEvidence(
-    Iterable<TaskEvidenceExpectation> expectations,
-  ) {
-    final seen = <String>{};
-    final result = <TaskEvidenceExpectation>[];
-    for (final expectation in expectations) {
-      final key = _encode({
-        'id': expectation.id,
-        'type': expectation.type.name,
-        'criterionIds': expectation.criterionIds,
-        'source': expectation.sourceRef,
-        'description': expectation.description,
-        'required': expectation.required,
-        'details': expectation.details,
-      });
-      if (seen.add(key)) result.add(expectation);
-    }
-    return result;
-  }
 
   TaskStep _stepFor(String reference) {
     final key = reference.trim();
@@ -923,6 +684,56 @@ class TaskPlanBuilder {
     }
   }
 
+  void _validateAcceptance(AcceptanceItem item, String fieldPath) {
+    if (item.ref.trim().isEmpty) {
+      throw _error(
+        'missing_acceptance_ref',
+        '$fieldPath.ref',
+        'Acceptance refs must be non-empty.',
+      );
+    }
+    if (item.statement.trim().isEmpty) {
+      throw _error(
+        'missing_acceptance_statement',
+        '$fieldPath.statement',
+        'Acceptance statements must be non-empty.',
+      );
+    }
+    if (item.verifiers.isEmpty) {
+      throw _error(
+        'missing_acceptance_verifier',
+        '$fieldPath.verifiers',
+        'Each acceptance item needs at least one verifier.',
+      );
+    }
+    if (!item.verifiers.any((verifier) => verifier.required)) {
+      throw _error(
+        'missing_required_verifier',
+        '$fieldPath.verifiers',
+        'Each acceptance item needs at least one required verifier.',
+      );
+    }
+    for (var index = 0; index < item.verifiers.length; index++) {
+      final verifier = item.verifiers[index];
+      if (!verifier.hasConfiguration) {
+        throw _error(
+          'invalid_acceptance_verifier',
+          '$fieldPath.verifiers[$index]',
+          'The verifier does not contain the fields required for its kind.',
+        );
+      }
+      if (verifier.kind == AcceptanceVerifierKind.command) {
+        _throwIfCommandBlocked(verifier.command!.trim());
+      }
+      if (verifier.kind == AcceptanceVerifierKind.artifact) {
+        _validateArtifactPath(
+          verifier.path!,
+          '$fieldPath.verifiers[$index].path',
+        );
+      }
+    }
+  }
+
   String? _nextStepId(List<TaskStep> steps) {
     for (final step in steps) {
       if (step.status == TaskStepStatus.pending ||
@@ -935,16 +746,6 @@ class TaskPlanBuilder {
     return null;
   }
 
-  String _workingDirectory(TaskGate gate) =>
-      gate.params['working_directory']?.toString() ??
-      gate.params['workingDirectory']?.toString() ??
-      '.';
-
-  String _workingDirectoryFromEvidence(TaskEvidenceExpectation expectation) =>
-      expectation.details['working_directory']?.toString() ??
-      expectation.details['workingDirectory']?.toString() ??
-      '.';
-
   void _throwIfCommandBlocked(String command) {
     final reason = TerminalCommandClassifier.blockedReasonForCommand(command);
     if (reason == null) return;
@@ -953,27 +754,6 @@ class TaskPlanBuilder {
       'command',
       'Verification command is rejected by terminal policy: $reason',
     );
-  }
-
-  TaskPlanIssue? _commandGateIssue(TaskGate gate, String fieldPath) {
-    if (gate.id != 'command_passes') return null;
-    final command = TerminalCommandParser.commandTextFromParts(
-      gate.params['command']?.toString() ?? '',
-      _stringListValue(gate.params['args']),
-    );
-    if (command.isEmpty) return null;
-    final reason = TerminalCommandClassifier.blockedReasonForCommand(command);
-    if (reason == null) return null;
-    return TaskPlanIssue(
-      code: 'blocked_command',
-      path: fieldPath,
-      message: 'Verification command is rejected by terminal policy: $reason',
-    );
-  }
-
-  List<String> _stringListValue(Object? value) {
-    if (value is! List) return const [];
-    return [for (final item in value) item.toString()];
   }
 
   bool _looksLikeWholeProject(String value, String goal) {

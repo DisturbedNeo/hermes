@@ -61,37 +61,6 @@ class TaskProjectCriterion with TaskProjectCriterionMappable {
   });
 }
 
-/// TaskSnapshotAggregate-planning DTO used by the task planner prompt. The canonical task
-/// record uses [TaskEvidenceExpectation] and its typed evidence enum.
-@MappableClass(ignoreNull: true)
-class TaskProjectEvidenceExpectation
-    with TaskProjectEvidenceExpectationMappable {
-  @MappableField(hook: JsonStringHook())
-  final String id;
-  @MappableField(hook: JsonStringHook(fallback: 'task_claim'))
-  final String type;
-  @MappableField(hook: JsonStringListHook())
-  final List<String> criterionIds;
-  @MappableField(hook: JsonStringHook())
-  final String description;
-  @MappableField(hook: JsonBoolHook(fallback: true))
-  final bool required;
-  @MappableField(hook: JsonNullableStringHook())
-  final String? sourceRef;
-  @MappableField(hook: JsonMapValueHook())
-  final Map<String, dynamic> details;
-
-  const TaskProjectEvidenceExpectation({
-    required this.id,
-    this.type = 'task_claim',
-    this.criterionIds = const [],
-    required this.description,
-    this.required = true,
-    this.sourceRef,
-    this.details = const {},
-  });
-}
-
 extension ExecutionModeWire on ExecutionMode {
   String get wire => switch (this) {
     ExecutionMode.continueTask => 'continue_task',
@@ -131,7 +100,6 @@ class RefinedTaskBrief with RefinedTaskBriefMappable {
   @MappableField(hook: JsonStringListHook())
   final List<String> constraints;
   @MappableField(hook: JsonStringListHook())
-  final List<String> successCriteria;
   @MappableField(hook: JsonStringListHook())
   final List<String> assumptions;
   @MappableField(hook: JsonStringListHook())
@@ -141,7 +109,6 @@ class RefinedTaskBrief with RefinedTaskBriefMappable {
     required this.title,
     required this.goal,
     this.constraints = const [],
-    this.successCriteria = const [],
     this.assumptions = const [],
     this.questions = const [],
   });
@@ -165,15 +132,11 @@ class TaskSnapshotAggregate
   final String objective;
   @MappableField(hook: JsonStringListHook())
   final List<String> constraints;
-  @MappableField(hook: JsonStringListHook())
-  final List<String> successCriteria;
-  @MappableField(hook: JsonObjectListHook())
-  final List<TaskGate> gates;
   @MappableField(hook: JsonObjectListHook())
   final List<TaskStep> steps;
   final TaskStatus status;
-  @MappableField(hook: JsonStringListHook())
-  final List<String> criterionIds;
+  @MappableField(hook: JsonObjectListHook())
+  final List<AcceptanceItem> acceptance;
   @MappableField(hook: JsonNullableStringHook())
   final String? milestoneId;
   @MappableField(hook: JsonStringListHook())
@@ -188,20 +151,14 @@ class TaskSnapshotAggregate
   final int revisionIntroduced;
   @MappableField(hook: JsonIntHook(fallback: 1, min: 1))
   final int revisionUpdated;
-  @MappableField(hook: JsonObjectListHook())
-  final List<TaskEvidenceExpectation> expectedEvidence;
   @MappableField(hook: JsonStringListHook())
   final List<String> readPaths;
   @MappableField(hook: JsonStringListHook())
   final List<String> writePaths;
   @MappableField(hook: JsonStringListHook())
-  final List<String> doneCriteria;
-  @MappableField(hook: JsonStringListHook())
   final List<String> outOfScope;
   @MappableField(hook: JsonStringListHook())
   final List<String> context;
-  @MappableField(hook: JsonObjectListHook())
-  final List<TaskArtifact> expectedArtifacts;
   @MappableField(hook: JsonNullableStringHook())
   final String? recoveryIncidentId;
   @MappableField(hook: JsonStringHook())
@@ -245,11 +202,9 @@ class TaskSnapshotAggregate
     String? originalPrompt,
     String? objective,
     this.constraints = const [],
-    this.successCriteria = const [],
-    this.gates = const [],
     this.steps = const [],
     this.status = TaskStatus.paused,
-    this.criterionIds = const [],
+    this.acceptance = const [],
     this.milestoneId,
     this.dependsOnTaskIds = const [],
     this.priority = TaskPriority.normal,
@@ -259,13 +214,10 @@ class TaskSnapshotAggregate
     this.selectionRationale = '',
     this.revisionIntroduced = 1,
     this.revisionUpdated = 1,
-    this.expectedEvidence = const [],
     this.readPaths = const [],
     this.writePaths = const [],
-    this.doneCriteria = const [],
     this.outOfScope = const [],
     this.context = const [],
-    this.expectedArtifacts = const [],
     this.recoveryIncidentId,
     this.fingerprint = '',
     this.rejectionReason,
@@ -292,11 +244,9 @@ class TaskSnapshotAggregate
     String? originalPrompt,
     String? objective,
     List<String>? constraints,
-    List<String>? successCriteria,
-    List<TaskGate>? gates,
     List<TaskStep>? steps,
     TaskStatus? status,
-    List<String>? criterionIds,
+    List<AcceptanceItem>? acceptance,
     Object? milestoneId = kSentinel,
     List<String>? dependsOnTaskIds,
     TaskPriority? priority,
@@ -306,13 +256,10 @@ class TaskSnapshotAggregate
     String? selectionRationale,
     int? revisionIntroduced,
     int? revisionUpdated,
-    List<TaskEvidenceExpectation>? expectedEvidence,
     List<String>? readPaths,
     List<String>? writePaths,
-    List<String>? doneCriteria,
     List<String>? outOfScope,
     List<String>? context,
-    List<TaskArtifact>? expectedArtifacts,
     Object? recoveryIncidentId = kSentinel,
     String? fingerprint,
     Object? rejectionReason = kSentinel,
@@ -337,11 +284,9 @@ class TaskSnapshotAggregate
       originalPrompt: originalPrompt ?? this.originalPrompt,
       objective: objective ?? this.objective,
       constraints: constraints ?? this.constraints,
-      successCriteria: successCriteria ?? this.successCriteria,
-      gates: gates ?? this.gates,
       steps: steps ?? this.steps,
       status: status ?? this.status,
-      criterionIds: criterionIds ?? this.criterionIds,
+      acceptance: acceptance ?? this.acceptance,
       milestoneId: resolve(milestoneId, this.milestoneId),
       dependsOnTaskIds: dependsOnTaskIds ?? this.dependsOnTaskIds,
       priority: priority ?? this.priority,
@@ -351,13 +296,10 @@ class TaskSnapshotAggregate
       selectionRationale: selectionRationale ?? this.selectionRationale,
       revisionIntroduced: revisionIntroduced ?? this.revisionIntroduced,
       revisionUpdated: revisionUpdated ?? this.revisionUpdated,
-      expectedEvidence: expectedEvidence ?? this.expectedEvidence,
       readPaths: readPaths ?? this.readPaths,
       writePaths: writePaths ?? this.writePaths,
-      doneCriteria: doneCriteria ?? this.doneCriteria,
       outOfScope: outOfScope ?? this.outOfScope,
       context: context ?? this.context,
-      expectedArtifacts: expectedArtifacts ?? this.expectedArtifacts,
       recoveryIncidentId: resolve(recoveryIncidentId, this.recoveryIncidentId),
       fingerprint: fingerprint ?? this.fingerprint,
       rejectionReason: resolve(rejectionReason, this.rejectionReason),
@@ -407,13 +349,10 @@ class TaskSnapshotAggregate
 
 class TaskJsonHook extends JsonModelHook {
   const TaskJsonHook()
-    : super(
-        omitEmpty: const {'gates'},
-        removeKeys: const {'persistenceRevision'},
-      );
+    : super(removeKeys: const {'persistenceRevision'});
 }
 
-@MappableClass(ignoreNull: true, hook: JsonModelHook(omitEmpty: {'gates'}))
+@MappableClass(ignoreNull: true)
 class TaskStep with TaskStepMappable {
   @MappableField(hook: JsonStringHook())
   final String id;
@@ -427,8 +366,8 @@ class TaskStep with TaskStepMappable {
   final bool mayEditFiles;
   @MappableField(hook: JsonObjectListHook())
   final List<TaskArtifact> artifacts;
-  @MappableField(hook: JsonObjectListHook())
-  final List<TaskGate> gates;
+  @MappableField(hook: JsonStringListHook())
+  final List<String> acceptanceRefs;
   final TaskStepStatus status;
 
   const TaskStep({
@@ -438,7 +377,7 @@ class TaskStep with TaskStepMappable {
     required this.instructions,
     required this.mayEditFiles,
     required this.artifacts,
-    this.gates = const [],
+    this.acceptanceRefs = const [],
     required this.status,
   });
 
@@ -449,7 +388,7 @@ class TaskStep with TaskStepMappable {
     List<String>? instructions,
     bool? mayEditFiles,
     List<TaskArtifact>? artifacts,
-    List<TaskGate>? gates,
+    List<String>? acceptanceRefs,
     TaskStepStatus? status,
   }) {
     return TaskStep(
@@ -459,7 +398,7 @@ class TaskStep with TaskStepMappable {
       instructions: instructions ?? this.instructions,
       mayEditFiles: mayEditFiles ?? this.mayEditFiles,
       artifacts: artifacts ?? this.artifacts,
-      gates: gates ?? this.gates,
+      acceptanceRefs: acceptanceRefs ?? this.acceptanceRefs,
       status: status ?? this.status,
     );
   }

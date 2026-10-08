@@ -286,7 +286,6 @@ TaskAggregate _task(String id, {List<TaskRun> runs = const []}) {
     originalPrompt: 'Task',
     objective: 'Task',
     constraints: const [],
-    successCriteria: const [],
     steps: const [],
     status: TaskStatus.queued,
     currentStepId: null,

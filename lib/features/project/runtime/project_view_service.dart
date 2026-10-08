@@ -1,4 +1,5 @@
 import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/project/domain/project_control_state_service.dart';
 import 'package:hermes/features/project/domain/project_scheduler.dart';
 import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
@@ -441,7 +442,9 @@ class ProjectViewService {
     'notes': _text(criterion.notes),
     'linked_task_refs': [
       for (final task in project.tasks)
-        if (task.criterionIds.contains(criterion.id))
+        if (task.acceptance.any(
+          (item) => item.criterionIds.contains(criterion.id),
+        ))
           project.taskAgentNumber(task.id),
     ].take(limit).toList(),
   };
@@ -472,9 +475,8 @@ class ProjectViewService {
     'objective': _text(task.objective),
     'status': task.status.wire,
     'readiness': _readinessWire(schedule.readinessFor(task.id)),
-    'criterion_ids': [
-      for (final id in task.criterionIds.take(limit))
-        project.criterionAgentNumber(id),
+    'acceptance_refs': [
+      for (final item in task.acceptance.take(limit)) item.ref,
     ],
     'milestone_id': task.milestoneId == null
         ? null
@@ -504,23 +506,14 @@ class ProjectViewService {
     'write_paths': [
       for (final path in task.writePaths.take(limit)) _text(path),
     ],
-    'done_criteria': [
-      for (final item in task.doneCriteria.take(limit)) _text(item),
+    'acceptance': [
+      for (final item in task.acceptance.take(limit))
+        _acceptanceSummary(project, task, item, limit),
     ],
     'out_of_scope': [
       for (final item in task.outOfScope.take(limit)) _text(item),
     ],
     'context': [for (final item in task.context.take(limit)) _text(item)],
-    'expected_artifacts': [
-      for (final artifact in task.expectedArtifacts.take(limit))
-        {
-          'path': _text(artifact.path),
-          'description': artifact.description == null
-              ? null
-              : _text(artifact.description!),
-          'kind': artifact.kind,
-        },
-    ],
     'rejection_reason': task.rejectionReason == null
         ? null
         : _text(task.rejectionReason!),
@@ -528,45 +521,89 @@ class ProjectViewService {
         ? null
         : {
             'key': _text(task.failureKey!),
-            'gate_ref': task.failureGateId,
             'error_codes': [
               for (final code in task.failureErrorCodes.take(limit))
                 _text(code),
             ],
             'unresolved_error_count': task.unresolvedErrorCount,
           },
-    'checks': [
-      for (final gate in task.gates.take(limit))
-        {
-          'kind': gate.id,
-          'required': gate.required,
-          'command': gate.params['command'] == null
-              ? null
-              : _text(gate.params['command'].toString()),
-          'working_directory': gate.params['working_directory'] == null
-              ? null
-              : _text(gate.params['working_directory'].toString()),
-          'description': gate.description == null
-              ? null
-              : _text(gate.description!),
-        },
+    'blocking_explanation': task.failureKey == null
+        ? null
+        : _text(task.failureKey!),
+  };
+
+  Map<String, dynamic> _acceptanceSummary(
+    ProjectAggregate project,
+    ProjectTaskNode task,
+    AcceptanceItem item,
+    int limit,
+  ) => {
+    'ref': _text(item.ref),
+    'statement': _text(item.statement),
+    'criterion_refs': [
+      for (final id in item.criterionIds.take(limit))
+        project.criterionAgentNumber(id),
     ],
-    'evidence_intents': [
-      for (final expectation in task.expectedEvidence.take(limit))
-        {
-          'kind': expectation.type.name,
-          'criterion_ids': [
-            for (final id in expectation.criterionIds.take(limit))
-              project.criterionAgentNumber(id),
-          ],
-          'description': _text(expectation.description),
-          'required': expectation.required,
-          'source_ref': expectation.sourceRef == null
-              ? null
-              : _text(expectation.sourceRef!),
-        },
+    'verifiers': [
+      for (
+        var index = 0;
+        index < item.verifiers.length && index < limit;
+        index++
+      )
+        _verifierSummary(project, task, item, index),
     ],
   };
+
+  Map<String, dynamic> _verifierSummary(
+    ProjectAggregate project,
+    ProjectTaskNode task,
+    AcceptanceItem item,
+    int index,
+  ) {
+    final verifier = item.verifiers[index];
+    final expectationId = 'acceptance_${item.ref}_$index';
+    final evidence = project.evidence
+              .where(
+                (candidate) =>
+                    candidate.taskId == task.id &&
+                    candidate.expectationIds.contains(expectationId),
+              )
+              .fold<ProjectEvidence?>(
+                null,
+                (latest, candidate) =>
+                    latest == null ||
+                        (candidate.evaluatedAt ?? candidate.createdAt).isAfter(
+                          latest.evaluatedAt ?? latest.createdAt,
+                        )
+                    ? candidate
+                    : latest,
+              );
+    final status = switch (evidence?.status) {
+      ProjectEvidenceStatus.accepted => 'passed',
+      ProjectEvidenceStatus.rejected => 'failed',
+      ProjectEvidenceStatus.proposed ||
+      ProjectEvidenceStatus.stale => 'pending',
+      null => task.status == TaskStatus.completed ? 'passed' : 'pending',
+    };
+    final blocking = evidence?.status == ProjectEvidenceStatus.rejected
+        ? evidence!.summary
+        : task.status == TaskStatus.failed
+        ? (task.failureKey ?? task.rejectionReason)
+        : null;
+    return {
+      'kind': verifier.kind.name,
+      'required': verifier.required,
+      'status': status,
+      if (verifier.required && status != 'passed')
+        'blocking_explanation': _text(
+          blocking ?? 'This required verifier has not passed.',
+        ),
+      if (verifier.command != null) 'command': _text(verifier.command!),
+      if (verifier.path != null) 'path': _text(verifier.path!),
+      if (verifier.description != null)
+        'description': _text(verifier.description!),
+    };
+  }
 
   List<Map<String, dynamic>> _recentFailures(
     ProjectAggregate project,

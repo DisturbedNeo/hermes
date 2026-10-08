@@ -5,6 +5,7 @@ import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/runtime/project_criterion_evaluator.dart';
 import 'package:hermes/features/project/runtime/project_plan_revision_service.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 
 void main() {
   late Directory workspace;
@@ -65,14 +66,6 @@ void main() {
             'Implement a different bounded slice.',
             const ['criterion_001'],
           ),
-          expectedEvidence: const [
-            TaskEvidenceExpectation(
-              id: 'expect_second',
-              type: ProjectEvidenceType.taskClaim,
-              criterionIds: ['criterion_001'],
-              description: 'The second slice is independently checked.',
-            ),
-          ],
         );
     final result = await service.prepareAndApply(
       project: project,
@@ -222,14 +215,6 @@ void main() {
           _task(
             'new',
             status: TaskStatus.obsolete,
-            expectedEvidence: const [
-              TaskEvidenceExpectation(
-                id: 'expect_new',
-                type: ProjectEvidenceType.taskClaim,
-                criterionIds: ['criterion_001'],
-                description: 'The new task is independently checked.',
-              ),
-            ],
           ),
         ],
         deferredTaskIds: const ['existing'],
@@ -282,31 +267,29 @@ void main() {
       'existing',
       writePaths: const ['lib/new_feature.dart'],
       selectionRationale: 'The new path is the bounded implementation surface.',
-      expectedEvidence: const [
-        TaskEvidenceExpectation(
-          id: 'expect_task',
-          type: ProjectEvidenceType.command,
+      acceptance: const [
+        AcceptanceItem(
+          ref: 'verification-command',
+          statement: 'The focused verification command passes.',
           criterionIds: ['criterion_001'],
-          description: 'The focused verification command passes.',
-          sourceRef: 'dart test',
-          details: {'working_directory': '.'},
+          verifiers: [
+            AcceptanceVerifier(
+              kind: AcceptanceVerifierKind.command,
+              command: 'dart test',
+            ),
+          ],
         ),
-      ],
-      gates: const [
-        TaskGate(
-          id: 'command_passes',
-          required: true,
-          scope: 'task',
-          params: {'command': 'dart test', 'working_directory': '.'},
-        ),
-      ],
-      expectedArtifacts: [
-        TaskArtifact(
-          id: 'artifact_existing',
-          path: 'lib/new_feature.dart',
-          description: 'The bounded implementation file.',
-          kind: 'file',
-          createdAt: DateTime(2026, 1, 2),
+        AcceptanceItem(
+          ref: 'implementation-file',
+          statement: 'The bounded implementation file exists.',
+          criterionIds: ['criterion_001'],
+          verifiers: [
+            AcceptanceVerifier(
+              kind: AcceptanceVerifierKind.artifact,
+              path: 'lib/new_feature.dart',
+              description: 'The bounded implementation file.',
+            ),
+          ],
         ),
       ],
     );
@@ -322,11 +305,11 @@ void main() {
       'lib/new_feature.dart',
     ]);
     expect(
-      result.project.taskById('existing')?.expectedEvidence.single.type,
-      ProjectEvidenceType.command,
+      result.project.taskById('existing')?.acceptance.first.verifiers.single.kind,
+      AcceptanceVerifierKind.command,
     );
     expect(
-      result.project.taskById('existing')?.expectedArtifacts.single.path,
+      result.project.taskById('existing')?.acceptance.last.verifiers.single.path,
       'lib/new_feature.dart',
     );
   });
@@ -710,39 +693,48 @@ TaskAggregate _task(
   String id, {
   List<String> dependencies = const [],
   List<String> writePaths = const ['lib/feature.dart'],
-  List<TaskEvidenceExpectation>? expectedEvidence,
-  List<TaskGate> gates = const [],
   List<TaskArtifact> expectedArtifacts = const [],
+  List<AcceptanceItem>? acceptance,
   String selectionRationale = '',
   TaskStatus status = TaskStatus.queued,
 }) {
   final now = DateTime(2026, 1, 2);
   final objective = 'Implement bounded slice $id.';
+  final verifierSpecs = <AcceptanceVerifier>[
+    for (final artifact in expectedArtifacts)
+      AcceptanceVerifier(
+        kind: AcceptanceVerifierKind.artifact,
+        path: artifact.path,
+        description: artifact.description,
+      ),
+  ];
+  if (verifierSpecs.isEmpty) {
+    verifierSpecs.add(
+      const AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+    );
+  }
+  final defaultAcceptance = AcceptanceItem(
+    ref: 'slice-$id',
+    statement: 'The bounded slice is implemented and checked.',
+    criterionIds: const ['criterion_001'],
+    verifiers: verifierSpecs,
+  );
   return TaskAggregate(
     id: id,
     title: 'Bounded slice $id',
     objective: objective,
-    criterionIds: const ['criterion_001'],
-    gates: gates,
+    acceptance: acceptance ?? [defaultAcceptance],
     dependsOnTaskIds: dependencies,
     selectionRationale: selectionRationale,
-    expectedEvidence:
-        expectedEvidence ??
-        const [
-          TaskEvidenceExpectation(
-            id: 'expect_task',
-            type: ProjectEvidenceType.taskClaim,
-            criterionIds: ['criterion_001'],
-            description: 'The done criteria are independently checked.',
-          ),
-        ],
     writePaths: writePaths,
-    doneCriteria: const ['The bounded slice is implemented and checked.'],
     outOfScope: const ['Do not change unrelated project scope.'],
     context: const [],
-    expectedArtifacts: expectedArtifacts,
     status: status,
-    fingerprint: projectTaskFingerprint(objective, const ['criterion_001']),
+    fingerprint: projectTaskFingerprint(
+      objective,
+      const ['criterion_001'],
+      acceptance ?? [defaultAcceptance],
+    ),
     rejectionReason: null,
     createdAt: now,
     updatedAt: now,

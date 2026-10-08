@@ -23,7 +23,7 @@ abstract final class ChatPanelProjection {
       pendingQuestion: snapshot.pendingQuestion,
       planningMetrics: snapshot.planningMetrics,
       memorySummary: snapshot.memorySummary,
-      doneCriteria: snapshot.doneCriteria,
+      acceptance: snapshot.acceptance,
       outOfScope: snapshot.outOfScope,
       currentStepId: snapshot.currentStepId,
       projectId: snapshot.projectId,
@@ -88,43 +88,14 @@ abstract final class ChatPanelProjection {
 
 TaskAggregate _snapshotTask(TaskAggregate source) => source.copyWith(
   constraints: List.unmodifiable(source.constraints),
-  successCriteria: List.unmodifiable(source.successCriteria),
-  gates: List.unmodifiable(source.gates.map(_snapshotGate)),
   steps: List.unmodifiable(source.steps.map(_snapshotStep)),
-  criterionIds: List.unmodifiable(source.criterionIds),
   dependsOnTaskIds: List.unmodifiable(source.dependsOnTaskIds),
-  expectedEvidence: List.unmodifiable(
-    source.expectedEvidence.map(_snapshotEvidenceExpectation),
-  ),
   readPaths: List.unmodifiable(source.readPaths),
   writePaths: List.unmodifiable(source.writePaths),
-  doneCriteria: List.unmodifiable(source.doneCriteria),
   outOfScope: List.unmodifiable(source.outOfScope),
   context: List.unmodifiable(source.context),
-  expectedArtifacts: List.unmodifiable(
-    source.expectedArtifacts.map(_snapshotArtifact),
-  ),
+  acceptance: List.unmodifiable(source.acceptance),
   runs: List.unmodifiable(source.runs.map(_snapshotRun)),
-);
-
-TaskGate _snapshotGate(TaskGate source) => TaskGate(
-  id: source.id,
-  required: source.required,
-  scope: source.scope,
-  params: _snapshotMap(source.params),
-  description: source.description,
-);
-
-TaskEvidenceExpectation _snapshotEvidenceExpectation(
-  TaskEvidenceExpectation source,
-) => TaskEvidenceExpectation(
-  id: source.id,
-  type: source.type,
-  criterionIds: List.unmodifiable(source.criterionIds),
-  description: source.description,
-  required: source.required,
-  sourceRef: source.sourceRef,
-  details: _snapshotMap(source.details),
 );
 
 TaskArtifact _snapshotArtifact(TaskArtifact source) => source.copyWith();
@@ -132,7 +103,6 @@ TaskArtifact _snapshotArtifact(TaskArtifact source) => source.copyWith();
 TaskStep _snapshotStep(TaskStep source) => source.copyWith(
   instructions: List.unmodifiable(source.instructions),
   artifacts: List.unmodifiable(source.artifacts.map(_snapshotArtifact)),
-  gates: List.unmodifiable(source.gates.map(_snapshotGate)),
 );
 
 TaskRun _snapshotRun(TaskRun source) => source.copyWith(
@@ -231,22 +201,13 @@ ProjectWorkspaceEdge _snapshotWorkspaceEdge(ProjectWorkspaceEdge source) =>
     source.copyWith();
 
 ProjectTaskNode _snapshotProjectTask(ProjectTaskNode source) => source.copyWith(
-  gates: List.unmodifiable(source.gates.map(_snapshotGate)),
   constraints: List.unmodifiable(source.constraints),
-  successCriteria: List.unmodifiable(source.successCriteria),
-  criterionIds: List.unmodifiable(source.criterionIds),
   dependsOnTaskIds: List.unmodifiable(source.dependsOnTaskIds),
-  expectedEvidence: List.unmodifiable(
-    source.expectedEvidence.map(_snapshotEvidenceExpectation),
-  ),
   readPaths: List.unmodifiable(source.readPaths),
   writePaths: List.unmodifiable(source.writePaths),
-  doneCriteria: List.unmodifiable(source.doneCriteria),
   outOfScope: List.unmodifiable(source.outOfScope),
   context: List.unmodifiable(source.context),
-  expectedArtifacts: List.unmodifiable(
-    source.expectedArtifacts.map(_snapshotArtifact),
-  ),
+  acceptance: List.unmodifiable(source.acceptance),
   failureErrorCodes: List.unmodifiable(source.failureErrorCodes),
 );
 

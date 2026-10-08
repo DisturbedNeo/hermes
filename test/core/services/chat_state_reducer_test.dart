@@ -16,7 +16,6 @@ void main() {
       originalPrompt: 'Show the task panel',
       objective: 'Render one task',
       constraints: const [],
-      successCriteria: const [],
       createdAt: now,
       updatedAt: now,
     );

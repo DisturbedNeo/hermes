@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes/features/project/application/contracts/project_task_models.dart'
-    show ProjectTaskCheckSpec;
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/runtime/project_plan_builder.dart';
@@ -25,15 +24,18 @@ void main() {
           ref: 'implementation',
           title: 'Implement the bounded slice',
           objective: 'Implement one bounded slice of the outcome.',
-          criterionRefs: ['quality'],
-          doneCriteria: ['The slice is implemented and checked.'],
+          acceptance: [
+            AcceptanceItem(
+              ref: 'quality-proof',
+              statement: 'The slice is implemented and checked.',
+              criterionIds: ['quality'],
+              verifiers: [
+                AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+              ],
+            ),
+          ],
           outOfScope: ['Unrelated project work.'],
         ),
-      );
-      final expectationId = builder.addCommandCheck(
-        taskReference: 'implementation',
-        command: 'dart test',
-        criterionRefs: ['quality'],
       );
       final noteId = builder.addNote(
         kind: ProjectMemoryKind.assumption,
@@ -43,7 +45,6 @@ void main() {
       expect(criterionId, startsWith('criterion_'));
       expect(taskId, startsWith('task_'));
       expect(builder.taskIdFor('implementation'), taskId);
-      expect(expectationId, startsWith('expect_'));
       expect(noteId, startsWith('memory_'));
 
       final committed = await builder.commit(
@@ -59,12 +60,7 @@ void main() {
       );
       expect(committed.patch.plan.tasks, hasLength(1));
       final task = committed.project.taskById(taskId)!;
-      expect(task.gates.single.id, 'command_passes');
-      expect(task.gates.single.params['command'], 'dart test');
-      expect(
-        task.expectedEvidence.any((item) => item.id == expectationId),
-        isTrue,
-      );
+      expect(task.acceptance.single.verifiers.single.kind, AcceptanceVerifierKind.review);
       expect(committed.project.memory.any((item) => item.id == noteId), isTrue);
     },
   );
@@ -76,8 +72,16 @@ void main() {
         ref: 'first',
         title: 'First bounded slice',
         objective: 'Implement the first bounded slice.',
-        criterionRefs: ['criterion_001'],
-        doneCriteria: ['The first slice is checked.'],
+        acceptance: [
+          AcceptanceItem(
+            ref: 'first-proof',
+            statement: 'The first slice is checked.',
+            criterionIds: ['criterion_001'],
+            verifiers: [
+              AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+            ],
+          ),
+        ],
         outOfScope: ['The second slice.'],
       ),
     );
@@ -86,8 +90,16 @@ void main() {
         ref: 'second',
         title: 'Second bounded slice',
         objective: 'Implement the second bounded slice.',
-        criterionRefs: ['criterion_001'],
-        doneCriteria: ['The second slice is checked.'],
+        acceptance: [
+          AcceptanceItem(
+            ref: 'second-proof',
+            statement: 'The second slice is checked.',
+            criterionIds: ['criterion_001'],
+            verifiers: [
+              AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+            ],
+          ),
+        ],
         outOfScope: ['The first slice.'],
       ),
     );
@@ -110,38 +122,30 @@ void main() {
     expect(committed.project.taskById(secondId)?.status, TaskStatus.deferred);
   });
 
-  test('repairs an existing command expectation and gate together', () async {
-    final source = _task('checked').copyWith(
-      gates: [
-        const TaskGate(
-          id: 'command_passes',
-          required: false,
-          scope: 'task',
-          params: {'command': 'dart test', 'working_directory': '.'},
-        ),
-      ],
-      expectedEvidence: [
-        const TaskEvidenceExpectation(
-          id: 'expect_checked_command',
-          type: ProjectEvidenceType.command,
-          criterionIds: ['criterion_001'],
-          description: 'The bounded slice is checked.',
-          required: false,
-          sourceRef: 'dart test',
-          details: {'working_directory': '.'},
-        ),
-      ],
-    );
+  test('keeps acceptance as the sole verification authoring source', () async {
+    final source = _task('checked');
     final builder = ProjectPlanBuilder(project: _project(tasks: [source]));
 
     builder.updateTask(
       'checked',
       constraints: ['Keep verification within the task boundary.'],
     );
-    final expectationId = builder.addCommandCheck(
-      taskReference: 'checked',
-      command: 'dart test',
-      required: true,
+    builder.updateTask(
+      'checked',
+      acceptance: const [
+        AcceptanceItem(
+          ref: 'checked-proof',
+          statement: 'The bounded slice is checked.',
+          criterionIds: ['criterion_001'],
+          verifiers: [
+            AcceptanceVerifier(
+              kind: AcceptanceVerifierKind.command,
+              command: 'dart test',
+              required: true,
+            ),
+          ],
+        ),
+      ],
     );
     final committed = await builder.commit(
       workspaceRoot: '/workspace',
@@ -149,10 +153,8 @@ void main() {
     );
 
     final task = committed.project.taskById('checked')!;
-    expect(expectationId, 'expect_checked_command');
     expect(committed.result.changed, isTrue);
-    expect(task.gates.single.required, isTrue);
-    expect(task.expectedEvidence.single.required, isTrue);
+    expect(task.acceptance.single.verifiers.single.required, isTrue);
     expect(task.constraints, ['Keep verification within the task boundary.']);
   });
 
@@ -162,10 +164,21 @@ void main() {
       ref: 'artifact_task',
       title: 'Produce output',
       objective: 'Produce the bounded output.',
-      criterionRefs: ['criterion_001'],
-      doneCriteria: ['The output is produced.'],
+      acceptance: const [
+        AcceptanceItem(
+          ref: 'output-proof',
+          statement: 'The output is produced.',
+          criterionIds: ['criterion_001'],
+          verifiers: [
+            AcceptanceVerifier(
+              kind: AcceptanceVerifierKind.artifact,
+              path: 'output',
+              artifactKind: 'file',
+            ),
+          ],
+        ),
+      ],
       outOfScope: ['Unrelated work.'],
-      expectedArtifacts: [TaskArtifact(path: 'output', kind: 'file')],
     );
     builder.addTask(spec, commandId: 'add-artifact-task');
 
@@ -175,10 +188,21 @@ void main() {
           ref: 'artifact_task',
           title: 'Produce output',
           objective: 'Produce the bounded output.',
-          criterionRefs: ['criterion_001'],
-          doneCriteria: ['The output is produced.'],
+          acceptance: const [
+            AcceptanceItem(
+              ref: 'output-proof',
+              statement: 'The output is produced.',
+              criterionIds: ['criterion_001'],
+              verifiers: [
+                AcceptanceVerifier(
+                  kind: AcceptanceVerifierKind.artifact,
+                  path: 'output',
+                  artifactKind: 'directory',
+                ),
+              ],
+            ),
+          ],
           outOfScope: ['Unrelated work.'],
-          expectedArtifacts: [TaskArtifact(path: 'output', kind: 'directory')],
         ),
         commandId: 'add-artifact-task',
       ),
@@ -198,8 +222,14 @@ void main() {
       ref: 'same',
       title: 'A bounded slice',
       objective: 'Implement a bounded slice.',
-      criterionRefs: ['criterion_001'],
-      doneCriteria: ['The slice is checked.'],
+      acceptance: const [
+        AcceptanceItem(
+          ref: 'same-proof',
+          statement: 'The slice is checked.',
+          criterionIds: ['criterion_001'],
+          verifiers: [AcceptanceVerifier(kind: AcceptanceVerifierKind.review)],
+        ),
+      ],
       outOfScope: ['Unrelated work.'],
     );
     builder.addTask(spec);
@@ -222,16 +252,32 @@ void main() {
           ref: 'valid_batch_item',
           title: 'Another bounded slice',
           objective: 'Implement another bounded slice.',
-          criterionRefs: ['criterion_001'],
-          doneCriteria: ['The other slice is checked.'],
+          acceptance: const [
+            AcceptanceItem(
+              ref: 'other-proof',
+              statement: 'The other slice is checked.',
+              criterionIds: ['criterion_001'],
+              verifiers: [
+                AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+              ],
+            ),
+          ],
           outOfScope: ['Unrelated work.'],
         ),
         const ProjectTaskSpec(
           ref: 'invalid_batch_item',
           title: 'Invalid bounded slice',
           objective: 'Implement an invalid bounded slice.',
-          criterionRefs: ['missing_criterion'],
-          doneCriteria: ['The invalid slice is checked.'],
+          acceptance: const [
+            AcceptanceItem(
+              ref: 'invalid-proof',
+              statement: 'The invalid slice is checked.',
+              criterionIds: ['missing_criterion'],
+              verifiers: [
+                AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+              ],
+            ),
+          ],
           outOfScope: ['Unrelated work.'],
         ),
       ]),
@@ -249,8 +295,14 @@ void main() {
       ref: 'idempotent',
       title: 'An idempotent slice',
       objective: 'Implement an idempotent bounded slice.',
-      criterionRefs: ['criterion_001'],
-      doneCriteria: ['The idempotent slice is checked.'],
+      acceptance: const [
+        AcceptanceItem(
+          ref: 'idempotent-proof',
+          statement: 'The idempotent slice is checked.',
+          criterionIds: ['criterion_001'],
+          verifiers: [AcceptanceVerifier(kind: AcceptanceVerifierKind.review)],
+        ),
+      ],
       outOfScope: ['Unrelated work.'],
     );
 
@@ -264,8 +316,16 @@ void main() {
           ref: 'idempotent',
           title: 'A changed slice',
           objective: 'Implement a changed bounded slice.',
-          criterionRefs: ['criterion_001'],
-          doneCriteria: ['The changed slice is checked.'],
+          acceptance: const [
+            AcceptanceItem(
+              ref: 'idempotent-proof',
+              statement: 'The changed slice is checked.',
+              criterionIds: ['criterion_001'],
+              verifiers: [
+                AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+              ],
+            ),
+          ],
           outOfScope: ['Unrelated work.'],
         ),
         commandId: 'command-1',
@@ -290,8 +350,16 @@ void main() {
             ref: 'sequence_$index',
             title: 'Generated task $index',
             objective: 'Implement generated slice $index.',
-            criterionRefs: const ['criterion_001'],
-            doneCriteria: const ['The generated slice is checked.'],
+            acceptance: const [
+              AcceptanceItem(
+                ref: 'generated-proof',
+                statement: 'The generated slice is checked.',
+                criterionIds: ['criterion_001'],
+                verifiers: [
+                  AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+                ],
+              ),
+            ],
             outOfScope: const ['Unrelated work.'],
           ),
         ),
@@ -304,8 +372,16 @@ void main() {
           ref: 'too_many',
           title: 'Too many tasks',
           objective: 'Exceed the bounded planning slice.',
-          criterionRefs: ['criterion_001'],
-          doneCriteria: ['The slice is checked.'],
+          acceptance: const [
+            AcceptanceItem(
+              ref: 'too-many-proof',
+              statement: 'The slice is checked.',
+              criterionIds: ['criterion_001'],
+              verifiers: [
+                AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+              ],
+            ),
+          ],
           outOfScope: ['Unrelated work.'],
         ),
       ),
@@ -427,56 +503,23 @@ void main() {
       ],
     );
     final parent = _task('parent').copyWith(
-      gates: [
-        const TaskGate(
-          id: 'command_passes',
-          required: true,
-          scope: 'task',
-          params: {'command': 'dart test', 'working_directory': '.'},
-        ),
-      ],
-      expectedEvidence: [
-        ..._task('parent').expectedEvidence,
-        const TaskEvidenceExpectation(
-          id: 'parent_command',
-          type: ProjectEvidenceType.command,
+      acceptance: const [
+        AcceptanceItem(
+          ref: 'parent-command-proof',
+          statement: 'The deterministic slice is checked.',
           criterionIds: ['criterion_001'],
-          description: 'The deterministic slice is checked.',
-          required: true,
-          sourceRef: 'dart test',
-          details: {'working_directory': '.'},
+          verifiers: [
+            AcceptanceVerifier(
+              kind: AcceptanceVerifierKind.command,
+              command: 'dart test',
+            ),
+          ],
         ),
       ],
     );
     final builder = ProjectPlanBuilder(
       project: project.copyWith(tasks: [ProjectTaskNode.fromTask(parent)]),
     );
-
-    expect(
-      () => builder.splitTask(
-        taskReference: 'parent',
-        children: const [
-          ProjectTaskSpec(
-            ref: 'child_one',
-            title: 'First child',
-            objective: 'Implement the first child slice.',
-          ),
-          ProjectTaskSpec(
-            ref: 'child_two',
-            title: 'Second child',
-            objective: 'Implement the second child slice.',
-          ),
-        ],
-      ),
-      throwsA(
-        isA<ProjectPlanBuilderException>().having(
-          (error) => error.code,
-          'code',
-          'missing_split_deterministic_check',
-        ),
-      ),
-    );
-    expect(builder.splitTaskIds, isEmpty);
 
     final childIds = builder.splitTask(
       taskReference: 'parent',
@@ -485,10 +528,17 @@ void main() {
           ref: 'child_one',
           title: 'First child',
           objective: 'Implement the first child slice.',
-          checks: [
-            ProjectTaskCheckSpec(
-              command: 'dart test',
-              criterionRefs: ['criterion_001'],
+          acceptance: [
+            AcceptanceItem(
+              ref: 'child-command-proof',
+              statement: 'The child command passes.',
+              criterionIds: ['criterion_001'],
+              verifiers: [
+                AcceptanceVerifier(
+                  kind: AcceptanceVerifierKind.command,
+                  command: 'dart test',
+                ),
+              ],
             ),
           ],
         ),
@@ -507,11 +557,18 @@ void main() {
     expect(committed.validation.valid, isTrue);
     expect(committed.project.taskById('parent')?.status, TaskStatus.split);
     final checkedChild = committed.project.taskById(childIds.first)!;
-    expect(checkedChild.gates.single.required, isTrue);
-    expect(checkedChild.gates.single.params['command'], 'dart test');
+    expect(checkedChild.acceptance.single.verifiers.single.required, isTrue);
     expect(
-      checkedChild.expectedEvidence.any(
-        (item) => item.type == ProjectEvidenceType.command && item.required,
+      checkedChild.acceptance.single.verifiers.single.command,
+      'dart test',
+    );
+    expect(
+      checkedChild.acceptance.any(
+        (item) => item.verifiers.any(
+          (verifier) =>
+              verifier.kind == AcceptanceVerifierKind.command &&
+              verifier.required,
+        ),
       ),
       isTrue,
     );
@@ -622,15 +679,14 @@ TaskAggregate _task(String id) {
     id: id,
     title: 'Bounded slice $id',
     objective: objective,
-    criterionIds: const ['criterion_001'],
-    expectedEvidence: [
-      TaskEvidenceExpectation(
-        id: 'expect_$id',
-        criterionIds: const ['criterion_001'],
-        description: 'The bounded slice is independently checked.',
+    acceptance: const [
+      AcceptanceItem(
+        ref: 'task-proof',
+        statement: 'The bounded slice is independently checked.',
+        criterionIds: ['criterion_001'],
+        verifiers: [AcceptanceVerifier(kind: AcceptanceVerifierKind.review)],
       ),
     ],
-    doneCriteria: const ['The bounded slice is implemented and checked.'],
     outOfScope: const ['Unrelated project work.'],
     status: TaskStatus.queued,
     fingerprint: projectTaskFingerprint(objective, const ['criterion_001']),

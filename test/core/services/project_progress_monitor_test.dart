@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/runtime/project_progress_monitor.dart';
 
@@ -270,8 +271,14 @@ ProjectTaskNode _task(String id, DateTime now) {
     id: id,
     title: id,
     objective: 'Implement bounded slice $id.',
-    criterionIds: const ['criterion_1'],
-    doneCriteria: const ['The bounded slice is complete.'],
+    acceptance: const [
+      AcceptanceItem(
+        ref: 'complete',
+        statement: 'The bounded slice is complete.',
+        criterionIds: ['criterion_1'],
+        verifiers: [AcceptanceVerifier(kind: AcceptanceVerifierKind.review)],
+      ),
+    ],
     outOfScope: const ['Unrelated work.'],
     status: TaskStatus.queued,
     createdAt: now,

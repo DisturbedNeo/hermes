@@ -101,7 +101,6 @@ class ProjectPlanningToolCommandService {
       ),
       'plan_split_task' => _planCommands.splitTask(arguments, commandId),
       'plan_retry_task' => _planCommands.retryTask(arguments, commandId),
-      'plan_add_check' => _planCommands.addCheck(arguments, commandId),
       'plan_add_note' => _planCommands.addNote(arguments, commandId),
       'plan_set_workspace_orientation' =>
         _workspaceCommands.setWorkspaceOrientation(arguments, commandId),
@@ -162,7 +161,6 @@ class ProjectPlanningToolCommandService {
     'plan_set_disposition',
     'plan_split_task',
     'plan_retry_task',
-    'plan_add_check',
     'plan_add_note',
     'plan_set_workspace_orientation',
     'plan_add_workspace_nodes',
@@ -193,7 +191,6 @@ class ProjectPlanningToolCommandService {
       return profile == ProjectPlanningToolProfile.bootstrap ||
           profile == ProjectPlanningToolProfile.maintenance;
     }
-    if (_legacyCompatibilityToolIds.contains(toolId)) return true;
     if (includeProjectDetails && toolId == 'plan_set_project_details') {
       return true;
     }
@@ -217,7 +214,6 @@ class ProjectPlanningToolCommandService {
         'plan_set_disposition',
         'plan_split_task',
         'plan_retry_task',
-        'plan_add_check',
         'plan_add_note',
         'plan_set_workspace_orientation',
         'plan_add_workspace_nodes',
@@ -248,31 +244,10 @@ class ProjectPlanningToolCommandService {
     };
   }
 
-  static const _legacyCompatibilityToolIds = {
-    'plan_set_project_details',
-    'plan_add_criteria',
-    'plan_add_milestones',
-    'plan_add_task',
-    'plan_update_task',
-    'plan_set_dependency',
-    'plan_set_disposition',
-    'plan_split_task',
-    'plan_retry_task',
-    'plan_add_check',
-    'plan_add_note',
-    'plan_set_workspace_orientation',
-    'plan_add_workspace_nodes',
-    'plan_update_workspace_node',
-    'plan_add_workspace_edges',
-    'plan_update_workspace_edge',
-    'plan_remove_workspace_item',
-    'plan_request_user_decision',
-    'plan_preview',
-  };
 
   bool _visible(String toolId) {
     if (profile == ProjectPlanningToolProfile.bootstrap &&
-        const {'plan_add_check', 'plan_preview'}.contains(toolId)) {
+        const {'plan_preview'}.contains(toolId)) {
       return false;
     }
     return _allows(toolId);
@@ -700,7 +675,29 @@ class ProjectPlanningToolCommandService {
     'title': task.title,
     'objective': task.objective,
     'status': task.status.wire,
-    'criterion_refs': task.criterionIds,
+    'acceptance': [
+      for (final item in task.acceptance)
+        {
+          'ref': item.ref,
+          'statement': item.statement,
+          'criterion_refs': item.criterionIds,
+          'verifiers': [
+            for (final verifier in item.verifiers)
+              {
+                'kind': verifier.kind.name,
+                'required': verifier.required,
+                if (verifier.command != null) 'command': verifier.command,
+                if (verifier.workingDirectory != '.')
+                  'working_directory': verifier.workingDirectory,
+                if (verifier.path != null) 'path': verifier.path,
+                if (verifier.artifactKind != 'file')
+                  'artifact_kind': verifier.artifactKind,
+                if (verifier.description != null)
+                  'description': verifier.description,
+              },
+          ],
+        },
+    ],
     'dependency_refs': task.dependsOnTaskIds,
     'milestone_ref': task.milestoneId,
     'priority': task.priority.name,
@@ -711,40 +708,8 @@ class ProjectPlanningToolCommandService {
     'constraints': task.constraints,
     'read_paths': task.readPaths,
     'write_paths': task.writePaths,
-    'done_criteria': task.doneCriteria,
     'out_of_scope': task.outOfScope,
     'context': task.context,
-    'expected_artifacts': [
-      for (final artifact in task.expectedArtifacts)
-        {
-          'path': artifact.path,
-          'description': artifact.description,
-          'kind': artifact.kind,
-        },
-    ],
-    'checks': [
-      for (final gate in task.gates)
-        {
-          'kind': gate.id,
-          'required': gate.required,
-          'scope': gate.scope,
-          'command': gate.params['command'],
-          'working_directory':
-              gate.params['working_directory'] ??
-              gate.params['workingDirectory'],
-          'description': gate.description,
-        },
-    ],
-    'evidence_intents': [
-      for (final expectation in task.expectedEvidence)
-        {
-          'kind': expectation.type.name,
-          'criterion_refs': expectation.criterionIds,
-          'description': expectation.description,
-          'required': expectation.required,
-          'source_ref': expectation.sourceRef,
-        },
-    ],
   };
 
   static ProjectTaskSpec _taskSpec(
@@ -757,7 +722,7 @@ class ProjectPlanningToolCommandService {
       'ref',
       'title',
       'objective',
-      'criterion_refs',
+      'acceptance',
       'dependency_refs',
       'milestone_ref',
       'priority',
@@ -768,24 +733,14 @@ class ProjectPlanningToolCommandService {
       'constraints',
       'read_paths',
       'write_paths',
-      'done_criteria',
       'out_of_scope',
       'context',
-      'checks',
-      'expected_artifacts',
     });
     final ref = _optionalString(value['ref'], '$path.ref') ?? '';
     final title = _optionalString(value['title'], '$path.title') ?? '';
     final objective =
         _optionalString(value['objective'], '$path.objective') ?? '';
-    final criterionRefs = _stringList(
-      value['criterion_refs'],
-      '$path.criterion_refs',
-    );
-    final doneCriteria = _stringList(
-      value['done_criteria'],
-      '$path.done_criteria',
-    );
+    final acceptance = _acceptance(value['acceptance'], '$path.acceptance');
     final outOfScope = _stringList(value['out_of_scope'], '$path.out_of_scope');
     final missingFields = <String>[];
     if (requireObjective
@@ -793,11 +748,8 @@ class ProjectPlanningToolCommandService {
         : title.isEmpty && objective.isEmpty) {
       missingFields.add(requireObjective ? 'objective' : 'objective_or_title');
     }
-    if (criterionRefs.where((item) => item.isNotEmpty).isEmpty) {
-      missingFields.add('criterion_refs');
-    }
-    if (doneCriteria.where((item) => item.isNotEmpty).isEmpty) {
-      missingFields.add('done_criteria');
+    if (acceptance.isEmpty) {
+      missingFields.add('acceptance');
     }
     if (outOfScope.where((item) => item.isNotEmpty).isEmpty) {
       missingFields.add('out_of_scope');
@@ -819,7 +771,7 @@ class ProjectPlanningToolCommandService {
       ref: ref,
       title: title,
       objective: objective,
-      criterionRefs: criterionRefs,
+      acceptance: acceptance,
       dependencyRefs: _stringList(
         value['dependency_refs'],
         '$path.dependency_refs',
@@ -857,54 +809,124 @@ class ProjectPlanningToolCommandService {
       constraints: _stringList(value['constraints'], '$path.constraints'),
       readPaths: _stringList(value['read_paths'], '$path.read_paths'),
       writePaths: _stringList(value['write_paths'], '$path.write_paths'),
-      doneCriteria: doneCriteria,
       outOfScope: outOfScope,
       context: _stringList(value['context'], '$path.context'),
-      checks: _checkSpecs(value['checks'], '$path.checks'),
-      expectedArtifacts: _artifacts(
-        value['expected_artifacts'],
-        '$path.expected_artifacts',
-      ),
     );
   }
 
-  static List<ProjectTaskCheckSpec> _checkSpecs(Object? value, String path) {
+  static List<AcceptanceItem> _acceptance(Object? value, String path) {
     if (value == null) return const [];
-    final maps = _maps(value, path);
-    return [
-      for (var index = 0; index < maps.length; index++)
-        () {
-          final item = maps[index];
-          _rejectPersistentFields(item, '$path[$index]');
-          _keys(item, const {
-            'command',
-            'working_directory',
-            'criterion_refs',
-            'required',
-            'description',
-          });
-          return ProjectTaskCheckSpec(
-            command: _requiredString(item['command'], '$path[$index].command'),
-            workingDirectory:
-                _optionalString(
-                  item['working_directory'],
-                  '$path[$index].working_directory',
-                ) ??
-                '.',
-            criterionRefs: _stringList(
-              item['criterion_refs'],
-              '$path[$index].criterion_refs',
-            ),
-            required:
-                _optionalBool(item['required'], '$path[$index].required') ??
-                true,
-            description: _optionalString(
-              item['description'],
-              '$path[$index].description',
-            ),
+    final maps = _maps(value, path, required: true);
+    final refs = <String>{};
+    final items = <AcceptanceItem>[];
+    for (var index = 0; index < maps.length; index++) {
+      final item = maps[index];
+      _rejectPersistentFields(item, '$path[$index]');
+      _keys(item, const {'ref', 'statement', 'criterion_refs', 'verifiers'});
+      final ref = _requiredString(item['ref'], '$path[$index].ref');
+      if (!refs.add(ref)) {
+        throw _argument(
+          'duplicate_acceptance_ref',
+          '$path[$index].ref',
+          'Acceptance ref $ref is duplicated.',
+        );
+      }
+      final statement = _requiredString(
+        item['statement'],
+        '$path[$index].statement',
+      );
+      final criterionIds = _stringList(
+        item['criterion_refs'],
+        '$path[$index].criterion_refs',
+      );
+      final verifierMaps = _maps(
+        item['verifiers'],
+        '$path[$index].verifiers',
+        required: true,
+      );
+      final verifiers = <AcceptanceVerifier>[];
+      var requiredVerifierCount = 0;
+      for (
+        var verifierIndex = 0;
+        verifierIndex < verifierMaps.length;
+        verifierIndex++
+      ) {
+        final verifier = verifierMaps[verifierIndex];
+        _keys(verifier, const {
+          'kind',
+          'required',
+          'command',
+          'working_directory',
+          'path',
+          'artifact_kind',
+          'description',
+        });
+        final kind = _enumValue(
+          AcceptanceVerifierKind.values,
+          verifier['kind'],
+          '$path[$index].verifiers[$verifierIndex].kind',
+        );
+        final required =
+            _optionalBool(
+              verifier['required'],
+              '$path[$index].verifiers[$verifierIndex].required',
+            ) ??
+            true;
+        if (required) requiredVerifierCount++;
+        final parsed = AcceptanceVerifier(
+          kind: kind ?? AcceptanceVerifierKind.command,
+          required: required,
+          command: _optionalString(
+            verifier['command'],
+            '$path[$index].verifiers[$verifierIndex].command',
+          ),
+          workingDirectory:
+              _optionalString(
+                verifier['working_directory'],
+                '$path[$index].verifiers[$verifierIndex].working_directory',
+              ) ??
+              '.',
+          path: _optionalString(
+            verifier['path'],
+            '$path[$index].verifiers[$verifierIndex].path',
+          ),
+          artifactKind:
+              _optionalString(
+                verifier['artifact_kind'],
+                '$path[$index].verifiers[$verifierIndex].artifact_kind',
+              ) ??
+              'file',
+          description: _optionalString(
+            verifier['description'],
+            '$path[$index].verifiers[$verifierIndex].description',
+          ),
+        );
+        if (!parsed.hasConfiguration) {
+          throw _argument(
+            'invalid_acceptance_verifier',
+            '$path[$index].verifiers[$verifierIndex]',
+            'The verifier does not contain the fields required for its kind.',
           );
-        }(),
-    ];
+        }
+        verifiers.add(parsed);
+      }
+      if (requiredVerifierCount == 0) {
+        throw _argument(
+          'missing_required_verifier',
+          '$path[$index].verifiers',
+          'Each acceptance item needs at least one required verifier.',
+        );
+      }
+      items.add(
+        AcceptanceItem(
+          ref: ref,
+          statement: statement,
+          criterionIds: criterionIds,
+          verifiers: verifiers,
+        ),
+      );
+    }
+    return items;
   }
 
   static void _rejectPersistentFields(Map<String, dynamic> value, String path) {
@@ -918,8 +940,6 @@ class ProjectPlanningToolCommandService {
       'runs',
       'failure',
       'gates',
-      'expected_evidence',
-      'expectedEvidence',
       'completed_at',
       'completedAt',
       'task_id',
@@ -941,33 +961,6 @@ class ProjectPlanningToolCommandService {
         );
       }
     }
-  }
-
-  static List<TaskArtifact> _artifacts(Object? value, String path) {
-    if (value == null) return const [];
-    final maps = _maps(value, path);
-    final artifacts = <TaskArtifact>[];
-    for (var index = 0; index < maps.length; index++) {
-      final item = maps[index];
-      _rejectPersistentFields(item, '$path[$index]');
-      _keys(item, const {'path', 'description', 'kind'});
-      artifacts.add(
-        TaskArtifact(
-          path: _requiredString(item['path'], '$path[$index].path'),
-          description: _optionalString(
-            item['description'],
-            '$path[$index].description',
-          ),
-          kind: _optionalString(item['kind'], '$path[$index].kind') ?? 'file',
-        ),
-      );
-    }
-    return artifacts;
-  }
-
-  static List<TaskArtifact>? _optionalArtifacts(Object? value, String path) {
-    if (value == null) return null;
-    return _artifacts(value, path);
   }
 
   Map<String, dynamic> _draftSummary(ProjectPlanBuilderPreview preview) => {
@@ -1039,7 +1032,26 @@ class ProjectPlanningToolCommandService {
     'title': task.title,
     'objective': task.objective,
     'constraints': task.constraints,
-    'criterion_refs': task.criterionIds,
+    'acceptance': [
+      for (final item in task.acceptance)
+        {
+          'ref': item.ref,
+          'statement': item.statement,
+          'criterion_refs': item.criterionIds,
+          'verifiers': [
+            for (final verifier in item.verifiers)
+              {
+                'kind': verifier.kind.name,
+                'required': verifier.required,
+                'command': verifier.command,
+                'working_directory': verifier.workingDirectory,
+                'path': verifier.path,
+                'artifact_kind': verifier.artifactKind,
+                'description': verifier.description,
+              },
+          ],
+        },
+    ],
     'milestone_ref': task.milestoneId,
     'dependency_refs': task.dependsOnTaskIds,
     'priority': task.priority.name,
@@ -1049,39 +1061,9 @@ class ProjectPlanningToolCommandService {
     'selection_rationale': task.selectionRationale,
     'read_paths': task.readPaths,
     'write_paths': task.writePaths,
-    'done_criteria': task.doneCriteria,
     'out_of_scope': task.outOfScope,
     'context': task.context,
     'status': task.status.name,
-    'gates': [
-      for (final gate in task.gates)
-        {
-          'id': gate.id,
-          'required': gate.required,
-          'scope': gate.scope,
-          'params': gate.params,
-          'description': gate.description,
-        },
-    ],
-    'expected_evidence': [
-      for (final expectation in task.expectedEvidence)
-        {
-          'type': expectation.type.name,
-          'criterion_refs': expectation.criterionIds,
-          'description': expectation.description,
-          'required': expectation.required,
-          'source_ref': expectation.sourceRef,
-          'details': expectation.details,
-        },
-    ],
-    'expected_artifacts': [
-      for (final artifact in task.expectedArtifacts)
-        {
-          'path': artifact.path,
-          'description': artifact.description,
-          'kind': artifact.kind,
-        },
-    ],
   });
 
   static void _keys(Object value, Set<String> allowed) {
@@ -1267,14 +1249,11 @@ class ProjectPlanningToolCommandService {
   }) => _PlanningArgumentException(code, path, message, details: details);
 
   static String _wirePath(String path) => path
-      .replaceAll('criterionRefs', 'criterion_refs')
       .replaceAll('dependencyRefs', 'dependency_refs')
       .replaceAll('milestoneRef', 'milestone_ref')
-      .replaceAll('doneCriteria', 'done_criteria')
       .replaceAll('outOfScope', 'out_of_scope')
       .replaceAll('readPaths', 'read_paths')
-      .replaceAll('writePaths', 'write_paths')
-      .replaceAll('expectedArtifacts', 'expected_artifacts');
+      .replaceAll('writePaths', 'write_paths');
 
   static Map<String, dynamic> _error({
     required String code,

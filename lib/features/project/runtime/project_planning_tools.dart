@@ -1,7 +1,10 @@
 import 'dart:convert';
 
 import 'package:hermes/features/project/application/contracts/project_task_models.dart'
-    show ProjectTaskCheckSpec;
+    show
+        AcceptanceItem,
+        AcceptanceVerifier,
+        AcceptanceVerifierKind;
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/task/application/protocol/planning_runtime.dart';
@@ -199,15 +202,31 @@ Map<String, dynamic> _enumSchema(Iterable<String> values) => {
   'enum': values.toList(),
 };
 
-final _taskCheckSpecSchema = _schema(
+final _acceptanceVerifierSchema = _schema(
   properties: {
+    'kind': _enumSchema(AcceptanceVerifierKind.values.map((item) => item.name)),
+    'required': {'type': 'boolean', 'default': true},
     'command': {'type': 'string'},
     'working_directory': {'type': 'string', 'default': '.'},
-    'criterion_refs': _stringArraySchema(),
-    'required': {'type': 'boolean', 'default': true},
+    'path': {'type': 'string'},
+    'artifact_kind': {'type': 'string', 'default': 'file'},
     'description': {'type': 'string'},
   },
-  required: const ['command'],
+  required: const ['kind'],
+);
+
+final _acceptanceSchema = _schema(
+  properties: {
+    'ref': {'type': 'string'},
+    'statement': {'type': 'string'},
+    'criterion_refs': _stringArraySchema(),
+    'verifiers': {
+      'type': 'array',
+      'minItems': 1,
+      'items': _acceptanceVerifierSchema,
+    },
+  },
+  required: const ['ref', 'statement', 'verifiers'],
 );
 
 final _taskSpecSchema = _schema(
@@ -215,7 +234,7 @@ final _taskSpecSchema = _schema(
     'ref': {'type': 'string', 'description': 'Optional temporary reference.'},
     'title': {'type': 'string'},
     'objective': {'type': 'string'},
-    'criterion_refs': _stringArraySchema(minItems: 1),
+    'acceptance': {'type': 'array', 'minItems': 1, 'items': _acceptanceSchema},
     'dependency_refs': _stringArraySchema(),
     'milestone_ref': {'type': 'string'},
     'priority': {
@@ -238,23 +257,10 @@ final _taskSpecSchema = _schema(
     'constraints': _stringArraySchema(),
     'read_paths': _stringArraySchema(),
     'write_paths': _stringArraySchema(),
-    'done_criteria': _stringArraySchema(minItems: 1),
     'out_of_scope': _stringArraySchema(minItems: 1),
     'context': _stringArraySchema(),
-    'checks': {'type': 'array', 'items': _taskCheckSpecSchema},
-    'expected_artifacts': {
-      'type': 'array',
-      'items': _schema(
-        properties: {
-          'path': {'type': 'string'},
-          'description': {'type': 'string'},
-          'kind': {'type': 'string'},
-        },
-        required: const ['path'],
-      ),
-    },
   },
-  required: const ['criterion_refs', 'done_criteria', 'out_of_scope'],
+  required: const ['acceptance', 'out_of_scope'],
   anyOf: const [
     {
       'required': ['title'],
@@ -276,24 +282,12 @@ final _agentCriterionSchema = _schema(
   required: const ['statement'],
 );
 
-final _agentCheckSchema = _schema(
-  properties: {
-    'command': {'type': 'string'},
-    'working_directory': {'type': 'string', 'default': '.'},
-    'criterion_ids': _intArraySchema(),
-    'required': {'type': 'boolean', 'default': true},
-    'description': {'type': 'string'},
-  },
-  required: const ['command'],
-);
-
 final _agentTaskSchema = _schema(
   properties: {
     'task_id': {'type': 'integer', 'minimum': 1},
     'title': {'type': 'string'},
     'objective': {'type': 'string'},
-    'criterion_ids': _intArraySchema(),
-    'criteria': {'type': 'array', 'items': _agentCriterionSchema},
+    'acceptance': {'type': 'array', 'minItems': 1, 'items': _acceptanceSchema},
     'dependency_task_ids': _intArraySchema(),
     'milestone_id': {'type': 'integer', 'minimum': 1},
     'clear_milestone': {'type': 'boolean'},
@@ -307,13 +301,8 @@ final _agentTaskSchema = _schema(
     'constraints': _stringArraySchema(),
     'read_paths': _stringArraySchema(),
     'write_paths': _stringArraySchema(),
-    'done_criteria': _stringArraySchema(),
     'out_of_scope': _stringArraySchema(),
     'context': _stringArraySchema(),
-    'expected_artifacts': _taskSpecSchema['properties'] is Map
-        ? (_taskSpecSchema['properties'] as Map)['expected_artifacts']
-        : _stringArraySchema(),
-    'checks': {'type': 'array', 'items': _agentCheckSchema},
     'disposition': _enumSchema(
       ProjectPlanTaskDisposition.values.map((item) => item.name),
     ),
@@ -377,8 +366,12 @@ final _projectUpdateDefinition = ToolDefinition(
             ),
           },
           anyOf: const [
-            {'required': ['statement']},
-            {'required': ['criterion_id']},
+            {
+              'required': ['statement'],
+            },
+            {
+              'required': ['criterion_id'],
+            },
           ],
         ),
       },
@@ -414,7 +407,7 @@ final _taskUpsertDefinition = ToolDefinition(
   id: 'task_upsert',
   name: 'Create or update task',
   description:
-      'Create a new bounded task or update one existing task. Criteria and checks may be supplied inline or added independently later.',
+      'Create or update one bounded task with canonical acceptance and project criterion links.',
   schema: _agentTaskSchema,
 );
 

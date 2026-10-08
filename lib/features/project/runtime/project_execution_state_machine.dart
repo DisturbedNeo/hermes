@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:hermes/core/json_parsing.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/core/uuid.dart';
 import 'package:hermes/core/contracts/model_conversation.dart';
 import 'package:hermes/features/project/domain/project.dart';
@@ -24,7 +25,6 @@ import 'package:hermes/features/project/runtime/project_lifecycle_service.dart';
 import 'package:hermes/features/project/runtime/project_decision_engine.dart';
 import 'package:hermes/features/project/application/contracts/project_checkpoint.dart';
 import 'package:hermes/features/project/application/contracts/project_commands.dart';
-import 'package:hermes/features/project/runtime/project_plan_patch.dart';
 import 'package:hermes/features/project/runtime/project_plan_validator.dart';
 import 'package:hermes/features/project/runtime/project_planning_policy.dart';
 import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
@@ -49,9 +49,7 @@ import 'package:hermes/features/task/application/task_application/task_ports.dar
 import 'package:hermes/features/task/application/task_application/task_persistence_ports.dart';
 import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/task/application/contracts/task_planning_models.dart';
-import 'package:hermes/features/workspace/application/workspace_discovery_profile.dart';
 import 'package:hermes/features/workspace/application/workspace_ports.dart';
-import 'package:path/path.dart' as path;
 
 part 'project_recovery_policy.dart';
 part 'project_execution_operations.dart';

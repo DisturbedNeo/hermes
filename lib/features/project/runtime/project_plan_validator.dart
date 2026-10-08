@@ -1,6 +1,9 @@
 import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
+import 'package:hermes/core/contracts/acceptance_compiler.dart';
 import 'package:hermes/features/project/domain/project_workspace_context_service.dart';
 import 'package:hermes/features/project/runtime/project_planning_policy.dart';
+import 'package:hermes/features/workspace/application/terminal_command_classifier.dart';
 import 'package:path/path.dart' as path;
 
 enum ProjectPlanValidationSeverity { warning, error }
@@ -370,8 +373,6 @@ class ProjectPlanValidator {
               'previous_decision',
     };
     final desiredFingerprints = <String, String>{};
-    final allExpectationIds = <String>{};
-    final expectationSignatures = <String, String>{};
     final desiredTaskDocuments = proposal.tasks;
     for (var index = 0; index < desiredTaskDocuments.length; index++) {
       final task = desiredTaskDocuments[index];
@@ -416,12 +417,24 @@ class ProjectPlanValidator {
           'A task cannot represent the entire project scope.',
         );
       }
-      if (task.doneCriteria.isEmpty) {
+      if (task.acceptance.isEmpty) {
         issue(
-          'missing_done_criteria',
-          '$fieldPath.doneCriteria',
-          'At least one done criterion is required.',
+          'missing_acceptance',
+          '$fieldPath.acceptance',
+          'At least one acceptance item is required.',
         );
+      } else {
+        try {
+          const AcceptanceCompiler().compile(
+            task.acceptance,
+            requireProjectCriteria: true,
+            path: '$fieldPath.acceptance',
+            commandSafetyValidator:
+                TerminalCommandClassifier.blockedReasonForCommand,
+          );
+        } on AcceptanceContractException catch (error) {
+          issue(error.code, error.path, error.message);
+        }
       }
       if (task.outOfScope.isEmpty) {
         issue(
@@ -430,18 +443,21 @@ class ProjectPlanValidator {
           'At least one explicit out-of-scope boundary is required.',
         );
       }
-      if (task.expectedEvidence.isEmpty && task.expectedArtifacts.isEmpty) {
+      if (task.acceptance.isEmpty) {
         issue(
           'missing_expected_verification',
-          '$fieldPath.expectedEvidence',
-          'Expected evidence or a verifiable artifact is required.',
+          '$fieldPath.acceptance',
+          'Acceptance must contain at least one verifier.',
         );
       }
-      if (task.recoveryIncidentId == null && task.criterionIds.isEmpty) {
+      final linkedCriterionIds = {
+        for (final item in task.acceptance) ...item.criterionIds,
+      };
+      if (task.recoveryIncidentId == null && linkedCriterionIds.isEmpty) {
         issue(
           'missing_criterion_link',
-          '$fieldPath.criterionIds',
-          'A task must link to at least one project criterion.',
+          '$fieldPath.acceptance',
+          'A task must link acceptance to at least one project criterion.',
         );
       }
       if (task.recoveryIncidentId == null) {
@@ -503,16 +519,11 @@ class ProjectPlanValidator {
           );
         }
       }
-      for (
-        var criterionIndex = 0;
-        criterionIndex < task.criterionIds.length;
-        criterionIndex++
-      ) {
-        final criterionId = task.criterionIds[criterionIndex];
+      for (final criterionId in linkedCriterionIds) {
         if (!criterionIds.contains(criterionId)) {
           issue(
             'unknown_criterion',
-            '$fieldPath.criterionIds[$criterionIndex]',
+            '$fieldPath.acceptance',
             'Criterion $criterionId does not exist in the desired plan.',
           );
         }
@@ -525,73 +536,6 @@ class ProjectPlanValidator {
           'Milestone ${task.milestoneId} does not exist in the desired plan.',
         );
       }
-      final taskExpectationIds = <String>{};
-      for (
-        var expectationIndex = 0;
-        expectationIndex < task.expectedEvidence.length;
-        expectationIndex++
-      ) {
-        final expectation = task.expectedEvidence[expectationIndex];
-        final expectationPath =
-            '$fieldPath.expectedEvidence[$expectationIndex]';
-        if (!taskExpectationIds.add(expectation.id) ||
-            !allExpectationIds.add(expectation.id)) {
-          issue(
-            'duplicate_evidence_expectation',
-            '$expectationPath.id',
-            'Evidence expectation ${expectation.id} is duplicated.',
-          );
-        }
-        final expectationSignature =
-            '${task.id}|${expectation.type.name}|${_normalise(expectation.sourceRef ?? '')}|'
-            '${([...expectation.criterionIds]..sort()).join(',')}';
-        final previousExpectation = expectationSignatures[expectationSignature];
-        if (previousExpectation != null) {
-          issue(
-            'ambiguous_evidence_expectation',
-            expectationPath,
-            'Evidence expectation duplicates the matching signature of $previousExpectation.',
-          );
-        } else {
-          expectationSignatures[expectationSignature] = expectation.id;
-        }
-        if (expectation.description.trim().isEmpty ||
-            expectation.criterionIds.isEmpty) {
-          issue(
-            'invalid_evidence_expectation',
-            expectationPath,
-            'Evidence expectations need a description and criterion link.',
-          );
-        }
-        for (final criterionId in expectation.criterionIds) {
-          if (!criterionIds.contains(criterionId) ||
-              !task.criterionIds.contains(criterionId)) {
-            issue(
-              'unlinked_evidence_criterion',
-              expectationPath,
-              'Evidence expectation $criterionId is not linked to task ${task.id}.',
-            );
-          }
-        }
-        if (expectation.required &&
-            expectation.type == ProjectEvidenceType.command) {
-          final command = expectation.sourceRef?.trim() ?? '';
-          final workingDirectory = _workingDirectoryForExpectation(expectation);
-          final matchingGate = task.gates.any(
-            (gate) =>
-                gate.id == 'command_passes' &&
-                gate.params['command']?.toString() == command &&
-                _workingDirectoryForGate(gate) == workingDirectory,
-          );
-          if (!matchingGate) {
-            issue(
-              'missing_command_passes_gate',
-              expectationPath,
-              'Required command evidence must have a matching command_passes gate with command "$command" and working directory "$workingDirectory".',
-            );
-          }
-        }
-      }
       for (final entry in [...task.readPaths, ...task.writePaths]) {
         if (!_isInsideWorkspace(workspaceRoot, entry)) {
           issue(
@@ -601,8 +545,15 @@ class ProjectPlanValidator {
           );
         }
       }
+      final artifactPaths = [
+        for (final item in task.acceptance)
+          for (final verifier in item.verifiers)
+            if (verifier.kind == AcceptanceVerifierKind.artifact &&
+                verifier.path != null)
+              verifier.path!,
+      ];
       if (task.effort == TaskEffort.small &&
-          task.expectedArtifacts.isNotEmpty &&
+          artifactPaths.isNotEmpty &&
           task.writePaths.isEmpty) {
         issue(
           'missing_write_paths',
@@ -618,7 +569,7 @@ class ProjectPlanValidator {
             task.status != TaskStatus.obsolete &&
             !proposal.deferredTaskIds.contains(task.id) &&
             !proposal.obsoleteTaskIds.contains(task.id))
-          ...task.criterionIds,
+          for (final item in task.acceptance) ...item.criterionIds,
     };
     for (var index = 0; index < proposal.criteria.length; index++) {
       final criterion = proposal.criteria[index];
@@ -640,12 +591,14 @@ class ProjectPlanValidator {
         (task) =>
             !proposal.deferredTaskIds.contains(task.id) &&
             !proposal.obsoleteTaskIds.contains(task.id) &&
-            task.expectedEvidence.any(
-              (expectation) =>
-                  expectation.required &&
-                  expectation.criterionIds.contains(criterion.id) &&
-                  (expectation.type == ProjectEvidenceType.gate ||
-                      expectation.type == ProjectEvidenceType.command),
+            task.acceptance.any(
+              (item) =>
+                  item.criterionIds.contains(criterion.id) &&
+                  item.verifiers.any(
+                    (verifier) =>
+                        verifier.required &&
+                        verifier.kind == AcceptanceVerifierKind.command,
+                  ),
             ),
       );
       if (!hasConclusiveExpectation) {
@@ -1174,22 +1127,4 @@ class ProjectPlanValidator {
   static String _normalise(String value) =>
       value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
-  static String _workingDirectoryForExpectation(
-    TaskEvidenceExpectation expectation,
-  ) {
-    final value =
-        (expectation.details['working_directory'] ??
-                expectation.details['workingDirectory'])
-            ?.toString()
-            .trim();
-    return value == null || value.isEmpty ? '.' : value;
-  }
-
-  static String _workingDirectoryForGate(TaskGate gate) {
-    final value =
-        (gate.params['working_directory'] ?? gate.params['workingDirectory'])
-            ?.toString()
-            .trim();
-    return value == null || value.isEmpty ? '.' : value;
-  }
 }

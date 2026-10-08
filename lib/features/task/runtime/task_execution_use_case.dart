@@ -80,14 +80,9 @@ class TaskExecutionUseCase {
   TaskStepExecutionStatus? _parseStepExecutionStatusStrict(String raw) =>
       _context.parseStepExecutionStatus(raw);
   List<TaskEvidenceClaim> _evidenceClaimsFromJson(
-    Object? value,
-    List<String> allowedCriterionIds, {
-    List<TaskProjectEvidenceExpectation> expectedEvidence = const [],
-  }) => _context.evidenceClaimsFromJson(
-    value,
-    allowedCriterionIds,
-    expectedEvidence: expectedEvidence,
-  );
+    Object? value, {
+    List<AcceptanceItem> acceptance = const [],
+  }) => _context.evidenceClaimsFromJson(value, acceptance: acceptance);
   String _taskToolErrorJson({
     required String code,
     required String message,

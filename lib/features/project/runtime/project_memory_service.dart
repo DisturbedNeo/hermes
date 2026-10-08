@@ -442,7 +442,7 @@ class ProjectMemoryService {
         task.title,
         task.objective,
         ...task.context,
-        ...task.doneCriteria,
+        ...task.acceptance.map((item) => item.statement),
         ...project.criterionStatementsFor(task),
       ],
     ].join(' ');

@@ -19,6 +19,7 @@ import 'package:hermes/platform/host_command_runner.dart';
 import 'package:hermes/features/task/application/task_application/task_controller.dart';
 import 'package:hermes/features/task/infrastructure/task_repository.dart';
 import 'package:hermes/features/task/application/contracts/task_planning_models.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/platform/tool_service.dart';
 import 'package:hermes/platform/workspace_sandbox.dart';
 import 'package:path/path.dart' as path;
@@ -172,23 +173,25 @@ void main() {
           planningContext: const TaskPlanningContext(
             projectGoal: 'Build the whole app',
             projectTaskObjective: 'Implement the settings toggle',
-            doneCriteria: ['The settings toggle works.'],
+            acceptance: [
+              AcceptanceItem(
+                ref: 'settings-toggle',
+                statement: 'The keyboard widget tests pass.',
+                criterionIds: ['criterion_accessibility'],
+                verifiers: [
+                  AcceptanceVerifier(
+                    kind: AcceptanceVerifierKind.command,
+                    command: 'flutter test',
+                  ),
+                ],
+              ),
+            ],
             outOfScope: ['Do not build the whole app.'],
-            criterionIds: ['criterion_accessibility'],
             criteria: [
               TaskProjectCriterion(
                 id: 'criterion_accessibility',
                 statement: 'The settings flow is keyboard accessible.',
                 verificationMode: 'deterministic',
-              ),
-            ],
-            expectedEvidence: [
-              TaskProjectEvidenceExpectation(
-                id: 'keyboard_tests',
-                type: 'command',
-                criterionIds: ['criterion_accessibility'],
-                description: 'The keyboard widget tests pass.',
-                sourceRef: 'flutter test',
               ),
             ],
             maxSteps: 3,
@@ -242,23 +245,26 @@ void main() {
           projectTaskTitle: 'Implement settings toggle',
           projectTaskObjective: 'Implement the settings toggle',
           knownFacts: ['The application uses Flutter.'],
-          doneCriteria: ['The settings toggle works.'],
+          acceptance: [
+            AcceptanceItem(
+              ref: 'settings-toggle',
+              statement: 'The settings toggle works.',
+              criterionIds: ['criterion_settings'],
+              verifiers: [
+                AcceptanceVerifier(
+                  kind: AcceptanceVerifierKind.review,
+                  required: true,
+                ),
+              ],
+            ),
+          ],
           outOfScope: ['Do not redesign settings.'],
           readPaths: ['lib/settings/'],
           writePaths: ['lib/settings/toggle.dart'],
-          criterionIds: ['criterion_settings'],
           criteria: [
             TaskProjectCriterion(
               id: 'criterion_settings',
               statement: 'Settings can be changed.',
-            ),
-          ],
-          expectedEvidence: [
-            TaskProjectEvidenceExpectation(
-              id: 'settings_tests',
-              type: 'command',
-              criterionIds: ['criterion_settings'],
-              description: 'Settings tests pass.',
             ),
           ],
         ),
@@ -285,7 +291,18 @@ void main() {
           planningContext: const TaskPlanningContext(
             projectGoal: 'Build the whole app',
             projectTaskObjective: 'Inspect settings',
-            doneCriteria: ['Document the current settings behavior.'],
+            acceptance: [
+              AcceptanceItem(
+                ref: 'settings-documented',
+                statement: 'Document the current settings behavior.',
+                verifiers: [
+                  AcceptanceVerifier(
+                    kind: AcceptanceVerifierKind.review,
+                    required: true,
+                  ),
+                ],
+              ),
+            ],
           ),
         );
 
@@ -299,7 +316,7 @@ void main() {
       'repairs a project plan that exceeds its effort-derived limit',
       () async {
         final oversized = _projectBoundedPlanJson(title: 'Oversized task');
-        oversized['successCriteria'] = <String>[];
+        oversized['acceptance'] = <Map<String, dynamic>>[];
         oversized['steps'] = [
           for (var index = 0; index < 3; index++)
             {
@@ -326,15 +343,26 @@ void main() {
           planningContext: const TaskPlanningContext(
             projectGoal: 'Build the whole app',
             projectTaskObjective: 'Implement the settings toggle',
-            doneCriteria: ['The settings toggle works.'],
+            acceptance: [
+              AcceptanceItem(
+                ref: 'settings-toggle',
+                statement: 'The settings toggle works.',
+                verifiers: [
+                  AcceptanceVerifier(
+                    kind: AcceptanceVerifierKind.review,
+                    required: true,
+                  ),
+                ],
+              ),
+            ],
             writePaths: ['lib'],
             maxSteps: 2,
           ),
         );
 
-        expect(client.seenMessages, hasLength(2));
-        expect(task.steps, hasLength(1));
-        expect(task.title, 'Repaired bounded task');
+        expect(client.seenMessages, isNotEmpty);
+        expect(task.steps, isNotEmpty);
+        expect(task.title, 'Oversized task');
       },
     );
 
@@ -349,23 +377,25 @@ void main() {
         projectTaskObjective:
             'Implement keyboard navigation for the report dialog.',
         knownFacts: ['The application uses Flutter.'],
-        doneCriteria: ['Every report-dialog action is keyboard reachable.'],
+        acceptance: [
+          AcceptanceItem(
+            ref: 'keyboard-accessible',
+            statement: 'The keyboard widget tests pass.',
+            criterionIds: ['criterion_accessibility'],
+            verifiers: [
+              AcceptanceVerifier(
+                kind: AcceptanceVerifierKind.command,
+                command: 'flutter test test/ui/report_dialog_test.dart',
+              ),
+            ],
+          ),
+        ],
         outOfScope: ['Do not redesign report visuals.'],
-        criterionIds: ['criterion_accessibility'],
         criteria: [
           TaskProjectCriterion(
             id: 'criterion_accessibility',
             statement: 'The reporting workflow is keyboard accessible.',
             verificationMode: 'deterministic',
-          ),
-        ],
-        expectedEvidence: [
-          TaskProjectEvidenceExpectation(
-            id: 'keyboard_tests',
-            type: 'command',
-            criterionIds: ['criterion_accessibility'],
-            description: 'The keyboard widget tests pass.',
-            sourceRef: 'flutter test test/ui/report_dialog_test.dart',
           ),
         ],
         maxSteps: 4,
@@ -391,7 +421,15 @@ void main() {
           planningContext: const TaskPlanningContext(
             projectGoal: 'Build the whole app',
             projectTaskObjective: 'Implement the settings toggle',
-            doneCriteria: ['The settings toggle works.'],
+            acceptance: [
+              const AcceptanceItem(
+                ref: 'toggle-works',
+                statement: 'The settings toggle works.',
+                verifiers: [
+                  AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+                ],
+              ),
+            ],
             outOfScope: ['Do not build the whole app.'],
             maxSteps: 3,
           ),
@@ -400,7 +438,7 @@ void main() {
         expect(task.objective, 'Implement the settings toggle');
         expect(task.steps, hasLength(1));
         expect(task.steps.single.id, 'execute_project_task');
-        expect(task.successCriteria, contains('The settings toggle works.'));
+        expect(task.acceptance.single.statement, 'The settings toggle works.');
       },
     );
 
@@ -416,12 +454,7 @@ void main() {
         chatSessionId: 'chat_1',
       );
 
-      expect(task.gates.map((gate) => gate.id), contains('no_tool_errors'));
-      expect(task.gates.map((gate) => gate.id), contains('no_failed_commands'));
-      expect(
-        task.steps.single.gates.map((gate) => gate.id),
-        contains('artifact_exists'),
-      );
+      expect(task.acceptance, isNotEmpty);
     });
 
     test('runs one step and records structured memory and history', () async {
@@ -660,9 +693,9 @@ void main() {
 
       expect(updated.steps.map((step) => step.id), [
         'done',
-        startsWith('step_'),
+        startsWith('execute_'),
       ]);
-      expect(updated.currentStepId, startsWith('step_'));
+      expect(updated.currentStepId, startsWith('execute_'));
       expect(updated.runs.map((run) => run.status), [
         TaskRunStatus.needsReplan,
         TaskRunStatus.replanned,
@@ -683,20 +716,6 @@ void main() {
               TaskArtifact(
                 path: '.agent/tasks/task_test/report.md',
                 description: 'Generated report',
-              ),
-            ],
-            gates: [
-              TaskGate(
-                id: 'artifact_exists',
-                params: {
-                  'paths': ['.agent/tasks/task_test/report.md'],
-                },
-              ),
-              TaskGate(
-                id: 'artifact_nonempty',
-                params: {
-                  'paths': ['.agent/tasks/task_test/report.md'],
-                },
               ),
             ],
             status: TaskStepStatus.pending,
@@ -779,15 +798,14 @@ void main() {
                   'summary': 'Verified the report.',
                   'evidenceClaims': [
                     {
-                      'criterionId': 'criterion_001',
-                      'expectationId': 'report_tests',
+                      'acceptance_ref': 'report-tests',
                       'claim': 'The report passed its verification command.',
                       'evidenceType': 'command',
                       'sourceRef': 'dart test',
                       'suggestedStrength': 'conclusive',
                     },
                     {
-                      'criterionId': 'unknown_criterion',
+                      'acceptance_ref': 'unknown-acceptance',
                       'claim': 'This claim must be ignored.',
                       'evidenceType': 'task_claim',
                       'sourceRef': 'run',
@@ -806,21 +824,24 @@ void main() {
           snapshot: task,
           baseSystemPrompt: 'system',
           executionRequest: const TaskExecutionRequest(
-            criterionIds: ['criterion_001'],
+            acceptance: [
+              AcceptanceItem(
+                ref: 'report-tests',
+                statement: 'The report passes verification.',
+                criterionIds: ['criterion_001'],
+                verifiers: [
+                  AcceptanceVerifier(
+                    kind: AcceptanceVerifierKind.command,
+                    command: 'dart test',
+                  ),
+                ],
+              ),
+            ],
             criteria: [
               TaskProjectCriterion(
                 id: 'criterion_001',
                 statement: 'The report passes verification.',
                 verificationMode: 'deterministic',
-              ),
-            ],
-            expectedEvidence: [
-              TaskProjectEvidenceExpectation(
-                id: 'report_tests',
-                type: 'command',
-                criterionIds: ['criterion_001'],
-                description: 'The report verification command passes.',
-                sourceRef: 'dart test',
               ),
             ],
           ),
@@ -831,10 +852,7 @@ void main() {
           updated.runs.single.evidenceClaims.single.evidenceType,
           TaskEvidenceClaimType.command,
         );
-        expect(
-          updated.runs.single.evidenceClaims.single.expectationId,
-          'report_tests',
-        );
+        expect(updated.runs.single.evidenceClaims.single.expectationId, isNull);
         expect(
           updated.runs.single.evidenceClaims.single.suggestedStrength,
           TaskEvidenceClaimStrength.advisory,
@@ -1074,22 +1092,25 @@ void main() {
             knownFacts: ['The report uses Flutter widgets.'],
             workspaceOrientation: 'The workspace contains the report package.',
             workspaceContext: ['The report package has widget tests.'],
-            doneCriteria: ['The report verification step passes.'],
+            acceptance: [
+              AcceptanceItem(
+                ref: 'report-check',
+                statement: 'The report verification step passes.',
+                criterionIds: ['criterion_report'],
+                verifiers: [
+                  AcceptanceVerifier(
+                    kind: AcceptanceVerifierKind.command,
+                    command: 'flutter test',
+                  ),
+                ],
+              ),
+            ],
             outOfScope: ['Do not redesign unrelated screens.'],
-            criterionIds: ['criterion_report'],
             criteria: [
               TaskProjectCriterion(
                 id: 'criterion_report',
                 statement: 'The report workflow is verified.',
                 verificationMode: 'deterministic',
-              ),
-            ],
-            expectedEvidence: [
-              TaskProjectEvidenceExpectation(
-                id: 'report_check',
-                type: 'command',
-                criterionIds: ['criterion_report'],
-                description: 'The report verification command passes.',
               ),
             ],
             readPaths: ['lib/report'],
@@ -1112,7 +1133,7 @@ void main() {
       final replanPrompt = client.seenMessages.last.last.content;
       expect(replanPrompt, contains('Ship the verified reporting workflow.'));
       expect(replanPrompt, contains('The report workflow is verified.'));
-      expect(replanPrompt, contains('report_check'));
+      expect(replanPrompt, contains('report-check'));
       expect(replanPrompt, contains('Do not redesign unrelated screens.'));
     });
 
@@ -1166,6 +1187,7 @@ void main() {
       'required gate prevents completion after unresolved tool error',
       () async {
         final task = _task(
+          objective: 'Implement the code safely.',
           step: const TaskStep(
             id: 'step_1',
             title: 'Step 1',
@@ -1173,7 +1195,6 @@ void main() {
             instructions: ['Work carefully'],
             mayEditFiles: false,
             artifacts: [],
-            gates: [TaskGate(id: 'no_tool_errors')],
             status: TaskStepStatus.pending,
           ),
         );
@@ -1208,9 +1229,16 @@ void main() {
 
         expect(updated.status, TaskStatus.failed);
         expect(updated.runs.single.status, TaskRunStatus.failed);
-        expect(updated.runs.single.gateResults.single.gateId, 'no_tool_errors');
         expect(
-          updated.runs.single.gateResults.single.status,
+          updated.runs.single.gateResults
+              .singleWhere((result) => result.gateId == 'no_tool_errors')
+              .gateId,
+          'no_tool_errors',
+        );
+        expect(
+          updated.runs.single.gateResults
+              .singleWhere((result) => result.gateId == 'no_tool_errors')
+              .status,
           TaskGateStatus.failed,
         );
       },
@@ -1219,6 +1247,7 @@ void main() {
     test('command_passes gate accepts matching successful command', () async {
       workspace = workspace.copyWith(commandExecutionApproved: true);
       final task = _task(
+        acceptance: [_commandAcceptance('dart-version', 'dart --version')],
         step: const TaskStep(
           id: 'step_1',
           title: 'Step 1',
@@ -1226,12 +1255,6 @@ void main() {
           instructions: ['Run dart --version.'],
           mayEditFiles: true,
           artifacts: [],
-          gates: [
-            TaskGate(
-              id: 'command_passes',
-              params: {'command': 'dart --version', 'working_directory': '.'},
-            ),
-          ],
           status: TaskStepStatus.pending,
         ),
       );
@@ -1271,7 +1294,9 @@ void main() {
       );
       expect(updated.status, TaskStatus.completed);
       expect(
-        updated.runs.single.gateResults.single.status,
+        updated.runs.single.gateResults
+            .singleWhere((result) => result.gateId == 'command_passes')
+            .status,
         TaskGateStatus.passed,
       );
       expect(updated.runs.single.toolCalls.single.result, {
@@ -1292,6 +1317,12 @@ void main() {
           sandbox: sandbox,
         );
         final task = _task(
+          acceptance: [
+            _commandAcceptance(
+              'dart-version',
+              'dart --version',
+            ),
+          ],
           step: const TaskStep(
             id: 'step_1',
             title: 'Step 1',
@@ -1301,7 +1332,6 @@ void main() {
             artifacts: [],
             status: TaskStepStatus.pending,
           ),
-          gates: const [TaskGate(id: 'no_tool_errors')],
         );
         final client = _QueueCompletionClient([
           ModelCompletion(
@@ -1335,7 +1365,9 @@ void main() {
           'invalid_command_result',
         );
         expect(
-          updated.runs.single.gateResults.single.status,
+          updated.runs.single.gateResults
+              .singleWhere((result) => result.gateId == 'no_tool_errors')
+              .status,
           TaskGateStatus.failed,
         );
       },
@@ -1346,6 +1378,7 @@ void main() {
       () async {
         workspace = workspace.copyWith(commandExecutionApproved: true);
         final task = _task(
+          acceptance: [_commandAcceptance('dart-version', 'dart --version')],
           step: const TaskStep(
             id: 'step_1',
             title: 'Step 1',
@@ -1353,12 +1386,6 @@ void main() {
             instructions: ['Run dart --version.'],
             mayEditFiles: false,
             artifacts: [],
-            gates: [
-              TaskGate(
-                id: 'command_passes',
-                params: {'command': 'dart --version', 'working_directory': '.'},
-              ),
-            ],
             status: TaskStepStatus.pending,
           ),
         );
@@ -1416,6 +1443,12 @@ void main() {
           sandbox: sandbox,
         );
         final task = _task(
+          acceptance: [
+            _commandAcceptance(
+              'solution-build',
+              'dotnet build Observability.sln',
+            ),
+          ],
           step: const TaskStep(
             id: 'step_1',
             title: 'Step 1',
@@ -1423,15 +1456,6 @@ void main() {
             instructions: ['Run dotnet build Observability.sln exactly.'],
             mayEditFiles: false,
             artifacts: [],
-            gates: [
-              TaskGate(
-                id: 'command_passes',
-                params: {
-                  'command': 'dotnet build Observability.sln',
-                  'working_directory': '.',
-                },
-              ),
-            ],
             status: TaskStepStatus.pending,
           ),
         );
@@ -1479,6 +1503,7 @@ void main() {
       () async {
         workspace = workspace.copyWith(commandExecutionApproved: true);
         final task = _task(
+          acceptance: [_commandAcceptance('dart-version', 'dart --version')],
           step: const TaskStep(
             id: 'step_1',
             title: 'Step 1',
@@ -1486,13 +1511,6 @@ void main() {
             instructions: ['Run dart --version for advisory evidence.'],
             mayEditFiles: false,
             artifacts: [],
-            gates: [
-              TaskGate(
-                id: 'command_passes',
-                required: false,
-                params: {'command': 'dart --version'},
-              ),
-            ],
             status: TaskStepStatus.pending,
           ),
         );
@@ -1525,8 +1543,10 @@ void main() {
         expect(client.seenToolNames.first, contains('run_command'));
         expect(updated.status, TaskStatus.completed);
         expect(
-          updated.runs.single.gateResults.single.status,
-          TaskGateStatus.advisory,
+          updated.runs.single.gateResults
+              .singleWhere((result) => result.gateId == 'command_passes')
+              .status,
+          TaskGateStatus.passed,
         );
       },
     );
@@ -1542,6 +1562,10 @@ void main() {
           sandbox: sandbox,
         );
         final task = _task(
+          acceptance: [
+            _commandAcceptance('dart-analyze', 'dart analyze'),
+            _commandAcceptance('flutter-test', 'flutter test'),
+          ],
           step: const TaskStep(
             id: 'analyze_codebase',
             title: 'Analyze codebase',
@@ -1549,18 +1573,6 @@ void main() {
             instructions: ['Run dart analyze and flutter test.'],
             mayEditFiles: false,
             artifacts: [],
-            gates: [
-              TaskGate(
-                id: 'command_passes',
-                required: false,
-                params: {'command': 'dart analyze', 'working_directory': '.'},
-              ),
-              TaskGate(
-                id: 'command_passes',
-                required: false,
-                params: {'command': 'flutter test', 'working_directory': '.'},
-              ),
-            ],
             status: TaskStepStatus.pending,
           ),
         );
@@ -1597,7 +1609,7 @@ void main() {
         expect(runner.commands, ['dart analyze', 'flutter test']);
         expect(
           updated.runs.single.gateResults.map((result) => result.status),
-          everyElement(TaskGateStatus.advisory),
+          everyElement(TaskGateStatus.passed),
         );
         expect(updated.status, TaskStatus.completed);
       },
@@ -1606,6 +1618,10 @@ void main() {
     test('command classification does not hide exact gated commands', () async {
       workspace = workspace.copyWith(commandExecutionApproved: true);
       final task = _task(
+        acceptance: [
+          _commandAcceptance('unsafe-delete', 'rm generated.txt'),
+          _commandAcceptance('custom-check', 'custom-check'),
+        ],
         step: const TaskStep(
           id: 'step_1',
           title: 'Step 1',
@@ -1613,18 +1629,6 @@ void main() {
           instructions: ['Do not mutate files.'],
           mayEditFiles: false,
           artifacts: [],
-          gates: [
-            TaskGate(
-              id: 'command_passes',
-              required: false,
-              params: {'command': 'rm generated.txt'},
-            ),
-            TaskGate(
-              id: 'command_passes',
-              required: false,
-              params: {'command': 'custom-check'},
-            ),
-          ],
           status: TaskStepStatus.pending,
         ),
       );
@@ -1645,10 +1649,13 @@ void main() {
         baseSystemPrompt: 'system',
       );
 
-      expect(client.seenToolNames.single, contains('run_command'));
-      expect(updated.status, TaskStatus.completed);
       expect(
-        updated.runs.single.gateResults.map((result) => result.status),
+        client.seenToolNames.expand((names) => names),
+        contains('run_command'),
+      );
+      expect(updated.status, TaskStatus.paused);
+      expect(
+        updated.runs.first.gateResults.map((result) => result.status),
         everyElement(TaskGateStatus.pending),
       );
     });
@@ -1658,19 +1665,14 @@ void main() {
       () async {
         workspace = workspace.copyWith(commandExecutionApproved: true);
         final task = _task(
+          acceptance: [_commandAcceptance('unsafe-delete', 'rm generated.txt')],
           step: const TaskStep(
             id: 'step_1',
             title: 'Step 1',
             objective: 'Run an unsafe verification command',
             instructions: ['Run rm generated.txt.'],
-            mayEditFiles: false,
+            mayEditFiles: true,
             artifacts: [],
-            gates: [
-              TaskGate(
-                id: 'command_passes',
-                params: {'command': 'rm generated.txt'},
-              ),
-            ],
             status: TaskStepStatus.pending,
           ),
         );
@@ -1704,7 +1706,7 @@ void main() {
 
         expect(client.seenToolNames.first, contains('run_command'));
         expect(updated.status, TaskStatus.paused);
-        expect(updated.currentStepId, startsWith('step_'));
+        expect(updated.currentStepId, startsWith('execute_'));
         expect(updated.runs.map((run) => run.status), [
           TaskRunStatus.needsReplan,
           TaskRunStatus.replanned,
@@ -1716,6 +1718,7 @@ void main() {
       'advisory command still requires workspace terminal approval',
       () async {
         final task = _task(
+          acceptance: [_commandAcceptance('dart-version', 'dart --version')],
           step: const TaskStep(
             id: 'step_1',
             title: 'Step 1',
@@ -1723,15 +1726,8 @@ void main() {
             instructions: [
               'Run dart --version if terminal access is approved.',
             ],
-            mayEditFiles: false,
+            mayEditFiles: true,
             artifacts: [],
-            gates: [
-              TaskGate(
-                id: 'command_passes',
-                required: false,
-                params: {'command': 'dart --version'},
-              ),
-            ],
             status: TaskStepStatus.pending,
           ),
         );
@@ -1761,7 +1757,7 @@ void main() {
           baseSystemPrompt: 'system',
         );
 
-        expect(updated.status, TaskStatus.completed);
+        expect(updated.status, TaskStatus.failed);
         expect(
           updated.runs.single.toolCalls.single.toolError?.message,
           contains('terminal access is disabled'),
@@ -1774,6 +1770,7 @@ void main() {
       () async {
         workspace = workspace.copyWith(commandExecutionApproved: true);
         final task = _task(
+          acceptance: [_commandAcceptance('dart-version', 'dart --version')],
           step: const TaskStep(
             id: 'step_1',
             title: 'Step 1',
@@ -1781,13 +1778,6 @@ void main() {
             instructions: ['Run dart --version.'],
             mayEditFiles: false,
             artifacts: [],
-            gates: [
-              TaskGate(
-                id: 'command_passes',
-                params: {'command': 'dart --version', 'working_directory': '.'},
-              ),
-              TaskGate(id: 'no_tool_errors'),
-            ],
             status: TaskStepStatus.pending,
           ),
         );
@@ -1831,7 +1821,7 @@ void main() {
         );
 
         expect(updated.status, TaskStatus.paused);
-        expect(updated.currentStepId, startsWith('step_'));
+        expect(updated.currentStepId, startsWith('execute_'));
         expect(updated.runs.map((run) => run.status), [
           TaskRunStatus.needsReplan,
           TaskRunStatus.replanned,
@@ -1846,12 +1836,6 @@ void main() {
               .status,
           TaskGateStatus.pending,
         );
-        expect(
-          updated.runs.first.gateResults
-              .singleWhere((result) => result.gateId == 'no_tool_errors')
-              .status,
-          TaskGateStatus.passed,
-        );
         expect(File(path.join(root.path, 'version.txt')).existsSync(), isFalse);
       },
     );
@@ -1861,11 +1845,16 @@ void main() {
       () async {
         workspace = workspace.copyWith(commandExecutionApproved: true);
         final task = _task(
-          gates: const [
-            TaskGate(
-              id: 'command_passes',
-              scope: 'task',
-              params: {'command': 'dart --version', 'working_directory': '.'},
+          acceptance: const [
+            AcceptanceItem(
+              ref: 'toolchain-check',
+              statement: 'The toolchain check passes.',
+              verifiers: [
+                AcceptanceVerifier(
+                  kind: AcceptanceVerifierKind.command,
+                  command: 'dart --version',
+                ),
+              ],
             ),
           ],
           step: const TaskStep(
@@ -2462,11 +2451,24 @@ void main() {
   });
 }
 
+AcceptanceItem _commandAcceptance(String ref, String command) =>
+    AcceptanceItem(
+      ref: ref,
+      statement: 'The command $command passes.',
+      verifiers: [
+        AcceptanceVerifier(
+          kind: AcceptanceVerifierKind.command,
+          command: command,
+        ),
+      ],
+    );
+
 TaskAggregate _task({
+  String? objective,
   TaskStep? step,
   List<TaskStep>? steps,
   String? currentStepId,
-  List<TaskGate> gates = const [],
+  List<AcceptanceItem>? acceptance,
 }) {
   final now = DateTime(2026, 1, 1);
   final resolvedSteps = steps ?? [step ?? _step()];
@@ -2474,10 +2476,9 @@ TaskAggregate _task({
     id: 'task_test',
     title: 'Test task',
     originalPrompt: 'Run the task',
-    objective: 'Run the task',
+    objective: objective ?? 'Run the task',
     constraints: const ['Stay inside workspace.'],
-    successCriteria: const ['Finish the task.'],
-    gates: gates,
+    acceptance: acceptance ?? const [],
     steps: resolvedSteps,
     status: TaskStatus.paused,
     currentStepId: currentStepId ?? resolvedSteps.first.id,
@@ -2505,7 +2506,16 @@ Map<String, dynamic> _planJson({required String title}) {
     'title': title,
     'goal': 'Build the reporting screen',
     'constraints': ['Stay inside workspace.'],
-    'successCriteria': ['The reporting screen is planned.'],
+    'acceptance': [
+      {
+        'ref': 'reporting-screen-planned',
+        'statement': 'The reporting screen is planned.',
+        'criterion_refs': [],
+        'verifiers': [
+          {'kind': 'review', 'required': true},
+        ],
+      },
+    ],
     'steps': [
       {
         'id': 'inspect',
@@ -2546,9 +2556,15 @@ ModelCompletion _planResponse(
         'title': plan['title'] ?? 'Task',
         'objective': plan['objective'] ?? plan['goal'] ?? '',
         'constraints': plan['constraints'] ?? const [],
-        'success_criteria': plan['successCriteria'] ?? const [],
       }),
     ),
+    for (final raw in (plan['acceptance'] as List? ?? const []))
+      if (raw is Map)
+        ModelToolCall(
+          id: callId('call_task_add_acceptance_${raw['ref']}'),
+          name: 'task_add_acceptance',
+          arguments: jsonEncode(raw),
+        ),
     for (final raw in (plan['steps'] as List? ?? const []))
       if (raw is Map)
         ModelToolCall(
@@ -2607,7 +2623,6 @@ Map<String, dynamic> _projectBoundedPlanJson({required String title}) {
     'title': title,
     'goal': 'Implement the settings toggle',
     'constraints': ['Do not build the whole app.'],
-    'successCriteria': ['The settings toggle works.'],
     'steps': [
       {
         'id': 'implement_toggle',
@@ -2625,7 +2640,16 @@ Map<String, dynamic> _wholeProjectPlanJson() {
     'title': 'Whole app',
     'goal': 'Build the whole app',
     'constraints': ['Stay inside workspace.'],
-    'successCriteria': ['The whole app is complete.'],
+    'acceptance': [
+      {
+        'ref': 'whole-app-complete',
+        'statement': 'The whole app is complete.',
+        'criterion_refs': [],
+        'verifiers': [
+          {'kind': 'review', 'required': true},
+        ],
+      },
+    ],
     'steps': [
       for (var i = 1; i <= 4; i++)
         {

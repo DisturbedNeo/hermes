@@ -15,6 +15,7 @@ import 'package:hermes/features/task/application/contracts/task_commands.dart';
 import 'package:hermes/features/task/application/contracts/task_planning_models.dart';
 import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
 import 'package:hermes/core/contracts/execution_settings.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
 import 'package:hermes/features/model/application/model_completion_port.dart';
@@ -90,8 +91,8 @@ Do not return a complete task JSON document. Start with task_view when context
 is needed. The view is bounded; use navigation.pages and call task_view again
 with section and next_cursor when a collection has more items. Optionally use
 task_set_brief, add one independently executable
-step at a time with task_add_step, attach exact verification commands with
-task_add_check, and finish with task_commit_plan. If a validation error means
+step at a time with task_add_step, attach acceptance verifiers with
+task_add_acceptance, and finish with task_commit_plan. If a validation error means
 the current uncommitted draft must be replaced, use task_reset_plan first and
 then rebuild the corrected draft with commands.
 
@@ -100,7 +101,7 @@ Never provide persistent IDs, statuses, timestamps, run history, fingerprints,
 or completion fields. A tool error affects only that command; inspect the
 returned error and retry the smallest correction.
 
-Stay inside the task objective, done criteria, out-of-scope boundaries, and
+Stay inside the task objective, acceptance statements, out-of-scope boundaries, and
 declared read/write paths. Do not expand a bounded Project task to the whole
 Project. Keep the number of steps within the supplied limit. Use
 task_request_user_decision only for genuinely blocking irreversible choices,
@@ -367,13 +368,11 @@ class TaskExecutionCoordinator {
           _planningUseCase._taskPlanningStepLimit(task),
       parseStepExecutionStatus: (raw) =>
           _planningUseCase._parseStepExecutionStatusStrict(raw),
-      evidenceClaimsFromJson:
-          (value, allowedCriterionIds, {expectedEvidence = const []}) =>
-              _planningUseCase._evidenceClaimsFromJson(
-                value,
-                allowedCriterionIds,
-                expectedEvidence: expectedEvidence,
-              ),
+      evidenceClaimsFromJson: (value, {acceptance = const []}) =>
+          _planningUseCase._evidenceClaimsFromJson(
+            value,
+            acceptance: acceptance,
+          ),
       taskToolErrorJson:
           ({
             required code,

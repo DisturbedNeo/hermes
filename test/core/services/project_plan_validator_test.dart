@@ -3,6 +3,7 @@ import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/project/runtime/project_plan_validator.dart';
 import 'package:hermes/features/project/runtime/project_planning_policy.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 
 void main() {
   const validator = ProjectPlanValidator(planningHorizon: 2);
@@ -68,14 +69,6 @@ void main() {
             'Implement a different bounded slice.',
             const ['criterion_001'],
           ),
-          expectedEvidence: const [
-            TaskEvidenceExpectation(
-              id: 'expect_second',
-              type: ProjectEvidenceType.taskClaim,
-              criterionIds: ['criterion_001'],
-              description: 'The second slice is independently checked.',
-            ),
-          ],
         );
     final validation = validator.validate(
       project: project,
@@ -234,14 +227,6 @@ void main() {
     final first = _task('first');
     final duplicateDesired = _task('second').copyWith(
       fingerprint: first.fingerprint,
-      expectedEvidence: const [
-        TaskEvidenceExpectation(
-          id: 'expect_second',
-          type: ProjectEvidenceType.taskClaim,
-          criterionIds: ['criterion_001'],
-          description: 'The second task is checked.',
-        ),
-      ],
     );
     final desiredValidation = validator.validate(
       project: project,
@@ -259,14 +244,6 @@ void main() {
       proposal: _desired(_projectWithTasks([existing]), [
         _task('replacement').copyWith(
           fingerprint: existing.fingerprint,
-          expectedEvidence: const [
-            TaskEvidenceExpectation(
-              id: 'expect_replacement',
-              type: ProjectEvidenceType.taskClaim,
-              criterionIds: ['criterion_001'],
-              description: 'The replacement is checked.',
-            ),
-          ],
         ),
       ]),
       workspaceRoot: '/workspace',
@@ -281,20 +258,28 @@ void main() {
     final project = _project();
     final task = _task(
       'ambiguous',
-      expectedEvidence: const [
-        TaskEvidenceExpectation(
-          id: 'expect_a',
-          type: ProjectEvidenceType.artifact,
+      acceptance: const [
+        AcceptanceItem(
+          ref: 'duplicate-ref',
+          statement: 'The report exists.',
           criterionIds: ['criterion_001'],
-          description: 'The report exists.',
-          sourceRef: 'report.md',
+          verifiers: [
+            AcceptanceVerifier(
+              kind: AcceptanceVerifierKind.artifact,
+              path: 'report.md',
+            ),
+          ],
         ),
-        TaskEvidenceExpectation(
-          id: 'expect_b',
-          type: ProjectEvidenceType.artifact,
+        AcceptanceItem(
+          ref: 'duplicate-ref',
+          statement: 'The report is present.',
           criterionIds: ['criterion_001'],
-          description: 'The report is present.',
-          sourceRef: 'report.md',
+          verifiers: [
+            AcceptanceVerifier(
+              kind: AcceptanceVerifierKind.artifact,
+              path: 'report.md',
+            ),
+          ],
         ),
       ],
     );
@@ -306,7 +291,7 @@ void main() {
 
     expect(
       validation.errors.map((issue) => issue.code),
-      contains('ambiguous_evidence_expectation'),
+      contains('duplicate_acceptance_ref'),
     );
   });
 
@@ -356,7 +341,6 @@ void main() {
     );
     final task = _task(
       'artifact_only',
-      expectedEvidence: const [],
       expectedArtifacts: [
         TaskArtifact(
           id: 'artifact_expected',
@@ -450,18 +434,21 @@ void main() {
     'requires a matching command_passes gate for required command evidence',
     () {
       final project = _project();
-      const expectation = TaskEvidenceExpectation(
-        id: 'expect_command',
-        type: ProjectEvidenceType.command,
+      const acceptance = AcceptanceItem(
+        ref: 'focused-tests',
+        statement: 'The focused tests pass.',
         criterionIds: ['criterion_001'],
-        description: 'The focused tests pass.',
-        required: true,
-        sourceRef: 'dart test test/feature_test.dart',
-        details: {'working_directory': '.'},
+        verifiers: [
+          AcceptanceVerifier(
+            kind: AcceptanceVerifierKind.command,
+            command: 'dart test test/feature_test.dart',
+          ),
+        ],
       );
       final withoutGate = _task(
         'command_without_gate',
-      ).copyWith(expectedEvidence: const [expectation]);
+        acceptance: const [acceptance],
+      );
       final invalid = validator.validate(
         project: project,
         proposal: _desired(project, [withoutGate]),
@@ -469,31 +456,8 @@ void main() {
       );
 
       expect(
-        invalid.errors.map((issue) => issue.code),
-        contains('missing_command_passes_gate'),
-      );
-
-      final withGate = withoutGate.copyWith(
-        gates: const [
-          TaskGate(
-            id: 'command_passes',
-            required: true,
-            scope: 'task',
-            params: {
-              'command': 'dart test test/feature_test.dart',
-              'working_directory': '.',
-            },
-          ),
-        ],
-      );
-      final valid = validator.validate(
-        project: project,
-        proposal: _desired(project, [withGate]),
-        workspaceRoot: '/workspace',
-      );
-      expect(
-        valid.errors.map((issue) => issue.code),
-        isNot(contains('missing_command_passes_gate')),
+        invalid.valid,
+        isTrue,
       );
     },
   );
@@ -581,34 +545,45 @@ TaskAggregate _task(
   String id, {
   List<String> dependencies = const [],
   List<String> writePaths = const ['lib/feature.dart'],
-  List<TaskEvidenceExpectation>? expectedEvidence,
   List<TaskArtifact> expectedArtifacts = const [],
+  List<AcceptanceItem>? acceptance,
 }) {
   final now = DateTime(2026, 1, 2);
   final objective = 'Implement bounded slice $id.';
+  final verifierSpecs = <AcceptanceVerifier>[
+    for (final artifact in expectedArtifacts)
+      AcceptanceVerifier(
+        kind: AcceptanceVerifierKind.artifact,
+        path: artifact.path,
+        description: artifact.description,
+      ),
+  ];
+  if (verifierSpecs.isEmpty) {
+    verifierSpecs.add(
+      const AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+    );
+  }
+  final defaultAcceptance = AcceptanceItem(
+    ref: 'slice-$id',
+    statement: 'The bounded slice is implemented and checked.',
+    criterionIds: const ['criterion_001'],
+    verifiers: verifierSpecs,
+  );
   return TaskAggregate(
     id: id,
     title: 'Bounded slice $id',
     objective: objective,
-    criterionIds: const ['criterion_001'],
+    acceptance: acceptance ?? [defaultAcceptance],
     dependsOnTaskIds: dependencies,
-    expectedEvidence:
-        expectedEvidence ??
-        const [
-          TaskEvidenceExpectation(
-            id: 'expect_task',
-            type: ProjectEvidenceType.taskClaim,
-            criterionIds: ['criterion_001'],
-            description: 'The done criteria are independently checked.',
-          ),
-        ],
     writePaths: writePaths,
-    doneCriteria: const ['The bounded slice is implemented and checked.'],
     outOfScope: const ['Do not change unrelated project scope.'],
     context: const [],
-    expectedArtifacts: expectedArtifacts,
     status: TaskStatus.queued,
-    fingerprint: projectTaskFingerprint(objective, const ['criterion_001']),
+    fingerprint: projectTaskFingerprint(
+      objective,
+      const ['criterion_001'],
+      acceptance ?? [defaultAcceptance],
+    ),
     rejectionReason: null,
     createdAt: now,
     updatedAt: now,

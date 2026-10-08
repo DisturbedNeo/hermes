@@ -1,16 +1,17 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/model_json.dart';
+import 'package:hermes/core/contracts/acceptance.dart';
 
 void main() {
-  test('canonical task JSON defaults missing gates to empty', () {
+  test('canonical task JSON defaults acceptance to empty', () {
     final task = ModelJson.decode<TaskAggregate>({
       'id': 'task_1',
       'title': 'Old task',
       'originalPrompt': 'Do work',
       'objective': 'Do work',
       'constraints': <String>[],
-      'successCriteria': ['Done'],
+      'acceptance': <Map<String, dynamic>>[],
       'steps': [
         {
           'id': 'step_1',
@@ -30,8 +31,7 @@ void main() {
       'updatedAt': '2026-01-01T00:00:00.000',
     });
 
-    expect(task.gates, isEmpty);
-    expect(task.steps.single.gates, isEmpty);
+    expect(task.acceptance, isEmpty);
   });
 
   test('serializes task, step, and run gate metadata', () {
@@ -42,8 +42,18 @@ void main() {
       originalPrompt: 'Do work',
       objective: 'Do work',
       constraints: const [],
-      successCriteria: const ['Done'],
-      gates: const [TaskGate(id: 'no_tool_errors', scope: 'task')],
+      acceptance: const [
+        AcceptanceItem(
+          ref: 'report-produced',
+          statement: 'The report is produced.',
+          verifiers: [
+            AcceptanceVerifier(
+              kind: AcceptanceVerifierKind.artifact,
+              path: 'out.md',
+            ),
+          ],
+        ),
+      ],
       steps: const [
         TaskStep(
           id: 'step_1',
@@ -52,14 +62,6 @@ void main() {
           instructions: ['Work'],
           mayEditFiles: false,
           artifacts: [],
-          gates: [
-            TaskGate(
-              id: 'artifact_exists',
-              params: {
-                'paths': ['out.md'],
-              },
-            ),
-          ],
           status: TaskStepStatus.pending,
         ),
       ],
@@ -103,8 +105,7 @@ void main() {
 
     final decoded = ModelJson.decode<TaskAggregate>(ModelJson.encode(task));
 
-    expect(decoded.gates.single.id, 'no_tool_errors');
-    expect(decoded.steps.single.gates.single.id, 'artifact_exists');
+    expect(decoded.acceptance.single.ref, 'report-produced');
     expect(
       decoded.runs.single.gateResults.single.status,
       TaskGateStatus.passed,

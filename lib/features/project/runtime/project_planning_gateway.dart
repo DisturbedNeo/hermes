@@ -14,23 +14,6 @@ import 'package:hermes/core/wire_case.dart';
 export 'package:hermes/features/project/runtime/project_plan_validator.dart'
     show ProjectPlanValidationIssue, ProjectPlanValidationSeverity;
 
-/// Canonical result of initial planning.
-///
-/// The patch is ready for application to the real project. Core project
-/// creation consumes this result directly and does not first materialize a
-/// temporary project or convert the plan into a second DTO.
-class ProjectInitialPlanResult {
-  const ProjectInitialPlanResult({
-    required this.patch,
-    this.planningMetrics = const PlanningMetrics(),
-    this.planningError,
-  });
-
-  final ProjectPlanPatch patch;
-  final PlanningMetrics planningMetrics;
-  final String? planningError;
-}
-
 /// Bounded, read-only planning context collected before a plan model call.
 class ProjectEvidenceSnapshot {
   final String workspaceName;
@@ -117,34 +100,6 @@ class ProjectEvidenceSnapshot {
   });
 }
 
-/// Typed planning metadata passed from discovery to a model planner.
-/// Wire conversion is intentionally local to the planning protocol adapter.
-class ProjectPlanningWorkspaceMetadata {
-  ProjectPlanningWorkspaceMetadata({
-    required this.evidence,
-    required this.commandExecutionApproved,
-  }) : _wireOverride = null;
-
-  ProjectPlanningWorkspaceMetadata.fromWire(Map<String, Object?> wire)
-    : evidence = null,
-      commandExecutionApproved =
-          wire['command_execution_approved'] == true ||
-          wire['commandExecutionApproved'] == true,
-      _wireOverride = Map.unmodifiable(wire);
-
-  final ProjectEvidenceSnapshot? evidence;
-  final bool commandExecutionApproved;
-  final Map<String, Object?>? _wireOverride;
-
-  Map<String, Object?> toWire() => snakeCaseMap(
-    _wireOverride ??
-        <String, Object?>{
-          ...evidence!.toMap(),
-          'commandExecutionApproved': commandExecutionApproved,
-        },
-  );
-}
-
 /// Pure result of evaluating whether the persisted project state is complete.
 class ProjectCompletionAssessment {
   final bool complete;
@@ -187,8 +142,7 @@ class ProjectIncrementalPlanResult {
 }
 
 /// Boundary between deterministic project orchestration and model-backed
-/// project planning decisions. Incremental revision is the normal planning
-/// protocol; legacy initial-plan DTOs remain above only for wire compatibility.
+/// project planning decisions.
 abstract interface class ProjectPlanner {
   Future<ProjectIncrementalPlanResult> maintainWorkspaceGraph({
     required ModelConversationPort client,

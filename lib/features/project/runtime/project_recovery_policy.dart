@@ -267,66 +267,6 @@ class ProjectRecoveryPolicy {
     ].join('|');
   }
 
-  List<TaskEvidenceExpectation> replacementExpectedEvidence({
-    required Iterable<TaskEvidenceExpectation> source,
-    required Iterable<TaskEvidenceExpectation> additions,
-    required Iterable<String> criterionIds,
-    required String idPrefix,
-  }) {
-    final validCriteria = criterionIds.toSet();
-    final merged = <String, TaskEvidenceExpectation>{};
-    for (final expectation in [...source, ...additions]) {
-      final linkedCriteria = expectation.criterionIds
-          .where(validCriteria.contains)
-          .toSet()
-          .toList();
-      if (linkedCriteria.isEmpty) continue;
-      final normalized = TaskEvidenceExpectation(
-        id: expectation.id,
-        type: expectation.type,
-        criterionIds: linkedCriteria,
-        description: expectation.description,
-        required: expectation.required,
-        sourceRef: expectation.sourceRef,
-        details: expectation.details,
-      );
-      final signature = _evidenceExpectationSignature(normalized);
-      final existing = merged[signature];
-      merged[signature] = existing == null
-          ? normalized
-          : TaskEvidenceExpectation(
-              id: normalized.id,
-              type: normalized.type,
-              criterionIds: normalized.criterionIds,
-              description: normalized.description,
-              required: existing.required || normalized.required,
-              sourceRef: normalized.sourceRef,
-              details: normalized.details,
-            );
-    }
-    return [
-      for (final expectation in merged.values)
-        TaskEvidenceExpectation(
-          id: '${idPrefix}_${uuid.v7()}',
-          type: expectation.type,
-          criterionIds: expectation.criterionIds,
-          description: expectation.description,
-          required: expectation.required,
-          sourceRef: expectation.sourceRef,
-          details: expectation.details,
-        ),
-    ];
-  }
-
-  String _evidenceExpectationSignature(TaskEvidenceExpectation expectation) {
-    final criteria = [...expectation.criterionIds]..sort();
-    return [
-      expectation.type.name,
-      _normalise(expectation.sourceRef ?? ''),
-      criteria.join(','),
-    ].join('|');
-  }
-
   ProjectTaskNode recoveryTaskForIncident({
     required String incidentId,
     required ProjectTaskNode sourceTask,
@@ -339,38 +279,36 @@ class ProjectRecoveryPolicy {
         ? '${failure.gateResult.gateId}: $command'
         : failure.gateResult.gateId;
     final objective = 'Restore required project health gate: $gateTarget';
-    final gateType =
-        command?.isNotEmpty == true ||
+    final verifierKind =
+      command?.isNotEmpty == true ||
             failure.gateResult.gateId == 'command_passes'
-        ? ProjectEvidenceType.command
+        ? AcceptanceVerifierKind.command
         : failure.gateResult.gateId == 'human_approval'
-        ? ProjectEvidenceType.userApproval
-        : ProjectEvidenceType.gate;
-    final gateSourceRef = command?.isNotEmpty == true
-        ? command
-        : failure.gateResult.gateId;
-    final recoveryGateExpectation = TaskEvidenceExpectation(
-      id: 'recovery_gate_expectation',
-      type: gateType,
-      criterionIds: sourceTask.criterionIds,
-      description: 'The required recovery gate passes: $gateTarget.',
-      required: true,
-      sourceRef: gateSourceRef,
-      details: failure.gateResult.details,
+        ? AcceptanceVerifierKind.approval
+        : AcceptanceVerifierKind.review;
+    final sourceCriterionIds = {
+      for (final item in sourceTask.acceptance) ...item.criterionIds,
+    }.toList();
+    final recoveryAcceptance = AcceptanceItem(
+      ref: 'recovery_gate',
+      statement: 'The required recovery gate passes: $gateTarget.',
+      criterionIds: sourceCriterionIds,
+      verifiers: [
+        AcceptanceVerifier(
+          kind: verifierKind,
+          required: true,
+          command: verifierKind == AcceptanceVerifierKind.command
+              ? command
+              : null,
+          workingDirectory: failure.workingDirectory ?? '.',
+        ),
+      ],
     );
     return ProjectTaskNode(
       id: 'project_recovery_${uuid.v7()}',
       title: 'Recover project health',
       objective: objective,
-      criterionIds: sourceTask.criterionIds,
-      doneCriteria: [
-        'Diagnose why the required gate is failing.',
-        'Make the smallest safe repair needed to restore the gate.',
-        if (command?.isNotEmpty == true)
-          'Run `$command` successfully before completing this task.'
-        else
-          'Rerun the failed required gate successfully before completing this task.',
-      ],
+      acceptance: [recoveryAcceptance],
       outOfScope: const [
         'Do not start unrelated feature work.',
         'Do not expand the original project scope.',
@@ -388,13 +326,6 @@ class ProjectRecoveryPolicy {
       ],
       readPaths: sourceTask.readPaths,
       writePaths: sourceTask.writePaths,
-      expectedEvidence: replacementExpectedEvidence(
-        source: sourceTask.expectedEvidence,
-        additions: [recoveryGateExpectation],
-        criterionIds: sourceTask.criterionIds,
-        idPrefix: 'recovery_expectation',
-      ),
-      expectedArtifacts: const [],
       status: TaskStatus.queued,
       recoveryIncidentId: incidentId,
       fingerprint: projectTaskFingerprint(objective, [
@@ -442,68 +373,6 @@ class ProjectRecoveryPolicy {
                 resolvedAt: now,
               )
             : incident,
-    ];
-  }
-
-  List<TaskGate> requiredGatesForTask(
-    ProjectAggregate project,
-    ProjectTaskNode task,
-  ) {
-    final expectedGates = <TaskGate>[
-      for (final expectation in task.expectedEvidence)
-        if (expectation.required &&
-            expectation.type == ProjectEvidenceType.command &&
-            expectation.sourceRef?.trim().isNotEmpty == true)
-          TaskGate(
-            id: 'command_passes',
-            required: true,
-            scope: 'task',
-            params: {
-              'command': expectation.sourceRef!.trim(),
-              ...expectation.details,
-            },
-            description: expectation.description,
-          )
-        else if (expectation.required &&
-            expectation.type == ProjectEvidenceType.gate &&
-            expectation.sourceRef?.trim().isNotEmpty == true)
-          TaskGate(
-            id: expectation.sourceRef!.trim(),
-            required: true,
-            scope: 'task',
-            params: expectation.details,
-            description: expectation.description,
-          )
-        else if (expectation.required &&
-            expectation.type == ProjectEvidenceType.userApproval)
-          TaskGate(
-            id: 'human_approval',
-            required: true,
-            scope: 'task',
-            params: expectation.details,
-            description: expectation.description,
-          ),
-    ];
-    final incidentId = task.recoveryIncidentId;
-    if (incidentId == null) return expectedGates;
-    final incident = project.recoveryIncidents
-        .where((item) => item.id == incidentId)
-        .firstOrNull;
-    if (incident == null) return expectedGates;
-    return [
-      ...expectedGates,
-      TaskGate(
-        id: incident.failedGateId,
-        required: true,
-        scope: 'task',
-        params: {
-          if (incident.command?.trim().isNotEmpty == true)
-            'command': incident.command,
-          if (incident.workingDirectory?.trim().isNotEmpty == true)
-            'working_directory': incident.workingDirectory,
-        },
-        description: 'Recovery incident ${incident.id} must be resolved.',
-      ),
     ];
   }
 
