@@ -97,17 +97,38 @@ class ProjectPlanBuilder {
        _requiresApproval = requiresApproval,
        _approvalReason = approvalReason.trim(),
        _revisionService = revisionService {
+    _criterionAgentNumbers.addAll(project.criterionAgentNumbers);
+    _milestoneAgentNumbers.addAll(project.milestoneAgentNumbers);
+    _taskAgentNumbers.addAll(project.taskAgentNumbers);
+    _nextCriterionAgentNumber = project.nextCriterionAgentNumber;
+    _nextMilestoneAgentNumber = project.nextMilestoneAgentNumber;
+    _nextTaskAgentNumber = project.nextTaskAgentNumber;
     for (final criterion in project.criteria) {
       _criteria[criterion.id] = criterion;
       _criterionRefs[criterion.id] = criterion.id;
+      final number = project.criterionAgentNumber(criterion.id);
+      if (number != null) {
+        _criterionRefs['$number'] = criterion.id;
+        _criterionRefs['Criterion $number'] = criterion.id;
+      }
     }
     for (final milestone in project.milestones) {
       _milestones[milestone.id] = milestone;
       _milestoneRefs[milestone.id] = milestone.id;
+      final number = project.milestoneAgentNumber(milestone.id);
+      if (number != null) {
+        _milestoneRefs['$number'] = milestone.id;
+        _milestoneRefs['Milestone $number'] = milestone.id;
+      }
     }
     for (final task in project.tasks) {
       _taskCatalog[task.id] = task;
       _taskRefs[task.id] = task.id;
+      final number = project.taskAgentNumber(task.id);
+      if (number != null) {
+        _taskRefs['$number'] = task.id;
+        _taskRefs['Task $number'] = task.id;
+      }
       if (!_isTerminal(task)) _tasks[task.id] = task;
     }
     for (final node in project.workspaceGraph.nodes) {
@@ -136,6 +157,9 @@ class ProjectPlanBuilder {
   final Map<String, String> _taskRefs = {};
   final Map<String, String> _workspaceNodeRefs = {};
   final Map<String, String> _workspaceEdgeRefs = {};
+  final Map<String, int> _criterionAgentNumbers = {};
+  final Map<String, int> _milestoneAgentNumbers = {};
+  final Map<String, int> _taskAgentNumbers = {};
   final Set<String> _deferredTaskIds = {};
   final Set<String> _obsoleteTaskIds = {};
   final Set<String> _splitTaskIds = {};
@@ -149,11 +173,20 @@ class ProjectPlanBuilder {
   final String _approvalReason;
   final ProjectPlanningLimits planningLimits;
   final Set<String> _newTaskIds = {};
+  int _nextCriterionAgentNumber = 1;
+  int _nextMilestoneAgentNumber = 1;
+  int _nextTaskAgentNumber = 1;
 
   String get summary => _summary;
   String get rationale => _rationale;
   List<ProjectPlanRevisionTrigger> get triggers => List.unmodifiable(_triggers);
   List<String> get splitTaskIds => List.unmodifiable(_splitTaskIds);
+
+  int? criterionAgentNumberFor(String id) => _criterionAgentNumbers[id];
+
+  int? milestoneAgentNumberFor(String id) => _milestoneAgentNumbers[id];
+
+  int? taskAgentNumberFor(String id) => _taskAgentNumbers[id];
 
   Future<ProjectPlanBuilderCommit> commit({
     required String workspaceRoot,

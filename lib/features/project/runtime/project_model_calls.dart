@@ -299,27 +299,18 @@ $planningInstructions
 Begin with project_view when you need context. The view is bounded; use the
 navigation.pages metadata and call project_view again with section and
 next_cursor when a collection has more items. Search cursors retain their
-search scope. Request a specific task, criterion, or memory detail when needed. Use
-plan_update_task for an existing mutable task. Use plan_add_task for one new
-task; the builder generates fresh IDs. Submit every new task as a complete object. Completed, failed, split, rejected,
-cancelled, and running task history is immutable. Use plan_retry_task only for
-failed or rejected work, use plan_split_task only for a mutable oversized task,
-and use plan_add_task for focused work around terminal history. Use
-plan_set_dependency to make ordering changes and plan_set_disposition only
-when deferral or obsolescence is justified. Add focused checks, notes, or a
-blocking user decision only when they are needed.
+search scope. Use task_upsert to create or update one bounded task, and use
+project_update for project details, criteria, and milestones. Task creation
+accepts inline criteria, dependencies, and checks; the same task_upsert
+command can add checks independently later. Numeric references from
+project_view are stable project-local IDs. Completed, failed, split, rejected,
+cancelled, and running task history is immutable.
 
 Make the smallest safe diff that addresses all supplied triggers. Preserve
 the original goal, accepted evidence, protected memory, and completed work.
-The workspace context graph is domain-neutral: it may describe code, writing,
-research, design, people, sources, requirements, or workflow structure.
-Keep it current when a task or workspace change reveals durable structure.
-Do not duplicate graph entries into project memory
-and do not alter protected user-authored nodes or relationships.
-Task agents must not mutate the workspace context graph directly; only this
-project planning flow or an explicit user command may change it.
-Use plan_preview if it helps inspect the diff or validation before the final
-plan_commit. A successful plan_commit is the only completion signal.
+Mutation responses and project_view include validation and the normalized
+draft. Finish with the explicit plan_commit command. A successful plan_commit
+is the only completion signal.
 ''',
         user:
             '''
@@ -647,22 +638,18 @@ The reader is read-only, limited to files in the discovery tree, and has a
 finite byte budget. If a result has has_more=true, continue at its next_start_line.
 Do not use it to inspect unrelated files; use the tree and the goal to choose
 only the smallest set of files needed for the initial plan.
-Use plan_set_project_details first to set a concise title, a useful refined goal, and the constraints that must remain true. Add one or more success criteria with plan_add_criteria. Milestones are optional; add one or more with plan_add_milestones when they clarify delivery, otherwise Hermes will create a default milestone for executable work.
-Keep criteria focused on the current executable slice. A deterministic criterion with no active task owner is allowed as future backlog; it will need a gate or command check when a later task takes ownership. Use plan_add_task once for each bounded near-term task, with no more than three queued tasks. Each call must contain the complete objective, criterion references, done criteria, explicit out-of-scope boundary, and any required command checks in that same call; arguments from separate calls are not merged. Use temporary refs such as scaffold and verify to link tasks and dependencies; Hermes generates canonical IDs. Hermes creates a default active milestone when executable tasks exist, so add a custom milestone only when it clarifies delivery.
-For deterministic criteria owned by a task, include required checks in the task's checks array. Do not use plan_add_check during bootstrap. Add notes with plan_add_note for sourced facts, assumptions, risks, or decisions. Ask a user decision only for genuinely irreversible, high-risk, credential, scope, or otherwise unsafe-to-assume ambiguity.
-When a note is based on a workspace file, set source_id to workspace:<relative-path>.
-Use project_view when you need a bounded summary or detail, then call plan_commit when the plan is complete. Do not supply IDs, statuses, timestamps, revisions, gates, evidence IDs, or runtime execution fields.
-
-Build a durable workspace context graph when the goal reveals stable project
-structure. The graph is domain-neutral and is not merely a code repository map.
-Set a concise orientation, add typed nodes for important concepts
-or artifacts, and connect them with labeled relationships. Nodes may represent
-code components, characters, sources, requirements, design artifacts, or
-workflow stages. References are opaque descriptions such as paths, URLs,
-chapters, or document names; do not assume the workspace is a code repository.
-Only record durable structure, not temporary task progress.
-Task agents must not mutate the workspace context graph directly; only the
-project planner or an explicit user command may change it.
+Use project_submit_plan once to submit the complete bounded frontier: title,
+refined goal, constraints, criteria, optional milestones, and no more than
+three tasks. Tasks may include dependencies, task-local criteria, and required
+command checks in the same call. Use numeric references from the tool schema;
+do not invent persistent IDs or temporary alphanumeric references. The call
+creates a validated draft only. For later repairs or independent changes, use
+project_update and task_upsert. Mutation responses include validation and the
+normalized draft. Finish with the explicit plan_commit command; it is the only
+completion signal.
+Use project_view when you need a bounded summary or detail, then call plan_commit
+when the plan is complete. Do not supply IDs, statuses, timestamps, revisions,
+gates, evidence IDs, or runtime execution fields.
 '''
               .trim(),
       user:

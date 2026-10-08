@@ -14,28 +14,27 @@ void main() {
     final now = DateTime(2026, 1, 1);
     final calls = ProjectModelCalls(sandbox: WorkspaceSandbox());
     final client = _Client([
-      _call('plan_set_project_details', {
+      _call('project_submit_plan', {
         'title': 'Bounded Project',
         'refined_goal': 'Deliver one verified bounded outcome.',
         'constraints': ['Stay within the attached workspace.'],
-      }),
-      _call('plan_add_criteria', {
         'criteria': [
-          {'ref': 'quality', 'statement': 'The bounded outcome is verified.'},
+          {'statement': 'The bounded outcome is verified.'},
         ],
-      }),
-      _call('plan_add_task', {
-        'ref': 'implement',
-        'objective': 'Implement the bounded outcome.',
-        'criterion_refs': ['quality'],
-        'done_criteria': ['The outcome is verified.'],
-        'out_of_scope': ['Unrelated project work.'],
-      }),
-      _call('plan_add_check', {
-        'task': 'implement',
-        'kind': 'command',
-        'command': 'dart test',
-        'criterion_refs': ['quality'],
+        'tasks': [
+          {
+            'objective': 'Implement the bounded outcome.',
+            'criterion_ids': [1],
+            'done_criteria': ['The outcome is verified.'],
+            'out_of_scope': ['Unrelated project work.'],
+            'checks': [
+              {
+                'command': 'dart test',
+                'criterion_ids': [1],
+              },
+            ],
+          },
+        ],
       }),
       _call('plan_commit', const {}),
     ]);
@@ -69,13 +68,13 @@ void main() {
     expect(plan.tasks.single.milestoneId, plan.milestones.single.id);
     expect(plan.tasks.single.gates.single.id, 'command_passes');
     expect(plan.tasks.single.expectedEvidence.length, 2);
-    expect(initialPlan.planningMetrics.planningCalls, 5);
-    expect(initialPlan.planningMetrics.planningCommandCount, 5);
+    expect(initialPlan.planningMetrics.planningCalls, 2);
+    expect(initialPlan.planningMetrics.planningCommandCount, 2);
     expect(initialPlan.planningMetrics.promptTokenEstimate, greaterThan(0));
     final toolNames = [
       for (final item in client.lastExtraParams?.tools ?? const []) item.id,
     ];
-    expect(toolNames, contains('plan_set_project_details'));
+    expect(toolNames, contains('project_submit_plan'));
   });
 
   test(
@@ -93,24 +92,20 @@ void main() {
       final calls = ProjectModelCalls(sandbox: WorkspaceSandbox());
       final client = _Client([
         _call('planning_read_file', {'path': 'Design.md'}),
-        _call('plan_set_project_details', {
+        _call('project_submit_plan', {
           'title': 'Accessible Report',
           'refined_goal': 'Deliver the accessible report workflow.',
-        }),
-        _call('plan_add_criteria', {
           'criteria': [
+            {'statement': 'The report remains keyboard accessible.'},
+          ],
+          'tasks': [
             {
-              'ref': 'accessibility',
-              'statement': 'The report remains keyboard accessible.',
+              'objective': 'Implement the accessible report workflow.',
+              'criterion_ids': [1],
+              'done_criteria': ['The report remains keyboard accessible.'],
+              'out_of_scope': ['Unrelated visual redesign.'],
             },
           ],
-        }),
-        _call('plan_add_task', {
-          'ref': 'implement',
-          'objective': 'Implement the accessible report workflow.',
-          'criterion_refs': ['accessibility'],
-          'done_criteria': ['The report remains keyboard accessible.'],
-          'out_of_scope': ['Unrelated visual redesign.'],
         }),
         _call('plan_commit', const {}),
       ]);
@@ -164,10 +159,13 @@ void main() {
           .join('\n');
       expect(prompt, contains('workspace_name'));
       expect(prompt, isNot(contains('workspaceName')));
-      expect(prompt, contains('domain-neutral'));
+      expect(prompt, contains('project_submit_plan'));
+      expect(prompt, contains('numeric references'));
       expect(
         prompt,
-        contains('Task agents must not mutate the workspace context graph'),
+        isNot(
+          contains('Task agents must not mutate the workspace context graph'),
+        ),
       );
     },
   );

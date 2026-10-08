@@ -15,8 +15,8 @@ void main() {
     () async {
       final calls = ProjectModelCalls(sandbox: WorkspaceSandbox());
       final client = _Client([
-        _call('plan_update_task', {
-          'task': 'task_existing',
+        _call('task_upsert', {
+          'task_id': 1,
           'objective': 'Update the bounded implementation after the failure.',
         }),
         _call('plan_commit', const {}),
@@ -41,16 +41,13 @@ void main() {
         result.project.tasks.where((task) => task.id == 'task_existing'),
         hasLength(1),
       );
-      expect(client.toolNames, contains('plan_update_task'));
+      expect(client.toolNames, contains('task_upsert'));
       final prompt = client.seenMessages
           .expand((messages) => messages)
           .map((message) => message.content)
           .join('\n');
-      expect(prompt, contains('workspace context graph'));
-      expect(
-        prompt,
-        contains('Task agents must not mutate the workspace context graph'),
-      );
+      expect(prompt, contains('Numeric references from'));
+      expect(prompt, isNot(contains('workspace context graph')));
     },
   );
 

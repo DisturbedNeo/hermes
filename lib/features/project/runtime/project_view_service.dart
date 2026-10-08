@@ -104,7 +104,9 @@ class ProjectViewService {
         'title': _text(project.title),
         'status': project.status.wire,
         'base_revision': project.nextRevision - 1,
-        'active_task_ref': project.activeTaskId,
+        'active_task_id': project.activeTaskId == null
+            ? null
+            : project.taskAgentNumber(project.activeTaskId!),
       },
       'control': controlState(project, maxItems: limit),
       'goal': {
@@ -113,11 +115,12 @@ class ProjectViewService {
       },
       'constraints': [for (final item in constraints.items) _text(item)],
       'criteria': [
-        for (final criterion in criteria.items) _criterionSummary(criterion),
+        for (final criterion in criteria.items)
+          _criterionSummary(project, criterion),
       ],
       'milestones': [
         for (final milestone in milestones.items)
-          _milestoneSummary(milestone, limit),
+          _milestoneSummary(project, milestone, limit),
       ],
       'workspaceGraph': {
         ...workspace.toMap(maxItems: limit),
@@ -125,16 +128,17 @@ class ProjectViewService {
         'edge_count': project.workspaceGraph.edges.length,
       },
       'tasks': [
-        for (final task in taskPage.items) _taskSummary(task, schedule, limit),
+        for (final task in taskPage.items)
+          _taskSummary(project, task, schedule, limit),
       ],
       'ready_tasks': [
         for (final task in readyTaskPage.items)
-          _taskSummary(task, schedule, limit),
+          _taskSummary(project, task, schedule, limit),
       ],
       'blocked_tasks': [
         for (final task in blockedTaskPage.items)
           {
-            'ref': task.id,
+            'task_id': project.taskAgentNumber(task.id),
             'title': _text(task.title),
             'readiness': _readinessWire(schedule.readinessFor(task.id)),
             'reasons': [
@@ -196,7 +200,7 @@ class ProjectViewService {
           message: 'Task reference $requestedTask does not exist.',
         );
       }
-      result['task_detail'] = _taskDetail(task, schedule, limit);
+      result['task_detail'] = _taskDetail(project, task, schedule, limit);
     }
 
     final requestedCriterion = criterionRef?.trim();
@@ -369,8 +373,11 @@ class ProjectViewService {
       if (!_isTerminal(task) || task.status == TaskStatus.completed) task,
   ];
 
-  Map<String, dynamic> _criterionSummary(ProjectCriterion criterion) => {
-    'ref': criterion.id,
+  Map<String, dynamic> _criterionSummary(
+    ProjectAggregate project,
+    ProjectCriterion criterion,
+  ) => {
+    'criterion_id': project.criterionAgentNumber(criterion.id),
     'statement': _text(criterion.statement),
     'required': criterion.required,
     'status': criterion.status.name,
@@ -430,38 +437,52 @@ class ProjectViewService {
     ProjectCriterion criterion,
     int limit,
   ) => {
-    ..._criterionSummary(criterion),
+    ..._criterionSummary(project, criterion),
     'notes': _text(criterion.notes),
     'linked_task_refs': [
       for (final task in project.tasks)
-        if (task.criterionIds.contains(criterion.id)) task.id,
+        if (task.criterionIds.contains(criterion.id))
+          project.taskAgentNumber(task.id),
     ].take(limit).toList(),
   };
 
   Map<String, dynamic> _milestoneSummary(
+    ProjectAggregate project,
     ProjectMilestone milestone,
     int limit,
   ) => {
-    'ref': milestone.id,
+    'milestone_id': project.milestoneAgentNumber(milestone.id),
     'title': _text(milestone.title),
     'objective': _text(milestone.objective),
     'status': milestone.status.name,
-    'criterion_refs': milestone.criterionIds.take(limit).toList(),
+    'criterion_ids': [
+      for (final id in milestone.criterionIds.take(limit))
+        project.criterionAgentNumber(id),
+    ],
   };
 
   Map<String, dynamic> _taskSummary(
+    ProjectAggregate project,
     ProjectTaskNode task,
     ProjectScheduleResult schedule,
     int limit,
   ) => {
-    'ref': task.id,
+    'task_id': project.taskAgentNumber(task.id),
     'title': _text(task.title),
     'objective': _text(task.objective),
     'status': task.status.wire,
     'readiness': _readinessWire(schedule.readinessFor(task.id)),
-    'criterion_refs': task.criterionIds.take(limit).toList(),
-    'milestone_ref': task.milestoneId,
-    'dependency_refs': task.dependsOnTaskIds.take(limit).toList(),
+    'criterion_ids': [
+      for (final id in task.criterionIds.take(limit))
+        project.criterionAgentNumber(id),
+    ],
+    'milestone_id': task.milestoneId == null
+        ? null
+        : project.milestoneAgentNumber(task.milestoneId!),
+    'dependency_task_ids': [
+      for (final id in task.dependsOnTaskIds.take(limit))
+        project.taskAgentNumber(id),
+    ],
     'priority': task.priority.name,
     'risk': task.risk.name,
     'risk_reduction': task.riskReduction.name,
@@ -470,11 +491,12 @@ class ProjectViewService {
   };
 
   Map<String, dynamic> _taskDetail(
+    ProjectAggregate project,
     ProjectTaskNode task,
     ProjectScheduleResult schedule,
     int limit,
   ) => {
-    ..._taskSummary(task, schedule, limit),
+    ..._taskSummary(project, task, schedule, limit),
     'constraints': [
       for (final item in task.constraints.take(limit)) _text(item),
     ],
@@ -533,7 +555,10 @@ class ProjectViewService {
       for (final expectation in task.expectedEvidence.take(limit))
         {
           'kind': expectation.type.name,
-          'criterion_refs': expectation.criterionIds.take(limit).toList(),
+          'criterion_ids': [
+            for (final id in expectation.criterionIds.take(limit))
+              project.criterionAgentNumber(id),
+          ],
           'description': _text(expectation.description),
           'required': expectation.required,
           'source_ref': expectation.sourceRef == null
@@ -559,7 +584,7 @@ class ProjectViewService {
             updatedAt: task.updatedAt,
             value: {
               'source': 'task',
-              'task_ref': task.id,
+              'task_id': project.taskAgentNumber(task.id),
               'summary': _text(
                 summary?.isNotEmpty == true ? summary! : rejection!,
               ),
@@ -576,7 +601,10 @@ class ProjectViewService {
           value: {
             'source': 'recovery',
             'incident_ref': incident.id,
-            'task_refs': incident.sourceTaskIds.take(limit).toList(),
+            'task_ids': [
+              for (final id in incident.sourceTaskIds.take(limit))
+                project.taskAgentNumber(id),
+            ],
             'summary': _text(incident.failureSummary),
             'status': incident.status.name,
             'attempts': incident.attemptCount,
@@ -599,7 +627,9 @@ class ProjectViewService {
     return {
       'type': blocker.type.wire,
       'message': _text(blocker.message),
-      'task_ref': blocker.taskId,
+      'task_id': blocker.taskId == null
+          ? null
+          : project.taskAgentNumber(blocker.taskId!),
     };
   }
 
@@ -614,7 +644,9 @@ class ProjectViewService {
       'action': boundary.action,
       'reason_code': boundary.reasonCode,
       'message': _text(boundary.message),
-      'task_ref': boundary.taskId,
+      'task_id': boundary.taskId == null
+          ? null
+          : project.taskAgentNumber(boundary.taskId!),
       'blocker': _blockerSummary(project),
       'pending_plan_approval': approval == null
           ? null

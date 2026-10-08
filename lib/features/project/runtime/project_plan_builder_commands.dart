@@ -67,7 +67,56 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
         _criteria[id] = criterion;
         _criterionRefs[reference] = id;
         _criterionRefs[id] = id;
+        final agentNumber = _nextCriterionAgentNumber++;
+        _criterionAgentNumbers[id] = agentNumber;
+        _criterionRefs['$agentNumber'] = id;
+        _criterionRefs['Criterion $agentNumber'] = id;
         return id;
+      });
+    });
+  }
+
+  ProjectCriterion updateCriterion(
+    String criterionReference, {
+    String? statement,
+    bool? required,
+    ProjectVerificationMode? verificationMode,
+    String? commandId,
+  }) {
+    final fingerprint = _encode({
+      'op': 'update_criterion',
+      'criterion': criterionReference.trim(),
+      'statement': statement,
+      'required': required,
+      'verificationMode': verificationMode?.name,
+    });
+    return _idempotent(commandId, fingerprint, () {
+      return _atomic(() {
+        final id = _resolveCriterion(criterionReference);
+        final existing = _criteria[id];
+        if (existing == null) {
+          throw _error(
+            'unknown_criterion',
+            'criterion',
+            'Criterion $id does not exist.',
+          );
+        }
+        final nextStatement = statement?.trim() ?? existing.statement;
+        if (nextStatement.isEmpty) {
+          throw _error(
+            'missing_criterion_statement',
+            'statement',
+            'A criterion statement is required.',
+          );
+        }
+        final updated = existing.copyWith(
+          statement: nextStatement,
+          required: required,
+          verificationMode: verificationMode,
+          updatedAt: _now,
+        );
+        _criteria[id] = updated;
+        return updated;
       });
     });
   }
@@ -135,7 +184,74 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
         _milestones[id] = milestone;
         _milestoneRefs[reference] = id;
         _milestoneRefs[id] = id;
+        final agentNumber = _nextMilestoneAgentNumber++;
+        _milestoneAgentNumbers[id] = agentNumber;
+        _milestoneRefs['$agentNumber'] = id;
+        _milestoneRefs['Milestone $agentNumber'] = id;
         return id;
+      });
+    });
+  }
+
+  ProjectMilestone updateMilestone(
+    String milestoneReference, {
+    String? title,
+    String? objective,
+    Iterable<String>? criterionRefs,
+    Iterable<String>? exitConditions,
+    int? order,
+    String? commandId,
+  }) {
+    final fingerprint = _encode({
+      'op': 'update_milestone',
+      'milestone': milestoneReference.trim(),
+      'title': title,
+      'objective': objective,
+      'criterionRefs': criterionRefs == null ? null : [...criterionRefs],
+      'exitConditions': exitConditions == null ? null : [...exitConditions],
+      'order': order,
+    });
+    return _idempotent(commandId, fingerprint, () {
+      return _atomic(() {
+        final id = _resolveMilestone(milestoneReference);
+        final existing = _milestones[id];
+        if (existing == null) {
+          throw _error(
+            'unknown_milestone',
+            'milestone',
+            'Milestone $id does not exist.',
+          );
+        }
+        final nextTitle = title?.trim() ?? existing.title;
+        final nextObjective = objective?.trim() ?? existing.objective;
+        if (nextTitle.isEmpty || nextObjective.isEmpty) {
+          throw _error(
+            'invalid_milestone',
+            'milestone',
+            'A milestone needs a title and objective.',
+          );
+        }
+        final nextCriterionIds = criterionRefs == null
+            ? existing.criterionIds
+            : _resolveReferences(
+                criterionRefs,
+                _resolveCriterion,
+                'criterionRefs',
+              );
+        final updated = existing.copyWith(
+          title: nextTitle,
+          objective: nextObjective,
+          criterionIds: nextCriterionIds,
+          exitConditions: exitConditions == null
+              ? existing.exitConditions
+              : (_cleanStrings(exitConditions).isEmpty
+                    ? [nextObjective]
+                    : _cleanStrings(exitConditions)),
+          order: order,
+          updatedAt: _now,
+        );
+        _milestones[id] = updated;
+        return updated;
       });
     });
   }

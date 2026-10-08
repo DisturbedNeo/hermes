@@ -22,33 +22,42 @@ class ProjectPlanningToolCommandService {
 
   String get closedMessage => 'This planning draft has already been committed.';
 
-  List<ToolDefinition> get toolDefinitions => [
-    if (includeProjectDetails && _allows('plan_set_project_details'))
-      _projectDetailsDefinition,
-    if (context.workspaceReader != null && _allows('planning_read_file'))
-      _planningReadFileDefinition,
-    if (_allows('project_view')) _projectViewDefinition,
-    if (_allows('plan_add_criteria')) _addCriteriaDefinition,
-    if (_allows('plan_add_milestones')) _addMilestonesDefinition,
-    if (_visible('plan_add_task')) _addTaskDefinition,
-    if (_allows('plan_update_task')) _updateTaskDefinition,
-    if (_allows('plan_set_dependency')) _setDependencyDefinition,
-    if (_allows('plan_set_disposition')) _setDispositionDefinition,
-    if (_allows('plan_split_task')) _splitTaskDefinition,
-    if (_allows('plan_retry_task')) _retryTaskDefinition,
-    if (_visible('plan_add_check')) _addCheckDefinition,
-    if (_allows('plan_add_note')) _addNoteDefinition,
-    if (_allows('plan_set_workspace_orientation'))
-      _setWorkspaceOrientationDefinition,
-    if (_allows('plan_add_workspace_nodes')) _addWorkspaceNodesDefinition,
-    if (_allows('plan_update_workspace_node')) _updateWorkspaceNodeDefinition,
-    if (_allows('plan_add_workspace_edges')) _addWorkspaceEdgesDefinition,
-    if (_allows('plan_update_workspace_edge')) _updateWorkspaceEdgeDefinition,
-    if (_allows('plan_remove_workspace_item')) _removeWorkspaceItemDefinition,
-    if (_allows('plan_request_user_decision')) _requestDecisionDefinition,
-    if (_visible('plan_preview')) _previewDefinition,
-    if (_allows('plan_commit')) _commitDefinition,
-  ];
+  List<ToolDefinition> get toolDefinitions {
+    final core = <ToolDefinition>[
+      _projectViewDefinition,
+      if (profile == ProjectPlanningToolProfile.bootstrap)
+        _projectSubmitPlanDefinition,
+      _projectUpdateDefinition,
+      _taskUpsertDefinition,
+      _commitDefinition,
+    ];
+    if (profile == ProjectPlanningToolProfile.graphMaintenance) {
+      return [
+        _projectViewDefinition,
+        _setWorkspaceOrientationDefinition,
+        _addWorkspaceNodesDefinition,
+        _updateWorkspaceNodeDefinition,
+        _addWorkspaceEdgesDefinition,
+        _updateWorkspaceEdgeDefinition,
+        _removeWorkspaceItemDefinition,
+        _previewDefinition,
+        _commitDefinition,
+      ];
+    }
+    if (profile == ProjectPlanningToolProfile.split) {
+      return [
+        _projectViewDefinition,
+        _splitTaskDefinition,
+        _previewDefinition,
+        _commitDefinition,
+      ];
+    }
+    if (context.workspaceReader != null &&
+        profile == ProjectPlanningToolProfile.bootstrap) {
+      core.insert(1, _planningReadFileDefinition);
+    }
+    return core;
+  }
 
   /// The planning registry has no route to workspace mutation.
   bool get allowsWorkspaceMutation => false;
@@ -72,6 +81,9 @@ class ProjectPlanningToolCommandService {
       'plan_set_project_details' => _setProjectDetails(arguments),
       'planning_read_file' => await _planningReadFile(arguments),
       'project_view' => _view(arguments),
+      'project_submit_plan' => _planCommands.submitPlan(arguments, commandId),
+      'project_update' => _planCommands.updateProject(arguments, commandId),
+      'task_upsert' => _planCommands.upsertTask(arguments, commandId),
       'plan_add_criteria' => _planCommands.addCriteria(arguments, commandId),
       'plan_add_milestones' => _planCommands.addMilestones(
         arguments,
@@ -127,12 +139,20 @@ class ProjectPlanningToolCommandService {
     };
     final response = <String, dynamic>{'ok': true, ...result};
     if (_mutationToolIds.contains(toolId)) {
-      response['state'] = _draftState();
+      if (_agentMutationToolIds.contains(toolId)) {
+        response['draft'] = _agentDraftState();
+        response['next_action'] = 'plan_commit';
+      } else {
+        response['state'] = _draftState();
+      }
     }
     return PlanningResponse.fromWire(response);
   }
 
   static const _mutationToolIds = {
+    'project_submit_plan',
+    'project_update',
+    'task_upsert',
     'plan_set_project_details',
     'plan_add_criteria',
     'plan_add_milestones',
@@ -153,31 +173,41 @@ class ProjectPlanningToolCommandService {
     'plan_request_user_decision',
   };
 
+  static const _agentMutationToolIds = {
+    'project_submit_plan',
+    'project_update',
+    'task_upsert',
+  };
+
   bool _allows(String toolId) {
+    if (toolId == 'planning_read_file' && context.workspaceReader != null) {
+      return true;
+    }
+    if (toolId == 'project_view' || toolId == 'plan_commit') {
+      return true;
+    }
+    if (toolId == 'project_submit_plan') {
+      return profile == ProjectPlanningToolProfile.bootstrap;
+    }
+    if (toolId == 'project_update' || toolId == 'task_upsert') {
+      return profile == ProjectPlanningToolProfile.bootstrap ||
+          profile == ProjectPlanningToolProfile.maintenance;
+    }
+    if (_legacyCompatibilityToolIds.contains(toolId)) return true;
     if (includeProjectDetails && toolId == 'plan_set_project_details') {
       return true;
     }
     return switch (profile) {
       ProjectPlanningToolProfile.bootstrap => const {
-        'project_view',
         'planning_read_file',
-        'plan_add_criteria',
-        'plan_add_milestones',
-        'plan_add_task',
-        'plan_add_check',
-        'plan_add_note',
-        'plan_request_user_decision',
         'plan_set_workspace_orientation',
         'plan_add_workspace_nodes',
         'plan_update_workspace_node',
         'plan_add_workspace_edges',
         'plan_update_workspace_edge',
         'plan_remove_workspace_item',
-        'plan_preview',
-        'plan_commit',
       }.contains(toolId),
       ProjectPlanningToolProfile.maintenance => const {
-        'project_view',
         'planning_read_file',
         'plan_add_criteria',
         'plan_add_milestones',
@@ -197,7 +227,6 @@ class ProjectPlanningToolCommandService {
         'plan_remove_workspace_item',
         'plan_request_user_decision',
         'plan_preview',
-        'plan_commit',
       }.contains(toolId),
       ProjectPlanningToolProfile.graphMaintenance => const {
         'project_view',
@@ -218,6 +247,28 @@ class ProjectPlanningToolCommandService {
       }.contains(toolId),
     };
   }
+
+  static const _legacyCompatibilityToolIds = {
+    'plan_set_project_details',
+    'plan_add_criteria',
+    'plan_add_milestones',
+    'plan_add_task',
+    'plan_update_task',
+    'plan_set_dependency',
+    'plan_set_disposition',
+    'plan_split_task',
+    'plan_retry_task',
+    'plan_add_check',
+    'plan_add_note',
+    'plan_set_workspace_orientation',
+    'plan_add_workspace_nodes',
+    'plan_update_workspace_node',
+    'plan_add_workspace_edges',
+    'plan_update_workspace_edge',
+    'plan_remove_workspace_item',
+    'plan_request_user_decision',
+    'plan_preview',
+  };
 
   bool _visible(String toolId) {
     if (profile == ProjectPlanningToolProfile.bootstrap &&
@@ -258,15 +309,15 @@ class ProjectPlanningToolCommandService {
     final actions = <String>{};
     for (final issue in issues) {
       final action = switch (issue.code) {
-        'missing_criteria' => 'plan_add_criteria',
+        'missing_criteria' => 'project_update',
         'missing_executable_tasks' ||
-        'new_task_minimum_not_met' => 'plan_add_task',
-        'missing_active_milestone' => 'plan_add_milestones',
+        'new_task_minimum_not_met' => 'task_upsert',
+        'missing_active_milestone' => 'project_update',
         'impossible_deterministic_verification' ||
         'missing_command_passes_gate' =>
           profile == ProjectPlanningToolProfile.bootstrap
-              ? 'plan_add_task'
-              : 'plan_add_check',
+              ? 'task_upsert'
+              : 'task_upsert',
         _ => null,
       };
       if (action != null && _visible(action)) actions.add(action);
@@ -295,6 +346,8 @@ class ProjectPlanningToolCommandService {
 
   Map<String, dynamic> _view(PlanningArguments arguments) {
     _keys(arguments, const {
+      'task_id',
+      'criterion_id',
       'task_ref',
       'criterion_ref',
       'memory_query',
@@ -306,11 +359,14 @@ class ProjectPlanningToolCommandService {
     final preview = context.builder.preview(
       workspaceRoot: context.workspaceRoot,
     );
-    final taskRef = _optionalString(arguments['task_ref'], 'task_ref');
-    final criterionRef = _optionalString(
-      arguments['criterion_ref'],
-      'criterion_ref',
-    );
+    final taskId = _optionalInt(arguments['task_id'], 'task_id');
+    final criterionId = _optionalInt(arguments['criterion_id'], 'criterion_id');
+    final taskRef = taskId == null
+        ? _optionalString(arguments['task_ref'], 'task_ref')
+        : _agentReference(taskId);
+    final criterionRef = criterionId == null
+        ? _optionalString(arguments['criterion_ref'], 'criterion_ref')
+        : _agentReference(criterionId);
     final memoryQuery = _optionalString(
       arguments['memory_query'],
       'memory_query',
@@ -374,6 +430,23 @@ class ProjectPlanningToolCommandService {
       constraints: context.draftConstraints,
       criteria: preview.proposal.criteria,
       milestones: preview.proposal.milestones,
+      criterionAgentNumbers:
+          preview.proposal.criterionAgentNumbers ??
+          context.project.criterionAgentNumbers,
+      milestoneAgentNumbers:
+          preview.proposal.milestoneAgentNumbers ??
+          context.project.milestoneAgentNumbers,
+      taskAgentNumbers:
+          preview.proposal.taskAgentNumbers ?? context.project.taskAgentNumbers,
+      nextCriterionAgentNumber:
+          preview.proposal.nextCriterionAgentNumber ??
+          context.project.nextCriterionAgentNumber,
+      nextMilestoneAgentNumber:
+          preview.proposal.nextMilestoneAgentNumber ??
+          context.project.nextMilestoneAgentNumber,
+      nextTaskAgentNumber:
+          preview.proposal.nextTaskAgentNumber ??
+          context.project.nextTaskAgentNumber,
       tasks: tasks,
       memory: [...context.project.memory, ...preview.proposal.memoryAdditions],
       workspaceGraph: preview.proposal.workspaceGraph,
@@ -425,6 +498,8 @@ class ProjectPlanningToolCommandService {
     }
     return reference;
   }
+
+  static String _agentReference(int number) => number.toString();
 
   Map<String, dynamic> _preview(PlanningArguments arguments) {
     _ensureOpen();
@@ -510,6 +585,12 @@ class ProjectPlanningToolCommandService {
         title: context.draftTitle,
         refinedGoal: context.draftRefinedGoal,
         constraints: context.draftConstraints,
+        criterionAgentNumbers: preview.proposal.criterionAgentNumbers,
+        milestoneAgentNumbers: preview.proposal.milestoneAgentNumbers,
+        taskAgentNumbers: preview.proposal.taskAgentNumbers,
+        nextCriterionAgentNumber: preview.proposal.nextCriterionAgentNumber,
+        nextMilestoneAgentNumber: preview.proposal.nextMilestoneAgentNumber,
+        nextTaskAgentNumber: preview.proposal.nextTaskAgentNumber,
         workspaceGraph: preview.proposal.workspaceGraph,
       );
     } else {
@@ -580,6 +661,20 @@ class ProjectPlanningToolCommandService {
         ],
       },
       'control': context.viewService.controlState(_projectForDetail(preview)),
+    };
+  }
+
+  Map<String, dynamic> _agentDraftState() {
+    final preview = context.builder.preview(
+      workspaceRoot: context.workspaceRoot,
+    );
+    final draftProject = _projectForDetail(preview);
+    return {
+      'valid': preview.validation.valid,
+      'validation': [
+        for (final issue in preview.validation.issues) issue.toMap(),
+      ],
+      'project': context.viewService.query(draftProject),
     };
   }
 
@@ -1092,6 +1187,26 @@ class ProjectPlanningToolCommandService {
     return _stringList(value, path);
   }
 
+  static List<int> _intList(Object? value, String path) {
+    if (value == null) return const [];
+    if (value is! List) {
+      throw _argument('invalid_argument', path, 'Expected a list of integers.');
+    }
+    final result = <int>[];
+    for (var index = 0; index < value.length; index++) {
+      final item = value[index];
+      if (item is! int || item < 1) {
+        throw _argument(
+          'invalid_argument',
+          '$path[$index]',
+          'Expected a positive integer.',
+        );
+      }
+      result.add(item);
+    }
+    return result;
+  }
+
   static void _validateOptionalText(String? value, String path) {
     if (value != null && value.trim().isEmpty) {
       throw _argument('invalid_argument', path, 'Expected a non-empty string.');
@@ -1140,6 +1255,9 @@ class ProjectPlanningToolCommandService {
 
   static String? _partCommandId(String? commandId, int index) =>
       commandId == null ? null : '$commandId:$index';
+
+  static String? _scopedCommandId(String? commandId, String scope) =>
+      commandId == null ? null : '$commandId:$scope';
 
   static _PlanningArgumentException _argument(
     String code,

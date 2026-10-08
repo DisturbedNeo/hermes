@@ -2100,6 +2100,41 @@ class ProjectDesiredPlanMapper extends ClassMapperBase<ProjectDesiredPlan> {
       v.milestones;
   static const Field<ProjectDesiredPlan, List<ProjectMilestone>> _f$milestones =
       Field('milestones', _$milestones, opt: true, def: const []);
+  static Map<String, int>? _$criterionAgentNumbers(ProjectDesiredPlan v) =>
+      v.criterionAgentNumbers;
+  static const Field<ProjectDesiredPlan, Map<String, int>>
+  _f$criterionAgentNumbers = Field(
+    'criterionAgentNumbers',
+    _$criterionAgentNumbers,
+    opt: true,
+  );
+  static Map<String, int>? _$milestoneAgentNumbers(ProjectDesiredPlan v) =>
+      v.milestoneAgentNumbers;
+  static const Field<ProjectDesiredPlan, Map<String, int>>
+  _f$milestoneAgentNumbers = Field(
+    'milestoneAgentNumbers',
+    _$milestoneAgentNumbers,
+    opt: true,
+  );
+  static Map<String, int>? _$taskAgentNumbers(ProjectDesiredPlan v) =>
+      v.taskAgentNumbers;
+  static const Field<ProjectDesiredPlan, Map<String, int>> _f$taskAgentNumbers =
+      Field('taskAgentNumbers', _$taskAgentNumbers, opt: true);
+  static int? _$nextCriterionAgentNumber(ProjectDesiredPlan v) =>
+      v.nextCriterionAgentNumber;
+  static const Field<ProjectDesiredPlan, int> _f$nextCriterionAgentNumber =
+      Field('nextCriterionAgentNumber', _$nextCriterionAgentNumber, opt: true);
+  static int? _$nextMilestoneAgentNumber(ProjectDesiredPlan v) =>
+      v.nextMilestoneAgentNumber;
+  static const Field<ProjectDesiredPlan, int> _f$nextMilestoneAgentNumber =
+      Field('nextMilestoneAgentNumber', _$nextMilestoneAgentNumber, opt: true);
+  static int? _$nextTaskAgentNumber(ProjectDesiredPlan v) =>
+      v.nextTaskAgentNumber;
+  static const Field<ProjectDesiredPlan, int> _f$nextTaskAgentNumber = Field(
+    'nextTaskAgentNumber',
+    _$nextTaskAgentNumber,
+    opt: true,
+  );
   static List<ProjectTaskNode> _$tasks(ProjectDesiredPlan v) => v.tasks;
   static const Field<ProjectDesiredPlan, List<ProjectTaskNode>> _f$tasks =
       Field('tasks', _$tasks, opt: true, def: const []);
@@ -2180,6 +2215,12 @@ class ProjectDesiredPlanMapper extends ClassMapperBase<ProjectDesiredPlan> {
     #assumptions: _f$assumptions,
     #criteria: _f$criteria,
     #milestones: _f$milestones,
+    #criterionAgentNumbers: _f$criterionAgentNumbers,
+    #milestoneAgentNumbers: _f$milestoneAgentNumbers,
+    #taskAgentNumbers: _f$taskAgentNumbers,
+    #nextCriterionAgentNumber: _f$nextCriterionAgentNumber,
+    #nextMilestoneAgentNumber: _f$nextMilestoneAgentNumber,
+    #nextTaskAgentNumber: _f$nextTaskAgentNumber,
     #tasks: _f$tasks,
     #splitTaskIds: _f$splitTaskIds,
     #deferredTaskIds: _f$deferredTaskIds,
@@ -2205,6 +2246,12 @@ class ProjectDesiredPlanMapper extends ClassMapperBase<ProjectDesiredPlan> {
       assumptions: data.dec(_f$assumptions),
       criteria: data.dec(_f$criteria),
       milestones: data.dec(_f$milestones),
+      criterionAgentNumbers: data.dec(_f$criterionAgentNumbers),
+      milestoneAgentNumbers: data.dec(_f$milestoneAgentNumbers),
+      taskAgentNumbers: data.dec(_f$taskAgentNumbers),
+      nextCriterionAgentNumber: data.dec(_f$nextCriterionAgentNumber),
+      nextMilestoneAgentNumber: data.dec(_f$nextMilestoneAgentNumber),
+      nextTaskAgentNumber: data.dec(_f$nextTaskAgentNumber),
       tasks: data.dec(_f$tasks),
       splitTaskIds: data.dec(_f$splitTaskIds),
       deferredTaskIds: data.dec(_f$deferredTaskIds),
@@ -2866,6 +2913,66 @@ class ProjectSnapshotAggregateMapper
       v.constraints;
   static const Field<ProjectSnapshotAggregate, List<String>> _f$constraints =
       Field('constraints', _$constraints, hook: JsonStringListHook());
+  static Map<String, int> _$criterionAgentNumbers(ProjectSnapshotAggregate v) =>
+      v.criterionAgentNumbers;
+  static const Field<ProjectSnapshotAggregate, Map<String, int>>
+  _f$criterionAgentNumbers = Field(
+    'criterionAgentNumbers',
+    _$criterionAgentNumbers,
+    opt: true,
+    def: const {},
+    hook: JsonMapValueHook(),
+  );
+  static Map<String, int> _$milestoneAgentNumbers(ProjectSnapshotAggregate v) =>
+      v.milestoneAgentNumbers;
+  static const Field<ProjectSnapshotAggregate, Map<String, int>>
+  _f$milestoneAgentNumbers = Field(
+    'milestoneAgentNumbers',
+    _$milestoneAgentNumbers,
+    opt: true,
+    def: const {},
+    hook: JsonMapValueHook(),
+  );
+  static Map<String, int> _$taskAgentNumbers(ProjectSnapshotAggregate v) =>
+      v.taskAgentNumbers;
+  static const Field<ProjectSnapshotAggregate, Map<String, int>>
+  _f$taskAgentNumbers = Field(
+    'taskAgentNumbers',
+    _$taskAgentNumbers,
+    opt: true,
+    def: const {},
+    hook: JsonMapValueHook(),
+  );
+  static int _$nextCriterionAgentNumber(ProjectSnapshotAggregate v) =>
+      v.nextCriterionAgentNumber;
+  static const Field<ProjectSnapshotAggregate, int>
+  _f$nextCriterionAgentNumber = Field(
+    'nextCriterionAgentNumber',
+    _$nextCriterionAgentNumber,
+    opt: true,
+    def: 1,
+    hook: JsonIntHook(min: 1),
+  );
+  static int _$nextMilestoneAgentNumber(ProjectSnapshotAggregate v) =>
+      v.nextMilestoneAgentNumber;
+  static const Field<ProjectSnapshotAggregate, int>
+  _f$nextMilestoneAgentNumber = Field(
+    'nextMilestoneAgentNumber',
+    _$nextMilestoneAgentNumber,
+    opt: true,
+    def: 1,
+    hook: JsonIntHook(min: 1),
+  );
+  static int _$nextTaskAgentNumber(ProjectSnapshotAggregate v) =>
+      v.nextTaskAgentNumber;
+  static const Field<ProjectSnapshotAggregate, int> _f$nextTaskAgentNumber =
+      Field(
+        'nextTaskAgentNumber',
+        _$nextTaskAgentNumber,
+        opt: true,
+        def: 1,
+        hook: JsonIntHook(min: 1),
+      );
   static List<ProjectTaskNode> _$tasks(ProjectSnapshotAggregate v) => v.tasks;
   static const Field<ProjectSnapshotAggregate, List<ProjectTaskNode>> _f$tasks =
       Field('tasks', _$tasks, opt: true, hook: JsonObjectListHook());
@@ -3133,6 +3240,12 @@ class ProjectSnapshotAggregateMapper
     #refinedGoal: _f$refinedGoal,
     #criteria: _f$criteria,
     #constraints: _f$constraints,
+    #criterionAgentNumbers: _f$criterionAgentNumbers,
+    #milestoneAgentNumbers: _f$milestoneAgentNumbers,
+    #taskAgentNumbers: _f$taskAgentNumbers,
+    #nextCriterionAgentNumber: _f$nextCriterionAgentNumber,
+    #nextMilestoneAgentNumber: _f$nextMilestoneAgentNumber,
+    #nextTaskAgentNumber: _f$nextTaskAgentNumber,
     #tasks: _f$tasks,
     #taskIds: _f$taskIds,
     #currentBatchTaskIds: _f$currentBatchTaskIds,
@@ -3180,6 +3293,12 @@ class ProjectSnapshotAggregateMapper
       refinedGoal: data.dec(_f$refinedGoal),
       criteria: data.dec(_f$criteria),
       constraints: data.dec(_f$constraints),
+      criterionAgentNumbers: data.dec(_f$criterionAgentNumbers),
+      milestoneAgentNumbers: data.dec(_f$milestoneAgentNumbers),
+      taskAgentNumbers: data.dec(_f$taskAgentNumbers),
+      nextCriterionAgentNumber: data.dec(_f$nextCriterionAgentNumber),
+      nextMilestoneAgentNumber: data.dec(_f$nextMilestoneAgentNumber),
+      nextTaskAgentNumber: data.dec(_f$nextTaskAgentNumber),
       tasks: data.dec(_f$tasks),
       taskIds: data.dec(_f$taskIds),
       currentBatchTaskIds: data.dec(_f$currentBatchTaskIds),

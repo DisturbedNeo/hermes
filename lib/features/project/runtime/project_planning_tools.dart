@@ -179,6 +179,15 @@ Map<String, dynamic> _stringArraySchema({int? minItems}) {
   return schema;
 }
 
+Map<String, dynamic> _intArraySchema({int? minItems}) {
+  final schema = <String, dynamic>{
+    'type': 'array',
+    'items': {'type': 'integer', 'minimum': 1},
+  };
+  if (minItems != null) schema['minItems'] = minItems;
+  return schema;
+}
+
 Map<String, dynamic> _workspaceStringArraySchema() => {
   'type': 'array',
   'maxItems': 20,
@@ -256,45 +265,157 @@ final _taskSpecSchema = _schema(
   ],
 );
 
-final _addTaskDefinition = ToolDefinition(
-  id: 'plan_add_task',
-  name: 'Add project task',
-  description:
-      'Create one bounded project task. Submit the complete task in this call; arguments from previous calls are not merged.',
-  schema: _schema(
-    properties: {
-      'ref': {'type': 'string', 'description': 'Optional temporary reference.'},
-      'title': {'type': 'string'},
-      'objective': {'type': 'string'},
-      'criterion_refs': _stringArraySchema(minItems: 1),
-      'dependency_refs': _stringArraySchema(),
-      'milestone_ref': {'type': 'string'},
-      'done_criteria': _stringArraySchema(minItems: 1),
-      'out_of_scope': _stringArraySchema(minItems: 1),
-      'checks': {'type': 'array', 'items': _taskCheckSpecSchema},
-    },
-    required: const [
-      'objective',
-      'criterion_refs',
-      'done_criteria',
-      'out_of_scope',
-    ],
-  ),
+final _agentCriterionSchema = _schema(
+  properties: {
+    'statement': {'type': 'string'},
+    'required': {'type': 'boolean', 'default': true},
+    'verification_mode': _enumSchema(
+      ProjectVerificationMode.values.map((item) => item.name),
+    ),
+  },
+  required: const ['statement'],
 );
 
-final _projectDetailsDefinition = ToolDefinition(
-  id: 'plan_set_project_details',
-  name: 'Set project details',
+final _agentCheckSchema = _schema(
+  properties: {
+    'command': {'type': 'string'},
+    'working_directory': {'type': 'string', 'default': '.'},
+    'criterion_ids': _intArraySchema(),
+    'required': {'type': 'boolean', 'default': true},
+    'description': {'type': 'string'},
+  },
+  required: const ['command'],
+);
+
+final _agentTaskSchema = _schema(
+  properties: {
+    'task_id': {'type': 'integer', 'minimum': 1},
+    'title': {'type': 'string'},
+    'objective': {'type': 'string'},
+    'criterion_ids': _intArraySchema(),
+    'criteria': {'type': 'array', 'items': _agentCriterionSchema},
+    'dependency_task_ids': _intArraySchema(),
+    'milestone_id': {'type': 'integer', 'minimum': 1},
+    'clear_milestone': {'type': 'boolean'},
+    'priority': _enumSchema(TaskPriority.values.map((item) => item.name)),
+    'risk': _enumSchema(TaskRisk.values.map((item) => item.name)),
+    'risk_reduction': _enumSchema(
+      ProjectRiskReduction.values.map((item) => item.name),
+    ),
+    'effort': _enumSchema(TaskEffort.values.map((item) => item.name)),
+    'selection_rationale': {'type': 'string'},
+    'constraints': _stringArraySchema(),
+    'read_paths': _stringArraySchema(),
+    'write_paths': _stringArraySchema(),
+    'done_criteria': _stringArraySchema(),
+    'out_of_scope': _stringArraySchema(),
+    'context': _stringArraySchema(),
+    'expected_artifacts': _taskSpecSchema['properties'] is Map
+        ? (_taskSpecSchema['properties'] as Map)['expected_artifacts']
+        : _stringArraySchema(),
+    'checks': {'type': 'array', 'items': _agentCheckSchema},
+    'disposition': _enumSchema(
+      ProjectPlanTaskDisposition.values.map((item) => item.name),
+    ),
+  },
+);
+
+final _projectSubmitPlanDefinition = ToolDefinition(
+  id: 'project_submit_plan',
+  name: 'Submit project plan',
   description:
-      'Set the initial project title, refined goal, and workspace constraints.',
+      'Create the initial bounded project plan atomically. This creates a draft only; call plan_commit when it is ready to execute.',
   schema: _schema(
     properties: {
       'title': {'type': 'string'},
       'refined_goal': {'type': 'string'},
       'constraints': _stringArraySchema(),
+      'criteria': {'type': 'array', 'items': _agentCriterionSchema},
+      'milestones': {
+        'type': 'array',
+        'items': _schema(
+          properties: {
+            'title': {'type': 'string'},
+            'objective': {'type': 'string'},
+            'criterion_ids': _intArraySchema(),
+            'exit_conditions': _stringArraySchema(),
+            'order': {'type': 'integer'},
+          },
+          required: const ['title', 'objective'],
+        ),
+      },
+      'tasks': {
+        'type': 'array',
+        'minItems': 1,
+        'maxItems': 3,
+        'items': _agentTaskSchema,
+      },
     },
-    required: const ['title', 'refined_goal'],
+    required: const ['title', 'refined_goal', 'tasks'],
   ),
+);
+
+final _projectUpdateDefinition = ToolDefinition(
+  id: 'project_update',
+  name: 'Update project',
+  description:
+      'Add or update project metadata, criteria, and milestones in the current draft.',
+  schema: _schema(
+    properties: {
+      'title': {'type': 'string'},
+      'refined_goal': {'type': 'string'},
+      'constraints': _stringArraySchema(),
+      'criteria': {
+        'type': 'array',
+        'items': _schema(
+          properties: {
+            'criterion_id': {'type': 'integer', 'minimum': 1},
+            'statement': {'type': 'string'},
+            'required': {'type': 'boolean'},
+            'verification_mode': _enumSchema(
+              ProjectVerificationMode.values.map((item) => item.name),
+            ),
+          },
+          anyOf: const [
+            {'required': ['statement']},
+            {'required': ['criterion_id']},
+          ],
+        ),
+      },
+      'milestones': {
+        'type': 'array',
+        'items': _schema(
+          properties: {
+            'milestone_id': {'type': 'integer', 'minimum': 1},
+            'title': {'type': 'string'},
+            'objective': {'type': 'string'},
+            'criterion_ids': _intArraySchema(),
+            'exit_conditions': _stringArraySchema(),
+            'order': {'type': 'integer'},
+          },
+          anyOf: const [
+            {
+              'required': ['title'],
+            },
+            {
+              'required': ['objective'],
+            },
+            {
+              'required': ['milestone_id'],
+            },
+          ],
+        ),
+      },
+    },
+  ),
+);
+
+final _taskUpsertDefinition = ToolDefinition(
+  id: 'task_upsert',
+  name: 'Create or update task',
+  description:
+      'Create a new bounded task or update one existing task. Criteria and checks may be supplied inline or added independently later.',
+  schema: _agentTaskSchema,
 );
 
 final _projectViewDefinition = ToolDefinition(
@@ -304,8 +425,8 @@ final _projectViewDefinition = ToolDefinition(
       'Read a bounded project summary, readiness, failures, or one requested detail.',
   schema: _schema(
     properties: {
-      'task_ref': {'type': 'string'},
-      'criterion_ref': {'type': 'string'},
+      'task_id': {'type': 'integer', 'minimum': 1},
+      'criterion_id': {'type': 'integer', 'minimum': 1},
       'memory_query': {'type': 'string'},
       'workspace_query': {'type': 'string'},
       'max_items': {'type': 'integer', 'minimum': 1, 'maximum': 100},
@@ -352,123 +473,6 @@ final _planningReadFileDefinition = ToolDefinition(
   ),
 );
 
-final _addCriteriaDefinition = ToolDefinition(
-  id: 'plan_add_criteria',
-  name: 'Add project criteria',
-  description:
-      'Add criteria with generated IDs and optional temporary references.',
-  schema: _schema(
-    properties: {
-      'criteria': {
-        'type': 'array',
-        'minItems': 1,
-        'items': _schema(
-          properties: {
-            'ref': {'type': 'string'},
-            'statement': {'type': 'string'},
-            'required': {'type': 'boolean'},
-            'verification_mode': _enumSchema(
-              ProjectVerificationMode.values.map((item) => item.name),
-            ),
-          },
-          required: const ['statement'],
-        ),
-      },
-    },
-    required: const ['criteria'],
-  ),
-);
-
-final _addMilestonesDefinition = ToolDefinition(
-  id: 'plan_add_milestones',
-  name: 'Add project milestones',
-  description: 'Add optional milestones linked to criterion references.',
-  schema: _schema(
-    properties: {
-      'milestones': {
-        'type': 'array',
-        'minItems': 1,
-        'items': _schema(
-          properties: {
-            'ref': {'type': 'string'},
-            'title': {'type': 'string'},
-            'objective': {'type': 'string'},
-            'criterion_refs': _stringArraySchema(),
-            'exit_conditions': _stringArraySchema(),
-            'order': {'type': 'integer'},
-          },
-          required: const ['title', 'objective'],
-        ),
-      },
-    },
-    required: const ['milestones'],
-  ),
-);
-
-final _updateTaskDefinition = ToolDefinition(
-  id: 'plan_update_task',
-  name: 'Update project task',
-  description:
-      'Patch one existing mutable task by reference; never creates a task.',
-  schema: _schema(
-    properties: {
-      'task': {'type': 'string'},
-      'title': {'type': 'string'},
-      'objective': {'type': 'string'},
-      'criterion_refs': _stringArraySchema(),
-      'dependency_refs': _stringArraySchema(),
-      'milestone_ref': {'type': 'string'},
-      'clear_milestone': {'type': 'boolean'},
-      'priority': _enumSchema(TaskPriority.values.map((item) => item.name)),
-      'risk': _enumSchema(TaskRisk.values.map((item) => item.name)),
-      'risk_reduction': _enumSchema(
-        ProjectRiskReduction.values.map((item) => item.name),
-      ),
-      'effort': _enumSchema(TaskEffort.values.map((item) => item.name)),
-      'selection_rationale': {'type': 'string'},
-      'constraints': _stringArraySchema(),
-      'read_paths': _stringArraySchema(),
-      'write_paths': _stringArraySchema(),
-      'done_criteria': _stringArraySchema(),
-      'out_of_scope': _stringArraySchema(),
-      'context': _stringArraySchema(),
-      'expected_artifacts': _taskSpecSchema['properties'] is Map
-          ? (_taskSpecSchema['properties'] as Map)['expected_artifacts']
-          : _stringArraySchema(),
-    },
-    required: const ['task'],
-  ),
-);
-
-final _setDependencyDefinition = ToolDefinition(
-  id: 'plan_set_dependency',
-  name: 'Set task dependency',
-  description: 'Add or remove one dependency and reject cycles immediately.',
-  schema: _schema(
-    properties: {
-      'task': {'type': 'string'},
-      'dependency': {'type': 'string'},
-      'enabled': {'type': 'boolean'},
-    },
-    required: const ['task', 'dependency'],
-  ),
-);
-
-final _setDispositionDefinition = ToolDefinition(
-  id: 'plan_set_disposition',
-  name: 'Set task disposition',
-  description: 'Defer or obsolete one mutable task by reference.',
-  schema: _schema(
-    properties: {
-      'task': {'type': 'string'},
-      'disposition': _enumSchema(
-        ProjectPlanTaskDisposition.values.map((item) => item.name),
-      ),
-    },
-    required: const ['task', 'disposition'],
-  ),
-);
-
 final _splitTaskDefinition = ToolDefinition(
   id: 'plan_split_task',
   name: 'Split project task',
@@ -485,59 +489,6 @@ final _splitTaskDefinition = ToolDefinition(
       },
     },
     required: const ['task', 'children'],
-  ),
-);
-
-final _retryTaskDefinition = ToolDefinition(
-  id: 'plan_retry_task',
-  name: 'Retry failed project task',
-  description:
-      'Create a fresh retry task while preserving the failed task history.',
-  schema: _schema(
-    properties: {
-      'task': {'type': 'string'},
-      'ref': {'type': 'string'},
-      'title': {'type': 'string'},
-      'objective': {'type': 'string'},
-    },
-    required: const ['task'],
-  ),
-);
-
-final _addCheckDefinition = ToolDefinition(
-  id: 'plan_add_check',
-  name: 'Add project check',
-  description:
-      'Add a command verification intent with generated gate and evidence IDs.',
-  schema: _schema(
-    properties: {
-      'task': {'type': 'string'},
-      'kind': {
-        'type': 'string',
-        'enum': const ['command'],
-      },
-      'command': {'type': 'string'},
-      'working_directory': {'type': 'string'},
-      'criterion_refs': _stringArraySchema(),
-      'required': {'type': 'boolean'},
-      'description': {'type': 'string'},
-    },
-    required: const ['task', 'kind', 'command'],
-  ),
-);
-
-final _addNoteDefinition = ToolDefinition(
-  id: 'plan_add_note',
-  name: 'Add planning note',
-  description:
-      'Record a planner fact, assumption, risk, or decision with a generated ID.',
-  schema: _schema(
-    properties: {
-      'kind': _enumSchema(ProjectMemoryKind.values.map((item) => item.name)),
-      'content': {'type': 'string'},
-      'source_id': {'type': 'string'},
-    },
-    required: const ['kind', 'content'],
   ),
 );
 
@@ -656,19 +607,6 @@ final _removeWorkspaceItemDefinition = ToolDefinition(
       'ref': {'type': 'string'},
     },
     required: const ['kind', 'ref'],
-  ),
-);
-
-final _requestDecisionDefinition = ToolDefinition(
-  id: 'plan_request_user_decision',
-  name: 'Request user decision',
-  description:
-      'Ask one blocking question for a genuinely unsafe-to-assume decision.',
-  schema: _schema(
-    properties: {
-      'question': {'type': 'string'},
-    },
-    required: const ['question'],
   ),
 );
 

@@ -11,6 +11,32 @@ import 'package:hermes/features/persistence/infrastructure/dto/project_state_mod
 export 'package:hermes/features/persistence/infrastructure/dto/project_state_models.dart'
     hide ProjectSnapshotAggregate;
 
+Map<String, int> _completeAgentNumbers(
+  Map<String, int>? existing,
+  Iterable<String> ids,
+) {
+  final numbers = <String, int>{...?existing};
+  var next =
+      numbers.values.fold<int>(0, (highest, value) {
+        return value > highest ? value : highest;
+      }) +
+      1;
+  for (final id in ids) {
+    if (id.isEmpty || numbers.containsKey(id)) continue;
+    numbers[id] = next++;
+  }
+  return numbers;
+}
+
+int _nextAgentNumber(Map<String, int> numbers, int? requested) {
+  final highest = numbers.values.fold<int>(0, (value, item) {
+    return item > value ? item : value;
+  });
+  return (requested ?? (highest + 1)) > highest
+      ? (requested ?? (highest + 1))
+      : highest + 1;
+}
+
 class ProjectAggregate {
   static final Object _ownedCollectionsToken = Object();
   static const int defaultMaxIterations = 25;
@@ -24,6 +50,16 @@ class ProjectAggregate {
   final String refinedGoal;
   final List<ProjectCriterion> criteria;
   final List<String> constraints;
+
+  /// Stable project-local references shown to planning agents. The values are
+  /// never renumbered or reused; the string IDs remain the canonical
+  /// persistence identifiers.
+  final Map<String, int> criterionAgentNumbers;
+  final Map<String, int> milestoneAgentNumbers;
+  final Map<String, int> taskAgentNumbers;
+  final int nextCriterionAgentNumber;
+  final int nextMilestoneAgentNumber;
+  final int nextTaskAgentNumber;
 
   /// Project-owned task references. The canonical executable task document is
   /// persisted by the task system and hydrated by ProjectAggregateHydrator.
@@ -75,6 +111,12 @@ class ProjectAggregate {
     required this.refinedGoal,
     required List<ProjectCriterion> criteria,
     required List<String> constraints,
+    Map<String, int>? criterionAgentNumbers,
+    Map<String, int>? milestoneAgentNumbers,
+    Map<String, int>? taskAgentNumbers,
+    int? nextCriterionAgentNumber,
+    int? nextMilestoneAgentNumber,
+    int? nextTaskAgentNumber,
     List<ProjectTaskNode>? tasks,
     List<String>? taskIds,
     List<String> currentBatchTaskIds = const [],
@@ -114,6 +156,51 @@ class ProjectAggregate {
        constraints = identical(collectionsOwnership, _ownedCollectionsToken)
            ? constraints
            : List.unmodifiable(constraints),
+       criterionAgentNumbers = Map.unmodifiable(
+         _completeAgentNumbers(
+           criterionAgentNumbers,
+           criteria.map((criterion) => criterion.id),
+         ),
+       ),
+       milestoneAgentNumbers = Map.unmodifiable(
+         _completeAgentNumbers(
+           milestoneAgentNumbers,
+           (milestones ?? const <ProjectMilestone>[]).map(
+             (milestone) => milestone.id,
+           ),
+         ),
+       ),
+       taskAgentNumbers = Map.unmodifiable(
+         _completeAgentNumbers(
+           taskAgentNumbers,
+           taskIds ??
+               [for (final task in tasks ?? const <ProjectTaskNode>[]) task.id],
+         ),
+       ),
+       nextCriterionAgentNumber = _nextAgentNumber(
+         _completeAgentNumbers(
+           criterionAgentNumbers,
+           criteria.map((criterion) => criterion.id),
+         ),
+         nextCriterionAgentNumber,
+       ),
+       nextMilestoneAgentNumber = _nextAgentNumber(
+         _completeAgentNumbers(
+           milestoneAgentNumbers,
+           (milestones ?? const <ProjectMilestone>[]).map(
+             (milestone) => milestone.id,
+           ),
+         ),
+         nextMilestoneAgentNumber,
+       ),
+       nextTaskAgentNumber = _nextAgentNumber(
+         _completeAgentNumbers(
+           taskAgentNumbers,
+           taskIds ??
+               [for (final task in tasks ?? const <ProjectTaskNode>[]) task.id],
+         ),
+         nextTaskAgentNumber,
+       ),
        tasks = identical(collectionsOwnership, _ownedCollectionsToken)
            ? (tasks ?? const <ProjectTaskNode>[])
            : List.unmodifiable(tasks ?? const <ProjectTaskNode>[]),
@@ -230,6 +317,21 @@ class ProjectAggregate {
     return criterionId;
   }
 
+  int? criterionAgentNumber(String id) => criterionAgentNumbers[id];
+
+  int? milestoneAgentNumber(String id) => milestoneAgentNumbers[id];
+
+  int? taskAgentNumber(String id) => taskAgentNumbers[id];
+
+  String? criterionIdForAgentNumber(int number) =>
+      _idForAgentNumber(criterionAgentNumbers, number);
+
+  String? milestoneIdForAgentNumber(int number) =>
+      _idForAgentNumber(milestoneAgentNumbers, number);
+
+  String? taskIdForAgentNumber(int number) =>
+      _idForAgentNumber(taskAgentNumbers, number);
+
   List<String> criterionStatementsFor(ProjectTaskNode task) => [
     for (final criterionId in task.criterionIds)
       criterionStatement(criterionId),
@@ -257,6 +359,12 @@ class ProjectAggregate {
     String? refinedGoal,
     List<ProjectCriterion>? criteria,
     List<String>? constraints,
+    Map<String, int>? criterionAgentNumbers,
+    Map<String, int>? milestoneAgentNumbers,
+    Map<String, int>? taskAgentNumbers,
+    int? nextCriterionAgentNumber,
+    int? nextMilestoneAgentNumber,
+    int? nextTaskAgentNumber,
     List<ProjectTaskNode>? tasks,
     List<String>? taskIds,
     List<String>? currentBatchTaskIds,
@@ -298,6 +406,16 @@ class ProjectAggregate {
       refinedGoal: refinedGoal ?? this.refinedGoal,
       criteria: criteria ?? this.criteria,
       constraints: constraints ?? this.constraints,
+      criterionAgentNumbers:
+          criterionAgentNumbers ?? this.criterionAgentNumbers,
+      milestoneAgentNumbers:
+          milestoneAgentNumbers ?? this.milestoneAgentNumbers,
+      taskAgentNumbers: taskAgentNumbers ?? this.taskAgentNumbers,
+      nextCriterionAgentNumber:
+          nextCriterionAgentNumber ?? this.nextCriterionAgentNumber,
+      nextMilestoneAgentNumber:
+          nextMilestoneAgentNumber ?? this.nextMilestoneAgentNumber,
+      nextTaskAgentNumber: nextTaskAgentNumber ?? this.nextTaskAgentNumber,
       tasks: tasks ?? this.tasks,
       taskIds:
           taskIds ??
@@ -347,4 +465,11 @@ class ProjectAggregate {
       collectionsOwnership: _ownedCollectionsToken,
     );
   }
+}
+
+String? _idForAgentNumber(Map<String, int> numbers, int number) {
+  for (final entry in numbers.entries) {
+    if (entry.value == number) return entry.key;
+  }
+  return null;
 }

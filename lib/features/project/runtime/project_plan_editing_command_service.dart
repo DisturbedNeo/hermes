@@ -15,6 +15,765 @@ class ProjectPlanEditingCommandService {
     }
   }
 
+  Map<String, dynamic> submitPlan(
+    PlanningArguments arguments,
+    String? commandId,
+  ) {
+    _ensureOpen();
+    if (context.project.tasks.isNotEmpty ||
+        context.project.criteria.isNotEmpty) {
+      throw ProjectPlanningToolCommandService._argument(
+        'initial_plan_only',
+        'tool',
+        'project_submit_plan is only available for an empty project draft.',
+      );
+    }
+    ProjectPlanningToolCommandService._keys(arguments, const {
+      'title',
+      'refined_goal',
+      'constraints',
+      'criteria',
+      'milestones',
+      'tasks',
+    });
+    final title = ProjectPlanningToolCommandService._requiredString(
+      arguments['title'],
+      'title',
+    );
+    final refinedGoal = ProjectPlanningToolCommandService._requiredString(
+      arguments['refined_goal'],
+      'refined_goal',
+    );
+    final constraints = arguments.containsKey('constraints')
+        ? ProjectPlanningToolCommandService._stringList(
+            arguments['constraints'],
+            'constraints',
+          )
+        : null;
+    final criteria = ProjectPlanningToolCommandService._maps(
+      arguments['criteria'],
+      'criteria',
+    );
+    final milestones = ProjectPlanningToolCommandService._maps(
+      arguments['milestones'],
+      'milestones',
+    );
+    final tasks = ProjectPlanningToolCommandService._maps(
+      arguments['tasks'],
+      'tasks',
+      required: true,
+    );
+
+    final createdTasks = <Map<String, dynamic>>[];
+    context.builder.transaction(() {
+      context.setProjectDetails(
+        title: title,
+        refinedGoal: refinedGoal,
+        constraints: constraints,
+      );
+      final criterionRefsByPosition = <int, String>{};
+      for (var index = 0; index < criteria.length; index++) {
+        final value = criteria[index];
+        ProjectPlanningToolCommandService._keys(value, const {
+          'statement',
+          'required',
+          'verification_mode',
+        });
+        final id = context.builder.addCriterion(
+          statement: ProjectPlanningToolCommandService._requiredString(
+            value['statement'],
+            'criteria[$index].statement',
+          ),
+          required:
+              ProjectPlanningToolCommandService._optionalBool(
+                value['required'],
+                'criteria[$index].required',
+              ) ??
+              true,
+          verificationMode:
+              ProjectPlanningToolCommandService._enumValue(
+                ProjectVerificationMode.values,
+                value['verification_mode'],
+                'criteria[$index].verification_mode',
+              ) ??
+              ProjectVerificationMode.mixed,
+          commandId: ProjectPlanningToolCommandService._scopedCommandId(
+            commandId,
+            'criterion:$index',
+          ),
+        );
+        // Root criteria are addressable by their assigned numeric ID. The
+        // task parser below can therefore use the same IDs after creation.
+        final agentNumber = context.builder.criterionAgentNumberFor(id);
+        if (agentNumber == null) {
+          throw ProjectPlanningToolCommandService._argument(
+            'reference_allocation_failed',
+            'criteria[$index]',
+            'The criterion could not be assigned an agent reference.',
+          );
+        }
+        criterionRefsByPosition[index + 1] = agentNumber.toString();
+      }
+      final milestoneRefsByPosition = <int, String>{};
+      for (var index = 0; index < milestones.length; index++) {
+        final value = milestones[index];
+        ProjectPlanningToolCommandService._keys(value, const {
+          'title',
+          'objective',
+          'criterion_ids',
+          'exit_conditions',
+          'order',
+        });
+        final id = context.builder.addMilestone(
+          title: ProjectPlanningToolCommandService._requiredString(
+            value['title'],
+            'milestones[$index].title',
+          ),
+          objective: ProjectPlanningToolCommandService._requiredString(
+            value['objective'],
+            'milestones[$index].objective',
+          ),
+          criterionRefs: _requestReferences(
+            ProjectPlanningToolCommandService._intList(
+              value['criterion_ids'],
+              'milestones[$index].criterion_ids',
+            ),
+            criterionRefsByPosition,
+            'milestones[$index].criterion_ids',
+          ),
+          exitConditions: ProjectPlanningToolCommandService._stringList(
+            value['exit_conditions'],
+            'milestones[$index].exit_conditions',
+          ),
+          order: ProjectPlanningToolCommandService._optionalInt(
+            value['order'],
+            'milestones[$index].order',
+          ),
+          commandId: ProjectPlanningToolCommandService._scopedCommandId(
+            commandId,
+            'milestone:$index',
+          ),
+        );
+        milestoneRefsByPosition[index + 1] = context.builder
+            .milestoneAgentNumberFor(id)!
+            .toString();
+      }
+
+      final specs = <ProjectTaskSpec>[];
+      final checks = <List<ProjectTaskCheckSpec>>[];
+      for (var index = 0; index < tasks.length; index++) {
+        final transformed = _transformTaskInput(
+          tasks[index],
+          'tasks[$index]',
+          createReference: (index + 1).toString(),
+          criterionRefsByPosition: criterionRefsByPosition,
+          milestoneRefsByPosition: milestoneRefsByPosition,
+        );
+        final taskInput = Map<String, dynamic>.from(transformed)
+          ..remove('inline_criterion_refs');
+        specs.add(
+          ProjectPlanningToolCommandService._taskSpec(
+            taskInput,
+            'tasks[$index]',
+            requireObjective: true,
+          ),
+        );
+        checks.add(
+          ProjectPlanningToolCommandService._checkSpecs(
+            transformed['checks'],
+            'tasks[$index].checks',
+          ),
+        );
+      }
+      context.builder.addTasks(
+        specs,
+        commandId: ProjectPlanningToolCommandService._scopedCommandId(
+          commandId,
+          'tasks',
+        ),
+      );
+      for (var index = 0; index < checks.length; index++) {
+        for (
+          var checkIndex = 0;
+          checkIndex < checks[index].length;
+          checkIndex++
+        ) {
+          final check = checks[index][checkIndex];
+          context.builder.addCommandCheck(
+            taskReference: (index + 1).toString(),
+            command: check.command,
+            workingDirectory: check.workingDirectory,
+            criterionRefs: check.criterionRefs.isEmpty
+                ? null
+                : check.criterionRefs,
+            required: check.required,
+            description: check.description,
+            commandId: ProjectPlanningToolCommandService._scopedCommandId(
+              commandId,
+              'check:$index:$checkIndex',
+            ),
+          );
+        }
+      }
+      _throwIfInvalidDraft();
+      for (var index = 0; index < specs.length; index++) {
+        final id = context.builder.taskIdFor((index + 1).toString());
+        createdTasks.add({
+          'task_id': context.builder.taskAgentNumberFor(id),
+          'position': index + 1,
+        });
+      }
+    });
+    return {'tasks': createdTasks};
+  }
+
+  Map<String, dynamic> updateProject(
+    PlanningArguments arguments,
+    String? commandId,
+  ) {
+    _ensureOpen();
+    ProjectPlanningToolCommandService._keys(arguments, const {
+      'title',
+      'refined_goal',
+      'constraints',
+      'criteria',
+      'milestones',
+    });
+    final hasChange = arguments.keys.any((key) => arguments[key] != null);
+    if (!hasChange) {
+      throw ProjectPlanningToolCommandService._argument(
+        'empty_update',
+        'tool',
+        'Provide at least one project field, criterion, or milestone to update.',
+      );
+    }
+    final criteria = ProjectPlanningToolCommandService._maps(
+      arguments['criteria'],
+      'criteria',
+    );
+    final milestones = ProjectPlanningToolCommandService._maps(
+      arguments['milestones'],
+      'milestones',
+    );
+    context.builder.transaction(() {
+      context.setProjectDetails(
+        title:
+            ProjectPlanningToolCommandService._optionalString(
+              arguments['title'],
+              'title',
+            ) ??
+            context.draftTitle,
+        refinedGoal:
+            ProjectPlanningToolCommandService._optionalString(
+              arguments['refined_goal'],
+              'refined_goal',
+            ) ??
+            context.draftRefinedGoal,
+        constraints: arguments.containsKey('constraints')
+            ? ProjectPlanningToolCommandService._stringList(
+                arguments['constraints'],
+                'constraints',
+              )
+            : null,
+      );
+      for (var index = 0; index < criteria.length; index++) {
+        final value = criteria[index];
+        ProjectPlanningToolCommandService._keys(value, const {
+          'criterion_id',
+          'statement',
+          'required',
+          'verification_mode',
+        });
+        final criterionId = ProjectPlanningToolCommandService._optionalInt(
+          value['criterion_id'],
+          'criteria[$index].criterion_id',
+        );
+        final statement =
+            ProjectPlanningToolCommandService._optionalString(
+              value['statement'],
+              'criteria[$index].statement',
+            );
+        final required = ProjectPlanningToolCommandService._optionalBool(
+          value['required'],
+          'criteria[$index].required',
+        );
+        final mode = ProjectPlanningToolCommandService._enumValue(
+          ProjectVerificationMode.values,
+          value['verification_mode'],
+          'criteria[$index].verification_mode',
+        );
+        if (criterionId == null) {
+          context.builder.addCriterion(
+            statement: ProjectPlanningToolCommandService._requiredString(
+              statement,
+              'criteria[$index].statement',
+            ),
+            required: required ?? true,
+            verificationMode: mode ?? ProjectVerificationMode.mixed,
+            commandId: ProjectPlanningToolCommandService._scopedCommandId(
+              commandId,
+              'criterion:$index',
+            ),
+          );
+        } else {
+          context.builder.updateCriterion(
+            criterionId.toString(),
+            statement: statement,
+            required: required,
+            verificationMode: mode,
+            commandId: ProjectPlanningToolCommandService._scopedCommandId(
+              commandId,
+              'criterion:$index',
+            ),
+          );
+        }
+      }
+      for (var index = 0; index < milestones.length; index++) {
+        final value = milestones[index];
+        ProjectPlanningToolCommandService._keys(value, const {
+          'milestone_id',
+          'title',
+          'objective',
+          'criterion_ids',
+          'exit_conditions',
+          'order',
+        });
+        final milestoneId = ProjectPlanningToolCommandService._optionalInt(
+          value['milestone_id'],
+          'milestones[$index].milestone_id',
+        );
+        final title = ProjectPlanningToolCommandService._optionalString(
+          value['title'],
+          'milestones[$index].title',
+        );
+        final objective = ProjectPlanningToolCommandService._optionalString(
+          value['objective'],
+          'milestones[$index].objective',
+        );
+        final criterionRefs = value.containsKey('criterion_ids')
+            ? [
+                for (final id in ProjectPlanningToolCommandService._intList(
+                  value['criterion_ids'],
+                  'milestones[$index].criterion_ids',
+                ))
+                  id.toString(),
+              ]
+            : null;
+        if (milestoneId == null) {
+          context.builder.addMilestone(
+            title: ProjectPlanningToolCommandService._requiredString(
+              title,
+              'milestones[$index].title',
+            ),
+            objective: ProjectPlanningToolCommandService._requiredString(
+              objective,
+              'milestones[$index].objective',
+            ),
+            criterionRefs: criterionRefs ?? const [],
+            exitConditions: value.containsKey('exit_conditions')
+                ? ProjectPlanningToolCommandService._stringList(
+                    value['exit_conditions'],
+                    'milestones[$index].exit_conditions',
+                  )
+                : const [],
+            order: ProjectPlanningToolCommandService._optionalInt(
+              value['order'],
+              'milestones[$index].order',
+            ),
+            commandId: ProjectPlanningToolCommandService._scopedCommandId(
+              commandId,
+              'milestone:$index',
+            ),
+          );
+        } else {
+          context.builder.updateMilestone(
+            milestoneId.toString(),
+            title: title,
+            objective: objective,
+            criterionRefs: criterionRefs,
+            exitConditions: value.containsKey('exit_conditions')
+                ? ProjectPlanningToolCommandService._stringList(
+                    value['exit_conditions'],
+                    'milestones[$index].exit_conditions',
+                  )
+                : null,
+            order: ProjectPlanningToolCommandService._optionalInt(
+              value['order'],
+              'milestones[$index].order',
+            ),
+            commandId: ProjectPlanningToolCommandService._scopedCommandId(
+              commandId,
+              'milestone:$index',
+            ),
+          );
+        }
+      }
+    });
+    return {'updated': true};
+  }
+
+  Map<String, dynamic> upsertTask(
+    PlanningArguments arguments,
+    String? commandId,
+  ) {
+    _ensureOpen();
+    ProjectPlanningToolCommandService._keys(arguments, const {
+      'task_id',
+      'title',
+      'objective',
+      'criterion_ids',
+      'criteria',
+      'dependency_task_ids',
+      'milestone_id',
+      'clear_milestone',
+      'priority',
+      'risk',
+      'risk_reduction',
+      'effort',
+      'selection_rationale',
+      'constraints',
+      'read_paths',
+      'write_paths',
+      'done_criteria',
+      'out_of_scope',
+      'context',
+      'expected_artifacts',
+      'checks',
+      'disposition',
+    });
+    final taskNumber = ProjectPlanningToolCommandService._optionalInt(
+      arguments['task_id'],
+      'task_id',
+    );
+    late Map<String, dynamic> transformed;
+    late List<ProjectTaskCheckSpec> inlineChecks;
+    late String taskId;
+    context.builder.transaction(() {
+      transformed = _transformTaskInput(arguments.toWire(), 'task');
+      inlineChecks = ProjectPlanningToolCommandService._checkSpecs(
+        transformed['checks'],
+        'checks',
+      );
+      if (taskNumber == null) {
+        final taskInput = Map<String, dynamic>.from(transformed)
+          ..remove('inline_criterion_refs');
+        final spec = ProjectPlanningToolCommandService._taskSpec(
+          taskInput,
+          'task',
+          requireObjective: true,
+        );
+        taskId = context.builder.addTaskWithChecks(
+          spec,
+          checks: inlineChecks,
+          commandId: ProjectPlanningToolCommandService._scopedCommandId(
+            commandId,
+            'task',
+          ),
+        );
+      } else {
+        final existingTaskId = context.builder.taskIdFor(taskNumber.toString());
+        final updated = context.builder.updateTask(
+          existingTaskId,
+          title: ProjectPlanningToolCommandService._optionalString(
+            arguments['title'],
+            'title',
+          ),
+          objective: ProjectPlanningToolCommandService._optionalString(
+            arguments['objective'],
+            'objective',
+          ),
+          criterionRefs:
+              arguments.containsKey('criterion_ids') ||
+                  (transformed['inline_criterion_refs'] as List).isNotEmpty
+              ? (transformed['criterion_refs'] as List).cast<String>()
+              : null,
+          dependencyRefs: arguments.containsKey('dependency_task_ids')
+              ? (transformed['dependency_refs'] as List).cast<String>()
+              : null,
+          milestoneRef: arguments.containsKey('milestone_id')
+              ? transformed['milestone_ref'] as String?
+              : null,
+          clearMilestone:
+              ProjectPlanningToolCommandService._optionalBool(
+                arguments['clear_milestone'],
+                'clear_milestone',
+              ) ??
+              false,
+          priority: ProjectPlanningToolCommandService._enumValue(
+            TaskPriority.values,
+            arguments['priority'],
+            'priority',
+          ),
+          risk: ProjectPlanningToolCommandService._enumValue(
+            TaskRisk.values,
+            arguments['risk'],
+            'risk',
+          ),
+          riskReduction: ProjectPlanningToolCommandService._enumValue(
+            ProjectRiskReduction.values,
+            arguments['risk_reduction'],
+            'risk_reduction',
+          ),
+          effort: ProjectPlanningToolCommandService._enumValue(
+            TaskEffort.values,
+            arguments['effort'],
+            'effort',
+          ),
+          selectionRationale: ProjectPlanningToolCommandService._optionalString(
+            arguments['selection_rationale'],
+            'selection_rationale',
+          ),
+          constraints: ProjectPlanningToolCommandService._optionalStringList(
+            arguments['constraints'],
+            'constraints',
+          ),
+          readPaths: ProjectPlanningToolCommandService._optionalStringList(
+            arguments['read_paths'],
+            'read_paths',
+          ),
+          writePaths: ProjectPlanningToolCommandService._optionalStringList(
+            arguments['write_paths'],
+            'write_paths',
+          ),
+          doneCriteria: ProjectPlanningToolCommandService._optionalStringList(
+            arguments['done_criteria'],
+            'done_criteria',
+          ),
+          outOfScope: ProjectPlanningToolCommandService._optionalStringList(
+            arguments['out_of_scope'],
+            'out_of_scope',
+          ),
+          context: ProjectPlanningToolCommandService._optionalStringList(
+            arguments['context'],
+            'context',
+          ),
+          expectedArtifacts:
+              ProjectPlanningToolCommandService._optionalArtifacts(
+                arguments['expected_artifacts'],
+                'expected_artifacts',
+              ),
+          commandId: ProjectPlanningToolCommandService._scopedCommandId(
+            commandId,
+            'task',
+          ),
+        );
+        taskId = updated.id;
+        for (
+          var checkIndex = 0;
+          checkIndex < inlineChecks.length;
+          checkIndex++
+        ) {
+          final check = inlineChecks[checkIndex];
+          context.builder.addCommandCheck(
+            taskReference: taskId,
+            command: check.command,
+            workingDirectory: check.workingDirectory,
+            criterionRefs: check.criterionRefs.isEmpty
+                ? null
+                : check.criterionRefs,
+            required: check.required,
+            description: check.description,
+            commandId: ProjectPlanningToolCommandService._scopedCommandId(
+              commandId,
+              'check:$checkIndex',
+            ),
+          );
+        }
+      }
+      final disposition = ProjectPlanningToolCommandService._enumValue(
+        ProjectPlanTaskDisposition.values,
+        arguments['disposition'],
+        'disposition',
+      );
+      if (disposition != null) {
+        context.builder.setDisposition(
+          taskReference: taskId,
+          disposition: disposition,
+          commandId: ProjectPlanningToolCommandService._scopedCommandId(
+            commandId,
+            'disposition',
+          ),
+        );
+      }
+    });
+    return {
+      'task_id': context.builder.taskAgentNumberFor(taskId),
+      'created': taskNumber == null,
+    };
+  }
+
+  void _throwIfInvalidDraft() {
+    final preview = context.builder.preview(
+      workspaceRoot: context.workspaceRoot,
+    );
+    if (preview.validation.valid) return;
+    final issues = preview.validation.errors;
+    final first = issues.firstOrNull ?? preview.validation.issues.firstOrNull;
+    throw ProjectPlanBuilderException(
+      code: first?.code ?? 'invalid_plan',
+      path: first?.path ?? 'plan',
+      message: first?.message ?? 'The plan did not pass validation.',
+      details: {
+        'errors': [for (final issue in issues) issue.toMap()],
+      },
+    );
+  }
+
+  Map<String, dynamic> _transformTaskInput(
+    Map<String, dynamic> value,
+    String path, {
+    String? createReference,
+    Map<int, String>? criterionRefsByPosition,
+    Map<int, String>? milestoneRefsByPosition,
+  }) {
+    final allowed = {
+      'task_id',
+      'title',
+      'objective',
+      'criterion_ids',
+      'criteria',
+      'dependency_task_ids',
+      'milestone_id',
+      'clear_milestone',
+      'priority',
+      'risk',
+      'risk_reduction',
+      'effort',
+      'selection_rationale',
+      'constraints',
+      'read_paths',
+      'write_paths',
+      'done_criteria',
+      'out_of_scope',
+      'context',
+      'expected_artifacts',
+      'checks',
+      'disposition',
+    };
+    ProjectPlanningToolCommandService._keys(value, allowed);
+    final criterionRefs = _requestReferences(
+      ProjectPlanningToolCommandService._intList(
+        value['criterion_ids'],
+        '$path.criterion_ids',
+      ),
+      criterionRefsByPosition,
+      '$path.criterion_ids',
+    );
+    final inlineCriterionRefs = <String>[];
+    final inlineCriteria = ProjectPlanningToolCommandService._maps(
+      value['criteria'],
+      '$path.criteria',
+    );
+    for (var index = 0; index < inlineCriteria.length; index++) {
+      final item = inlineCriteria[index];
+      ProjectPlanningToolCommandService._keys(item, const {
+        'statement',
+        'required',
+        'verification_mode',
+      });
+      final id = context.builder.addCriterion(
+        statement: ProjectPlanningToolCommandService._requiredString(
+          item['statement'],
+          '$path.criteria[$index].statement',
+        ),
+        required:
+            ProjectPlanningToolCommandService._optionalBool(
+              item['required'],
+              '$path.criteria[$index].required',
+            ) ??
+            true,
+        verificationMode:
+            ProjectPlanningToolCommandService._enumValue(
+              ProjectVerificationMode.values,
+              item['verification_mode'],
+              '$path.criteria[$index].verification_mode',
+            ) ??
+            ProjectVerificationMode.mixed,
+      );
+      inlineCriterionRefs.add(id);
+    }
+    criterionRefs.addAll(inlineCriterionRefs);
+    final transformed = <String, dynamic>{
+      'ref': createReference ?? '',
+      'title': value['title'],
+      'objective': value['objective'],
+      'criterion_refs': criterionRefs,
+      'dependency_refs': [
+        for (final id in ProjectPlanningToolCommandService._intList(
+          value['dependency_task_ids'],
+          '$path.dependency_task_ids',
+        ))
+          id.toString(),
+      ],
+      'milestone_ref': value['milestone_id'] == null
+          ? null
+          : _requestReferences(
+              [
+                ProjectPlanningToolCommandService._optionalInt(
+                  value['milestone_id'],
+                  '$path.milestone_id',
+                )!,
+              ],
+              milestoneRefsByPosition,
+              '$path.milestone_id',
+            ).single,
+      'priority': value['priority'],
+      'risk': value['risk'],
+      'risk_reduction': value['risk_reduction'],
+      'effort': value['effort'],
+      'selection_rationale': value['selection_rationale'],
+      'constraints': value['constraints'],
+      'read_paths': value['read_paths'],
+      'write_paths': value['write_paths'],
+      'done_criteria': value['done_criteria'],
+      'out_of_scope': value['out_of_scope'],
+      'context': value['context'],
+      'expected_artifacts': value['expected_artifacts'],
+      'checks': [
+        for (final check in ProjectPlanningToolCommandService._maps(
+          value['checks'],
+          '$path.checks',
+        ))
+          {
+            'command': check['command'],
+            'working_directory': check['working_directory'],
+            'criterion_refs': _requestReferences(
+              ProjectPlanningToolCommandService._intList(
+                check['criterion_ids'],
+                '$path.checks.criterion_ids',
+              ),
+              criterionRefsByPosition,
+              '$path.checks.criterion_ids',
+            ),
+            'required': check['required'],
+            'description': check['description'],
+          },
+      ],
+      'inline_criterion_refs': inlineCriterionRefs,
+    };
+    return transformed;
+  }
+
+  List<String> _requestReferences(
+    Iterable<int> numbers,
+    Map<int, String>? mapping,
+    String path,
+  ) {
+    final values = <String>[];
+    for (final number in numbers) {
+      final resolved = mapping?[number] ?? number.toString();
+      if (mapping != null && !mapping.containsKey(number)) {
+        throw ProjectPlanningToolCommandService._argument(
+          'unknown_reference',
+          path,
+          'Reference $number does not exist in this submission.',
+        );
+      }
+      if (!values.contains(resolved)) values.add(resolved);
+    }
+    return values;
+  }
+
   Map<String, dynamic> addCriteria(
     PlanningArguments arguments,
     String? commandId,

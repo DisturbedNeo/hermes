@@ -11,6 +11,12 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
       hasCompleteCollections: true,
       criteria: _criteria.values.toList(),
       milestones: _milestones.values.toList(),
+      criterionAgentNumbers: Map.unmodifiable(_criterionAgentNumbers),
+      milestoneAgentNumbers: Map.unmodifiable(_milestoneAgentNumbers),
+      taskAgentNumbers: Map.unmodifiable(_taskAgentNumbers),
+      nextCriterionAgentNumber: _nextCriterionAgentNumber,
+      nextMilestoneAgentNumber: _nextMilestoneAgentNumber,
+      nextTaskAgentNumber: _nextTaskAgentNumber,
       tasks: [
         for (final task in _tasks.values)
           if (!_splitTaskIds.contains(task.id)) task,
@@ -56,6 +62,10 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
     );
     _milestones[id] = milestone;
     _milestoneRefs[id] = id;
+    final agentNumber = _nextMilestoneAgentNumber++;
+    _milestoneAgentNumbers[id] = agentNumber;
+    _milestoneRefs['$agentNumber'] = id;
+    _milestoneRefs['Milestone $agentNumber'] = id;
     for (final entry in _tasks.entries.toList()) {
       if (entry.value.milestoneId == null) {
         final assigned = entry.value.copyWith(milestoneId: id);
@@ -206,6 +216,10 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
       final reference = references.keys.elementAt(index);
       _taskRefs[reference] = task.id;
       _taskRefs[task.id] = task.id;
+      final agentNumber = _nextTaskAgentNumber++;
+      _taskAgentNumbers[task.id] = agentNumber;
+      _taskRefs['$agentNumber'] = task.id;
+      _taskRefs['Task $agentNumber'] = task.id;
     }
     for (var index = 0; index < specs.length; index++) {
       final taskId = ids[index];
@@ -543,6 +557,12 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
     final taskRefs = Map<String, String>.from(_taskRefs);
     final workspaceNodeRefs = Map<String, String>.from(_workspaceNodeRefs);
     final workspaceEdgeRefs = Map<String, String>.from(_workspaceEdgeRefs);
+    final criterionAgentNumbers = Map<String, int>.from(_criterionAgentNumbers);
+    final milestoneAgentNumbers = Map<String, int>.from(_milestoneAgentNumbers);
+    final taskAgentNumbers = Map<String, int>.from(_taskAgentNumbers);
+    final nextCriterionAgentNumber = _nextCriterionAgentNumber;
+    final nextMilestoneAgentNumber = _nextMilestoneAgentNumber;
+    final nextTaskAgentNumber = _nextTaskAgentNumber;
     final deferred = {..._deferredTaskIds};
     final obsolete = {..._obsoleteTaskIds};
     final split = {..._splitTaskIds};
@@ -587,6 +607,18 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
       _workspaceEdgeRefs
         ..clear()
         ..addAll(workspaceEdgeRefs);
+      _criterionAgentNumbers
+        ..clear()
+        ..addAll(criterionAgentNumbers);
+      _milestoneAgentNumbers
+        ..clear()
+        ..addAll(milestoneAgentNumbers);
+      _taskAgentNumbers
+        ..clear()
+        ..addAll(taskAgentNumbers);
+      _nextCriterionAgentNumber = nextCriterionAgentNumber;
+      _nextMilestoneAgentNumber = nextMilestoneAgentNumber;
+      _nextTaskAgentNumber = nextTaskAgentNumber;
       _deferredTaskIds
         ..clear()
         ..addAll(deferred);

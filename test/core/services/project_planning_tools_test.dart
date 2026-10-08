@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/planning_test_helpers.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/features/persistence/infrastructure/dto/aggregate_snapshot_codecs.dart';
 import 'package:hermes/features/project/runtime/project_planning_tools.dart';
 import 'package:hermes/features/project/runtime/project_planning_workspace_reader.dart';
 import 'package:hermes/features/project/runtime/project_view_service.dart';
@@ -24,19 +25,10 @@ void main() {
       includeProjectDetails: true,
     );
     expect(bootstrap.toolDefinitions.map((tool) => tool.id).toSet(), {
-      'plan_set_project_details',
       'project_view',
-      'plan_add_criteria',
-      'plan_add_milestones',
-      'plan_add_task',
-      'plan_add_note',
-      'plan_set_workspace_orientation',
-      'plan_add_workspace_nodes',
-      'plan_update_workspace_node',
-      'plan_add_workspace_edges',
-      'plan_update_workspace_edge',
-      'plan_remove_workspace_item',
-      'plan_request_user_decision',
+      'project_submit_plan',
+      'project_update',
+      'task_upsert',
       'plan_commit',
     });
 
@@ -91,11 +83,8 @@ void main() {
       ids,
       containsAll([
         'project_view',
-        'plan_add_task',
-        'plan_update_task',
-        'plan_split_task',
-        'plan_retry_task',
-        'plan_preview',
+        'project_update',
+        'task_upsert',
         'plan_commit',
       ]),
     );
@@ -105,7 +94,7 @@ void main() {
     expect(registry.allowsWorkspaceMutation, isFalse);
 
     final schema = registry.toolDefinitions
-        .singleWhere((item) => item.id == 'plan_add_task')
+        .singleWhere((item) => item.id == 'task_upsert')
         .schema
         .toWire();
     final taskProperties = schema['properties'] as Map;
@@ -118,7 +107,7 @@ void main() {
       containsAll([
         'command',
         'working_directory',
-        'criterion_refs',
+        'criterion_ids',
         'required',
         'description',
       ]),
@@ -126,16 +115,6 @@ void main() {
     expect(((taskProperties['checks'] as Map)['items'] as Map)['required'], [
       'command',
     ]);
-
-    final splitSchema = registry.toolDefinitions
-        .singleWhere((tool) => tool.id == 'plan_split_task')
-        .schema
-        .toWire();
-    final childProperties =
-        ((((splitSchema['properties'] as Map)['children'] as Map)['items']
-                as Map)['properties']
-            as Map);
-    expect(childProperties.keys, contains('checks'));
 
     expect(ids, isNot(contains('plan_add_tasks')));
     expect(
@@ -257,7 +236,7 @@ void main() {
 
     expect(secondPage['offset'], 1);
     expect(secondPage['next_cursor'], 'tasks:2');
-    expect((second['tasks'] as List).single['ref'], 'task_2');
+    expect((second['tasks'] as List).single['task_id'], 2);
   });
 
   test('project view rejects malformed navigation cursors', () {
@@ -462,7 +441,9 @@ void main() {
         project: _project(),
         workspaceRoot: root.path,
         workspaceReader: reader,
+        planningPass: ProjectPlanningPass.bootstrap,
       ),
+      profile: ProjectPlanningToolProfile.bootstrap,
       includeProjectDetails: true,
     );
 
@@ -480,7 +461,7 @@ void main() {
   });
 
   test(
-    'initial planning exposes project details as a separate command',
+    'project update exposes project details as a flexible command',
     () async {
       final registry = ProjectPlanningToolRegistry(
         context: ProjectPlanningContext(
@@ -492,17 +473,13 @@ void main() {
 
       expect(
         registry.toolDefinitions.map((item) => item.id),
-        contains('plan_set_project_details'),
+        contains('project_update'),
       );
-      final updated = await invokePlanning(
-        registry,
-        'plan_set_project_details',
-        {
-          'title': 'A more precise project',
-          'refined_goal': 'Deliver the verified bounded outcome.',
-          'constraints': ['Use only the attached workspace.'],
-        },
-      );
+      final updated = await invokePlanning(registry, 'project_update', {
+        'title': 'A more precise project',
+        'refined_goal': 'Deliver the verified bounded outcome.',
+        'constraints': ['Use only the attached workspace.'],
+      });
 
       expect(updated['ok'], isTrue);
       final view = await invokePlanning(registry, 'project_view', {});
@@ -583,7 +560,7 @@ void main() {
         'task_ref': 'scaffold',
       });
       expect(detail['ok'], isTrue);
-      expect((detail['task_detail'] as Map)['ref'], taskId);
+      expect((detail['task_detail'] as Map)['task_id'], 1);
       expect(
         (detail['task_detail'] as Map)['title'],
         'Scaffold the reviewed slice',
@@ -766,6 +743,228 @@ void main() {
       );
     },
   );
+
+  test(
+    'simplified planning surface submits a complete draft atomically',
+    () async {
+      final base = _emptyProject();
+      final registry = ProjectPlanningToolRegistry(
+        context: ProjectPlanningContext(
+          project: base,
+          workspaceRoot: '/workspace',
+          planningPass: ProjectPlanningPass.bootstrap,
+          planningLimits: ProjectPlanningLimits.bootstrap,
+          approvalPolicy: ProjectPlanApprovalPolicy.never,
+        ),
+        profile: ProjectPlanningToolProfile.bootstrap,
+      );
+
+      final submitted = await invokePlanning(registry, 'project_submit_plan', {
+        'title': 'Verified project',
+        'refined_goal': 'Deliver the verified outcome.',
+        'constraints': ['Stay within the workspace.'],
+        'criteria': [
+          {'statement': 'The main outcome is verified.'},
+        ],
+        'milestones': [
+          {
+            'title': 'First slice',
+            'objective': 'Deliver the first executable slice.',
+            'criterion_ids': [1],
+          },
+        ],
+        'tasks': [
+          {
+            'objective': 'Implement the first slice.',
+            'criterion_ids': [1],
+            'done_criteria': ['The first slice is implemented.'],
+            'out_of_scope': ['Unrelated work.'],
+            'milestone_id': 1,
+            'checks': [
+              {'command': 'dart test', 'working_directory': '.'},
+            ],
+          },
+          {
+            'objective': 'Verify the first slice.',
+            'criteria': [
+              {'statement': 'The verification report is available.'},
+            ],
+            'criterion_ids': [1],
+            'dependency_task_ids': [1],
+            'done_criteria': ['The verification report is available.'],
+            'out_of_scope': ['Changing the implementation.'],
+          },
+        ],
+      });
+
+      expect(submitted['ok'], isTrue);
+      expect(submitted['next_action'], 'plan_commit');
+      expect((submitted['draft'] as Map)['valid'], isTrue);
+      final draftProject = (submitted['draft'] as Map)['project'] as Map;
+      expect(
+        (draftProject['tasks'] as List).map((item) => (item as Map)['task_id']),
+        [1, 2],
+      );
+      expect(
+        (draftProject['criteria'] as List).map(
+          (item) => (item as Map)['criterion_id'],
+        ),
+        [1, 2],
+      );
+
+      final committed = await invokePlanning(registry, 'plan_commit', {});
+      expect(committed['ok'], isTrue);
+      expect(committed['changed'], isTrue);
+    },
+  );
+
+  test(
+    'simplified planning mutations roll back inline work on failure',
+    () async {
+      final base = _project().copyWith(
+        criteria: const [],
+        milestones: const [],
+      );
+      final context = ProjectPlanningContext(
+        project: base,
+        workspaceRoot: '/workspace',
+        planningPass: ProjectPlanningPass.bootstrap,
+        planningLimits: ProjectPlanningLimits.bootstrap,
+        approvalPolicy: ProjectPlanApprovalPolicy.never,
+      );
+      final registry = ProjectPlanningToolRegistry(
+        context: context,
+        profile: ProjectPlanningToolProfile.bootstrap,
+      );
+
+      final invalid = await invokePlanning(registry, 'project_submit_plan', {
+        'title': 'Invalid project',
+        'refined_goal': 'This must not partially apply.',
+        'criteria': [
+          {
+            'statement': 'The outcome is deterministic.',
+            'verification_mode': 'deterministic',
+          },
+        ],
+        'tasks': [
+          {
+            'objective': 'Forget the required check.',
+            'criterion_ids': [1],
+            'done_criteria': ['It is done.'],
+            'out_of_scope': ['Everything else.'],
+          },
+        ],
+      });
+
+      expect(invalid['ok'], isFalse);
+      expect(invalid['path'], contains('criteria'));
+      final view = await invokePlanning(registry, 'project_view', {});
+      expect((view['criteria'] as List), isEmpty);
+      expect((view['tasks'] as List), isEmpty);
+    },
+  );
+
+  test(
+    'project update and task upsert support independent metadata and checks',
+    () async {
+      final registry = _registry();
+      final projectUpdate = await invokePlanning(registry, 'project_update', {
+        'title': 'Updated project',
+        'criteria': [
+          {'criterion_id': 1, 'statement': 'The updated outcome is verified.'},
+        ],
+        'milestones': [
+          {
+            'title': 'Verification',
+            'objective': 'Verify the updated outcome.',
+            'criterion_ids': [1],
+          },
+        ],
+      });
+      expect(projectUpdate['ok'], isTrue);
+
+      final created = await invokePlanning(registry, 'task_upsert', {
+        'objective': 'Implement the updated outcome.',
+        'criterion_ids': [1],
+        'milestone_id': 1,
+        'done_criteria': ['The updated outcome is implemented.'],
+        'out_of_scope': ['Unrelated work.'],
+      });
+      expect(created['ok'], isTrue);
+      expect(created['task_id'], 1);
+
+      final updated = await invokePlanning(registry, 'task_upsert', {
+        'task_id': 1,
+        'objective': 'Implement and verify the updated outcome.',
+        'checks': [
+          {
+            'command': 'dart test',
+            'criterion_ids': [1],
+          },
+        ],
+      });
+      expect(updated['ok'], isTrue);
+      expect(updated['task_id'], 1);
+
+      final view = await invokePlanning(registry, 'project_view', {
+        'task_id': 1,
+      });
+      expect(view['ok'], isTrue);
+      expect((view['task_detail'] as Map)['objective'], contains('verify'));
+      expect((view['task_detail'] as Map)['checks'], hasLength(1));
+    },
+  );
+
+  test('numeric planning references survive commit and reload', () async {
+    final context = ProjectPlanningContext(
+      project: _emptyProject(),
+      workspaceRoot: '/workspace',
+      planningPass: ProjectPlanningPass.bootstrap,
+      planningLimits: ProjectPlanningLimits.bootstrap,
+      approvalPolicy: ProjectPlanApprovalPolicy.never,
+    );
+    final registry = ProjectPlanningToolRegistry(
+      context: context,
+      profile: ProjectPlanningToolProfile.bootstrap,
+    );
+
+    final submitted = await invokePlanning(registry, 'project_submit_plan', {
+      'title': 'Stable references',
+      'refined_goal': 'Keep references stable.',
+      'criteria': [
+        {'statement': 'The references remain stable.'},
+      ],
+      'tasks': [
+        {
+          'objective': 'Persist the reference table.',
+          'criterion_ids': [1],
+          'done_criteria': ['The table is persisted.'],
+          'out_of_scope': ['Changing execution.'],
+        },
+      ],
+    });
+    expect(submitted['ok'], isTrue);
+    final committed = await invokePlanning(registry, 'plan_commit', {});
+    expect(committed['ok'], isTrue);
+
+    final committedProject = context.committedProject!;
+    expect(
+      committedProject.criterionAgentNumber(
+        committedProject.criteria.single.id,
+      ),
+      1,
+    );
+    expect(
+      committedProject.taskAgentNumber(committedProject.tasks.single.id),
+      1,
+    );
+
+    final reloaded = ProjectSnapshotCodec.decode(
+      ProjectSnapshotCodec.encode(committedProject),
+    );
+    expect(reloaded.criterionAgentNumber(reloaded.criteria.single.id), 1);
+    expect(reloaded.taskAgentNumber(reloaded.taskIds.single), 1);
+  });
 }
 
 ProjectPlanningToolRegistry _registry() => ProjectPlanningToolRegistry(
@@ -794,6 +993,22 @@ ProjectAggregate _project({List<TaskAggregate> tasks = const []}) {
     ],
     constraints: const [],
     tasks: [for (final task in tasks) ProjectTaskNode.fromTask(task)],
+    status: ProjectStatus.active,
+    activeTaskId: null,
+    createdAt: now,
+    updatedAt: now,
+  );
+}
+
+ProjectAggregate _emptyProject() {
+  final now = DateTime(2026, 1, 1);
+  return ProjectAggregate(
+    id: 'project_empty',
+    title: 'Untitled project',
+    originalGoal: 'Deliver a bounded outcome.',
+    refinedGoal: 'Deliver a bounded outcome.',
+    criteria: const [],
+    constraints: const [],
     status: ProjectStatus.active,
     activeTaskId: null,
     createdAt: now,

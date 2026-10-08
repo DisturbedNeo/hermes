@@ -490,6 +490,30 @@ class ProjectMilestone with ProjectMilestoneMappable {
     required this.updatedAt,
     this.completedAt,
   });
+
+  ProjectMilestone copyWith({
+    String? id,
+    String? title,
+    String? objective,
+    List<String>? criterionIds,
+    ProjectMilestoneStatus? status,
+    List<String>? exitConditions,
+    int? order,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Object? completedAt = kSentinel,
+  }) => ProjectMilestone(
+    id: id ?? this.id,
+    title: title ?? this.title,
+    objective: objective ?? this.objective,
+    criterionIds: criterionIds ?? this.criterionIds,
+    status: status ?? this.status,
+    exitConditions: exitConditions ?? this.exitConditions,
+    order: order ?? this.order,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    completedAt: resolve(completedAt, this.completedAt),
+  );
 }
 
 @MappableClass(ignoreNull: true)
@@ -585,6 +609,16 @@ class ProjectDesiredPlan with ProjectDesiredPlanMappable {
   final List<ProjectCriterion> criteria;
   final List<ProjectMilestone> milestones;
 
+  /// Durable agent-facing references staged with a plan revision. These are
+  /// nullable for backward compatibility with pending plans serialized before
+  /// numeric references were introduced.
+  final Map<String, int>? criterionAgentNumbers;
+  final Map<String, int>? milestoneAgentNumbers;
+  final Map<String, int>? taskAgentNumbers;
+  final int? nextCriterionAgentNumber;
+  final int? nextMilestoneAgentNumber;
+  final int? nextTaskAgentNumber;
+
   /// Planner-owned task nodes. Executable Task documents are materialized only
   /// by the plan revision/task persistence boundary.
   final List<ProjectTaskNode> tasks;
@@ -612,6 +646,12 @@ class ProjectDesiredPlan with ProjectDesiredPlanMappable {
     this.assumptions = const [],
     this.criteria = const [],
     this.milestones = const [],
+    this.criterionAgentNumbers,
+    this.milestoneAgentNumbers,
+    this.taskAgentNumbers,
+    this.nextCriterionAgentNumber,
+    this.nextMilestoneAgentNumber,
+    this.nextTaskAgentNumber,
     List<ProjectTaskNode> tasks = const [],
     this.splitTaskIds = const [],
     this.deferredTaskIds = const [],
@@ -635,6 +675,12 @@ class ProjectDesiredPlan with ProjectDesiredPlanMappable {
     List<String>? assumptions,
     List<ProjectCriterion>? criteria,
     List<ProjectMilestone>? milestones,
+    Map<String, int>? criterionAgentNumbers,
+    Map<String, int>? milestoneAgentNumbers,
+    Map<String, int>? taskAgentNumbers,
+    int? nextCriterionAgentNumber,
+    int? nextMilestoneAgentNumber,
+    int? nextTaskAgentNumber,
     List<ProjectTaskNode>? tasks,
     List<String>? splitTaskIds,
     List<String>? deferredTaskIds,
@@ -656,6 +702,14 @@ class ProjectDesiredPlan with ProjectDesiredPlanMappable {
     assumptions: assumptions ?? this.assumptions,
     criteria: criteria ?? this.criteria,
     milestones: milestones ?? this.milestones,
+    criterionAgentNumbers: criterionAgentNumbers ?? this.criterionAgentNumbers,
+    milestoneAgentNumbers: milestoneAgentNumbers ?? this.milestoneAgentNumbers,
+    taskAgentNumbers: taskAgentNumbers ?? this.taskAgentNumbers,
+    nextCriterionAgentNumber:
+        nextCriterionAgentNumber ?? this.nextCriterionAgentNumber,
+    nextMilestoneAgentNumber:
+        nextMilestoneAgentNumber ?? this.nextMilestoneAgentNumber,
+    nextTaskAgentNumber: nextTaskAgentNumber ?? this.nextTaskAgentNumber,
     tasks: tasks ?? this.tasks,
     splitTaskIds: splitTaskIds ?? this.splitTaskIds,
     deferredTaskIds: deferredTaskIds ?? this.deferredTaskIds,
@@ -844,6 +898,18 @@ class ProjectSnapshotAggregate with ProjectSnapshotAggregateMappable {
   final List<ProjectCriterion> criteria;
   @MappableField(hook: JsonStringListHook())
   final List<String> constraints;
+  @MappableField(hook: JsonMapValueHook())
+  final Map<String, int> criterionAgentNumbers;
+  @MappableField(hook: JsonMapValueHook())
+  final Map<String, int> milestoneAgentNumbers;
+  @MappableField(hook: JsonMapValueHook())
+  final Map<String, int> taskAgentNumbers;
+  @MappableField(hook: JsonIntHook(min: 1))
+  final int nextCriterionAgentNumber;
+  @MappableField(hook: JsonIntHook(min: 1))
+  final int nextMilestoneAgentNumber;
+  @MappableField(hook: JsonIntHook(min: 1))
+  final int nextTaskAgentNumber;
   @MappableField(hook: JsonStringListHook())
   /// Project-owned task references. The canonical executable task document is
   /// persisted by the task system and hydrated by ProjectSnapshotAggregateHydrator.
@@ -927,6 +993,12 @@ class ProjectSnapshotAggregate with ProjectSnapshotAggregateMappable {
     required this.refinedGoal,
     required this.criteria,
     required this.constraints,
+    this.criterionAgentNumbers = const {},
+    this.milestoneAgentNumbers = const {},
+    this.taskAgentNumbers = const {},
+    this.nextCriterionAgentNumber = 1,
+    this.nextMilestoneAgentNumber = 1,
+    this.nextTaskAgentNumber = 1,
     List<ProjectTaskNode>? tasks,
     List<String>? taskIds,
     this.currentBatchTaskIds = const [],
@@ -1061,6 +1133,12 @@ class ProjectSnapshotAggregate with ProjectSnapshotAggregateMappable {
     String? refinedGoal,
     List<ProjectCriterion>? criteria,
     List<String>? constraints,
+    Map<String, int>? criterionAgentNumbers,
+    Map<String, int>? milestoneAgentNumbers,
+    Map<String, int>? taskAgentNumbers,
+    int? nextCriterionAgentNumber,
+    int? nextMilestoneAgentNumber,
+    int? nextTaskAgentNumber,
     List<ProjectTaskNode>? tasks,
     List<String>? taskIds,
     List<String>? currentBatchTaskIds,
@@ -1102,6 +1180,16 @@ class ProjectSnapshotAggregate with ProjectSnapshotAggregateMappable {
       refinedGoal: refinedGoal ?? this.refinedGoal,
       criteria: criteria ?? this.criteria,
       constraints: constraints ?? this.constraints,
+      criterionAgentNumbers:
+          criterionAgentNumbers ?? this.criterionAgentNumbers,
+      milestoneAgentNumbers:
+          milestoneAgentNumbers ?? this.milestoneAgentNumbers,
+      taskAgentNumbers: taskAgentNumbers ?? this.taskAgentNumbers,
+      nextCriterionAgentNumber:
+          nextCriterionAgentNumber ?? this.nextCriterionAgentNumber,
+      nextMilestoneAgentNumber:
+          nextMilestoneAgentNumber ?? this.nextMilestoneAgentNumber,
+      nextTaskAgentNumber: nextTaskAgentNumber ?? this.nextTaskAgentNumber,
       tasks: tasks ?? this.tasks,
       taskIds:
           taskIds ??

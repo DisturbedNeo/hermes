@@ -693,6 +693,17 @@ class ProjectPlanRevisionService {
     final revised = project.copyWith(
       criteria: desiredCriteria.values.toList(),
       milestones: normalizedMilestones,
+      criterionAgentNumbers:
+          proposal.criterionAgentNumbers ?? project.criterionAgentNumbers,
+      milestoneAgentNumbers:
+          proposal.milestoneAgentNumbers ?? project.milestoneAgentNumbers,
+      taskAgentNumbers: proposal.taskAgentNumbers ?? project.taskAgentNumbers,
+      nextCriterionAgentNumber:
+          proposal.nextCriterionAgentNumber ?? project.nextCriterionAgentNumber,
+      nextMilestoneAgentNumber:
+          proposal.nextMilestoneAgentNumber ?? project.nextMilestoneAgentNumber,
+      nextTaskAgentNumber:
+          proposal.nextTaskAgentNumber ?? project.nextTaskAgentNumber,
       tasks: tasksById.values.toList(),
       evidence: revisedEvidence,
       memory: memoryProject.memory,
