@@ -94,6 +94,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
 
   @override
   List<ToolDefinition> get toolDefinitions => const [
+    _taskReadDefinition,
     _taskAddDefinition,
     _taskUpdateDefinition,
     _taskRemoveDefinition,
@@ -110,6 +111,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     String? commandId,
   }) async {
     final result = switch (toolId) {
+      'task_read' => _readTask(),
       'task_add' => await _addTask(arguments),
       'task_update' => await _updateTask(arguments),
       'task_remove' => await _removeTask(arguments),
@@ -151,6 +153,15 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     final committed = _validateCandidate(candidate);
     final persisted = await context.persist(committed);
     return _mutationResponse('added', persisted);
+  }
+
+  Map<String, dynamic> _readTask() {
+    _ensureOpen();
+    return {
+      'resource': 'task',
+      'task': _taskWire(context.currentTask),
+      'persistence_revision': context.currentTask.persistenceRevision,
+    };
   }
 
   Future<Map<String, dynamic>> _updateTask(PlanningArguments arguments) async {
@@ -873,6 +884,18 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
 class _TaskPlanningArgumentException extends PlanningToolArgumentException {
   const _TaskPlanningArgumentException(super.code, super.path, super.message);
 }
+
+const ToolDefinition _taskReadDefinition = ToolDefinition(
+  id: 'task_read',
+  name: 'Read task detail',
+  description:
+      'Read the current selected task in full, including step details omitted from the compact planning frontier. This tool is read-only and takes no arguments.',
+  schema: ToolSchema({
+    'type': 'object',
+    'additionalProperties': false,
+    'properties': {},
+  }),
+);
 
 const ToolDefinition _taskAddDefinition = ToolDefinition(
   id: 'task_add',

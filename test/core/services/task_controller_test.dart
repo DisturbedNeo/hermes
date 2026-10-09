@@ -202,7 +202,7 @@ void main() {
         final normalisedPlannerRequest = plannerRequest
             .replaceAll(RegExp(r'\s+'), ' ')
             .toLowerCase();
-        expect(plannerRequest, contains('Bounded Project task context'));
+        expect(plannerRequest, contains('Planning frontier'));
         expect(
           normalisedPlannerRequest,
           contains('do not plan or perform the whole project'),
@@ -1131,6 +1131,7 @@ void main() {
       ]);
       expect(updated.memorySummary, contains('Add a verification step.'));
       final replanPrompt = client.seenMessages.last.last.content;
+      expect(replanPrompt, contains('Planning frontier'));
       expect(replanPrompt, contains('Ship the verified reporting workflow.'));
       expect(replanPrompt, contains('The report workflow is verified.'));
       expect(replanPrompt, contains('report-check'));

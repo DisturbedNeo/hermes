@@ -23,6 +23,7 @@ class ProjectPlanningToolCommandService {
 
   List<ToolDefinition> get toolDefinitions {
     final core = <ToolDefinition>[
+      _planReadDefinition,
       _projectUpdateDefinition,
       _taskAddDefinition,
       _taskUpdateDefinition,
@@ -32,6 +33,7 @@ class ProjectPlanningToolCommandService {
     ];
     if (profile == ProjectPlanningToolProfile.graphMaintenance) {
       return [
+        _planReadDefinition,
         _setWorkspaceOrientationDefinition,
         _addWorkspaceNodesDefinition,
         _updateWorkspaceNodeDefinition,
@@ -43,6 +45,7 @@ class ProjectPlanningToolCommandService {
     }
     if (profile == ProjectPlanningToolProfile.split) {
       return [
+        _planReadDefinition,
         _taskAddDefinition,
         _taskRemoveDefinition,
         _projectFinalizeDefinition,
@@ -68,6 +71,7 @@ class ProjectPlanningToolCommandService {
       );
     }
     final result = switch (toolId) {
+      'plan_read' => _readPlanningDetail(arguments),
       'project_update' => await _planCommands.updateProject(
         arguments,
         commandId,
@@ -114,6 +118,9 @@ class ProjectPlanningToolCommandService {
     if (toolId == 'plan_finalize') {
       return true;
     }
+    if (toolId == 'plan_read') {
+      return true;
+    }
     if (const {
       'project_update',
       'task_add',
@@ -158,6 +165,143 @@ class ProjectPlanningToolCommandService {
       path: 'tool',
       message: 'The planning command could not be applied: $error',
     );
+  }
+
+  Map<String, dynamic> _readPlanningDetail(PlanningArguments arguments) {
+    _keys(arguments, const {'resource', 'id', 'ref'});
+    final resource = _requiredString(arguments['resource'], 'resource');
+    final project = context.currentProject;
+    final id = _optionalInt(arguments['id'], 'id');
+    final ref = _optionalString(arguments['ref'], 'ref');
+
+    switch (resource) {
+      case 'task':
+        if (id == null) {
+          throw _argument(
+            'invalid_argument',
+            'id',
+            'A numeric task ID is required for task reads.',
+          );
+        }
+        final taskId = _idForAgent(project.taskAgentNumbers, id);
+        if (taskId == null) {
+          throw _argument(
+            'unknown_reference',
+            'id',
+            'Unknown task reference $id.',
+          );
+        }
+        final task = project.tasks
+            .where((item) => item.id == taskId)
+            .firstOrNull;
+        if (task == null) {
+          throw _argument(
+            'unknown_reference',
+            'id',
+            'Task reference $id is not present in the project.',
+          );
+        }
+        return {
+          'resource': 'task',
+          'persistence_revision': project.persistenceRevision,
+          'task': ProjectPlanningFrontierBuilder.taskDetail(
+            project,
+            task,
+            canonicalTask: context.canonicalTasks[task.id],
+          ),
+        };
+      case 'criterion':
+        if (id == null) {
+          throw _argument(
+            'invalid_argument',
+            'id',
+            'A numeric criterion ID is required for criterion reads.',
+          );
+        }
+        final criterionId = _idForAgent(project.criterionAgentNumbers, id);
+        if (criterionId == null) {
+          throw _argument(
+            'unknown_reference',
+            'id',
+            'Unknown criterion reference $id.',
+          );
+        }
+        final criterion = project.criteria
+            .where((item) => item.id == criterionId)
+            .firstOrNull;
+        if (criterion == null) {
+          throw _argument(
+            'unknown_reference',
+            'id',
+            'Criterion reference $id is not present in the project.',
+          );
+        }
+        return {
+          'resource': 'criterion',
+          'persistence_revision': project.persistenceRevision,
+          'criterion': ProjectPlanningFrontierBuilder.criterionDetail(
+            project,
+            criterion,
+          ),
+        };
+      case 'milestone':
+        if (id == null) {
+          throw _argument(
+            'invalid_argument',
+            'id',
+            'A numeric milestone ID is required for milestone reads.',
+          );
+        }
+        final milestoneId = _idForAgent(project.milestoneAgentNumbers, id);
+        if (milestoneId == null) {
+          throw _argument(
+            'unknown_reference',
+            'id',
+            'Unknown milestone reference $id.',
+          );
+        }
+        final milestone = project.milestones
+            .where((item) => item.id == milestoneId)
+            .firstOrNull;
+        if (milestone == null) {
+          throw _argument(
+            'unknown_reference',
+            'id',
+            'Milestone reference $id is not present in the project.',
+          );
+        }
+        return {
+          'resource': 'milestone',
+          'persistence_revision': project.persistenceRevision,
+          'milestone': ProjectPlanningFrontierBuilder.milestoneDetail(
+            project,
+            milestone,
+          ),
+        };
+      case 'workspace_graph':
+        try {
+          return {
+            'resource': 'workspace_graph',
+            'persistence_revision': project.persistenceRevision,
+            'workspace_graph': ProjectPlanningFrontierBuilder.workspaceDetail(
+              project.workspaceGraph,
+              ref,
+            ),
+          };
+        } on StateError {
+          throw _argument(
+            'unknown_reference',
+            'ref',
+            'Unknown workspace graph reference ${ref ?? ''}.',
+          );
+        }
+      default:
+        throw _argument(
+          'unsupported_resource',
+          'resource',
+          'Unsupported planning resource $resource.',
+        );
+    }
   }
 
   Future<Map<String, dynamic>> _finalize(PlanningArguments arguments) async {
@@ -211,6 +355,11 @@ class ProjectPlanningToolCommandService {
       'persistence_revision': persisted.persistenceRevision,
     };
   }
+
+  String? _idForAgent(Map<String, int> ids, int number) => ids.entries
+      .where((entry) => entry.value == number)
+      .map((entry) => entry.key)
+      .firstOrNull;
 
   static ProjectTaskSpec _taskSpec(
     Map<String, dynamic> value,

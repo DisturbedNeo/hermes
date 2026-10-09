@@ -4,8 +4,6 @@ import 'package:hermes/core/json_parsing.dart';
 import 'package:hermes/core/uuid.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/task/domain/task.dart';
-import 'package:hermes/features/project/application/contracts/project_task_models.dart'
-    show AcceptanceItem;
 import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
 import 'package:hermes/core/model_json.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
@@ -15,6 +13,7 @@ import 'package:hermes/core/cancellation.dart';
 import 'package:hermes/features/task/application/protocol/planning_runtime.dart';
 import 'package:hermes/features/task/application/protocol/planning_structured_output.dart';
 import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
+import 'package:hermes/features/project/runtime/project_planning_frontier.dart';
 import 'package:hermes/features/project/runtime/project_planning_tools.dart';
 import 'package:hermes/features/project/runtime/project_planning_policy.dart';
 import 'package:hermes/features/task/application/protocol/question_protocol_adapter.dart';
@@ -80,137 +79,17 @@ class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
     ),
   )).toMap();
 
-  Map<String, dynamic> _editableProjectContext(
+  Map<String, dynamic> _planningFrontier(
     ProjectAggregate project, {
-    Map<String, TaskAggregate> canonicalTasks = const {},
-  }) {
-    int? criterionNumber(String id) => project.criterionAgentNumber(id);
-    int? milestoneNumber(String id) => project.milestoneAgentNumber(id);
-    int? taskNumber(String id) => project.taskAgentNumber(id);
-    Map<String, dynamic> acceptance(AcceptanceItem item) => {
-      'ref': item.ref,
-      'statement': item.statement,
-      'criterion_ids': [
-        for (final id in item.criterionIds) ?criterionNumber(id),
-      ],
-      'verifiers': [
-        for (final verifier in item.verifiers)
-          {
-            'kind': verifier.kind.name,
-            'required': verifier.required,
-            if (verifier.command != null) 'command': verifier.command,
-            if (verifier.workingDirectory != '.')
-              'working_directory': verifier.workingDirectory,
-            if (verifier.path != null) 'path': verifier.path,
-            if (verifier.artifactKind != 'file')
-              'artifact_kind': verifier.artifactKind,
-            if (verifier.description != null)
-              'description': verifier.description,
-          },
-      ],
-    };
-    return {
-      'project': {
-        'id': project.id,
-        'persistence_revision': project.persistenceRevision,
-        'title': project.title,
-        'original_goal': project.originalGoal,
-        'refined_goal': project.refinedGoal,
-        'constraints': project.constraints,
-        'status': project.status.wire,
-      },
-      'criteria': [
-        for (final criterion in project.criteria)
-          {
-            'criterion_id': criterionNumber(criterion.id),
-            'statement': criterion.statement,
-            'required': criterion.required,
-            'verification_mode': criterion.verificationMode.name,
-          },
-      ],
-      'milestones': [
-        for (final milestone in project.milestones)
-          {
-            'milestone_id': milestoneNumber(milestone.id),
-            'title': milestone.title,
-            'objective': milestone.objective,
-            'criterion_ids': [
-              for (final id in milestone.criterionIds) ?criterionNumber(id),
-            ],
-            'exit_conditions': milestone.exitConditions,
-            'order': milestone.order,
-            'status': milestone.status.name,
-          },
-      ],
-      'tasks': [
-        for (final task in project.tasks)
-          {
-            'task_id': taskNumber(task.id),
-            'title': task.title,
-            'objective': task.objective,
-            'status': task.status.wire,
-            'constraints': task.constraints,
-            'out_of_scope': task.outOfScope,
-            'read_paths': task.readPaths,
-            'write_paths': task.writePaths,
-            'context': task.context,
-            'dependency_task_ids': [
-              for (final id in task.dependsOnTaskIds) ?taskNumber(id),
-            ],
-            'milestone_id': task.milestoneId == null
-                ? null
-                : milestoneNumber(task.milestoneId!),
-            'priority': task.priority.name,
-            'risk': task.risk.name,
-            'risk_reduction': task.riskReduction.name,
-            'effort': task.effort.name,
-            'selection_rationale': task.selectionRationale,
-            'acceptance': [
-              for (final item in task.acceptance) acceptance(item),
-            ],
-            if (canonicalTasks[task.id] != null)
-              'steps': [
-                for (
-                  var stepIndex = 0;
-                  stepIndex < canonicalTasks[task.id]!.steps.length;
-                  stepIndex++
-                )
-                  {
-                    'ref': 'step_${stepIndex + 1}',
-                    'title': canonicalTasks[task.id]!.steps[stepIndex].title,
-                    'objective':
-                        canonicalTasks[task.id]!.steps[stepIndex].objective,
-                    'instructions':
-                        canonicalTasks[task.id]!.steps[stepIndex].instructions,
-                    'may_edit_files':
-                        canonicalTasks[task.id]!.steps[stepIndex].mayEditFiles,
-                    'acceptance_refs': canonicalTasks[task.id]!
-                        .steps[stepIndex]
-                        .acceptanceRefs,
-                    'artifacts': [
-                      for (final artifact
-                          in canonicalTasks[task.id]!
-                              .steps[stepIndex]
-                              .artifacts)
-                        {
-                          'path': artifact.path,
-                          'description': artifact.description,
-                          'kind': artifact.kind,
-                        },
-                    ],
-                  },
-              ],
-          },
-      ],
-      'pending_questions': [
-        for (final question in project.openQuestions)
-          {'id': question.id, 'question': question.question},
-      ],
-      'workspace_graph': snakeCaseWire(
-        ModelJson.encode(project.workspaceGraph),
-      ),
-    };
-  }
+    ProjectEvidenceSnapshot? evidence,
+    Iterable<String> triggers = const [],
+    ProjectTaskNode? focusedTask,
+  }) => ProjectPlanningFrontierBuilder.build(
+    project: project,
+    evidence: evidence,
+    triggers: triggers,
+    focusedTask: focusedTask,
+  );
 
   @override
   Future<ProjectIncrementalPlanResult> maintainWorkspaceGraph({
@@ -259,20 +138,18 @@ documents whenever the evidence provides them. Do not modify, remove, or
 protect managed or protected entries. Do not duplicate graph knowledge into
 project memory. Omit concepts and relationships that remain ambiguous.
 Workspace orientation is planner-owned and may be refined when the evidence
-supports a durable orientation. The current graph is included in the supplied
-context. Apply mutations immediately and finish with plan_finalize. A successful
-plan_finalize is the only completion signal.
+supports a durable orientation. The frontier contains graph summaries. Use
+plan_read for full node or edge detail when needed; never guess omitted graph
+metadata. Apply mutations immediately and finish with plan_finalize. A
+successful plan_finalize is the only completion signal.
 ''',
         user:
             '''
-Current complete planning context:
-${_encoder.convert(_editableProjectContext(project))}
+Planning frontier:
+${_encoder.convert(_planningFrontier(project, evidence: evidenceSnapshot, triggers: const ['workspace_graph_maintenance']))}
 
 Deterministic graph reconciliation:
 ${_encoder.convert(evidenceSnapshot.workspaceGraphReconciliation?.toMap() ?? const {})}
-
-Bounded workspace evidence:
-${_encoder.convert(evidenceSnapshot.toMap())}
 ''',
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
@@ -360,8 +237,9 @@ IDs, statuses, timestamps, evidence, gates, or runtime state.
 
 $planningInstructions
 
-The complete editable project state is included in the planning context; do
-not request it through a read tool. Use task_add to create a complete bounded
+The planning frontier contains compact summaries. Omitted task, criterion,
+milestone, and graph details are not known; use plan_read before relying on
+them or editing them. Use task_add to create a complete bounded
 task, task_update for a partial task update, task_remove to obsolete an active
 task, and project_update for partial project, criterion, and milestone updates.
 Numeric task, criterion, milestone, and dependency IDs are stable project-local
@@ -380,11 +258,8 @@ plan_finalize is the only completion signal.
 Revision triggers:
 ${_encoder.convert(triggers.map((item) => item.name).toList())}
 
-Bounded discovery snapshot:
-${_encoder.convert(evidenceSnapshot.toMap())}
-
-Current complete planning context:
-${_encoder.convert(_editableProjectContext(project, canonicalTasks: canonicalTasks))}
+Planning frontier:
+${_encoder.convert(_planningFrontier(project, evidence: evidenceSnapshot, triggers: triggers.map((item) => item.name)))}
 ''',
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
@@ -468,8 +343,8 @@ Task title: ${oversizedTask.title}
 Validation violations:
 ${_encoder.convert(violations)}
 
-Current complete planning context:
-${_encoder.convert(_editableProjectContext(project))}
+Planning frontier:
+${_encoder.convert(_planningFrontier(project, focusedTask: oversizedTask, triggers: const ['task_replan_requested']))}
 ''',
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,

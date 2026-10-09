@@ -16,6 +16,7 @@ import 'package:hermes/features/project/runtime/project_plan_revision_service.da
 import 'package:hermes/features/project/runtime/project_plan_patch.dart';
 import 'package:hermes/features/project/runtime/project_planning_policy.dart';
 import 'package:hermes/features/project/runtime/project_lifecycle_service.dart';
+import 'package:hermes/features/project/runtime/project_planning_frontier.dart';
 
 part 'project_planning_tool_command_service.dart';
 part 'project_planning_workspace_command_service.dart';
@@ -496,6 +497,26 @@ final _taskAddSchemaProperties =
 final _taskUpdateSchemaProperties = Map<String, dynamic>.from(
   _agentTaskSchemaProperties,
 )..remove('disposition');
+
+final _planReadDefinition = ToolDefinition(
+  id: 'plan_read',
+  name: 'Read planning detail',
+  description:
+      'Read one omitted project planning record. Use a numeric agent ID for a task, criterion, or milestone, or a graph ref for workspace_graph. This tool is read-only.',
+  schema: _schema(
+    properties: {
+      'resource': _enumSchema(const [
+        'task',
+        'criterion',
+        'milestone',
+        'workspace_graph',
+      ]),
+      'id': {'type': 'integer', 'minimum': 1},
+      'ref': {'type': 'string', 'maxLength': 200},
+    },
+    required: const ['resource'],
+  ),
+);
 
 final _projectUpdateDefinition = ToolDefinition(
   id: 'project_update',

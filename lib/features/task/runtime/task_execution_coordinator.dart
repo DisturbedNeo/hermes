@@ -56,6 +56,7 @@ part 'task_persistence_use_case.dart';
 part 'task_planning_use_case.dart';
 part 'task_execution_use_case.dart';
 part 'task_execution_context.dart';
+part 'task_planning_frontier.dart';
 
 const String _refinerSystemInstruction = '''
 You refine user requests for a long-horizon AI task runner.
@@ -87,8 +88,9 @@ If finish_task_step is unavailable, return only the requested JSON object.
 
 const String _taskPlanningToolsSystemInstruction = '''
 You create or revise a complete task plan through explicit task mutation tools.
-The complete editable task and its bounded project context are already supplied;
-do not call a read tool and do not return a task JSON document as text.
+The planning frontier supplies the current editable task and bounded project
+context. Omitted completed-step detail is not known; call task_read when it is
+needed and do not guess. Do not return a task JSON document as text.
 
 Use task_add once to create the complete task, task_update with the task ID for
 partial changes, and task_remove only to obsolete the current task. A task_add

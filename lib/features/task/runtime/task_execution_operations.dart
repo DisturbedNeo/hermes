@@ -711,11 +711,8 @@ then call plan_finalize. Do not recreate, rename, or edit preserved steps.
 Reason for replan:
 $reason
 
-Project context that remains authoritative:
-${projectContext == null ? 'None supplied.' : _encoder.convert(snakeCaseWire(ModelJson.encode(projectContext)))}
-
-Current complete editable task context:
-${_encoder.convert(_editableTaskPlanningState(snapshot, taskNumber: context.taskNumber, inheritedAcceptance: projectContext?.acceptance ?? const [], criterionAgentNumbers: projectContext?.criterionAgentNumbers ?? const {}, taskAgentNumbers: projectContext?.taskAgentNumbers ?? const {}, milestoneAgentNumbers: projectContext?.milestoneAgentNumbers ?? const {}))}
+Planning frontier:
+${_encoder.convert(TaskPlanningFrontierBuilder.build(task: snapshot, taskNumber: context.taskNumber, metadata: const WorkspaceMetadata(), planningContext: projectContext, inheritedAcceptance: projectContext?.acceptance ?? const [], criterionAgentNumbers: projectContext?.criterionAgentNumbers ?? const {}, taskAgentNumbers: projectContext?.taskAgentNumbers ?? const {}, milestoneAgentNumbers: projectContext?.milestoneAgentNumbers ?? const {}))}
 ''',
       onModelOutput: onModelOutput,
       cancellationToken: cancellationToken,

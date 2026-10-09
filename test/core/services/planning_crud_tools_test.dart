@@ -3,11 +3,12 @@ import '../helpers/planning_test_helpers.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/application/contracts/project_task_models.dart';
 import 'package:hermes/features/project/runtime/project_planning_tools.dart';
+import 'package:hermes/features/project/runtime/project_planning_frontier.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/runtime/task_planning_tools.dart';
 
 void main() {
-  test('task planning exposes only CRUD and finalization tools', () {
+  test('task planning exposes CRUD, read, and finalization tools', () {
     final registry = TaskPlanningToolRegistry(
       context: TaskPlanningToolContext(
         task: _task(),
@@ -17,6 +18,7 @@ void main() {
     );
 
     expect(registry.toolDefinitions.map((tool) => tool.id), [
+      'task_read',
       'task_add',
       'task_update',
       'task_remove',
@@ -78,6 +80,23 @@ void main() {
     },
   );
 
+  test('task_read returns the current task without changing it', () async {
+    final context = TaskPlanningToolContext(
+      task: _task(),
+      workspaceRoot: '/workspace',
+      maxSteps: 3,
+    );
+    final registry = TaskPlanningToolRegistry(context: context);
+
+    final before = context.currentTask;
+    final result = await invokePlanning(registry, 'task_read', {});
+
+    expect(result['ok'], isTrue);
+    expect(result['resource'], 'task');
+    expect((result['task'] as Map)['task_id'], 1);
+    expect(context.currentTask, same(before));
+  });
+
   test('project planning exposes the new project/task contract', () {
     final registry = ProjectPlanningToolRegistry(
       context: ProjectPlanningContext(
@@ -88,6 +107,7 @@ void main() {
     );
 
     expect(registry.toolDefinitions.map((tool) => tool.id), [
+      'plan_read',
       'project_update',
       'task_add',
       'task_update',
@@ -96,6 +116,112 @@ void main() {
       'plan_finalize',
     ]);
   });
+
+  test(
+    'plan_read returns compact-project details by stable references',
+    () async {
+      final project = _project().copyWith(
+        tasks: [
+          ProjectTaskNode(
+            id: 'task_existing',
+            title: 'Existing task',
+            objective: 'Inspect the existing task.',
+            status: TaskStatus.queued,
+            constraints: const ['Keep it bounded.'],
+            outOfScope: const ['Unrelated work.'],
+            acceptance: const [
+              AcceptanceItem(
+                ref: 'verified',
+                statement: 'The task is verified.',
+                criterionIds: ['criterion_001'],
+                verifiers: [
+                  AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+                ],
+              ),
+            ],
+            createdAt: DateTime(2026, 1, 1),
+            updatedAt: DateTime(2026, 1, 1),
+          ),
+        ],
+        taskAgentNumbers: const {'task_existing': 1},
+        nextTaskAgentNumber: 2,
+      );
+      final registry = ProjectPlanningToolRegistry(
+        context: ProjectPlanningContext(
+          project: project,
+          workspaceRoot: '/workspace',
+          approvalPolicy: ProjectPlanApprovalPolicy.never,
+        ),
+      );
+
+      final task = await invokePlanning(registry, 'plan_read', {
+        'resource': 'task',
+        'id': 1,
+      });
+    final criterion = await invokePlanning(registry, 'plan_read', {
+      'resource': 'criterion',
+      'id': 1,
+    });
+    final graph = await invokePlanning(registry, 'plan_read', {
+      'resource': 'workspace_graph',
+      'ref': 'summary',
+    });
+
+      expect(task['ok'], isTrue);
+      expect((task['task'] as Map)['constraints'], ['Keep it bounded.']);
+    expect(criterion['ok'], isTrue);
+    expect((criterion['criterion'] as Map)['criterion_id'], 1);
+    expect(graph['ok'], isTrue);
+    expect((graph['workspace_graph'] as Map)['orientation'], '');
+
+      final unknown = await invokePlanning(registry, 'plan_read', {
+        'resource': 'task',
+        'id': 99,
+      });
+      expect(unknown['ok'], isFalse);
+      expect(unknown['code'], 'unknown_reference');
+    },
+  );
+
+  test(
+    'project frontier omits full task detail while retaining references',
+    () {
+      final project = _project().copyWith(
+        tasks: [
+          ProjectTaskNode(
+            id: 'task_existing',
+            title: 'Existing task',
+            objective: 'Inspect the existing task.',
+            status: TaskStatus.queued,
+            constraints: const ['Do not expand scope.'],
+            outOfScope: const ['Unrelated work.'],
+            acceptance: const [
+              AcceptanceItem(
+                ref: 'verified',
+                statement: 'The task is verified.',
+                criterionIds: ['criterion_001'],
+                verifiers: [
+                  AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+                ],
+              ),
+            ],
+            createdAt: DateTime(2026, 1, 1),
+            updatedAt: DateTime(2026, 1, 1),
+          ),
+        ],
+        taskAgentNumbers: const {'task_existing': 1},
+        nextTaskAgentNumber: 2,
+      );
+      final frontier = ProjectPlanningFrontierBuilder.build(project: project);
+      final task = (frontier['tasks'] as List).single as Map;
+
+      expect(frontier['schema_version'], 1);
+      expect(task['task_id'], 1);
+      expect(task.containsKey('acceptance'), isFalse);
+      expect(task.containsKey('constraints'), isFalse);
+      expect(task.containsKey('steps'), isFalse);
+    },
+  );
 
   test('project task mutations persist between immediate calls', () async {
     final persisted = <ProjectAggregate>[];

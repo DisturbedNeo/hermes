@@ -100,6 +100,11 @@ class PlannerMessageCompactor {
           'dependencies',
           'milestone',
           'metadata',
+          'resource',
+          'id',
+          'ref',
+          'persistence_revision',
+          'workspace_graph',
         ]) {
           final value = decoded[key];
           if (value is String ||
