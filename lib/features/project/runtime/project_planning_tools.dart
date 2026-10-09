@@ -1,10 +1,7 @@
 import 'dart:convert';
 
 import 'package:hermes/features/project/application/contracts/project_task_models.dart'
-    show
-        AcceptanceItem,
-        AcceptanceVerifier,
-        AcceptanceVerifierKind;
+    show AcceptanceItem, AcceptanceVerifier, AcceptanceVerifierKind;
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/task/application/protocol/planning_runtime.dart';
@@ -116,11 +113,9 @@ class ProjectPlanningToolRegistry extends PlanningToolRegistryBase {
   ProjectPlanningToolRegistry({
     required ProjectPlanningContext context,
     ProjectPlanningToolProfile profile = ProjectPlanningToolProfile.maintenance,
-    bool includeProjectDetails = false,
   }) : _commands = ProjectPlanningToolCommandService(
          context: context,
          profile: profile,
-         includeProjectDetails: includeProjectDetails,
        );
 
   final ProjectPlanningToolCommandService _commands;

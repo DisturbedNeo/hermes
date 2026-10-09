@@ -483,7 +483,7 @@ void main() {
 
       await chat.send('/continue-project');
 
-      expect(chat.activeProject?.status, ProjectStatus.active);
+      expect(chat.activeProject?.status, ProjectStatus.completed);
       expect(
         chat.messageStore.messages.firstWhere(
           (m) => m.text == '/continue-project',
@@ -1198,53 +1198,45 @@ ModelCompletion _commandPlanProjectResponse(
   String reasoning = '',
 }) {
   final calls = <ModelToolCall>[
-    if (arguments['title'] != null || arguments['refinedGoal'] != null)
-      _toolCall('plan_set_project_details', {
-        'title': arguments['title'] ?? 'Project',
-        'refined_goal':
-            arguments['refinedGoal'] ?? arguments['refined_goal'] ?? '',
-        'constraints': arguments['constraints'] ?? const [],
-      }),
-    if (arguments['criteria'] is List &&
-        (arguments['criteria'] as List).isNotEmpty)
-      _toolCall('plan_add_criteria', {
-        'criteria': [
-          for (final raw in arguments['criteria'] as List)
-            if (raw is Map)
-              {
-                'ref': raw['id'] ?? raw['ref'] ?? '',
-                'statement': raw['statement'] ?? '',
-                'required': raw['required'] ?? true,
-                'verification_mode': 'mixed',
-              },
-        ],
-      }),
-    if (arguments['milestones'] is List &&
-        (arguments['milestones'] as List).isNotEmpty)
-      _toolCall('plan_add_milestones', {
-        'milestones': [
-          for (final raw in arguments['milestones'] as List)
-            if (raw is Map)
-              {
-                'ref': raw['id'] ?? raw['ref'] ?? '',
-                'title': raw['title'] ?? '',
-                'objective': raw['objective'] ?? '',
-                'criterion_refs': raw['criterionIds'] ?? const [],
-                'exit_conditions': raw['exitConditions'] ?? const [],
-                'order': raw['order'] ?? 1,
-              },
-        ],
-      }),
+    _toolCall('project_update', {
+      'criteria': [
+        for (final raw in arguments['criteria'] as List? ?? const [])
+          if (raw is Map)
+            {
+              'statement': raw['statement'] ?? '',
+              'required': raw['required'] ?? true,
+              'verification_mode': 'mixed',
+            },
+      ],
+      'milestones': [
+        for (final raw in arguments['milestones'] as List? ?? const [])
+          if (raw is Map)
+            {
+              'title': raw['title'] ?? '',
+              'objective': raw['objective'] ?? '',
+              'criterion_ids': [1],
+              'exit_conditions': raw['exitConditions'] ?? const [],
+              'order': raw['order'] ?? 1,
+            },
+      ],
+    }),
     for (final raw in (arguments['tasks'] as List? ?? const []))
       if (raw is Map)
-        _toolCall('plan_add_task', {
-          'ref': raw['id'] ?? raw['ref'] ?? '',
+        _toolCall('task_upsert', {
           'title': raw['title'] ?? '',
           'objective': raw['objective'] ?? '',
-          'acceptance': raw['acceptance'] ?? const [],
-          'dependency_refs': raw['dependsOnTaskIds'] ?? const [],
-          'milestone_ref': raw['milestoneId'],
-          'out_of_scope': raw['outOfScope'] ?? const [],
+          'acceptance': [
+            {
+              'ref': 'project-task-verified',
+              'statement': 'The project task is verified.',
+              'criterion_refs': ['1'],
+              'verifiers': [
+                {'kind': 'review', 'required': true},
+              ],
+            },
+          ],
+          'milestone_id': 1,
+          'out_of_scope': raw['outOfScope'] ?? const ['Unrelated work.'],
         }),
     _toolCall('plan_commit', {
       'summary': arguments['summary'] ?? 'Apply the project plan.',

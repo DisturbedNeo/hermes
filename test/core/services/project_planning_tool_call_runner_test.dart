@@ -7,6 +7,7 @@ import 'package:hermes/features/model/infrastructure/chat_client.dart';
 import 'package:hermes/features/model/application/model_completion_port.dart';
 import 'package:hermes/features/task/application/protocol/planning_runtime.dart';
 import 'package:hermes/features/project/runtime/project_planning_tools.dart';
+import 'package:hermes/features/project/runtime/project_planning_policy.dart';
 
 void main() {
   test('runs initial planning commands through commit', () async {
@@ -18,51 +19,47 @@ void main() {
     );
     final registry = ProjectPlanningToolRegistry(
       context: context,
-      includeProjectDetails: true,
+      profile: ProjectPlanningToolProfile.bootstrap,
     );
     final result = await _complete(
       client: _Client([
-        _call('plan_set_project_details', {
+        _call('project_submit_plan', {
           'title': 'Bounded Project',
           'refined_goal': 'Deliver one verified bounded outcome.',
           'constraints': ['Stay within the attached workspace.'],
-        }, id: 'call_details'),
-        _call('plan_add_criteria', {
           'criteria': [
-            {'ref': 'quality', 'statement': 'The bounded outcome is verified.'},
+            {'statement': 'The bounded outcome is verified.'},
           ],
-        }, id: 'call_criteria'),
-        _call('plan_add_milestones', {
           'milestones': [
             {
-              'ref': 'delivery',
               'title': 'Deliver the slice',
               'objective': 'Deliver and verify the bounded slice.',
-              'criterion_refs': ['quality'],
+              'criterion_ids': [1],
             },
           ],
-        }, id: 'call_milestone'),
-        _call('plan_add_task', {
-          'ref': 'implement',
-          'objective': 'Implement the bounded outcome.',
-          'acceptance': [
+          'tasks': [
             {
-              'ref': 'quality-proof',
-              'statement': 'The bounded outcome is verified.',
-              'criterion_refs': ['quality'],
-              'verifiers': [
+              'objective': 'Implement the bounded outcome.',
+              'acceptance': [
                 {
-                  'kind': 'command',
-                  'command': 'dart test',
-                  'working_directory': '.',
-                  'required': true,
+                  'ref': 'quality-proof',
+                  'statement': 'The bounded outcome is verified.',
+                  'criterion_refs': ['1'],
+                  'verifiers': [
+                    {
+                      'kind': 'command',
+                      'command': 'dart test',
+                      'working_directory': '.',
+                      'required': true,
+                    },
+                  ],
                 },
               ],
+              'milestone_id': 1,
+              'out_of_scope': ['Unrelated project work.'],
             },
           ],
-          'milestone_ref': 'delivery',
-          'out_of_scope': ['Unrelated project work.'],
-        }, id: 'call_tasks'),
+        }, id: 'call_submit'),
         _call('plan_commit', const {}, id: 'call_commit'),
       ]),
       registry: registry,
@@ -81,8 +78,8 @@ void main() {
     expect(context.draftTitle, 'Bounded Project');
     expect(context.draftRefinedGoal, 'Deliver one verified bounded outcome.');
     final metrics = result['planning_metrics'] as Map<String, dynamic>;
-    expect(metrics['planningCalls'], 5);
-    expect(metrics['planningCommandCount'], 5);
+    expect(metrics['planningCalls'], 2);
+    expect(metrics['planningCommandCount'], 2);
     expect(metrics['invalidCommandCount'], 0);
   });
 
@@ -124,10 +121,7 @@ void main() {
     ]);
     final result = await _complete(
       client: client,
-      registry: ProjectPlanningToolRegistry(
-        context: context,
-        includeProjectDetails: true,
-      ),
+      registry: ProjectPlanningToolRegistry(context: context),
       label: 'Test Unbounded Planning',
       system: 'Use planning tools.',
       user: 'Keep working until the draft is committed.',
@@ -182,7 +176,7 @@ void main() {
       final client = _Client([
         for (var index = 0; index < 33; index++)
           _call(
-            'plan_add_task',
+            'task_upsert',
             index.isEven
                 ? {'objective': 'Implement the bounded outcome.'}
                 : {
@@ -219,24 +213,23 @@ void main() {
       );
       final result = await _complete(
         client: _Client([
-          _call('plan_add_task', {
+          _call('task_upsert', {
             'ref': 'invalid',
             'objective': 'Missing criterion reference.',
             'acceptance': [],
           }, id: 'invalid-task'),
-          _call('plan_add_criteria', {
+          _call('project_update', {
             'criteria': [
-              {'ref': 'quality', 'statement': 'The outcome is verified.'},
+              {'statement': 'The outcome is verified.'},
             ],
           }, id: 'criteria'),
-          _call('plan_add_task', {
-            'ref': 'valid',
+          _call('task_upsert', {
             'objective': 'Verify the outcome.',
             'acceptance': [
               {
                 'ref': 'quality-proof',
                 'statement': 'The outcome is verified.',
-                'criterion_refs': ['quality'],
+                'criterion_refs': ['1'],
                 'verifiers': [
                   {'kind': 'review', 'required': true},
                 ],
@@ -246,10 +239,7 @@ void main() {
           }, id: 'valid-task'),
           _call('plan_commit', const {}, id: 'commit'),
         ]),
-        registry: ProjectPlanningToolRegistry(
-          context: context,
-          includeProjectDetails: true,
-        ),
+        registry: ProjectPlanningToolRegistry(context: context),
         label: 'Test Planning Metrics',
         system: 'Use planning tools.',
         user: 'Exercise an invalid command.',

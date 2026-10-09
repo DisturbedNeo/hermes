@@ -23,7 +23,6 @@ void main() {
         planningLimits: ProjectPlanningLimits.bootstrap,
       ),
       profile: ProjectPlanningToolProfile.bootstrap,
-      includeProjectDetails: true,
     );
     expect(bootstrap.toolDefinitions.map((tool) => tool.id).toSet(), {
       'project_view',
@@ -91,7 +90,6 @@ void main() {
     );
     expect(ids, isNot(contains('read_file')));
     expect(ids, isNot(contains('write_file')));
-    expect(ids, isNot(contains('plan_set_project_details')));
     expect(registry.allowsWorkspaceMutation, isFalse);
 
     final schema = registry.toolDefinitions
@@ -113,67 +111,60 @@ void main() {
             as Map;
     expect(verifierProperties.keys, containsAll(['kind', 'required']));
 
-    expect(ids, isNot(contains('plan_add_tasks')));
     expect(
       registry.toolDefinitions.map((item) => item.schema.toString()).join(),
       isNot(contains('ProjectAggregate')),
     );
   });
 
-  test(
-    'singular task creation is complete and reports all missing fields',
-    () async {
-      final context = ProjectPlanningContext(
-        project: _project(),
-        workspaceRoot: '/workspace',
-        approvalPolicy: ProjectPlanApprovalPolicy.never,
-      );
-      final registry = ProjectPlanningToolRegistry(context: context);
+  test('task upsert requires a complete acceptance payload', () async {
+    final context = ProjectPlanningContext(
+      project: _project(),
+      workspaceRoot: '/workspace',
+      approvalPolicy: ProjectPlanApprovalPolicy.never,
+    );
+    final registry = ProjectPlanningToolRegistry(context: context);
 
-      final invalid = await invokePlanning(registry, 'plan_add_task', {
-        'objective': 'Implement the bounded outcome.',
-      });
-      expect(invalid['ok'], isFalse);
-      expect(invalid['code'], 'invalid_task_spec');
-      expect(invalid['path'], 'task');
-      final details = invalid['details'] as Map;
-      expect(details['missing_fields'], ['acceptance', 'out_of_scope']);
-      expect(details['instruction'], contains('complete task object'));
+    final invalid = await invokePlanning(registry, 'task_upsert', {
+      'objective': 'Implement the bounded outcome.',
+    });
+    expect(invalid['ok'], isFalse);
+    expect(invalid['code'], 'invalid_argument');
+    expect(invalid['path'], 'task.acceptance');
 
-      final previewAfterFailure = await invokePlanning(
-        registry,
-        'plan_preview',
-        const {},
-      );
-      expect(previewAfterFailure['ok'], isTrue);
-      expect(
-        ((previewAfterFailure['preview'] as Map)['diff'] as Map)['added_tasks'],
-        isEmpty,
-      );
+    final previewAfterFailure = await invokePlanning(
+      registry,
+      'project_view',
+      const {},
+    );
+    expect(previewAfterFailure['ok'], isTrue);
+    expect(
+      ((previewAfterFailure['draft'] as Map)['diff'] as Map)['added_tasks'],
+      isEmpty,
+    );
 
-      final added = await invokePlanning(registry, 'plan_add_task', {
-        'ref': 'implement',
-        'objective': 'Implement the bounded outcome.',
-        'acceptance': [
-          {
-            'ref': 'outcome-verified',
-            'statement': 'The bounded outcome is verified.',
-            'criterion_refs': ['criterion_001'],
-            'verifiers': [
-              {'kind': 'review', 'required': true},
-            ],
-          },
-        ],
-        'out_of_scope': ['Unrelated project work.'],
-      });
-      expect(added['ok'], isTrue);
-      expect((added['task'] as Map)['ref'], 'implement');
-      expect(
-        ((added['state'] as Map)['diff'] as Map)['added_tasks'],
-        isNotEmpty,
-      );
-    },
-  );
+    final added = await invokePlanning(registry, 'task_upsert', {
+      'objective': 'Implement the bounded outcome.',
+      'acceptance': [
+        {
+          'ref': 'outcome-verified',
+          'statement': 'The bounded outcome is verified.',
+          'criterion_refs': ['criterion_001'],
+          'verifiers': [
+            {'kind': 'review', 'required': true},
+          ],
+        },
+      ],
+      'out_of_scope': ['Unrelated project work.'],
+    });
+    expect(added['ok'], isTrue);
+    expect(added['task_id'], 1);
+    final addedView = await invokePlanning(registry, 'project_view', {});
+    expect(
+      ((addedView['draft'] as Map)['diff'] as Map)['added_tasks'],
+      isNotEmpty,
+    );
+  });
 
   test('project view exposes approval and user-input control state', () {
     final now = DateTime(2026, 1, 1);
@@ -299,8 +290,7 @@ void main() {
         approvalPolicy: ProjectPlanApprovalPolicy.never,
       ),
     );
-    final added = await invokePlanning(registry, 'plan_add_task', {
-      'ref': 'checked',
+    final added = await invokePlanning(registry, 'task_upsert', {
       'objective': 'Implement the deterministic slice.',
       'acceptance': [
         {
@@ -322,7 +312,7 @@ void main() {
 
     expect(added['ok'], isTrue);
     final detail = await invokePlanning(registry, 'project_view', {
-      'task_ref': 'checked',
+      'task_id': 1,
     });
     expect(detail['ok'], isTrue);
     final task = detail['task_detail'] as Map;
@@ -348,8 +338,7 @@ void main() {
         approvalPolicy: ProjectPlanApprovalPolicy.never,
       ),
     );
-    final result = await invokePlanning(registry, 'plan_add_task', {
-      'ref': 'invalid',
+    final result = await invokePlanning(registry, 'task_upsert', {
       'objective': 'Implement the first outcome.',
       'acceptance': [
         {
@@ -366,11 +355,8 @@ void main() {
 
     expect(result['ok'], isFalse);
     expect(result['code'], 'unknown_reference');
-    final preview = await invokePlanning(registry, 'plan_preview', {});
-    expect(
-      ((preview['preview'] as Map)['diff'] as Map)['added_tasks'],
-      isEmpty,
-    );
+    final preview = await invokePlanning(registry, 'project_view', {});
+    expect(((preview['draft'] as Map)['diff'] as Map)['added_tasks'], isEmpty);
   });
 
   test(
@@ -398,28 +384,26 @@ void main() {
           approvalPolicy: ProjectPlanApprovalPolicy.never,
         ),
       );
-      final result = await invokePlanning(registry, 'plan_add_task', {
+      final result = await invokePlanning(registry, 'task_upsert', {
         'objective': 'Implement both deterministic outcomes.',
         'out_of_scope': ['Unrelated project work.'],
       });
 
       expect(result['ok'], isFalse);
-      expect(result['code'], 'invalid_task_spec');
+      expect(result['code'], 'invalid_argument');
+      expect(result['path'], 'task.acceptance');
+      final preview = await invokePlanning(registry, 'project_view', {});
       expect(
-        ((result['details'] as Map)['missing_fields'] as List),
-        contains('acceptance'),
-      );
-      final preview = await invokePlanning(registry, 'plan_preview', {});
-      expect(
-        ((preview['preview'] as Map)['diff'] as Map)['added_tasks'],
+        ((preview['draft'] as Map)['diff'] as Map)['added_tasks'],
         isEmpty,
       );
     },
   );
 
   test('single task creation requires an objective', () async {
-    final added = await invokePlanning(_registry(), 'plan_add_task', {
+    final added = await invokePlanning(_registry(), 'task_upsert', {
       'title': 'Verify the bounded outcome.',
+      'acceptance': [_acceptance('outcome', 'The outcome is verified.')],
       'out_of_scope': ['Unrelated project work.'],
     });
 
@@ -452,7 +436,6 @@ void main() {
         planningPass: ProjectPlanningPass.bootstrap,
       ),
       profile: ProjectPlanningToolProfile.bootstrap,
-      includeProjectDetails: true,
     );
 
     final ids = registry.toolDefinitions.map((item) => item.id).toSet();
@@ -476,7 +459,6 @@ void main() {
           project: _project(),
           workspaceRoot: '/workspace',
         ),
-        includeProjectDetails: true,
       );
 
       expect(
@@ -502,101 +484,84 @@ void main() {
     },
   );
 
-  test(
-    'draft commands use generated IDs and keep create separate from update',
-    () async {
-      final registry = _registry();
-      final added = await invokePlanning(registry, 'plan_add_task', {
-        'ref': 'scaffold',
-        'title': 'Scaffold the bounded slice',
-        'objective': 'Create the bounded project slice.',
-        'acceptance': [
-          _acceptance('slice', 'The bounded slice is implemented.'),
-        ],
-        'out_of_scope': ['Unrelated project work.'],
-      }, commandId: 'add-1');
+  test('task upsert creates and updates a task by numeric reference', () async {
+    final registry = _registry();
+    final added = await invokePlanning(registry, 'task_upsert', {
+      'title': 'Scaffold the bounded slice',
+      'objective': 'Create the bounded project slice.',
+      'acceptance': [_acceptance('slice', 'The bounded slice is implemented.')],
+      'out_of_scope': ['Unrelated project work.'],
+    }, commandId: 'add-1');
 
-      expect(added['ok'], isTrue);
-      final taskId = ((added['task'] as Map)['id']) as String;
-      expect(taskId, startsWith('task_'));
+    expect(added['ok'], isTrue);
+    expect(added['task_id'], 1);
 
-      final repeated = await invokePlanning(registry, 'plan_add_task', {
-        'ref': 'scaffold',
-        'title': 'Scaffold the bounded slice',
-        'objective': 'Create the bounded project slice.',
-        'acceptance': [
-          _acceptance('slice', 'The bounded slice is implemented.'),
-        ],
-        'out_of_scope': ['Unrelated project work.'],
-      }, commandId: 'add-1');
-      expect(repeated['ok'], isTrue);
-      expect(((repeated['task'] as Map)['id']) as String, taskId);
+    final repeated = await invokePlanning(registry, 'task_upsert', {
+      'title': 'Scaffold the bounded slice',
+      'objective': 'Create the bounded project slice.',
+      'acceptance': [_acceptance('slice', 'The bounded slice is implemented.')],
+      'out_of_scope': ['Unrelated project work.'],
+    }, commandId: 'add-1');
+    expect(repeated['ok'], isTrue);
+    expect(repeated['task_id'], 1);
 
-      final updated = await invokePlanning(registry, 'plan_update_task', {
-        'task': 'scaffold',
-        'title': 'Scaffold the reviewed slice',
-      });
-      expect(updated['ok'], isTrue);
-      expect((((updated['task'] as Map)['id']) as String), taskId);
+    final updated = await invokePlanning(registry, 'task_upsert', {
+      'task_id': 1,
+      'title': 'Scaffold the reviewed slice',
+    });
+    expect(updated['ok'], isTrue);
+    expect(updated['task_id'], 1);
 
-      final attemptedCreateWithId = await invokePlanning(
-        registry,
-        'plan_add_task',
-        {
-          'id': 'pretend_replace',
-          'title': 'Invalid replacement',
-          'objective': 'Invalid replacement.',
-          'acceptance': [_acceptance('checked', 'It is checked.')],
-          'out_of_scope': ['Unrelated work.'],
-        },
-      );
-      expect(attemptedCreateWithId['ok'], isFalse);
-      expect(attemptedCreateWithId['code'], 'invalid_argument');
-      expect(attemptedCreateWithId['path'], 'id');
+    final attemptedCreateWithId = await invokePlanning(
+      registry,
+      'task_upsert',
+      {
+        'id': 'pretend_replace',
+        'title': 'Invalid replacement',
+        'objective': 'Invalid replacement.',
+        'acceptance': [_acceptance('checked', 'It is checked.')],
+        'out_of_scope': ['Unrelated work.'],
+      },
+    );
+    expect(attemptedCreateWithId['ok'], isFalse);
+    expect(attemptedCreateWithId['code'], 'invalid_argument');
+    expect(attemptedCreateWithId['path'], 'id');
 
-      final view = await invokePlanning(registry, 'project_view', {});
-      expect(view['ok'], isTrue);
-      expect(
-        ((view['draft'] as Map)['diff'] as Map)['added_tasks'],
-        contains(taskId),
-      );
-      expect(
-        ((view['tasks'] as List).single as Map)['title'],
-        'Scaffold the reviewed slice',
-      );
+    final view = await invokePlanning(registry, 'project_view', {});
+    expect(view['ok'], isTrue);
+    expect(((view['draft'] as Map)['diff'] as Map)['added_tasks'], isNotEmpty);
+    expect(
+      ((view['tasks'] as List).single as Map)['title'],
+      'Scaffold the reviewed slice',
+    );
 
-      final detail = await invokePlanning(registry, 'project_view', {
-        'task_ref': 'scaffold',
-      });
-      expect(detail['ok'], isTrue);
-      expect((detail['task_detail'] as Map)['task_id'], 1);
-      expect(
-        (detail['task_detail'] as Map)['title'],
-        'Scaffold the reviewed slice',
-      );
-    },
-  );
+    final detail = await invokePlanning(registry, 'project_view', {
+      'task_id': 1,
+    });
+    expect(detail['ok'], isTrue);
+    expect((detail['task_detail'] as Map)['task_id'], 1);
+    expect(
+      (detail['task_detail'] as Map)['title'],
+      'Scaffold the reviewed slice',
+    );
+  });
 
   test(
     'preview and commit return compact validation and diff results',
     () async {
       final registry = _registry();
-      final added = await invokePlanning(registry, 'plan_add_task', {
-        'ref': 'checked',
+      final added = await invokePlanning(registry, 'task_upsert', {
         'objective': 'Implement and verify the bounded slice.',
         'acceptance': [_acceptance('slice', 'The bounded slice is verified.')],
         'out_of_scope': ['Unrelated project work.'],
       });
       expect(added['ok'], isTrue);
 
-      final preview = await invokePlanning(registry, 'plan_preview', {
-        'summary': 'Add the checked slice.',
-        'rationale': 'The criterion needs one bounded implementation task.',
-      });
+      final preview = await invokePlanning(registry, 'project_view', {});
       expect(preview['ok'], isTrue);
-      expect((preview['preview'] as Map)['valid'], isTrue);
+      expect((preview['draft'] as Map)['valid'], isTrue);
       expect(
-        ((preview['preview'] as Map)['diff'] as Map)['added_tasks'],
+        ((preview['draft'] as Map)['diff'] as Map)['added_tasks'],
         hasLength(1),
       );
 
@@ -605,43 +570,12 @@ void main() {
       expect(committed['changed'], isTrue);
       expect(committed['awaiting_approval'], isFalse);
 
-      final afterCommit = await invokePlanning(registry, 'plan_add_note', {
-        'kind': 'assumption',
-        'content': 'This must not be applied after commit.',
+      final afterCommit = await invokePlanning(registry, 'task_upsert', {
+        'task_id': 1,
+        'title': 'This must not be applied after commit.',
       });
       expect(afterCommit['ok'], isFalse);
       expect(afterCommit['code'], 'draft_closed');
-    },
-  );
-
-  test(
-    'a failed batch criteria command does not leave an earlier item in the draft',
-    () async {
-      final registry = _registry();
-      final result = await invokePlanning(registry, 'plan_add_criteria', {
-        'criteria': [
-          {'ref': 'temporary', 'statement': 'This item must be rolled back.'},
-          {'ref': 'invalid'},
-        ],
-      });
-
-      expect(result['ok'], isFalse);
-      expect(result['path'], 'criteria[1].statement');
-
-      final dependent = await invokePlanning(registry, 'plan_add_task', {
-        'ref': 'dependent',
-        'objective': 'Use a criterion that should not exist.',
-        'acceptance': [
-          _acceptance(
-            'temporary',
-            'The task is checked.',
-            criterion: 'temporary',
-          ),
-        ],
-        'out_of_scope': ['Unrelated work.'],
-      });
-      expect(dependent['ok'], isFalse);
-      expect(dependent['code'], 'unknown_reference');
     },
   );
 
@@ -909,10 +843,7 @@ void main() {
       final created = await invokePlanning(registry, 'task_upsert', {
         'objective': 'Implement the updated outcome.',
         'acceptance': [
-          _acceptance(
-            'updated-outcome',
-            'The updated outcome is implemented.',
-          ),
+          _acceptance('updated-outcome', 'The updated outcome is implemented.'),
         ],
         'milestone_id': 1,
         'out_of_scope': ['Unrelated work.'],

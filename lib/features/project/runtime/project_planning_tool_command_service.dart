@@ -4,7 +4,6 @@ class ProjectPlanningToolCommandService {
   ProjectPlanningToolCommandService({
     required this.context,
     this.profile = ProjectPlanningToolProfile.maintenance,
-    this.includeProjectDetails = false,
   }) {
     _workspaceCommands = ProjectWorkspacePlanningCommandService(context);
     _planCommands = ProjectPlanEditingCommandService(context);
@@ -12,7 +11,6 @@ class ProjectPlanningToolCommandService {
 
   final ProjectPlanningContext context;
   final ProjectPlanningToolProfile profile;
-  final bool includeProjectDetails;
   late final ProjectWorkspacePlanningCommandService _workspaceCommands;
   late final ProjectPlanEditingCommandService _planCommands;
 
@@ -68,7 +66,6 @@ class ProjectPlanningToolCommandService {
     String? commandId,
   }) async {
     if (!_allows(toolId) ||
-        (toolId == 'plan_set_project_details' && !includeProjectDetails) ||
         (toolId == 'planning_read_file' && context.workspaceReader == null)) {
       throw _argument(
         'tool_unavailable',
@@ -78,30 +75,12 @@ class ProjectPlanningToolCommandService {
       );
     }
     final result = switch (toolId) {
-      'plan_set_project_details' => _setProjectDetails(arguments),
       'planning_read_file' => await _planningReadFile(arguments),
       'project_view' => _view(arguments),
       'project_submit_plan' => _planCommands.submitPlan(arguments, commandId),
       'project_update' => _planCommands.updateProject(arguments, commandId),
       'task_upsert' => _planCommands.upsertTask(arguments, commandId),
-      'plan_add_criteria' => _planCommands.addCriteria(arguments, commandId),
-      'plan_add_milestones' => _planCommands.addMilestones(
-        arguments,
-        commandId,
-      ),
-      'plan_add_task' => _planCommands.addTask(arguments, commandId),
-      'plan_update_task' => _planCommands.updateTask(arguments, commandId),
-      'plan_set_dependency' => _planCommands.setDependency(
-        arguments,
-        commandId,
-      ),
-      'plan_set_disposition' => _planCommands.setDisposition(
-        arguments,
-        commandId,
-      ),
       'plan_split_task' => _planCommands.splitTask(arguments, commandId),
-      'plan_retry_task' => _planCommands.retryTask(arguments, commandId),
-      'plan_add_note' => _planCommands.addNote(arguments, commandId),
       'plan_set_workspace_orientation' =>
         _workspaceCommands.setWorkspaceOrientation(arguments, commandId),
       'plan_add_workspace_nodes' => _workspaceCommands.addWorkspaceNodes(
@@ -121,10 +100,6 @@ class ProjectPlanningToolCommandService {
         commandId,
       ),
       'plan_remove_workspace_item' => _workspaceCommands.removeWorkspaceItem(
-        arguments,
-        commandId,
-      ),
-      'plan_request_user_decision' => _planCommands.requestDecision(
         arguments,
         commandId,
       ),
@@ -152,23 +127,13 @@ class ProjectPlanningToolCommandService {
     'project_submit_plan',
     'project_update',
     'task_upsert',
-    'plan_set_project_details',
-    'plan_add_criteria',
-    'plan_add_milestones',
-    'plan_add_task',
-    'plan_update_task',
-    'plan_set_dependency',
-    'plan_set_disposition',
     'plan_split_task',
-    'plan_retry_task',
-    'plan_add_note',
     'plan_set_workspace_orientation',
     'plan_add_workspace_nodes',
     'plan_update_workspace_node',
     'plan_add_workspace_edges',
     'plan_update_workspace_edge',
     'plan_remove_workspace_item',
-    'plan_request_user_decision',
   };
 
   static const _agentMutationToolIds = {
@@ -178,7 +143,9 @@ class ProjectPlanningToolCommandService {
   };
 
   bool _allows(String toolId) {
-    if (toolId == 'planning_read_file' && context.workspaceReader != null) {
+    if (toolId == 'planning_read_file' &&
+        profile == ProjectPlanningToolProfile.bootstrap &&
+        context.workspaceReader != null) {
       return true;
     }
     if (toolId == 'project_view' || toolId == 'plan_commit') {
@@ -191,39 +158,9 @@ class ProjectPlanningToolCommandService {
       return profile == ProjectPlanningToolProfile.bootstrap ||
           profile == ProjectPlanningToolProfile.maintenance;
     }
-    if (includeProjectDetails && toolId == 'plan_set_project_details') {
-      return true;
-    }
     return switch (profile) {
-      ProjectPlanningToolProfile.bootstrap => const {
-        'planning_read_file',
-        'plan_set_workspace_orientation',
-        'plan_add_workspace_nodes',
-        'plan_update_workspace_node',
-        'plan_add_workspace_edges',
-        'plan_update_workspace_edge',
-        'plan_remove_workspace_item',
-      }.contains(toolId),
-      ProjectPlanningToolProfile.maintenance => const {
-        'planning_read_file',
-        'plan_add_criteria',
-        'plan_add_milestones',
-        'plan_add_task',
-        'plan_update_task',
-        'plan_set_dependency',
-        'plan_set_disposition',
-        'plan_split_task',
-        'plan_retry_task',
-        'plan_add_note',
-        'plan_set_workspace_orientation',
-        'plan_add_workspace_nodes',
-        'plan_update_workspace_node',
-        'plan_add_workspace_edges',
-        'plan_update_workspace_edge',
-        'plan_remove_workspace_item',
-        'plan_request_user_decision',
-        'plan_preview',
-      }.contains(toolId),
+      ProjectPlanningToolProfile.bootstrap => false,
+      ProjectPlanningToolProfile.maintenance => false,
       ProjectPlanningToolProfile.graphMaintenance => const {
         'project_view',
         'plan_set_workspace_orientation',
@@ -243,7 +180,6 @@ class ProjectPlanningToolCommandService {
       }.contains(toolId),
     };
   }
-
 
   bool _visible(String toolId) {
     if (profile == ProjectPlanningToolProfile.bootstrap &&
@@ -438,29 +374,6 @@ class ProjectPlanningToolCommandService {
       // Preserve the original reference for the view's error contract.
     }
     return reference;
-  }
-
-  Map<String, dynamic> _setProjectDetails(PlanningArguments arguments) {
-    _ensureOpen();
-    _keys(arguments, const {'title', 'refined_goal', 'constraints'});
-    final title = _requiredString(arguments['title'], 'title');
-    final refinedGoal = _requiredString(
-      arguments['refined_goal'],
-      'refined_goal',
-    );
-    final constraints = arguments.containsKey('constraints')
-        ? _stringList(arguments['constraints'], 'constraints')
-        : null;
-    context.setProjectDetails(
-      title: title,
-      refinedGoal: refinedGoal,
-      constraints: constraints,
-    );
-    return {
-      'title': context.draftTitle,
-      'refined_goal': context.draftRefinedGoal,
-      'constraints': context.draftConstraints,
-    };
   }
 
   String? _draftCriterionReference(String? reference, Iterable<String> ids) {
@@ -1234,9 +1147,6 @@ class ProjectPlanningToolCommandService {
       'Unsupported value $value. Expected one of ${values.map((item) => item.name).join(', ')}.',
     );
   }
-
-  static String? _partCommandId(String? commandId, int index) =>
-      commandId == null ? null : '$commandId:$index';
 
   static String? _scopedCommandId(String? commandId, String scope) =>
       commandId == null ? null : '$commandId:$scope';
