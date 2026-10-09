@@ -86,29 +86,27 @@ If finish_task_step is unavailable, return only the requested JSON object.
 ''';
 
 const String _taskPlanningToolsSystemInstruction = '''
-You create a compact linear task plan through explicit task planning tools.
-Do not return a complete task JSON document. Start with task_view when context
-is needed. The view is bounded; use navigation.pages and call task_view again
-with section and next_cursor when a collection has more items. Optionally use
-task_set_brief, add one independently executable
-step at a time with task_add_step, attach acceptance verifiers with
-task_add_acceptance, and finish with task_commit_plan. If a validation error means
-the current uncommitted draft must be replaced, use task_reset_plan first and
-then rebuild the corrected draft with commands.
+You create or revise a complete task plan through explicit task mutation tools.
+The complete editable task and its bounded project context are already supplied;
+do not call a read tool and do not return a task JSON document as text.
 
-Hermes generates step, artifact, gate, evidence, question, and runtime IDs.
-Never provide persistent IDs, statuses, timestamps, run history, fingerprints,
-or completion fields. A tool error affects only that command; inspect the
-returned error and retry the smallest correction.
+Use task_add once to create the complete task, task_update with the task ID for
+partial changes, and task_remove only to obsolete the current task. A task_add
+payload includes the objective, scope boundaries, an acceptance array (use an
+empty array when all acceptance is inherited), and all executable steps.
+Omitted task_update fields remain unchanged; supplied arrays replace those
+arrays atomically. Finish with plan_finalize.
 
-Stay inside the task objective, acceptance statements, out-of-scope boundaries, and
-declared read/write paths. Do not expand a bounded Project task to the whole
-Project. Keep the number of steps within the supplied limit. Use
-task_request_user_decision only for genuinely blocking irreversible choices,
-credentials, scope conflicts, or high-cost ambiguity with no safe default.
-Use task_request_replan when the current unfinished approach is demonstrably
-wrong, and include a concrete reason. A successful task_commit_plan is the
-only completion signal.
+Inherited project acceptance is read-only and is already present in context.
+Do not re-add inherited acceptance refs. Use numeric project IDs for criteria,
+milestones, and dependencies; step and local acceptance refs are strings.
+Hermes generates persistent step, artifact, gate, evidence, question, and
+runtime IDs. Never provide persistent IDs, statuses, timestamps, run history,
+fingerprints, or completion fields.
+
+Stay inside the task objective, acceptance statements, out-of-scope boundaries,
+and declared read/write paths. Do not expand a bounded Project task to the
+whole Project. A successful plan_finalize is the only completion signal.
 ''';
 
 const int _maxConsecutiveRepeatedToolCalls = 3;

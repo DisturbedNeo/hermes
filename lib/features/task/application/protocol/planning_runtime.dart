@@ -36,7 +36,7 @@ abstract class PlanningToolRegistryBase implements PlanningToolRegistry {
   /// Allows a domain registry to preserve its existing closed-session code.
   String get closedCode => 'planning_closed';
 
-  String get closedMessage => 'The planning draft was already committed.';
+  String get closedMessage => 'The planning session was already finalized.';
 
   @override
   Future<PlanningResponse> invoke(
@@ -73,7 +73,9 @@ abstract class PlanningToolRegistryBase implements PlanningToolRegistry {
       if (key != null && key.isNotEmpty) {
         _commands[key] = _PlanningAppliedCommand(fingerprint!, response);
       }
-      if (toolId == terminalToolId && response.ok) {
+      if ((toolId == terminalToolId ||
+              toolId == 'project_request_user_decision') &&
+          response.ok) {
         _terminalCommitted = true;
       }
       return response;
@@ -319,7 +321,8 @@ class PlanningToolCallRunner {
             details['repairable'] == false) {
           return _result(payload: result!, metrics: metrics, modelCalls: turn);
         }
-        if (call.name == request.registry.terminalToolId &&
+        if ((call.name == request.registry.terminalToolId ||
+                call.name == 'project_request_user_decision') &&
             result?['ok'] == true) {
           for (
             var remaining = index + 1;
@@ -333,7 +336,7 @@ class PlanningToolCallRunner {
                 label: request.label,
                 text: jsonEncode({
                   'skipped': true,
-                  'reason': 'The planning commit ended the draft.',
+                  'reason': 'The terminal planning command ended the session.',
                 }),
                 toolIndex: remaining,
               ),
@@ -346,7 +349,8 @@ class PlanningToolCallRunner {
                   'ok': false,
                   'code': 'planning_tool_failed',
                   'path': request.registry.terminalToolId,
-                  'message': 'The planning commit returned an invalid result.',
+                  'message':
+                      'The terminal planning command returned an invalid result.',
                 },
             metrics: metrics,
             modelCalls: turn,

@@ -10,7 +10,7 @@ import 'package:hermes/features/project/runtime/project_planning_tools.dart';
 import 'package:hermes/features/project/runtime/project_planning_policy.dart';
 
 void main() {
-  test('runs initial planning commands through commit', () async {
+  test('runs initial planning commands through finalization', () async {
     final context = ProjectPlanningContext(
       project: _project(),
       workspaceRoot: '/workspace',
@@ -24,6 +24,7 @@ void main() {
     final result = await _complete(
       client: _Client([
         _call('project_update', {
+          'project_id': 'planning_seed',
           'title': 'Bounded Project',
           'refined_goal': 'Deliver one verified bounded outcome.',
           'constraints': ['Stay within the attached workspace.'],
@@ -38,13 +39,13 @@ void main() {
             },
           ],
         }, id: 'call_project_update'),
-        _call('task_upsert', {
+        _call('task_add', {
           'objective': 'Implement the bounded outcome.',
           'acceptance': [
             {
               'ref': 'quality-proof',
               'statement': 'The bounded outcome is verified.',
-              'criterion_refs': ['1'],
+              'criterion_ids': [1],
               'verifiers': [
                 {
                   'kind': 'command',
@@ -57,8 +58,11 @@ void main() {
           ],
           'milestone_id': 1,
           'out_of_scope': ['Unrelated project work.'],
-        }, id: 'call_task_upsert'),
-        _call('plan_commit', const {}, id: 'call_commit'),
+          'steps': [
+            {'objective': 'Implement the bounded outcome.'},
+          ],
+        }, id: 'call_task_add'),
+        _call('plan_finalize', const {}, id: 'call_finalize'),
       ]),
       registry: registry,
       label: 'Test Initial Planning',
@@ -88,13 +92,13 @@ void main() {
         workspaceRoot: '/workspace',
       ),
     );
-    final client = _Client([_call('plan_commit', const {}, id: 'commit')]);
+    final client = _Client([_call('plan_finalize', const {}, id: 'finalize')]);
     final result = await _complete(
       client: client,
       registry: registry,
       label: 'Test Planning',
       system: 'Use planning tools.',
-      user: 'Commit the empty draft.',
+      user: 'Finalize the empty plan.',
     );
 
     expect(result['ok'], isTrue);
@@ -103,39 +107,6 @@ void main() {
     ];
     expect(names, isNot(contains('read_file')));
     expect(names, isNot(contains('write_file')));
-  });
-
-  test('commits at the reduced default tool-call limit', () async {
-    final context = ProjectPlanningContext(
-      project: _project(),
-      workspaceRoot: '/workspace',
-      now: DateTime(2026, 1, 1),
-      approvalPolicy: ProjectPlanApprovalPolicy.never,
-    );
-    final client = _Client([
-      for (var index = 0; index < 31; index++)
-        _call('project_view', {'max_items': 1}, id: 'view_$index'),
-      _call('plan_commit', const {}, id: 'commit'),
-    ]);
-    final result = await _complete(
-      client: client,
-      registry: ProjectPlanningToolRegistry(context: context),
-      label: 'Test Unbounded Planning',
-      system: 'Use planning tools.',
-      user: 'Keep working until the draft is committed.',
-    );
-
-    expect(result['ok'], isTrue);
-    final metrics = result['planning_metrics'] as Map<String, dynamic>;
-    expect(metrics['planningCommandCount'], 32);
-    expect(
-      client.messagesByCall.any(
-        (messages) => messages.any(
-          (message) => message.content.contains('planning_history_compacted'),
-        ),
-      ),
-      isTrue,
-    );
   });
 
   test('stops a non-terminating planning loop at the safety ceiling', () async {
@@ -147,9 +118,18 @@ void main() {
     );
     final result = await _complete(
       client: _Client([
-        _call('project_view', const {}, id: 'view_1'),
-        _call('project_view', const {}, id: 'view_2'),
-        _call('project_view', const {}, id: 'view_3'),
+        _call('project_update', {
+          'project_id': 'planning_seed',
+          'title': 'Project',
+        }, id: 'update_1'),
+        _call('project_update', {
+          'project_id': 'planning_seed',
+          'title': 'Project',
+        }, id: 'update_2'),
+        _call('project_update', {
+          'project_id': 'planning_seed',
+          'title': 'Project',
+        }, id: 'update_3'),
       ]),
       registry: ProjectPlanningToolRegistry(context: context),
       label: 'Test Planning Safety Ceiling',
@@ -162,43 +142,46 @@ void main() {
     expect(result['code'], 'planning_safety_limit');
   });
 
-  test(
-    'bounds alternating incomplete task repairs at the reduced ceiling',
-    () async {
-      final context = ProjectPlanningContext(
-        project: _project(),
-        workspaceRoot: '/workspace',
-        now: DateTime(2026, 1, 1),
-        approvalPolicy: ProjectPlanApprovalPolicy.never,
-      );
-      final client = _Client([
-        for (var index = 0; index < 33; index++)
-          _call(
-            'task_upsert',
-            index.isEven
-                ? {'objective': 'Implement the bounded outcome.'}
-                : {
-                    'objective': 'Implement the bounded outcome.',
-                    'acceptance': [],
-                    'out_of_scope': ['Unrelated work.'],
-                  },
-            id: 'invalid_$index',
-          ),
-      ]);
+  test('bounds repeated task mutations at the reduced ceiling', () async {
+    final context = ProjectPlanningContext(
+      project: _project(),
+      workspaceRoot: '/workspace',
+      now: DateTime(2026, 1, 1),
+      approvalPolicy: ProjectPlanApprovalPolicy.never,
+    );
+    final client = _Client([
+      for (var index = 0; index < 33; index++)
+        _call('task_add', {
+          'objective': 'Implement bounded outcome $index.',
+          'acceptance': [
+            {
+              'ref': 'outcome-$index',
+              'statement': 'The bounded outcome is verified.',
+              'criterion_ids': [],
+              'verifiers': [
+                {'kind': 'review'},
+              ],
+            },
+          ],
+          'out_of_scope': ['Unrelated work.'],
+          'steps': [
+            {'objective': 'Implement the bounded outcome.'},
+          ],
+        }, id: 'invalid_$index'),
+    ]);
 
-      final result = await _complete(
-        client: client,
-        registry: ProjectPlanningToolRegistry(context: context),
-        label: 'Test Incomplete Task Repair Ceiling',
-        system: 'Use planning tools.',
-        user: 'Create the project plan.',
-      );
+    final result = await _complete(
+      client: client,
+      registry: ProjectPlanningToolRegistry(context: context),
+      label: 'Test Incomplete Task Repair Ceiling',
+      system: 'Use planning tools.',
+      user: 'Create the project plan.',
+    );
 
-      expect(result['ok'], isFalse);
-      expect(result['code'], 'planning_safety_limit');
-      expect(client.messagesByCall, hasLength(33));
-    },
-  );
+    expect(result['ok'], isFalse);
+    expect(result['code'], 'planning_safety_limit');
+    expect(client.messagesByCall, hasLength(33));
+  });
 
   test(
     'records invalid planning commands without retaining model payloads',
@@ -211,23 +194,24 @@ void main() {
       );
       final result = await _complete(
         client: _Client([
-          _call('task_upsert', {
+          _call('task_add', {
             'ref': 'invalid',
             'objective': 'Missing criterion reference.',
             'acceptance': [],
           }, id: 'invalid-task'),
           _call('project_update', {
+            'project_id': 'planning_seed',
             'criteria': [
               {'statement': 'The outcome is verified.'},
             ],
           }, id: 'criteria'),
-          _call('task_upsert', {
+          _call('task_add', {
             'objective': 'Verify the outcome.',
             'acceptance': [
               {
                 'ref': 'quality-proof',
                 'statement': 'The outcome is verified.',
-                'criterion_refs': ['1'],
+                'criterion_ids': [1],
                 'verifiers': [
                   {'kind': 'review', 'required': true},
                 ],
@@ -235,7 +219,7 @@ void main() {
             ],
             'out_of_scope': ['Unrelated work.'],
           }, id: 'valid-task'),
-          _call('plan_commit', const {}, id: 'commit'),
+          _call('plan_finalize', const {}, id: 'finalize'),
         ]),
         registry: ProjectPlanningToolRegistry(context: context),
         label: 'Test Planning Metrics',

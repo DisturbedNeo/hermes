@@ -13,7 +13,7 @@ import 'package:hermes/platform/workspace_sandbox.dart';
 
 void main() {
   test(
-    'TaskController creates a plan through incremental task commands',
+    'TaskController creates a complete plan through CRUD task commands',
     () async {
       final root = await Directory.systemTemp.createTemp(
         'hermes_incremental_task_',
@@ -27,31 +27,35 @@ void main() {
         sandbox: sandbox,
       );
       final client = _QueueClient([
-        _call('task_set_brief', {
+        _call('task_add', {
           'title': 'Incremental task',
           'objective': 'Implement the bounded change.',
-        }),
-        _call('task_add_acceptance', {
-          'ref': 'bounded-change',
-          'statement': 'The bounded change is complete.',
-          'criterion_refs': [],
-          'verifiers': [
+          'out_of_scope': ['Unrelated work.'],
+          'acceptance': [
             {
-              'kind': 'command',
-              'command': 'dart test test/example_test.dart',
-              'working_directory': '.',
-              'required': true,
+              'ref': 'bounded-change',
+              'statement': 'The bounded change is complete.',
+              'criterion_ids': [],
+              'verifiers': [
+                {
+                  'kind': 'command',
+                  'command': 'dart test test/example_test.dart',
+                },
+              ],
+            },
+          ],
+          'steps': [
+            {
+              'ref': 'implement',
+              'title': 'Implement change',
+              'objective': 'Implement the bounded change.',
+              'instructions': ['Make the change and keep it focused.'],
+              'may_edit_files': true,
+              'acceptance_refs': ['bounded-change'],
             },
           ],
         }),
-        _call('task_add_step', {
-          'ref': 'implement',
-          'title': 'Implement change',
-          'objective': 'Implement the bounded change.',
-          'instructions': ['Make the change and keep it focused.'],
-          'may_edit_files': true,
-        }),
-        _call('task_commit_plan', const {}),
+        _call('plan_finalize', const {}),
       ]);
 
       final task = await service.createTask(
@@ -71,19 +75,16 @@ void main() {
       expect(task.steps.single.id, startsWith('step_'));
       expect(task.acceptance, isNotEmpty);
       expect(
-        task.acceptance.expand((item) => item.verifiers).map((verifier) => verifier.kind),
+        task.acceptance
+            .expand((item) => item.verifiers)
+            .map((verifier) => verifier.kind),
         contains(AcceptanceVerifierKind.command),
       );
-      expect(task.planningMetrics.planningCalls, 4);
-      expect(task.planningMetrics.planningCommandCount, 4);
+      expect(task.planningMetrics.planningCalls, 2);
+      expect(task.planningMetrics.planningCommandCount, 2);
       expect(task.planningMetrics.promptTokenEstimate, greaterThan(0));
       expect(task.planningMetrics.toolResultTokenEstimate, greaterThan(0));
-      expect(client.toolNames, [
-        'task_set_brief',
-        'task_add_acceptance',
-        'task_add_step',
-        'task_commit_plan',
-      ]);
+      expect(client.toolNames, ['task_add', 'plan_finalize']);
     },
   );
 

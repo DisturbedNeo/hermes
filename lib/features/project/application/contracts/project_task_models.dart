@@ -56,10 +56,43 @@ abstract interface class TaskExecutionSource {
 /// persistence metadata. The project planner can exchange this shape without
 /// accidentally treating an executable task document as authoritative plan
 /// input.
+class ProjectTaskStepSpec {
+  final String ref;
+  final String title;
+  final String objective;
+  final List<String> instructions;
+  final bool mayEditFiles;
+  final List<ProjectTaskArtifactSpec> artifacts;
+  final List<String> acceptanceRefs;
+
+  const ProjectTaskStepSpec({
+    this.ref = '',
+    this.title = '',
+    this.objective = '',
+    this.instructions = const [],
+    this.mayEditFiles = false,
+    this.artifacts = const [],
+    this.acceptanceRefs = const [],
+  });
+}
+
+class ProjectTaskArtifactSpec {
+  final String path;
+  final String? description;
+  final String kind;
+
+  const ProjectTaskArtifactSpec({
+    required this.path,
+    this.description,
+    this.kind = 'file',
+  });
+}
+
 class ProjectTaskSpec {
   final String ref;
   final String title;
   final String objective;
+  final List<ProjectTaskStepSpec> steps;
   final List<AcceptanceItem> acceptance;
   final List<String> dependencyRefs;
   final String? milestoneRef;
@@ -78,6 +111,7 @@ class ProjectTaskSpec {
     this.ref = '',
     this.title = '',
     this.objective = '',
+    this.steps = const [],
     this.acceptance = const [],
     this.dependencyRefs = const [],
     this.milestoneRef,

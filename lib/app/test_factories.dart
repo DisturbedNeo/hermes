@@ -188,7 +188,6 @@ ProjectApplication createTestProjectApplication({
   final resolvedStructuredOutput =
       structuredOutput ?? const StructuredPlanningOutputService();
   final resolvedModelCalls = ProjectModelCalls(
-    sandbox: resolvedSandbox,
     planningRunner: resolvedPlanningRunner,
     structuredOutput: resolvedStructuredOutput,
   );

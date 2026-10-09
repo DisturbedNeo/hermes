@@ -36,6 +36,10 @@
       "verificationMode": "deterministic"
     }
   ],
+  "taskAgentNumber": null,
+  "criterionAgentNumbers": {},
+  "milestoneAgentNumbers": {},
+  "taskAgentNumbers": {},
   "readPaths": [],
   "writePaths": [],
   "maxSteps": 4

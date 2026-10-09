@@ -641,8 +641,8 @@ extension ChatSessionStateOperations on ChatSessionOrchestrator {
     String? currentUserRequest,
   }) {
     // Loading and payload construction must preserve the transcript exactly.
-    // The only exception is a legacy/invalid snapshot with no system message;
-    // repair that once at the boundary rather than replacing an existing one.
+    // If a snapshot has no system message, repair it once at the boundary
+    // rather than replacing an existing one.
     if (messages.any((message) => message.role == MessageRole.system)) {
       return List<Bubble>.of(messages);
     }

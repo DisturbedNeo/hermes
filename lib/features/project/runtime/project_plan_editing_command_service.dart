@@ -10,24 +10,38 @@ class ProjectPlanEditingCommandService {
       throw ProjectPlanningToolCommandService._argument(
         'planning_closed',
         'tool',
-        'The planning draft has already been committed.',
+        'The planning session has already been finalized.',
       );
     }
   }
 
-  Map<String, dynamic> updateProject(
+  Future<Map<String, dynamic>> updateProject(
     PlanningArguments arguments,
     String? commandId,
-  ) {
+  ) async {
     _ensureOpen();
     ProjectPlanningToolCommandService._keys(arguments, const {
+      'project_id',
       'title',
       'refined_goal',
       'constraints',
       'criteria',
       'milestones',
     });
-    final hasChange = arguments.keys.any((key) => arguments[key] != null);
+    final projectId = ProjectPlanningToolCommandService._requiredString(
+      arguments['project_id'],
+      'project_id',
+    );
+    if (projectId != context.project.id) {
+      throw ProjectPlanningToolCommandService._argument(
+        'unknown_reference',
+        'project_id',
+        'Project $projectId is not the active project.',
+      );
+    }
+    final hasChange = arguments.keys.any(
+      (key) => key != 'project_id' && arguments[key] != null,
+    );
     if (!hasChange) {
       throw ProjectPlanningToolCommandService._argument(
         'empty_update',
@@ -196,13 +210,19 @@ class ProjectPlanEditingCommandService {
         }
       }
     });
-    return {'updated': true};
+    final persisted = await context.persistDraft();
+    return {
+      'updated': true,
+      'project': _projectWire(persisted),
+      'persistence_revision': persisted.persistenceRevision,
+      'next_action': 'plan_finalize',
+    };
   }
 
-  Map<String, dynamic> upsertTask(
+  Future<Map<String, dynamic>> _mutateTask(
     PlanningArguments arguments,
     String? commandId,
-  ) {
+  ) async {
     _ensureOpen();
     ProjectPlanningToolCommandService._keys(arguments, const {
       'task_id',
@@ -222,6 +242,7 @@ class ProjectPlanEditingCommandService {
       'write_paths',
       'out_of_scope',
       'context',
+      'steps',
       'disposition',
     });
     final taskNumber = ProjectPlanningToolCommandService._optionalInt(
@@ -230,125 +251,327 @@ class ProjectPlanEditingCommandService {
     );
     late Map<String, dynamic> transformed;
     late String taskId;
-    context.builder.transaction(() {
-      transformed = _transformTaskInput(arguments.toWire(), 'task');
-      if (taskNumber == null) {
-        final taskInput = Map<String, dynamic>.from(transformed)
-          ..remove('inline_criterion_refs');
-        final spec = ProjectPlanningToolCommandService._taskSpec(
-          taskInput,
-          'task',
-          requireObjective: true,
-        );
-        taskId = context.builder.addTask(
-          spec,
-          commandId: ProjectPlanningToolCommandService._scopedCommandId(
-            commandId,
+    final suppliedSteps = arguments.containsKey('steps')
+        ? ProjectPlanningToolCommandService._steps(arguments['steps'], 'steps')
+        : null;
+    final previousTaskSteps = <String, List<ProjectTaskStepSpec>>{};
+    for (final task in context.currentProject.tasks) {
+      final steps = context.taskStepsFor(task.id);
+      if (steps != null) previousTaskSteps[task.id] = steps;
+    }
+    try {
+      context.builder.transaction(() {
+        transformed = _transformTaskInput(arguments.toWire(), 'task');
+        if (taskNumber == null) {
+          final taskInput = Map<String, dynamic>.from(transformed)
+            ..remove('inline_criterion_refs');
+          final spec = ProjectPlanningToolCommandService._taskSpec(
+            taskInput,
             'task',
-          ),
+            requireObjective: true,
+          );
+          taskId = context.builder.addTask(
+            spec,
+            commandId: ProjectPlanningToolCommandService._scopedCommandId(
+              commandId,
+              'task',
+            ),
+          );
+          context.setTaskSteps(taskId, spec.steps);
+        } else {
+          final existingTaskId = context.builder.taskIdFor(
+            taskNumber.toString(),
+          );
+          final updated = context.builder.updateTask(
+            existingTaskId,
+            title: ProjectPlanningToolCommandService._optionalString(
+              arguments['title'],
+              'title',
+            ),
+            objective: ProjectPlanningToolCommandService._optionalString(
+              arguments['objective'],
+              'objective',
+            ),
+            acceptance: arguments.containsKey('acceptance')
+                ? ProjectPlanningToolCommandService._acceptance(
+                    transformed['acceptance'],
+                    'acceptance',
+                  )
+                : null,
+            dependencyRefs: arguments.containsKey('dependency_task_ids')
+                ? (transformed['dependency_refs'] as List).cast<String>()
+                : null,
+            milestoneRef: arguments.containsKey('milestone_id')
+                ? transformed['milestone_ref'] as String?
+                : null,
+            clearMilestone:
+                ProjectPlanningToolCommandService._optionalBool(
+                  arguments['clear_milestone'],
+                  'clear_milestone',
+                ) ??
+                false,
+            priority: ProjectPlanningToolCommandService._enumValue(
+              TaskPriority.values,
+              arguments['priority'],
+              'priority',
+            ),
+            risk: ProjectPlanningToolCommandService._enumValue(
+              TaskRisk.values,
+              arguments['risk'],
+              'risk',
+            ),
+            riskReduction: ProjectPlanningToolCommandService._enumValue(
+              ProjectRiskReduction.values,
+              arguments['risk_reduction'],
+              'risk_reduction',
+            ),
+            effort: ProjectPlanningToolCommandService._enumValue(
+              TaskEffort.values,
+              arguments['effort'],
+              'effort',
+            ),
+            selectionRationale:
+                ProjectPlanningToolCommandService._optionalString(
+                  arguments['selection_rationale'],
+                  'selection_rationale',
+                ),
+            constraints: ProjectPlanningToolCommandService._optionalStringList(
+              arguments['constraints'],
+              'constraints',
+            ),
+            readPaths: ProjectPlanningToolCommandService._optionalStringList(
+              arguments['read_paths'],
+              'read_paths',
+            ),
+            writePaths: ProjectPlanningToolCommandService._optionalStringList(
+              arguments['write_paths'],
+              'write_paths',
+            ),
+            outOfScope: ProjectPlanningToolCommandService._optionalStringList(
+              arguments['out_of_scope'],
+              'out_of_scope',
+            ),
+            context: ProjectPlanningToolCommandService._optionalStringList(
+              arguments['context'],
+              'context',
+            ),
+            commandId: ProjectPlanningToolCommandService._scopedCommandId(
+              commandId,
+              'task',
+            ),
+          );
+          taskId = updated.id;
+          if (suppliedSteps != null) {
+            context.setTaskSteps(taskId, suppliedSteps);
+          }
+        }
+        final disposition = ProjectPlanningToolCommandService._enumValue(
+          ProjectPlanTaskDisposition.values,
+          arguments['disposition'],
+          'disposition',
         );
-      } else {
-        final existingTaskId = context.builder.taskIdFor(taskNumber.toString());
-        final updated = context.builder.updateTask(
-          existingTaskId,
-          title: ProjectPlanningToolCommandService._optionalString(
-            arguments['title'],
-            'title',
-          ),
-          objective: ProjectPlanningToolCommandService._optionalString(
-            arguments['objective'],
-            'objective',
-          ),
-          acceptance: arguments.containsKey('acceptance')
-              ? ProjectPlanningToolCommandService._acceptance(
-                  transformed['acceptance'],
-                  'acceptance',
-                )
-              : null,
-          dependencyRefs: arguments.containsKey('dependency_task_ids')
-              ? (transformed['dependency_refs'] as List).cast<String>()
-              : null,
-          milestoneRef: arguments.containsKey('milestone_id')
-              ? transformed['milestone_ref'] as String?
-              : null,
-          clearMilestone:
-              ProjectPlanningToolCommandService._optionalBool(
-                arguments['clear_milestone'],
-                'clear_milestone',
-              ) ??
-              false,
-          priority: ProjectPlanningToolCommandService._enumValue(
-            TaskPriority.values,
-            arguments['priority'],
-            'priority',
-          ),
-          risk: ProjectPlanningToolCommandService._enumValue(
-            TaskRisk.values,
-            arguments['risk'],
-            'risk',
-          ),
-          riskReduction: ProjectPlanningToolCommandService._enumValue(
-            ProjectRiskReduction.values,
-            arguments['risk_reduction'],
-            'risk_reduction',
-          ),
-          effort: ProjectPlanningToolCommandService._enumValue(
-            TaskEffort.values,
-            arguments['effort'],
-            'effort',
-          ),
-          selectionRationale: ProjectPlanningToolCommandService._optionalString(
-            arguments['selection_rationale'],
-            'selection_rationale',
-          ),
-          constraints: ProjectPlanningToolCommandService._optionalStringList(
-            arguments['constraints'],
-            'constraints',
-          ),
-          readPaths: ProjectPlanningToolCommandService._optionalStringList(
-            arguments['read_paths'],
-            'read_paths',
-          ),
-          writePaths: ProjectPlanningToolCommandService._optionalStringList(
-            arguments['write_paths'],
-            'write_paths',
-          ),
-          outOfScope: ProjectPlanningToolCommandService._optionalStringList(
-            arguments['out_of_scope'],
-            'out_of_scope',
-          ),
-          context: ProjectPlanningToolCommandService._optionalStringList(
-            arguments['context'],
-            'context',
-          ),
-          commandId: ProjectPlanningToolCommandService._scopedCommandId(
-            commandId,
-            'task',
-          ),
-        );
-        taskId = updated.id;
-      }
-      final disposition = ProjectPlanningToolCommandService._enumValue(
-        ProjectPlanTaskDisposition.values,
-        arguments['disposition'],
-        'disposition',
-      );
-      if (disposition != null) {
-        context.builder.setDisposition(
-          taskReference: taskId,
-          disposition: disposition,
-          commandId: ProjectPlanningToolCommandService._scopedCommandId(
-            commandId,
-            'disposition',
-          ),
-        );
-      }
-    });
+        if (disposition != null) {
+          context.builder.setDisposition(
+            taskReference: taskId,
+            disposition: disposition,
+            commandId: ProjectPlanningToolCommandService._scopedCommandId(
+              commandId,
+              'disposition',
+            ),
+          );
+        }
+      });
+    } catch (_) {
+      context.restoreTaskSteps(previousTaskSteps);
+      rethrow;
+    }
+    final persisted = await context.persistDraft();
     return {
       'task_id': context.builder.taskAgentNumberFor(taskId),
       'created': taskNumber == null,
+      'task': _taskWire(
+        persisted.tasks.firstWhere((task) => task.id == taskId),
+      ),
+      'persistence_revision': persisted.persistenceRevision,
+      'next_action': 'plan_finalize',
     };
   }
+
+  Future<Map<String, dynamic>> addTask(
+    PlanningArguments arguments,
+    String? commandId,
+  ) async {
+    ProjectPlanningToolCommandService._keys(arguments, const {
+      'title',
+      'objective',
+      'acceptance',
+      'dependency_task_ids',
+      'milestone_id',
+      'priority',
+      'risk',
+      'risk_reduction',
+      'effort',
+      'selection_rationale',
+      'constraints',
+      'read_paths',
+      'write_paths',
+      'out_of_scope',
+      'context',
+      'steps',
+    });
+    if (arguments.containsKey('task_id')) {
+      throw ProjectPlanningToolCommandService._argument(
+        'invalid_argument',
+        'task_id',
+        'task_add does not accept an existing task ID.',
+      );
+    }
+    return _mutateTask(arguments, commandId);
+  }
+
+  Future<Map<String, dynamic>> updateTask(
+    PlanningArguments arguments,
+    String? commandId,
+  ) async {
+    if (!arguments.containsKey('task_id')) {
+      throw ProjectPlanningToolCommandService._argument(
+        'missing_argument',
+        'task_id',
+        'task_update requires a task ID.',
+      );
+    }
+    return _mutateTask(arguments, commandId);
+  }
+
+  Future<Map<String, dynamic>> removeTask(
+    PlanningArguments arguments,
+    String? commandId,
+  ) async {
+    _ensureOpen();
+    ProjectPlanningToolCommandService._keys(arguments, const {'task_id'});
+    final taskNumber = ProjectPlanningToolCommandService._optionalInt(
+      arguments['task_id'],
+      'task_id',
+    );
+    if (taskNumber == null) {
+      throw ProjectPlanningToolCommandService._argument(
+        'missing_argument',
+        'task_id',
+        'task_remove requires a task ID.',
+      );
+    }
+    final taskId = context.builder.taskIdFor(taskNumber.toString());
+    context.builder.setDisposition(
+      taskReference: taskId,
+      disposition: ProjectPlanTaskDisposition.obsolete,
+      commandId: commandId,
+    );
+    final persisted = await context.persistDraft();
+    return {
+      'removed': true,
+      'task_id': taskNumber,
+      'task': _taskWire(
+        persisted.tasks.firstWhere((task) => task.id == taskId),
+      ),
+      'persistence_revision': persisted.persistenceRevision,
+      'next_action': 'plan_finalize',
+    };
+  }
+
+  Future<Map<String, dynamic>> requestUserDecision(
+    PlanningArguments arguments,
+    String? commandId,
+  ) async {
+    _ensureOpen();
+    ProjectPlanningToolCommandService._keys(arguments, const {'question'});
+    final question = ProjectPlanningToolCommandService._requiredString(
+      arguments['question'],
+      'question',
+    );
+    final id = context.builder.requestUserDecision(
+      question: question,
+      commandId: commandId,
+    );
+    final persisted = await context.persistDraft();
+    context.closed = true;
+    return {
+      'awaiting_user_input': true,
+      'question': {'id': id, 'question': question},
+      'project': _projectWire(persisted),
+      'persistence_revision': persisted.persistenceRevision,
+    };
+  }
+
+  Map<String, dynamic> _projectWire(ProjectAggregate project) => {
+    'id': project.id,
+    'status': project.status.wire,
+    'persistence_revision': project.persistenceRevision,
+    'title': project.title,
+    'refined_goal': project.refinedGoal,
+    'constraints': project.constraints,
+    'criteria': [
+      for (final criterion in project.criteria)
+        {
+          'criterion_id': project.criterionAgentNumber(criterion.id),
+          'statement': criterion.statement,
+          'required': criterion.required,
+          'verification_mode': criterion.verificationMode.name,
+        },
+    ],
+    'milestones': [
+      for (final milestone in project.milestones)
+        {
+          'milestone_id': project.milestoneAgentNumber(milestone.id),
+          'title': milestone.title,
+          'objective': milestone.objective,
+          'criterion_ids': [
+            for (final id in milestone.criterionIds)
+              project.criterionAgentNumber(id),
+          ],
+          'order': milestone.order,
+        },
+    ],
+    'tasks': [for (final task in project.tasks) _taskWire(task)],
+    'open_questions': [
+      for (final question in project.openQuestions)
+        {'id': question.id, 'question': question.question},
+    ],
+  };
+
+  Map<String, dynamic> _taskWire(ProjectTaskNode task) => {
+    'task_id': context.currentProject.taskAgentNumber(task.id),
+    'title': task.title,
+    'objective': task.objective,
+    'status': task.status.wire,
+    'constraints': task.constraints,
+    'out_of_scope': task.outOfScope,
+    'read_paths': task.readPaths,
+    'write_paths': task.writePaths,
+    'context': task.context,
+    'priority': task.priority.name,
+    'risk': task.risk.name,
+    'risk_reduction': task.riskReduction.name,
+    'effort': task.effort.name,
+    'selection_rationale': task.selectionRationale,
+    'dependency_task_ids': [
+      for (final id in task.dependsOnTaskIds)
+        context.currentProject.taskAgentNumber(id),
+    ],
+    'milestone_id': task.milestoneId == null
+        ? null
+        : context.currentProject.milestoneAgentNumber(task.milestoneId!),
+    'acceptance': [
+      for (final item in task.acceptance)
+        {
+          'ref': item.ref,
+          'statement': item.statement,
+          'criterion_ids': [
+            for (final id in item.criterionIds)
+              context.currentProject.criterionAgentNumber(id),
+          ],
+        },
+    ],
+  };
 
   Map<String, dynamic> _transformTaskInput(
     Map<String, dynamic> value,
@@ -374,6 +597,7 @@ class ProjectPlanEditingCommandService {
       'write_paths',
       'out_of_scope',
       'context',
+      'steps',
       'disposition',
     };
     ProjectPlanningToolCommandService._keys(value, allowed);
@@ -415,6 +639,7 @@ class ProjectPlanEditingCommandService {
       'write_paths': value['write_paths'],
       'out_of_scope': value['out_of_scope'],
       'context': value['context'],
+      'steps': value['steps'],
     };
     return transformed;
   }
@@ -437,49 +662,5 @@ class ProjectPlanEditingCommandService {
       if (!values.contains(resolved)) values.add(resolved);
     }
     return values;
-  }
-
-  Map<String, dynamic> splitTask(
-    PlanningArguments arguments,
-    String? commandId,
-  ) {
-    _ensureOpen();
-    ProjectPlanningToolCommandService._keys(arguments, const {
-      'task',
-      'children',
-    });
-    final task = ProjectPlanningToolCommandService._requiredString(
-      arguments['task'],
-      'task',
-    );
-    final values = ProjectPlanningToolCommandService._maps(
-      arguments['children'],
-      'children',
-      required: true,
-    );
-    final children = [
-      for (var index = 0; index < values.length; index++)
-        ProjectPlanningToolCommandService._taskSpec(
-          values[index],
-          'children[$index]',
-        ),
-    ];
-    final ids = context.builder.splitTask(
-      taskReference: task,
-      children: children,
-      commandId: commandId,
-    );
-    return {
-      'source_task': task,
-      'children': [
-        for (var index = 0; index < ids.length; index++)
-          {
-            'id': ids[index],
-            'ref': children[index].ref.trim().isEmpty
-                ? ids[index]
-                : children[index].ref.trim(),
-          },
-      ],
-    };
   }
 }

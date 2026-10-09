@@ -19,6 +19,10 @@ class TaskPlanningContext with TaskPlanningContextMappable {
   final List<AcceptanceItem> acceptance;
   final List<String> outOfScope;
   final List<TaskProjectCriterion> criteria;
+  final int? taskAgentNumber;
+  final Map<String, int> criterionAgentNumbers;
+  final Map<String, int> milestoneAgentNumbers;
+  final Map<String, int> taskAgentNumbers;
   final List<String> readPaths;
   final List<String> writePaths;
   final int maxSteps;
@@ -33,6 +37,10 @@ class TaskPlanningContext with TaskPlanningContextMappable {
     this.acceptance = const [],
     this.outOfScope = const [],
     this.criteria = const [],
+    this.taskAgentNumber,
+    this.criterionAgentNumbers = const {},
+    this.milestoneAgentNumbers = const {},
+    this.taskAgentNumbers = const {},
     this.readPaths = const [],
     this.writePaths = const [],
     this.maxSteps = 3,

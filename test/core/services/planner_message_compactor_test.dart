@@ -6,7 +6,7 @@ import 'package:hermes/features/task/application/protocol/planner_message_compac
 import 'package:hermes/features/chat/application/protocol/chat_message_wire_adapter.dart';
 
 void main() {
-  test('compacts old planning output while preserving tool call structure', () {
+  test('compacts planning output while preserving tool call structure', () {
     final messages = [
       const ChatMessage(role: 'system', content: 'System prompt'),
       const ChatMessage(role: 'user', content: 'User request'),
@@ -17,14 +17,14 @@ void main() {
         toolCalls: [
           ChatMessageWireAdapter().toolCall(
             id: 'old-call',
-            name: 'project_view',
+            name: 'task_add',
             argumentsJson: '{}',
           ),
         ],
       ),
       const ChatMessage(
         role: 'tool',
-        content: '{"ok":true,"draft_step_count":12}',
+        content: '{"ok":true,"steps":["step_1","step_2"]}',
         toolCallId: 'old-call',
       ),
       const ChatMessage(role: 'assistant', content: 'Recent reasoning'),
@@ -51,7 +51,7 @@ void main() {
     final compactedTool = jsonDecode(compacted[3].content) as Map;
     expect(compactedTool['code'], 'planning_history_compacted');
     expect(compactedTool['original_code'], isNull);
-    expect(compactedTool['draft_step_count'], 12);
+    expect(compactedTool['steps'], ['step_1', 'step_2']);
     expect(compacted[3].toolCallId, 'old-call');
     expect(compacted[4], same(messages[4]));
     expect(compacted[5], same(messages[5]));

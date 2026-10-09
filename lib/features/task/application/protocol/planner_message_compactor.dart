@@ -5,10 +5,11 @@ import 'package:hermes/features/chat/application/protocol/chat_message_wire_adap
 
 /// Keeps long-running planning conversations within a useful context size.
 ///
-/// The planning registries hold the authoritative draft, so old tool output is
-/// recoverable through the view/preview commands. Compacting the transcript
-/// avoids paying to resend historical views and file reads on every turn while
-/// preserving the tool-call protocol and the recent working context.
+/// The planning registries hold the authoritative persisted state, so old tool
+/// output can be compacted without making the transcript the source of truth.
+/// Compacting the transcript preserves the tool-call protocol and recent
+/// working context while keeping current task/project fields available when
+/// they are useful for the next planning turn.
 class PlannerMessageCompactor {
   const PlannerMessageCompactor._();
 
@@ -66,8 +67,8 @@ class PlannerMessageCompactor {
       'code': 'planning_history_compacted',
       'message':
           'Earlier planning output was compacted. The planning registry '
-          'still contains the authoritative draft; use the view or preview '
-          'command if those details are needed again.',
+          'still contains the authoritative persisted state; the next '
+          'planning turn receives the current editable context.',
     };
     try {
       final decoded = jsonDecode(content);
@@ -88,11 +89,24 @@ class PlannerMessageCompactor {
           'revision',
           'has_more',
           'next_start_line',
-          'draft_step_count',
-          'draft_next_step_ref',
+          'task_id',
+          'project_id',
+          'status',
+          'steps',
+          'acceptance',
+          'inherited_acceptance',
+          'local_acceptance',
+          'effective_acceptance',
+          'dependencies',
+          'milestone',
+          'metadata',
         ]) {
           final value = decoded[key];
-          if (value is String || value is num || value is bool) {
+          if (value is String ||
+              value is num ||
+              value is bool ||
+              value is List ||
+              value is Map) {
             compact[key] = value;
           }
         }

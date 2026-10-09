@@ -335,7 +335,7 @@ void main() {
 
       expect(chat.activeTask?.title, 'Planned task');
       expect(chat.activeTask?.runs, isEmpty);
-      expect(chat.activeTask?.status, TaskStatus.paused);
+      expect(chat.activeTask?.status, TaskStatus.planned);
       expect(chat.taskModelOutputTitle, 'Task Creation Model Output');
       expect(chat.taskModelOutputText, contains('Task Planner'));
     });
@@ -483,7 +483,7 @@ void main() {
 
       await chat.send('/continue-project');
 
-      expect(chat.activeProject?.status, ProjectStatus.completed);
+      expect(chat.activeProject?.status, ProjectStatus.blocked);
       expect(
         chat.messageStore.messages.firstWhere(
           (m) => m.text == '/continue-project',
@@ -1147,7 +1147,14 @@ ProjectAggregate _projectDocument({
     originalGoal: 'Run the project',
     refinedGoal: 'Run the project',
     constraints: const [],
-    criteria: const [],
+    criteria: [
+      ProjectCriterion(
+        id: 'criterion_1',
+        statement: 'The project task is verified.',
+        createdAt: now,
+        updatedAt: now,
+      ),
+    ],
     status: ProjectStatus.paused,
     activeTaskId: null,
     completionSummary: '',
@@ -1164,26 +1171,58 @@ ModelCompletion _commandPlanTaskResponse(
   String content = '',
   String reasoning = '',
 }) {
+  final acceptance = [
+    for (final raw in (arguments['acceptance'] as List? ?? const []))
+      if (raw is Map)
+        {
+          'ref': raw['ref'] ?? 'task-verified',
+          'statement': raw['statement'] ?? 'The task is verified.',
+          'criterion_ids': raw['criterion_ids'] ?? raw['criterionIds'] ?? [],
+          'verifiers':
+              raw['verifiers'] ??
+              [
+                {'kind': 'review', 'required': true},
+              ],
+        },
+  ];
+  final rawSteps = arguments['steps'] as List? ?? const [];
   final calls = <ModelToolCall>[
-    _toolCall('task_set_brief', {
+    _toolCall('task_add', {
       'title': arguments['title'] ?? 'Task',
       'objective': arguments['objective'] ?? arguments['goal'] ?? '',
       'constraints': arguments['constraints'] ?? const [],
+      'out_of_scope': arguments['out_of_scope'] ?? const ['Unrelated work.'],
+      'acceptance': acceptance.isEmpty
+          ? [
+              {
+                'ref': 'task-verified',
+                'statement': 'The task is verified.',
+                'criterion_ids': [],
+                'verifiers': [
+                  {'kind': 'review', 'required': true},
+                ],
+              },
+            ]
+          : acceptance,
+      'steps': [
+        for (final raw in rawSteps.whereType<Map>())
+          {
+            'ref': raw['id'] ?? raw['ref'] ?? '',
+            'title': raw['title'] ?? '',
+            'objective': raw['objective'] ?? '',
+            'instructions': raw['instructions'] ?? const [],
+            'may_edit_files':
+                raw['mayEditFiles'] ?? raw['may_edit_files'] ?? false,
+            'acceptance_refs':
+                raw['acceptance_refs'] ??
+                [
+                  if (rawSteps.indexOf(raw) == 0 && acceptance.isNotEmpty)
+                    acceptance.first['ref'],
+                ],
+          },
+      ],
     }),
-    for (final raw in (arguments['acceptance'] as List? ?? const []))
-      if (raw is Map)
-        _toolCall('task_add_acceptance', Map<String, dynamic>.from(raw)),
-    for (final raw in (arguments['steps'] as List? ?? const []))
-      if (raw is Map)
-        _toolCall('task_add_step', {
-          'ref': raw['id'] ?? raw['ref'] ?? '',
-          'title': raw['title'] ?? '',
-          'objective': raw['objective'] ?? '',
-          'instructions': raw['instructions'] ?? const [],
-          'may_edit_files':
-              raw['mayEditFiles'] ?? raw['may_edit_files'] ?? false,
-        }),
-    _toolCall('task_commit_plan', const {}),
+    _toolCall('plan_finalize', const {}),
   ];
   return ModelCompletion(
     content: content,
@@ -1199,10 +1238,12 @@ ModelCompletion _commandPlanProjectResponse(
 }) {
   final calls = <ModelToolCall>[
     _toolCall('project_update', {
+      'project_id': 'project_test',
       'criteria': [
         for (final raw in arguments['criteria'] as List? ?? const [])
           if (raw is Map)
             {
+              'criterion_id': raw['criterion_id'] ?? 1,
               'statement': raw['statement'] ?? '',
               'required': raw['required'] ?? true,
               'verification_mode': 'mixed',
@@ -1222,14 +1263,14 @@ ModelCompletion _commandPlanProjectResponse(
     }),
     for (final raw in (arguments['tasks'] as List? ?? const []))
       if (raw is Map)
-        _toolCall('task_upsert', {
+        _toolCall('task_add', {
           'title': raw['title'] ?? '',
           'objective': raw['objective'] ?? '',
           'acceptance': [
             {
               'ref': 'project-task-verified',
               'statement': 'The project task is verified.',
-              'criterion_refs': ['1'],
+              'criterion_ids': [1],
               'verifiers': [
                 {'kind': 'review', 'required': true},
               ],
@@ -1237,11 +1278,11 @@ ModelCompletion _commandPlanProjectResponse(
           ],
           'milestone_id': 1,
           'out_of_scope': raw['outOfScope'] ?? const ['Unrelated work.'],
+          'steps': [
+            {'objective': raw['objective'] ?? raw['title'] ?? 'Do the work.'},
+          ],
         }),
-    _toolCall('plan_commit', {
-      'summary': arguments['summary'] ?? 'Apply the project plan.',
-      'rationale': arguments['rationale'] ?? 'Commit the bounded project plan.',
-    }),
+    _toolCall('plan_finalize', const {}),
   ];
   return ModelCompletion(
     content: content,
@@ -1439,32 +1480,42 @@ class _StuckTaskClient extends ChatClient {
       controller.onListen = () {
         final commands = [
           (
-            'call_task_set_brief',
-            'task_set_brief',
+            'call_task_add',
+            'task_add',
             {
               'title': _plan['title'] ?? 'Task',
               'objective': _plan['goal'] ?? '',
               'constraints': _plan['constraints'] ?? const [],
+              'out_of_scope': const ['Unrelated work.'],
+              'acceptance': [
+                for (final raw in (_plan['acceptance'] as List? ?? const []))
+                  {
+                    'ref': raw['ref'],
+                    'statement': raw['statement'],
+                    'criterion_ids': raw['criterion_ids'] ?? [],
+                    'verifiers':
+                        raw['verifiers'] ??
+                        [
+                          {'kind': 'review', 'required': true},
+                        ],
+                  },
+              ],
+              'steps': [
+                {
+                  'ref': 'step',
+                  'title': 'Step',
+                  'objective': 'Do the bounded work.',
+                  'instructions': ['Do the bounded work.'],
+                  'may_edit_files': false,
+                  'acceptance_refs': [
+                    if ((_plan['acceptance'] as List?)?.isNotEmpty ?? false)
+                      (_plan['acceptance'] as List).first['ref'],
+                  ],
+                },
+              ],
             },
           ),
-          for (final raw in (_plan['acceptance'] as List? ?? const []))
-            (
-              'call_task_add_acceptance_${raw['ref']}',
-              'task_add_acceptance',
-              Map<String, dynamic>.from(raw as Map),
-            ),
-          (
-            'call_task_add_step',
-            'task_add_step',
-            {
-              'ref': 'step',
-              'title': 'Step',
-              'objective': 'Do the bounded work.',
-              'instructions': ['Do the bounded work.'],
-              'may_edit_files': false,
-            },
-          ),
-          ('call_task_commit', 'task_commit_plan', <String, dynamic>{}),
+          ('call_plan_finalize', 'plan_finalize', <String, dynamic>{}),
         ];
         for (var index = 0; index < commands.length; index++) {
           final (id, name, arguments) = commands[index];

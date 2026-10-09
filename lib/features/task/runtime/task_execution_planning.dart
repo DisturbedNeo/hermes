@@ -1,5 +1,88 @@
 part of 'task_execution_coordinator.dart';
 
+Map<String, dynamic> _editableTaskPlanningState(
+  TaskAggregate task, {
+  required int taskNumber,
+  List<AcceptanceItem> inheritedAcceptance = const [],
+  Map<String, int> criterionAgentNumbers = const {},
+  Map<String, int> taskAgentNumbers = const {},
+  Map<String, int> milestoneAgentNumbers = const {},
+}) {
+  final inheritedRefs = {for (final item in inheritedAcceptance) item.ref};
+  int? criterionNumber(String id) =>
+      criterionAgentNumbers[id] ?? int.tryParse(id);
+  Map<String, dynamic> acceptanceWire(AcceptanceItem item) => {
+    'ref': item.ref,
+    'statement': item.statement,
+    'criterion_ids': [
+      for (final id in item.criterionIds)
+        if (criterionNumber(id) != null) criterionNumber(id)!,
+    ],
+    'verifiers': [
+      for (final verifier in item.verifiers)
+        {
+          'kind': verifier.kind.name,
+          'required': verifier.required,
+          if (verifier.command != null) 'command': verifier.command,
+          if (verifier.path != null) 'path': verifier.path,
+          if (verifier.description != null) 'description': verifier.description,
+        },
+    ],
+  };
+  final inherited = [
+    for (final item in inheritedAcceptance) acceptanceWire(item),
+  ];
+  final local = [
+    for (final item in task.acceptance)
+      if (!inheritedRefs.contains(item.ref)) acceptanceWire(item),
+  ];
+  final effective = [for (final item in task.acceptance) acceptanceWire(item)];
+  return {
+    'task_id': taskNumber,
+    'title': task.title,
+    'objective': task.objective,
+    'constraints': task.constraints,
+    'out_of_scope': task.outOfScope,
+    'read_paths': task.readPaths,
+    'write_paths': task.writePaths,
+    'context': task.context,
+    'dependency_task_ids': [
+      for (final id in task.dependsOnTaskIds) ?taskAgentNumbers[id],
+    ],
+    'milestone_id': task.milestoneId == null
+        ? null
+        : milestoneAgentNumbers[task.milestoneId!],
+    'priority': task.priority.name,
+    'risk': task.risk.name,
+    'risk_reduction': task.riskReduction.name,
+    'effort': task.effort.name,
+    'selection_rationale': task.selectionRationale,
+    'status': task.status.wire,
+    'steps': [
+      for (var index = 0; index < task.steps.length; index++)
+        {
+          'ref': 'step_${index + 1}',
+          'title': task.steps[index].title,
+          'objective': task.steps[index].objective,
+          'instructions': task.steps[index].instructions,
+          'may_edit_files': task.steps[index].mayEditFiles,
+          'acceptance_refs': task.steps[index].acceptanceRefs,
+          'artifacts': [
+            for (final artifact in task.steps[index].artifacts)
+              {
+                'path': artifact.path,
+                'description': artifact.description,
+                'kind': artifact.kind,
+              },
+          ],
+        },
+    ],
+    'inherited_acceptance': inherited,
+    'local_acceptance': local,
+    'effective_acceptance': effective,
+  };
+}
+
 extension TaskExecutionPlanning on TaskPlanningUseCase {
   int _taskPlanningStepLimit(TaskAggregate task) {
     final effortLimit = switch (task.effort) {
@@ -44,10 +127,27 @@ extension TaskExecutionPlanning on TaskPlanningUseCase {
       // source task. Passing it again would duplicate refs in the builder's
       // draft; the context still exposes it through the source task.
       acceptance: const [],
+      inheritedAcceptance: planningContext?.acceptance ?? const [],
+      taskNumber: planningContext?.taskAgentNumber ?? 1,
+      criterionAgentNumbers: planningContext?.criterionAgentNumbers ?? const {},
+      taskIdsByAgentNumber: {
+        for (final entry
+            in (planningContext?.taskAgentNumbers ?? const <String, int>{})
+                .entries)
+          entry.value: entry.key,
+      },
+      milestoneIdsByAgentNumber: {
+        for (final entry
+            in (planningContext?.milestoneAgentNumbers ?? const <String, int>{})
+                .entries)
+          entry.value: entry.key,
+      },
       outOfScope: planningContext?.outOfScope ?? const [],
       readPaths: planningContext?.readPaths ?? const [],
       writePaths: planningContext?.writePaths ?? const [],
       requireDeclaredWriteBoundary: planningContext != null,
+      persistTask: (candidate) =>
+          _context.persistTask(workspace.rootPath, candidate),
     );
     final planningResult = await _planningCoordinator.plan(
       client: client,
@@ -61,8 +161,8 @@ $_taskPlanningToolsSystemInstruction
 ''',
       user:
           '''
-Plan this task with the task planning tools. Hermes owns the task ID
-$taskId; never use it as a step ID and never supply persistent IDs.
+Plan this task with the task planning tools. Hermes owns task number
+${context.taskNumber}; never use it as a step ID and never supply persistent IDs.
 
 For a bounded Project task, the Project goal is context only: do not plan or
 perform the whole Project. Plan only the selected task objective.
@@ -70,10 +170,13 @@ perform the whole Project. Plan only the selected task objective.
 User request:
 $userPrompt
 
+Complete editable task context:
+${_encoder.convert(_planningTaskState(task, taskNumber: context.taskNumber, inheritedAcceptance: planningContext?.acceptance ?? const [], criterionAgentNumbers: planningContext?.criterionAgentNumbers ?? const {}, taskAgentNumbers: planningContext?.taskAgentNumbers ?? const {}, milestoneAgentNumbers: planningContext?.milestoneAgentNumbers ?? const {}))}
+
 Bounded workspace profile:
 ${_encoder.convert(_compactTaskMetadata(metadata))}
 
-      ${planningContext == null ? '' : 'Bounded Project task context:\n${_encoder.convert(_taskPlanningContextMap(planningContext, taskId: taskId))}'}
+      ${planningContext == null ? '' : 'Bounded Project task context:\n${_encoder.convert(_taskPlanningContextMap(planningContext, taskId: context.taskNumber.toString()))}'}
 
 Workspace context is read-only task context. Do not mutate the project
 workspace graph directly; durable graph changes belong to the project planner
@@ -145,55 +248,74 @@ or an explicit user command. Task memories remain separate from that graph.
   Map<String, dynamic> _taskPlanningContextMap(
     TaskPlanningContext context, {
     String? taskId,
-  }) => {
-    'project_goal': context.projectGoal,
-    'task_title': context.projectTaskTitle,
-    'task_objective': context.projectTaskObjective,
-    'known_facts': context.knownFacts,
-    'workspace_orientation': context.workspaceOrientation,
-    'workspace_context': context.workspaceContext,
-    'acceptance': [
-      for (final item
-          in context.acceptance.isNotEmpty
-              ? context.acceptance
-              : _effectiveAcceptance(context))
-        {
-          'ref': item.ref,
-          'statement': item.statement,
-          'criterion_refs': item.criterionIds,
-          'verifiers': [
-            for (final verifier in item.verifiers)
-              {
-                'kind': verifier.kind.name,
-                'required': verifier.required,
-                if (verifier.command != null) 'command': verifier.command,
-                if (verifier.workingDirectory != '.')
-                  'working_directory': verifier.workingDirectory,
-                if (verifier.path != null)
-                  'path': verifier.path!.replaceAll(
-                    '{{task_id}}',
-                    taskId ?? '{{task_id}}',
-                  ),
-                if (verifier.description != null)
-                  'description': verifier.description,
-              },
-          ],
-        },
-    ],
-    'out_of_scope': context.outOfScope,
-    'criteria': [
-      for (final criterion in context.criteria)
-        {
-          'id': criterion.id,
-          'statement': criterion.statement,
-          'required': criterion.required,
-          'verification_mode': criterion.verificationMode,
-        },
-    ],
-    'read_paths': context.readPaths,
-    'write_paths': context.writePaths,
-    'max_steps': context.maxSteps.clamp(1, 6),
-  };
+  }) {
+    int? criterionNumber(String id) =>
+        context.criterionAgentNumbers[id] ?? int.tryParse(id);
+    Map<String, dynamic> acceptanceWire(AcceptanceItem item) => {
+      'ref': item.ref,
+      'statement': item.statement,
+      'criterion_ids': [
+        for (final id in item.criterionIds) ?criterionNumber(id),
+      ],
+      'verifiers': [
+        for (final verifier in item.verifiers)
+          {
+            'kind': verifier.kind.name,
+            'required': verifier.required,
+            if (verifier.command != null) 'command': verifier.command,
+            if (verifier.workingDirectory != '.')
+              'working_directory': verifier.workingDirectory,
+            if (verifier.path != null)
+              'path': verifier.path!.replaceAll(
+                '{{task_id}}',
+                taskId ?? '{{task_id}}',
+              ),
+            if (verifier.description != null)
+              'description': verifier.description,
+          },
+      ],
+    };
+    return {
+      'project_goal': context.projectGoal,
+      'task_title': context.projectTaskTitle,
+      'task_objective': context.projectTaskObjective,
+      'known_facts': context.knownFacts,
+      'workspace_orientation': context.workspaceOrientation,
+      'workspace_context': context.workspaceContext,
+      'inherited_acceptance': [
+        for (final item in context.acceptance) acceptanceWire(item),
+      ],
+      'out_of_scope': context.outOfScope,
+      'criteria': [
+        for (final criterion in context.criteria)
+          {
+            'criterion_id': criterionNumber(criterion.id),
+            'statement': criterion.statement,
+            'required': criterion.required,
+            'verification_mode': criterion.verificationMode,
+          },
+      ],
+      'read_paths': context.readPaths,
+      'write_paths': context.writePaths,
+      'max_steps': context.maxSteps.clamp(1, 6),
+    };
+  }
+
+  Map<String, dynamic> _planningTaskState(
+    TaskAggregate task, {
+    required int taskNumber,
+    List<AcceptanceItem> inheritedAcceptance = const [],
+    Map<String, int> criterionAgentNumbers = const {},
+    Map<String, int> taskAgentNumbers = const {},
+    Map<String, int> milestoneAgentNumbers = const {},
+  }) => _editableTaskPlanningState(
+    task,
+    taskNumber: taskNumber,
+    inheritedAcceptance: inheritedAcceptance,
+    criterionAgentNumbers: criterionAgentNumbers,
+    taskAgentNumbers: taskAgentNumbers,
+    milestoneAgentNumbers: milestoneAgentNumbers,
+  );
 
   Map<String, dynamic> _compactTaskMetadata(WorkspaceMetadata metadata) {
     final raw = snakeCaseMap(ModelJson.encode(metadata));
@@ -725,6 +847,7 @@ $whitelist
         'user_approval' || 'userapproval' => TaskEvidenceClaimType.userApproval,
         _ => TaskEvidenceClaimType.taskClaim,
       };
+
       // A model can suggest where a claim belongs, but it cannot promote its
       // own assertion. Conclusive/supporting evidence is created from gates
       // and actual workspace provenance at the execution boundary.

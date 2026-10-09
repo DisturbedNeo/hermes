@@ -10,7 +10,7 @@ class ProjectWorkspacePlanningCommandService {
       throw ProjectPlanningToolCommandService._argument(
         'planning_closed',
         'tool',
-        'The planning draft has already been committed.',
+        'The planning session has already been finalized.',
       );
     }
   }

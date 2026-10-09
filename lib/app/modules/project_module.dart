@@ -39,11 +39,6 @@ class ProjectModule {
   }) {
     const planningRunner = PlanningToolCallRunner();
     const structuredOutput = StructuredPlanningOutputService();
-    final modelCalls = ProjectModelCalls(
-      sandbox: workspace.sandbox,
-      planningRunner: planningRunner,
-      structuredOutput: structuredOutput,
-    );
     const scheduler = ProjectScheduler();
     const memory = ProjectMemoryService();
     const progress = ProjectProgressMonitor();
@@ -69,6 +64,28 @@ class ProjectModule {
       aggregateStore: aggregateStore,
       scheduler: scheduler,
       controlState: controlState,
+    );
+    final modelCalls = ProjectModelCalls(
+      planningRunner: planningRunner,
+      structuredOutput: structuredOutput,
+      persistProject: (workspaceRoot, project) =>
+          persistenceHandler.persist(workspaceRoot, project),
+      persistProjectWithTasks: (workspaceRoot, project, dirtyTasks) {
+        final persistenceContext = ProjectPersistenceContext(const []);
+        for (final task in dirtyTasks) {
+          if (task.persistenceRevision == 0) {
+            persistenceContext.stageNewTask(task);
+          } else {
+            persistenceContext.stageTask(task);
+          }
+        }
+        return persistenceHandler.persist(
+          workspaceRoot,
+          project,
+          persistenceContext: persistenceContext,
+        );
+      },
+      loadTask: (workspace, taskId) => task.loadTask(workspace, taskId),
     );
     final discovery = ProjectDiscoveryService(
       taskController: task,

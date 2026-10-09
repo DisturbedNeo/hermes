@@ -657,14 +657,14 @@ extension TaskExecutionOperations on TaskExecutionUseCase {
     CancellationToken? cancellationToken,
   }) async {
     final projectContext = executionRequest.planningContext;
+    final inheritedAcceptance = projectContext?.acceptance ?? const [];
     final context = TaskPlanningToolContext(
       task: snapshot,
       workspaceRoot: workspace.rootPath,
       maxSteps: _taskPlanningStepLimit(snapshot),
       projectGoal: projectContext?.projectGoal ?? '',
-      acceptance: projectContext?.acceptance.isNotEmpty == true
-          ? projectContext!.acceptance
-          : snapshot.acceptance,
+      acceptance: inheritedAcceptance,
+      inheritedAcceptance: inheritedAcceptance,
       outOfScope: projectContext?.outOfScope.isNotEmpty == true
           ? projectContext!.outOfScope
           : snapshot.outOfScope,
@@ -674,7 +674,23 @@ extension TaskExecutionOperations on TaskExecutionUseCase {
       writePaths: projectContext?.writePaths.isNotEmpty == true
           ? projectContext!.writePaths
           : snapshot.writePaths,
+      taskNumber: projectContext?.taskAgentNumber ?? 1,
+      criterionAgentNumbers: projectContext?.criterionAgentNumbers ?? const {},
+      taskIdsByAgentNumber: {
+        for (final entry
+            in (projectContext?.taskAgentNumbers ?? const <String, int>{})
+                .entries)
+          entry.value: entry.key,
+      },
+      milestoneIdsByAgentNumber: {
+        for (final entry
+            in (projectContext?.milestoneAgentNumbers ?? const <String, int>{})
+                .entries)
+          entry.value: entry.key,
+      },
       preserveCompletedStepsOnly: true,
+      persistTask: (candidate) =>
+          _context.persistTask(workspace.rootPath, candidate),
     );
     final planningResult = await _planningCoordinator.replan(
       client: client,
@@ -688,7 +704,7 @@ $_taskPlanningToolsSystemInstruction
 
 You are replanning only unfinished work. Completed and skipped steps are
 already preserved by Hermes. Add replacement steps for the remaining work,
-then call task_commit_plan. Do not recreate, rename, or edit preserved steps.
+then call plan_finalize. Do not recreate, rename, or edit preserved steps.
 ''',
       user:
           '''
@@ -698,8 +714,8 @@ $reason
 Project context that remains authoritative:
 ${projectContext == null ? 'None supplied.' : _encoder.convert(snakeCaseWire(ModelJson.encode(projectContext)))}
 
-Current bounded task view:
-${_encoder.convert(_taskViewService.query(snapshot, maxSteps: _taskPlanningStepLimit(snapshot), outOfScope: context.outOfScope, readPaths: context.readPaths, writePaths: context.writePaths))}
+Current complete editable task context:
+${_encoder.convert(_editableTaskPlanningState(snapshot, taskNumber: context.taskNumber, inheritedAcceptance: projectContext?.acceptance ?? const [], criterionAgentNumbers: projectContext?.criterionAgentNumbers ?? const {}, taskAgentNumbers: projectContext?.taskAgentNumbers ?? const {}, milestoneAgentNumbers: projectContext?.milestoneAgentNumbers ?? const {}))}
 ''',
       onModelOutput: onModelOutput,
       cancellationToken: cancellationToken,

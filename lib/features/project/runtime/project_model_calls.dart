@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:hermes/core/json_parsing.dart';
 import 'package:hermes/core/uuid.dart';
 import 'package:hermes/features/project/domain/project.dart';
+import 'package:hermes/features/task/domain/task.dart';
+import 'package:hermes/features/project/application/contracts/project_task_models.dart'
+    show AcceptanceItem;
 import 'package:hermes/features/task/application/contracts/planning_metrics.dart';
 import 'package:hermes/core/model_json.dart';
 import 'package:hermes/features/workspace/application/workspace.dart';
@@ -14,11 +17,8 @@ import 'package:hermes/features/task/application/protocol/planning_structured_ou
 import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
 import 'package:hermes/features/project/runtime/project_planning_tools.dart';
 import 'package:hermes/features/project/runtime/project_planning_policy.dart';
-import 'package:hermes/features/project/runtime/project_planning_workspace_reader.dart';
-import 'package:hermes/features/project/runtime/project_view_service.dart';
 import 'package:hermes/features/task/application/protocol/question_protocol_adapter.dart';
 import 'package:hermes/features/model/application/model_output.dart';
-import 'package:hermes/features/workspace/application/workspace_ports.dart';
 import 'package:hermes/core/wire_case.dart';
 
 export 'package:hermes/features/project/runtime/project_planning_gateway.dart'
@@ -31,21 +31,34 @@ export 'package:hermes/features/project/runtime/project_planning_gateway.dart'
 
 class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
   ProjectModelCalls({
-    required WorkspacePlanningReadPort sandbox,
-    ProjectViewService projectViewService = const ProjectViewService(),
     PlanningToolCallRunner planningRunner = const PlanningToolCallRunner(),
     StructuredPlanningOutputService structuredOutput =
         const StructuredPlanningOutputService(),
-  }) : _sandbox = sandbox,
-       _projectViewService = projectViewService,
-       _planningRunner = planningRunner,
+    this.persistProject,
+    this.persistProjectWithTasks,
+    this.loadTask,
+  }) : _planningRunner = planningRunner,
        _structuredOutput = structuredOutput;
 
   final JsonEncoder _encoder = const JsonEncoder.withIndent('  ');
-  final WorkspacePlanningReadPort _sandbox;
-  final ProjectViewService _projectViewService;
   final PlanningToolCallRunner _planningRunner;
   final StructuredPlanningOutputService _structuredOutput;
+  final Future<ProjectAggregate> Function(
+    String workspaceRoot,
+    ProjectAggregate project,
+  )?
+  persistProject;
+  final Future<ProjectAggregate> Function(
+    String workspaceRoot,
+    ProjectAggregate project,
+    Iterable<TaskAggregate> dirtyTasks,
+  )?
+  persistProjectWithTasks;
+  final Future<TaskAggregate?> Function(
+    WorkspaceAttachment workspace,
+    String taskId,
+  )?
+  loadTask;
 
   Future<Map<String, dynamic>> _runPlanning({
     required ModelConversationPort client,
@@ -67,6 +80,138 @@ class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
     ),
   )).toMap();
 
+  Map<String, dynamic> _editableProjectContext(
+    ProjectAggregate project, {
+    Map<String, TaskAggregate> canonicalTasks = const {},
+  }) {
+    int? criterionNumber(String id) => project.criterionAgentNumber(id);
+    int? milestoneNumber(String id) => project.milestoneAgentNumber(id);
+    int? taskNumber(String id) => project.taskAgentNumber(id);
+    Map<String, dynamic> acceptance(AcceptanceItem item) => {
+      'ref': item.ref,
+      'statement': item.statement,
+      'criterion_ids': [
+        for (final id in item.criterionIds) ?criterionNumber(id),
+      ],
+      'verifiers': [
+        for (final verifier in item.verifiers)
+          {
+            'kind': verifier.kind.name,
+            'required': verifier.required,
+            if (verifier.command != null) 'command': verifier.command,
+            if (verifier.workingDirectory != '.')
+              'working_directory': verifier.workingDirectory,
+            if (verifier.path != null) 'path': verifier.path,
+            if (verifier.artifactKind != 'file')
+              'artifact_kind': verifier.artifactKind,
+            if (verifier.description != null)
+              'description': verifier.description,
+          },
+      ],
+    };
+    return {
+      'project': {
+        'id': project.id,
+        'persistence_revision': project.persistenceRevision,
+        'title': project.title,
+        'original_goal': project.originalGoal,
+        'refined_goal': project.refinedGoal,
+        'constraints': project.constraints,
+        'status': project.status.wire,
+      },
+      'criteria': [
+        for (final criterion in project.criteria)
+          {
+            'criterion_id': criterionNumber(criterion.id),
+            'statement': criterion.statement,
+            'required': criterion.required,
+            'verification_mode': criterion.verificationMode.name,
+          },
+      ],
+      'milestones': [
+        for (final milestone in project.milestones)
+          {
+            'milestone_id': milestoneNumber(milestone.id),
+            'title': milestone.title,
+            'objective': milestone.objective,
+            'criterion_ids': [
+              for (final id in milestone.criterionIds) ?criterionNumber(id),
+            ],
+            'exit_conditions': milestone.exitConditions,
+            'order': milestone.order,
+            'status': milestone.status.name,
+          },
+      ],
+      'tasks': [
+        for (final task in project.tasks)
+          {
+            'task_id': taskNumber(task.id),
+            'title': task.title,
+            'objective': task.objective,
+            'status': task.status.wire,
+            'constraints': task.constraints,
+            'out_of_scope': task.outOfScope,
+            'read_paths': task.readPaths,
+            'write_paths': task.writePaths,
+            'context': task.context,
+            'dependency_task_ids': [
+              for (final id in task.dependsOnTaskIds) ?taskNumber(id),
+            ],
+            'milestone_id': task.milestoneId == null
+                ? null
+                : milestoneNumber(task.milestoneId!),
+            'priority': task.priority.name,
+            'risk': task.risk.name,
+            'risk_reduction': task.riskReduction.name,
+            'effort': task.effort.name,
+            'selection_rationale': task.selectionRationale,
+            'acceptance': [
+              for (final item in task.acceptance) acceptance(item),
+            ],
+            if (canonicalTasks[task.id] != null)
+              'steps': [
+                for (
+                  var stepIndex = 0;
+                  stepIndex < canonicalTasks[task.id]!.steps.length;
+                  stepIndex++
+                )
+                  {
+                    'ref': 'step_${stepIndex + 1}',
+                    'title': canonicalTasks[task.id]!.steps[stepIndex].title,
+                    'objective':
+                        canonicalTasks[task.id]!.steps[stepIndex].objective,
+                    'instructions':
+                        canonicalTasks[task.id]!.steps[stepIndex].instructions,
+                    'may_edit_files':
+                        canonicalTasks[task.id]!.steps[stepIndex].mayEditFiles,
+                    'acceptance_refs': canonicalTasks[task.id]!
+                        .steps[stepIndex]
+                        .acceptanceRefs,
+                    'artifacts': [
+                      for (final artifact
+                          in canonicalTasks[task.id]!
+                              .steps[stepIndex]
+                              .artifacts)
+                        {
+                          'path': artifact.path,
+                          'description': artifact.description,
+                          'kind': artifact.kind,
+                        },
+                    ],
+                  },
+              ],
+          },
+      ],
+      'pending_questions': [
+        for (final question in project.openQuestions)
+          {'id': question.id, 'question': question.question},
+      ],
+      'workspace_graph': snakeCaseWire(
+        ModelJson.encode(project.workspaceGraph),
+      ),
+    };
+  }
+
   @override
   Future<ProjectIncrementalPlanResult> maintainWorkspaceGraph({
     required ModelConversationPort client,
@@ -87,6 +232,7 @@ class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
       approvalPolicy: ProjectPlanApprovalPolicy.never,
       planningPass: ProjectPlanningPass.graphMaintenance,
       planningLimits: ProjectPlanningLimits.graphMaintenance,
+      persistProject: persistProject,
     );
     final registry = ProjectPlanningToolRegistry(
       context: context,
@@ -102,7 +248,7 @@ class ProjectModelCalls implements ProjectPlanner, ProjectCompletionEvaluator {
 $baseSystemPrompt
 
 You are the dedicated workspace graph-maintenance planner. Enrich only the
-workspace context graph using the graph tools and finish with plan_commit.
+workspace context graph using the graph tools and finish with plan_finalize.
 This pass is graph-only: do not create, update, split, defer, obsolete, or
 otherwise change tasks, criteria, milestones, dependencies, memory, project
 details, user questions, or workspace files.
@@ -113,14 +259,14 @@ documents whenever the evidence provides them. Do not modify, remove, or
 protect managed or protected entries. Do not duplicate graph knowledge into
 project memory. Omit concepts and relationships that remain ambiguous.
 Workspace orientation is planner-owned and may be refined when the evidence
-supports a durable orientation. Use project_view for the current graph and
-the supplied maintenance evidence, then use plan_preview if useful and finish
-with plan_commit. A successful plan_commit is the only completion signal.
+supports a durable orientation. The current graph is included in the supplied
+context. Apply mutations immediately and finish with plan_finalize. A successful
+plan_finalize is the only completion signal.
 ''',
         user:
             '''
-Current bounded project view:
-${_encoder.convert(_projectViewService.query(project))}
+Current complete planning context:
+${_encoder.convert(_editableProjectContext(project))}
 
 Deterministic graph reconciliation:
 ${_encoder.convert(evidenceSnapshot.workspaceGraphReconciliation?.toMap() ?? const {})}
@@ -158,14 +304,13 @@ ${_encoder.convert(evidenceSnapshot.toMap())}
     ModelOutputSink? onModelOutput,
     CancellationToken? cancellationToken,
   }) async {
-    final workspaceReader = planningPass == ProjectPlanningPass.bootstrap
-        ? ProjectPlanningWorkspaceReader(
-            workspace: workspace,
-            sandbox: _sandbox,
-            allowedPaths: evidenceSnapshot.workspaceProfile.treePaths,
-            cancellationToken: cancellationToken,
-          )
-        : null;
+    final canonicalTasks = <String, TaskAggregate>{};
+    if (loadTask != null) {
+      for (final task in project.tasks) {
+        final loaded = await loadTask!(workspace, task.id);
+        if (loaded != null) canonicalTasks[task.id] = loaded;
+      }
+    }
     final context = ProjectPlanningContext(
       project: project,
       workspaceRoot: workspace.rootPath,
@@ -176,7 +321,9 @@ ${_encoder.convert(evidenceSnapshot.toMap())}
       approvalPolicy: approvalPolicy,
       planningPass: planningPass,
       planningLimits: planningLimits,
-      workspaceReader: workspaceReader,
+      persistProject: persistProject,
+      persistProjectWithTasks: persistProjectWithTasks,
+      canonicalTasks: canonicalTasks,
     );
     final registry = ProjectPlanningToolRegistry(
       context: context,
@@ -189,8 +336,8 @@ ${_encoder.convert(evidenceSnapshot.toMap())}
 You are bootstrapping a new project frontier. Establish durable success
 criteria, exactly one active milestone, and only the next one to three bounded
 tasks that are credible from the supplied evidence. Do not inventory
-speculative future work or build a complete roadmap. Use the bounded workspace
-reader only for authoritative files that are needed to define this slice.
+speculative future work or build a complete roadmap. Use only the supplied
+bounded workspace evidence.
 '''
         : '''
 You are maintaining an existing project frontier. Inspect current evidence and
@@ -208,26 +355,25 @@ $baseSystemPrompt
 
 You are the project plan revision agent. Use the project planning tools to
 make a small, explicit update to the existing plan and finish by calling
-plan_commit. Do not return a plan as JSON text and do not invent persistent
+plan_finalize. Do not return a plan as JSON text and do not invent persistent
 IDs, statuses, timestamps, evidence, gates, or runtime state.
 
 $planningInstructions
 
-Begin with project_view when you need context. The view is bounded; use the
-navigation.pages metadata and call project_view again with section and
-next_cursor when a collection has more items. Search cursors retain their
-search scope. Use task_upsert to create or update one bounded task, and use
-project_update for project details, criteria, and milestones. Task creation
-accepts canonical acceptance, dependencies, and verifier declarations in one
-payload. Numeric references from
-project_view are stable project-local IDs. Completed, failed, split, rejected,
-cancelled, and running task history is immutable.
+The complete editable project state is included in the planning context; do
+not request it through a read tool. Use task_add to create a complete bounded
+task, task_update for a partial task update, task_remove to obsolete an active
+task, and project_update for partial project, criterion, and milestone updates.
+Numeric task, criterion, milestone, and dependency IDs are stable project-local
+IDs. Completed, failed, split, rejected, cancelled, and running task history
+is immutable.
 
 Make the smallest safe diff that addresses all supplied triggers. Preserve
 the original goal, accepted evidence, protected memory, and completed work.
-Mutation responses and project_view include validation and the normalized
-project state. Finish with the explicit plan_commit command. A successful
-plan_commit is the only completion signal.
+Mutation responses include validation and the normalized persisted state. If a
+genuinely blocking project decision is required, call
+project_request_user_decision. Finish with plan_finalize. A successful
+plan_finalize is the only completion signal.
 ''',
         user:
             '''
@@ -237,8 +383,8 @@ ${_encoder.convert(triggers.map((item) => item.name).toList())}
 Bounded discovery snapshot:
 ${_encoder.convert(evidenceSnapshot.toMap())}
 
-Current bounded project view:
-${_encoder.convert(_projectViewService.query(project))}
+Current complete planning context:
+${_encoder.convert(_editableProjectContext(project, canonicalTasks: canonicalTasks))}
 ''',
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,
@@ -280,6 +426,7 @@ ${_encoder.convert(_projectViewService.query(project))}
       approvalPolicy: approvalPolicy,
       planningPass: planningPass,
       planningLimits: planningLimits,
+      persistProject: persistProject,
     );
     final registry = ProjectPlanningToolRegistry(
       context: context,
@@ -294,9 +441,9 @@ ${_encoder.convert(_projectViewService.query(project))}
             '''
 $baseSystemPrompt
 
-You are the project task-splitting agent. Inspect the supplied task with
-project_view and call plan_split_task with 2 or 3 bounded child tasks, then
-call plan_commit. Do not return JSON text. Do not reuse the parent's ID or
+You are the project task-splitting agent. The supplied task is already in
+context. Remove the parent with task_remove and add 2 or 3 bounded child tasks
+with task_add, then call plan_finalize. Do not return JSON text. Do not reuse the parent's ID or
 supply IDs, statuses, timestamps, evidence, gates, or runtime fields. The
 builder creates fresh child IDs, preserves the invalid parent as split history,
 and validates all criterion, dependency, and verification references. If the
@@ -310,19 +457,19 @@ Keep the children small enough to execute independently and address every
 reported violation. Keep every parent criterion on at least one child. Each
 deterministic criterion must be covered by a required child acceptance
 verifier; reuse the parent command when it remains valid, or provide the narrowest
-appropriate verification command. A successful plan_commit is the only
+appropriate verification command. A successful plan_finalize is the only
 completion signal.
 ''',
         user:
             '''
-Task to split: ${oversizedTask.id}
+Task to split: ${project.taskAgentNumber(oversizedTask.id)}
 Task title: ${oversizedTask.title}
 
 Validation violations:
 ${_encoder.convert(violations)}
 
-Current bounded project view:
-${_encoder.convert(_projectViewService.query(project, taskRef: oversizedTask.id))}
+Current complete planning context:
+${_encoder.convert(_editableProjectContext(project))}
 ''',
         onModelOutput: onModelOutput,
         cancellationToken: cancellationToken,

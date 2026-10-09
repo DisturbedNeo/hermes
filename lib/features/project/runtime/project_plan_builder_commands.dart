@@ -1,8 +1,14 @@
 part of 'project_plan_builder.dart';
 
 extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
-  void setValidationRefinedGoal(String refinedGoal) {
+  void setValidationProjectDetails({
+    required String title,
+    required String refinedGoal,
+    List<String>? constraints,
+  }) {
+    _validationTitle = title.trim();
     _validationRefinedGoal = refinedGoal.trim();
+    if (constraints != null) _validationConstraints = [...constraints];
   }
 
   void setSummary(String summary) {
@@ -400,12 +406,13 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
           writePaths: writePaths == null ? null : _cleanStrings(writePaths),
           outOfScope: nextOutOfScope,
           context: context == null ? null : _cleanStrings(context),
-          fingerprint:
-              objective == null && acceptance == null
+          fingerprint: objective == null && acceptance == null
               ? null
               : projectTaskFingerprint(
                   nextObjective,
-                  {for (final item in nextAcceptance) ...item.criterionIds}.toList(),
+                  {
+                    for (final item in nextAcceptance) ...item.criterionIds,
+                  }.toList(),
                   nextAcceptance,
                 ),
           updatedAt: _now,
@@ -733,16 +740,15 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
         continue;
       }
       final hasConclusiveExpectation = children.any(
-        (child) =>
-            child.acceptance.any(
-              (item) =>
-                  item.criterionIds.contains(criterionId) &&
-                  item.verifiers.any(
-                    (verifier) =>
-                        verifier.required &&
-                        verifier.kind == AcceptanceVerifierKind.command,
-                  ),
-            ),
+        (child) => child.acceptance.any(
+          (item) =>
+              item.criterionIds.contains(criterionId) &&
+              item.verifiers.any(
+                (verifier) =>
+                    verifier.required &&
+                    verifier.kind == AcceptanceVerifierKind.command,
+              ),
+        ),
       );
       if (!hasConclusiveExpectation) missingDeterministic.add(criterionId);
     }
@@ -754,7 +760,7 @@ extension ProjectPlanBuilderCommands on ProjectPlanBuilder {
         details: {
           'missing_criterion_refs': missingDeterministic,
           'instruction':
-            'Resubmit the split with a required command verifier in acceptance on a child covering every listed criterion.',
+              'Resubmit the split with a required command verifier in acceptance on a child covering every listed criterion.',
         },
       );
     }

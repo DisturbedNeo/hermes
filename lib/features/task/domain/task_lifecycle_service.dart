@@ -108,7 +108,9 @@ class TaskLifecycleService {
       TaskStatus.split ||
       TaskStatus.deferred ||
       TaskStatus.obsolete =>
-        !task.isTerminal && trigger == TaskLifecycleTrigger.planManagement,
+        !task.isTerminal &&
+            from != TaskStatus.running &&
+            trigger == TaskLifecycleTrigger.planManagement,
       TaskStatus.draft => from == TaskStatus.draft,
     };
     if (valid) return;

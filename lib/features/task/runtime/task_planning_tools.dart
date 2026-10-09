@@ -1,15 +1,16 @@
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/core/contracts/acceptance.dart';
+import 'package:hermes/core/uuid.dart';
 import 'package:hermes/features/tools/application/tool_contracts.dart';
 import 'package:hermes/features/task/application/protocol/planning_runtime.dart';
 import 'package:hermes/features/task/runtime/task_plan_builder.dart';
-import 'package:hermes/features/task/runtime/task_view_service.dart';
+import 'package:hermes/features/task/domain/task_lifecycle_service.dart';
 
 /// State available to one task-planning invocation.
 ///
 /// The registry has no [ToolService] and no workspace mutation route. It only
-/// edits the in-memory builder and returns a task to the owning service after
-/// a valid commit.
+/// validates each mutation against the complete task and persists it through
+/// the owning service before returning a response.
 class TaskPlanningToolContext {
   TaskPlanningToolContext({
     required this.task,
@@ -17,12 +18,17 @@ class TaskPlanningToolContext {
     required this.maxSteps,
     this.projectGoal = '',
     this.acceptance = const [],
+    List<AcceptanceItem>? inheritedAcceptance,
     this.outOfScope = const [],
     this.readPaths = const [],
     this.writePaths = const [],
     this.requireDeclaredWriteBoundary = false,
     this.preserveCompletedStepsOnly = false,
-    this.viewService = const TaskViewService(),
+    this.taskNumber = 1,
+    this.criterionAgentNumbers = const {},
+    this.taskIdsByAgentNumber = const {},
+    this.milestoneIdsByAgentNumber = const {},
+    this.persistTask,
     DateTime? now,
   }) : builder = TaskPlanBuilder(
          task: task,
@@ -35,24 +41,47 @@ class TaskPlanningToolContext {
          requireDeclaredWriteBoundary: requireDeclaredWriteBoundary,
          preserveCompletedStepsOnly: preserveCompletedStepsOnly,
          now: now,
-       );
+       ),
+       currentTask = task,
+       inheritedAcceptance = inheritedAcceptance ?? acceptance;
 
   final TaskAggregate task;
   final String workspaceRoot;
   final int maxSteps;
   final String projectGoal;
   final List<AcceptanceItem> acceptance;
+  final List<AcceptanceItem> inheritedAcceptance;
   final List<String> outOfScope;
   final List<String> readPaths;
   final List<String> writePaths;
   final bool requireDeclaredWriteBoundary;
   final bool preserveCompletedStepsOnly;
-  final TaskViewService viewService;
-  final TaskPlanBuilder builder;
+  final int taskNumber;
+  final Map<String, int> criterionAgentNumbers;
+  final Map<int, String> taskIdsByAgentNumber;
+  final Map<int, String> milestoneIdsByAgentNumber;
+  final Future<TaskAggregate> Function(TaskAggregate task)? persistTask;
+  TaskPlanBuilder builder;
+  TaskAggregate currentTask;
 
   TaskAggregate? committedTask;
   String? replanReason;
   bool closed = false;
+
+  Future<TaskAggregate> persist(TaskAggregate task) async {
+    final persisted = persistTask == null ? task : await persistTask!(task);
+    currentTask = persisted;
+    builder = TaskPlanBuilder(
+      task: persisted,
+      maxSteps: maxSteps,
+      projectGoal: projectGoal,
+      outOfScope: outOfScope,
+      readPaths: readPaths,
+      writePaths: writePaths,
+      requireDeclaredWriteBoundary: requireDeclaredWriteBoundary,
+    );
+    return persisted;
+  }
 }
 
 class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
@@ -61,19 +90,14 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
   final TaskPlanningToolContext context;
 
   @override
-  String get terminalToolId => 'task_commit_plan';
+  String get terminalToolId => 'plan_finalize';
 
   @override
   List<ToolDefinition> get toolDefinitions => const [
-    _taskViewDefinition,
-    _setBriefDefinition,
-    _resetPlanDefinition,
-    _addStepDefinition,
-    _addAcceptanceDefinition,
-    _previewDefinition,
-    _commitDefinition,
-    _requestReplanDefinition,
-    _requestDecisionDefinition,
+    _taskAddDefinition,
+    _taskUpdateDefinition,
+    _taskRemoveDefinition,
+    _finalizeDefinition,
   ];
 
   @override
@@ -86,15 +110,10 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     String? commandId,
   }) async {
     final result = switch (toolId) {
-      'task_view' => _view(arguments),
-      'task_set_brief' => _setBrief(arguments),
-      'task_reset_plan' => _resetPlan(arguments, commandId),
-      'task_add_step' => _addStep(arguments, commandId),
-      'task_add_acceptance' => _addAcceptance(arguments, commandId),
-      'task_preview_plan' => _preview(arguments),
-      'task_commit_plan' => _commit(arguments),
-      'task_request_replan' => _requestReplan(arguments),
-      'task_request_user_decision' => _requestDecision(arguments, commandId),
+      'task_add' => await _addTask(arguments),
+      'task_update' => await _updateTask(arguments),
+      'task_remove' => await _removeTask(arguments),
+      'plan_finalize' => await _finalize(arguments),
       _ => throw _argument(
         'unknown_tool',
         'tool',
@@ -102,120 +121,287 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
       ),
     };
     final response = <String, dynamic>{'ok': true, ...result};
-    if (_mutationToolIds.contains(toolId)) {
-      response['state'] = _draftState();
-    }
     return PlanningResponse.fromWire(response);
   }
-
-  static const _mutationToolIds = {
-    'task_set_brief',
-    'task_reset_plan',
-    'task_add_step',
-    'task_add_acceptance',
-    'task_request_replan',
-    'task_request_user_decision',
-  };
 
   @override
   Map<String, dynamic> domainError(Object error) {
     if (error is TaskPlanBuilderException) {
       return _error(code: error.code, path: error.path, message: error.message);
     }
-    if (error is TaskViewException) {
-      return _error(code: error.code, path: error.path, message: error.message);
+    if (error is InvalidTaskTransitionException) {
+      return _error(
+        code: 'invalid_transition',
+        path: 'task.status',
+        message: error.reason,
+      );
     }
     return super.domainError(error);
   }
 
-  Map<String, dynamic> _view(PlanningArguments arguments) {
-    _keys(arguments, const {'step_ref', 'max_items', 'section', 'cursor'});
-    final stepRef = _optionalString(arguments['step_ref'], 'step_ref');
-    final section = _optionalString(arguments['section'], 'section');
-    final cursor = _optionalString(arguments['cursor'], 'cursor');
-    final preview = context.builder.preview();
-    final draftStepId = stepRef == null
-        ? null
-        : context.builder.stepIdFor(stepRef);
-    final viewTask = draftStepId != null
-        ? preview.task
-        : context.preserveCompletedStepsOnly
-        ? context.task
-        : preview.task;
-    final view = context.viewService.query(
-      viewTask,
-      stepRef: draftStepId ?? stepRef,
-      maxItems: _optionalInt(arguments['max_items'], 'max_items'),
+  Future<Map<String, dynamic>> _addTask(PlanningArguments arguments) async {
+    _ensureOpen();
+    _keys(arguments, _taskMutationKeys);
+    final candidate = _taskCandidate(
+      arguments,
+      requireComplete: true,
+      replaceSteps: true,
+      replaceAcceptance: true,
+    );
+    final committed = _validateCandidate(candidate);
+    final persisted = await context.persist(committed);
+    return _mutationResponse('added', persisted);
+  }
+
+  Future<Map<String, dynamic>> _updateTask(PlanningArguments arguments) async {
+    _ensureOpen();
+    _keys(arguments, {..._taskMutationKeys, 'task_id'});
+    _requireTaskId(arguments['task_id']);
+    final candidate = _taskCandidate(arguments);
+    final committed = _validateCandidate(candidate);
+    final persisted = await context.persist(committed);
+    return _mutationResponse('updated', persisted);
+  }
+
+  Future<Map<String, dynamic>> _removeTask(PlanningArguments arguments) async {
+    _ensureOpen();
+    _keys(arguments, const {'task_id'});
+    _requireTaskId(arguments['task_id']);
+    final transition = const TaskLifecycleService().transition(
+      snapshot: context.currentTask,
+      to: TaskStatus.obsolete,
+      trigger: TaskLifecycleTrigger.planManagement,
+      reason: 'Removed by the planning agent.',
+    );
+    final persisted = await context.persist(transition.task);
+    return _mutationResponse('removed', persisted);
+  }
+
+  Future<Map<String, dynamic>> _finalize(PlanningArguments arguments) async {
+    _ensureOpen();
+    _keys(arguments, const {});
+    final validation = context.builder.commit();
+    if (!validation.valid) {
+      final issue = validation.issues.first;
+      throw TaskPlanBuilderException(
+        code: issue.code,
+        path: issue.path,
+        message: issue.message,
+      );
+    }
+    final transitioned = context.currentTask.status == TaskStatus.obsolete
+        ? context.currentTask
+        : const TaskLifecycleService()
+              .transition(
+                snapshot: context.currentTask,
+                to: TaskStatus.planned,
+                trigger: TaskLifecycleTrigger.planning,
+                reason: 'Task planning finalized.',
+              )
+              .task;
+    final persisted = await context.persist(transitioned);
+    context.committedTask = persisted;
+    context.closed = true;
+    return {
+      'finalized': true,
+      'task': _taskWire(persisted),
+      'persistence_revision': persisted.persistenceRevision,
+    };
+  }
+
+  TaskAggregate _taskCandidate(
+    PlanningArguments arguments, {
+    bool requireComplete = false,
+    bool replaceSteps = false,
+    bool replaceAcceptance = false,
+  }) {
+    final current = context.currentTask;
+    final now = DateTime.now();
+    final title = _optionalString(arguments['title'], 'title');
+    final objective = _optionalString(arguments['objective'], 'objective');
+    final acceptanceSupplied = arguments.containsKey('acceptance');
+    final acceptance = acceptanceSupplied
+        ? _parseMutationAcceptance(arguments['acceptance'], 'acceptance')
+        : replaceAcceptance
+        ? const <AcceptanceItem>[]
+        : current.acceptance;
+    final parsedSteps = arguments.containsKey('steps') || replaceSteps
+        ? _parseMutationSteps(arguments['steps'], 'steps')
+        : null;
+    final steps = parsedSteps == null
+        ? current.steps
+        : [
+            if (context.preserveCompletedStepsOnly)
+              ...current.steps.where(_isPreservedStep),
+            ...parsedSteps,
+          ];
+    if (requireComplete && objective == null) {
+      throw _argument(
+        'missing_argument',
+        'objective',
+        'A task_add call requires an objective.',
+      );
+    }
+    if (requireComplete &&
+        acceptance.isEmpty &&
+        context.inheritedAcceptance.isEmpty) {
+      throw _argument(
+        'missing_argument',
+        'acceptance',
+        'A task_add call requires acceptance unless inherited acceptance is present.',
+      );
+    }
+    if (requireComplete && steps.isEmpty) {
+      throw _argument(
+        'missing_argument',
+        'steps',
+        'A task_add call requires at least one executable step.',
+      );
+    }
+    final mergedAcceptance = acceptanceSupplied
+        ? _mergeInheritedAcceptance(acceptance)
+        : replaceAcceptance
+        ? [...context.inheritedAcceptance]
+        : [
+            ...context.inheritedAcceptance,
+            ...current.acceptance.where(
+              (item) => !context.inheritedAcceptance.any(
+                (inherited) => inherited.ref == item.ref,
+              ),
+            ),
+          ];
+    return current.copyWith(
+      title: title ?? current.title,
+      objective: objective ?? current.objective,
+      constraints: arguments.containsKey('constraints')
+          ? _stringList(arguments['constraints'], 'constraints')
+          : current.constraints,
+      steps: steps,
+      acceptance: mergedAcceptance,
+      milestoneId: arguments.containsKey('milestone_id')
+          ? _resolveAgentReference(
+              _optionalInt(arguments['milestone_id'], 'milestone_id'),
+              context.milestoneIdsByAgentNumber,
+              'milestone_id',
+              'milestone',
+            )
+          : current.milestoneId,
+      dependsOnTaskIds: arguments.containsKey('dependency_task_ids')
+          ? [
+              for (final id in _intList(
+                arguments['dependency_task_ids'],
+                'dependency_task_ids',
+              ))
+                _resolveAgentReference(
+                  id,
+                  context.taskIdsByAgentNumber,
+                  'dependency_task_ids',
+                  'task',
+                )!,
+            ]
+          : current.dependsOnTaskIds,
+      priority:
+          _enumValue(TaskPriority.values, arguments['priority'], 'priority') ??
+          current.priority,
+      risk:
+          _enumValue(TaskRisk.values, arguments['risk'], 'risk') ??
+          current.risk,
+      riskReduction:
+          _enumValue(
+            ProjectRiskReduction.values,
+            arguments['risk_reduction'],
+            'risk_reduction',
+          ) ??
+          current.riskReduction,
+      effort:
+          _enumValue(TaskEffort.values, arguments['effort'], 'effort') ??
+          current.effort,
+      selectionRationale:
+          _optionalString(
+            arguments['selection_rationale'],
+            'selection_rationale',
+          ) ??
+          current.selectionRationale,
+      readPaths: arguments.containsKey('read_paths')
+          ? _stringList(arguments['read_paths'], 'read_paths')
+          : current.readPaths,
+      writePaths: arguments.containsKey('write_paths')
+          ? _stringList(arguments['write_paths'], 'write_paths')
+          : current.writePaths,
+      outOfScope: arguments.containsKey('out_of_scope')
+          ? _stringList(arguments['out_of_scope'], 'out_of_scope')
+          : current.outOfScope,
+      context: arguments.containsKey('context')
+          ? _stringList(arguments['context'], 'context')
+          : current.context,
+      status: TaskStatus.paused,
+      currentStepId: steps.isEmpty ? null : steps.first.id,
+      pendingQuestion: null,
+      updatedAt: now,
+    );
+  }
+
+  TaskAggregate _validateCandidate(TaskAggregate candidate) {
+    final committed = TaskPlanBuilder(
+      task: candidate,
       maxSteps: context.maxSteps,
       projectGoal: context.projectGoal,
       outOfScope: context.outOfScope,
       readPaths: context.readPaths,
       writePaths: context.writePaths,
-      section: section,
-      cursor: cursor,
-    );
-    return {
-      ...view,
-      'planning': {
-        'max_steps': context.maxSteps,
-        'draft_step_count': preview.task.steps.length,
-        'draft_next_step_ref': preview.task.currentStepId,
-        'preserve_completed_steps_only': context.preserveCompletedStepsOnly,
-        'draft_issues': [for (final issue in preview.issues) issue.toMap()],
-      },
-    };
-  }
-
-  Map<String, dynamic> _setBrief(PlanningArguments arguments) {
-    _ensureOpen();
-    _keys(arguments, const {'title', 'objective', 'constraints'});
-    final title = _optionalString(arguments['title'], 'title');
-    final objective = _optionalString(arguments['objective'], 'objective');
-    final constraints = arguments.containsKey('constraints')
-        ? _stringList(arguments['constraints'], 'constraints')
-        : null;
-    if (title == null && objective == null && constraints == null) {
-      throw _argument(
-        'missing_argument',
-        'brief',
-        'Provide at least one brief field to update.',
+      requireDeclaredWriteBoundary: context.requireDeclaredWriteBoundary,
+    ).commit();
+    if (!committed.valid) {
+      final issue = committed.issues.first;
+      throw TaskPlanBuilderException(
+        code: issue.code,
+        path: issue.path,
+        message: issue.message,
       );
     }
-    context.builder.setBrief(
-      title: title,
-      objective: objective,
-      constraints: constraints,
-    );
-    return {
-      'title': context.builder.preview().task.title,
-      'objective': context.builder.preview().task.objective,
-      'acceptance': [
-        for (final item in context.builder.preview().task.acceptance)
-          _acceptanceWire(item),
-      ],
-    };
+    return committed.task;
   }
 
-  Map<String, dynamic> _resetPlan(
-    PlanningArguments arguments,
-    String? commandId,
+  List<AcceptanceItem> _mergeInheritedAcceptance(
+    List<AcceptanceItem> supplied,
   ) {
-    _ensureOpen();
-    _keys(arguments, const {});
-    context.builder.resetDraft(commandId: commandId);
-    return {
-      'reset': true,
-      'preserved_step_count': context.builder.steps.length,
+    final inheritedRefs = {
+      for (final item in context.inheritedAcceptance) item.ref,
     };
+    for (final item in supplied) {
+      if (inheritedRefs.contains(item.ref)) {
+        throw _argument(
+          'duplicate_acceptance_ref',
+          'acceptance',
+          'Inherited acceptance ref ${item.ref} must not be re-added.',
+        );
+      }
+    }
+    final local = supplied.where((item) => !inheritedRefs.contains(item.ref));
+    return [...context.inheritedAcceptance, ...local];
   }
 
-  Map<String, dynamic> _addStep(
-    PlanningArguments arguments,
-    String? commandId,
-  ) {
-    _ensureOpen();
-    _rejectPersistentFields(arguments, 'step');
-    _keys(arguments, const {
+  List<TaskStep> _parseMutationSteps(Object? value, String path) {
+    if (value is! List || value.isEmpty) {
+      throw _argument(
+        'missing_argument',
+        path,
+        'At least one executable step is required.',
+      );
+    }
+    return [
+      for (var index = 0; index < value.length; index++)
+        _parseMutationStep(value[index], '$path[$index]'),
+    ];
+  }
+
+  TaskStep _parseMutationStep(Object? raw, String path) {
+    if (raw is! Map) {
+      throw _argument('invalid_argument', path, 'A step must be an object.');
+    }
+    final value = Map<String, dynamic>.from(raw);
+    _rejectPersistentFields(value, path);
+    _keys(value, const {
       'ref',
       'title',
       'objective',
@@ -223,195 +409,323 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
       'may_edit_files',
       'artifacts',
       'acceptance_refs',
-    });
-    final ref = _optionalString(arguments['ref'], 'ref') ?? '';
-    final title = _optionalString(arguments['title'], 'title') ?? '';
-    final objective = _requiredString(arguments['objective'], 'objective');
-    final instructions = _stringList(arguments['instructions'], 'instructions');
-    final artifacts = _artifacts(arguments['artifacts'], 'artifacts');
-    final mayEditFiles =
-        _optionalBool(arguments['may_edit_files'], 'may_edit_files') ?? false;
-    final acceptanceRefs = _stringList(
-      arguments['acceptance_refs'],
-      'acceptance_refs',
-    );
-    final id = context.builder.addStep(
-      TaskPlanStepSpec(
-        ref: ref,
-        title: title,
-        objective: objective,
-        instructions: instructions,
-        mayEditFiles: mayEditFiles,
-        artifacts: artifacts,
-        acceptanceRefs: acceptanceRefs,
+    }, fieldPath: path);
+    final objective = _requiredString(value['objective'], '$path.objective');
+    final title = _optionalString(value['title'], '$path.title') ?? objective;
+    final artifacts = _artifacts(value['artifacts'], '$path.artifacts');
+    return TaskStep(
+      id: 'step_${uuid.v7()}',
+      title: title,
+      objective: objective,
+      instructions: _stringList(value['instructions'], '$path.instructions'),
+      mayEditFiles:
+          _optionalBool(value['may_edit_files'], '$path.may_edit_files') ??
+          false,
+      artifacts: artifacts,
+      acceptanceRefs: _stringList(
+        value['acceptance_refs'],
+        '$path.acceptance_refs',
       ),
-      commandId: commandId,
+      status: TaskStepStatus.pending,
     );
-    final step = context.builder.preview().task.stepById(id)!;
-    return {
-      'changed': true,
-      'step': _stepDetail(step, ref.trim().isEmpty ? id : ref.trim()),
-    };
   }
 
-  Map<String, dynamic> _addAcceptance(
-    PlanningArguments arguments,
-    String? commandId,
-  ) {
-    _ensureOpen();
-    _keys(arguments, const {'ref', 'statement', 'criterion_refs', 'verifiers'});
-    final item = _parseAcceptance(
-      arguments.toWire(),
-      'acceptance',
-      allowEmptyCriteria: true,
-    );
-    context.builder.addAcceptance(item: item, commandId: commandId);
-    return {'changed': true, 'acceptance': _acceptanceWire(item)};
+  List<AcceptanceItem> _parseMutationAcceptance(Object? value, String path) {
+    if (value is! List) return const [];
+    return [
+      for (var index = 0; index < value.length; index++)
+        _parseMutationAcceptanceItem(value[index], '$path[$index]'),
+    ];
   }
 
-  Map<String, dynamic> _preview(PlanningArguments arguments) {
-    _ensureOpen();
-    _keys(arguments, const {});
-    final preview = context.builder.preview();
-    return {
-      'plan': _planSummary(preview.task),
-      'issues': [for (final issue in preview.issues) issue.toMap()],
-    };
-  }
-
-  Map<String, dynamic> _commit(PlanningArguments arguments) {
-    _ensureOpen();
-    _keys(arguments, const {});
-    final committed = context.builder.commit();
-    final response = {
-      'plan': _planSummary(committed.task),
-      'control': _controlState(committed.task),
-      'issues': [for (final issue in committed.issues) issue.toMap()],
-    };
-    if (!committed.valid) {
-      final issue = committed.issues.first;
-      return _error(
-        code: issue.code,
-        path: issue.path,
-        message: issue.message,
-        extra: response,
+  AcceptanceItem _parseMutationAcceptanceItem(Object? raw, String path) {
+    if (raw is! Map) {
+      throw _argument(
+        'invalid_argument',
+        path,
+        'Acceptance must be an object.',
       );
     }
-    context.committedTask = committed.task;
-    context.closed = true;
-    return response;
-  }
-
-  Map<String, dynamic> _requestReplan(PlanningArguments arguments) {
-    _ensureOpen();
-    _keys(arguments, const {'reason'});
-    final reason = _requiredString(arguments['reason'], 'reason');
-    context.builder.requestReplan(reason);
-    context.replanReason = reason;
-    return {'reason': reason};
-  }
-
-  Map<String, dynamic> _requestDecision(
-    PlanningArguments arguments,
-    String? commandId,
-  ) {
-    _ensureOpen();
-    _keys(arguments, const {'question', 'step_ref'});
-    final stepRef = _optionalString(arguments['step_ref'], 'step_ref');
-    final id = context.builder.requestUserDecision(
-      question: _requiredString(arguments['question'], 'question'),
-      stepReference: stepRef,
-      commandId: commandId,
+    final value = Map<String, dynamic>.from(raw);
+    _keys(value, const {
+      'ref',
+      'statement',
+      'criterion_ids',
+      'verifiers',
+    }, fieldPath: path);
+    final verifierMaps = value['verifiers'];
+    if (verifierMaps is! List || verifierMaps.isEmpty) {
+      throw _argument(
+        'missing_argument',
+        '$path.verifiers',
+        'At least one verifier is required.',
+      );
+    }
+    final verifiers = [
+      for (var index = 0; index < verifierMaps.length; index++)
+        _parseMutationVerifier(verifierMaps[index], '$path.verifiers[$index]'),
+    ];
+    return AcceptanceItem(
+      ref: _requiredString(value['ref'], '$path.ref'),
+      statement: _requiredString(value['statement'], '$path.statement'),
+      criterionIds: [
+        for (final id in _intList(
+          value['criterion_ids'],
+          '$path.criterion_ids',
+        ))
+          _resolveCriterionReference(id, '$path.criterion_ids'),
+      ],
+      verifiers: verifiers,
     );
-    return {
-      'changed': true,
-      'question': {'id': id, 'step_ref': stepRef},
-    };
   }
 
-  Map<String, dynamic> _draftState() {
-    final preview = context.builder.preview();
-    return {
-      'plan': _planSummary(preview.task),
-      'steps': [
-        for (final step in preview.task.steps) _stepDetail(step, step.id),
-      ],
-      'acceptance': [
-        for (final item in preview.task.acceptance) _acceptanceSummary(item),
-      ],
-      'issues': [for (final issue in preview.issues) issue.toMap()],
-      'control': _controlState(preview.task),
-    };
+  AcceptanceVerifier _parseMutationVerifier(Object? raw, String path) {
+    if (raw is! Map) {
+      throw _argument(
+        'invalid_argument',
+        path,
+        'A verifier must be an object.',
+      );
+    }
+    final value = Map<String, dynamic>.from(raw);
+    _keys(value, const {
+      'kind',
+      'required',
+      'command',
+      'working_directory',
+      'path',
+      'artifact_kind',
+      'description',
+    }, fieldPath: path);
+    final kindName = _requiredString(value['kind'], '$path.kind');
+    final kind = AcceptanceVerifierKind.values.firstWhere(
+      (item) => item.name == kindName,
+      orElse: () => throw _argument(
+        'invalid_argument',
+        '$path.kind',
+        'Unsupported verifier kind $kindName.',
+      ),
+    );
+    return AcceptanceVerifier(
+      kind: kind,
+      required: _optionalBool(value['required'], '$path.required') ?? true,
+      command: _optionalString(value['command'], '$path.command'),
+      workingDirectory:
+          _optionalString(
+            value['working_directory'],
+            '$path.working_directory',
+          ) ??
+          '.',
+      path: _optionalString(value['path'], '$path.path'),
+      artifactKind:
+          _optionalString(value['artifact_kind'], '$path.artifact_kind') ??
+          'file',
+      description: _optionalString(value['description'], '$path.description'),
+    );
   }
 
-  Map<String, dynamic> _stepDetail(TaskStep step, String ref) => {
-    'id': step.id,
-    'ref': ref,
-    'title': step.title,
-    'objective': step.objective,
-    'status': step.status.wire,
-    'may_edit_files': step.mayEditFiles,
-    'instructions': step.instructions,
-    'artifacts': [
-      for (final artifact in step.artifacts)
-        {
-          'path': artifact.path,
-          'description': artifact.description,
-          'kind': artifact.kind,
-        },
-    ],
-    'acceptance_refs': step.acceptanceRefs,
+  Map<String, dynamic> _mutationResponse(String action, TaskAggregate task) => {
+    action: true,
+    'task': _taskWire(task),
+    'persistence_revision': task.persistenceRevision,
+    'next_action': 'plan_finalize',
   };
 
-  Map<String, dynamic> _acceptanceSummary(AcceptanceItem item) => {
+  Map<String, dynamic> _taskWire(TaskAggregate task) => {
+    'task_id': context.taskNumber,
+    'title': task.title,
+    'objective': task.objective,
+    'constraints': task.constraints,
+    'out_of_scope': task.outOfScope,
+    'read_paths': task.readPaths,
+    'write_paths': task.writePaths,
+    'context': task.context,
+    'dependency_task_ids': [
+      for (final id in task.dependsOnTaskIds)
+        ?context.taskIdsByAgentNumber.entries
+            .where((entry) => entry.value == id)
+            .map((entry) => entry.key)
+            .firstOrNull,
+    ],
+    'milestone_id': task.milestoneId == null
+        ? null
+        : context.milestoneIdsByAgentNumber.entries
+              .where((entry) => entry.value == task.milestoneId)
+              .map((entry) => entry.key)
+              .firstOrNull,
+    'priority': task.priority.name,
+    'risk': task.risk.name,
+    'risk_reduction': task.riskReduction.name,
+    'effort': task.effort.name,
+    'selection_rationale': task.selectionRationale,
+    'status': task.status.wire,
+    'steps': [
+      for (var index = 0; index < task.steps.length; index++)
+        {
+          'ref': 'step_${index + 1}',
+          'title': task.steps[index].title,
+          'objective': task.steps[index].objective,
+          'instructions': task.steps[index].instructions,
+          'may_edit_files': task.steps[index].mayEditFiles,
+          'acceptance_refs': task.steps[index].acceptanceRefs,
+          'artifacts': [
+            for (final artifact in task.steps[index].artifacts)
+              {
+                'path': artifact.path,
+                'description': artifact.description,
+                'kind': artifact.kind,
+              },
+          ],
+        },
+    ],
+    'inherited_acceptance': [
+      for (final item in context.inheritedAcceptance)
+        _acceptanceWireNumeric(item),
+    ],
+    'local_acceptance': [
+      for (final item in task.acceptance)
+        if (!context.inheritedAcceptance.any(
+          (inherited) => inherited.ref == item.ref,
+        ))
+          _acceptanceWireNumeric(item),
+    ],
+    'effective_acceptance': [
+      for (final item in task.acceptance) _acceptanceWireNumeric(item),
+    ],
+  };
+
+  Map<String, dynamic> _acceptanceWireNumeric(AcceptanceItem item) => {
     'ref': item.ref,
     'statement': item.statement,
-    'criterion_refs': item.criterionIds,
+    'criterion_ids': [
+      for (final id in item.criterionIds)
+        if (_criterionAgentNumber(id) != null) _criterionAgentNumber(id)!,
+    ],
     'verifiers': [
       for (final verifier in item.verifiers)
         {
-          'kind': verifier.kind.wire,
+          'kind': verifier.kind.name,
           'required': verifier.required,
-          'status': 'pending',
           if (verifier.command != null) 'command': verifier.command,
+          if (verifier.workingDirectory != '.')
+            'working_directory': verifier.workingDirectory,
           if (verifier.path != null) 'path': verifier.path,
+          if (verifier.artifactKind != 'file')
+            'artifact_kind': verifier.artifactKind,
           if (verifier.description != null) 'description': verifier.description,
         },
     ],
   };
 
-  Map<String, dynamic> _controlState(TaskAggregate task) => {
-    'outcome': task.pendingQuestion != null
-        ? 'awaiting_user_input'
-        : task.status.wire,
-    'action': task.pendingQuestion == null ? null : 'answer_question',
-    'pending_question': task.pendingQuestion == null
-        ? null
-        : {
-            'id': task.pendingQuestion!.id,
-            'step_ref': task.pendingQuestion!.stepId,
-            'question': task.pendingQuestion!.question,
-          },
+  int? _criterionAgentNumber(String id) =>
+      context.criterionAgentNumbers[id] ?? int.tryParse(id);
+
+  String _resolveCriterionReference(int number, String path) {
+    if (context.criterionAgentNumbers.isEmpty) return number.toString();
+    final id = context.criterionAgentNumbers.entries
+        .where((entry) => entry.value == number)
+        .map((entry) => entry.key)
+        .firstOrNull;
+    if (id == null) {
+      throw _argument(
+        'unknown_reference',
+        path,
+        'Unknown criterion reference $number.',
+      );
+    }
+    return id;
+  }
+
+  String? _resolveAgentReference(
+    int? number,
+    Map<int, String> references,
+    String path,
+    String kind,
+  ) {
+    if (number == null) return null;
+    if (references.isEmpty) return number.toString();
+    final resolved = references[number];
+    if (resolved == null) {
+      throw _argument(
+        'unknown_reference',
+        path,
+        'Unknown $kind reference $number.',
+      );
+    }
+    return resolved;
+  }
+
+  bool _isPreservedStep(TaskStep step) =>
+      step.status == TaskStepStatus.completed ||
+      step.status == TaskStepStatus.skipped;
+
+  void _requireTaskId(Object? value) {
+    final id = _optionalInt(value, 'task_id');
+    if (id == null || id != context.taskNumber) {
+      throw _argument(
+        'unknown_reference',
+        'task_id',
+        'Task $value is not the current task.',
+      );
+    }
+  }
+
+  static const _taskMutationKeys = {
+    'title',
+    'objective',
+    'constraints',
+    'acceptance',
+    'steps',
+    'out_of_scope',
+    'read_paths',
+    'write_paths',
+    'context',
+    'dependency_task_ids',
+    'milestone_id',
+    'priority',
+    'risk',
+    'risk_reduction',
+    'effort',
+    'selection_rationale',
   };
 
-  Map<String, dynamic> _planSummary(TaskAggregate task) => {
-    'task_id': task.id,
-    'title': task.title,
-    'objective': task.objective,
-    'step_count': task.steps.length,
-    'next_step_ref': task.currentStepId,
-    'status': task.status.wire,
-    'acceptance': [
-      for (final item in task.acceptance) _acceptanceSummary(item),
-    ],
-  };
+  List<int> _intList(Object? value, String fieldPath) {
+    if (value == null) return const [];
+    if (value is! List || value.any((item) => item is! int)) {
+      throw _argument(
+        'invalid_argument',
+        fieldPath,
+        'Expected an array of integers.',
+      );
+    }
+    return [for (final item in value.cast<int>()) item];
+  }
+
+  T? _enumValue<T extends Enum>(
+    Iterable<T> values,
+    Object? value,
+    String fieldPath,
+  ) {
+    if (value == null) return null;
+    if (value is! String) {
+      throw _argument(
+        'invalid_argument',
+        fieldPath,
+        'Expected a string enum value.',
+      );
+    }
+    for (final item in values) {
+      if (item.name == value) return item;
+    }
+    throw _argument('invalid_argument', fieldPath, 'Unsupported value $value.');
+  }
 
   void _ensureOpen() {
     if (context.closed) {
       throw _argument(
         'planning_closed',
         'tool',
-        'The task plan was already committed.',
+        'The task plan was already finalized.',
       );
     }
   }
@@ -466,145 +780,6 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
       kind: _optionalString(value['kind'], '$fieldPath.kind') ?? 'file',
     );
   }
-
-  AcceptanceItem _parseAcceptance(
-    Map<String, dynamic> value,
-    String fieldPath, {
-    required bool allowEmptyCriteria,
-  }) {
-    _keys(value, const {
-      'ref',
-      'statement',
-      'criterion_refs',
-      'verifiers',
-    }, fieldPath: fieldPath);
-    final criterionIds = _stringList(
-      value['criterion_refs'],
-      '$fieldPath.criterion_refs',
-    );
-    if (!allowEmptyCriteria && criterionIds.isEmpty) {
-      throw _argument(
-        'missing_argument',
-        '$fieldPath.criterion_refs',
-        'Project-linked acceptance needs at least one criterion reference.',
-      );
-    }
-    final rawVerifiers = value['verifiers'];
-    if (rawVerifiers is! List || rawVerifiers.isEmpty) {
-      throw _argument(
-        'missing_argument',
-        '$fieldPath.verifiers',
-        'At least one verifier is required.',
-      );
-    }
-    final verifiers = <AcceptanceVerifier>[];
-    for (var index = 0; index < rawVerifiers.length; index++) {
-      final raw = rawVerifiers[index];
-      if (raw is! Map) {
-        throw _argument(
-          'invalid_argument',
-          '$fieldPath.verifiers[$index]',
-          'A verifier must be an object.',
-        );
-      }
-      final verifier = Map<String, dynamic>.from(raw);
-      _keys(verifier, const {
-        'kind',
-        'required',
-        'command',
-        'working_directory',
-        'path',
-        'artifact_kind',
-        'description',
-      }, fieldPath: '$fieldPath.verifiers[$index]');
-      final kindName = _requiredString(
-        verifier['kind'],
-        '$fieldPath.verifiers[$index].kind',
-      );
-      final kind = AcceptanceVerifierKind.values.firstWhere(
-        (item) => item.name == kindName,
-        orElse: () => throw _argument(
-          'invalid_argument',
-          '$fieldPath.verifiers[$index].kind',
-          'Unsupported verifier kind $kindName.',
-        ),
-      );
-      final parsed = AcceptanceVerifier(
-        kind: kind,
-        required:
-            _optionalBool(
-              verifier['required'],
-              '$fieldPath.verifiers[$index].required',
-            ) ??
-            true,
-        command: _optionalString(
-          verifier['command'],
-          '$fieldPath.verifiers[$index].command',
-        ),
-        workingDirectory:
-            _optionalString(
-              verifier['working_directory'],
-              '$fieldPath.verifiers[$index].working_directory',
-            ) ??
-            '.',
-        path: _optionalString(
-          verifier['path'],
-          '$fieldPath.verifiers[$index].path',
-        ),
-        artifactKind:
-            _optionalString(
-              verifier['artifact_kind'],
-              '$fieldPath.verifiers[$index].artifact_kind',
-            ) ??
-            'file',
-        description: _optionalString(
-          verifier['description'],
-          '$fieldPath.verifiers[$index].description',
-        ),
-      );
-      if (!parsed.hasConfiguration) {
-        throw _argument(
-          'invalid_argument',
-          '$fieldPath.verifiers[$index]',
-          'Verifier configuration does not match its kind.',
-        );
-      }
-      verifiers.add(parsed);
-    }
-    if (!verifiers.any((item) => item.required)) {
-      throw _argument(
-        'missing_required_verifier',
-        '$fieldPath.verifiers',
-        'At least one verifier must be required.',
-      );
-    }
-    return AcceptanceItem(
-      ref: _requiredString(value['ref'], '$fieldPath.ref'),
-      statement: _requiredString(value['statement'], '$fieldPath.statement'),
-      criterionIds: criterionIds,
-      verifiers: verifiers,
-    );
-  }
-
-  Map<String, dynamic> _acceptanceWire(AcceptanceItem item) => {
-    'ref': item.ref,
-    'statement': item.statement,
-    'criterion_refs': item.criterionIds,
-    'verifiers': [
-      for (final verifier in item.verifiers)
-        {
-          'kind': verifier.kind.wire,
-          'required': verifier.required,
-          if (verifier.command != null) 'command': verifier.command,
-          if (verifier.workingDirectory != '.')
-            'working_directory': verifier.workingDirectory,
-          if (verifier.path != null) 'path': verifier.path,
-          if (verifier.artifactKind != 'file')
-            'artifact_kind': verifier.artifactKind,
-          if (verifier.description != null) 'description': verifier.description,
-        },
-    ],
-  };
 
   void _keys(
     Object value,
@@ -699,45 +874,11 @@ class _TaskPlanningArgumentException extends PlanningToolArgumentException {
   const _TaskPlanningArgumentException(super.code, super.path, super.message);
 }
 
-const ToolDefinition _taskViewDefinition = ToolDefinition(
-  id: 'task_view',
-  name: 'View task plan',
+const ToolDefinition _taskAddDefinition = ToolDefinition(
+  id: 'task_add',
+  name: 'Add task',
   description:
-      'Inspect a bounded task summary, its step statuses, acceptance, and boundaries.',
-  schema: ToolSchema({
-    'type': 'object',
-    'additionalProperties': false,
-    'properties': {
-      'step_ref': {
-        'type': 'string',
-        'description': 'A step ref returned by task_add_step or task_view.',
-      },
-      'section': {
-        'type': 'string',
-        'enum': TaskViewService.viewSections,
-        'description':
-            'Optional collection to page. Use the next_cursor returned in navigation.pages.',
-      },
-      'cursor': {
-        'type': 'string',
-        'description':
-            'Cursor returned in navigation.pages for the selected section.',
-      },
-      'max_items': {
-        'type': 'integer',
-        'minimum': 1,
-        'maximum': 48,
-        'default': 12,
-      },
-    },
-  }),
-);
-
-const ToolDefinition _setBriefDefinition = ToolDefinition(
-  id: 'task_set_brief',
-  name: 'Set task brief',
-  description:
-      'Refine the task title, objective, or constraints. Acceptance is managed separately.',
+      'Create or replace the complete current task in one validated operation.',
   schema: ToolSchema({
     'type': 'object',
     'additionalProperties': false,
@@ -748,66 +889,133 @@ const ToolDefinition _setBriefDefinition = ToolDefinition(
         'type': 'array',
         'items': {'type': 'string'},
       },
+      'out_of_scope': {
+        'type': 'array',
+        'minItems': 1,
+        'items': {'type': 'string'},
+      },
+      'read_paths': {
+        'type': 'array',
+        'items': {'type': 'string'},
+      },
+      'write_paths': {
+        'type': 'array',
+        'items': {'type': 'string'},
+      },
+      'context': {
+        'type': 'array',
+        'items': {'type': 'string'},
+      },
+      'dependency_task_ids': {
+        'type': 'array',
+        'items': {'type': 'integer', 'minimum': 1},
+      },
+      'milestone_id': {'type': 'integer', 'minimum': 1},
+      'priority': {
+        'type': 'string',
+        'enum': ['critical', 'high', 'normal', 'low'],
+      },
+      'risk': {
+        'type': 'string',
+        'enum': ['high', 'medium', 'low', 'unknown'],
+      },
+      'risk_reduction': {
+        'type': 'string',
+        'enum': ['high', 'medium', 'low', 'none'],
+      },
+      'effort': {
+        'type': 'string',
+        'enum': ['small', 'medium', 'large'],
+      },
+      'selection_rationale': {'type': 'string'},
+      'acceptance': _taskAcceptanceSchema,
+      'steps': _taskStepsSchema,
     },
+    'required': ['objective', 'acceptance', 'out_of_scope', 'steps'],
   }),
 );
 
-const ToolDefinition _addStepDefinition = ToolDefinition(
-  id: 'task_add_step',
-  name: 'Add task step',
+const ToolDefinition _taskUpdateDefinition = ToolDefinition(
+  id: 'task_update',
+  name: 'Update task',
   description:
-      'Add one independently executable step. Hermes generates its persistent ID.',
+      'Partially update the current task. Omitted fields remain unchanged.',
   schema: ToolSchema({
     'type': 'object',
     'additionalProperties': false,
     'properties': {
-      'ref': {'type': 'string'},
+      'task_id': {'type': 'integer', 'minimum': 1},
       'title': {'type': 'string'},
       'objective': {'type': 'string'},
-      'instructions': {
+      'constraints': {
         'type': 'array',
         'items': {'type': 'string'},
       },
-      'may_edit_files': {
-        'type': 'boolean',
-        'default': false,
-        'description':
-            'Whether this step may edit source files. Defaults to read-only.',
-      },
-      'artifacts': {
-        'type': 'array',
-        'items': {
-          'type': 'object',
-          'additionalProperties': false,
-          'properties': {
-            'path': {'type': 'string'},
-            'description': {'type': 'string'},
-            'kind': {
-              'type': 'string',
-              'enum': ['file', 'directory'],
-              'default': 'file',
-              'description':
-                  'Use directory for a directory output; file is the default.',
-            },
-          },
-          'required': ['path'],
-        },
-      },
-      'acceptance_refs': {
+      'out_of_scope': {
         'type': 'array',
         'items': {'type': 'string'},
-        'description': 'Acceptance refs verified by this step.',
       },
+      'read_paths': {
+        'type': 'array',
+        'items': {'type': 'string'},
+      },
+      'write_paths': {
+        'type': 'array',
+        'items': {'type': 'string'},
+      },
+      'context': {
+        'type': 'array',
+        'items': {'type': 'string'},
+      },
+      'dependency_task_ids': {
+        'type': 'array',
+        'items': {'type': 'integer', 'minimum': 1},
+      },
+      'milestone_id': {'type': 'integer', 'minimum': 1},
+      'priority': {
+        'type': 'string',
+        'enum': ['critical', 'high', 'normal', 'low'],
+      },
+      'risk': {
+        'type': 'string',
+        'enum': ['high', 'medium', 'low', 'unknown'],
+      },
+      'risk_reduction': {
+        'type': 'string',
+        'enum': ['high', 'medium', 'low', 'none'],
+      },
+      'effort': {
+        'type': 'string',
+        'enum': ['small', 'medium', 'large'],
+      },
+      'selection_rationale': {'type': 'string'},
+      'acceptance': _taskAcceptanceSchema,
+      'steps': _taskStepsSchema,
     },
-    'required': ['objective'],
+    'required': ['task_id'],
   }),
 );
 
-const ToolDefinition _resetPlanDefinition = ToolDefinition(
-  id: 'task_reset_plan',
-  name: 'Reset task draft',
+const ToolDefinition _taskRemoveDefinition = ToolDefinition(
+  id: 'task_remove',
+  name: 'Remove task',
   description:
-      'Discard the current uncommitted draft so it can be rebuilt with planning commands. Completed and skipped steps are preserved during replanning.',
+      'Remove the current task from active planning while preserving its history.',
+  schema: ToolSchema({
+    'type': 'object',
+    'additionalProperties': false,
+    'properties': {
+      'task_id': {'type': 'integer', 'minimum': 1},
+    },
+    'required': ['task_id'],
+  }),
+);
+
+const ToolDefinition _finalizeDefinition = ToolDefinition(
+  id: 'plan_finalize',
+  name: 'Finalize plan',
+  description:
+      'Finish planning and move the validated persisted task into implementation.',
   schema: ToolSchema({
     'type': 'object',
     'additionalProperties': false,
@@ -815,21 +1023,18 @@ const ToolDefinition _resetPlanDefinition = ToolDefinition(
   }),
 );
 
-const ToolDefinition _addAcceptanceDefinition = ToolDefinition(
-  id: 'task_add_acceptance',
-  name: 'Add task acceptance',
-  description:
-      'Add one explicit local acceptance item. Hermes creates all gate and evidence identifiers.',
-  schema: ToolSchema({
+const Map<String, dynamic> _taskAcceptanceSchema = {
+  'type': 'array',
+  'minItems': 0,
+  'items': {
     'type': 'object',
     'additionalProperties': false,
     'properties': {
       'ref': {'type': 'string'},
       'statement': {'type': 'string'},
-      'criterion_refs': {
+      'criterion_ids': {
         'type': 'array',
-        'items': {'type': 'string'},
-        'description': 'Leave empty for task-local acceptance.',
+        'items': {'type': 'integer', 'minimum': 1},
       },
       'verifiers': {
         'type': 'array',
@@ -854,56 +1059,42 @@ const ToolDefinition _addAcceptanceDefinition = ToolDefinition(
       },
     },
     'required': ['ref', 'statement', 'verifiers'],
-  }),
-);
+  },
+};
 
-const ToolDefinition _previewDefinition = ToolDefinition(
-  id: 'task_preview_plan',
-  name: 'Preview task plan',
-  description: 'Validate the current task draft without committing it.',
-  schema: ToolSchema({
-    'type': 'object',
-    'additionalProperties': false,
-    'properties': {},
-  }),
-);
-
-const ToolDefinition _commitDefinition = ToolDefinition(
-  id: 'task_commit_plan',
-  name: 'Commit task plan',
-  description: 'Validate and finish the task plan draft.',
-  schema: ToolSchema({
-    'type': 'object',
-    'additionalProperties': false,
-    'properties': {},
-  }),
-);
-
-const ToolDefinition _requestReplanDefinition = ToolDefinition(
-  id: 'task_request_replan',
-  name: 'Request task replan',
-  description: 'Record a concrete reason why unfinished work needs replanning.',
-  schema: ToolSchema({
+const Map<String, dynamic> _taskStepsSchema = {
+  'type': 'array',
+  'minItems': 1,
+  'items': {
     'type': 'object',
     'additionalProperties': false,
     'properties': {
-      'reason': {'type': 'string'},
+      'ref': {'type': 'string'},
+      'title': {'type': 'string'},
+      'objective': {'type': 'string'},
+      'instructions': {
+        'type': 'array',
+        'items': {'type': 'string'},
+      },
+      'may_edit_files': {'type': 'boolean', 'default': false},
+      'artifacts': {
+        'type': 'array',
+        'items': {
+          'type': 'object',
+          'additionalProperties': false,
+          'properties': {
+            'path': {'type': 'string'},
+            'description': {'type': 'string'},
+            'kind': {'type': 'string', 'default': 'file'},
+          },
+          'required': ['path'],
+        },
+      },
+      'acceptance_refs': {
+        'type': 'array',
+        'items': {'type': 'string'},
+      },
     },
-    'required': ['reason'],
-  }),
-);
-
-const ToolDefinition _requestDecisionDefinition = ToolDefinition(
-  id: 'task_request_user_decision',
-  name: 'Request user decision',
-  description: 'Ask one genuinely blocking user question.',
-  schema: ToolSchema({
-    'type': 'object',
-    'additionalProperties': false,
-    'properties': {
-      'question': {'type': 'string'},
-      'step_ref': {'type': 'string'},
-    },
-    'required': ['question'],
-  }),
-);
+    'required': ['objective'],
+  },
+};

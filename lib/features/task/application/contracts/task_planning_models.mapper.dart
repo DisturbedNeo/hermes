@@ -71,6 +71,39 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
       v.criteria;
   static const Field<TaskPlanningContext, List<TaskProjectCriterion>>
   _f$criteria = Field('criteria', _$criteria, opt: true, def: const []);
+  static int? _$taskAgentNumber(TaskPlanningContext v) => v.taskAgentNumber;
+  static const Field<TaskPlanningContext, int> _f$taskAgentNumber = Field(
+    'taskAgentNumber',
+    _$taskAgentNumber,
+    opt: true,
+  );
+  static Map<String, int> _$criterionAgentNumbers(TaskPlanningContext v) =>
+      v.criterionAgentNumbers;
+  static const Field<TaskPlanningContext, Map<String, int>>
+  _f$criterionAgentNumbers = Field(
+    'criterionAgentNumbers',
+    _$criterionAgentNumbers,
+    opt: true,
+    def: const {},
+  );
+  static Map<String, int> _$milestoneAgentNumbers(TaskPlanningContext v) =>
+      v.milestoneAgentNumbers;
+  static const Field<TaskPlanningContext, Map<String, int>>
+  _f$milestoneAgentNumbers = Field(
+    'milestoneAgentNumbers',
+    _$milestoneAgentNumbers,
+    opt: true,
+    def: const {},
+  );
+  static Map<String, int> _$taskAgentNumbers(TaskPlanningContext v) =>
+      v.taskAgentNumbers;
+  static const Field<TaskPlanningContext, Map<String, int>>
+  _f$taskAgentNumbers = Field(
+    'taskAgentNumbers',
+    _$taskAgentNumbers,
+    opt: true,
+    def: const {},
+  );
   static List<String> _$readPaths(TaskPlanningContext v) => v.readPaths;
   static const Field<TaskPlanningContext, List<String>> _f$readPaths = Field(
     'readPaths',
@@ -104,6 +137,10 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
     #acceptance: _f$acceptance,
     #outOfScope: _f$outOfScope,
     #criteria: _f$criteria,
+    #taskAgentNumber: _f$taskAgentNumber,
+    #criterionAgentNumbers: _f$criterionAgentNumbers,
+    #milestoneAgentNumbers: _f$milestoneAgentNumbers,
+    #taskAgentNumbers: _f$taskAgentNumbers,
     #readPaths: _f$readPaths,
     #writePaths: _f$writePaths,
     #maxSteps: _f$maxSteps,
@@ -120,6 +157,10 @@ class TaskPlanningContextMapper extends ClassMapperBase<TaskPlanningContext> {
       acceptance: data.dec(_f$acceptance),
       outOfScope: data.dec(_f$outOfScope),
       criteria: data.dec(_f$criteria),
+      taskAgentNumber: data.dec(_f$taskAgentNumber),
+      criterionAgentNumbers: data.dec(_f$criterionAgentNumbers),
+      milestoneAgentNumbers: data.dec(_f$milestoneAgentNumbers),
+      taskAgentNumbers: data.dec(_f$taskAgentNumbers),
       readPaths: data.dec(_f$readPaths),
       writePaths: data.dec(_f$writePaths),
       maxSteps: data.dec(_f$maxSteps),

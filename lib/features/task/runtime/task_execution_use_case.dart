@@ -14,7 +14,6 @@ class TaskExecutionUseCase {
   TaskGateEvaluator get _gateEvaluator => _context.gateEvaluator;
   TaskToolExecutionPort get _toolExecution => _context.toolExecution;
   TaskStepExecutionLoop get _stepLoop => _context.stepLoop;
-  TaskViewService get _taskViewService => _context.taskViewService;
   QuestionPolicyService get _questionPolicy => _context.questionPolicy;
   JsonEncoder get _encoder => _context.encoder;
   TaskExecutionPolicy get _executionPolicy => const TaskExecutionPolicy();

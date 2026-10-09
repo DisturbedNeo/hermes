@@ -11,7 +11,6 @@ import 'package:hermes/features/project/runtime/project_evidence_service.dart';
 import 'package:hermes/features/project/runtime/project_planning_tools.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/runtime/task_plan_builder.dart';
-import 'package:hermes/features/task/runtime/task_planning_tools.dart';
 
 void main() {
   test('acceptance contract encodes and decodes typed verifiers', () {
@@ -175,80 +174,29 @@ void main() {
     });
   });
 
-  test(
-    'agent-facing planning tools expose acceptance and reject legacy fields',
-    () async {
-      final taskRegistry = TaskPlanningToolRegistry(
-        context: TaskPlanningToolContext(
-          task: _task(),
-          workspaceRoot: '/workspace',
-          maxSteps: 2,
-        ),
-      );
-      final taskToolIds = taskRegistry.toolDefinitions.map((item) => item.id);
-      expect(taskToolIds, contains('task_add_acceptance'));
-      expect(taskToolIds, isNot(contains('task_add_check')));
-      final taskSchema = taskRegistry.toolDefinitions
-          .singleWhere((item) => item.id == 'task_add_step')
-          .schema
-          .toWire();
-      expect(
-        (taskSchema['properties'] as Map).keys,
-        contains('acceptance_refs'),
-      );
-
-      final rejectedTask = await invokePlanning(
-        taskRegistry,
-        'task_add_acceptance',
-        {
-          'ref': 'legacy',
-          'statement': 'This must be rejected.',
-          'done_criteria': ['legacy field'],
-          'verifiers': [
-            {'kind': 'review'},
-          ],
-        },
-      );
-      expect(rejectedTask['ok'], isFalse);
-
-      final projectRegistry = ProjectPlanningToolRegistry(
-        context: ProjectPlanningContext(
-          project: _project(),
-          workspaceRoot: '/workspace',
-        ),
-      );
-      final projectSchema = projectRegistry.toolDefinitions
-          .singleWhere((item) => item.id == 'task_upsert')
-          .schema
-          .toWire();
-      final projectProperties = projectSchema['properties'] as Map;
-      expect(projectProperties.keys, contains('acceptance'));
-      expect(projectProperties.keys, isNot(contains('checks')));
-      expect(projectProperties.keys, isNot(contains('done_criteria')));
-      expect(projectProperties.keys, isNot(contains('expected_artifacts')));
-    },
-  );
-
-  test('project planning rejects unknown acceptance criteria', () async {
+  test('project task planning rejects unknown acceptance criteria', () async {
     final registry = ProjectPlanningToolRegistry(
       context: ProjectPlanningContext(
         project: _project(),
         workspaceRoot: '/workspace',
       ),
     );
-    final response = await invokePlanning(registry, 'task_upsert', {
+    final response = await invokePlanning(registry, 'task_add', {
       'objective': 'Implement the bounded outcome.',
       'acceptance': [
         {
           'ref': 'unknown-link',
           'statement': 'The outcome is verified.',
-          'criterion_refs': ['criterion_missing'],
+          'criterion_ids': [99],
           'verifiers': [
             {'kind': 'review'},
           ],
         },
       ],
       'out_of_scope': ['Unrelated project work.'],
+      'steps': [
+        {'objective': 'Implement the bounded outcome.'},
+      ],
     });
 
     expect(response['ok'], isFalse);

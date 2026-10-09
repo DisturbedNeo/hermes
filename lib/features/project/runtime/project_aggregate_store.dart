@@ -42,6 +42,10 @@ class ProjectPersistenceContext {
     }
   }
 
+  void stageNewTask(TaskAggregate task) {
+    _stagedTasks[task.id] = task;
+  }
+
   Iterable<TaskAggregate> get stagedTasks => _stagedTasks.values;
 
   int? expectedTaskRevision(String taskId) => _expectedTaskRevisions[taskId];

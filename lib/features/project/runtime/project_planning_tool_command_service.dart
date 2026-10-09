@@ -14,43 +14,39 @@ class ProjectPlanningToolCommandService {
   late final ProjectWorkspacePlanningCommandService _workspaceCommands;
   late final ProjectPlanEditingCommandService _planCommands;
 
-  String get terminalToolId => 'plan_commit';
+  String get terminalToolId => 'plan_finalize';
 
-  String get closedCode => 'draft_closed';
+  String get closedCode => 'planning_closed';
 
-  String get closedMessage => 'This planning draft has already been committed.';
+  String get closedMessage =>
+      'This planning session has already been finalized.';
 
   List<ToolDefinition> get toolDefinitions {
     final core = <ToolDefinition>[
-      _projectViewDefinition,
       _projectUpdateDefinition,
-      _taskUpsertDefinition,
-      _commitDefinition,
+      _taskAddDefinition,
+      _taskUpdateDefinition,
+      _taskRemoveDefinition,
+      _projectRequestDecisionDefinition,
+      _projectFinalizeDefinition,
     ];
     if (profile == ProjectPlanningToolProfile.graphMaintenance) {
       return [
-        _projectViewDefinition,
         _setWorkspaceOrientationDefinition,
         _addWorkspaceNodesDefinition,
         _updateWorkspaceNodeDefinition,
         _addWorkspaceEdgesDefinition,
         _updateWorkspaceEdgeDefinition,
         _removeWorkspaceItemDefinition,
-        _previewDefinition,
-        _commitDefinition,
+        _projectFinalizeDefinition,
       ];
     }
     if (profile == ProjectPlanningToolProfile.split) {
       return [
-        _projectViewDefinition,
-        _splitTaskDefinition,
-        _previewDefinition,
-        _commitDefinition,
+        _taskAddDefinition,
+        _taskRemoveDefinition,
+        _projectFinalizeDefinition,
       ];
-    }
-    if (context.workspaceReader != null &&
-        profile == ProjectPlanningToolProfile.bootstrap) {
-      core.insert(1, _planningReadFileDefinition);
     }
     return core;
   }
@@ -63,8 +59,7 @@ class ProjectPlanningToolCommandService {
     PlanningArguments arguments, {
     String? commandId,
   }) async {
-    if (!_allows(toolId) ||
-        (toolId == 'planning_read_file' && context.workspaceReader == null)) {
+    if (!_allows(toolId)) {
       throw _argument(
         'tool_unavailable',
         'tool',
@@ -73,11 +68,15 @@ class ProjectPlanningToolCommandService {
       );
     }
     final result = switch (toolId) {
-      'planning_read_file' => await _planningReadFile(arguments),
-      'project_view' => _view(arguments),
-      'project_update' => _planCommands.updateProject(arguments, commandId),
-      'task_upsert' => _planCommands.upsertTask(arguments, commandId),
-      'plan_split_task' => _planCommands.splitTask(arguments, commandId),
+      'project_update' => await _planCommands.updateProject(
+        arguments,
+        commandId,
+      ),
+      'task_add' => await _planCommands.addTask(arguments, commandId),
+      'task_update' => await _planCommands.updateTask(arguments, commandId),
+      'task_remove' => await _planCommands.removeTask(arguments, commandId),
+      'project_request_user_decision' =>
+        await _planCommands.requestUserDecision(arguments, commandId),
       'plan_set_workspace_orientation' =>
         _workspaceCommands.setWorkspaceOrientation(arguments, commandId),
       'plan_add_workspace_nodes' => _workspaceCommands.addWorkspaceNodes(
@@ -100,8 +99,7 @@ class ProjectPlanningToolCommandService {
         arguments,
         commandId,
       ),
-      'plan_preview' => _preview(arguments),
-      'plan_commit' => await _commit(arguments),
+      'plan_finalize' => await _finalize(arguments),
       _ => throw _argument(
         'unknown_tool',
         'tool',
@@ -109,41 +107,20 @@ class ProjectPlanningToolCommandService {
       ),
     };
     final response = <String, dynamic>{'ok': true, ...result};
-    if (_mutationToolIds.contains(toolId)) {
-      if (_agentMutationToolIds.contains(toolId)) {
-        response['draft'] = _agentDraftState();
-        response['next_action'] = 'plan_commit';
-      } else {
-        response['state'] = _draftState();
-      }
-    }
     return PlanningResponse.fromWire(response);
   }
 
-  static const _mutationToolIds = {
-    'project_update',
-    'task_upsert',
-    'plan_split_task',
-    'plan_set_workspace_orientation',
-    'plan_add_workspace_nodes',
-    'plan_update_workspace_node',
-    'plan_add_workspace_edges',
-    'plan_update_workspace_edge',
-    'plan_remove_workspace_item',
-  };
-
-  static const _agentMutationToolIds = {'project_update', 'task_upsert'};
-
   bool _allows(String toolId) {
-    if (toolId == 'planning_read_file' &&
-        profile == ProjectPlanningToolProfile.bootstrap &&
-        context.workspaceReader != null) {
+    if (toolId == 'plan_finalize') {
       return true;
     }
-    if (toolId == 'project_view' || toolId == 'plan_commit') {
-      return true;
-    }
-    if (toolId == 'project_update' || toolId == 'task_upsert') {
+    if (const {
+      'project_update',
+      'task_add',
+      'task_update',
+      'task_remove',
+      'project_request_user_decision',
+    }.contains(toolId)) {
       return profile == ProjectPlanningToolProfile.bootstrap ||
           profile == ProjectPlanningToolProfile.maintenance;
     }
@@ -151,78 +128,20 @@ class ProjectPlanningToolCommandService {
       ProjectPlanningToolProfile.bootstrap => false,
       ProjectPlanningToolProfile.maintenance => false,
       ProjectPlanningToolProfile.graphMaintenance => const {
-        'project_view',
         'plan_set_workspace_orientation',
         'plan_add_workspace_nodes',
         'plan_update_workspace_node',
         'plan_add_workspace_edges',
         'plan_update_workspace_edge',
         'plan_remove_workspace_item',
-        'plan_preview',
-        'plan_commit',
+        'plan_finalize',
       }.contains(toolId),
       ProjectPlanningToolProfile.split => const {
-        'project_view',
-        'plan_split_task',
-        'plan_preview',
-        'plan_commit',
+        'task_add',
+        'task_remove',
+        'plan_finalize',
       }.contains(toolId),
     };
-  }
-
-  bool _visible(String toolId) {
-    if (profile == ProjectPlanningToolProfile.bootstrap &&
-        const {'plan_preview'}.contains(toolId)) {
-      return false;
-    }
-    return _allows(toolId);
-  }
-
-  bool _validationRepairable(List<ProjectPlanValidationIssue> issues) {
-    // Bootstrap can repair only omissions that its visible additive tools can
-    // still supply. Existing task ownership, evidence, dependency, and
-    // structural errors require mutation operations outside that profile.
-    const bootstrapRepairable = {
-      'missing_criteria',
-      'missing_active_milestone',
-      'missing_executable_tasks',
-      'new_task_minimum_not_met',
-    };
-    if (profile == ProjectPlanningToolProfile.bootstrap) {
-      return issues.every((issue) => bootstrapRepairable.contains(issue.code));
-    }
-    if (profile == ProjectPlanningToolProfile.split) {
-      return false;
-    }
-    if (profile == ProjectPlanningToolProfile.graphMaintenance) {
-      return false;
-    }
-    const nonRepairableByProfile = {
-      ProjectPlanningToolProfile.maintenance: {'path_outside_workspace'},
-    };
-    final nonRepairable = nonRepairableByProfile[profile]!;
-    return issues.every((issue) => !nonRepairable.contains(issue.code));
-  }
-
-  List<String> _suggestedActions(List<ProjectPlanValidationIssue> issues) {
-    if (!_validationRepairable(issues)) return const [];
-    final actions = <String>{};
-    for (final issue in issues) {
-      final action = switch (issue.code) {
-        'missing_criteria' => 'project_update',
-        'missing_executable_tasks' ||
-        'new_task_minimum_not_met' => 'task_upsert',
-        'missing_active_milestone' => 'project_update',
-        'impossible_deterministic_verification' ||
-        'missing_command_passes_gate' =>
-          profile == ProjectPlanningToolProfile.bootstrap
-              ? 'task_upsert'
-              : 'task_upsert',
-        _ => null,
-      };
-      if (action != null && _visible(action)) actions.add(action);
-    }
-    return actions.toList()..sort();
   }
 
   Map<String, dynamic> domainError(Object error) {
@@ -234,9 +153,6 @@ class ProjectPlanningToolCommandService {
         extra: error.details.isEmpty ? const {} : {'details': error.details},
       );
     }
-    if (error is ProjectViewException) {
-      return _error(code: error.code, path: error.path, message: error.message);
-    }
     return _error(
       code: 'planning_tool_failed',
       path: 'tool',
@@ -244,375 +160,57 @@ class ProjectPlanningToolCommandService {
     );
   }
 
-  Map<String, dynamic> _view(PlanningArguments arguments) {
-    _keys(arguments, const {
-      'task_id',
-      'criterion_id',
-      'task_ref',
-      'criterion_ref',
-      'memory_query',
-      'workspace_query',
-      'max_items',
-      'section',
-      'cursor',
-    });
+  Future<Map<String, dynamic>> _finalize(PlanningArguments arguments) async {
+    _ensureOpen();
+    _keys(arguments, const {});
+    if (context.currentProject.openQuestions.isNotEmpty) {
+      throw _argument(
+        'awaiting_user_input',
+        'project',
+        'Resolve all pending project questions before finalizing.',
+      );
+    }
     final preview = context.builder.preview(
       workspaceRoot: context.workspaceRoot,
+      ensureBootstrapMilestone: false,
     );
-    final taskId = _optionalInt(arguments['task_id'], 'task_id');
-    final criterionId = _optionalInt(arguments['criterion_id'], 'criterion_id');
-    final taskRef = taskId == null
-        ? _optionalString(arguments['task_ref'], 'task_ref')
-        : _agentReference(taskId);
-    final criterionRef = criterionId == null
-        ? _optionalString(arguments['criterion_ref'], 'criterion_ref')
-        : _agentReference(criterionId);
-    final memoryQuery = _optionalString(
-      arguments['memory_query'],
-      'memory_query',
-    );
-    final workspaceQuery = _optionalString(
-      arguments['workspace_query'],
-      'workspace_query',
-    );
-    final section = _optionalString(arguments['section'], 'section');
-    final cursor = _optionalString(arguments['cursor'], 'cursor');
-    final view = context.viewService.query(
-      _projectForDetail(preview),
-      taskRef: _draftTaskReference(
-        taskRef,
-        preview.proposal.tasks.map((item) => item.id),
-      ),
-      criterionRef: _draftCriterionReference(
-        criterionRef,
-        preview.proposal.criteria.map((item) => item.id),
-      ),
-      memoryQuery: memoryQuery,
-      workspaceQuery: workspaceQuery,
-      maxItems: _optionalInt(arguments['max_items'], 'max_items'),
-      section: section,
-      cursor: cursor,
-    );
-    return {...view, 'draft': _draftSummary(preview)};
-  }
-
-  Future<Map<String, dynamic>> _planningReadFile(
-    PlanningArguments arguments,
-  ) async {
-    _keys(arguments, const {'path', 'start_line', 'end_line'});
-    final startLine = _optionalInt(arguments['start_line'], 'start_line') ?? 1;
-    final endLine = _optionalInt(arguments['end_line'], 'end_line');
-    return context.workspaceReader!.read(
-      requestedPath: _requiredString(arguments['path'], 'path'),
-      startLine: startLine,
-      endLine: endLine,
-    );
-  }
-
-  ProjectAggregate _projectForDetail(ProjectPlanBuilderPreview preview) {
-    final proposedTaskIds = {
-      for (final task in preview.proposal.tasks) task.id,
-    };
-    final tasks = [
-      for (final task in context.project.tasks)
-        if (!proposedTaskIds.contains(task.id))
-          context.builder.splitTaskIds.contains(task.id)
-              ? task.copyWith(
-                  status: TaskStatus.split,
-                  rejectionReason: 'Split in the current planning draft.',
-                )
-              : task,
-      ...preview.proposal.tasks,
-    ];
-    return context.project.copyWith(
-      title: context.draftTitle,
-      refinedGoal: context.draftRefinedGoal,
-      constraints: context.draftConstraints,
-      criteria: preview.proposal.criteria,
-      milestones: preview.proposal.milestones,
-      criterionAgentNumbers:
-          preview.proposal.criterionAgentNumbers ??
-          context.project.criterionAgentNumbers,
-      milestoneAgentNumbers:
-          preview.proposal.milestoneAgentNumbers ??
-          context.project.milestoneAgentNumbers,
-      taskAgentNumbers:
-          preview.proposal.taskAgentNumbers ?? context.project.taskAgentNumbers,
-      nextCriterionAgentNumber:
-          preview.proposal.nextCriterionAgentNumber ??
-          context.project.nextCriterionAgentNumber,
-      nextMilestoneAgentNumber:
-          preview.proposal.nextMilestoneAgentNumber ??
-          context.project.nextMilestoneAgentNumber,
-      nextTaskAgentNumber:
-          preview.proposal.nextTaskAgentNumber ??
-          context.project.nextTaskAgentNumber,
-      tasks: tasks,
-      memory: [...context.project.memory, ...preview.proposal.memoryAdditions],
-      workspaceGraph: preview.proposal.workspaceGraph,
-      openQuestions: preview.proposal.openQuestions,
-    );
-  }
-
-  String? _draftTaskReference(String? reference, Iterable<String> ids) {
-    if (reference == null || reference.isEmpty) return reference;
-    try {
-      final id = context.builder.taskIdFor(reference);
-      if (ids.contains(id)) return id;
-    } on ProjectPlanBuilderException {
-      // Preserve the original reference for the view's error contract.
-    }
-    return reference;
-  }
-
-  String? _draftCriterionReference(String? reference, Iterable<String> ids) {
-    if (reference == null || reference.isEmpty) return reference;
-    try {
-      final id = context.builder.criterionIdFor(reference);
-      if (ids.contains(id)) return id;
-    } on ProjectPlanBuilderException {
-      // Preserve the original reference for the view's error contract.
-    }
-    return reference;
-  }
-
-  static String _agentReference(int number) => number.toString();
-
-  Map<String, dynamic> _preview(PlanningArguments arguments) {
-    _ensureOpen();
-    _keys(arguments, const {'summary', 'rationale'});
-    final summary = _optionalString(arguments['summary'], 'summary');
-    final rationale = _optionalString(arguments['rationale'], 'rationale');
-    _validateOptionalText(summary, 'summary');
-    _validateOptionalText(rationale, 'rationale');
-    if (summary != null) context.builder.setSummary(summary);
-    if (rationale != null) context.builder.setRationale(rationale);
-    return {
-      'preview': _draftSummary(
-        context.builder.preview(workspaceRoot: context.workspaceRoot),
-      ),
-    };
-  }
-
-  Future<Map<String, dynamic>> _commit(PlanningArguments arguments) async {
-    _ensureOpen();
-    _keys(arguments, const {'summary', 'rationale'});
-    final summary = _optionalString(arguments['summary'], 'summary');
-    final rationale = _optionalString(arguments['rationale'], 'rationale');
-    _validateOptionalText(summary, 'summary');
-    _validateOptionalText(rationale, 'rationale');
-    if (summary != null) context.builder.setSummary(summary);
-    if (rationale != null) context.builder.setRationale(rationale);
-    final preview = context.builder.preview(
-      workspaceRoot: context.workspaceRoot,
-    );
-    final validation = preview.validation;
-    final response = <String, dynamic>{
-      'revision': preview.proposal.revision,
-      'changed': true,
-      'awaiting_approval': false,
-      'control': context.viewService.controlState(context.project),
-      'validation': [for (final issue in validation.issues) issue.toMap()],
-      'diff': _draftDiff(preview.proposal),
-    };
-    if (!validation.valid) {
+    if (!preview.validation.valid) {
       final issue =
-          validation.errors.firstOrNull ?? validation.issues.firstOrNull;
-      if (issue != null) {
-        return _error(
-          code: issue.code,
-          path: issue.path,
-          message: issue.message,
-          extra: {
-            ...response,
-            'details': {
-              'repairable': _validationRepairable(validation.errors),
-              'blockers': [for (final item in validation.errors) item.toMap()],
-              'suggested_actions': _suggestedActions(validation.errors),
-            },
-          },
-        );
-      }
-      return _error(
-        code: 'invalid_plan',
-        path: 'plan',
-        message: 'The plan did not pass validation.',
-        extra: {
-          ...response,
-          'details': {
-            'repairable': false,
-            'blockers': const [],
-            'suggested_actions': const [],
-          },
-        },
+          preview.validation.errors.firstOrNull ??
+          preview.validation.issues.first;
+      throw ProjectPlanBuilderException(
+        code: issue.code,
+        path: issue.path,
+        message: issue.message,
       );
     }
-    if (context.deferRevision) {
-      // Initial planning only produces a validated draft. Applying the
-      // revision service here would create a synthetic first commit and make
-      // project creation reconcile the same plan a second time.
-      context.committedProposal = preview.proposal;
-      context.committedPatch = ProjectPlanPatch.initial(
-        preview.proposal,
-        title: context.draftTitle,
-        refinedGoal: context.draftRefinedGoal,
-        constraints: context.draftConstraints,
-      );
-      context.committedProject = context.project.copyWith(
-        title: context.draftTitle,
-        refinedGoal: context.draftRefinedGoal,
-        constraints: context.draftConstraints,
-        criterionAgentNumbers: preview.proposal.criterionAgentNumbers,
-        milestoneAgentNumbers: preview.proposal.milestoneAgentNumbers,
-        taskAgentNumbers: preview.proposal.taskAgentNumbers,
-        nextCriterionAgentNumber: preview.proposal.nextCriterionAgentNumber,
-        nextMilestoneAgentNumber: preview.proposal.nextMilestoneAgentNumber,
-        nextTaskAgentNumber: preview.proposal.nextTaskAgentNumber,
-        workspaceGraph: preview.proposal.workspaceGraph,
-      );
-    } else {
-      final committed = await context.builder.commit(
-        workspaceRoot: context.workspaceRoot,
-        approvalPolicy: context.approvalPolicy,
-      );
-      context.committedProposal = committed.proposal;
-      context.committedPatch = committed.patch;
-      context.committedProject = committed.project.copyWith(
-        title: context.draftTitle,
-        refinedGoal: context.draftRefinedGoal,
-        constraints: context.draftConstraints,
-        workspaceGraph: committed.project.workspaceGraph,
-      );
-      response['changed'] = committed.result.changed;
-      response['awaiting_approval'] = committed.result.awaitingApproval;
-      response['control'] = context.viewService.controlState(committed.project);
-    }
-    if (context.deferRevision) {
-      response['control'] = context.viewService.controlState(
-        context.committedProject!,
-      );
-    }
+    final transitioned = context.currentProject.status == ProjectStatus.active
+        ? context.currentProject
+        : const ProjectLifecycleService()
+              .transition(
+                snapshot: context.currentProject,
+                to: ProjectStatus.active,
+                trigger: ProjectLifecycleTrigger.planRevision,
+                reason: 'Project planning finalized.',
+              )
+              .project;
+    final persisted = context.persistProject == null
+        ? transitioned
+        : await context.persistProject!(context.workspaceRoot, transitioned);
+    context.currentProject = persisted;
+    context.committedProject = persisted;
+    context.rebase(persisted);
     context.closed = true;
-    return response;
-  }
-
-  Map<String, dynamic> _draftState() {
-    final preview = context.builder.preview(
-      workspaceRoot: context.workspaceRoot,
-    );
-    final diff = _draftDiff(preview.proposal);
-    final changedCriterionIds = {
-      for (final id in (diff['added_criteria'] as List).cast<String>()) id,
-    };
-    final changedMilestoneIds = {
-      for (final id in (diff['added_milestones'] as List).cast<String>()) id,
-    };
-    final changedTaskIds = {
-      for (final id in (diff['added_tasks'] as List).cast<String>()) id,
-      for (final id in (diff['updated_tasks'] as List).cast<String>()) id,
-      for (final id in (diff['deferred_tasks'] as List).cast<String>()) id,
-      for (final id in (diff['obsolete_tasks'] as List).cast<String>()) id,
-      for (final id in (diff['split_tasks'] as List).cast<String>()) id,
-    };
     return {
-      'revision': preview.proposal.revision,
-      'valid': preview.validation.valid,
-      'validation': [
-        for (final issue in preview.validation.issues) issue.toMap(),
-      ],
-      'diff': diff,
-      'changed_resources': {
-        'criteria': [
-          for (final criterion in preview.proposal.criteria)
-            if (changedCriterionIds.contains(criterion.id))
-              _criterionState(criterion),
-        ],
-        'milestones': [
-          for (final milestone in preview.proposal.milestones)
-            if (changedMilestoneIds.contains(milestone.id))
-              _milestoneState(milestone),
-        ],
-        'tasks': [
-          for (final task in preview.proposal.tasks)
-            if (changedTaskIds.contains(task.id)) _taskState(task),
-        ],
+      'finalized': true,
+      'project': {
+        'id': persisted.id,
+        'revision': persisted.persistenceRevision,
+        'status': persisted.status.wire,
       },
-      'control': context.viewService.controlState(_projectForDetail(preview)),
+      'persistence_revision': persisted.persistenceRevision,
     };
   }
-
-  Map<String, dynamic> _agentDraftState() {
-    final preview = context.builder.preview(
-      workspaceRoot: context.workspaceRoot,
-    );
-    final draftProject = _projectForDetail(preview);
-    return {
-      'valid': preview.validation.valid,
-      'validation': [
-        for (final issue in preview.validation.issues) issue.toMap(),
-      ],
-      'project': context.viewService.query(draftProject),
-    };
-  }
-
-  Map<String, dynamic> _criterionState(ProjectCriterion criterion) => {
-    'id': criterion.id,
-    'statement': criterion.statement,
-    'required': criterion.required,
-    'verification_mode': criterion.verificationMode.name,
-  };
-
-  Map<String, dynamic> _milestoneState(ProjectMilestone milestone) => {
-    'id': milestone.id,
-    'title': milestone.title,
-    'objective': milestone.objective,
-    'criterion_refs': milestone.criterionIds,
-    'exit_conditions': milestone.exitConditions,
-    'order': milestone.order,
-    'status': milestone.status.name,
-  };
-
-  Map<String, dynamic> _taskState(ProjectTaskNode task) => {
-    'id': task.id,
-    'title': task.title,
-    'objective': task.objective,
-    'status': task.status.wire,
-    'acceptance': [
-      for (final item in task.acceptance)
-        {
-          'ref': item.ref,
-          'statement': item.statement,
-          'criterion_refs': item.criterionIds,
-          'verifiers': [
-            for (final verifier in item.verifiers)
-              {
-                'kind': verifier.kind.name,
-                'required': verifier.required,
-                if (verifier.command != null) 'command': verifier.command,
-                if (verifier.workingDirectory != '.')
-                  'working_directory': verifier.workingDirectory,
-                if (verifier.path != null) 'path': verifier.path,
-                if (verifier.artifactKind != 'file')
-                  'artifact_kind': verifier.artifactKind,
-                if (verifier.description != null)
-                  'description': verifier.description,
-              },
-          ],
-        },
-    ],
-    'dependency_refs': task.dependsOnTaskIds,
-    'milestone_ref': task.milestoneId,
-    'priority': task.priority.name,
-    'risk': task.risk.name,
-    'risk_reduction': task.riskReduction.name,
-    'effort': task.effort.name,
-    'selection_rationale': task.selectionRationale,
-    'constraints': task.constraints,
-    'read_paths': task.readPaths,
-    'write_paths': task.writePaths,
-    'out_of_scope': task.outOfScope,
-    'context': task.context,
-  };
 
   static ProjectTaskSpec _taskSpec(
     Map<String, dynamic> value,
@@ -637,6 +235,7 @@ class ProjectPlanningToolCommandService {
       'write_paths',
       'out_of_scope',
       'context',
+      'steps',
     });
     final ref = _optionalString(value['ref'], '$path.ref') ?? '';
     final title = _optionalString(value['title'], '$path.title') ?? '';
@@ -644,6 +243,7 @@ class ProjectPlanningToolCommandService {
         _optionalString(value['objective'], '$path.objective') ?? '';
     final acceptance = _acceptance(value['acceptance'], '$path.acceptance');
     final outOfScope = _stringList(value['out_of_scope'], '$path.out_of_scope');
+    final steps = _steps(value['steps'], '$path.steps');
     final missingFields = <String>[];
     if (requireObjective
         ? objective.isEmpty
@@ -655,6 +255,9 @@ class ProjectPlanningToolCommandService {
     }
     if (outOfScope.where((item) => item.isNotEmpty).isEmpty) {
       missingFields.add('out_of_scope');
+    }
+    if (steps.isEmpty) {
+      missingFields.add('steps');
     }
     if (missingFields.isNotEmpty) {
       throw _argument(
@@ -673,6 +276,7 @@ class ProjectPlanningToolCommandService {
       ref: ref,
       title: title,
       objective: objective,
+      steps: steps,
       acceptance: acceptance,
       dependencyRefs: _stringList(
         value['dependency_refs'],
@@ -724,7 +328,7 @@ class ProjectPlanningToolCommandService {
     for (var index = 0; index < maps.length; index++) {
       final item = maps[index];
       _rejectPersistentFields(item, '$path[$index]');
-      _keys(item, const {'ref', 'statement', 'criterion_refs', 'verifiers'});
+      _keys(item, const {'ref', 'statement', 'criterion_ids', 'verifiers'});
       final ref = _requiredString(item['ref'], '$path[$index].ref');
       if (!refs.add(ref)) {
         throw _argument(
@@ -737,10 +341,13 @@ class ProjectPlanningToolCommandService {
         item['statement'],
         '$path[$index].statement',
       );
-      final criterionIds = _stringList(
-        item['criterion_refs'],
-        '$path[$index].criterion_refs',
-      );
+      final criterionIds = [
+        for (final id in _intList(
+          item['criterion_ids'],
+          '$path[$index].criterion_ids',
+        ))
+          id.toString(),
+      ];
       final verifierMaps = _maps(
         item['verifiers'],
         '$path[$index].verifiers',
@@ -831,6 +438,85 @@ class ProjectPlanningToolCommandService {
     return items;
   }
 
+  static List<ProjectTaskStepSpec> _steps(Object? value, String path) {
+    if (value == null) return const [];
+    final maps = _maps(value, path, required: true);
+    return [
+      for (var index = 0; index < maps.length; index++)
+        () {
+          final item = maps[index];
+          _rejectPersistentFields(item, '$path[$index]');
+          _keys(item, const {
+            'ref',
+            'title',
+            'objective',
+            'instructions',
+            'may_edit_files',
+            'artifacts',
+            'acceptance_refs',
+          });
+          final objective = _requiredString(
+            item['objective'],
+            '$path[$index].objective',
+          );
+          final artifacts = _maps(item['artifacts'], '$path[$index].artifacts');
+          return ProjectTaskStepSpec(
+            ref: _optionalString(item['ref'], '$path[$index].ref') ?? '',
+            title: _optionalString(item['title'], '$path[$index].title') ?? '',
+            objective: objective,
+            instructions: _stringList(
+              item['instructions'],
+              '$path[$index].instructions',
+            ),
+            mayEditFiles:
+                _optionalBool(
+                  item['may_edit_files'],
+                  '$path[$index].may_edit_files',
+                ) ??
+                false,
+            artifacts: [
+              for (
+                var artifactIndex = 0;
+                artifactIndex < artifacts.length;
+                artifactIndex++
+              )
+                () {
+                  _rejectPersistentFields(
+                    artifacts[artifactIndex],
+                    '$path[$index].artifacts[$artifactIndex]',
+                  );
+                  _keys(artifacts[artifactIndex], const {
+                    'path',
+                    'description',
+                    'kind',
+                  });
+                  return ProjectTaskArtifactSpec(
+                    path: _requiredString(
+                      artifacts[artifactIndex]['path'],
+                      '$path[$index].artifacts[$artifactIndex].path',
+                    ),
+                    description: _optionalString(
+                      artifacts[artifactIndex]['description'],
+                      '$path[$index].artifacts[$artifactIndex].description',
+                    ),
+                    kind:
+                        _optionalString(
+                          artifacts[artifactIndex]['kind'],
+                          '$path[$index].artifacts[$artifactIndex].kind',
+                        ) ??
+                        'file',
+                  );
+                }(),
+            ],
+            acceptanceRefs: _stringList(
+              item['acceptance_refs'],
+              '$path[$index].acceptance_refs',
+            ),
+          );
+        }(),
+    ];
+  }
+
   static void _rejectPersistentFields(Map<String, dynamic> value, String path) {
     const fields = {
       'id',
@@ -851,7 +537,6 @@ class ProjectPlanningToolCommandService {
       'revisionIntroduced',
       'revisionUpdated',
       'evidence',
-      'steps',
       'currentStepId',
     };
     for (final field in fields) {
@@ -865,108 +550,15 @@ class ProjectPlanningToolCommandService {
     }
   }
 
-  Map<String, dynamic> _draftSummary(ProjectPlanBuilderPreview preview) => {
-    'base_revision': context.baseRevision,
-    'summary': context.builder.summary,
-    'rationale': context.builder.rationale,
-    'valid': preview.validation.valid,
-    'validation': [
-      for (final issue in preview.validation.issues) issue.toMap(),
-    ],
-    'diff': _draftDiff(preview.proposal),
-  };
-
-  Map<String, dynamic> _draftDiff(ProjectDesiredPlan proposal) {
-    final existingCriteria = {
-      for (final item in context.project.criteria) item.id,
-    };
-    final existingMilestones = {
-      for (final item in context.project.milestones) item.id,
-    };
-    final existingTasks = {for (final item in context.project.tasks) item.id};
-    return {
-      'project_details_changed': context.projectDetailsChanged,
-      'added_criteria': [
-        for (final item in proposal.criteria)
-          if (!existingCriteria.contains(item.id)) item.id,
-      ],
-      'added_milestones': [
-        for (final item in proposal.milestones)
-          if (!existingMilestones.contains(item.id)) item.id,
-      ],
-      'added_tasks': [
-        for (final item in proposal.tasks)
-          if (!existingTasks.contains(item.id)) item.id,
-      ],
-      'updated_tasks': [
-        for (final item in proposal.tasks)
-          if (existingTasks.contains(item.id) &&
-              _taskChanged(context.project.taskById(item.id)!, item))
-            item.id,
-      ],
-      'deferred_tasks': proposal.deferredTaskIds,
-      'obsolete_tasks': proposal.obsoleteTaskIds,
-      'split_tasks': context.builder.splitTaskIds,
-      'added_notes': [for (final item in proposal.memoryAdditions) item.id],
-      'workspace': {
-        'orientation': proposal.workspaceGraph.orientation,
-        'node_count': proposal.workspaceGraph.nodes.length,
-        'edge_count': proposal.workspaceGraph.edges.length,
-      },
-      'pending_questions': [for (final item in proposal.openQuestions) item.id],
-    };
-  }
-
   void _ensureOpen() {
     if (context.closed) {
       throw _argument(
-        'draft_closed',
+        'planning_closed',
         'tool',
-        'This planning draft has already been committed.',
+        'This planning session has already been finalized.',
       );
     }
   }
-
-  static bool _taskChanged(ProjectTaskNode existing, ProjectTaskNode desired) =>
-      _taskSignature(existing) != _taskSignature(desired);
-
-  static String _taskSignature(ProjectTaskNode task) => jsonEncode({
-    'title': task.title,
-    'objective': task.objective,
-    'constraints': task.constraints,
-    'acceptance': [
-      for (final item in task.acceptance)
-        {
-          'ref': item.ref,
-          'statement': item.statement,
-          'criterion_refs': item.criterionIds,
-          'verifiers': [
-            for (final verifier in item.verifiers)
-              {
-                'kind': verifier.kind.name,
-                'required': verifier.required,
-                'command': verifier.command,
-                'working_directory': verifier.workingDirectory,
-                'path': verifier.path,
-                'artifact_kind': verifier.artifactKind,
-                'description': verifier.description,
-              },
-          ],
-        },
-    ],
-    'milestone_ref': task.milestoneId,
-    'dependency_refs': task.dependsOnTaskIds,
-    'priority': task.priority.name,
-    'risk': task.risk.name,
-    'risk_reduction': task.riskReduction.name,
-    'effort': task.effort.name,
-    'selection_rationale': task.selectionRationale,
-    'read_paths': task.readPaths,
-    'write_paths': task.writePaths,
-    'out_of_scope': task.outOfScope,
-    'context': task.context,
-    'status': task.status.name,
-  });
 
   static void _keys(Object value, Set<String> allowed) {
     final keys = value is PlanningArguments
@@ -1089,12 +681,6 @@ class ProjectPlanningToolCommandService {
       result.add(item);
     }
     return result;
-  }
-
-  static void _validateOptionalText(String? value, String path) {
-    if (value != null && value.trim().isEmpty) {
-      throw _argument('invalid_argument', path, 'Expected a non-empty string.');
-    }
   }
 
   static bool? _optionalBool(Object? value, String path) {

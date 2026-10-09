@@ -68,7 +68,7 @@ void main() {
       );
 
       expect(task.title, 'Planned task');
-      expect(task.status, TaskStatus.paused);
+      expect(task.status, TaskStatus.planned);
       expect(task.currentStepId, startsWith('step_'));
       expect(task.steps, hasLength(2));
       expect(
@@ -100,7 +100,7 @@ void main() {
 
         expect(task.title, 'Design-informed task');
         expect(client.requestCount, 1);
-        expect(client.seenToolNames.first, contains('task_add_step'));
+        expect(client.seenToolNames.first, contains('task_add'));
         expect(client.seenToolNames.first, isNot(contains('read_file')));
         expect(
           client.seenMessages.single.last.content,
@@ -132,7 +132,7 @@ void main() {
 
         expect(task.title, 'Build the reporting screen');
         expect(client.requestCount, 1);
-        expect(client.seenToolNames.first, contains('task_add_step'));
+        expect(client.seenToolNames.first, contains('task_add'));
       },
     );
 
@@ -362,7 +362,7 @@ void main() {
 
         expect(client.seenMessages, isNotEmpty);
         expect(task.steps, isNotEmpty);
-        expect(task.title, 'Oversized task');
+        expect(task.title, 'Repaired bounded task');
       },
     );
 
@@ -422,7 +422,7 @@ void main() {
             projectGoal: 'Build the whole app',
             projectTaskObjective: 'Implement the settings toggle',
             acceptance: [
-              const AcceptanceItem(
+              AcceptanceItem(
                 ref: 'toggle-works',
                 statement: 'The settings toggle works.',
                 verifiers: [
@@ -1317,12 +1317,7 @@ void main() {
           sandbox: sandbox,
         );
         final task = _task(
-          acceptance: [
-            _commandAcceptance(
-              'dart-version',
-              'dart --version',
-            ),
-          ],
+          acceptance: [_commandAcceptance('dart-version', 'dart --version')],
           step: const TaskStep(
             id: 'step_1',
             title: 'Step 1',
@@ -1685,6 +1680,16 @@ void main() {
             }),
           ),
           _replanResponse({
+            'acceptance': [
+              {
+                'ref': 'safe-verification',
+                'statement': 'The replacement verification passes.',
+                'criterion_ids': const [],
+                'verifiers': [
+                  {'kind': 'review', 'required': true},
+                ],
+              },
+            ],
             'steps': [
               {
                 'id': 'safe_verification',
@@ -1692,6 +1697,7 @@ void main() {
                 'objective': 'Use read-only inspection instead.',
                 'instructions': ['Inspect without mutation.'],
                 'mayEditFiles': false,
+                'acceptance_refs': ['safe-verification'],
               },
             ],
           }),
@@ -1706,7 +1712,7 @@ void main() {
 
         expect(client.seenToolNames.first, contains('run_command'));
         expect(updated.status, TaskStatus.paused);
-        expect(updated.currentStepId, startsWith('execute_'));
+        expect(updated.currentStepId, startsWith('step_'));
         expect(updated.runs.map((run) => run.status), [
           TaskRunStatus.needsReplan,
           TaskRunStatus.replanned,
@@ -1821,7 +1827,7 @@ void main() {
         );
 
         expect(updated.status, TaskStatus.paused);
-        expect(updated.currentStepId, startsWith('execute_'));
+        expect(updated.currentStepId, startsWith('step_'));
         expect(updated.runs.map((run) => run.status), [
           TaskRunStatus.needsReplan,
           TaskRunStatus.replanned,
@@ -2451,17 +2457,13 @@ void main() {
   });
 }
 
-AcceptanceItem _commandAcceptance(String ref, String command) =>
-    AcceptanceItem(
-      ref: ref,
-      statement: 'The command $command passes.',
-      verifiers: [
-        AcceptanceVerifier(
-          kind: AcceptanceVerifierKind.command,
-          command: command,
-        ),
-      ],
-    );
+AcceptanceItem _commandAcceptance(String ref, String command) => AcceptanceItem(
+  ref: ref,
+  statement: 'The command $command passes.',
+  verifiers: [
+    AcceptanceVerifier(kind: AcceptanceVerifierKind.command, command: command),
+  ],
+);
 
 TaskAggregate _task({
   String? objective,
@@ -2538,50 +2540,46 @@ Map<String, dynamic> _planJson({required String title}) {
 ModelCompletion _planResponse(
   Map<String, dynamic> plan, {
   String idSuffix = '',
-  bool resetFirst = false,
 }) {
   String callId(String base) => idSuffix.isEmpty ? base : '${base}_$idSuffix';
 
   final calls = <ModelToolCall>[
-    if (resetFirst)
-      ModelToolCall(
-        id: callId('call_task_reset_plan'),
-        name: 'task_reset_plan',
-        arguments: '{}',
-      ),
     ModelToolCall(
-      id: callId('call_task_set_brief'),
-      name: 'task_set_brief',
+      id: callId('call_task_add'),
+      name: 'task_add',
       arguments: jsonEncode({
         'title': plan['title'] ?? 'Task',
         'objective': plan['objective'] ?? plan['goal'] ?? '',
+        'out_of_scope': plan['out_of_scope'] ?? ['Unrelated work.'],
         'constraints': plan['constraints'] ?? const [],
+        'acceptance': [
+          for (final raw in (plan['acceptance'] as List? ?? const []))
+            if (raw is Map)
+              {
+                'ref': raw['ref'] ?? '',
+                'statement': raw['statement'] ?? '',
+                'criterion_ids': raw['criterion_ids'] ?? const [],
+                'verifiers': raw['verifiers'] ?? const [],
+              },
+        ],
+        'steps': [
+          for (final raw in (plan['steps'] as List? ?? const []))
+            if (raw is Map)
+              {
+                'ref': raw['id'] ?? raw['ref'] ?? '',
+                'title': raw['title'] ?? '',
+                'objective': raw['objective'] ?? '',
+                'instructions': raw['instructions'] ?? const [],
+                'may_edit_files': raw['mayEditFiles'] ?? false,
+                'artifacts': raw['artifacts'] ?? const [],
+                'acceptance_refs': raw['acceptance_refs'] ?? const [],
+              },
+        ],
       }),
     ),
-    for (final raw in (plan['acceptance'] as List? ?? const []))
-      if (raw is Map)
-        ModelToolCall(
-          id: callId('call_task_add_acceptance_${raw['ref']}'),
-          name: 'task_add_acceptance',
-          arguments: jsonEncode(raw),
-        ),
-    for (final raw in (plan['steps'] as List? ?? const []))
-      if (raw is Map)
-        ModelToolCall(
-          id: callId('call_task_add_step_${raw['id'] ?? raw['title']}'),
-          name: 'task_add_step',
-          arguments: jsonEncode({
-            'ref': raw['id'] ?? '',
-            'title': raw['title'] ?? '',
-            'objective': raw['objective'] ?? '',
-            'instructions': raw['instructions'] ?? const [],
-            'may_edit_files': raw['mayEditFiles'] ?? false,
-            'artifacts': raw['artifacts'] ?? const [],
-          }),
-        ),
     ModelToolCall(
-      id: callId('call_task_commit_plan'),
-      name: 'task_commit_plan',
+      id: callId('call_plan_finalize'),
+      name: 'plan_finalize',
       arguments: '{}',
     ),
   ];
@@ -2595,23 +2593,41 @@ ModelCompletion _replanResponse(
   String callId(String base) => idSuffix.isEmpty ? base : '${base}_$idSuffix';
 
   final calls = <ModelToolCall>[
-    for (final raw in (plan['steps'] as List? ?? const []))
-      if (raw is Map)
-        ModelToolCall(
-          id: callId('call_task_add_step_${raw['id'] ?? raw['title']}'),
-          name: 'task_add_step',
-          arguments: jsonEncode({
-            'ref': raw['id'] ?? '',
-            'title': raw['title'] ?? '',
-            'objective': raw['objective'] ?? '',
-            'instructions': raw['instructions'] ?? const [],
-            'may_edit_files': raw['mayEditFiles'] ?? false,
-            'artifacts': raw['artifacts'] ?? const [],
-          }),
-        ),
     ModelToolCall(
-      id: callId('call_task_commit_replan'),
-      name: 'task_commit_plan',
+      id: callId('call_task_update'),
+      name: 'task_update',
+      arguments: jsonEncode({
+        'task_id': 1,
+        if (plan['goal'] != null) 'objective': plan['goal'],
+        if (plan['acceptance'] is List)
+          'acceptance': [
+            for (final raw in plan['acceptance'] as List)
+              if (raw is Map)
+                {
+                  'ref': raw['ref'] ?? '',
+                  'statement': raw['statement'] ?? '',
+                  'criterion_ids': raw['criterion_ids'] ?? const [],
+                  'verifiers': raw['verifiers'] ?? const [],
+                },
+          ],
+        'steps': [
+          for (final raw in (plan['steps'] as List? ?? const []))
+            if (raw is Map)
+              {
+                'ref': raw['id'] ?? raw['ref'] ?? '',
+                'title': raw['title'] ?? '',
+                'objective': raw['objective'] ?? '',
+                'instructions': raw['instructions'] ?? const [],
+                'may_edit_files': raw['mayEditFiles'] ?? false,
+                'artifacts': raw['artifacts'] ?? const [],
+                'acceptance_refs': raw['acceptance_refs'] ?? const [],
+              },
+        ],
+      }),
+    ),
+    ModelToolCall(
+      id: callId('call_plan_finalize'),
+      name: 'plan_finalize',
       arguments: '{}',
     ),
   ];
@@ -2700,7 +2716,7 @@ class _QueueChatClient extends ChatClient {
         final plan = Map<String, dynamic>.from(decoded);
         return plan['title'] == null && plan['goal'] == null
             ? _replanResponse(plan, idSuffix: '$_index')
-            : _planResponse(plan, idSuffix: '$_index', resetFirst: _index > 1);
+            : _planResponse(plan, idSuffix: '$_index');
       }
     } on FormatException {
       // Keep malformed responses as plain model output for fallback tests.

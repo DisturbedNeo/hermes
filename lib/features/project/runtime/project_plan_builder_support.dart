@@ -1,8 +1,8 @@
 part of 'project_plan_builder.dart';
 
 extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
-  ProjectDesiredPlan _materialize() {
-    _ensureBootstrapMilestone();
+  ProjectDesiredPlan _materialize({bool ensureBootstrapMilestone = true}) {
+    if (ensureBootstrapMilestone) _ensureBootstrapMilestone();
     return ProjectDesiredPlan(
       revision: _project.nextRevision,
       triggers: [..._triggers],
@@ -75,8 +75,11 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
     }
   }
 
-  ProjectAggregate get _planningProject =>
-      _project.copyWith(refinedGoal: _validationRefinedGoal);
+  ProjectAggregate get _planningProject => _project.copyWith(
+    title: _validationTitle,
+    refinedGoal: _validationRefinedGoal,
+    constraints: _validationConstraints,
+  );
 
   List<String> _addTasksInternal(List<ProjectTaskSpec> specs) {
     if (specs.isEmpty) {
@@ -729,6 +732,25 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
     'ref': spec.ref,
     'title': spec.title,
     'objective': spec.objective,
+    'steps': [
+      for (final step in spec.steps)
+        {
+          'ref': step.ref,
+          'title': step.title,
+          'objective': step.objective,
+          'instructions': step.instructions,
+          'mayEditFiles': step.mayEditFiles,
+          'acceptanceRefs': step.acceptanceRefs,
+          'artifacts': [
+            for (final artifact in step.artifacts)
+              {
+                'path': artifact.path,
+                'description': artifact.description,
+                'kind': artifact.kind,
+              },
+          ],
+        },
+    ],
     'acceptance': [
       for (final item in spec.acceptance)
         {
@@ -780,5 +802,4 @@ extension ProjectPlanBuilderSupport on ProjectPlanBuilder {
     'label': spec.label,
     'description': spec.description,
   };
-
 }

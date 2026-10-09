@@ -3,9 +3,7 @@ import 'dart:convert';
 import 'package:hermes/core/uuid.dart';
 import 'package:hermes/core/contracts/acceptance_compiler.dart';
 import 'package:hermes/features/project/application/contracts/project_task_models.dart'
-    show
-        AcceptanceItem,
-        AcceptanceVerifierKind;
+    show AcceptanceItem, AcceptanceVerifierKind;
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/runtime/project_plan_revision_service.dart';
 import 'package:hermes/features/project/runtime/project_plan_validator.dart';
@@ -91,7 +89,9 @@ class ProjectPlanBuilder {
         const ProjectPlanRevisionService(),
   }) : _project = project,
        _now = now ?? DateTime.now(),
+       _validationTitle = project.title,
        _validationRefinedGoal = project.refinedGoal,
+       _validationConstraints = [...project.constraints],
        _triggers = triggers.isEmpty
            ? [ProjectPlanRevisionTrigger.manual]
            : [...triggers],
@@ -147,7 +147,9 @@ class ProjectPlanBuilder {
 
   final ProjectAggregate _project;
   final DateTime _now;
+  String _validationTitle;
   String _validationRefinedGoal;
+  List<String> _validationConstraints;
   final List<ProjectPlanRevisionTrigger> _triggers;
   final ProjectPlanRevisionService _revisionService;
   final Map<String, ProjectCriterion> _criteria = {};
@@ -210,8 +212,13 @@ class ProjectPlanBuilder {
 
   /// Produces a validation result and desired-plan representation without
   /// applying it. This is intentionally separate from [commit].
-  ProjectPlanBuilderPreview preview({required String workspaceRoot}) {
-    final proposal = _materialize();
+  ProjectPlanBuilderPreview preview({
+    required String workspaceRoot,
+    bool ensureBootstrapMilestone = true,
+  }) {
+    final proposal = _materialize(
+      ensureBootstrapMilestone: ensureBootstrapMilestone,
+    );
     final validation = _revisionService.validate(
       project: _planningProject,
       proposal: proposal,
