@@ -23,8 +23,6 @@ class ProjectPlanningToolCommandService {
   List<ToolDefinition> get toolDefinitions {
     final core = <ToolDefinition>[
       _projectViewDefinition,
-      if (profile == ProjectPlanningToolProfile.bootstrap)
-        _projectSubmitPlanDefinition,
       _projectUpdateDefinition,
       _taskUpsertDefinition,
       _commitDefinition,
@@ -77,7 +75,6 @@ class ProjectPlanningToolCommandService {
     final result = switch (toolId) {
       'planning_read_file' => await _planningReadFile(arguments),
       'project_view' => _view(arguments),
-      'project_submit_plan' => _planCommands.submitPlan(arguments, commandId),
       'project_update' => _planCommands.updateProject(arguments, commandId),
       'task_upsert' => _planCommands.upsertTask(arguments, commandId),
       'plan_split_task' => _planCommands.splitTask(arguments, commandId),
@@ -124,7 +121,6 @@ class ProjectPlanningToolCommandService {
   }
 
   static const _mutationToolIds = {
-    'project_submit_plan',
     'project_update',
     'task_upsert',
     'plan_split_task',
@@ -136,11 +132,7 @@ class ProjectPlanningToolCommandService {
     'plan_remove_workspace_item',
   };
 
-  static const _agentMutationToolIds = {
-    'project_submit_plan',
-    'project_update',
-    'task_upsert',
-  };
+  static const _agentMutationToolIds = {'project_update', 'task_upsert'};
 
   bool _allows(String toolId) {
     if (toolId == 'planning_read_file' &&
@@ -150,9 +142,6 @@ class ProjectPlanningToolCommandService {
     }
     if (toolId == 'project_view' || toolId == 'plan_commit') {
       return true;
-    }
-    if (toolId == 'project_submit_plan') {
-      return profile == ProjectPlanningToolProfile.bootstrap;
     }
     if (toolId == 'project_update' || toolId == 'task_upsert') {
       return profile == ProjectPlanningToolProfile.bootstrap ||

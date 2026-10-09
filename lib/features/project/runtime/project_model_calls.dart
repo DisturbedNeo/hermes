@@ -226,8 +226,8 @@ cancelled, and running task history is immutable.
 Make the smallest safe diff that addresses all supplied triggers. Preserve
 the original goal, accepted evidence, protected memory, and completed work.
 Mutation responses and project_view include validation and the normalized
-draft. Finish with the explicit plan_commit command. A successful plan_commit
-is the only completion signal.
+project state. Finish with the explicit plan_commit command. A successful
+plan_commit is the only completion signal.
 ''',
         user:
             '''
@@ -511,7 +511,6 @@ ${_encoder.convert(snakeCaseWire(ModelJson.encode(project)))}
       return ModelJson.decode<PendingProjectQuestion>(map);
     }).toList();
   }
-
 }
 
 const String _completionEvaluationSystemInstruction = '''

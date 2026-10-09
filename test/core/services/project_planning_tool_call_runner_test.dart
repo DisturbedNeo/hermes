@@ -23,7 +23,7 @@ void main() {
     );
     final result = await _complete(
       client: _Client([
-        _call('project_submit_plan', {
+        _call('project_update', {
           'title': 'Bounded Project',
           'refined_goal': 'Deliver one verified bounded outcome.',
           'constraints': ['Stay within the attached workspace.'],
@@ -37,29 +37,27 @@ void main() {
               'criterion_ids': [1],
             },
           ],
-          'tasks': [
+        }, id: 'call_project_update'),
+        _call('task_upsert', {
+          'objective': 'Implement the bounded outcome.',
+          'acceptance': [
             {
-              'objective': 'Implement the bounded outcome.',
-              'acceptance': [
+              'ref': 'quality-proof',
+              'statement': 'The bounded outcome is verified.',
+              'criterion_refs': ['1'],
+              'verifiers': [
                 {
-                  'ref': 'quality-proof',
-                  'statement': 'The bounded outcome is verified.',
-                  'criterion_refs': ['1'],
-                  'verifiers': [
-                    {
-                      'kind': 'command',
-                      'command': 'dart test',
-                      'working_directory': '.',
-                      'required': true,
-                    },
-                  ],
+                  'kind': 'command',
+                  'command': 'dart test',
+                  'working_directory': '.',
+                  'required': true,
                 },
               ],
-              'milestone_id': 1,
-              'out_of_scope': ['Unrelated project work.'],
             },
           ],
-        }, id: 'call_submit'),
+          'milestone_id': 1,
+          'out_of_scope': ['Unrelated project work.'],
+        }, id: 'call_task_upsert'),
         _call('plan_commit', const {}, id: 'call_commit'),
       ]),
       registry: registry,
@@ -78,8 +76,8 @@ void main() {
     expect(context.draftTitle, 'Bounded Project');
     expect(context.draftRefinedGoal, 'Deliver one verified bounded outcome.');
     final metrics = result['planning_metrics'] as Map<String, dynamic>;
-    expect(metrics['planningCalls'], 2);
-    expect(metrics['planningCommandCount'], 2);
+    expect(metrics['planningCalls'], 3);
+    expect(metrics['planningCommandCount'], 3);
     expect(metrics['invalidCommandCount'], 0);
   });
 

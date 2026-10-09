@@ -266,17 +266,6 @@ final _taskSpecSchema = _schema(
   ],
 );
 
-final _agentCriterionSchema = _schema(
-  properties: {
-    'statement': {'type': 'string'},
-    'required': {'type': 'boolean', 'default': true},
-    'verification_mode': _enumSchema(
-      ProjectVerificationMode.values.map((item) => item.name),
-    ),
-  },
-  required: const ['statement'],
-);
-
 final _agentTaskSchema = _schema(
   properties: {
     'task_id': {'type': 'integer', 'minimum': 1},
@@ -304,46 +293,10 @@ final _agentTaskSchema = _schema(
   },
 );
 
-final _projectSubmitPlanDefinition = ToolDefinition(
-  id: 'project_submit_plan',
-  name: 'Submit project plan',
-  description:
-      'Create the initial bounded project plan atomically. This creates a draft only; call plan_commit when it is ready to execute.',
-  schema: _schema(
-    properties: {
-      'title': {'type': 'string'},
-      'refined_goal': {'type': 'string'},
-      'constraints': _stringArraySchema(),
-      'criteria': {'type': 'array', 'items': _agentCriterionSchema},
-      'milestones': {
-        'type': 'array',
-        'items': _schema(
-          properties: {
-            'title': {'type': 'string'},
-            'objective': {'type': 'string'},
-            'criterion_ids': _intArraySchema(),
-            'exit_conditions': _stringArraySchema(),
-            'order': {'type': 'integer'},
-          },
-          required: const ['title', 'objective'],
-        ),
-      },
-      'tasks': {
-        'type': 'array',
-        'minItems': 1,
-        'maxItems': 3,
-        'items': _agentTaskSchema,
-      },
-    },
-    required: const ['title', 'refined_goal', 'tasks'],
-  ),
-);
-
 final _projectUpdateDefinition = ToolDefinition(
   id: 'project_update',
   name: 'Update project',
-  description:
-      'Add or update project metadata, criteria, and milestones in the current draft.',
+  description: 'Add or update project metadata, criteria, and milestones.',
   schema: _schema(
     properties: {
       'title': {'type': 'string'},

@@ -26,7 +26,6 @@ void main() {
     );
     expect(bootstrap.toolDefinitions.map((tool) => tool.id).toSet(), {
       'project_view',
-      'project_submit_plan',
       'project_update',
       'task_upsert',
       'plan_commit',
@@ -692,7 +691,7 @@ void main() {
   );
 
   test(
-    'simplified planning surface submits a complete draft atomically',
+    'bootstrap uses the same project mutations as later planning passes',
     () async {
       final base = _emptyProject();
       final registry = ProjectPlanningToolRegistry(
@@ -706,7 +705,7 @@ void main() {
         profile: ProjectPlanningToolProfile.bootstrap,
       );
 
-      final submitted = await invokePlanning(registry, 'project_submit_plan', {
+      final updated = await invokePlanning(registry, 'project_update', {
         'title': 'Verified project',
         'refined_goal': 'Deliver the verified outcome.',
         'constraints': ['Stay within the workspace.'],
@@ -720,48 +719,55 @@ void main() {
             'criterion_ids': [1],
           },
         ],
-        'tasks': [
-          {
-            'objective': 'Implement the first slice.',
-            'acceptance': [
-              _acceptance(
-                'implementation-verified',
-                'The first slice is implemented.',
-                criterion: '1',
-                command: 'dart test',
-              ),
-            ],
-            'out_of_scope': ['Unrelated work.'],
-            'milestone_id': 1,
-          },
-          {
-            'objective': 'Verify the first slice.',
-            'acceptance': [
-              _acceptance(
-                'report-verified',
-                'The verification report is available.',
-                criterion: '1',
-              ),
-            ],
-            'dependency_task_ids': [1],
-            'out_of_scope': ['Changing the implementation.'],
-          },
-        ],
       });
 
-      expect(submitted['ok'], isTrue);
-      expect(submitted['next_action'], 'plan_commit');
-      expect((submitted['draft'] as Map)['valid'], isTrue);
-      final draftProject = (submitted['draft'] as Map)['project'] as Map;
+      expect(updated['ok'], isTrue);
+      final updatedProject = (updated['draft'] as Map)['project'] as Map;
       expect(
-        (draftProject['tasks'] as List).map((item) => (item as Map)['task_id']),
-        [1, 2],
-      );
-      expect(
-        (draftProject['criteria'] as List).map(
+        (updatedProject['criteria'] as List).map(
           (item) => (item as Map)['criterion_id'],
         ),
         [1],
+      );
+      expect(
+        (updatedProject['milestones'] as List).map(
+          (item) => (item as Map)['milestone_id'],
+        ),
+        [1],
+      );
+
+      final firstTask = await invokePlanning(registry, 'task_upsert', {
+        'objective': 'Implement the first slice.',
+        'acceptance': [
+          _acceptance(
+            'implementation-verified',
+            'The first slice is implemented.',
+            criterion: '1',
+            command: 'dart test',
+          ),
+        ],
+        'out_of_scope': ['Unrelated work.'],
+        'milestone_id': 1,
+      });
+      expect(firstTask['ok'], isTrue);
+
+      final secondTask = await invokePlanning(registry, 'task_upsert', {
+        'objective': 'Verify the first slice.',
+        'acceptance': [
+          _acceptance(
+            'report-verified',
+            'The verification report is available.',
+            criterion: '1',
+          ),
+        ],
+        'dependency_task_ids': [1],
+        'out_of_scope': ['Changing the implementation.'],
+      });
+      expect(secondTask['ok'], isTrue);
+      final taskState = (secondTask['draft'] as Map)['project'] as Map;
+      expect(
+        (taskState['tasks'] as List).map((item) => (item as Map)['task_id']),
+        [1, 2],
       );
 
       final committed = await invokePlanning(registry, 'plan_commit', {});
@@ -770,56 +776,38 @@ void main() {
     },
   );
 
-  test(
-    'simplified planning mutations roll back inline work on failure',
-    () async {
-      final base = _project().copyWith(
-        criteria: const [],
-        milestones: const [],
-      );
-      final context = ProjectPlanningContext(
-        project: base,
-        workspaceRoot: '/workspace',
-        planningPass: ProjectPlanningPass.bootstrap,
-        planningLimits: ProjectPlanningLimits.bootstrap,
-        approvalPolicy: ProjectPlanApprovalPolicy.never,
-      );
-      final registry = ProjectPlanningToolRegistry(
-        context: context,
-        profile: ProjectPlanningToolProfile.bootstrap,
-      );
+  test('task upsert rolls back its own work on failure', () async {
+    final base = _project().copyWith(criteria: const [], milestones: const []);
+    final context = ProjectPlanningContext(
+      project: base,
+      workspaceRoot: '/workspace',
+      planningPass: ProjectPlanningPass.bootstrap,
+      planningLimits: ProjectPlanningLimits.bootstrap,
+      approvalPolicy: ProjectPlanApprovalPolicy.never,
+    );
+    final registry = ProjectPlanningToolRegistry(
+      context: context,
+      profile: ProjectPlanningToolProfile.bootstrap,
+    );
 
-      final invalid = await invokePlanning(registry, 'project_submit_plan', {
-        'title': 'Invalid project',
-        'refined_goal': 'This must not partially apply.',
-        'criteria': [
-          {
-            'statement': 'The outcome is deterministic.',
-            'verification_mode': 'deterministic',
-          },
-        ],
-        'tasks': [
-          {
-            'objective': 'Forget the required acceptance.',
-            'acceptance': [
-              _acceptance(
-                'invalid-link',
-                'It is done.',
-                criterion: 'missing-criterion',
-              ),
-            ],
-            'out_of_scope': ['Everything else.'],
-          },
-        ],
-      });
+    final invalid = await invokePlanning(registry, 'task_upsert', {
+      'objective': 'Forget the required acceptance.',
+      'acceptance': [
+        _acceptance(
+          'invalid-link',
+          'It is done.',
+          criterion: 'missing-criterion',
+        ),
+      ],
+      'out_of_scope': ['Everything else.'],
+    });
 
-      expect(invalid['ok'], isFalse);
-      expect(invalid['path'], contains('criterion'));
-      final view = await invokePlanning(registry, 'project_view', {});
-      expect((view['criteria'] as List), isEmpty);
-      expect((view['tasks'] as List), isEmpty);
-    },
-  );
+    expect(invalid['ok'], isFalse);
+    expect(invalid['path'], contains('criterion'));
+    final view = await invokePlanning(registry, 'project_view', {});
+    expect((view['criteria'] as List), isEmpty);
+    expect((view['tasks'] as List), isEmpty);
+  });
 
   test(
     'project update and task upsert support independent metadata and acceptance',
@@ -890,27 +878,26 @@ void main() {
       profile: ProjectPlanningToolProfile.bootstrap,
     );
 
-    final submitted = await invokePlanning(registry, 'project_submit_plan', {
+    final updated = await invokePlanning(registry, 'project_update', {
       'title': 'Stable references',
       'refined_goal': 'Keep references stable.',
       'criteria': [
         {'statement': 'The references remain stable.'},
       ],
-      'tasks': [
-        {
-          'objective': 'Persist the reference table.',
-          'acceptance': [
-            _acceptance(
-              'reference-table',
-              'The table is persisted.',
-              criterion: '1',
-            ),
-          ],
-          'out_of_scope': ['Changing execution.'],
-        },
-      ],
     });
-    expect(submitted['ok'], isTrue);
+    expect(updated['ok'], isTrue);
+    final added = await invokePlanning(registry, 'task_upsert', {
+      'objective': 'Persist the reference table.',
+      'acceptance': [
+        _acceptance(
+          'reference-table',
+          'The table is persisted.',
+          criterion: '1',
+        ),
+      ],
+      'out_of_scope': ['Changing execution.'],
+    });
+    expect(added['ok'], isTrue);
     final committed = await invokePlanning(registry, 'plan_commit', {});
     expect(committed['ok'], isTrue);
 
