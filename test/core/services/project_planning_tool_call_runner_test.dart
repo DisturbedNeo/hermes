@@ -24,7 +24,6 @@ void main() {
     final result = await _complete(
       client: _Client([
         _call('project_update', {
-          'project_id': 'planning_seed',
           'title': 'Bounded Project',
           'refined_goal': 'Deliver one verified bounded outcome.',
           'constraints': ['Stay within the attached workspace.'],
@@ -118,18 +117,9 @@ void main() {
     );
     final result = await _complete(
       client: _Client([
-        _call('project_update', {
-          'project_id': 'planning_seed',
-          'title': 'Project',
-        }, id: 'update_1'),
-        _call('project_update', {
-          'project_id': 'planning_seed',
-          'title': 'Project',
-        }, id: 'update_2'),
-        _call('project_update', {
-          'project_id': 'planning_seed',
-          'title': 'Project',
-        }, id: 'update_3'),
+        _call('project_update', {'title': 'Project'}, id: 'update_1'),
+        _call('project_update', {'title': 'Project'}, id: 'update_2'),
+        _call('project_update', {'title': 'Project'}, id: 'update_3'),
       ]),
       registry: ProjectPlanningToolRegistry(context: context),
       label: 'Test Planning Safety Ceiling',
@@ -200,7 +190,6 @@ void main() {
             'acceptance': [],
           }, id: 'invalid-task'),
           _call('project_update', {
-            'project_id': 'planning_seed',
             'criteria': [
               {'statement': 'The outcome is verified.'},
             ],

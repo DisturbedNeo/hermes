@@ -8,77 +8,73 @@ import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/runtime/task_planning_tools.dart';
 
 void main() {
-  test('task planning exposes CRUD, read, and finalization tools', () {
-    final registry = TaskPlanningToolRegistry(
-      context: TaskPlanningToolContext(
-        task: _task(),
-        workspaceRoot: '/workspace',
-        maxSteps: 3,
-      ),
-    );
-
-    expect(registry.toolDefinitions.map((tool) => tool.id), [
-      'task_read',
-      'task_add',
-      'task_update',
-      'task_remove',
-      'plan_finalize',
-    ]);
-  });
-
   test(
-    'task add, update, remove, and finalize use one-call mutations',
-    () async {
-      final context = TaskPlanningToolContext(
-        task: _task(),
-        workspaceRoot: '/workspace',
-        maxSteps: 3,
+    'task planning exposes update, remove, read, and finalization tools',
+    () {
+      final registry = TaskPlanningToolRegistry(
+        context: TaskPlanningToolContext(
+          task: _task(),
+          workspaceRoot: '/workspace',
+          maxSteps: 3,
+        ),
       );
-      final registry = TaskPlanningToolRegistry(context: context);
 
-      final added = await invokePlanning(registry, 'task_add', {
-        'title': 'Build the bounded outcome',
-        'objective': 'Build the bounded outcome.',
-        'out_of_scope': ['Unrelated work.'],
-        'acceptance': [
-          {
-            'ref': 'verified',
-            'statement': 'The bounded outcome is verified.',
-            'criterion_ids': [],
-            'verifiers': [
-              {'kind': 'review'},
-            ],
-          },
-        ],
-        'steps': [
-          {
-            'ref': 'implement',
-            'objective': 'Implement the bounded outcome.',
-            'acceptance_refs': ['verified'],
-          },
-        ],
-      });
-      expect(added['ok'], isTrue);
-      expect((added['task'] as Map)['steps'], hasLength(1));
-
-      final updated = await invokePlanning(registry, 'task_update', {
-        'task_id': 1,
-        'title': 'Updated bounded outcome',
-      });
-      expect(updated['ok'], isTrue);
-      expect((updated['task'] as Map)['title'], 'Updated bounded outcome');
-
-      final removed = await invokePlanning(registry, 'task_remove', {
-        'task_id': 1,
-      });
-      expect(removed['ok'], isTrue);
-      expect((removed['task'] as Map)['status'], 'obsolete');
-
-      final finalized = await invokePlanning(registry, 'plan_finalize', {});
-      expect(finalized['ok'], isTrue);
-      expect(finalized['finalized'], isTrue);
+      expect(registry.toolDefinitions.map((tool) => tool.id), [
+        'task_read',
+        'task_update',
+        'task_remove',
+        'plan_finalize',
+      ]);
     },
   );
+
+  test('task update, remove, and finalize use one-call mutations', () async {
+    final context = TaskPlanningToolContext(
+      task: _task(),
+      workspaceRoot: '/workspace',
+      maxSteps: 3,
+    );
+    final registry = TaskPlanningToolRegistry(context: context);
+
+    final planned = await invokePlanning(registry, 'task_update', {
+      'title': 'Build the bounded outcome',
+      'objective': 'Build the bounded outcome.',
+      'out_of_scope': ['Unrelated work.'],
+      'acceptance': [
+        {
+          'ref': 'verified',
+          'statement': 'The bounded outcome is verified.',
+          'criterion_ids': [],
+          'verifiers': [
+            {'kind': 'review'},
+          ],
+        },
+      ],
+      'steps': [
+        {
+          'ref': 'implement',
+          'objective': 'Implement the bounded outcome.',
+          'acceptance_refs': ['verified'],
+        },
+      ],
+    });
+    expect(planned['ok'], isTrue);
+    expect((planned['task'] as Map)['steps'], hasLength(1));
+
+    final updated = await invokePlanning(registry, 'task_update', {
+      'title': 'Updated bounded outcome',
+    });
+    expect(updated['ok'], isTrue);
+    expect((updated['task'] as Map)['title'], 'Updated bounded outcome');
+
+    final removed = await invokePlanning(registry, 'task_remove', {});
+    expect(removed['ok'], isTrue);
+    expect((removed['task'] as Map)['status'], 'obsolete');
+
+    final finalized = await invokePlanning(registry, 'plan_finalize', {});
+    expect(finalized['ok'], isTrue);
+    expect(finalized['finalized'], isTrue);
+  });
 
   test('task_read returns the current task without changing it', () async {
     final context = TaskPlanningToolContext(
@@ -158,21 +154,21 @@ void main() {
         'resource': 'task',
         'id': 1,
       });
-    final criterion = await invokePlanning(registry, 'plan_read', {
-      'resource': 'criterion',
-      'id': 1,
-    });
-    final graph = await invokePlanning(registry, 'plan_read', {
-      'resource': 'workspace_graph',
-      'ref': 'summary',
-    });
+      final criterion = await invokePlanning(registry, 'plan_read', {
+        'resource': 'criterion',
+        'id': 1,
+      });
+      final graph = await invokePlanning(registry, 'plan_read', {
+        'resource': 'workspace_graph',
+        'ref': 'summary',
+      });
 
       expect(task['ok'], isTrue);
       expect((task['task'] as Map)['constraints'], ['Keep it bounded.']);
-    expect(criterion['ok'], isTrue);
-    expect((criterion['criterion'] as Map)['criterion_id'], 1);
-    expect(graph['ok'], isTrue);
-    expect((graph['workspace_graph'] as Map)['orientation'], '');
+      expect(criterion['ok'], isTrue);
+      expect((criterion['criterion'] as Map)['criterion_id'], 1);
+      expect(graph['ok'], isTrue);
+      expect((graph['workspace_graph'] as Map)['orientation'], '');
 
       final unknown = await invokePlanning(registry, 'plan_read', {
         'resource': 'task',
@@ -362,7 +358,7 @@ void main() {
       );
       final registry = TaskPlanningToolRegistry(context: context);
 
-      final added = await invokePlanning(registry, 'task_add', {
+      final added = await invokePlanning(registry, 'task_update', {
         'objective': 'Complete the inherited project task.',
         'out_of_scope': ['Unrelated work.'],
         'steps': [
@@ -379,7 +375,6 @@ void main() {
       expect((added['task'] as Map)['inherited_acceptance'], hasLength(1));
 
       final duplicate = await invokePlanning(registry, 'task_update', {
-        'task_id': 1,
         'acceptance': [
           {
             'ref': 'project-check',
@@ -414,7 +409,7 @@ void main() {
       );
       final registry = TaskPlanningToolRegistry(context: context);
 
-      await invokePlanning(registry, 'task_add', {
+      await invokePlanning(registry, 'task_update', {
         'objective': 'Persist a complete task.',
         'out_of_scope': ['Unrelated work.'],
         'acceptance': [
@@ -454,7 +449,7 @@ void main() {
       },
     );
     final registry = TaskPlanningToolRegistry(context: context);
-    final result = await invokePlanning(registry, 'task_add', {
+    final result = await invokePlanning(registry, 'task_update', {
       'objective': 'This must not be applied.',
       'out_of_scope': ['Unrelated work.'],
       'acceptance': [
@@ -487,7 +482,7 @@ void main() {
     final result = await invokePlanning(
       TaskPlanningToolRegistry(context: context),
       'task_remove',
-      {'task_id': 1},
+      {},
     );
     expect(result['ok'], isFalse);
     expect(result['code'], 'invalid_transition');
@@ -503,7 +498,7 @@ void main() {
     final result = await invokePlanning(
       TaskPlanningToolRegistry(context: context),
       'task_remove',
-      {'task_id': 1},
+      {},
     );
     expect(result['ok'], isFalse);
     expect(result['code'], 'invalid_transition');
@@ -551,7 +546,6 @@ void main() {
       TaskPlanningToolRegistry(context: context),
       'task_update',
       {
-        'task_id': 1,
         'steps': [
           {'objective': 'Use the corrected approach.'},
         ],

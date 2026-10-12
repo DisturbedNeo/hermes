@@ -27,7 +27,7 @@ void main() {
         sandbox: sandbox,
       );
       final client = _QueueClient([
-        _call('task_add', {
+        _call('task_update', {
           'title': 'Incremental task',
           'objective': 'Implement the bounded change.',
           'out_of_scope': ['Unrelated work.'],
@@ -84,7 +84,7 @@ void main() {
       expect(task.planningMetrics.planningCommandCount, 2);
       expect(task.planningMetrics.promptTokenEstimate, greaterThan(0));
       expect(task.planningMetrics.toolResultTokenEstimate, greaterThan(0));
-      expect(client.toolNames, ['task_add', 'plan_finalize']);
+      expect(client.toolNames, ['task_update', 'plan_finalize']);
     },
   );
 

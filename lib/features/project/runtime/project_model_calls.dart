@@ -242,6 +242,15 @@ milestone, and graph details are not known; use plan_read before relying on
 them or editing them. Use task_add to create a complete bounded
 task, task_update for a partial task update, task_remove to obsolete an active
 task, and project_update for partial project, criterion, and milestone updates.
+Omitted task_update fields stay unchanged. Within task_update, acceptance and
+steps entries upsert by ref; remove individual entries with
+remove_acceptance_refs or remove_step_refs. Use replace_acceptance or
+replace_steps only when intentionally replacing that entire list. Read a task
+before editing its steps so you can use the stable step refs shown in its
+detail. Each supplied acceptance or step entry is a complete entry. For
+project_update, omitted fields stay unchanged, constraints replaces the full
+list, and criteria or milestone entries add or update only the referenced
+records.
 Numeric task, criterion, milestone, and dependency IDs are stable project-local
 IDs. Completed, failed, split, rejected, cancelled, and running task history
 is immutable.

@@ -849,6 +849,14 @@ class TaskStepMapper extends ClassMapperBase<TaskStep> {
     _$id,
     hook: JsonStringHook(),
   );
+  static String _$planningRef(TaskStep v) => v.planningRef;
+  static const Field<TaskStep, String> _f$planningRef = Field(
+    'planningRef',
+    _$planningRef,
+    opt: true,
+    def: '',
+    hook: JsonStringHook(),
+  );
   static String _$title(TaskStep v) => v.title;
   static const Field<TaskStep, String> _f$title = Field(
     'title',
@@ -896,6 +904,7 @@ class TaskStepMapper extends ClassMapperBase<TaskStep> {
   @override
   final MappableFields<TaskStep> fields = const {
     #id: _f$id,
+    #planningRef: _f$planningRef,
     #title: _f$title,
     #objective: _f$objective,
     #instructions: _f$instructions,
@@ -907,9 +916,14 @@ class TaskStepMapper extends ClassMapperBase<TaskStep> {
   @override
   final bool ignoreNull = true;
 
+  @override
+  final MappingHook hook = const JsonModelHook(
+    omitEmptyStrings: {'planningRef'},
+  );
   static TaskStep _instantiate(DecodingData data) {
     return TaskStep(
       id: data.dec(_f$id),
+      planningRef: data.dec(_f$planningRef),
       title: data.dec(_f$title),
       objective: data.dec(_f$objective),
       instructions: data.dec(_f$instructions),

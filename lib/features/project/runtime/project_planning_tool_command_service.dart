@@ -392,7 +392,7 @@ class ProjectPlanningToolCommandService {
         _optionalString(value['objective'], '$path.objective') ?? '';
     final acceptance = _acceptance(value['acceptance'], '$path.acceptance');
     final outOfScope = _stringList(value['out_of_scope'], '$path.out_of_scope');
-    final steps = _steps(value['steps'], '$path.steps');
+    final steps = _withStepRefs(_steps(value['steps'], '$path.steps'), path);
     final missingFields = <String>[];
     if (requireObjective
         ? objective.isEmpty
@@ -587,7 +587,12 @@ class ProjectPlanningToolCommandService {
     return items;
   }
 
-  static List<ProjectTaskStepSpec> _steps(Object? value, String path) {
+  static List<ProjectTaskStepSpec> _steps(
+    Object? value,
+    String path, {
+    bool requireRefs = false,
+    bool requireComplete = false,
+  }) {
     if (value == null) return const [];
     final maps = _maps(value, path, required: true);
     return [
@@ -595,6 +600,24 @@ class ProjectPlanningToolCommandService {
         () {
           final item = maps[index];
           _rejectPersistentFields(item, '$path[$index]');
+          if (requireComplete) {
+            for (final field in const [
+              'title',
+              'objective',
+              'instructions',
+              'may_edit_files',
+              'artifacts',
+              'acceptance_refs',
+            ]) {
+              if (!item.containsKey(field)) {
+                throw _argument(
+                  'missing_argument',
+                  '$path[$index].$field',
+                  'A step upsert must provide the complete step entry.',
+                );
+              }
+            }
+          }
           _keys(item, const {
             'ref',
             'title',
@@ -610,7 +633,9 @@ class ProjectPlanningToolCommandService {
           );
           final artifacts = _maps(item['artifacts'], '$path[$index].artifacts');
           return ProjectTaskStepSpec(
-            ref: _optionalString(item['ref'], '$path[$index].ref') ?? '',
+            ref: requireRefs
+                ? _requiredString(item['ref'], '$path[$index].ref')
+                : _optionalString(item['ref'], '$path[$index].ref') ?? '',
             title: _optionalString(item['title'], '$path[$index].title') ?? '',
             objective: objective,
             instructions: _stringList(
@@ -661,6 +686,38 @@ class ProjectPlanningToolCommandService {
               item['acceptance_refs'],
               '$path[$index].acceptance_refs',
             ),
+          );
+        }(),
+    ];
+  }
+
+  static List<ProjectTaskStepSpec> _withStepRefs(
+    List<ProjectTaskStepSpec> steps,
+    String path,
+  ) {
+    final refs = <String>{};
+    return [
+      for (var index = 0; index < steps.length; index++)
+        () {
+          final step = steps[index];
+          final ref = step.ref.trim().isEmpty
+              ? 'step_${index + 1}'
+              : step.ref.trim();
+          if (!refs.add(ref)) {
+            throw _argument(
+              'duplicate_step_ref',
+              '$path.steps[$index].ref',
+              'Step ref $ref is duplicated.',
+            );
+          }
+          return ProjectTaskStepSpec(
+            ref: ref,
+            title: step.title,
+            objective: step.objective,
+            instructions: step.instructions,
+            mayEditFiles: step.mayEditFiles,
+            artifacts: step.artifacts,
+            acceptanceRefs: step.acceptanceRefs,
           );
         }(),
     ];

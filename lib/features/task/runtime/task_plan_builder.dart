@@ -153,11 +153,7 @@ class TaskPlanBuilder {
         _steps.where((step) => step.id == key).firstOrNull?.id;
   }
 
-  void setBrief({
-    String? title,
-    String? objective,
-    List<String>? constraints,
-  }) {
+  void setBrief({String? title, String? objective, List<String>? constraints}) {
     if (title != null) _title = title.trim();
     if (objective != null) _objective = objective.trim();
     if (constraints != null) _constraints = _cleanStrings(constraints);
@@ -270,6 +266,7 @@ class TaskPlanBuilder {
       _steps.add(
         TaskStep(
           id: id,
+          planningRef: ref.trim().isEmpty ? 'stepref_${uuid.v7()}' : ref.trim(),
           title: title,
           objective: objective,
           instructions: _cleanStrings(spec.instructions),
@@ -596,7 +593,6 @@ class TaskPlanBuilder {
         },
     ])}';
   }
-
 
   TaskStep _stepFor(String reference) {
     final key = reference.trim();

@@ -140,6 +140,37 @@ class ProjectPlanningContext {
 
   List<ProjectTaskStepSpec>? taskStepsFor(String taskId) => _taskSteps[taskId];
 
+  List<ProjectTaskStepSpec> currentTaskStepSpecs(String taskId) {
+    final draft = _taskSteps[taskId];
+    if (draft != null) return draft;
+    final task = canonicalTasks[taskId];
+    if (task == null) return const [];
+    return [
+      for (var index = 0; index < task.steps.length; index++)
+        () {
+          final step = task.steps[index];
+          return ProjectTaskStepSpec(
+            ref: step.planningRef.trim().isEmpty
+                ? 'step_${index + 1}'
+                : step.planningRef,
+            title: step.title,
+            objective: step.objective,
+            instructions: step.instructions,
+            mayEditFiles: step.mayEditFiles,
+            artifacts: [
+              for (final artifact in step.artifacts)
+                ProjectTaskArtifactSpec(
+                  path: artifact.path,
+                  description: artifact.description,
+                  kind: artifact.kind,
+                ),
+            ],
+            acceptanceRefs: step.acceptanceRefs,
+          );
+        }(),
+    ];
+  }
+
   void restoreTaskSteps(Map<String, List<ProjectTaskStepSpec>> steps) {
     _taskSteps
       ..clear()
@@ -197,28 +228,75 @@ class ProjectPlanningContext {
             createdAt: node.createdAt,
             updatedAt: node.updatedAt,
           );
+      final existingSteps = <String, TaskStep>{
+        for (var index = 0; index < base.steps.length; index++)
+          (base.steps[index].planningRef.trim().isEmpty
+                  ? 'step_${index + 1}'
+                  : base.steps[index].planningRef):
+              base.steps[index],
+      };
       final steps = [
         for (final step in entry.value)
-          TaskStep(
-            id: 'step_${uuid.v7()}',
-            title: step.title.trim().isEmpty
-                ? step.objective.trim()
-                : step.title.trim(),
-            objective: step.objective.trim(),
-            instructions: step.instructions,
-            mayEditFiles: step.mayEditFiles,
-            artifacts: [
+          () {
+            final objective = step.objective.trim();
+            final title = step.title.trim().isEmpty
+                ? objective
+                : step.title.trim();
+            final existingStep = existingSteps[step.ref];
+            final artifacts = [
               for (final artifact in step.artifacts)
-                TaskArtifact(
-                  path: artifact.path,
-                  description: artifact.description,
-                  kind: artifact.kind,
-                ),
-            ],
-            acceptanceRefs: step.acceptanceRefs,
-            status: TaskStepStatus.pending,
-          ),
+                () {
+                  final existingArtifact = existingStep?.artifacts
+                      .where((item) => item.path == artifact.path)
+                      .firstOrNull;
+                  return TaskArtifact(
+                    path: artifact.path,
+                    id: existingArtifact?.id ?? '',
+                    description: artifact.description,
+                    kind: artifact.kind,
+                    stepId: existingArtifact?.stepId,
+                    taskId: existingArtifact?.taskId,
+                    runId: existingArtifact?.runId,
+                    createdAt: existingArtifact?.createdAt,
+                  );
+                }(),
+            ];
+            if (existingStep != null) {
+              return existingStep.copyWith(
+                planningRef: step.ref,
+                title: title,
+                objective: objective,
+                instructions: step.instructions,
+                mayEditFiles: step.mayEditFiles,
+                artifacts: artifacts,
+                acceptanceRefs: step.acceptanceRefs,
+              );
+            }
+            return TaskStep(
+              id: 'step_${uuid.v7()}',
+              planningRef: step.ref,
+              title: title,
+              objective: objective,
+              instructions: step.instructions,
+              mayEditFiles: step.mayEditFiles,
+              artifacts: artifacts,
+              acceptanceRefs: step.acceptanceRefs,
+              status: TaskStepStatus.pending,
+            );
+          }(),
       ];
+      final currentStepId =
+          base.currentStepId != null &&
+              steps.any((step) => step.id == base.currentStepId)
+          ? base.currentStepId
+          : steps
+                .where(
+                  (step) =>
+                      step.status != TaskStepStatus.completed &&
+                      step.status != TaskStepStatus.skipped,
+                )
+                .firstOrNull
+                ?.id;
       updates.add(
         base.copyWith(
           title: node.title,
@@ -226,7 +304,7 @@ class ProjectPlanningContext {
           objective: node.objective,
           constraints: node.constraints,
           steps: steps,
-          currentStepId: steps.firstOrNull?.id,
+          currentStepId: currentStepId,
           acceptance: node.acceptance,
           milestoneId: node.milestoneId,
           dependsOnTaskIds: node.dependsOnTaskIds,
@@ -462,6 +540,32 @@ final _taskStepSchema = _schema(
   required: const ['objective'],
 );
 
+final _taskStepUpsertSchema = _schema(
+  properties: _taskStepSchema['properties'] as Map<String, dynamic>,
+  required: const [
+    'ref',
+    'title',
+    'objective',
+    'instructions',
+    'may_edit_files',
+    'artifacts',
+    'acceptance_refs',
+  ],
+);
+
+final _taskStepReplaceSchema = _schema(
+  properties: _taskStepSchema['properties'] as Map<String, dynamic>,
+  required: const [
+    'ref',
+    'title',
+    'objective',
+    'instructions',
+    'may_edit_files',
+    'artifacts',
+    'acceptance_refs',
+  ],
+);
+
 final _agentTaskSchemaProperties = <String, dynamic>{
   'task_id': {'type': 'integer', 'minimum': 1},
   'title': {'type': 'string'},
@@ -521,10 +625,13 @@ final _planReadDefinition = ToolDefinition(
 final _projectUpdateDefinition = ToolDefinition(
   id: 'project_update',
   name: 'Update project',
-  description: 'Add or update project metadata, criteria, and milestones.',
+  description:
+      'Partially update the active project. Omitted fields stay unchanged. '
+      'A supplied constraints array replaces the full list. Criteria and '
+      'milestone entries add new records when their ID is omitted, or update '
+      'the matching record when an ID is supplied; omitted records stay unchanged.',
   schema: _schema(
     properties: {
-      'project_id': {'type': 'string'},
       'title': {'type': 'string'},
       'refined_goal': {'type': 'string'},
       'constraints': _stringArraySchema(),
@@ -571,7 +678,6 @@ final _projectUpdateDefinition = ToolDefinition(
         ),
       },
     },
-    required: const ['project_id'],
   ),
 );
 
@@ -589,11 +695,34 @@ final _taskAddDefinition = ToolDefinition(
 final _taskUpdateDefinition = ToolDefinition(
   id: 'task_update',
   name: 'Update task',
-  description: 'Partially update one task. Omitted fields remain unchanged.',
+  description:
+      'Partially update one task. Omitted fields remain unchanged. The '
+      'acceptance and steps arrays upsert complete entries by ref; use the '
+      'remove_*_refs fields to delete entries. Use replace_acceptance or '
+      'replace_steps only to replace an entire collection. Other supplied '
+      'arrays replace that field.',
   schema: _schema(
     properties: {
       'task_id': {'type': 'integer', 'minimum': 1},
       ..._taskUpdateSchemaProperties,
+      'acceptance': {
+        'type': 'array',
+        'minItems': 1,
+        'items': _acceptanceSchema,
+      },
+      'remove_acceptance_refs': _stringArraySchema(minItems: 1),
+      'replace_acceptance': {
+        'type': 'array',
+        'minItems': 1,
+        'items': _acceptanceSchema,
+      },
+      'steps': {'type': 'array', 'minItems': 1, 'items': _taskStepUpsertSchema},
+      'remove_step_refs': _stringArraySchema(minItems: 1),
+      'replace_steps': {
+        'type': 'array',
+        'minItems': 1,
+        'items': _taskStepReplaceSchema,
+      },
     },
     required: const ['task_id'],
   ),

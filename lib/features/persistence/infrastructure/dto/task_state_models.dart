@@ -348,14 +348,18 @@ class TaskSnapshotAggregate
 }
 
 class TaskJsonHook extends JsonModelHook {
-  const TaskJsonHook()
-    : super(removeKeys: const {'persistenceRevision'});
+  const TaskJsonHook() : super(removeKeys: const {'persistenceRevision'});
 }
 
-@MappableClass(ignoreNull: true)
+@MappableClass(
+  ignoreNull: true,
+  hook: JsonModelHook(omitEmptyStrings: {'planningRef'}),
+)
 class TaskStep with TaskStepMappable {
   @MappableField(hook: JsonStringHook())
   final String id;
+  @MappableField(hook: JsonStringHook())
+  final String planningRef;
   @MappableField(hook: JsonStringHook(fallback: 'Untitled step'))
   final String title;
   @MappableField(hook: JsonStringHook())
@@ -372,6 +376,7 @@ class TaskStep with TaskStepMappable {
 
   const TaskStep({
     required this.id,
+    this.planningRef = '',
     required this.title,
     required this.objective,
     required this.instructions,
@@ -383,6 +388,7 @@ class TaskStep with TaskStepMappable {
 
   TaskStep copyWith({
     String? id,
+    String? planningRef,
     String? title,
     String? objective,
     List<String>? instructions,
@@ -393,6 +399,7 @@ class TaskStep with TaskStepMappable {
   }) {
     return TaskStep(
       id: id ?? this.id,
+      planningRef: planningRef ?? this.planningRef,
       title: title ?? this.title,
       objective: objective ?? this.objective,
       instructions: instructions ?? this.instructions,

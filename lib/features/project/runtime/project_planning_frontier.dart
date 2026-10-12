@@ -51,7 +51,6 @@ class ProjectPlanningFrontierBuilder {
     return {
       'schema_version': 1,
       'project': {
-        'project_id': project.id,
         'persistence_revision': project.persistenceRevision,
         'title': project.title,
         'original_goal': project.originalGoal,
@@ -343,7 +342,9 @@ class ProjectPlanningFrontierBuilder {
   }
 
   static Map<String, dynamic> _stepWire(TaskStep step, int index) => {
-    'ref': 'step_${index + 1}',
+    'ref': step.planningRef.trim().isEmpty
+        ? 'step_${index + 1}'
+        : step.planningRef,
     'title': step.title,
     'objective': step.objective,
     'instructions': step.instructions,

@@ -122,7 +122,9 @@ class TaskPlanningFrontierBuilder {
 
   static Map<String, dynamic> _stepWire(TaskStep step, int index) {
     final compact = <String, dynamic>{
-      'ref': 'step_${index + 1}',
+      'ref': step.planningRef.trim().isEmpty
+          ? 'step_${index + 1}'
+          : step.planningRef,
       'title': step.title,
       'status': step.status.wire,
     };

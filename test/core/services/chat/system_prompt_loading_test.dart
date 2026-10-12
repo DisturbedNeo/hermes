@@ -1187,7 +1187,7 @@ ModelCompletion _commandPlanTaskResponse(
   ];
   final rawSteps = arguments['steps'] as List? ?? const [];
   final calls = <ModelToolCall>[
-    _toolCall('task_add', {
+    _toolCall('task_update', {
       'title': arguments['title'] ?? 'Task',
       'objective': arguments['objective'] ?? arguments['goal'] ?? '',
       'constraints': arguments['constraints'] ?? const [],
@@ -1238,7 +1238,6 @@ ModelCompletion _commandPlanProjectResponse(
 }) {
   final calls = <ModelToolCall>[
     _toolCall('project_update', {
-      'project_id': 'project_test',
       'criteria': [
         for (final raw in arguments['criteria'] as List? ?? const [])
           if (raw is Map)
@@ -1480,8 +1479,8 @@ class _StuckTaskClient extends ChatClient {
       controller.onListen = () {
         final commands = [
           (
-            'call_task_add',
-            'task_add',
+            'call_task_update',
+            'task_update',
             {
               'title': _plan['title'] ?? 'Task',
               'objective': _plan['goal'] ?? '',

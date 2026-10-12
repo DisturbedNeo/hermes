@@ -100,7 +100,7 @@ void main() {
 
         expect(task.title, 'Design-informed task');
         expect(client.requestCount, 1);
-        expect(client.seenToolNames.first, contains('task_add'));
+        expect(client.seenToolNames.first, contains('task_update'));
         expect(client.seenToolNames.first, isNot(contains('read_file')));
         expect(
           client.seenMessages.single.last.content,
@@ -132,7 +132,7 @@ void main() {
 
         expect(task.title, 'Build the reporting screen');
         expect(client.requestCount, 1);
-        expect(client.seenToolNames.first, contains('task_add'));
+        expect(client.seenToolNames.first, contains('task_update'));
       },
     );
 
@@ -2546,8 +2546,8 @@ ModelCompletion _planResponse(
 
   final calls = <ModelToolCall>[
     ModelToolCall(
-      id: callId('call_task_add'),
-      name: 'task_add',
+      id: callId('call_task_update'),
+      name: 'task_update',
       arguments: jsonEncode({
         'title': plan['title'] ?? 'Task',
         'objective': plan['objective'] ?? plan['goal'] ?? '',
@@ -2598,7 +2598,6 @@ ModelCompletion _replanResponse(
       id: callId('call_task_update'),
       name: 'task_update',
       arguments: jsonEncode({
-        'task_id': 1,
         if (plan['goal'] != null) 'objective': plan['goal'],
         if (plan['acceptance'] is List)
           'acceptance': [

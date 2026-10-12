@@ -95,7 +95,6 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
   @override
   List<ToolDefinition> get toolDefinitions => const [
     _taskReadDefinition,
-    _taskAddDefinition,
     _taskUpdateDefinition,
     _taskRemoveDefinition,
     _finalizeDefinition,
@@ -112,7 +111,6 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
   }) async {
     final result = switch (toolId) {
       'task_read' => _readTask(),
-      'task_add' => await _addTask(arguments),
       'task_update' => await _updateTask(arguments),
       'task_remove' => await _removeTask(arguments),
       'plan_finalize' => await _finalize(arguments),
@@ -141,20 +139,6 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     return super.domainError(error);
   }
 
-  Future<Map<String, dynamic>> _addTask(PlanningArguments arguments) async {
-    _ensureOpen();
-    _keys(arguments, _taskMutationKeys);
-    final candidate = _taskCandidate(
-      arguments,
-      requireComplete: true,
-      replaceSteps: true,
-      replaceAcceptance: true,
-    );
-    final committed = _validateCandidate(candidate);
-    final persisted = await context.persist(committed);
-    return _mutationResponse('added', persisted);
-  }
-
   Map<String, dynamic> _readTask() {
     _ensureOpen();
     return {
@@ -166,8 +150,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
 
   Future<Map<String, dynamic>> _updateTask(PlanningArguments arguments) async {
     _ensureOpen();
-    _keys(arguments, {..._taskMutationKeys, 'task_id'});
-    _requireTaskId(arguments['task_id']);
+    _keys(arguments, _taskMutationKeys);
     final candidate = _taskCandidate(arguments);
     final committed = _validateCandidate(candidate);
     final persisted = await context.persist(committed);
@@ -176,8 +159,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
 
   Future<Map<String, dynamic>> _removeTask(PlanningArguments arguments) async {
     _ensureOpen();
-    _keys(arguments, const {'task_id'});
-    _requireTaskId(arguments['task_id']);
+    _keys(arguments, const {});
     final transition = const TaskLifecycleService().transition(
       snapshot: context.currentTask,
       to: TaskStatus.obsolete,
@@ -220,12 +202,7 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     };
   }
 
-  TaskAggregate _taskCandidate(
-    PlanningArguments arguments, {
-    bool requireComplete = false,
-    bool replaceSteps = false,
-    bool replaceAcceptance = false,
-  }) {
+  TaskAggregate _taskCandidate(PlanningArguments arguments) {
     final current = context.currentTask;
     final now = DateTime.now();
     final title = _optionalString(arguments['title'], 'title');
@@ -233,46 +210,26 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     final acceptanceSupplied = arguments.containsKey('acceptance');
     final acceptance = acceptanceSupplied
         ? _parseMutationAcceptance(arguments['acceptance'], 'acceptance')
-        : replaceAcceptance
-        ? const <AcceptanceItem>[]
         : current.acceptance;
-    final parsedSteps = arguments.containsKey('steps') || replaceSteps
+    final parsedSteps = arguments.containsKey('steps')
         ? _parseMutationSteps(arguments['steps'], 'steps')
         : null;
-    final steps = parsedSteps == null
+    final candidateSteps = parsedSteps == null
         ? current.steps
         : [
             if (context.preserveCompletedStepsOnly)
               ...current.steps.where(_isPreservedStep),
             ...parsedSteps,
           ];
-    if (requireComplete && objective == null) {
-      throw _argument(
-        'missing_argument',
-        'objective',
-        'A task_add call requires an objective.',
-      );
-    }
-    if (requireComplete &&
-        acceptance.isEmpty &&
-        context.inheritedAcceptance.isEmpty) {
-      throw _argument(
-        'missing_argument',
-        'acceptance',
-        'A task_add call requires acceptance unless inherited acceptance is present.',
-      );
-    }
-    if (requireComplete && steps.isEmpty) {
-      throw _argument(
-        'missing_argument',
-        'steps',
-        'A task_add call requires at least one executable step.',
-      );
-    }
+    final steps = [
+      for (var index = 0; index < candidateSteps.length; index++)
+        candidateSteps[index].planningRef.trim().isEmpty
+            ? candidateSteps[index].copyWith(planningRef: 'step_${index + 1}')
+            : candidateSteps[index],
+    ];
+    _validateStepPlanningRefs(steps);
     final mergedAcceptance = acceptanceSupplied
         ? _mergeInheritedAcceptance(acceptance)
-        : replaceAcceptance
-        ? [...context.inheritedAcceptance]
         : [
             ...context.inheritedAcceptance,
             ...current.acceptance.where(
@@ -373,6 +330,20 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     return committed.task;
   }
 
+  void _validateStepPlanningRefs(List<TaskStep> steps) {
+    final refs = <String>{};
+    for (var index = 0; index < steps.length; index++) {
+      final ref = steps[index].planningRef.trim();
+      if (ref.isNotEmpty && !refs.add(ref)) {
+        throw TaskPlanBuilderException(
+          code: 'duplicate_step_ref',
+          path: 'steps[$index].ref',
+          message: 'Step ref $ref is duplicated.',
+        );
+      }
+    }
+  }
+
   List<AcceptanceItem> _mergeInheritedAcceptance(
     List<AcceptanceItem> supplied,
   ) {
@@ -423,9 +394,13 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
     }, fieldPath: path);
     final objective = _requiredString(value['objective'], '$path.objective');
     final title = _optionalString(value['title'], '$path.title') ?? objective;
+    final rawPlanningRef = _optionalString(value['ref'], '$path.ref')?.trim();
     final artifacts = _artifacts(value['artifacts'], '$path.artifacts');
     return TaskStep(
       id: 'step_${uuid.v7()}',
+      planningRef: rawPlanningRef?.isNotEmpty == true
+          ? rawPlanningRef!
+          : 'stepref_${uuid.v7()}',
       title: title,
       objective: objective,
       instructions: _stringList(value['instructions'], '$path.instructions'),
@@ -670,17 +645,6 @@ class TaskPlanningToolRegistry extends PlanningToolRegistryBase {
       step.status == TaskStepStatus.completed ||
       step.status == TaskStepStatus.skipped;
 
-  void _requireTaskId(Object? value) {
-    final id = _optionalInt(value, 'task_id');
-    if (id == null || id != context.taskNumber) {
-      throw _argument(
-        'unknown_reference',
-        'task_id',
-        'Task $value is not the current task.',
-      );
-    }
-  }
-
   static const _taskMutationKeys = {
     'title',
     'objective',
@@ -897,77 +861,17 @@ const ToolDefinition _taskReadDefinition = ToolDefinition(
   }),
 );
 
-const ToolDefinition _taskAddDefinition = ToolDefinition(
-  id: 'task_add',
-  name: 'Add task',
-  description:
-      'Create or replace the complete current task in one validated operation.',
-  schema: ToolSchema({
-    'type': 'object',
-    'additionalProperties': false,
-    'properties': {
-      'title': {'type': 'string'},
-      'objective': {'type': 'string'},
-      'constraints': {
-        'type': 'array',
-        'items': {'type': 'string'},
-      },
-      'out_of_scope': {
-        'type': 'array',
-        'minItems': 1,
-        'items': {'type': 'string'},
-      },
-      'read_paths': {
-        'type': 'array',
-        'items': {'type': 'string'},
-      },
-      'write_paths': {
-        'type': 'array',
-        'items': {'type': 'string'},
-      },
-      'context': {
-        'type': 'array',
-        'items': {'type': 'string'},
-      },
-      'dependency_task_ids': {
-        'type': 'array',
-        'items': {'type': 'integer', 'minimum': 1},
-      },
-      'milestone_id': {'type': 'integer', 'minimum': 1},
-      'priority': {
-        'type': 'string',
-        'enum': ['critical', 'high', 'normal', 'low'],
-      },
-      'risk': {
-        'type': 'string',
-        'enum': ['high', 'medium', 'low', 'unknown'],
-      },
-      'risk_reduction': {
-        'type': 'string',
-        'enum': ['high', 'medium', 'low', 'none'],
-      },
-      'effort': {
-        'type': 'string',
-        'enum': ['small', 'medium', 'large'],
-      },
-      'selection_rationale': {'type': 'string'},
-      'acceptance': _taskAcceptanceSchema,
-      'steps': _taskStepsSchema,
-    },
-    'required': ['objective', 'acceptance', 'out_of_scope', 'steps'],
-  }),
-);
-
 const ToolDefinition _taskUpdateDefinition = ToolDefinition(
   id: 'task_update',
   name: 'Update task',
   description:
-      'Partially update the current task. Omitted fields remain unchanged.',
+      'Create or revise the selected task plan without an ID. Use this for '
+      'initial planning, replanning, and later edits. Omitted fields remain '
+      'unchanged; supplied arrays replace those arrays.',
   schema: ToolSchema({
     'type': 'object',
     'additionalProperties': false,
     'properties': {
-      'task_id': {'type': 'integer', 'minimum': 1},
       'title': {'type': 'string'},
       'objective': {'type': 'string'},
       'constraints': {
@@ -1015,7 +919,6 @@ const ToolDefinition _taskUpdateDefinition = ToolDefinition(
       'acceptance': _taskAcceptanceSchema,
       'steps': _taskStepsSchema,
     },
-    'required': ['task_id'],
   }),
 );
 
@@ -1023,14 +926,12 @@ const ToolDefinition _taskRemoveDefinition = ToolDefinition(
   id: 'task_remove',
   name: 'Remove task',
   description:
-      'Remove the current task from active planning while preserving its history.',
+      'Remove the selected task from active planning while preserving its history. '
+      'This tool takes no arguments.',
   schema: ToolSchema({
     'type': 'object',
     'additionalProperties': false,
-    'properties': {
-      'task_id': {'type': 'integer', 'minimum': 1},
-    },
-    'required': ['task_id'],
+    'properties': {},
   }),
 );
 

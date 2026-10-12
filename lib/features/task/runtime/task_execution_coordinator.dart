@@ -92,12 +92,13 @@ The planning frontier supplies the current editable task and bounded project
 context. Omitted completed-step detail is not known; call task_read when it is
 needed and do not guess. Do not return a task JSON document as text.
 
-Use task_add once to create the complete task, task_update with the task ID for
-partial changes, and task_remove only to obsolete the current task. A task_add
-payload includes the objective, scope boundaries, an acceptance array (use an
-empty array when all acceptance is inherited), and all executable steps.
-Omitted task_update fields remain unchanged; supplied arrays replace those
-arrays atomically. Finish with plan_finalize.
+Use task_update to create or revise the selected task plan, and task_remove
+only to obsolete the selected task. These tools already target the selected
+task; do not provide a task ID. For initial planning, task_update should supply
+the objective, scope boundaries, an acceptance array (use an empty array when
+all acceptance is inherited), and all executable steps. During replanning,
+supply replacement steps for unfinished work. Omitted fields remain unchanged;
+supplied arrays replace those arrays atomically. Finish with plan_finalize.
 
 Inherited project acceptance is read-only and is already present in context.
 Do not re-add inherited acceptance refs. Use numeric project IDs for criteria,

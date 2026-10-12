@@ -21,27 +21,13 @@ class ProjectPlanEditingCommandService {
   ) async {
     _ensureOpen();
     ProjectPlanningToolCommandService._keys(arguments, const {
-      'project_id',
       'title',
       'refined_goal',
       'constraints',
       'criteria',
       'milestones',
     });
-    final projectId = ProjectPlanningToolCommandService._requiredString(
-      arguments['project_id'],
-      'project_id',
-    );
-    if (projectId != context.project.id) {
-      throw ProjectPlanningToolCommandService._argument(
-        'unknown_reference',
-        'project_id',
-        'Project $projectId is not the active project.',
-      );
-    }
-    final hasChange = arguments.keys.any(
-      (key) => key != 'project_id' && arguments[key] != null,
-    );
+    final hasChange = arguments.keys.any((key) => arguments[key] != null);
     if (!hasChange) {
       throw ProjectPlanningToolCommandService._argument(
         'empty_update',
@@ -243,6 +229,10 @@ class ProjectPlanEditingCommandService {
       'out_of_scope',
       'context',
       'steps',
+      'remove_step_refs',
+      'replace_steps',
+      'remove_acceptance_refs',
+      'replace_acceptance',
       'disposition',
     });
     final taskNumber = ProjectPlanningToolCommandService._optionalInt(
@@ -252,8 +242,73 @@ class ProjectPlanEditingCommandService {
     late Map<String, dynamic> transformed;
     late String taskId;
     final suppliedSteps = arguments.containsKey('steps')
-        ? ProjectPlanningToolCommandService._steps(arguments['steps'], 'steps')
+        ? ProjectPlanningToolCommandService._steps(
+            arguments['steps'],
+            'steps',
+            requireRefs: taskNumber != null,
+            requireComplete: taskNumber != null,
+          )
         : null;
+    final replacementSteps = arguments.containsKey('replace_steps')
+        ? ProjectPlanningToolCommandService._withStepRefs(
+            ProjectPlanningToolCommandService._steps(
+              arguments['replace_steps'],
+              'replace_steps',
+              requireRefs: true,
+              requireComplete: true,
+            ),
+            'replace_steps',
+          )
+        : null;
+    final removedStepRefs = arguments.containsKey('remove_step_refs')
+        ? ProjectPlanningToolCommandService._stringList(
+            arguments['remove_step_refs'],
+            'remove_step_refs',
+          )
+        : const <String>[];
+    final hasAcceptanceUpserts = arguments.containsKey('acceptance');
+    final hasAcceptanceReplacement = arguments.containsKey(
+      'replace_acceptance',
+    );
+    final removedAcceptanceRefs =
+        arguments.containsKey('remove_acceptance_refs')
+        ? ProjectPlanningToolCommandService._stringList(
+            arguments['remove_acceptance_refs'],
+            'remove_acceptance_refs',
+          )
+        : const <String>[];
+    if (replacementSteps != null &&
+        (suppliedSteps != null || arguments.containsKey('remove_step_refs'))) {
+      throw ProjectPlanningToolCommandService._argument(
+        'conflicting_list_operations',
+        'replace_steps',
+        'Use replace_steps by itself; do not combine it with steps or remove_step_refs.',
+      );
+    }
+    if (hasAcceptanceReplacement &&
+        (hasAcceptanceUpserts ||
+            arguments.containsKey('remove_acceptance_refs'))) {
+      throw ProjectPlanningToolCommandService._argument(
+        'conflicting_list_operations',
+        'replace_acceptance',
+        'Use replace_acceptance by itself; do not combine it with acceptance or remove_acceptance_refs.',
+      );
+    }
+    if (arguments.containsKey('remove_step_refs') && removedStepRefs.isEmpty) {
+      throw ProjectPlanningToolCommandService._argument(
+        'invalid_argument',
+        'remove_step_refs',
+        'At least one step ref is required.',
+      );
+    }
+    if (arguments.containsKey('remove_acceptance_refs') &&
+        removedAcceptanceRefs.isEmpty) {
+      throw ProjectPlanningToolCommandService._argument(
+        'invalid_argument',
+        'remove_acceptance_refs',
+        'At least one acceptance ref is required.',
+      );
+    }
     final previousTaskSteps = <String, List<ProjectTaskStepSpec>>{};
     for (final task in context.currentProject.tasks) {
       final steps = context.taskStepsFor(task.id);
@@ -282,6 +337,26 @@ class ProjectPlanEditingCommandService {
           final existingTaskId = context.builder.taskIdFor(
             taskNumber.toString(),
           );
+          final existingTask = context.currentProject.tasks.firstWhere(
+            (task) => task.id == existingTaskId,
+          );
+          final acceptance = hasAcceptanceReplacement
+              ? ProjectPlanningToolCommandService._acceptance(
+                  arguments['replace_acceptance'],
+                  'replace_acceptance',
+                )
+              : hasAcceptanceUpserts || removedAcceptanceRefs.isNotEmpty
+              ? _mergeAcceptance(
+                  existingTask.acceptance,
+                  hasAcceptanceUpserts
+                      ? ProjectPlanningToolCommandService._acceptance(
+                          transformed['acceptance'],
+                          'acceptance',
+                        )
+                      : const [],
+                  removedAcceptanceRefs,
+                )
+              : null;
           final updated = context.builder.updateTask(
             existingTaskId,
             title: ProjectPlanningToolCommandService._optionalString(
@@ -292,12 +367,7 @@ class ProjectPlanEditingCommandService {
               arguments['objective'],
               'objective',
             ),
-            acceptance: arguments.containsKey('acceptance')
-                ? ProjectPlanningToolCommandService._acceptance(
-                    transformed['acceptance'],
-                    'acceptance',
-                  )
-                : null,
+            acceptance: acceptance,
             dependencyRefs: arguments.containsKey('dependency_task_ids')
                 ? (transformed['dependency_refs'] as List).cast<String>()
                 : null,
@@ -361,9 +431,24 @@ class ProjectPlanEditingCommandService {
             ),
           );
           taskId = updated.id;
-          if (suppliedSteps != null) {
-            context.setTaskSteps(taskId, suppliedSteps);
+          var nextSteps = context.currentTaskStepSpecs(taskId);
+          if (replacementSteps != null ||
+              suppliedSteps != null ||
+              removedStepRefs.isNotEmpty) {
+            nextSteps =
+                replacementSteps ??
+                _mergeStepSpecs(
+                  context.currentTaskStepSpecs(taskId),
+                  suppliedSteps ?? const [],
+                  removedStepRefs,
+                );
+            _validateCompletedStepPreservation(
+              context.canonicalTasks[taskId],
+              nextSteps,
+            );
+            context.setTaskSteps(taskId, nextSteps);
           }
+          _validateStepAcceptanceRefs(nextSteps, updated.acceptance);
         }
         final disposition = ProjectPlanningToolCommandService._enumValue(
           ProjectPlanTaskDisposition.values,
@@ -476,6 +561,191 @@ class ProjectPlanEditingCommandService {
       'persistence_revision': persisted.persistenceRevision,
       'next_action': 'plan_finalize',
     };
+  }
+
+  List<AcceptanceItem> _mergeAcceptance(
+    List<AcceptanceItem> existing,
+    List<AcceptanceItem> upserts,
+    List<String> removals,
+  ) {
+    final removalRefs = <String>{};
+    for (var index = 0; index < removals.length; index++) {
+      final ref = removals[index].trim();
+      if (ref.isEmpty || !removalRefs.add(ref)) {
+        throw ProjectPlanningToolCommandService._argument(
+          'invalid_reference',
+          'remove_acceptance_refs[$index]',
+          'Acceptance refs to remove must be non-empty and unique.',
+        );
+      }
+    }
+    final upsertRefs = {for (final item in upserts) item.ref};
+    if (upsertRefs.any(removalRefs.contains)) {
+      throw ProjectPlanningToolCommandService._argument(
+        'conflicting_list_operations',
+        'acceptance',
+        'An acceptance ref cannot be updated and removed in the same call.',
+      );
+    }
+    for (final ref in removalRefs) {
+      if (!existing.any((item) => item.ref == ref)) {
+        throw ProjectPlanningToolCommandService._argument(
+          'unknown_reference',
+          'remove_acceptance_refs',
+          'Acceptance ref $ref does not exist on this task.',
+        );
+      }
+    }
+    final merged = existing
+        .where((item) => !removalRefs.contains(item.ref))
+        .toList();
+    for (final item in upserts) {
+      final index = merged.indexWhere((existing) => existing.ref == item.ref);
+      if (index < 0) {
+        merged.add(item);
+      } else {
+        merged[index] = item;
+      }
+    }
+    return merged;
+  }
+
+  List<ProjectTaskStepSpec> _mergeStepSpecs(
+    List<ProjectTaskStepSpec> existing,
+    List<ProjectTaskStepSpec> upserts,
+    List<String> removals,
+  ) {
+    final removalRefs = <String>{};
+    for (var index = 0; index < removals.length; index++) {
+      final ref = removals[index].trim();
+      if (ref.isEmpty || !removalRefs.add(ref)) {
+        throw ProjectPlanningToolCommandService._argument(
+          'invalid_reference',
+          'remove_step_refs[$index]',
+          'Step refs to remove must be non-empty and unique.',
+        );
+      }
+    }
+    final upsertRefs = <String>{};
+    for (var index = 0; index < upserts.length; index++) {
+      final ref = upserts[index].ref.trim();
+      if (ref.isEmpty || !upsertRefs.add(ref)) {
+        throw ProjectPlanningToolCommandService._argument(
+          'invalid_step_ref',
+          'steps[$index].ref',
+          'Step refs must be non-empty and unique.',
+        );
+      }
+    }
+    if (upsertRefs.any(removalRefs.contains)) {
+      throw ProjectPlanningToolCommandService._argument(
+        'conflicting_list_operations',
+        'steps',
+        'A step ref cannot be updated and removed in the same call.',
+      );
+    }
+    for (final ref in removalRefs) {
+      if (!existing.any((step) => step.ref == ref)) {
+        throw ProjectPlanningToolCommandService._argument(
+          'unknown_reference',
+          'remove_step_refs',
+          'Step ref $ref does not exist on this task.',
+        );
+      }
+    }
+    final merged = existing
+        .where((step) => !removalRefs.contains(step.ref))
+        .toList();
+    for (final step in upserts) {
+      final index = merged.indexWhere((existing) => existing.ref == step.ref);
+      if (index < 0) {
+        merged.add(step);
+      } else {
+        merged[index] = step;
+      }
+    }
+    if (merged.isEmpty) {
+      throw ProjectPlanningToolCommandService._argument(
+        'missing_steps',
+        'steps',
+        'A task needs at least one executable step.',
+      );
+    }
+    return merged;
+  }
+
+  void _validateCompletedStepPreservation(
+    TaskAggregate? task,
+    List<ProjectTaskStepSpec> nextSteps,
+  ) {
+    if (task == null) return;
+    for (var index = 0; index < task.steps.length; index++) {
+      final existing = task.steps[index];
+      if (existing.status != TaskStepStatus.completed &&
+          existing.status != TaskStepStatus.skipped) {
+        continue;
+      }
+      final ref = existing.planningRef.trim().isEmpty
+          ? 'step_${index + 1}'
+          : existing.planningRef;
+      final replacement = nextSteps
+          .where((step) => step.ref == ref)
+          .firstOrNull;
+      if (replacement == null || !_sameStep(existing, replacement)) {
+        throw ProjectPlanningToolCommandService._argument(
+          'completed_step_immutable',
+          'steps',
+          'Completed or skipped step $ref cannot be changed or removed.',
+        );
+      }
+    }
+  }
+
+  bool _sameStep(TaskStep existing, ProjectTaskStepSpec candidate) {
+    if (existing.title != candidate.title ||
+        existing.objective != candidate.objective ||
+        existing.mayEditFiles != candidate.mayEditFiles ||
+        !_sameStrings(existing.instructions, candidate.instructions) ||
+        !_sameStrings(existing.acceptanceRefs, candidate.acceptanceRefs) ||
+        existing.artifacts.length != candidate.artifacts.length) {
+      return false;
+    }
+    for (var index = 0; index < existing.artifacts.length; index++) {
+      final current = existing.artifacts[index];
+      final next = candidate.artifacts[index];
+      if (current.path != next.path ||
+          current.description != next.description ||
+          current.kind != next.kind) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool _sameStrings(List<String> left, List<String> right) {
+    if (left.length != right.length) return false;
+    for (var index = 0; index < left.length; index++) {
+      if (left[index] != right[index]) return false;
+    }
+    return true;
+  }
+
+  void _validateStepAcceptanceRefs(
+    List<ProjectTaskStepSpec> steps,
+    List<AcceptanceItem> acceptance,
+  ) {
+    final acceptanceRefs = {for (final item in acceptance) item.ref};
+    for (var stepIndex = 0; stepIndex < steps.length; stepIndex++) {
+      for (final ref in steps[stepIndex].acceptanceRefs) {
+        if (!acceptanceRefs.contains(ref)) {
+          throw ProjectPlanningToolCommandService._argument(
+            'unknown_reference',
+            'steps[$stepIndex].acceptance_refs',
+            'Unknown acceptance ref $ref for this task.',
+          );
+        }
+      }
+    }
   }
 
   Future<Map<String, dynamic>> requestUserDecision(
@@ -598,6 +868,10 @@ class ProjectPlanEditingCommandService {
       'out_of_scope',
       'context',
       'steps',
+      'remove_step_refs',
+      'replace_steps',
+      'remove_acceptance_refs',
+      'replace_acceptance',
       'disposition',
     };
     ProjectPlanningToolCommandService._keys(value, allowed);
