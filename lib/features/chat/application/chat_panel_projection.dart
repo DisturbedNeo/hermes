@@ -64,6 +64,7 @@ abstract final class ChatPanelProjection {
       blocker: snapshot.blocker,
       openQuestions: snapshot.openQuestions,
       diagnostics: snapshot.diagnostics,
+      boundary: snapshot.boundary,
       schedule: ProjectScheduleReadModel(
         readiness: Map<String, TaskReadiness>.unmodifiable(schedule.readiness),
         readinessReasons: Map<String, List<String>>.unmodifiable({

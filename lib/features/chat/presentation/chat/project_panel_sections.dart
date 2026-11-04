@@ -77,7 +77,12 @@ class ProjectOutcomeSection extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          _LabelValue(label: 'Status', value: _humanize(project.status.name)),
+          _LabelValue(
+            label: 'Status',
+            value: project.planningInterrupted
+                ? project.statusLabel
+                : _humanize(project.status.name),
+          ),
           _LabelValue(
             label: 'Active milestone',
             value: activeMilestone?.title ?? 'No active milestone',

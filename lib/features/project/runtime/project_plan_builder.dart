@@ -198,6 +198,7 @@ class ProjectPlanBuilder {
     required String workspaceRoot,
     ProjectPlanApprovalPolicy approvalPolicy =
         ProjectPlanApprovalPolicy.highRiskOnly,
+    ProjectPlanningLimits? validationLimits,
   }) async {
     final proposal = _materialize();
     final result = await _revisionService.prepareAndApplyPatch(
@@ -205,7 +206,7 @@ class ProjectPlanBuilder {
       patch: ProjectPlanPatch.incremental(proposal),
       workspaceRoot: workspaceRoot,
       approvalPolicy: approvalPolicy,
-      planningLimits: planningLimits,
+      planningLimits: validationLimits ?? planningLimits,
     );
     return ProjectPlanBuilderCommit(proposal: proposal, result: result);
   }
@@ -215,6 +216,7 @@ class ProjectPlanBuilder {
   ProjectPlanBuilderPreview preview({
     required String workspaceRoot,
     bool ensureBootstrapMilestone = true,
+    ProjectPlanningLimits? validationLimits,
   }) {
     final proposal = _materialize(
       ensureBootstrapMilestone: ensureBootstrapMilestone,
@@ -223,7 +225,7 @@ class ProjectPlanBuilder {
       project: _planningProject,
       proposal: proposal,
       workspaceRoot: workspaceRoot,
-      planningLimits: planningLimits,
+      planningLimits: validationLimits ?? planningLimits,
     );
     return ProjectPlanBuilderPreview(
       proposal: proposal,

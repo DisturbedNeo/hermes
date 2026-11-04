@@ -115,8 +115,8 @@ class ProjectPlanningFrontierBuilder {
       'frontier': {
         'active_task_id': activeTaskId,
         'current_batch_task_ids': currentBatchTaskIds,
-        'ready_task_ids': readyTaskIds,
-        'blocked_task_ids': blockedTaskIds,
+        'ready_task_ids': readyTaskIds.toList()..sort(),
+        'blocked_task_ids': blockedTaskIds.toList()..sort(),
         'detail_required_for': frontierTaskIds.toList()..sort(),
       },
       'control': {

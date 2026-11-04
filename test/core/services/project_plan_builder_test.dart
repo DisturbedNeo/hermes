@@ -164,7 +164,7 @@ void main() {
       ref: 'artifact_task',
       title: 'Produce output',
       objective: 'Produce the bounded output.',
-      acceptance: const [
+      acceptance: [
         AcceptanceItem(
           ref: 'output-proof',
           statement: 'The output is produced.',
@@ -188,7 +188,7 @@ void main() {
           ref: 'artifact_task',
           title: 'Produce output',
           objective: 'Produce the bounded output.',
-          acceptance: const [
+          acceptance: [
             AcceptanceItem(
               ref: 'output-proof',
               statement: 'The output is produced.',
@@ -222,7 +222,7 @@ void main() {
       ref: 'same',
       title: 'A bounded slice',
       objective: 'Implement a bounded slice.',
-      acceptance: const [
+      acceptance: [
         AcceptanceItem(
           ref: 'same-proof',
           statement: 'The slice is checked.',
@@ -252,7 +252,7 @@ void main() {
           ref: 'valid_batch_item',
           title: 'Another bounded slice',
           objective: 'Implement another bounded slice.',
-          acceptance: const [
+          acceptance: [
             AcceptanceItem(
               ref: 'other-proof',
               statement: 'The other slice is checked.',
@@ -268,7 +268,7 @@ void main() {
           ref: 'invalid_batch_item',
           title: 'Invalid bounded slice',
           objective: 'Implement an invalid bounded slice.',
-          acceptance: const [
+          acceptance: [
             AcceptanceItem(
               ref: 'invalid-proof',
               statement: 'The invalid slice is checked.',
@@ -295,7 +295,7 @@ void main() {
       ref: 'idempotent',
       title: 'An idempotent slice',
       objective: 'Implement an idempotent bounded slice.',
-      acceptance: const [
+      acceptance: [
         AcceptanceItem(
           ref: 'idempotent-proof',
           statement: 'The idempotent slice is checked.',
@@ -316,7 +316,7 @@ void main() {
           ref: 'idempotent',
           title: 'A changed slice',
           objective: 'Implement a changed bounded slice.',
-          acceptance: const [
+          acceptance: [
             AcceptanceItem(
               ref: 'idempotent-proof',
               statement: 'The changed slice is checked.',
@@ -372,7 +372,7 @@ void main() {
           ref: 'too_many',
           title: 'Too many tasks',
           objective: 'Exceed the bounded planning slice.',
-          acceptance: const [
+          acceptance: [
             AcceptanceItem(
               ref: 'too-many-proof',
               statement: 'The slice is checked.',

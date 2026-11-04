@@ -161,7 +161,7 @@ ${_encoder.convert(evidenceSnapshot.workspaceGraphReconciliation?.toMap() ?? con
       rethrow;
     } catch (error) {
       return _incrementalFailure(
-        project,
+        context.currentProject,
         'Workspace graph maintenance failed: $error',
       );
     }
@@ -280,7 +280,7 @@ ${_encoder.convert(_planningFrontier(project, evidence: evidenceSnapshot, trigge
       rethrow;
     } catch (error) {
       return _incrementalFailure(
-        project,
+        context.currentProject,
         'Incremental plan revision failed: $error',
       );
     }
@@ -365,7 +365,7 @@ ${_encoder.convert(_planningFrontier(project, focusedTask: oversizedTask, trigge
       rethrow;
     } catch (error) {
       return _incrementalFailure(
-        project,
+        context.currentProject,
         'Incremental task split failed: $error',
       );
     }
@@ -390,7 +390,7 @@ ${_encoder.convert(_planningFrontier(project, focusedTask: oversizedTask, trigge
     final code = result['code']?.toString().trim();
     final message = result['message']?.toString().trim();
     return _incrementalFailure(
-      context.project,
+      context.currentProject,
       [
         if (code != null && code.isNotEmpty) '$code:',
         if (message != null && message.isNotEmpty) message,

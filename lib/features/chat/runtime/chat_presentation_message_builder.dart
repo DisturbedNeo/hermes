@@ -73,11 +73,24 @@ class ChatPresentationMessageBuilder {
   }
 
   String projectStatus(ProjectAggregate snapshot, {TaskAggregate? activeTask}) {
+    final planningInterrupted =
+        snapshot.boundary?.outcome == ProjectControlOutcome.degradedPlanning;
     final buffer = StringBuffer()
       ..writeln('Project status: **${snapshot.title}**')
       ..writeln()
-      ..writeln('Status: `${ProjectStatusWire(snapshot.status).wire}`');
-    if (projectHasTransportFailure(snapshot, activeTask: activeTask)) {
+      ..writeln(
+        'Status: `${planningInterrupted ? 'Planning interrupted' : ProjectStatusWire(snapshot.status).wire}`',
+      );
+    if (planningInterrupted) {
+      final message = snapshot.boundary!.message.trim();
+      buffer
+        ..writeln()
+        ..writeln(
+          message.isEmpty ? 'Project planning did not finish.' : message,
+        )
+        ..writeln()
+        ..writeln('Continue the project to retry planning.');
+    } else if (projectHasTransportFailure(snapshot, activeTask: activeTask)) {
       buffer
         ..writeln()
         ..writeln(

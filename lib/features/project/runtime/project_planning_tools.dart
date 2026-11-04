@@ -329,12 +329,21 @@ class ProjectPlanningContext {
 
   Future<ProjectAggregate> persistDraft() async {
     final previous = currentProject;
+    // Bootstrap commands build criteria, milestones, and tasks incrementally.
+    // Check each mutation's integrity here; plan_finalize enforces the complete
+    // executable slice once all of those records have been supplied.
+    final validationLimits = planningPass == ProjectPlanningPass.bootstrap
+        ? ProjectPlanningLimits(maxNewTasks: planningLimits.maxNewTasks)
+        : planningLimits;
     final previousTaskSteps = {
       for (final entry in _taskSteps.entries)
         entry.key: List<ProjectTaskStepSpec>.from(entry.value),
     };
     try {
-      final preview = builder.preview(workspaceRoot: workspaceRoot);
+      final preview = builder.preview(
+        workspaceRoot: workspaceRoot,
+        validationLimits: validationLimits,
+      );
       if (!preview.validation.valid) {
         final issue =
             preview.validation.errors.firstOrNull ??
@@ -348,6 +357,7 @@ class ProjectPlanningContext {
       final committed = await builder.commit(
         workspaceRoot: workspaceRoot,
         approvalPolicy: approvalPolicy,
+        validationLimits: validationLimits,
       );
       if (!committed.validation.valid) {
         final issue =

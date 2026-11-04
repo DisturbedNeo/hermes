@@ -164,13 +164,14 @@ class ProjectAggregateStore {
     // merging a second Task copy stored on the project.
     for (final node in project.tasks) {
       final existing = loadedExisting[node.id]?.value;
-      if (existing == null) {
+      if (existing == null && !preparedById.containsKey(node.id)) {
         preparedById[node.id] = _materializer.create(
           node,
           projectId: project.id,
           chatSessionId: project.chatSessionId,
         );
-      } else if (!_materializer.matches(node, existing) &&
+      } else if (existing != null &&
+          !_materializer.matches(node, existing) &&
           !preparedById.containsKey(node.id)) {
         preparedById[node.id] = _materializer.apply(
           node,

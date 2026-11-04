@@ -127,7 +127,54 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('Project task'), findsOneWidget);
     expect(find.text('Recent Decisions'), findsOneWidget);
+    expect(find.text('Run Next Ready Task'), findsOneWidget);
   });
+
+  testWidgets(
+    'planning failure is visible in the collapsed and expanded panel',
+    (tester) async {
+      final project = _projectWithTask().copyWith(
+        boundary: ProjectBoundary(
+          outcome: ProjectControlOutcome.degradedPlanning,
+          message: 'The planning service is unavailable.',
+          action: 'retry_planning',
+          reasonCode: 'planning_failed',
+          occurredAt: DateTime(2026, 11, 4),
+        ),
+      );
+      chat.dispatchActiveProject(project);
+
+      Widget panel({required bool expanded}) => MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 640,
+            child: TaskPanel(
+              chat: chat,
+              expanded: expanded,
+              onToggleExpanded: () {},
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(panel(expanded: false));
+      expect(find.text('Planning interrupted'), findsOneWidget);
+
+      await tester.pumpWidget(panel(expanded: true));
+      expect(tester.takeException(), isNull);
+      expect(find.text('Planning interrupted'), findsWidgets);
+      expect(find.text('The planning service is unavailable.'), findsOneWidget);
+      expect(
+        find.text('Select Continue Project to retry planning.'),
+        findsOneWidget,
+      );
+
+      chat.dispatchActiveProject(project.copyWith(boundary: null));
+      await tester.pumpWidget(panel(expanded: true));
+      expect(find.text('Planning interrupted'), findsNothing);
+      expect(find.text('The planning service is unavailable.'), findsNothing);
+    },
+  );
 
   testWidgets('blocked recovery renders structured diagnostics and retry', (
     tester,
@@ -245,7 +292,10 @@ TaskAggregate _taskWithArtifact() {
         ref: 'artifact',
         statement: 'The artifact is produced.',
         verifiers: [
-          AcceptanceVerifier(kind: AcceptanceVerifierKind.artifact, path: 'output.md'),
+          AcceptanceVerifier(
+            kind: AcceptanceVerifierKind.artifact,
+            path: 'output.md',
+          ),
         ],
       ),
     ],
@@ -318,7 +368,9 @@ ProjectAggregate _projectWithTask() {
             AcceptanceItem(
               ref: 'finished',
               statement: 'Finished.',
-              verifiers: [AcceptanceVerifier(kind: AcceptanceVerifierKind.review)],
+              verifiers: [
+                AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+              ],
             ),
           ],
           outOfScope: const [],
@@ -384,7 +436,9 @@ ProjectAggregate _projectWithExhaustedRecovery() {
               ref: 'works',
               statement: 'Project works.',
               criterionIds: ['criterion_1'],
-              verifiers: [AcceptanceVerifier(kind: AcceptanceVerifierKind.review)],
+              verifiers: [
+                AcceptanceVerifier(kind: AcceptanceVerifierKind.review),
+              ],
             ),
           ],
           outOfScope: const [],

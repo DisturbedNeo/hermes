@@ -7,6 +7,8 @@ export 'package:hermes/features/project/domain/project.dart'
     show
         ProjectBlocker,
         ProjectBlockerType,
+        ProjectBoundary,
+        ProjectControlOutcome,
         ProjectCriterion,
         ProjectCriterionStatus,
         ProjectDecisionRecord,
@@ -221,6 +223,7 @@ class ProjectPanelReadModel {
     required this.schedule,
     required this.orderedReadyTasks,
     required this.workspaceContext,
+    required this.boundary,
   });
 
   final String id;
@@ -251,6 +254,14 @@ class ProjectPanelReadModel {
   final ProjectScheduleReadModel schedule;
   final List<ProjectTaskNode> orderedReadyTasks;
   final ProjectWorkspaceContextReadModel workspaceContext;
+  final ProjectBoundary? boundary;
+
+  bool get planningInterrupted =>
+      boundary?.outcome == ProjectControlOutcome.degradedPlanning;
+
+  String get statusLabel => planningInterrupted
+      ? 'Planning interrupted'
+      : ChatProjectStatusWire(status).wire;
 
   bool get isTerminal =>
       status == ProjectStatus.completed ||

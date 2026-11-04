@@ -1,13 +1,69 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/planning_test_helpers.dart';
 import 'package:hermes/features/project/domain/project.dart';
 import 'package:hermes/features/project/application/contracts/project_task_models.dart';
 import 'package:hermes/features/project/runtime/project_planning_tools.dart';
 import 'package:hermes/features/project/runtime/project_planning_frontier.dart';
+import 'package:hermes/features/project/runtime/project_planning_gateway.dart';
+import 'package:hermes/features/project/runtime/project_planning_policy.dart';
 import 'package:hermes/features/task/domain/task.dart';
 import 'package:hermes/features/task/runtime/task_planning_tools.dart';
 
 void main() {
+  test('an empty project frontier can be encoded as a planning prompt', () {
+    final project = _project().copyWith(
+      criteria: [],
+      tasks: [],
+      milestones: [],
+    );
+    final encoded = jsonEncode(
+      ProjectPlanningFrontierBuilder.build(project: project),
+    );
+    final decoded = jsonDecode(encoded) as Map<String, dynamic>;
+
+    expect(decoded['frontier']['ready_task_ids'], isEmpty);
+    expect(decoded['frontier']['blocked_task_ids'], isEmpty);
+  });
+
+  test(
+    'bootstrap updates allow partial plans but finalization requires work',
+    () async {
+      final context = ProjectPlanningContext(
+        project: _project(),
+        workspaceRoot: '/workspace',
+        approvalPolicy: ProjectPlanApprovalPolicy.never,
+        planningPass: ProjectPlanningPass.bootstrap,
+        planningLimits: ProjectPlanningLimits.bootstrap,
+      );
+      final registry = ProjectPlanningToolRegistry(
+        context: context,
+        profile: ProjectPlanningToolProfile.bootstrap,
+      );
+      final update = await invokePlanning(registry, 'project_update', {
+        'criteria': [
+          {'criterion_id': 1, 'statement': 'The bounded outcome is verified.'},
+        ],
+        'milestones': [
+          {
+            'title': 'First slice',
+            'objective': 'Deliver the first slice.',
+            'criterion_ids': [1],
+          },
+        ],
+      });
+
+      expect(update['ok'], isTrue, reason: update.toString());
+      expect(context.currentProject.criteria, hasLength(1));
+      expect(context.currentProject.tasks, isEmpty);
+      final finalize = await invokePlanning(registry, 'plan_finalize', {});
+      expect(finalize['ok'], isFalse);
+      expect(finalize['code'], 'missing_executable_tasks');
+      expect(context.closed, isFalse);
+    },
+  );
+
   test(
     'task planning exposes update, remove, read, and finalization tools',
     () {
@@ -208,10 +264,29 @@ void main() {
         taskAgentNumbers: const {'task_existing': 1},
         nextTaskAgentNumber: 2,
       );
-      final frontier = ProjectPlanningFrontierBuilder.build(project: project);
+      final frontier =
+          jsonDecode(
+                jsonEncode(
+                  ProjectPlanningFrontierBuilder.build(
+                    project: project,
+                    evidence: ProjectEvidenceSnapshot(
+                      workspaceName: 'Workspace',
+                      readyTasks: const [
+                        'task_existing: Ready',
+                        'task_existing: Ready',
+                      ],
+                      blockedTasks: const ['task_existing: Blocked'],
+                      collectedAt: DateTime(2026, 1, 1),
+                    ),
+                  ),
+                ),
+              )
+              as Map<String, dynamic>;
       final task = (frontier['tasks'] as List).single as Map;
 
       expect(frontier['schema_version'], 1);
+      expect(frontier['frontier']['ready_task_ids'], [1]);
+      expect(frontier['frontier']['blocked_task_ids'], [1]);
       expect(task['task_id'], 1);
       expect(task.containsKey('acceptance'), isFalse);
       expect(task.containsKey('constraints'), isFalse);

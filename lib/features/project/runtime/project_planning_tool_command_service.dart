@@ -328,7 +328,14 @@ class ProjectPlanningToolCommandService {
         message: issue.message,
       );
     }
-    final transitioned = context.currentProject.status == ProjectStatus.active
+    // Graph tools edit the builder; commit those changes (including a no-op
+    // maintenance pass) before publishing the finalized project.
+    if (profile == ProjectPlanningToolProfile.graphMaintenance) {
+      await context.persistDraft();
+    }
+    final transitioned =
+        profile == ProjectPlanningToolProfile.graphMaintenance ||
+            context.currentProject.status == ProjectStatus.active
         ? context.currentProject
         : const ProjectLifecycleService()
               .transition(

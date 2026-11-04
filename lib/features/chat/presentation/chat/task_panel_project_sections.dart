@@ -32,8 +32,8 @@ class _ProjectBody extends StatelessWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             AccessibleWidget(
-              label: 'Project status: ${project.status.wire}',
-              child: _StatusChip(label: project.status.wire),
+              label: 'Project status: ${project.statusLabel}',
+              child: _StatusChip(label: project.statusLabel),
             ),
             AccessibleWidget(
               label:
@@ -58,6 +58,24 @@ class _ProjectBody extends StatelessWidget {
         ],
         const SizedBox(height: 10),
         _ProjectActions(chat: chat, project: project),
+        if (project.planningInterrupted) ...[
+          const SizedBox(height: 10),
+          _Section(
+            title: 'Planning interrupted',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  project.boundary!.message.trim().isEmpty
+                      ? 'Project planning did not finish.'
+                      : project.boundary!.message,
+                ),
+                const SizedBox(height: 8),
+                const Text('Select Continue Project to retry planning.'),
+              ],
+            ),
+          ),
+        ],
         if (project.openQuestions.isNotEmpty) ...[
           const SizedBox(height: 10),
           _ProjectQuestionCard(chat: chat, project: project),
@@ -77,7 +95,7 @@ class _ProjectBody extends StatelessWidget {
         if (activeTask != null) ...[
           const SizedBox(height: 10),
           _Section(
-            title: 'TaskPanelReadModel Executor',
+            title: 'Task Executor',
             child: _CurrentProjectTask(chat: chat, task: activeTask),
           ),
         ],
@@ -222,7 +240,7 @@ class _ProjectActions extends StatelessWidget {
           enabled: canRun,
           child: FilledButton.icon(
             icon: const Icon(Icons.play_arrow),
-            label: const Text('Run Next Ready TaskPanelReadModel'),
+            label: const Text('Run Next Ready Task'),
             onPressed: canRun
                 ? () => unawaited(chat.runNextProjectTask())
                 : null,
@@ -427,8 +445,7 @@ class _CurrentProjectTask extends StatelessWidget {
       for (final criterionId in criterionIds)
         project?.criterionStatement(criterionId) ?? criterionId,
     ];
-    final acceptance =
-        projectTask?.acceptance ?? const <AcceptanceItem>[];
+    final acceptance = projectTask?.acceptance ?? const <AcceptanceItem>[];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -446,8 +463,7 @@ class _CurrentProjectTask extends StatelessWidget {
             _StatusChip(label: task.status.wire),
           ],
         ),
-        if (criterionStatements.isNotEmpty ||
-            acceptance.isNotEmpty) ...[
+        if (criterionStatements.isNotEmpty || acceptance.isNotEmpty) ...[
           const SizedBox(height: 8),
           _StringList(title: 'Project criteria', items: criterionStatements),
           if (acceptance.isNotEmpty) ...[
@@ -455,8 +471,7 @@ class _CurrentProjectTask extends StatelessWidget {
             _StringList(
               title: 'Acceptance',
               items: [
-                for (final item in acceptance)
-                  '${item.ref}: ${item.statement}',
+                for (final item in acceptance) '${item.ref}: ${item.statement}',
               ],
             ),
           ],

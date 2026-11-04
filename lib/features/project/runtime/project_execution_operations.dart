@@ -226,7 +226,12 @@ extension ProjectExecutionOperations on ProjectExecutionUseCase {
     );
     return revised.copyWith(
       id: project.id,
-      persistenceRevision: project.persistenceRevision,
+      // Planning tools can persist several updates during this invocation.
+      // Keep their latest revision without moving behind the input snapshot.
+      persistenceRevision:
+          revised.persistenceRevision > project.persistenceRevision
+          ? revised.persistenceRevision
+          : project.persistenceRevision,
       createdAt: project.createdAt,
       chatSessionId: project.chatSessionId,
     );

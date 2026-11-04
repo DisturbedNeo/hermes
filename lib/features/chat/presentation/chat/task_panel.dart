@@ -124,8 +124,8 @@ class _CollapsedTaskPanel extends StatelessWidget {
                 )
               else if (project != null)
                 AccessibleWidget(
-                  label: 'Project status: ${project!.status.wire}',
-                  child: _StatusChip(label: project!.status.wire),
+                  label: 'Project status: ${project!.statusLabel}',
+                  child: _StatusChip(label: project!.statusLabel),
                 )
               else if (task != null)
                 AccessibleWidget(
